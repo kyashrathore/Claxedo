@@ -11,6 +11,7 @@ import { ingestCursorSdkMessage } from "./driver"
 function cursorDriver(transcriptRegistrar?: Parameters<typeof ingestCursorSdkMessage>[2]): SdkRuntimeDriver {
   return {
     type: "cursor",
+    instructionChannel: "prompt-prefix",
     interactions: { permissions: false, questions: false },
     applyConfig() {},
     createAgentSession: async () => ({ id: "cursor-parent-agent" }),

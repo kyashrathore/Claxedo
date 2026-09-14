@@ -43,7 +43,7 @@ describe("embedded first-party MCP credential", () => {
     process.env.CLAXEDO_DATA_DIR = path.join(path.dirname(a.directory), "data")
     configureEmbeddedWorkspaceRuntime({
       connectionProviders: [createAcpConnectionProvider()],
-      firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:2593", userId: "user-1" },
+      firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:2593", userId: "user-1", enabledToolGroups: () => ["sessions"] },
     })
 
     const runtimeA = await ensureEmbeddedWorkspaceRuntime(a, { config: "skip" })

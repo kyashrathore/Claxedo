@@ -10,6 +10,7 @@ import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../../deployments/local/embedded-workspace-runtime"
+import { createLocalAgentPluginsComposition } from "../../agent-plugins/local-composition"
 import { createLocalControlPlaneServices } from "../local-services"
 import { startLocalServer, type LocalServer } from "../start-local-server"
 
@@ -59,6 +60,10 @@ export async function startLiveFirstPartyMcp() {
     services: createLocalControlPlaneServices(),
     isCredentialPath: (candidate: string) => candidate.startsWith("/api/claxedo/credentials"),
     corsOrigin: (origin: string) => origin,
+    // The Marketplace the desktop entry mounts. Without it a session's tool
+    // surface would be whatever the defaults say and nothing could change it,
+    // which is the half of this composition worth proving.
+    routeContributions: createLocalAgentPluginsComposition().routeContributions,
   })
   await server.ready
 

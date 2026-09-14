@@ -126,3 +126,21 @@ configureReviewAppPorts({
 if (rendererTraceEnabled()) {
   performance.mark("runtime.secondaryFeaturePortsModuleEvaluated")
 }
+
+/**
+ * Tasks, in a chunk of its own.
+ *
+ * The import is dynamic so Rollup keeps `features/tasks/**` out of the chunks
+ * the shell needs before first paint. Registration is awaited by
+ * `preloadRuntimeProviders()` through this export, which is what keeps a
+ * restored Tasks tab from painting the surface fallback while that chunk is
+ * still in flight.
+ *
+ * It is wired here rather than in the first-party surface list because that
+ * list is reached from the published local entry, whose closure must stay free
+ * of hosted capability modules; this wiring runs only once the shell is being
+ * composed.
+ */
+export const secondaryFeaturePortsReady: Promise<void> = import(
+  "@/app/integrations/tasks-contributions"
+).then((module) => module.loadTasksContributions())

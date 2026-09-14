@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { AgentPluginRequestError, agentPluginApi, agentPluginMutationResult, agentPluginSkillResult, isAgentPluginRevisionConflict, withCurrentRevision } from "./api"
+import { AgentPluginRequestError, BUILT_IN_TOOL_GROUP_ORDER, agentPluginApi, agentPluginMutationResult, agentPluginSkillResult, isAgentPluginRevisionConflict, withCurrentRevision } from "./api"
 
 const activation = { effective: { status: "ready", effective: true, winner: "user-default" } }
 
@@ -106,6 +106,60 @@ describe("Agent Plugins client", () => {
     await reject({ icon: { kind: "svg", markup: "<svg />" } })
     await reject({ skills: [{ name: "search", description: "Search the docs" }] })
     await reject({ source: { id: "claxedo", kind: "machine", label: "This machine" } })
+  })
+
+  test("keeps the built-in's tool groups, each naming the activation subject that turns it on", async () => {
+    const groups = [
+      { id: "tasks", pluginInstanceId: "claxedo:tasks", enabled: false, tools: ["task_list", "task_create"] },
+      { id: "review", pluginInstanceId: "claxedo:review", enabled: true, tools: ["session_changes"] },
+    ]
+    const api = agentPluginApi({
+      baseUrl: "https://claxedo.test",
+      request: async () => Response.json(catalogBody(
+        candidate({ pluginInstanceId: "claxedo", builtIn: true, groups, source: null, sourceId: null, sourceKind: null }),
+        candidate(),
+      )),
+    })
+
+    const catalog = await api.catalog()
+
+    expect(catalog.candidates[0]).toMatchObject({ builtIn: true, groups })
+    expect(catalog.candidates[1].builtIn).toBeUndefined()
+    expect(catalog.candidates[1].groups).toBeUndefined()
+  })
+
+  test("every group the order table names decodes, and so does one it does not", async () => {
+    const ids = [...BUILT_IN_TOOL_GROUP_ORDER, "telemetry"]
+    const api = agentPluginApi({
+      baseUrl: "https://claxedo.test",
+      request: async () => Response.json(catalogBody(candidate({
+        builtIn: true,
+        groups: ids.map((id) => ({ id, pluginInstanceId: `claxedo:${id}`, enabled: true, tools: [`${id}_list`] })),
+      }))),
+    })
+
+    const catalog = await api.catalog()
+
+    // Which groups exist is the server's to say: it derives them by running
+    // each registration. A catalog refused over a name this build has not
+    // heard of would take the whole Marketplace down to hide one row.
+    expect(catalog.candidates[0].groups?.map((group) => group.id)).toEqual(ids)
+  })
+
+  test("a group missing a field the pane reads refuses the catalog rather than rendering a hole", async () => {
+    const reject = async (overrides: Record<string, unknown>) => {
+      const api = agentPluginApi({
+        baseUrl: "https://claxedo.test",
+        request: async () => Response.json(catalogBody(candidate(overrides))),
+      })
+      await expect(api.catalog()).rejects.toThrow("did not match its API contract")
+    }
+
+    await reject({ groups: [{ id: "tasks", enabled: true, tools: [] }] })
+    await reject({ groups: [{ id: 7, pluginInstanceId: "claxedo:tasks", enabled: true, tools: [] }] })
+    await reject({ groups: [{ id: "tasks", pluginInstanceId: "claxedo:tasks", enabled: true, tools: [7] }] })
+    await reject({ groups: [{ id: "tasks", pluginInstanceId: "claxedo:tasks", enabled: "yes", tools: [] }] })
+    await reject({ builtIn: "yes" })
   })
 
   test("keeps the browse categories and the featured flag a candidate declares", async () => {

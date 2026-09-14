@@ -1,8 +1,8 @@
 {
   "source": "packages/ui/src/components/icon.tsx",
   "extraction": "Source artwork; SHA-256 of viewBox + newline + SVG content",
-  "count": 118,
-  "uniqueGeometries": 117,
+  "count": 119,
+  "uniqueGeometries": 118,
   "icons": [
     {
       "id": "opencode-icon-codex-collapse-all",
@@ -544,6 +544,12 @@
       "name": "circle-half",
       "viewBox": "0 0 20 20",
       "hash": "60ad3a4ea4d071930e65e4cd6d4b0f3ad8de522cf459e062db0bc0c6e7dcf574"
+    },
+    {
+      "id": "opencode-icon-circle",
+      "name": "circle",
+      "viewBox": "0 0 20 20",
+      "hash": "a55f0fc1cf59db9db86a04eee502ecc20cd717fe47f276a72474f6c87ca1cd9d"
     },
     {
       "id": "opencode-icon-chevron-double-left",

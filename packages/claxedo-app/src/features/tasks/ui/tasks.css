@@ -1,0 +1,1234 @@
+/*
+ * Layout, table and board geometry, and the accents that have no host
+ * primitive. Every control on these surfaces is a component from
+ * @opencode-ai/ui, so nothing here restates a button, a menu or a field — the
+ * rules that name `.ui-*` only re-shape a host component into a row of the
+ * table or a segment of a pair.
+ */
+.tsk {
+  --tsk-row: 36px;
+  --tsk-head: 32px;
+  --tsk-gutter: 16px;
+  --tsk-gap: 8px;
+  --tsk-hairline: var(--border-weak-base);
+  --tsk-tools: 172px;
+  color: var(--text-base);
+  font-size: var(--font-size-compact);
+  letter-spacing: var(--letter-spacing-ui);
+  min-width: 0;
+}
+
+.tsk-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--background-base);
+}
+
+.tsk-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tsk-gap);
+  min-width: 0;
+}
+
+.tsk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tsk-gap);
+  min-width: 0;
+}
+
+.tsk-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tsk-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.tsk-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsk-section-title {
+  color: var(--text-weak);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-section);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.tsk-label {
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.tsk-hint {
+  margin: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-error {
+  margin: 0;
+  color: var(--text-diff-delete-base);
+  font-size: var(--font-size-small);
+}
+
+/* A plain muted number, as Linear's group counts are: a pill would make a count
+   look like a control. */
+.tsk-count {
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.tsk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 32px var(--tsk-gutter);
+  color: var(--text-weak);
+}
+
+.tsk-empty > p {
+  margin: 0;
+}
+
+.tsk-empty-action.ui-button {
+  margin-left: -8px;
+}
+
+.tsk-inset {
+  padding: 8px var(--tsk-gutter);
+}
+
+.tsk-divider {
+  height: 1px;
+  background: var(--tsk-hairline);
+}
+
+.tsk-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tsk-cell .ui-icon-svg {
+  color: var(--icon-weak-base, var(--icon-base));
+}
+
+/*
+ * The status mark is the host's own circle set — dashed while parked, a plain
+ * ring once it is to do, half filled while working, an alert when it needs
+ * you, a tick when done — in the one icon colour, so the shape alone carries
+ * the state.
+ */
+.tsk-status-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--icon-base);
+}
+
+.tsk-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-base);
+  font-size: var(--font-size-x-small);
+  white-space: nowrap;
+}
+
+.tsk-status-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  cursor: pointer;
+  transition: background-color 90ms linear;
+}
+
+.tsk-status-trigger:hover:not(:disabled),
+.tsk-status-trigger[data-expanded] {
+  background: var(--surface-base-hover);
+}
+
+.tsk-status-trigger:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.tsk-status-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tsk-status-caret {
+  color: var(--icon-weak-base, var(--icon-base));
+}
+
+.tsk-menu-content {
+  min-width: 208px;
+}
+
+.tsk-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsk-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsk-menu-detail {
+  flex: none;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-menu-check {
+  flex: none;
+  display: inline-flex;
+  color: var(--icon-base);
+}
+
+.tsk-menu-note {
+  margin: 0;
+  padding: 6px 8px;
+  max-width: 240px;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-menu-content .tsk-menu-note:first-child {
+  color: var(--text-diff-delete-base);
+}
+
+/*
+ * Start and its caret as one control: the pair carries the border and the
+ * children give theirs up, so the seam between them is a single hairline rather
+ * than two rounded boxes with a gap.
+ */
+.tsk-split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--radius-md);
+  background: var(--button-secondary-base);
+  box-shadow: var(--shadow-xs-border-base);
+  overflow: hidden;
+}
+
+.tsk-split > .ui-button,
+.tsk-split .ui-icon-button {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tsk-split .ui-icon-button {
+  width: 22px;
+  border-left: 1px solid var(--tsk-hairline);
+}
+
+.tsk-split[data-busy="true"] {
+  opacity: 0.6;
+}
+
+.tsk-row-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Pointer-only reveal: a touch screen has no hover to reveal it with, and a
+   keyboard reaches it through :focus-within. */
+@media (hover: hover) and (pointer: fine) {
+  .tsk-tr .tsk-row-tools,
+  .tsk-card .tsk-row-tools,
+  .tsk-column-head .ui-icon-button {
+    opacity: 0;
+    transition: opacity 100ms linear;
+  }
+
+  .tsk-tr:hover .tsk-row-tools,
+  .tsk-tr:focus-within .tsk-row-tools,
+  .tsk-card:hover .tsk-row-tools,
+  .tsk-card:focus-within .tsk-row-tools,
+  .tsk-column:hover .tsk-column-head .ui-icon-button,
+  .tsk-column-head:focus-within .ui-icon-button,
+  /* An open menu portals its focus out of the row, so neither hover nor
+     focus-within survives the press that opened it. */
+  .tsk-row-tools:has([data-expanded]) {
+    opacity: 1;
+  }
+
+  /* The properties and the actions share one reserved column, so revealing the
+     actions moves nothing. */
+  .tsk-tr:hover .tsk-props,
+  .tsk-tr:focus-within .tsk-props,
+  .tsk-tr:has(.tsk-row-tools [data-expanded]) .tsk-props {
+    visibility: hidden;
+  }
+
+  .tsk-tr .ui-button.tsk-row-quiet {
+    opacity: 0;
+    transition: opacity 100ms linear;
+  }
+
+  .tsk-tr:hover .tsk-row-quiet,
+  .tsk-tr:focus-within .tsk-row-quiet {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsk-tr .tsk-row-tools,
+  .tsk-tr .ui-button.tsk-row-quiet,
+  .tsk-card .tsk-row-tools,
+  .tsk-column-head .ui-icon-button {
+    transition: none;
+  }
+}
+
+.tsk-surface-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 48px;
+  padding: 0 var(--tsk-gutter);
+  border-bottom: 1px solid var(--tsk-hairline);
+}
+
+.tsk-surface-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-title);
+}
+
+/* No rule under the bar: the first group header is what the table starts with. */
+.tsk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  flex-wrap: wrap;
+  min-height: 40px;
+  padding: 4px var(--tsk-gutter);
+}
+
+.tsk-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tsk-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tsk-filter-tag .ui-icon-button {
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+}
+
+.tsk-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 252px;
+}
+
+.tsk-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  padding: 0 2px;
+}
+
+.tsk-option-label {
+  color: var(--text-base);
+  font-size: var(--font-size-small);
+  white-space: nowrap;
+}
+
+.tsk-listing {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  container-type: inline-size;
+}
+
+/*
+ * A band, not a rule: the header names the group and the tint separates it from
+ * the rows above without drawing a line across the page.
+ */
+.tsk-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--tsk-head);
+  margin: 0;
+  padding: 0 var(--tsk-gutter);
+  background: var(--surface-base);
+  backdrop-filter: blur(8px);
+  color: var(--text-strong);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-ui);
+}
+
+.tsk-group-name {
+  color: var(--text-strong);
+}
+
+.tsk-tr {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--tsk-tools);
+  align-items: center;
+  gap: 10px;
+  height: var(--tsk-row);
+  padding: 0 var(--tsk-gutter);
+}
+
+.tsk-tr:hover {
+  background: var(--surface-base-hover);
+}
+
+.tsk-tr[data-selected="true"] {
+  background: var(--surface-base-active);
+}
+
+.tsk-tr[data-selected="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--text-strong);
+}
+
+.tsk-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tsk-open:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.tsk-open-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsk-tr[data-archived="true"] .tsk-open-name {
+  color: var(--text-weak);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-base);
+}
+
+.tsk-parent {
+  flex: none;
+  max-width: 200px;
+  overflow: hidden;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsk-props {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.tsk-cell-time {
+  min-width: 30px;
+  justify-content: flex-end;
+}
+
+/* The key a person quotes: monospace so the digits line up down the column. */
+.tsk-key {
+  flex: none;
+  color: var(--text-weak);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The actions sit in the column the properties reserved, so nothing shifts when
+   they appear. */
+.tsk-tr .tsk-row-tools {
+  position: absolute;
+  top: 50%;
+  right: var(--tsk-gutter);
+  transform: translateY(-50%);
+}
+
+@container (max-width: 560px) {
+  .tsk-cell-sub,
+  .tsk-cell-session,
+  .tsk-parent {
+    display: none;
+  }
+}
+
+/* A flat ground: the columns are spacing, and only the cards are surfaces. */
+.tsk-board {
+  flex: 1 1 auto;
+  display: grid;
+  grid-auto-columns: minmax(248px, 1fr);
+  grid-auto-flow: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 4px var(--tsk-gutter) var(--tsk-gutter);
+  overflow: auto;
+  background: var(--background-base);
+}
+
+.tsk-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-md);
+}
+
+.tsk-column[data-over="true"] {
+  outline: 1px dashed var(--border-base);
+  outline-offset: -1px;
+}
+
+.tsk-column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: var(--tsk-head);
+  padding: 0 4px;
+  color: var(--text-strong);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.tsk-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 2px;
+  overflow: auto;
+}
+
+.tsk-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  background: var(--surface-raised-strong);
+  border: 1px solid var(--tsk-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition:
+    border-color 90ms linear,
+    box-shadow 90ms linear;
+}
+
+.tsk-card:hover {
+  border-color: var(--border-base);
+  box-shadow: var(--shadow-md);
+}
+
+.tsk-card[data-selected="true"] {
+  border-color: var(--text-strong);
+}
+
+.tsk-card[data-dragging="true"] {
+  opacity: 0.4;
+}
+
+.tsk-card-key {
+  display: block;
+  padding-right: 92px;
+}
+
+.tsk-card-title {
+  padding: 0;
+  padding-right: 92px;
+  background: transparent;
+  border: 0;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--font-size-compact);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tsk-card-title:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.tsk-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tsk-card .tsk-row-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+/* The only mark a drop target needs. */
+.tsk-card-drop {
+  min-height: 56px;
+  border: 1px dashed var(--tsk-hairline);
+  border-radius: var(--radius-md);
+}
+
+.tsk-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 28px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px var(--tsk-gutter) var(--tsk-gutter);
+  overflow: auto;
+  container-type: inline-size;
+}
+
+.tsk-detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tsk-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-crumbs > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsk-crumb-link {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-3);
+  color: var(--text-weak);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tsk-crumb-link:hover,
+.tsk-crumb-link:focus-visible {
+  color: var(--text-strong);
+}
+
+.tsk-crumb-link:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.tsk-crumb-sep {
+  flex: none;
+  color: var(--icon-disabled);
+}
+
+.tsk-crumb-current .tsk-key {
+  margin-right: 6px;
+}
+
+.tsk-crumb-current {
+  color: var(--text-base);
+}
+
+.tsk-page-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsk-parent-tag {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 8px;
+  background: var(--surface-weak);
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  cursor: pointer;
+}
+
+.tsk-parent-tag:hover:not(:disabled) {
+  color: var(--text-strong);
+}
+
+.tsk-parent-tag:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.tsk-parent-tag:disabled {
+  cursor: default;
+}
+
+.tsk-bare-title {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--font-size-2x-large);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-title);
+}
+
+.tsk-bare-title:focus-visible {
+  outline: none;
+}
+
+.tsk-bare-title::placeholder {
+  color: var(--text-weak);
+}
+
+.tsk-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+@container (max-width: 720px) {
+  .tsk-detail {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+.tsk-rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tsk-rail-title {
+  margin: 0 0 2px;
+}
+
+.tsk-rail-action.ui-button {
+  align-self: flex-start;
+  margin-left: -8px;
+}
+
+.tsk-destructive.ui-button {
+  color: var(--text-diff-delete-base);
+}
+
+/* Value rows with no label column, on the status control's own metrics so the
+   glyphs line up down the rail. */
+.tsk-props-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0 0 0 -6px;
+}
+
+.tsk-prop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  color: var(--text-base);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-prop .ui-icon-svg {
+  flex: none;
+  color: var(--icon-base);
+}
+
+/* A property that is somewhere to go, quieter than the ones that are only read. */
+.tsk-prop-link {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-3);
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  cursor: pointer;
+}
+
+.tsk-prop-link:hover,
+.tsk-prop-link:focus-visible {
+  color: var(--text-strong);
+}
+
+.tsk-prop-link:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.tsk-slots {
+  display: flex;
+  flex-direction: column;
+}
+
+.tsk-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--tsk-hairline);
+}
+
+.tsk-slot:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.tsk-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.tsk-slot-name {
+  color: var(--text-base);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+}
+
+/* The ghost Open sits flush with the rail's edge; the split control has a
+   border of its own and stays inside it. */
+.tsk-slot-head > .ui-button {
+  margin-right: -8px;
+}
+
+.tsk-slot-notice,
+.tsk-slot-resend.ui-button {
+  align-self: flex-start;
+  margin: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-slot-resend.ui-button {
+  margin-left: -8px;
+}
+
+/* A ring until the host reports the session live, which fills it. A surface
+   that only knows a session exists carries the ring and claims nothing more. */
+.tsk-dot {
+  flex: none;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--icon-base);
+}
+
+.tsk-dot[data-liveness="live"] {
+  background: var(--icon-success-base);
+  box-shadow: none;
+  animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tsk-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tsk-attempts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tsk-attempt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-attempt-no {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tsk-attempt-liveness {
+  flex: none;
+}
+
+.tsk-attempt-open {
+  flex: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-weak);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-base);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.tsk-attempt-open:hover {
+  color: var(--text-strong);
+}
+
+.tsk-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.tsk-subtasks-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+}
+
+.tsk-subtask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px 0 0;
+  border-radius: var(--radius-sm);
+}
+
+.tsk-subtask:hover {
+  background: var(--surface-base-hover);
+}
+
+.tsk-subtask-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-base);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tsk-subtask-open[data-done="true"] {
+  color: var(--text-weak);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-base);
+}
+
+/* A link row, as Linear's "Add sub-issues" is — not a button that competes with
+   the page's own actions. */
+.tsk-add-trigger {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-small);
+  cursor: pointer;
+}
+
+.tsk-add-trigger:hover {
+  color: var(--text-strong);
+}
+
+.tsk-add-trigger:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.tsk-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.tsk-add .ui-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tsk-create {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tsk-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tsk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tsk-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.tsk-notice-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-notice-glyph {
+  flex: none;
+  margin-top: 1px;
+  color: var(--icon-base);
+}
+
+.tsk-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px var(--tsk-gutter) var(--tsk-gutter);
+  overflow: auto;
+}
+
+.tsk-page-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsk-thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  height: var(--tsk-head);
+  padding: 0 var(--tsk-gutter);
+  background: var(--surface-base);
+  color: var(--text-weak);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-section);
+  text-transform: uppercase;
+}
+
+.tsk-tr-preset {
+  grid-template-columns: minmax(0, 1fr) 76px minmax(0, 210px) 112px 60px 84px;
+}
+
+.tsk-row-quiet.ui-button {
+  justify-self: end;
+  color: var(--text-weak);
+}
+
+.tsk-preset-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.tsk-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.tsk-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-base);
+  font-size: var(--font-size-small);
+}
+
+/* The editor paints its own body; this only gives it the page's measure and a
+   focus ring that matches the other borderless fields. */
+.tsk-prose {
+  max-width: 80ch;
+  min-width: 0;
+}
+
+.tsk-prose :focus-visible {
+  outline: none;
+}
+
+.tsk-prose-boxed {
+  max-width: none;
+  padding: 6px 8px;
+  background: var(--input-base);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-5);
+}
+
+.tsk-prose textarea {
+  width: 100%;
+  min-height: 78px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-relaxed);
+  resize: vertical;
+}
+
+.tsk-prose textarea::placeholder {
+  color: var(--text-weak);
+  opacity: 0.7;
+}
+
+/* The Documents editor sizes itself for a page: a 200px writing area and a
+   160px scroll runway under it. A description is a field on a page that already
+   has both, so this surface asks for neither. */
+.tsk-prose .notion-editor .tiptap {
+  min-height: 1.6em;
+}
+
+.tsk-prose .notion-bottom-space {
+  display: none;
+}
+
+.tsk-rise {
+  animation: tsk-rise 260ms cubic-bezier(0.2, 0, 0, 1) backwards;
+  animation-delay: calc(min(var(--tsk-i, 0), 14) * 20ms);
+}
+
+@keyframes tsk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsk-rise,
+  .tsk-dot[data-liveness="live"] {
+    animation: none;
+  }
+
+  .tsk-card {
+    transition: none;
+  }
+}

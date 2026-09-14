@@ -227,16 +227,15 @@ describe("@claxedo/local-server closure", () => {
     // the published closure now measures exactly 83 modules / 24 packages.
     // app/local-documents adds the desktop composition of shared Documents;
     // the published closure measures 84 modules / 24 packages.
-    // credentials/broker.ts is the 85th module: the desktop's credential
-    // authority, which derives a binding per active registry row and hands the
-    // loopback broker its handler. Its one new package edge is
-    // @claxedo/egress-broker, the request policy, header injection and
-    // runtime-token verification behind that handler; it reaches only `jose`
-    // and `@hono/node-server`, both already here. The table naming each
-    // provider's vendor host, allowed methods and paths and header shape is a
-    // fact about the vendor rather than about this machine, so it is owned by
-    // server-core, where the cloud delivery adapter reads the same rows; it
-    // adds no package edge here.
+    // credentials/broker.ts is the desktop's credential authority, which
+    // derives a binding per active registry row and hands the loopback broker
+    // its handler. Its one new package edge is @claxedo/egress-broker, the
+    // request policy, header injection and runtime-token verification behind
+    // that handler; it reaches only `jose` and `@hono/node-server`, both
+    // already here. The table naming each provider's vendor host, allowed
+    // methods and paths and header shape is a fact about the vendor rather
+    // than about this machine, so it is owned by server-core, where the cloud
+    // delivery adapter reads the same rows; it adds no package edge here.
     // credentials/machine-credentials.ts is the credential port for a server
     // running on the machine the harnesses live on. Asking a CLI what it is
     // signed in as, and withdrawing the stored mark so a harness runs on that
@@ -247,13 +246,19 @@ describe("@claxedo/local-server closure", () => {
     // belongs to this product because this is the process that ran that scan.
     // Both reach only the registry and the machine-login reader, which this
     // closure already holds.
-    // usage/adapters/token-tracker-usage-limits.ts is the 87th module: the plan
-    // probe for every agent installed on this machine, which only a server
-    // running on that machine can ask. It reaches tokentracker-cli and this
-    // package's JSON narrowing, both already here, so it adds no package edge —
-    // the history adapter beside it already carries that dependency.
-    // Measured: 87 modules, 25 packages.
-    expect(modules.size).toBeLessThanOrEqual(87)
+    // usage/adapters/token-tracker-usage-limits.ts is the plan probe for every
+    // agent installed on this machine, which only a server running on that
+    // machine can ask. It reaches tokentracker-cli and this package's JSON
+    // narrowing, both already here, so it adds no package edge — the history
+    // adapter beside it already carries that dependency.
+    // Tasks adds its two feature-owned modules -- the route composition and
+    // the session bridge it hands the kit. The kit itself is reached through
+    // server-core's tasks-host owners, and this package's only direct import
+    // of `@claxedo/tasks` is a type, so it adds no package edge here. Nothing
+    // outside `src/tasks/` imports either module, so a product entry that does
+    // not mount the composition carries neither.
+    // Measured: 90 modules, 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(90)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(25)
   })

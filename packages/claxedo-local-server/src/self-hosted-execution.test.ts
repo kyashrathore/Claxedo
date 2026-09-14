@@ -21,6 +21,22 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       // (deployments/self-hosted-node/start.ts), the same module the desktop's
       // server entry mounts. Only that entry may name it.
       "@claxedo/local-server/agent-plugins/local-composition",
+      // The same entry mounts local Tasks, the same way and for the same
+      // reason: a product that does not name this subpath carries neither the
+      // routes nor the kit.
+      "@claxedo/local-server/tasks/local-composition",
+      // The SIGNED self-hosted Tasks composition
+      // (claxedo-server/src/tasks/self-hosted-composition.ts) binds this box's
+      // own identity to the kit but starts sessions the same way the unsigned
+      // one does, because the box runs them. The bridge is the only piece it
+      // shares, and re-implementing it there would be a second copy of the
+      // start path rather than a boundary.
+      "@claxedo/local-server/tasks/session-bridge",
+      // The signed node serves this machine's Marketplace, so its MCP mount,
+      // its embedded runtimes and its Tasks grant all have to read the very
+      // activation rows those routes write. One reader, named here, rather
+      // than a second copy of the resolution on the server side.
+      "@claxedo/local-server/agent-plugins/builtin-groups",
     ])
     const offenders: string[] = []
     const walk = (dir: string): string[] =>

@@ -20,6 +20,38 @@ export type HarnessActivation = {
 
 export type AgentPluginSourceKind = "claxedo" | "personal" | "organization"
 
+/**
+ * The order the pane lists the first-party server's tool groups in.
+ *
+ * Reading order only. The catalog derives the groups themselves by running each
+ * registration, so which groups exist is the server's to say and this table
+ * cannot be the authority on it: a group missing from here still renders, after
+ * the ones named here, so that a group the server starts serving is one the
+ * user can see and consent to rather than one that refuses the whole catalog.
+ */
+export const BUILT_IN_TOOL_GROUP_ORDER: readonly string[] = [
+  "sessions",
+  "subagents",
+  "attention",
+  "processes",
+  "documents",
+  "tasks",
+  "review",
+  "workspaces",
+]
+
+/**
+ * A group is the unit of consent: enabling it registers its tools on the
+ * session's MCP mount and, for Tasks, mints the capability the tools act on.
+ */
+export type PluginToolGroup = {
+  id: string
+  /** What `activation` names to turn this group on or off; the group is the activation subject. */
+  pluginInstanceId: string
+  enabled: boolean
+  tools: string[]
+}
+
 export type PluginIcon =
   | { kind: "url"; url: string }
   | { kind: "monogram"; text: string }
@@ -40,6 +72,10 @@ export type PluginSource = {
 
 export type PluginCandidate = {
   pluginInstanceId: string
+  /** The first-party server: always in the catalog, never installed or removed. */
+  builtIn?: boolean
+  /** Present only on the built-in, where a group rather than the plugin is what a user turns on. */
+  groups?: PluginToolGroup[]
   sourceId: string | null
   sourceKind: AgentPluginSourceKind | null
   source: PluginSource | null
@@ -138,6 +174,15 @@ function pluginCategories(value: unknown): value is string[] | undefined {
   return value === undefined || (Array.isArray(value) && value.every(isString))
 }
 
+function pluginToolGroups(value: unknown): value is PluginToolGroup[] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every((group) => isRecord(group)
+    && typeof group.id === "string"
+    && typeof group.pluginInstanceId === "string"
+    && typeof group.enabled === "boolean"
+    && Array.isArray(group.tools)
+    && group.tools.every(isString)))
+}
+
 function pluginSkills(value: unknown): value is PluginSkill[] {
   return Array.isArray(value) && value.every((skill) => isRecord(skill)
     && typeof skill.name === "string"
@@ -148,6 +193,8 @@ function pluginSkills(value: unknown): value is PluginSkill[] {
 function pluginCandidate(value: unknown): value is PluginCandidate {
   if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
+    || !(value.builtIn === undefined || typeof value.builtIn === "boolean")
+    || !pluginToolGroups(value.groups)
     || !optionalString(value.sourceId)
     || !(value.sourceKind === null || isAgentPluginSourceKind(value.sourceKind))
     || !pluginSource(value.source)

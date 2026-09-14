@@ -52,7 +52,7 @@ describe("the first-party MCP credential as a direct caller", () => {
     const foreign = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
     const runtime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure(relayAuth),
-      firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:2593", issuer },
+      firstPartyMcpLaunch: { enabledToolGroups: () => ["sessions"], baseUrl: "http://127.0.0.1:2593", issuer },
       routeContributions: [{
         id: "mcp",
         mount: () => ({

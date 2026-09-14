@@ -85,10 +85,16 @@ export function useAppShellRouteSync(input: {
           input.shellRouteKind() === "session" ||
           input.shellRouteKind() === "workspace"
         ) return
+        const shellRoute = parseShellRoute(input.pathname())
         const target = focusedSurfaceRouteTarget({
           route: {
             ...input.params,
             marketplace: input.shellRouteKind() === "marketplace",
+            tasks: input.shellRouteKind() === "tasks",
+            // Read from the URL rather than from a router param: the nested
+            // Tasks pages are parsed by `parseShellRoute`, and a param the
+            // route spine does not declare never reaches `input.params`.
+            ...(shellRoute.kind === "tasks" && shellRoute.page ? { tasksPage: shellRoute.page } : {}),
           },
           surface,
           routeWorkspaceKey: input.routeId(),

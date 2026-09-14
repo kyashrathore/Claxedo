@@ -42,6 +42,7 @@ describe("AcpHarnessAdapter", () => {
     expect(item.readHarnessCapabilities()).toEqual({
       harness: "openclaw",
       modelSelection: { status: "optional" },
+      instructionChannel: "prompt-prefix",
       abort: true,
       reconnect: false,
       replay: true,
@@ -55,6 +56,7 @@ describe("AcpHarnessAdapter", () => {
       configOptions: true,
       subagents: false,
       goals: false,
+      effortLevels: { status: "unsupported", models: [] },
     })
   })
 

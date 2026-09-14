@@ -571,6 +571,27 @@ describe("state/orchestration", () => {
 
 
 
+  test("openTasks creates one reusable closable global content", () => {
+    const { layout, meta, getState } = makeFixture()
+    const id = layout.openTasks()
+    const again = layout.openTasks()
+    expect(again).toBe(id)
+    expect(meta.get(id)?.scope).toBe("global")
+    expect(meta.get(id)?.directory).toBeUndefined()
+    expect(meta.get(id)?.content?.type).toBe("tasks")
+
+    layout.closeContent(id)
+
+    expect(meta.get(id)).toBeUndefined()
+    expect(getState().contentIds).not.toContain(id)
+  })
+
+  test("openTasks and openMarketplace own separate global tabs", () => {
+    const { layout } = makeFixture()
+
+    expect(layout.openTasks()).not.toBe(layout.openMarketplace())
+  })
+
   test("closeContent removes meta + content + cleans terminal owner", () => {
     const { layout, meta, terminal, getState } = makeFixture()
     const id = layout.openTerminal("/work/foo", "pty_1", "Terminal")

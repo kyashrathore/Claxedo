@@ -12,6 +12,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
+import { stageWorkerControlPlaneMigrations } from "./staged-control-plane-migrations"
 import { asRecord, isRecordArray, numberField, stringField } from "@claxedo/server-core/platform/json/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
@@ -240,7 +241,15 @@ async function main() {
     const temporary = await mkdtemp(path.join(serverRoot, ".claxedo-paired-backup-"))
     try {
       const config = path.join(temporary, "wrangler.toml")
-      await writeFile(config, renderBetterAuthD1WranglerConfig({ staging: environment === "staging", ...release }))
+      const staged = stageWorkerControlPlaneMigrations({ configDirectory: temporary })
+      await writeFile(
+        config,
+        renderBetterAuthD1WranglerConfig({
+          staging: environment === "staging",
+          ...release,
+          controlPlaneMigrationsDir: staged.migrationsDir,
+        }),
+      )
       for (const [binding, output] of [
         ["AUTH_DB", authPath],
         ["CONTROL_PLANE_DB", controlPath],

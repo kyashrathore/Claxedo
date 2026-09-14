@@ -20,8 +20,10 @@ import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { configureRuntimeGitAuth } from "./git-auth"
+import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import {
   sandboxLeaseEnv,
+  workspaceRuntimeMcpToolGroups,
   workspaceRuntimeDirectAuthEnv,
   workspaceRuntimeTargetEnv,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
@@ -141,9 +143,13 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // runtime launches carries, and its `verify` is both the endpoint's admission
   // check and the runtime's proof that the caller is a harness it started.
   const firstPartyMcp = createRuntimeCredentialIssuer({ runtimeId: randomUUID(), workspaceId: workspaceId(env) })
+  // What this root's project consented to, as the control plane wrote it at
+  // launch. A sandbox cannot ask again, and a variable that never arrived is
+  // not consent, so an absent one leaves every group off.
+  const enabledToolGroups = workspaceRuntimeMcpToolGroups(env) ?? []
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
-    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp },
+    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
     ...relayOptions,
     // Relay-host gating must come from env so a runtime spawned as a
     // subprocess (sandbox image) rejects unauthenticated direct access
@@ -164,7 +170,11 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // the sandbox image answering 404 to the provisioner.
     routeContributions: [
       ...(input.routeContributions ?? []),
-      firstPartyMcpRuntimeContribution(firstPartyMcp.verify),
+      firstPartyMcpRuntimeContribution({
+        verifyRuntimeCredential: firstPartyMcp.verify,
+        enabledToolGroups,
+        tasks: workspaceRuntimeTasksGrant(env),
+      }),
     ],
   }
   return { port, hostname, options }

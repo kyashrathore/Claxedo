@@ -5,7 +5,14 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { withCurrentRevision, type AgentPluginApi, type AgentPluginHarness, type PluginCandidate, type PluginCatalog } from "../api"
+import {
+  withCurrentRevision,
+  type AgentPluginApi,
+  type AgentPluginHarness,
+  type PluginCandidate,
+  type PluginCatalog,
+  type PluginToolGroup,
+} from "../api"
 import { oauthServers, type AgentPluginConnectionPort, type AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
 import { requestConfirm } from "./confirm"
@@ -17,7 +24,9 @@ import { PluginDetailPane } from "./detail-pane"
 import {
   categoryChips,
   directorySections,
+  isBuiltIn,
   isInstalled,
+  toolGroups,
   matchesQuery,
   personalEntries,
   pluginLabel,
@@ -144,51 +153,121 @@ export function AgentPluginDirectory(props: {
   const selectedPersonal = createMemo(() => personal().find((entry) => personalEntryKey(entry) === selectedPersonalKey()))
   const projectLabel = () => catalog()?.projects?.find((project) => project.id === projectId())?.label ?? CROSS_PROJECT
 
-  const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
-    const current = catalog()
-    if (!current) return
-    if (choice === false) {
-      // What disabling costs is not recoverable from the button label: it
-      // deletes the materialized tree the harnesses read.
-      const ok = await requestConfirm(dialog, {
-        title: `Disable ${pluginLabel(plugin)}?`,
-        body: "This removes its config and materialized files.",
-        confirmLabel: "Disable",
+  /**
+   * Where a signed choice lands: the selected project's own override, or —
+   * from the cross-project view — the user default every project reads.
+   */
+  const activationTarget = () => {
+    if (!signed()) return undefined
+    const project = projectId()
+    return project
+      ? { scope: "projects" as const, projectIds: [project] }
+      : { scope: "all-projects" as const }
+  }
+
+  /**
+   * Posts one activation per subject, threading each receipt's revision into
+   * the next request.
+   *
+   * The built-in's whole-plugin actions are the only caller that names more
+   * than one subject, and every post after the first would otherwise carry the
+   * revision the one before it just moved.
+   */
+  const activateAll = async (
+    subjects: readonly string[],
+    choice: boolean | null,
+    target: ReturnType<typeof activationTarget>,
+  ) => {
+    let expected = catalog()?.revision
+    if (expected === undefined) throw new Error("The plugin catalog is not loaded")
+    const receipts = []
+    for (const pluginInstanceId of subjects) {
+      const receipt = await withCurrentRevision({
+        revision: () => expected,
+        reread: async () => {
+          await reread()
+          expected = catalog()?.revision
+        },
+        run: (expectedRevision) => props.api.activation({
+          pluginInstanceId,
+          harnessIds: harnesses(),
+          choice,
+          expectedRevision,
+          ...(target ? { target } : {}),
+        }),
       })
+      expected = receipt.revision
+      receipts.push(receipt)
+    }
+    return receipts
+  }
+
+  /**
+   * Enable, Disable and Clear, for one plugin or for the built-in's groups.
+   *
+   * `"claxedo"` is not an activation subject — only `claxedo:<group>` is — so
+   * the built-in's whole-plugin actions fan out across its groups. Enable
+   * clears them rather than turning them all on, because turning Tasks on
+   * mints a capability, and that is a consent the group's own switch asks for.
+   */
+  const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
+    if (!catalog()) return
+    const builtIn = isBuiltIn(plugin)
+    const subjects = builtIn
+      ? toolGroups(plugin).map((group) => group.pluginInstanceId)
+      : [plugin.pluginInstanceId]
+    const decision = builtIn && choice === true ? null : choice
+    if (choice === false) {
+      const ok = await requestConfirm(dialog, builtIn
+        ? {
+            title: "Turn off every tool group?",
+            body: "Sessions started from now get none of Claxedo's own tools.",
+            confirmLabel: "Turn off",
+          }
+        : {
+            // What disabling costs is not recoverable from the button label: it
+            // deletes the materialized tree the harnesses read.
+            title: `Disable ${pluginLabel(plugin)}?`,
+            body: "This removes its config and materialized files.",
+            confirmLabel: "Disable",
+          })
       if (!ok) return
     }
     setPending(plugin.pluginInstanceId)
     try {
-      // A signed choice names the projects it covers. A deployment that lists
-      // none (a self-hosted box, or an account before its first project) has
-      // nothing to enumerate, so the choice is the user's cross-project default.
-      const projectIds = (current.projects ?? []).map((project) => project.id)
-      const targetSelection = signed()
-        ? projectIds.length > 0
-          ? { scope: "projects" as const, projectIds }
-          : { scope: "all-projects" as const }
-        : undefined
-      const result = await withCurrentRevision({
-        revision: () => catalog()?.revision,
-        reread,
-        run: (expectedRevision) => props.api.activation({
-          pluginInstanceId: plugin.pluginInstanceId,
-          harnessIds: harnesses(),
-          choice,
-          expectedRevision,
-          ...(targetSelection ? { target: targetSelection } : {}),
-        }),
-      })
-      if (result.reconciliation.state === "failed") {
+      const receipts = await activateAll(subjects, decision, activationTarget())
+      const failed = receipts.find((receipt) => receipt.reconciliation.state === "failed")
+      if (failed) {
         showToast({
           title: "Activation saved",
-          description: result.reconciliation.message ?? "Runtime reconciliation will be retried.",
+          description: failed.reconciliation.message ?? "Runtime reconciliation will be retried.",
         })
       }
       await reread()
       if (signed() && props.connections) await refetchConnections()
     } catch (error) {
       showToast({ title: "Could not change plugin", description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setPending(undefined)
+    }
+  }
+
+  /**
+   * A switch posts the same activation the Enable button does, against the
+   * group's own instance id. It skips `mutate`'s confirm: turning a group off
+   * takes tools away from the next session and removes no materialized files.
+   */
+  const setToolGroup = async (plugin: PluginCandidate, group: PluginToolGroup, enabled: boolean) => {
+    if (!catalog()) return
+    setPending(plugin.pluginInstanceId)
+    try {
+      await activateAll([group.pluginInstanceId], enabled, activationTarget())
+      await reread()
+    } catch (error) {
+      showToast({
+        title: `Could not turn ${group.id} ${enabled ? "on" : "off"}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       setPending(undefined)
     }
@@ -348,7 +427,9 @@ export function AgentPluginDirectory(props: {
   }
 
   const cardAction = (plugin: PluginCandidate) => {
-    if (isInstalled(plugin)) return undefined
+    // The built-in ships with the product: there is nothing to add or enable
+    // from a card, and its card says which tool groups are on instead.
+    if (isBuiltIn(plugin) || isInstalled(plugin)) return undefined
     const disabled = pending() === plugin.pluginInstanceId || (!plugin.sourceAvailable && !plugin.retainedDigest)
     return plugin.retainedDigest
       ? { label: "Enable", disabled, run: () => void mutate(plugin, true) }
@@ -551,6 +632,7 @@ export function AgentPluginDirectory(props: {
                 onOrganizationDefault={(choice) => void organizationDefault(plugin(), choice)}
                 onConnect={openConnection}
                 onDisconnect={(connection) => void disconnect(connection)}
+                onToolGroup={(group, enabled) => void setToolGroup(plugin(), group, enabled)}
                 onClose={() => setSelectedId(undefined)}
               />
             )}

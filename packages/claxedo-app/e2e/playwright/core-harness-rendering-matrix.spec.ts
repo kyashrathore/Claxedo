@@ -117,7 +117,7 @@ function nonBackgroundNoiseConsole(entries: string[]) {
  *   - the harness IDENTITY the mock runtime is installed with, which is the
  *     mock runtime's fixture key (`connectionIdFor` in e2e/helpers/mock-runtime.ts
  *     maps it to a connection id). The real validator, `normalizeHarnessIdentity`
- *     (agent-sdk-runtime/src/harness-types.ts), does not accept colon-form ids.
+ *     (agent-runtime-contract's `harnesses.ts`), does not accept colon-form ids.
  *
  * Only the identity moves here. Fixture names, directories, and session ids are
  * unchanged, so every replayed trace and every assertion is the same one.

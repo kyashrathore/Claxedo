@@ -1,5 +1,5 @@
 import type { Policy } from "../policy.ts"
-import { APP_ALIASES, MANIFEST_READS } from "./shared.ts"
+import { APP_ALIASES, MANIFEST_READS, TASKS_CHUNK_MARKER } from "./shared.ts"
 
 const SRC = "packages/claxedo-app/src"
 
@@ -339,31 +339,72 @@ export const appLocal: Policy = {
   // per-turn foldable count it now resolves so a switch cannot re-fold rows
   // under the reader. It reaches the prefetched page and the view key through
   // owners the rail and the session controller already put in this closure.
-  // No new package edge. Measured 1013 / 38.
+  // No new package edge.
   // +2 modules (2026-09-13): features/settings/ui/agent-harness-row.tsx and
   // features/settings/ui/provider-connect-card.tsx, the Agents-on-this-machine
   // row and the inline connect card lifted out of provider-setup-row.tsx so the
   // catalog row and the agent row stop sharing one component with two jobs. Both
   // are reached only from the settings feature already in this closure.
-  // No new package edge. Measured 1015 / 38.
+  // No new package edge.
   // +1 module (2026-09-13): platform/identity/harness-catalog.ts, the single
   // owner of the words a harness and its vendor are named by. The connect card
   // used to render the registry's provider id when the model catalog had never
   // heard of it; both the card and the agent rows now resolve through here, and
   // it reaches nothing but the harness-id union already in this closure.
-  // No new package edge. Measured 1016 / 38.
+  // No new package edge.
   // +1 module (2026-09-13): platform/identity/connect-methods.ts, the single
   // owner of a vendor's sign-in methods — their display order, the words that
   // explain each one, the command that mints a token and the vendor's key page.
   // The connect card reads it beside harness-catalog.ts, already in this
   // closure, and it imports nothing.
-  // No new package edge. Measured 1017 / 38.
+  // No new package edge.
   // +1 module (2026-09-13): lib/percent.ts, the single owner of how a usage
   // percentage is read. The vendors report the fraction they measured, and the
   // Settings agent rows and the Usage quota cards each spelled it out in full;
   // both round through here now. It imports nothing.
-  // No new package edge. Measured 1018 / 38.
-  ceilings: { modules: 1018, packages: 38 },
+  // No new package edge.
+  //
+  // `app/workbench/rail/first-project-canvas.{tsx,css}`: the rail canvas is the
+  // screen this entry boots to before a project exists, and it renders the
+  // create form inline rather than mounting the draft composer with an empty
+  // project, so both modules belong to the local product.
+  //
+  // `app/integrations/settings-sections.ts` is the shell's registry for
+  // contributed settings sections; Tasks registers its Presets section through
+  // it.
+  //
+  // Tasks and Presets. `@claxedo/tasks` is the package edge; the HLD makes both
+  // catalogs part of every build that renders the shell, so the surface is
+  // registered from `app/integrations/secondary-feature-ports.ts` — the
+  // first-party surface list is reached from the published local entry, whose
+  // closure must stay clear of hosted capability modules — and everything
+  // behind it hangs off the one module that list dynamic-imports,
+  // `app/integrations/tasks-contributions.ts`. The reviewed owners are the
+  // `app/integrations/tasks` modules that bind the ports (the catalog and
+  // navigation ports, the contributed Presets settings section, and the
+  // `ProseEditor` binding) and the `features/tasks` modules behind them: the
+  // app ports, the catalog client and its queries, the filter/draft store, the
+  // preview-and-start pair, the view-model and preset-editor model, and the
+  // surface with its two pages, dialogs, detail panel, list, board and shared
+  // row controls. The kit keeps domain, http, client and conformance; its UI
+  // lives here, which is why those modules are visible to this walk at all.
+  //
+  // Task descriptions and preset instructions use the Documents editor, which
+  // the user reviewed and accepted on 2026-09-13 — "task description and preset
+  // instructions use the Documents editor" — because the alternative was a
+  // second markdown surface with its own subset. That is where the Tiptap
+  // package edges come from: @tiptap/core, /pm, /starter-kit, /markdown,
+  // /suggestion, solid-tiptap, and the extensions the Documents configuration
+  // mounts. The owner is `app/integrations/tasks/tasks-prose-editor.tsx`, and
+  // the Documents modules it reaches are the rich editor, its extension list
+  // (including the markdown input rules and paste path), the mermaid block,
+  // slash commands, and the markdown detector and frontmatter pair that keep
+  // the stored value markdown. The hosted Documents set stays out: no store,
+  // route or content-surface module is reachable from here, and
+  // `documents-content-surfaces` remains a forbidden chunk marker.
+  //
+  // Measured 1069 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1069, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
@@ -376,6 +417,7 @@ export const appLocal: Policy = {
       `${SRC}/app/entry/app.tsx`,
       `${SRC}/features/terminal/core/backend/xterm.ts`,
     ],
+    requiredChunkMarkers: [TASKS_CHUNK_MARKER],
     forbiddenChunkMarkers: ["documents-content-surfaces"],
   },
 }

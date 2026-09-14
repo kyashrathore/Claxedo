@@ -14,19 +14,31 @@ import Underline from "@tiptap/extension-underline"
 import { Markdown } from "@tiptap/markdown"
 import StarterKit from "@tiptap/starter-kit"
 import { MermaidCodeBlock } from "./mermaid-block"
+import { OrderedListParenInput, markdownLinkInputRule } from "./markdown-input-rules"
+import { MarkdownPaste } from "./markdown-paste"
 import { SlashCommands } from "./slash-commands"
 
 /** The single production extension list used by both the editor and its fidelity proof. */
 export function documentRichEditorExtensions(): AnyExtension[] {
   return [
     StarterKit.configure({ codeBlock: false, link: false, underline: false }),
+    OrderedListParenInput,
     MermaidCodeBlock,
-    Link.configure({ openOnClick: false, autolink: true }),
+    // Upstream ships no input rule for a link, so the syntax stayed literal
+    // while every other mark converted.
+    Link.extend({
+      addInputRules() {
+        return [markdownLinkInputRule(this.type)]
+      },
+    }).configure({ openOnClick: false, autolink: true }),
     Underline,
     TextStyle,
     Color,
     Highlight.configure({ multicolor: true }),
-    Image.configure({ allowBase64: true }),
+    // Inline, because that is where the markdown parser puts an image. As a
+    // block node the bundled input rule replaced the paragraph being typed and
+    // `getMarkdown()` came back empty, so typing and loading disagreed.
+    Image.configure({ allowBase64: true, inline: true }),
     Table.configure({ resizable: true }),
     TableRow,
     TableHeader,
@@ -35,5 +47,6 @@ export function documentRichEditorExtensions(): AnyExtension[] {
     TaskItem.configure({ nested: true }),
     SlashCommands,
     Markdown,
+    MarkdownPaste,
   ]
 }

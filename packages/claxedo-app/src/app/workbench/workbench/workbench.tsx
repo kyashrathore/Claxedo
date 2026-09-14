@@ -45,6 +45,8 @@ export type WorkbenchProps = {
   retainedHiddenLimit?: () => number
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
   onPaneResize?: (paneId: string, rect: PaneRect) => void
+  /** Whether a pane holding this content offers its drag grip; absent is yes. */
+  paneDraggable?: (contentId: string) => boolean
   onContentOpen?: (contentId: string, paneId: string) => void
   onContentClose?: (contentId: string, reason: "user" | "stale") => void
   onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
@@ -653,7 +655,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
         <For each={ctx.getState().panes}>
           {(pane) => (
             <>
-              <Show when={pane.contentId}>
+              <Show when={pane.contentId && (props.paneDraggable?.(pane.contentId) ?? true) ? pane.contentId : undefined}>
                 {(cid) => (
                   <div
                     data-testid={`pane-handle-zone-${pane.id}`}

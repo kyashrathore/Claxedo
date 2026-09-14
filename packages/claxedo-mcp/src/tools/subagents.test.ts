@@ -24,6 +24,11 @@ const MODE_LEVELS: Record<string, string | undefined> = {
 }
 const LEVEL_ORDER = ["ask", "auto", "full"]
 
+const GROUP = {
+  planning: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-opus-4" }, effort: "high" },
+  review: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5" } },
+}
+
 type FakeSession = {
   id: string
   parentID?: string
@@ -32,6 +37,15 @@ type FakeSession = {
   answer: string
   turnMs: number
   model?: unknown
+  variant?: string
+  instructions?: string
+  group?: Record<string, unknown>
+}
+
+type FakeHarnessCapabilities = {
+  modelSelection?: { status: string; models?: Array<{ providerId: string; modelId: string; name: string }> }
+  effortLevels?: { status: string; models: Array<{ modelID: string; levels: string[] }> }
+  instructionChannel?: "turn-system-prompt" | "thread-start" | "prompt-prefix" | "none"
 }
 
 type FakeRow = {
@@ -44,6 +58,9 @@ type FakeRow = {
   wake?: string
 }
 
+const HARNESSES = ["claude", "codex", "cursor", "pi", "opencode"]
+const CONNECTIONS = ["review-bot"]
+
 const error = (code: string, message: string) => ({ error: { code, message } })
 
 /**
@@ -53,7 +70,12 @@ const error = (code: string, message: string) => ({ error: { code, message } })
  * adapter and a store from `@claxedo/agent-sdk-runtime`, which is not a
  * dependency here.
  */
-function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHarness?: string | null } = {}) {
+function fakeRuntime(options: {
+  turnMs?: number
+  parentMode?: string
+  defaultHarness?: string | null
+  harnessCapabilities?: FakeHarnessCapabilities
+} = {}) {
   const sessions = new Map<string, FakeSession>()
   const rows = new Map<string, FakeRow[]>()
   const messages = new Map<string, Array<{ info: { id: string; role: string; sessionID: string }; parts: Array<{ id: string; sessionID: string; messageID: string; type: "text"; text: string }> }>>()
@@ -113,9 +135,10 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHar
 
   const app = new Hono()
     .post("/session", async (c) => {
-      const harness = c.req.query("nativeHarness")
-      if (!harness || !["claude", "codex", "cursor", "pi", "opencode"].includes(harness)) {
-        return c.json(error("unknown_native_harness", "Unknown native harness"), 400)
+      const connection = c.req.query("connectionId")
+      const harness = connection ?? c.req.query("nativeHarness")
+      if (!harness || !(connection ? CONNECTIONS : HARNESSES).includes(harness)) {
+        return c.json(error("unknown_native_harness", `Unknown harness "${harness ?? ""}"`), 400)
       }
       const body = await c.req.json() as Record<string, string | undefined> & { model?: unknown }
       const parentID = body.parentID
@@ -133,6 +156,9 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHar
       const active = childrenOf(parentID).filter((row) => ["pending", "running", "paused"].includes(row.status))
       if (active.length >= 4) {
         return c.json(error("subagent_child_cap_reached", `Session ${parentID} already has ${active.length} active children (limit 4)`), 409)
+      }
+      if (body.instructions && options.harnessCapabilities?.instructionChannel === "none") {
+        return c.json(error("session_instructions_unsupported", "This harness takes no standing instructions"), 501)
       }
       const ceiling = narrower(MODE_LEVELS[parent.permissionMode], body.permissionCeiling)
       const requested = body.permissionMode
@@ -152,7 +178,15 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHar
       }
       const permissionMode = requested ?? widestUnder(ceiling) ?? parent.permissionMode
       const id = `ses_child_${++counter}`
-      seed(id, { parentID, permissionMode, answer: parent.answer, turnMs: parent.turnMs, ...(body.model ? { model: body.model } : {}) })
+      seed(id, {
+        parentID,
+        permissionMode,
+        answer: parent.answer,
+        turnMs: parent.turnMs,
+        ...(body.model ? { model: body.model } : {}),
+        ...(body.variant ? { variant: body.variant } : {}),
+        ...(body.instructions ? { instructions: body.instructions } : {}),
+      })
       const row: FakeRow = {
         subagentKey: `subagent_${counter}`,
         childSessionId: id,
@@ -184,9 +218,32 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHar
       if (child) scheduleTurn(child, "killed", 0)
       return c.json({ ok: true, status: "cancelled" })
     })
-    .get("/session/capabilities", (c) => options.defaultHarness === null
-      ? c.json(error("workspace_harness_not_configured", "No default harness is configured on this runtime"), 409)
-      : c.json({ harness: options.defaultHarness ?? "codex", subagents: true }))
+    .get("/session/capabilities", (c) => {
+      const requested = c.req.query("nativeHarness") ?? c.req.query("connectionId")
+      if (requested && ![...HARNESSES, ...CONNECTIONS].includes(requested)) {
+        return c.json(error("unknown_native_harness", `Unknown harness "${requested}"`), 400)
+      }
+      if (!requested && options.defaultHarness === null) {
+        return c.json(error("workspace_harness_not_configured", "No default harness is configured on this runtime"), 409)
+      }
+      return c.json({
+        harness: requested ?? options.defaultHarness ?? "codex",
+        subagents: true,
+        ...options.harnessCapabilities,
+      })
+    })
+    .get("/session/:id/config", (c) => {
+      const session = sessions.get(c.req.param("id"))
+      if (!session) return c.json(error("session_not_found", "not found"), 404)
+      const model = session.model as { providerID?: string; id?: string } | undefined
+      return c.json({
+        harness: { id: "codex", access: "native" },
+        ...(model?.providerID && model.id ? { model: { providerID: model.providerID, modelID: model.id } } : {}),
+        variant: session.variant ?? null,
+        instructions: session.instructions ?? "",
+        ...(session.group ? { group: session.group } : {}),
+      })
+    })
     .get("/session/:id/subagents", (c) => c.json(childrenOf(c.req.param("id"))))
     // `messagePageResponse` answers with the messages alone and puts the cursor
     // on `X-Next-Cursor`; a `{ messages }` envelope here is what let
@@ -208,6 +265,8 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string; defaultHar
     childrenOf,
     prompts,
     sessions,
+    config: async (sessionId: string) =>
+      await (await app.request(`http://runtime.test/session/${sessionId}/config`)).json() as Record<string, unknown>,
     dispose: () => { for (const timer of timers.splice(0)) clearTimeout(timer) },
   }
 }
@@ -241,6 +300,7 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
   runtimes.push(runtime)
   const routes = createClaxedoMcpRoutes({
     mount: "loopback",
+    enabledToolGroups: () => ["subagents"],
     verifyRuntimeCredential: (token) =>
       token.startsWith("rt-token:")
         ? { runtimeId: "rt_1", workspaceId: WORKSPACE, sessionId: token.slice("rt-token:".length), userId: "user_1", permissionMode: "ask", expiresAt: Number.MAX_SAFE_INTEGER }
@@ -249,7 +309,7 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
       deployment: "loopback",
       local: { fetch: inProcessFetch((request) => runtime.app.fetch(request)), workspace: { workspaceId: WORKSPACE, directory: DIRECTORY } },
     }),
-    registerTools: [registerSubagentTools],
+    registerTools: [{ id: "subagents", reach: "runtime", register: registerSubagentTools }],
     audit: () => undefined,
     ...options,
   })
@@ -552,5 +612,239 @@ describe("subagent tools", () => {
 
     expect((await client.listTools()).tools).toEqual([])
     await expect(call(client, "create_subagent", { harness: "codex", prompt: "Consult", mode: "async" })).rejects.toThrow(/-32601/)
+  })
+  test("a child started by a configuration runs that slot's harness, model and effort", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const created = jsonOf(await call(client, "create_subagent", {
+      configuration: "planning",
+      prompt: "Draft the approach",
+      mode: "async",
+    }))
+    expect(await runtime.config(String(created.sessionId))).toMatchObject({
+      model: { providerID: "anthropic", modelID: "claude-opus-4" },
+      variant: "high",
+    })
+    // The harness reaches the create in the query, and the row the runtime
+    // minted names the one it selected.
+    expect(runtime.childrenOf("parent")).toMatchObject([{ subagentType: "claude" }])
+  })
+
+  test("the child is given the parent's own instructions and told which configuration it runs", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP, instructions: "Read before you write." })
+    const client = await asRuntime(url, "parent")
+
+    const created = jsonOf(await call(client, "create_subagent", {
+      configuration: "review",
+      prompt: "Check it",
+      mode: "async",
+    }))
+    const instructions = String((await runtime.config(String(created.sessionId))).instructions)
+    expect(instructions).toContain("Read before you write.")
+    expect(instructions).toContain("review configuration")
+    expect(instructions).toContain("openai/gpt-5")
+    expect(instructions).toContain("cannot start subagents of your own")
+    // The prompt is still the task alone; the instruction block is not history.
+    expect(runtime.prompts).toEqual([
+      { sessionId: created.sessionId, text: "Check it", model: { providerID: "openai", id: "gpt-5" } },
+    ])
+  })
+
+  test("a harness with no instruction channel gets the block at the head of the child's first prompt", async () => {
+    const runtime = fakeRuntime({ harnessCapabilities: { instructionChannel: "none" } })
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP, instructions: "Read before you write." })
+    const client = await asRuntime(url, "parent")
+
+    const created = jsonOf(await call(client, "create_subagent", {
+      configuration: "review",
+      prompt: "Check it",
+      mode: "async",
+    }))
+    expect((await runtime.config(String(created.sessionId))).instructions).toBe("")
+    expect(runtime.prompts).toHaveLength(1)
+    const prompt = runtime.prompts[0]
+    expect(prompt.sessionId).toBe(created.sessionId)
+    expect(prompt.text).toContain("Read before you write.")
+    expect(prompt.text).toContain("review configuration")
+    expect(prompt.text.endsWith("\n\nCheck it")).toBe(true)
+  })
+
+  test("a configuration this session's group does not name is refused with the ones it has", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const refused = await call(client, "create_subagent", { configuration: "implementation", prompt: "Build it", mode: "async" })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toContain("subagent_configuration_unknown")
+    expect(textOf(refused)).toContain("planning, review")
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+
+  test("a session with no group is told so rather than resolving a slot from nothing", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent")
+    const client = await asRuntime(url, "parent")
+
+    const refused = await call(client, "create_subagent", { configuration: "planning", prompt: "Draft", mode: "async" })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toContain("no model group")
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+
+  test("a model or harness that contradicts the chosen configuration is refused", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    for (const contradiction of [
+      { model: { providerID: "openai", id: "gpt-5" } },
+      { harness: "codex" },
+      { effort: "low" },
+    ]) {
+      const refused = await call(client, "create_subagent", {
+        configuration: "planning",
+        prompt: "Draft",
+        mode: "async",
+        ...contradiction,
+      })
+      expect(refused.isError, JSON.stringify(contradiction)).toBe(true)
+      expect(textOf(refused)).toContain("subagent_configuration_contradicted")
+    }
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+
+  test("an effort the harness refuses for that model is refused with the levels it accepts", async () => {
+    const runtime = fakeRuntime({
+      harnessCapabilities: {
+        effortLevels: { status: "resolved", models: [{ modelID: "claude-opus-4", levels: ["low", "medium"] }] },
+      },
+    })
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const refused = await call(client, "create_subagent", { configuration: "planning", prompt: "Draft", mode: "async" })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toContain("subagent_effort_unsupported")
+    expect(textOf(refused)).toContain("it accepts low, medium")
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+
+  test("an effort no catalog has answered for reaches the child instead of being dropped", async () => {
+    for (const effortLevels of [
+      { status: "unresolved", models: [] },
+      { status: "unsupported", models: [] },
+      { status: "resolved", models: [{ modelID: "claude-opus-4", levels: ["low", "high"] }] },
+    ]) {
+      const runtime = fakeRuntime({ harnessCapabilities: { effortLevels } })
+      const url = await mount(runtime)
+      runtime.seed("parent", { group: GROUP })
+      const client = await asRuntime(url, "parent")
+
+      const created = await call(client, "create_subagent", { configuration: "planning", prompt: "Draft", mode: "async" })
+      expect(created.isError, effortLevels.status).toBeFalsy()
+      expect(await runtime.config(String(jsonOf(created).sessionId)), effortLevels.status).toMatchObject({ variant: "high" })
+    }
+  })
+
+  test("a model the harness does not offer is refused before any child exists", async () => {
+    const runtime = fakeRuntime({
+      harnessCapabilities: {
+        modelSelection: { status: "optional", models: [{ providerId: "openai", modelId: "gpt-5", name: "GPT-5" }] },
+      },
+    })
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const refused = await call(client, "create_subagent", { configuration: "planning", prompt: "Draft", mode: "async" })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toContain("subagent_model_unavailable")
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+
+  test("a configuration cannot widen the permission ceiling its parent runs under", async () => {
+    const runtime = fakeRuntime({ parentMode: "read-only" })
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const refused = await call(client, "create_subagent", {
+      configuration: "planning",
+      prompt: "Draft",
+      mode: "async",
+      permissionMode: "full-access",
+    })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toContain("permission_ceiling_exceeded")
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+
+  test("a retried configuration request returns the same child and prompts it once", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const args = { configuration: "planning", prompt: "Draft", mode: "async", clientRequestId: "req-planning" }
+    const first = jsonOf(await call(client, "create_subagent", args))
+    const retry = jsonOf(await call(client, "create_subagent", args))
+    expect(retry.sessionId).toBe(first.sessionId)
+    expect(runtime.childrenOf("parent")).toHaveLength(1)
+    expect(runtime.prompts).toEqual([{ sessionId: first.sessionId, text: "Draft", model: { providerID: "anthropic", id: "claude-opus-4" } }])
+  })
+
+  test("subagent_capabilities advertises the group a child may be started from", async () => {
+    const runtime = fakeRuntime({
+      harnessCapabilities: { effortLevels: { status: "resolved", models: [{ modelID: "gpt-5", levels: ["low", "high"] }] } },
+    })
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    expect(jsonOf(await call(client, "subagent_capabilities"))).toMatchObject({
+      canSpawn: true,
+      configurations: GROUP,
+      effortLevels: { status: "resolved", models: [{ modelID: "gpt-5", levels: ["low", "high"] }] },
+    })
+  })
+
+  test("a create that names neither a harness nor a configuration is refused", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP })
+    const client = await asRuntime(url, "parent")
+
+    const refused = await call(client, "create_subagent", { prompt: "Do it", mode: "async" })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toContain("subagent_harness_required")
+    expect(runtime.childrenOf("parent")).toEqual([])
+  })
+  test("a configuration whose harness is a connection reaches the create as a connection, not a native id", async () => {
+    const runtime = fakeRuntime()
+    const url = await mount(runtime)
+    runtime.seed("parent", {
+      group: {
+        review: {
+          harness: { id: "review-bot", access: "connection" },
+          model: { providerID: "openai", modelID: "gpt-5" },
+        },
+      },
+    })
+    const client = await asRuntime(url, "parent")
+
+    const created = await call(client, "create_subagent", { configuration: "review", prompt: "Check it", mode: "async" })
+    expect(created.isError).toBeFalsy()
+    expect(runtime.childrenOf("parent")).toMatchObject([{ subagentType: "review-bot" }])
   })
 })

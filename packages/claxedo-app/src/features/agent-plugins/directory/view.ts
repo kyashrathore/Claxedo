@@ -1,6 +1,13 @@
 import { oauthServers, type OAuthServer } from "../connections"
 export { oauthServers, type OAuthServer }
-import { AGENT_PLUGIN_HARNESSES, type AgentPluginHarness, type HarnessActivation, type PluginCandidate } from "../api"
+import {
+  AGENT_PLUGIN_HARNESSES,
+  BUILT_IN_TOOL_GROUP_ORDER,
+  type AgentPluginHarness,
+  type HarnessActivation,
+  type PluginCandidate,
+  type PluginToolGroup,
+} from "../api"
 import type { AgentPluginConnectionSummary } from "../connections"
 import type { DirectorySource, MachineInstalled, MachineInstalledEntry, MachineInstalledHarness, MachineSkill } from "./data"
 
@@ -17,6 +24,29 @@ export function installedHarnesses(plugin: PluginCandidate): AgentPluginHarness[
 /** "Installed" means at least one harness resolves the plugin as enabled. */
 export function isInstalled(plugin: PluginCandidate) {
   return installedHarnesses(plugin).length > 0
+}
+
+/** The first-party server, which ships with the product rather than from a source. */
+export function isBuiltIn(plugin: PluginCandidate) {
+  return plugin.builtIn === true
+}
+
+/**
+ * The built-in's groups in reading order; the catalog emits them in
+ * registration order. A group the order table does not name keeps its place
+ * behind the ones it does, rather than jumping to the front on `indexOf`'s -1.
+ */
+export function toolGroups(plugin: PluginCandidate): PluginToolGroup[] {
+  const rank = (group: PluginToolGroup) => {
+    const index = BUILT_IN_TOOL_GROUP_ORDER.indexOf(group.id)
+    return index === -1 ? BUILT_IN_TOOL_GROUP_ORDER.length : index
+  }
+  return [...plugin.groups ?? []].sort((left, right) => rank(left) - rank(right))
+}
+
+/** The tool groups the built-in registers on a session started now. */
+export function enabledToolGroups(plugin: PluginCandidate): string[] {
+  return toolGroups(plugin).filter((group) => group.enabled).map((group) => group.id)
 }
 
 /** The plugin's artifact cannot be materialized, whatever activation says. */
@@ -66,6 +96,13 @@ export function pluginStatus(input: {
   connectionsKnown?: boolean
 }): PluginStatus | undefined {
   const { plugin } = input
+  if (isBuiltIn(plugin)) {
+    if (!isInstalled(plugin)) return { label: "Off for this project", tone: "normal", attention: false }
+    const groups = enabledToolGroups(plugin)
+    return groups.length > 0
+      ? { label: `On for this project: ${groups.join(", ")}`, tone: "normal", attention: false }
+      : { label: "No tool groups on for this project", tone: "warning", attention: false }
+  }
   if (!isInstalled(plugin)) {
     return plugin.updateAvailable ? { label: "Update available", tone: "accent", attention: false } : undefined
   }
@@ -149,6 +186,7 @@ export function matchesQuery(plugin: PluginCandidate, query: string) {
     plugin.manifest?.description ?? "",
     ...plugin.skills.map((skill) => skill.name),
     ...plugin.mcpServers.map((server) => server.name),
+    ...(plugin.groups ?? []).flatMap((group) => [group.id, ...group.tools]),
   ].join(" ").toLowerCase()
   return haystack.includes(query)
 }
@@ -246,7 +284,10 @@ export function directorySections(input: {
   const installed: PluginCandidate[] = []
   const offered: PluginCandidate[] = []
   for (const plugin of visible) {
-    if (!isInstalled(plugin)) {
+    // The built-in is never an offer: it is always present, so a disabled one
+    // belongs beside the installed plugins rather than in a source's section,
+    // which it has none of.
+    if (!isInstalled(plugin) && !isBuiltIn(plugin)) {
       offered.push(plugin)
       continue
     }

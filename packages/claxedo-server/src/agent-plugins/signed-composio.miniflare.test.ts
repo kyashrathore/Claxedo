@@ -828,6 +828,8 @@ describe("Composio MCP through RFC 7591 dynamic client registration", () => {
       pluginInstanceId: PLUGIN_INSTANCE_ID,
       serverName: "gmail",
       integrationId,
+      artifactDigest: `sha256:${"f".repeat(64)}` as const,
+      execution: "default" as const,
     }
     const minted = await mintMcpGatewayToken(scope, signingEnv)
     const forwarded = await gateway.request(`/${integrationId}`, {

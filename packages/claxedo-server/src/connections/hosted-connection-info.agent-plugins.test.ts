@@ -82,6 +82,7 @@ describe("Agent Plugins cloud readiness gate", () => {
     const { services, signer } = subject(order)
     const preparation = {
       secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
+      env: { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" },
       state: { kind: "test-plan" },
     }
     const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
@@ -99,6 +100,7 @@ describe("Agent Plugins cloud readiness gate", () => {
       homeRegion: "us-east",
       net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["relay.test", "control.test"]) }),
       secrets: preparation.secrets,
+      env: preparation.env,
     })
     expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1", userId: "user_1" })
     expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1", userId: "user_1" }, preparation)

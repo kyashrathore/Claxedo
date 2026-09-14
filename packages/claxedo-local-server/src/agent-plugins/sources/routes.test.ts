@@ -15,6 +15,7 @@ import type { AgentPluginSourceFetch } from "@claxedo/server-core/agent-plugins/
 import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
 import { LocalAgentPluginActivationRoutes } from "../activation/routes"
 import { SqliteUnsignedAgentPluginActivationStore } from "../activation/sqlite-store"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { LocalAgentPluginSourceRoutes } from "./routes"
 import { SqliteAgentPluginSourceStore } from "./sqlite-store"
 
@@ -41,6 +42,7 @@ function rail(fetch: AgentPluginSourceFetch) {
     artifacts,
     activations,
     reconcile: { reconcile: async () => ({ state: "applied" as const }) },
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
   }))
   app.route(`${AGENT_PLUGINS_ROUTE_PATH}/sources`, LocalAgentPluginSourceRoutes({
     registry,
@@ -124,7 +126,7 @@ describe("unsigned Agent Plugin source routes", () => {
         repository: "acme/plugins",
       },
       manifest: expect.objectContaining({ name: "review" }),
-    })])
+    }), expect.objectContaining({ pluginInstanceId: "claxedo", builtIn: true })])
   })
 
   test("refuses a repository that serves no valid plugin and saves nothing", async () => {

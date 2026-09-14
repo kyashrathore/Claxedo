@@ -1,3 +1,4 @@
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Hono } from "hono"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
@@ -31,6 +32,7 @@ import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cac
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
+import { createCloudRootEnvironment, type CloudRootIdentity } from "./runtime/cloud-root-environment"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
@@ -65,6 +67,23 @@ export type HostedAgentPluginsComposition = {
   integrationRoutes: Hono
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   provisionRuntime: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  /**
+   * The environment `prepareRuntime` launches a cloud root with, for a caller
+   * that allocates its own workspace and prepares its own selection.
+   */
+  rootEnvironment: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /**
+   * One root's own capability set, for a caller that allocates its own
+   * workspace: the same preparation and apply the workspace routes run, over
+   * an explicit selection instead of the project's activation defaults.
+   */
+  selectedCapabilities: {
+    prepare(input: {
+      workspaceId: string
+      capabilities: { plugins: readonly { sourceId: string; pluginName: string }[]; skills: readonly { sourceId: string; skillName: string }[] }
+    }): Promise<WorkspaceRuntimePreparation>
+    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+  }
 }
 
 function required(value: string | undefined, name: string) {
@@ -140,6 +159,8 @@ export function createHostedAgentPluginsComposition(input: {
   plane: HostedControlPlane
   database: D1Database
   authentication: RequestAuthenticationAdapter
+  /** The grant a root whose project turned Tasks on is launched with. */
+  tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -150,6 +171,10 @@ export function createHostedAgentPluginsComposition(input: {
   const services = input.plane.services
   const authority = requireAuthority(services)
   const artifacts = hostedAgentPluginArtifactStore(bucket)
+  // Hosted, documents are an account service a session reaches across the
+  // network rather than a store in this process, so that group is a decision
+  // rather than an inheritance.
+  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } }
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.
@@ -284,13 +309,38 @@ export function createHostedAgentPluginsComposition(input: {
       .first<{ backing: string; access: string }>()
     return row?.backing === "cloud-vm" && row.access === "cloud"
   }
+  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant })
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (!(await cloudWorkspace(workspaceId))) return {}
-    return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId))
+    const snapshot = await activations.runtimeSnapshot(workspaceId)
+    const [preparation, env] = await Promise.all([
+      preparer.forSnapshot(snapshot),
+      rootEnvironment({
+        userId: snapshot.identity.userId,
+        orgId: snapshot.identity.organizationId,
+        projectId: snapshot.identity.projectId,
+        workspaceId: snapshot.identity.workspaceId,
+      }),
+    ])
+    return { ...preparation, env }
   }
   const provisionRuntime = async ({ workspaceId }: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
     if (!(await cloudWorkspace(workspaceId))) return
     await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
+  }
+  const selectedCapabilities: HostedAgentPluginsComposition["selectedCapabilities"] = {
+    async prepare({ workspaceId, capabilities }) {
+      // The same cloud-VM rail as `prepareRuntime`: a workspace the control
+      // plane does not host has no projection to push, and a caller asking for
+      // one here is asking for a promise this rail cannot keep.
+      if (!(await cloudWorkspace(workspaceId))) {
+        throw new Error(`Workspace ${workspaceId} is not a cloud root this control plane provisions`)
+      }
+      return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId), { selection: capabilities })
+    },
+    async apply({ workspaceId, preparation }) {
+      await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
+    },
   }
 
   const gateway = HostedMcpGatewayRoutes({
@@ -328,6 +378,10 @@ export function createHostedAgentPluginsComposition(input: {
     // revision at its next readiness boundary; no route claims a running VM
     // was updated without an apply receipt.
     reconcile: { reconcile: async () => ({ state: "scheduled" }) },
+    // Hosted, documents are an account service a session reaches across the
+    // network rather than a store in this process, so the group is a decision
+    // rather than an inheritance.
+    builtIn,
     mcpAuthentication: hostedMcpCatalogAuthentication(oauth),
     mcpClientMetadata: clientMetadata,
     mcpGatewayRoutes: gateway,
@@ -350,6 +404,8 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
+    rootEnvironment,
+    selectedCapabilities,
   }
 }
 

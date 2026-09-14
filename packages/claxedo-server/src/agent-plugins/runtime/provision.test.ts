@@ -3,6 +3,10 @@ import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/
 import { decodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import {
+  AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+  AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+} from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
 import { createHostedAgentPluginRuntimeProvisioner, type SignedAgentPluginRuntimeSnapshot } from "./provision"
 import { fetchBodyText } from "../../test-support/fetch-calls"
 
@@ -97,5 +101,98 @@ describe("hosted Agent Plugins runtime provisioner", () => {
     })
 
     await expect(provisioner.provision("ws_1")).rejects.toThrow("invalid harness launch receipt")
+  })
+  test("two selections of one workspace at one revision are two applies, not one cached answer", async () => {
+    const first = await artifact("review-user")
+    const second = await artifact("review-org")
+    const applied: Array<{ version: number; selectionHash?: string }> = []
+    const runtimeFetch = vi.fn(async (_workspaceId, _identity, _path, init: RequestInit) => {
+      const body = JSON.parse(fetchBodyText(init.body)) as {
+        version: number
+        execution: { mode: string; selectionHash?: string }
+      }
+      applied.push({ version: body.version, ...(body.execution.selectionHash ? { selectionHash: body.execution.selectionHash } : {}) })
+      return Response.json({
+        ok: true,
+        revision: 9,
+        generationId: `generation_${applied.length}`,
+        ...(body.execution.selectionHash ? { selectionHash: body.execution.selectionHash } : {}),
+        harnessLaunch: {},
+      })
+    })
+    const provisioner = createHostedAgentPluginRuntimeProvisioner({
+      activations: { runtimeSnapshot: async () => snapshot({ first: first.digest, second: second.digest }) },
+      artifacts: {
+        put: async (value) => value,
+        get: async (digest) => digest === first.digest ? first : digest === second.digest ? second : undefined,
+      },
+      runtimeFetch,
+    })
+    const plan = (selectionHash: string, digest: `sha256:${string}`) => ({
+      revision: 9,
+      mcpServers: [],
+      execution: {
+        selectionHash,
+        selections: [{
+          pluginInstanceId: "claxedo/review",
+          artifactDigest: digest,
+          harnessIds: ["claude" as const],
+          contribution: { kind: "plugin" as const },
+        }],
+      },
+    })
+
+    await Promise.all([
+      provisioner.provision("ws_1", plan("a".repeat(64), first.digest)),
+      provisioner.provision("ws_1", plan("a".repeat(64), first.digest)),
+      provisioner.provision("ws_1", plan("b".repeat(64), second.digest)),
+      provisioner.provision("ws_1"),
+    ])
+
+    expect(applied.map((entry) => JSON.stringify(entry)).toSorted()).toEqual([
+      { version: AGENT_PLUGINS_APPLY_VERSION_DEFAULT },
+      { version: AGENT_PLUGINS_APPLY_VERSION_SELECTED, selectionHash: "a".repeat(64) },
+      { version: AGENT_PLUGINS_APPLY_VERSION_SELECTED, selectionHash: "b".repeat(64) },
+    ].map((entry) => JSON.stringify(entry)).toSorted())
+  })
+
+  test("refuses a runtime that applied something other than the selection it was given", async () => {
+    const first = await artifact("review-user")
+    const second = await artifact("review-org")
+    const provisioner = (selectionHash: string | undefined) => createHostedAgentPluginRuntimeProvisioner({
+      activations: { runtimeSnapshot: async () => snapshot({ first: first.digest, second: second.digest }) },
+      artifacts: {
+        put: async (value) => value,
+        get: async (digest) => digest === first.digest ? first : digest === second.digest ? second : undefined,
+      },
+      runtimeFetch: async () => Response.json({
+        ok: true,
+        revision: 9,
+        generationId: "generation_9",
+        ...(selectionHash ? { selectionHash } : {}),
+        harnessLaunch: {},
+      }),
+    })
+    const plan = {
+      revision: 9,
+      mcpServers: [],
+      execution: {
+        selectionHash: "a".repeat(64),
+        selections: [{
+          pluginInstanceId: "claxedo/review",
+          artifactDigest: first.digest,
+          harnessIds: ["claude" as const],
+          contribution: { kind: "plugin" as const },
+        }],
+      },
+    }
+
+    // The shape a runtime too old to read the selection answers with.
+    await expect(provisioner(undefined).provision("ws_1", plan))
+      .rejects.toThrow("did not acknowledge the selected capability set")
+    await expect(provisioner("c".repeat(64)).provision("ws_1", plan))
+      .rejects.toThrow("did not acknowledge the selected capability set")
+    await expect(provisioner("a".repeat(64)).provision("ws_1"))
+      .rejects.toThrow("acknowledged a capability selection that was not requested")
   })
 })

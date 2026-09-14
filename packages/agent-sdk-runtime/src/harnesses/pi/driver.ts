@@ -59,6 +59,10 @@ export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverO
 
 class PiRpcDriver implements SdkRuntimeDriver {
   readonly type = "pi" as const
+  // `--append-system-prompt` is a spawn flag, and `ensure` respawns a reaped
+  // session with `--session <file>` alone, so a block given at create is gone
+  // the first time the process is reaped. The per-turn message carries it.
+  readonly instructionChannel = "prompt-prefix" as const
   readonly interactions = { permissions: false, questions: true } as const
   readonly goals
   private evaluators = 0
@@ -275,10 +279,9 @@ class PiRpcDriver implements SdkRuntimeDriver {
       throw error
     }
   }
-  async createAgentSession(input: { directory: string; title?: string; model: string; system?: string }) {
+  async createAgentSession(input: { directory: string; title?: string; model: string }) {
     const process = await this.start(input.directory, [
       ...(input.model ? ["--model", input.model] : []),
-      ...(input.system ? ["--append-system-prompt", input.system] : []),
       ...(input.title ? ["--name", input.title] : []),
     ], input.model)
     try {

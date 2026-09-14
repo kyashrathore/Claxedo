@@ -30,9 +30,15 @@ export function preloadRuntimeProviders() {
     // Start both requests together. They remain separate dynamic module graphs,
     // so evaluation can yield between them without paying a serial fetch.
     const secondaryStarted = performance.now()
-    const secondaryReady = import("@/app/integrations/secondary-feature-ports").then(() => {
-      trace("runtime.secondaryFeaturePortsReady", performance.now() - secondaryStarted)
-    })
+    const secondaryReady = import("@/app/integrations/secondary-feature-ports")
+      // The build-selected contributions that module starts live in a second
+      // chunk. Returning its promise keeps "secondary ports are ready" meaning
+      // registered rather than merely requested, so a restored tab whose
+      // surface comes from one does not paint the fallback first.
+      .then((module) => module.secondaryFeaturePortsReady)
+      .then(() => {
+        trace("runtime.secondaryFeaturePortsReady", performance.now() - secondaryStarted)
+      })
 
     return import("@/app/integrations/feature-ports")
       .then(() => {

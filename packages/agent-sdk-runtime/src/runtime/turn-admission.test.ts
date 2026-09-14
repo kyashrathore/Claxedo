@@ -55,6 +55,7 @@ function harness(options: {
   aborts?: string[]
 }): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
+    instructionChannel: "none",
     async getSession() { return null },
     async createSession(_directory, _title, id) { return { id: id ?? "ses_test" } },
     async updateSession() { return null },

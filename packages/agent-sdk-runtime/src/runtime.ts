@@ -22,6 +22,7 @@ import type {
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import { hasAdapterCapability } from "./capabilities"
+import { admitSessionInstructions } from "./session-instructions"
 import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
@@ -561,7 +562,20 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(create.model.modelID === DEFAULT_MODEL_ID ? "" : create.model.modelID)
         }
-        const session = await adapter.createSession(create.directory, create.title, create.id)
+        const refusal = admitSessionInstructions({
+          harness: create.harness.id,
+          channel: adapter.instructionChannel,
+          instructions: create.instructions,
+        })
+        if (refusal?.reason === "no_instruction_channel") {
+          throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: refusal.message })
+        }
+        if (refusal) throw new Error(refusal.message)
+        const retained = {
+          ...(create.instructions ? { instructions: create.instructions } : {}),
+          ...(create.group ? { group: create.group } : {}),
+        }
+        const session = await adapter.createSession(create.directory, create.title, create.id, retained)
         // Provider creation establishes the local row; the runtime completes
         // its workspace binding below. An unexpected returned id that already
         // has a complete binding belongs to another execution scope.
@@ -584,6 +598,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(model ? { model } : {}),
           variant: create.variant ?? null,
           agent: create.agent ?? null,
+          ...retained,
         }
         const persistedConfig = store.updateSessionConfig(session.id, config)
         if (!persistedConfig) throw new Error(`Session ${session.id} has no runtime config`)
@@ -636,7 +651,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
-        const prompt = turnPrompt({ turn, config, userMessageId, assistantMessageId, handoff })
+        const prompt = turnPrompt({ turn, config, userMessageId, assistantMessageId, channel: adapter.instructionChannel })
         const running = admissions.active(turn.sessionId)
         if (running) {
           if (!turn.delivery) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)

@@ -1,10 +1,11 @@
 import { createSignal, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import type { PluginCandidate, PluginCatalog } from "../api"
+import { Switch } from "@opencode-ai/ui/switch"
+import type { PluginCandidate, PluginCatalog, PluginToolGroup } from "../api"
 import { AGENT_PLUGIN_CONNECTION_STATUS, type AgentPluginConnectionSummary } from "../connections"
 import { ROW } from "./chrome"
 import { OverflowItem, OverflowMenu } from "./overflow-menu"
-import { connectionFor } from "./view"
+import { connectionFor, isBuiltIn, toolGroups } from "./view"
 
 type ConnectRequest = {
   serverName: string
@@ -29,13 +30,50 @@ function ServerDot(props: { connection?: AgentPluginConnectionSummary; required:
 }
 
 /**
+ * The built-in's rows: one tool group, its switch, and the tools it registers.
+ *
+ * A group is what the built-in has instead of a server to authenticate — the
+ * connection a third-party server needs is, here, the user's consent — so it
+ * takes the same row with a switch where the Connect button sits.
+ */
+function PluginToolGroupRows(props: {
+  groups: readonly PluginToolGroup[]
+  pending: boolean
+  onToolGroup: (group: PluginToolGroup, enabled: boolean) => void
+}) {
+  return (
+    <>
+      <For each={props.groups}>
+        {(group) => (
+          <div class={`${ROW} mb-1.5 flex items-start gap-2`} data-agent-plugin-tool-group={group.id}>
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-12-medium text-text-strong">{group.id}</div>
+              <div class="break-words text-12-mono text-text-weaker">{group.tools.join(", ")}</div>
+            </div>
+            <Switch
+              checked={group.enabled}
+              disabled={props.pending}
+              hideLabel
+              onChange={(enabled: boolean) => props.onToolGroup(group, enabled)}
+            >
+              {group.id}
+            </Switch>
+          </div>
+        )}
+      </For>
+      <p class="text-11-regular text-text-weaker">Changes apply to sessions started from now.</p>
+    </>
+  )
+}
+
+/**
  * The pane's MCP list: one row per server, one visible action per row.
  *
  * Connecting is the action a row exists for; disconnecting and every
  * organization-scoped variant are rarer and move behind the row's "…" so the
  * list stays scannable when a plugin ships four servers.
  */
-export function PluginMcpServers(props: {
+function PluginServerRows(props: {
   plugin: PluginCandidate
   catalog: PluginCatalog
   connections?: readonly AgentPluginConnectionSummary[]
@@ -166,5 +204,49 @@ export function PluginMcpServers(props: {
         </p>
       </Show>
     </>
+  )
+}
+
+/**
+ * What the pane lists under one plugin's servers: OAuth rows for a plugin that
+ * ships servers, tool-group rows for the built-in.
+ *
+ * A Show, not a branch in the caller: the pane is not remounted when the user
+ * picks another card, so the choice has to stay reactive to `plugin`.
+ */
+export function PluginMcpServers(props: {
+  plugin: PluginCandidate
+  catalog: PluginCatalog
+  connections?: readonly AgentPluginConnectionSummary[]
+  connectionsLoading: boolean
+  connectionsError?: unknown
+  onRetryConnections?: () => void
+  onConnect: (input: ConnectRequest) => void
+  onDisconnect: (connection: AgentPluginConnectionSummary) => void
+  pending: boolean
+  onToolGroup: (group: PluginToolGroup, enabled: boolean) => void
+}) {
+  return (
+    <Show
+      when={isBuiltIn(props.plugin)}
+      fallback={
+        <PluginServerRows
+          plugin={props.plugin}
+          catalog={props.catalog}
+          connections={props.connections}
+          connectionsLoading={props.connectionsLoading}
+          connectionsError={props.connectionsError}
+          onRetryConnections={props.onRetryConnections}
+          onConnect={props.onConnect}
+          onDisconnect={props.onDisconnect}
+        />
+      }
+    >
+      <PluginToolGroupRows
+        groups={toolGroups(props.plugin)}
+        pending={props.pending}
+        onToolGroup={props.onToolGroup}
+      />
+    </Show>
   )
 }

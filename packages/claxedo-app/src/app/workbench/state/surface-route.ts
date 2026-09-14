@@ -1,11 +1,13 @@
 import type { ContentMeta } from "./types"
 import {
   marketplaceRoute,
+  tasksRoute,
   sessionRoute as canonicalSessionRoute,
   workspacePageRoute,
   workspaceRoute as canonicalWorkspaceRoute,
   workspaceSessionRoute,
   workspaceTerminalRoute,
+  type TasksPage,
 } from "@/platform/identity/route"
 import { PENDING_TERMINAL_PREFIX } from "@/features/terminal/core/terminal-surface-id"
 import { workspaceKey } from "@/platform/identity/session-ref"
@@ -42,6 +44,16 @@ function routeTerminalId(content: RouteContent) {
   return content.terminalId ?? payloadText(content, "terminalId")
 }
 
+/** The nested page a Tasks surface is on, from the payload that owns it. */
+function routeTasksPage(content: RouteContent): TasksPage | undefined {
+  return content.content?.type === "tasks" ? content.content.page : undefined
+}
+
+function sameTasksPage(a: TasksPage | undefined, b: TasksPage | undefined) {
+  if (!a || !b) return a === b
+  return a.kind === b.kind && a.taskId === b.taskId
+}
+
 function routeSessionRef(content: RouteContent) {
   return content.content?.type === "session" ? content.content.sessionRef : undefined
 }
@@ -58,6 +70,7 @@ export function surfaceWorkspaceRouteKey(content: RouteContent, fallback: string
 export function surfaceRoute(workspaceId: string | undefined, content: RouteContent) {
   const routeId = surfaceWorkspaceRouteKey(content, workspaceId)
   if (content.type === "marketplace") return marketplaceRoute()
+  if (content.type === "tasks") return tasksRoute(routeTasksPage(content))
   if (content.type === "session") {
     const sessionRef = routeSessionRef(content)
     if (sessionRef?.sessionId && sessionRef.sessionId !== "new") {
@@ -93,6 +106,8 @@ export function routeMatchesSurface(
   route: {
     id?: string
     marketplace?: boolean
+    tasks?: boolean
+    tasksPage?: TasksPage
     pageId?: string
     terminalId?: string
   },
@@ -101,6 +116,7 @@ export function routeMatchesSurface(
   routeWorkspaceKey?: string,
 ) {
   if (content.type === "marketplace") return route.marketplace === true
+  if (content.type === "tasks") return route.tasks === true && sameTasksPage(route.tasksPage, routeTasksPage(content))
   if (routeWorkspaceKey !== surfaceWorkspaceRouteKey(content, workspaceId)) return false
 
   if (content.type === "session") {
@@ -122,6 +138,8 @@ export function focusedSurfaceRouteTarget(input: {
     dir?: string
     id?: string
     marketplace?: boolean
+    tasks?: boolean
+    tasksPage?: TasksPage
     pageId?: string
     terminalId?: string
   }
@@ -134,12 +152,12 @@ export function focusedSurfaceRouteTarget(input: {
   if (input.route.terminalId && (!input.surface || input.surface.type !== "terminal")) return undefined
   if (pendingTerminalRoute && (!input.surface || input.surface.type !== "terminal" || routeTerminalId(input.surface) !== input.route.terminalId)) return undefined
   if (!input.surface) {
-    if (input.route.marketplace) return undefined
+    if (input.route.marketplace || input.route.tasks) return undefined
     if (!hasConcreteRoute || !input.activeRouteId) return undefined
     return workspaceBrowseRoute(input.activeRouteId)
   }
 
-  if (input.surface.type === "marketplace") {
+  if (input.surface.type === "marketplace" || input.surface.type === "tasks") {
     if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return undefined
     return surfaceRoute("", input.surface)
   }

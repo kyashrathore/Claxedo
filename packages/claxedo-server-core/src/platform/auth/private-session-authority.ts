@@ -145,6 +145,11 @@ export function privateSessionRuntimeProof(claims: RelayHostPrivateSessionClaims
  * Provider-neutral private-session authority. The lifecycle protocol is one
  * state machine: an ambiguous create is reconciled by retrying the same exact
  * registration; definitive denial enters compensation and can never register.
+ *
+ * A completed compensation releases the session id and the operation id it
+ * held, so a caller that derives both from a request it repeats can start
+ * over. A compensation that has only begun keeps holding them, because the
+ * session it undoes may still exist.
  */
 export type PrivateSessionAuthority = {
   /** Internal runtime principal, already authenticated by the host; never a public HTTP admission. */

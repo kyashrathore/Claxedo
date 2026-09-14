@@ -84,6 +84,7 @@
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/service-contract": "workspace:*",
+        "@claxedo/tasks": "workspace:*",
         "@claxedo/usage-contract": "workspace:*",
         "@kobalte/core": "0.13.12",
         "@opencode-ai/session-ui": "workspace:*",
@@ -302,6 +303,7 @@
         "@claxedo/opencode-server-adapter": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@claxedo/server-core": "workspace:*",
+        "@claxedo/tasks": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@hono/node-ws": "1.3.1",
         "@lydell/node-pty": "catalog:",
@@ -362,6 +364,7 @@
         "@claxedo/sandbox-manager": "workspace:*",
         "@claxedo/server-core": "workspace:*",
         "@claxedo/service-contract": "workspace:*",
+        "@claxedo/tasks": "workspace:*",
         "@claxedo/wakes": "workspace:*",
         "@claxedo/workspace-relay": "workspace:*",
         "@claxedo/workspace-relay-protocol": "workspace:*",
@@ -405,6 +408,7 @@
         "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
+        "@claxedo/tasks": "workspace:*",
         "@claxedo/usage-contract": "workspace:*",
         "@claxedo/workspace-relay": "workspace:*",
         "@claxedo/workspace-relay-protocol": "workspace:*",
@@ -432,6 +436,19 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/claxedo-tasks": {
+      "name": "@claxedo/tasks",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/helpers": "workspace:*",
+        "hono": "4.10.7",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
@@ -1192,6 +1209,8 @@
     "@claxedo/server-core": ["@claxedo/server-core@workspace:packages/claxedo-server-core"],
 
     "@claxedo/service-contract": ["@claxedo/service-contract@workspace:packages/claxedo-service-contract"],
+
+    "@claxedo/tasks": ["@claxedo/tasks@workspace:packages/claxedo-tasks"],
 
     "@claxedo/telemetry": ["@claxedo/telemetry@workspace:packages/claxedo-telemetry"],
 

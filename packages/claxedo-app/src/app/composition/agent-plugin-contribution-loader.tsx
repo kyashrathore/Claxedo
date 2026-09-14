@@ -27,6 +27,7 @@ export function agentPluginContributions(): AgentPluginContributionSet {
       tier: "claxedo-first-party",
       surface: "marketplace",
       slot: "workbench",
+      draggablePane: false,
       renderer: () => <Suspense fallback={<SurfaceFallback />}><DirectorySurface /></Suspense>,
     }],
   }

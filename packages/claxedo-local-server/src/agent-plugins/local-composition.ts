@@ -15,6 +15,7 @@ import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { LocalAgentPluginArtifactStore } from "./artifacts/local-store"
 import { SqliteUnsignedAgentPluginActivationStore } from "./activation/sqlite-store"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { createLocalAgentPluginsModule } from "./module"
 import { LocalAgentPluginSourceRoutes } from "./sources/routes"
 import { SqliteAgentPluginSourceStore } from "./sources/sqlite-store"
@@ -184,6 +185,7 @@ export function createLocalAgentPluginsComposition(
       runtimeRoot: signedRuntimeRoot,
       identity: input.identity,
       revision: input.revision,
+      execution: input.execution,
       selections: input.selections,
       artifacts: await runtimeArtifactStore(input.artifacts),
       mcpServers: runtimeMcpServers(input.mcpServers, secrets),
@@ -211,7 +213,16 @@ export function createLocalAgentPluginsComposition(
   }
 
   const ready = reconcile.reconcile(activations.revision()).then(() => undefined)
-  const module = createLocalAgentPluginsModule({ sources, artifacts, activations, reconcile, signedRuntime })
+  const module = createLocalAgentPluginsModule({
+    sources,
+    artifacts,
+    activations,
+    reconcile,
+    signedRuntime,
+    // This machine runs the documents service itself, so that group reaches no
+    // further than the process the session already runs in.
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
+  })
   const harnessLaunch = async () => {
     await current
     await signedWork.catch(() => undefined)

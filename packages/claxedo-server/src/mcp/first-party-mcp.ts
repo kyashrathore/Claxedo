@@ -33,6 +33,11 @@ export type FirstPartyMcpContributionInput = Readonly<{
   oauthCredential?: (request: Request) => Promise<McpCredential | undefined>
   /** The runtimes this process serves, for a credential that may reach them; absent on the hosted worker. */
   local?: (credential: McpCredential) => McpClientInputs["local"]
+  /**
+   * This deployment's Tasks routes, as this credential may reach them. Absent
+   * on a deployment that serves no Tasks, and then the tools are not listed.
+   */
+  tasks?: (credential: McpCredential) => Promise<McpClientInputs["tasks"]> | McpClientInputs["tasks"]
   /** Where a write is recorded when no authority can attribute it. */
   auditFallback: (record: ReturnType<typeof mcpAuditRecord>) => void
 }>
@@ -54,8 +59,9 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
       auths.set(credential, auth)
       return credential
     },
-    createClient: (credential, request) => {
+    createClient: async (credential, request) => {
       const authorization = request.headers.get("authorization")
+      const tasks = await input.tasks?.(credential)
       return input.options.createClient({
         deployment: input.mount,
         credential,
@@ -67,6 +73,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
             }
           : {}),
         ...(input.local ? { local: input.local(credential) } : {}),
+        ...(tasks ? { tasks } : {}),
       })
     },
     registerTools: input.options.registerTools ?? [],

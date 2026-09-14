@@ -87,7 +87,11 @@ const ENTRIES = [
   // included.
   // +1 module: `src/mcp/oauth-credential.ts`, which turns a consented access
   // token into an MCP credential. Consent revocation adds platform/auth/oauth-consent-revocation.ts; 139/38.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 38 },
+  // +1 package (2026-09-12): `@claxedo/tasks`, reached only through
+  // `src/tasks/self-hosted-composition.ts` — the SIGNED posture's Tasks
+  // composition, which `self-hosted-node/start.ts` selects from the composed
+  // `services.auth.config.enabled`. 139/39.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 39 },
 ] as const
 
 /** The remaining cloud compositions. */

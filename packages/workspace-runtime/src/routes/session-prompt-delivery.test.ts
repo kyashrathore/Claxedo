@@ -25,6 +25,7 @@ function storeRoot() {
 
 function adapter(): AgentHarnessAdapter {
   return {
+    instructionChannel: "none",
     getSession: async (binding) => ({ id: binding.sessionId }),
     createSession: async () => ({ id: "session_1" }),
     updateSession: async (binding) => ({ id: binding.sessionId }),

@@ -1,6 +1,6 @@
 import { createWorkspaceRuntimeClient, workspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, WorkspaceSummary, WorkspaceTarget } from "./contract"
+import type { ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, TasksGrant, WorkspaceSummary, WorkspaceTarget } from "./contract"
 import { ClaxedoMcpClientError } from "./errors"
 import {
   createWorkspaceConnectionCache,
@@ -9,7 +9,7 @@ import {
   type WorkspaceConnectionOptions,
 } from "./relay-connection"
 
-export type { ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, WorkspaceSummary, WorkspaceTarget } from "./contract"
+export type { ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, TasksGrant, TasksOperation, WorkspaceSummary, WorkspaceTarget } from "./contract"
 export { ClaxedoMcpClientError, type ClaxedoMcpClientErrorCode } from "./errors"
 export type { WorkspaceConnection } from "./relay-connection"
 
@@ -20,6 +20,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   /** Control-plane routes, already authenticated as the calling user. */
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
   documents?: Readonly<{ fetch: ClaxedoFetch }>
+  tasks?: TasksGrant
   /** Dials the relay; defaults to the global fetch. */
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
 }> &
@@ -154,6 +155,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
   return {
     deployment,
     ...(options.documents ? { documents: options.documents.fetch } : {}),
+    ...(options.tasks ? { tasks: options.tasks } : {}),
     ...(local ? { ownWorkspace: local.workspace } : {}),
     ...(controlPlane ? { controlPlane: controlPlane.fetch } : {}),
     runtime,

@@ -5,7 +5,12 @@ import type {
   PromptInput,
   SessionConfig,
 } from "../../index"
-import type { AgentQuestionAnswer, AgentTodo } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentQuestionAnswer,
+  AgentTodo,
+  HarnessEffortLevels,
+  HarnessInstructionChannel,
+} from "@claxedo/agent-runtime-contract"
 import type {
   AgentGoalResource,
   AgentHarnessAdapterHealth,
@@ -13,7 +18,7 @@ import type {
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { NativeSdkHarnessId } from "../../harness-types"
+import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
 import type { AgentProcessObserver } from "../../process-observer"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { AgentSessionBinding } from "./agent-session-index"
@@ -132,6 +137,13 @@ export type SdkRuntimeTurnInput = {
 export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
   /**
+   * Where this driver puts a session's standing instruction block. The adapter
+   * hands the block to `createAgentSession` only for `thread-start`, and the
+   * turn composer leaves it out of `SdkRuntimeTurnInput.input.system` for the
+   * same channel, so exactly one of the two deliveries carries it.
+   */
+  readonly instructionChannel: HarnessInstructionChannel
+  /**
    * Which interactive requests this driver actually raises through the host's
    * `pendingPermissions` / `pendingQuestions` maps. The adapter advertises
    * exactly these, so a harness whose SDK has no approval or question callback
@@ -167,6 +179,12 @@ export type SdkRuntimeDriver = {
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]>
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[]
+  /**
+   * Accepted effort levels per model, from the catalog this driver has already
+   * resolved. Omitted by a driver with no effort control at all, which is what
+   * separates "this harness takes no effort" from "its catalog is still cold".
+   */
+  effortLevels?(directory?: string): HarnessEffortLevels
   permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
   setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
 }

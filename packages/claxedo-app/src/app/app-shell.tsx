@@ -146,6 +146,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     handleNewPage,
     handleTabSelect,
     handleOpenMarketplace,
+    handleOpenTasks,
   } = useAppShellActions({
     shell,
     params,
@@ -171,6 +172,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onUsage={handleUsage}
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
+        onOpenTasks={handleOpenTasks}
         documentNavigationEnabled={productUi().documentNavigation}
         canUseDocuments={shell.canUseDocuments()}
         onNewSession={handleNewSession}

@@ -21,6 +21,13 @@
       "import": "./src/agent-plugins/local-composition.ts",
       "default": "./src/agent-plugins/local-composition.ts"
     },
+    "./tasks/local-composition": {
+      "types": "./src/tasks/local-composition.ts",
+      "bun": "./src/tasks/local-composition.ts",
+      "development": "./src/tasks/local-composition.ts",
+      "import": "./src/tasks/local-composition.ts",
+      "default": "./src/tasks/local-composition.ts"
+    },
     "./self-hosted-execution": {
       "types": "./src/self-hosted-execution.ts",
       "bun": "./src/self-hosted-execution.ts",
@@ -51,6 +58,7 @@
     "@claxedo/opencode-server-adapter": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/server-core": "workspace:*",
+    "@claxedo/tasks": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@hono/node-ws": "1.3.1",
     "@lydell/node-pty": "catalog:",

@@ -11,6 +11,7 @@ import type { WorkbenchState } from "../workbench/index"
 import type {
   WorkspacePanelState,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type { TasksPage } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 
 // ── Content type vocabulary ───────────────────────────────────────────────
@@ -22,6 +23,7 @@ export const CONTENT_TYPES = [
   "pages-index",
   "page",
   "marketplace",
+  "tasks",
 ] as const
 
 export type ContentType = typeof CONTENT_TYPES[number]
@@ -78,6 +80,13 @@ export type MarketplaceContentPayload = BaseContentPayload & {
   directory?: string
 }
 
+export type TasksContentPayload = BaseContentPayload & {
+  type: "tasks"
+  directory?: string
+  /** The nested Tasks page this tab is on. Absent is the task list. */
+  page?: TasksPage
+}
+
 export type DraftSessionContentPayload = BaseContentPayload & {
   type: "draft-session"
   draftId: string
@@ -92,7 +101,7 @@ export type SessionContentPayload = BaseContentPayload & {
 }
 
 export type ScopedContentPayload = BaseContentPayload & {
-  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace">
+  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace" | "tasks">
   directory: string
 }
 
@@ -100,6 +109,7 @@ export type ContentPayload =
   | PageContentPayload
   | PagesIndexContentPayload
   | MarketplaceContentPayload
+  | TasksContentPayload
   | DraftSessionContentPayload
   | SessionContentPayload
   | ScopedContentPayload
@@ -129,6 +139,7 @@ const GLOBAL_CONTENT_TYPES: ReadonlySet<ContentType> = new Set<ContentType>([
   "page",
   "pages-index",
   "marketplace",
+  "tasks",
 ])
 
 export function isGlobalContent(content: Pick<ContentMeta, "type" | "scope" | "directory">) {

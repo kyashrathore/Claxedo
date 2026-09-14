@@ -13,10 +13,13 @@ import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import {
   desiredAgentPluginSelections,
+  type AgentPluginRuntimeExecutionPlan,
   type AgentPluginRuntimeProjectionPlan,
   type SignedAgentPluginRuntimeSnapshot,
   type SignedAgentPluginRuntimeSnapshotReader,
 } from "../runtime/provision"
+import { selectedAgentPluginProjection } from "../runtime/selected-projection"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
 import { isRecord } from "@claxedo/helpers/guards"
 
@@ -59,6 +62,10 @@ function runtimeState(value: unknown): value is AgentPluginMcpRuntimeState {
     && value.plan.revision >= 0
     && Array.isArray(value.plan.mcpServers)
     && value.plan.mcpServers.every(runtimeMcpServer)
+    && (value.plan.execution === undefined
+      || (isRecord(value.plan.execution)
+        && typeof value.plan.execution.selectionHash === "string"
+        && Array.isArray(value.plan.execution.selections)))
 }
 
 function gatewayBase(input: string) {
@@ -159,10 +166,27 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
        * receives them in the same response — names its own capability here.
        */
       secretBrokering?: SandboxDriverMetadata["secretBrokering"]
+      /**
+       * One root's explicit capability set. Resolving it here, against the
+       * snapshot just read, is what rechecks the user's current entitlement
+       * before any gateway credential is minted for it.
+       */
+      selection?: AgentPluginExecutionSelection
     } = {},
   ): Promise<WorkspaceRuntimePreparation> => {
     const secretBrokering = options.secretBrokering ?? input.secretBrokering
-    const selections = desiredAgentPluginSelections(snapshot)
+    const projection = options.selection
+      ? await selectedAgentPluginProjection({ snapshot, artifacts: input.artifacts, selection: options.selection })
+      : undefined
+    const execution: AgentPluginRuntimeExecutionPlan | undefined = projection
+      ? { selectionHash: projection.selectionHash, selections: projection.selections }
+      : undefined
+    // A directly selected skill contributes guidance, so its supplying plugin
+    // declares no server here at all: the credential for one is never minted,
+    // rather than minted and hidden.
+    const selections = projection
+      ? projection.selections.filter((selection) => selection.contribution.kind === "plugin")
+      : desiredAgentPluginSelections(snapshot)
     const mcpServers: AgentPluginRuntimeApplyRequest["mcpServers"] = []
     const secrets: SandboxBrokeredSecret[] = []
     const discovery = new Map<string, ReturnType<typeof discoverMcpOAuth>>()
@@ -293,6 +317,8 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             pluginInstanceId: selection.pluginInstanceId,
             serverName: server.name,
             integrationId,
+            artifactDigest: selection.artifactDigest,
+            execution: execution ? "selected" : "default",
           }
           const endpoint = gatewayEndpoint(base, scope, style)
           const credential = await mintMcpGatewayToken(scope, input.signingEnv)
@@ -313,7 +339,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
     }
     const state: AgentPluginMcpRuntimeState = {
       kind: "agent-plugins-mcp-runtime",
-      plan: { revision: snapshot.revision, mcpServers },
+      plan: { revision: snapshot.revision, mcpServers, ...(execution ? { execution } : {}) },
     }
     return { secrets, state }
   }

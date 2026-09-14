@@ -1581,7 +1581,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             directory,
             ...(requested ? { harness: requested } : {}),
           })
-          const session = await adapter.createSession(directory, title, id)
+          const session = await adapter.createSession(
+            directory,
+            title,
+            id,
+            {
+              ...(create?.instructions ? { instructions: create.instructions } : {}),
+              ...(create?.group ? { group: create.group } : {}),
+            },
+          )
           const selectedHarness = requested
             ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
             ?? currentRunner()
@@ -1613,8 +1621,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               agentSessionId: upstreamSessionId,
             })
             if (!store().getSessionConfig(session.id)) {
+              // An adapter that owns its config has already persisted the
+              // retained pair into this store; one whose config is
+              // runtime-owned wrote nothing, and a reopened session has no
+              // other place to read the instructions or the group back from.
               const accepted = adapter.sessionConfigOwner === "runtime"
-                ? { harness: selectedHarness, model: null, variant: null, agent: null }
+                ? {
+                    harness: selectedHarness,
+                    model: null,
+                    variant: null,
+                    agent: null,
+                    ...(create?.instructions ? { instructions: create.instructions } : {}),
+                    ...(create?.group ? { group: create.group } : {}),
+                  }
                 : await adapter.getSessionConfig(binding)
               store().updateSessionConfig(session.id, {
                 ...accepted,

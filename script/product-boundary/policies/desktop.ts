@@ -419,16 +419,25 @@ export const desktopRendererUnsigned: Policy = {
   // stylesheet in, the Connect-your-AI dialog and the scope pickers out.
   // No new package edge. Measured 1063 / 57.
   // +1 module (2026-09-12): the same timeline-mount-cache owner app-local
-  // reviews. No new package edge. Measured 1064 / 57.
+  // reviews. No new package edge.
   // +2 modules (2026-09-13): the same agent-harness-row and provider-connect-card
-  // owners app-local reviews. No new package edge. Measured 1066 / 57.
+  // owners app-local reviews. No new package edge.
   // +1 module (2026-09-13): the same harness-catalog owner app-local reviews.
-  // No new package edge. Measured 1067 / 57.
+  // No new package edge.
   // +1 module (2026-09-13): the same connect-methods owner app-local reviews.
-  // No new package edge. Measured 1068 / 57.
+  // No new package edge.
   // +1 module (2026-09-13): the same lib/percent.ts owner app-local reviews.
-  // No new package edge. Measured 1069 / 57.
-  ceilings: { modules: 1069, packages: 57 },
+  // No new package edge.
+  //
+  // Tasks and Presets reach this renderer through the shell's secondary port
+  // wiring, under exactly the owners `app-local` reviews — including the
+  // Documents editor the user accepted on 2026-09-13, the first-project canvas
+  // and the contributed settings section. `@claxedo/tasks` is the one package
+  // edge they add; this renderer already carried the Tiptap edges through its
+  // hosted half.
+  //
+  // Measured 1112 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1112, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -447,6 +456,12 @@ export const desktopRendererUnsigned: Policy = {
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
+    // This manifest is the renderer's STATIC closure —
+    // `desktopRendererBoundaryManifestPlugin` builds the base entry without
+    // `includeDynamicImports` — and the only edge into Tasks is the dynamic
+    // import in `secondary-feature-ports.ts`, so no Tasks module or chunk can
+    // appear in it. `app-local`'s emitted manifest records the full closure and
+    // is where the Tasks chunk is measured.
     forbiddenChunkMarkers: ["desktop-hosted-contributions"],
   },
 }

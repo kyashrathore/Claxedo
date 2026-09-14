@@ -78,3 +78,17 @@ export function prefixedRandomId(prefix: string): string {
   for (const byte of bytes) hex += byte.toString(16).padStart(2, "0")
   return `${prefix}_${hex}`
 }
+
+/**
+ * SHA-256 of a string, as 64 lowercase hex characters.
+ *
+ * Global Web Crypto for the same reason as `prefixedRandomId`, and a hex loop
+ * rather than `toHex()`: claxedo-server declares `node: ">=22 <25"` and that
+ * method landed in 24.
+ */
+export async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
+  let hex = ""
+  for (const byte of new Uint8Array(digest)) hex += byte.toString(16).padStart(2, "0")
+  return hex
+}

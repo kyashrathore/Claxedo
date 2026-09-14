@@ -8,6 +8,10 @@ import {
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import {
+  agentPluginContributionView,
+  type AgentPluginSelectedContribution,
+} from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
+import {
   activateGeneration,
   cleanupInactiveGenerations,
   generationDirectory,
@@ -31,12 +35,27 @@ export type AgentPluginMaterializationSelection = {
   pluginInstanceId: string
   artifactDigest: ArtifactDigest
   harnessIds: readonly string[]
+  /** Required under a selected execution, and rejected under the default one. */
+  contribution?: AgentPluginSelectedContribution
 }
+
+/**
+ * Which configuration a generation is.
+ *
+ * `default` is the workspace's ordinary activation. `selected` is one root's
+ * explicit execution set, and carries its hash so a later apply of the same
+ * activation revision under a different selection is a different generation
+ * rather than a cache hit on this one.
+ */
+export type AgentPluginMaterializationExecution =
+  | { mode: "default" }
+  | { mode: "selected"; selectionHash: string }
 
 export type MaterializedAgentPluginGeneration = {
   generationId: string
   revision: number
   root: string
+  execution: AgentPluginMaterializationExecution
   projections: Partial<Record<AgentPluginHarnessId, HarnessPluginProjection>>
   cleanupWarning?: string
 }
@@ -126,8 +145,23 @@ export async function readMaterializedAgentPluginGeneration(
     generationId: active.generationId,
     revision: active.revision,
     root,
+    execution: readExecution(manifest.execution),
     projections,
   }
+}
+
+/**
+ * A generation written before this field existed is the workspace's default
+ * activation: only a selected execution ever recorded one, so an absent value
+ * cannot be a selection whose identity was lost.
+ */
+function readExecution(value: unknown): AgentPluginMaterializationExecution {
+  if (value === undefined) return { mode: "default" }
+  if (isRecord(value) && value.mode === "default") return { mode: "default" }
+  if (isRecord(value) && value.mode === "selected" && typeof value.selectionHash === "string" && value.selectionHash) {
+    return { mode: "selected", selectionHash: value.selectionHash }
+  }
+  throw new AgentPluginMaterializationError("artifact-unavailable", "Active Agent Plugins generation has an invalid execution")
 }
 
 export class AgentPluginMaterializationError extends Error {
@@ -136,6 +170,7 @@ export class AgentPluginMaterializationError extends Error {
       | "identity-required"
       | "stale-revision"
       | "duplicate-selection"
+      | "execution-mismatch"
       | "unsupported-harness"
       | "adapter-unavailable"
       | "artifact-unavailable",
@@ -161,12 +196,15 @@ export async function materializeAgentPluginGeneration(input: {
   runtimeRoot: string
   identity: AgentPluginRuntimeIdentity
   revision: number
+  /** Defaults to the workspace's ordinary activation. */
+  execution?: AgentPluginMaterializationExecution
   selections: readonly AgentPluginMaterializationSelection[]
   artifacts: AgentPluginArtifactStore
   adapters: readonly AgentPluginHarnessProjectionAdapter[]
   mcpServers?: readonly RuntimeMcpServerProjection[]
 }): Promise<MaterializedAgentPluginGeneration> {
   assertIdentity(input.identity)
+  const execution: AgentPluginMaterializationExecution = input.execution ?? { mode: "default" }
   const active = await readActiveGeneration(input.runtimeRoot)
   if (active && input.revision <= active.revision) {
     throw new AgentPluginMaterializationError(
@@ -179,6 +217,16 @@ export async function materializeAgentPluginGeneration(input: {
   const seenPluginHarnesses = new Set<string>()
   const seenSelections = new Set<string>()
   const normalized = input.selections.map((selection) => {
+    // A contribution that arrives under default activation, or is missing
+    // under a selected one, means producer and consumer disagree about which
+    // configuration this is — the one disagreement that would quietly project
+    // a whole plugin where guidance alone was asked for.
+    if ((execution.mode === "selected") !== (selection.contribution !== undefined)) {
+      throw new AgentPluginMaterializationError(
+        "execution-mismatch",
+        `Plugin ${selection.pluginInstanceId} does not carry a contribution for ${execution.mode} execution`,
+      )
+    }
     const selectionKey = `${selection.pluginInstanceId}\0${selection.artifactDigest}`
     if (seenSelections.has(selectionKey)) {
       throw new AgentPluginMaterializationError("duplicate-selection", `Plugin artifact ${selection.pluginInstanceId} ${selection.artifactDigest} was selected more than once`)
@@ -215,17 +263,20 @@ export async function materializeAgentPluginGeneration(input: {
           `Retained artifact ${selection.artifactDigest} is unavailable for ${selection.pluginInstanceId}`,
         )
       }
+      const view = selection.contribution
+        ? agentPluginContributionView(artifact, selection.contribution)
+        : { tree: artifact.tree, plugin: artifact.plugin }
       const root = path.join(finalRoot, "plugins", copiedPluginName(
         artifact.plugin.manifest.name,
         selection.pluginInstanceId,
         selection.artifactDigest,
       ))
-      await writeAgentPluginTreeToDirectory(artifact.tree, root)
+      await writeAgentPluginTreeToDirectory(view.tree, root)
       const dataRoot = pluginDataDirectory(input.runtimeRoot, selection.pluginInstanceId)
       await fs.mkdir(dataRoot, { recursive: true })
       materialized.push({
         pluginInstanceId: selection.pluginInstanceId,
-        plugin: { ...artifact.plugin, root },
+        plugin: { ...view.plugin, root },
         root,
         dataRoot,
         harnessIds: selection.harnessIds,
@@ -267,6 +318,7 @@ export async function materializeAgentPluginGeneration(input: {
         generationRoot: finalRoot,
         plugins,
         mcpServers: (input.mcpServers ?? []).filter((server) => server.harnessId === harnessId),
+        ...(execution.mode === "selected" ? { selected: true } : {}),
       })
     }
 
@@ -275,6 +327,7 @@ export async function materializeAgentPluginGeneration(input: {
       generationId,
       revision: input.revision,
       identity: input.identity,
+      execution,
       plugins: materialized.map((plugin) => ({
         pluginInstanceId: plugin.pluginInstanceId,
         artifactDigest: plugin.artifactDigest,
@@ -308,6 +361,7 @@ export async function materializeAgentPluginGeneration(input: {
       generationId,
       revision: input.revision,
       root: finalRoot,
+      execution,
       projections,
       ...(cleanupWarning ? { cleanupWarning } : {}),
     }

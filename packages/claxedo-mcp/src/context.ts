@@ -1,5 +1,5 @@
 import type { ElicitRequestFormParams, ElicitRequestURLParams, ElicitResult } from "@modelcontextprotocol/sdk/types.js"
-import type { ClaxedoMcpClient } from "./client/contract"
+import type { ClaxedoMcpClient, TasksOperation } from "./client/contract"
 
 /** OAuth scopes offered at consent; a user credential carries the subset it was granted. */
 export type McpScope = "read" | "act" | "approve" | "admin"
@@ -45,6 +45,8 @@ export type McpToolAccess = Readonly<{
   scope: McpScope
   /** Human-only, annotated `destructiveHint`, and confirmed through elicitation where the host supports it. */
   destructive?: boolean
+  /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
+  operation?: TasksOperation
 }>
 
 export type McpAuditEvent = Readonly<{
@@ -65,7 +67,7 @@ export type McpToolContext = Readonly<{
 
 export class McpAccessDenied extends Error {
   constructor(
-    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion",
+    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks",
     message: string,
   ) {
     super(message)
@@ -73,8 +75,21 @@ export class McpAccessDenied extends Error {
   }
 }
 
-/** The handler-side check; `tools/list` filtering is the courtesy, this is the boundary. */
-export function assertToolAccess(credential: McpCredential, name: string, access: McpToolAccess): void {
+/**
+ * The handler-side check; `tools/list` filtering is the courtesy, this is the
+ * boundary.
+ *
+ * `granted` is the Tasks operations the caller's grant carries, which live on
+ * the client rather than the credential: hosted, the control plane mints them
+ * into the capability the mount presents, so the credential the runtime signed
+ * for itself says nothing about them.
+ */
+export function assertToolAccess(
+  credential: McpCredential,
+  name: string,
+  access: McpToolAccess,
+  granted?: readonly TasksOperation[],
+): void {
   if (!access.audiences.includes(credential.kind)) {
     throw new McpAccessDenied("audience", `${name} is not available to a ${credential.kind} credential`)
   }
@@ -84,11 +99,17 @@ export function assertToolAccess(credential: McpCredential, name: string, access
   if (credential.kind === "user" && !credential.scopes.has(access.scope)) {
     throw new McpAccessDenied("scope", `${name} requires the claxedo:${access.scope} scope`)
   }
+  if (access.operation) {
+    if (!granted) throw new McpAccessDenied("tasks", `${name} needs the Tasks service, which this Claxedo deployment does not serve`)
+    if (!granted.includes(access.operation)) {
+      throw new McpAccessDenied("tasks", `${name} needs the ${access.operation} Tasks operation, which this session was not granted`)
+    }
+  }
 }
 
-export function toolListed(credential: McpCredential, access: McpToolAccess): boolean {
+export function toolListed(credential: McpCredential, access: McpToolAccess, granted?: readonly TasksOperation[]): boolean {
   try {
-    assertToolAccess(credential, "", access)
+    assertToolAccess(credential, "", access, granted)
     return true
   } catch (error) {
     if (error instanceof McpAccessDenied) return false

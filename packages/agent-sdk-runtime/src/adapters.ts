@@ -16,6 +16,7 @@ export type {
   AgentConfigOptions,
   AgentHandoffSessionOptions,
   AgentPreparedHandoffSession,
+  AgentSessionCreateOptions,
   PermissionDecision,
   ResolvedHarnessModel,
   SupportsAbort,

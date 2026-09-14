@@ -119,6 +119,30 @@ export const queryKeys = {
     vcs: (baseUrl: string | undefined, directory: string, workspaceId?: string) =>
       [...runtimeVcsDirectoryKey(baseUrl, directory), workspaceId ?? ""] as const,
   },
+  /**
+   * Tasks and presets, partitioned by the server that serves them AND by the
+   * authenticated scope: one URL answers an organization's tasks and a local
+   * build's, and a preset catalog belongs to its owner alone. Presets and tasks
+   * are separate families inside that partition.
+   */
+  tasks: {
+    scope: (baseUrl: string | undefined, scope: string) => ["tasks", normalized(baseUrl), scope] as const,
+    capabilities: (baseUrl: string | undefined, scope: string) =>
+      ["tasks", normalized(baseUrl), scope, "capabilities"] as const,
+    // The installed plugins and skills a cloud preset selects from. Scoped like
+    // the rest of the family: the catalog is what one account retained, so a
+    // second account on the same server must not be served the first one's.
+    capabilityCatalog: (baseUrl: string | undefined, scope: string) =>
+      ["tasks", normalized(baseUrl), scope, "capabilityCatalog"] as const,
+    presets: (baseUrl: string | undefined, scope: string, includeArchived: boolean) =>
+      ["tasks", normalized(baseUrl), scope, "presets", includeArchived] as const,
+    list: (baseUrl: string | undefined, scope: string, query: unknown) =>
+      ["tasks", normalized(baseUrl), scope, "list", query] as const,
+    detail: (baseUrl: string | undefined, scope: string, taskId: string) =>
+      ["tasks", normalized(baseUrl), scope, "detail", taskId] as const,
+    children: (baseUrl: string | undefined, scope: string, taskId: string) =>
+      ["tasks", normalized(baseUrl), scope, "children", taskId] as const,
+  },
   session: {
     row: (baseUrl: string | undefined, directory: string, sessionID: string) =>
       ["session", normalized(baseUrl), "row", directory, sessionID] as const,

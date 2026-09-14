@@ -45,6 +45,7 @@ import type {
   AgentHarnessAdapterProcessOptions,
   AgentConfigOptions,
   AgentPermissionModeState,
+  AgentSessionCreateOptions,
 } from "../../adapter-contract"
 import { goalCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { acpRuntimeHealth } from "./health"
@@ -118,6 +119,9 @@ export type {
 
 export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["runtime-config"] as const
+  // `blocks` leads the prompt with the system text under
+  // `annotations.audience: ["assistant"]`; ACP has no separate instruction slot.
+  readonly instructionChannel = "prompt-prefix" as const
   readonly commitsStreamEvents = true
   private goalPublisher?: GoalPublisher
   readonly goals: AgentGoalResource = this.goalResource()
@@ -277,7 +281,12 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return this.store.getSession(binding.sessionId) ?? null
   }
 
-  async createSession(directory: string, title?: string, id: string = randomUUID()): Promise<{ id: string }> {
+  async createSession(
+    directory: string,
+    title?: string,
+    id: string = randomUUID(),
+    options: AgentSessionCreateOptions = {},
+  ): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
     log.info("createSession: start", { directory, title, transport: this.connection().kind })
     if (this.store.getSession(id)) return { id }
@@ -301,6 +310,8 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       ...(this.currentModel ? { model: this.cfg() } : {}),
       variant: null,
       agent: null,
+      ...(options.instructions ? { instructions: options.instructions } : {}),
+      ...(options.group ? { group: options.group } : {}),
     })
     log.info("createSession: local session stored", { id, agentSessionId })
     return { id }

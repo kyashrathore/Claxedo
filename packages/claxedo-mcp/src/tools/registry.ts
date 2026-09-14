@@ -25,9 +25,17 @@ export type McpToolHandler<Shape extends McpToolShape> = (
   addressed?: (sessionId: string) => void,
 ) => Promise<McpToolResult>
 
-export type ToolRegistry = {
-  readonly ctx: McpToolContext
+/**
+ * The half of {@link ToolRegistry} a group's registration uses. Named apart so
+ * the tool-name inventory can run a registration against a sink that has no
+ * server, no context and no credential behind it.
+ */
+export type ToolRegistrar = {
   tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>): void
+}
+
+export type ToolRegistry = ToolRegistrar & {
+  readonly ctx: McpToolContext
   /** Every name registered, listed or not, with its access; the pinned-list tests read this. */
   readonly declared: ReadonlyMap<string, McpToolAccess>
   readonly listed: readonly string[]
@@ -50,7 +58,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
     listed,
     tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>) {
       declared.set(name, definition.access)
-      if (!toolListed(ctx.credential, definition.access)) return
+      if (!toolListed(ctx.credential, definition.access, ctx.client.tasks?.operations)) return
       listed.push(name)
       // `ToolCallback<Shape>` is a conditional type over the shape; it resolves
       // only for a concrete shape, so a callback written once for every shape
@@ -59,7 +67,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- see above: `ToolCallback<Shape>` resolves only for a concrete shape.
       const callback = (async (args: ShapeOutput<Shape>) => {
           try {
-            assertToolAccess(ctx.credential, name, definition.access)
+            assertToolAccess(ctx.credential, name, definition.access, ctx.client.tasks?.operations)
             if (definition.access.destructive && ctx.elicit) {
               const answer = await ctx.elicit({
                 mode: "form",

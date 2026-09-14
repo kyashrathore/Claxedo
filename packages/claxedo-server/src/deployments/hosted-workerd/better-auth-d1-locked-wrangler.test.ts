@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 
 import { renderBetterAuthD1WranglerConfig } from "../../../scripts/deploy/release-better-auth-d1"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "../../../scripts/deploy/staged-control-plane-migrations"
 
 const source = renderBetterAuthD1WranglerConfig({
   staging: false,
@@ -9,6 +10,7 @@ const source = renderBetterAuthD1WranglerConfig({
   controlPlaneDatabaseId: "33333333-3333-3333-3333-333333333333",
   controlPlaneDatabaseName: "claxedo-control-plane",
   namespaceId: "2101",
+  controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
 })
 
 describe("generated Better Auth D1 locked Wrangler config", () => {
@@ -19,7 +21,7 @@ describe("generated Better Auth D1 locked Wrangler config", () => {
     expect(source.match(/binding = "AUTH_DB"/g)).toHaveLength(1)
     expect(source.match(/binding = "CONTROL_PLANE_DB"/g)).toHaveLength(1)
     expect(source.match(/migrations_dir = "..\/migrations\/auth"/g)).toHaveLength(1)
-    expect(source.match(/migrations_dir = "..\/migrations\/control-plane"/g)).toHaveLength(1)
+    expect(source.match(/migrations_dir = "migrations\/control-plane"/g)).toHaveLength(1)
     expect(source.match(/name = "CLAXEDO_REQUEST_LIMITER"/g)).toHaveLength(1)
     expect(source).toContain('CLAXEDO_ADAPTER_PROFILE = "better-auth-d1"')
     expect(source).toContain('CLAXEDO_PRODUCT_POSTURE = "user-deployed"')

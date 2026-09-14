@@ -29,4 +29,10 @@ export type ContentSurfaceId = string
 export type ContentSurfaceContribution = SurfaceContribution<ContentSurfaceRenderContext, never> & {
   surface: ContentSurfaceId
   renderer: (context: ContentSurfaceRenderContext) => JSX.Element
+  /**
+   * Whether the pane holding this surface offers its drag grip. Defaults to
+   * true; a surface the user reaches as a whole page rather than as one of
+   * several panes sets it false and the grip is not rendered at all.
+   */
+  draggablePane?: boolean
 }

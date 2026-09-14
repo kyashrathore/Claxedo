@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import type { RetainedAgentPluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import { verifyMcpGatewayToken } from "./runtime-token"
@@ -268,5 +269,100 @@ describe("hosted MCP runtime preparation", () => {
     expect(agentPluginMcpRuntimePlan(value.preparation).mcpServers).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "gateway", serverName: "docs" }),
     ]))
+  })
+  test("mints a credential only for a selected plugin's own server, scoped to that workspace", async () => {
+    const env = await signingEnv()
+    const docs = `sha256:${"a".repeat(64)}` as const
+    const helpers = `sha256:${"b".repeat(64)}` as const
+    const retained: Record<string, RetainedAgentPluginArtifact> = {
+      [docs]: {
+        digest: docs,
+        tree: { entries: [] },
+        plugin: {
+          root: ".",
+          manifest: { $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "docs" },
+          skills: [{ name: "docs", description: "Docs", path: "skills/docs" }],
+          mcp: { status: "valid", servers: [{ name: "docs", type: "streamable-http", url: "https://mcp.example/mcp" }] },
+        },
+      },
+      [helpers]: {
+        digest: helpers,
+        tree: { entries: [] },
+        plugin: {
+          root: ".",
+          manifest: { $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "helpers" },
+          skills: [{ name: "summarize", description: "Summarize", path: "skills/summarize" }],
+          mcp: { status: "valid", servers: [{ name: "helpers", type: "streamable-http", url: "https://mcp.example/mcp" }] },
+        },
+      },
+    }
+    const both: SignedAgentPluginRuntimeSnapshot = {
+      revision: 4,
+      identity: { userId: "user-1", organizationId: "org-1", projectId: "project-1", workspaceId: "workspace-1" },
+      plugins: ([
+        ["docs", docs],
+        ["helpers", helpers],
+      ] as const).map(([name, digest]) => ({
+        pluginInstanceId: `["acme","${name}"]`,
+        pins: { user: { digest, sourceId: "acme", relativePath: name, sourceRevision: "rev-1" } },
+        harnesses: Object.fromEntries((["opencode", "claude", "codex", "cursor"] as AgentPluginHarnessId[])
+          .map((harnessId) => [harnessId, {
+            revision: 4,
+            pluginInstanceId: `["acme","${name}"]`,
+            harnessId,
+            projectId: "project-1",
+            projectOverride: true,
+            pins: { user: digest },
+          }])) as SignedAgentPluginRuntimeSnapshot["plugins"][number]["harnesses"],
+      })),
+    }
+    const preparer = createHostedMcpRuntimePreparer({
+      activations: { runtimeSnapshot: async () => both },
+      artifacts: {
+        put: async (value) => value,
+        get: async (digest: string) => retained[digest],
+      },
+      resolveConnection: async () => ({
+        ok: true as const,
+        connectionId: "connection-1",
+        integrationId: "dynamic",
+        scope: "personal" as const,
+        fields: { resource: "https://mcp.example/mcp" },
+      }),
+      oauth: { fetch: oauthFetch(), preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+      gatewayUrl: "https://mcp-gateway.example/",
+      signingEnv: env,
+      secretBrokering: "native",
+    })
+
+    const defaults = agentPluginMcpRuntimePlan(await preparer.forSnapshot(both))
+    expect(new Set(defaults.mcpServers.map((server) => server.pluginInstanceId)))
+      .toEqual(new Set(['["acme","docs"]', '["acme","helpers"]']))
+
+    // `helpers` is chosen as guidance, `docs` not at all: neither contributes a
+    // server, so there is no credential for either to be hidden behind.
+    const preparation = await preparer.forSnapshot(both, {
+      selection: { plugins: [], skills: [{ sourceId: "acme", skillName: "summarize" }] },
+    })
+    const selected = agentPluginMcpRuntimePlan(preparation)
+    expect(selected.mcpServers).toEqual([])
+    expect(preparation.secrets).toEqual([])
+    expect(selected.execution?.selectionHash).toMatch(/^[a-f0-9]{64}$/)
+
+    const whole = await preparer.forSnapshot(both, {
+      selection: { plugins: [{ sourceId: "acme", pluginName: "helpers" }], skills: [] },
+    })
+    const wholePlan = agentPluginMcpRuntimePlan(whole)
+    expect(new Set(wholePlan.mcpServers.map((server) => server.pluginInstanceId))).toEqual(new Set(['["acme","helpers"]']))
+    const credential = whole.secrets![0]
+    const scope = await verifyMcpGatewayToken(credential.value.replace(/^Bearer /, ""), {
+      integrationId: await mcpOAuthIntegrationId({ pluginInstanceId: '["acme","helpers"]', serverName: "helpers" }),
+    }, env)
+    expect(scope).toMatchObject({
+      workspaceId: "workspace-1",
+      pluginInstanceId: '["acme","helpers"]',
+      artifactDigest: helpers,
+      execution: "selected",
+    })
   })
 })

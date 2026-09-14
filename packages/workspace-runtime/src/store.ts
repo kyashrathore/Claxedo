@@ -21,6 +21,8 @@ import {
   createMemorySubagentAdmissionStore,
   firstTurnErrorData,
   normalizeHarnessIdentity,
+  parseStoredSessionModelGroup,
+  sessionModelGroupJson,
 } from "@claxedo/agent-sdk-runtime"
 import type {
   AdmittedSubagentObservation,
@@ -34,6 +36,7 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
   SessionHarness,
+  SessionModelGroup,
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -762,6 +765,8 @@ export class RuntimeStore {
         model_id TEXT,
         variant TEXT,
         agent TEXT,
+        instructions TEXT,
+        group_json TEXT,
         handoff_json TEXT,
         goal_json TEXT,
         permission_mode TEXT,
@@ -1042,6 +1047,8 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN model_id TEXT",
       "ALTER TABLE session ADD COLUMN variant TEXT",
       "ALTER TABLE session ADD COLUMN agent TEXT",
+      "ALTER TABLE session ADD COLUMN instructions TEXT",
+      "ALTER TABLE session ADD COLUMN group_json TEXT",
       "ALTER TABLE session ADD COLUMN handoff_json TEXT",
       "ALTER TABLE session ADD COLUMN goal_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
@@ -2145,6 +2152,8 @@ export class RuntimeStore {
     model?: SessionModel
     variant?: string | null
     agent?: string | null
+    instructions?: string | null
+    group?: SessionModelGroup | null
     handoff?: SessionConfig["handoff"]
     createdAt: number
     updatedAt: number
@@ -2178,6 +2187,8 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      instructions: string | null
+      group_json: string | null
       handoff_json: string | null
     }>(
         `
@@ -2199,6 +2210,8 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
+          instructions,
+          group_json,
           handoff_json
         FROM session
         WHERE id = ?
@@ -2224,13 +2237,15 @@ export class RuntimeStore {
         model_id,
         variant,
         agent,
+        instructions,
+        group_json,
         handoff_json,
         created_at,
         updated_at,
         last_human_turn_at,
         status,
         recovery_error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         parent_id = COALESCE(excluded.parent_id, session.parent_id),
         directory = excluded.directory,
@@ -2249,6 +2264,8 @@ export class RuntimeStore {
         model_id = excluded.model_id,
         variant = excluded.variant,
         agent = excluded.agent,
+        instructions = excluded.instructions,
+        group_json = excluded.group_json,
         handoff_json = excluded.handoff_json,
         updated_at = excluded.updated_at,
         last_human_turn_at = excluded.last_human_turn_at,
@@ -2272,6 +2289,8 @@ export class RuntimeStore {
         input.model?.modelID ?? prev?.model_id ?? null,
         input.variant ?? prev?.variant ?? null,
         input.agent ?? prev?.agent ?? null,
+        input.instructions ?? prev?.instructions ?? null,
+        input.group === undefined ? (prev?.group_json ?? null) : sessionModelGroupJson(input.group),
         input.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(input.handoff),
         prev?.created_at ?? input.createdAt,
         input.updatedAt,
@@ -3930,6 +3949,8 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      instructions: string | null
+      group_json: string | null
       handoff_json: string | null
       permission_state_json: string | null
       permission_ceiling: SessionConfig["permissionCeiling"] | null
@@ -3947,6 +3968,8 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
+          instructions,
+          group_json,
           handoff_json,
           permission_ceiling,
           permission_mode,
@@ -3960,6 +3983,7 @@ export class RuntimeStore {
     const harness = sessionHarness(row)
     if (!harness) return null
     const handoff = sessionHandoff(row.handoff_json)
+    const group = parseStoredSessionModelGroup(row.group_json)
     return {
       harness,
       ...(row.model_provider_id && row.model_id
@@ -3967,6 +3991,8 @@ export class RuntimeStore {
         : {}),
       variant: nullable(row.variant) ?? null,
       agent: nullable(row.agent) ?? null,
+      ...(nullable(row.instructions) ? { instructions: row.instructions } : {}),
+      ...(group ? { group } : {}),
       ...(handoff ? { handoff } : {}),
       ...(row.permission_ceiling ? { permissionCeiling: row.permission_ceiling } : {}),
       ...(row.permission_mode ? { permissionMode: row.permission_mode } : {}),
@@ -3988,6 +4014,8 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      instructions: string | null
+      group_json: string | null
       handoff_json: string | null
       permission_state_json: string | null
       permission_ceiling: SessionConfig["permissionCeiling"] | null
@@ -4007,6 +4035,8 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
+          instructions,
+          group_json,
           handoff_json,
           permission_ceiling,
           permission_mode,
@@ -4027,6 +4057,8 @@ export class RuntimeStore {
         model: patch.model ?? undefined,
         variant: patch.variant ?? null,
         agent: patch.agent ?? null,
+        instructions: patch.instructions ?? null,
+        group: patch.group ?? null,
         handoff: patch.handoff,
         createdAt: ts,
         updatedAt: ts,
@@ -4043,7 +4075,7 @@ export class RuntimeStore {
       .prepare(
         `
 	      UPDATE session
-	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, permission_mode = ?, permission_state_json = ?, permission_ceiling = ?, updated_at = ?
+	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, instructions = ?, group_json = ?, handoff_json = ?, permission_mode = ?, permission_state_json = ?, permission_ceiling = ?, updated_at = ?
 	      WHERE id = ?
 	    `,
       )
@@ -4058,6 +4090,8 @@ export class RuntimeStore {
         nextModelId,
         patch.variant === undefined ? (prev?.variant ?? null) : patch.variant,
         patch.agent === undefined ? (prev?.agent ?? null) : patch.agent,
+        patch.instructions === undefined ? (prev?.instructions ?? null) : patch.instructions,
+        patch.group === undefined ? (prev?.group_json ?? null) : sessionModelGroupJson(patch.group),
         patch.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(patch.handoff),
         patch.permissionMode === undefined
           ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_mode : null

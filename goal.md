@@ -43,14 +43,14 @@ The user has settled the single-agent direction. The pending work concerns techn
 
 ## Scoped delivery: Presets and Tasks
 
-- [ ] S1 — Optional package with separate preset/task modules and artifact selection.
-- [ ] S2 — Personal presets, tasks/subtasks, slot links, real SQLite/D1 stores and authorized API.
-- [ ] S3 — Preset editor, task list/board/detail and side-effect-free Start preview.
-- [ ] S4 — Canonical resolved session settings, local Start, safe replay and durable links.
-- [ ] S5 — Isolated cloud workspace allocation, source/ref, lifecycle and recovery.
-- [ ] S6 — Exact cloud skill/plugin projection, credential scope and isolation proof.
-- [ ] S7 — Explicit model-group selection and qualified native delegation with effort/context/capability inheritance.
-- [ ] S8 — Final artifact checks, T01–T24 and independent live computer-use proof.
+- [x] S1 — Optional package with separate preset/task modules and artifact selection.
+- [x] S2 — Personal presets, tasks/subtasks, slot links, real SQLite/D1 stores and authorized API.
+- [x] S3 — Preset editor, task list/board/detail and side-effect-free Start preview.
+- [x] S4 — Canonical resolved session settings, local Start, safe replay and durable links.
+- [ ] S5 — Isolated cloud workspace allocation, source/ref, lifecycle and recovery. Implemented against the sandbox manager's driver seam; real isolation unproven (no driver credentials).
+- [ ] S6 — Exact cloud skill/plugin projection, credential scope and isolation proof. Contract, projection and gateway scoping implemented with fakes; two-root inventory and revocation unproven.
+- [ ] S7 — Explicit model-group selection and qualified native delegation with effort/context/capability inheritance. Implemented and proven on the real tool and runtime; live distinct-model run not done; OpenCode/Pi effort vocabulary unresolved.
+- [ ] S8 — Final artifact checks, T01–T24 and independent live computer-use proof. T02–T09, T12, T17–T19 proven live locally with a credentialed model turn; packaged desktop blocked by the app-builder-lib collector, deployed Worker dry-run only.
 
 Presets describe how/where to work; tasks describe the work. Start joins them through existing session/workspace owners. Presets have no project, credentials, memory or standing responsibility. Tasks has no planning/activity/Run system. Root sessions may occupy Primary/Planning/Implementation/Review slots; labels do not create an automatic phase workflow. Local inherits its current skills/plugins; Cloud selected-only support requires an isolated root environment and verified runtime projection.
 
@@ -64,7 +64,7 @@ Use the [acceptance evidence format](docs/plans/2026-09-08-007-feat-tasks-accept
 
 **Context/memory design and evidence:** pending; no implementation proof.
 
-**Tasks evidence index:** not created; all acceptance journeys remain NOT RUN.
+**Tasks evidence index:** [feat-tasks-presets-2026-09-12](docs/verification/tasks/feat-tasks-presets-2026-09-12/index.md). Local slice (S1 package, S2 stores/API, S3 UI, S4 local Start with retained instructions and restartable attempts) implemented and proven live on the unsigned local stack; the real model turn, cloud placement (S5/S6), delegation (S7), feature-off artifacts and the packaged/deployed lanes (S8) remain NOT RUN or GATING as the index states per journey.
 
 **Tasks/presets engineering gates:** G1 atomic stores and distinct authority; G2 canonical session settings/origin/replay; G3 isolated cloud allocation and lifecycle; G4 exact skill/plugin selection and credential enforcement; G5 qualified model-group delegation; G6 real artifact/E2E/computer-use evidence. See the [implementation plan](docs/plans/2026-09-08-006-feat-tasks-implementation-plan.md#5-remaining-implementation-gates). These do not substitute for context/memory gates from M2/M3.
 

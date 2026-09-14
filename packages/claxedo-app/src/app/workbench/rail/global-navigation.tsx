@@ -7,6 +7,7 @@ export function GlobalNavigation(props: {
   onNewProject?: () => void
   onOpenPages?: () => void
   onOpenMarketplace?: () => void
+  onOpenTasks?: () => void
 }) {
   // Derive the active surface from the route so the matching nav item shows a
   // selected state (bg + strong text + brighter icon), mirroring the selected
@@ -15,6 +16,7 @@ export function GlobalNavigation(props: {
   const location = useLocation()
   const path = () => location.pathname
   const isMarketplace = () => path().startsWith("/marketplace")
+  const isTasks = () => path().startsWith("/tasks")
   const isDocuments = () => path().includes("/page/")
 
   return (
@@ -25,12 +27,13 @@ export function GlobalNavigation(props: {
     >
       <NavigationRow icon="plus-small" label={props.newProjectLabel} onClick={props.onNewProject} />
       <Show when={props.onOpenPages}><NavigationRow icon="page" label="Documents" onClick={props.onOpenPages} active={isDocuments()} testId="sidebar-documents-entry" ariaLabel="Open Documents" /></Show>
+      <Show when={props.onOpenTasks}><NavigationRow icon="checklist" label="Tasks" onClick={props.onOpenTasks} active={isTasks()} testId="sidebar-tasks-entry" ariaLabel="Open Tasks" /></Show>
       <Show when={props.onOpenMarketplace}><NavigationRow icon="marketplace" label="Marketplace" onClick={props.onOpenMarketplace} active={isMarketplace()} testId="sidebar-marketplace-entry" ariaLabel="Open Marketplace" /></Show>
     </div>
   )
 }
 
-function NavigationRow(props: { icon: "plus-small" | "page" | "three-dots" | "marketplace"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
+function NavigationRow(props: { icon: "plus-small" | "page" | "three-dots" | "marketplace" | "checklist"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
   return (
     <button
       type="button"

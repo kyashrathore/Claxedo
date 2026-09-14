@@ -24,6 +24,7 @@ import { configureDocumentsAppPorts, type DocumentsAppPorts } from "@/features/d
 import { configureReviewAppPorts, type ReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts, type WorkspacesAppPorts } from "@/features/workspaces/app-ports"
 import { configureOnboardingAppPorts, type OnboardingAppPorts } from "@/features/onboarding/app-ports"
+import { configureTasksAppPorts, type TasksAppPorts } from "@/features/tasks/app-ports"
 
 export type AppPortsTestOverrides = {
   session?: Partial<SessionAppPorts>
@@ -33,6 +34,7 @@ export type AppPortsTestOverrides = {
   review?: Partial<ReviewAppPorts>
   workspaces?: Partial<WorkspacesAppPorts>
   onboarding?: Partial<OnboardingAppPorts>
+  tasks?: Partial<TasksAppPorts>
 }
 
 type Thunks<P> = { [K in keyof P]: () => P[K] }
@@ -103,8 +105,8 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),
   loadManageModelsDialog: () => () => import("@/app/dialogs/manage-models"),
   openSettingsProviders: () => (dialog) => {
-    const { openSettingsProviders } = require("@/features/settings/open-settings-providers") as typeof import("@/features/settings/open-settings-providers")
-    return openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+    const { openSettings } = require("@/features/settings/open-settings") as typeof import("@/features/settings/open-settings")
+    return openSettings(dialog, () => import("@/app/dialogs/settings"), "providers")
   },
   listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
   documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),
@@ -140,6 +142,8 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   saveTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "saveTerminalCommands"),
   defaultTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "defaultTerminalCommands"),
   useModelVisibility: lazy("@/features/session/providers/models", "useModelVisibility"),
+  loadHarnessModelOptions: lazy("@/features/session/harness/harness-model-options", "loadHarnessModelOptions"),
+  groupHarnessModels: lazy("@/features/session/harness/harness-model-options", "groupHarnessModels"),
   formatKeybind: lazy("@/app/providers/command", "formatKeybind"),
   parseKeybind: lazy("@/app/providers/command", "parseKeybind"),
   useCommand: lazy("@/app/providers/command", "useCommand"),
@@ -211,6 +215,19 @@ const onboardingThunks: Thunks<OnboardingAppPorts> = {
   SandboxDriverLogo: lazy("@/features/settings/ui/sandbox-driver-logo", "SandboxDriverLogo"),
 }
 
+const tasksThunks: Thunks<TasksAppPorts> = {
+  useScope: lazy("@/app/integrations/tasks/tasks-ports", "useTasksScopePort"),
+  request: lazy("@/platform/api/api", "authFetch"),
+  useProjects: lazy("@/app/integrations/tasks/tasks-ports", "useTasksProjectsPort"),
+  useActiveProjectId: lazy("@/app/integrations/tasks/tasks-ports", "useTasksActiveProjectIdPort"),
+  useCapabilityCatalog: lazy("@/app/integrations/tasks/tasks-ports", "useCapabilityCatalogPort"),
+  ConfigurationEditor: lazy("@/app/integrations/tasks/preset-configuration-editor", "PresetConfigurationEditor"),
+  ProseEditor: lazy("@/app/integrations/tasks/tasks-prose-editor", "TasksProseEditor"),
+  useOpenSession: lazy("@/app/integrations/tasks/open-task-session", "useOpenTaskSession"),
+  useOpenPage: lazy("@/app/integrations/tasks/open-tasks-page", "useOpenTasksPage"),
+  openPresetSettings: lazy("@/app/integrations/tasks/tasks-ports", "openPresetSettings"),
+}
+
 /**
  * Install test app-ports for every feature. Safe to call repeatedly; each call
  * replaces the full configuration (including any previous overrides).
@@ -223,4 +240,5 @@ export function configureAppPortsForTest(overrides: AppPortsTestOverrides = {}) 
   configureReviewAppPorts(portsFromThunks(reviewThunks, overrides.review ?? {}))
   configureWorkspacesAppPorts(portsFromThunks(workspacesThunks, overrides.workspaces ?? {}))
   configureOnboardingAppPorts(portsFromThunks(onboardingThunks, overrides.onboarding ?? {}))
+  configureTasksAppPorts(portsFromThunks(tasksThunks, overrides.tasks ?? {}))
 }

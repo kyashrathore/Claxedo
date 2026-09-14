@@ -3,7 +3,7 @@ import { createSessionRoutes, type SessionRouteContext } from "./session-core"
 import { createChildSessionHost, type PendingChildWake } from "./session-children"
 import { createQueuedPromptHost, type QueuedPromptStore } from "./session-queued-prompts"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
-import { runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
+import { admitSessionPromptTurn, runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
   type AgentRuntime,
   type AgentMessage,
@@ -15,6 +15,7 @@ import {
   type PromptDelivery,
   type SessionConfig,
   type SessionConfigRequestUpdate,
+  type SessionModelGroup,
 } from "@claxedo/agent-sdk-runtime"
 import {
   type AgentMessagePage,
@@ -130,7 +131,7 @@ export function SessionRoutes(
      * the host's session store learns about a create directly rather than from
      * the list-time adapter fan-out.
      */
-    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"] }) => Promise<{ id: string }>
+    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
     /**
      * Host-owned child sessions (`POST /session` with `parentID`). The host
@@ -294,11 +295,18 @@ export function SessionRoutes(
         : (async () => {
             const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.sessionId })
             if (!binding) throw new Error(`Session ${input.sessionId} has no complete execution binding`)
+            const admitted = await admitSessionPromptTurn({
+              adapter,
+              binding,
+              sessionId: input.sessionId,
+              directory: input.directory,
+              body: input.body,
+            })
             resolve("started")
             input.onDelivery?.("start")
             return runSessionPromptTurn({
               adapter,
-              binding,
+              admitted,
               sessionId: input.sessionId,
               directory: input.directory,
               body: input.body,

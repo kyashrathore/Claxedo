@@ -6,7 +6,11 @@ import { Hono } from "hono"
 import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import { encodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
-import { AGENT_PLUGINS_RUNTIME_APPLY_PATH } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
+import {
+  AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+  AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+  AGENT_PLUGINS_RUNTIME_APPLY_PATH,
+} from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
 import { mountRouteContributions } from "@claxedo/workspace-runtime/route-contribution"
 import { agentPluginWorkspaceRuntimeContribution } from "./runtime-contribution"
 
@@ -179,4 +183,84 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     })
   })
 
+  test("the same revision under a different selection is a different generation, and the receipt names it", async () => {
+    const { artifact, app } = await fixture()
+    const apply = async (selectionHash: string) => {
+      const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          version: AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+          identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+          revision: 4,
+          execution: { mode: "selected", selectionHash },
+          selections: [{
+            pluginInstanceId: "claxedo/review",
+            artifactDigest: artifact.digest,
+            harnessIds: ["claude"],
+            contribution: { kind: "plugin" },
+          }],
+          artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+          mcpServers: [],
+        }),
+      })
+      expect(response.status).toBe(200)
+      return await response.json() as { generationId: string; selectionHash?: string }
+    }
+
+    const first = await apply("1".repeat(64))
+    expect(first.selectionHash).toBe("1".repeat(64))
+    expect(await apply("1".repeat(64))).toMatchObject({ generationId: first.generationId })
+
+    const other = await apply("2".repeat(64))
+    expect(other.generationId).not.toBe(first.generationId)
+    expect(other.selectionHash).toBe("2".repeat(64))
+  })
+
+  test("refuses a version it does not implement and a selection smuggled into a default request", async () => {
+    const { artifact, app, applyHarnessLaunch } = await fixture()
+    const post = (body: unknown) => app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    const base = {
+      identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+      revision: 1,
+      artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+      mcpServers: [],
+    }
+    const selection = {
+      pluginInstanceId: "claxedo/review",
+      artifactDigest: artifact.digest,
+      harnessIds: ["claude"],
+      contribution: { kind: "plugin" },
+    }
+
+    expect((await post({
+      ...base,
+      version: AGENT_PLUGINS_APPLY_VERSION_SELECTED + 1,
+      execution: { mode: "selected", selectionHash: "3".repeat(64) },
+      selections: [selection],
+    })).status).toBe(400)
+
+    // A runtime that reads only version 1 would apply the defaults these
+    // selections replace, so the contribution is not accepted at that version
+    // at all.
+    expect((await post({
+      ...base,
+      version: AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+      execution: { mode: "selected", selectionHash: "3".repeat(64) },
+      selections: [selection],
+    })).status).toBe(400)
+
+    expect((await post({
+      ...base,
+      version: AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+      execution: { mode: "selected", selectionHash: "3".repeat(64) },
+      selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+    })).status).toBe(400)
+
+    expect(applyHarnessLaunch).not.toHaveBeenCalled()
+  })
 })

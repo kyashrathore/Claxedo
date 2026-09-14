@@ -32,6 +32,13 @@
       "import": "./dist/guards.mjs",
       "default": "./dist/guards.mjs"
     },
+    "./crypto": {
+      "development": "./src/crypto.ts",
+      "bun": "./src/crypto.ts",
+      "types": "./dist/crypto.d.ts",
+      "import": "./dist/crypto.mjs",
+      "default": "./dist/crypto.mjs"
+    },
     "./string": {
       "development": "./src/string.ts",
       "bun": "./src/string.ts",

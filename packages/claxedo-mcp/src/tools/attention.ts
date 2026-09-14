@@ -5,7 +5,7 @@ import { WorkspaceRuntimeClientTransportError, type WorkspaceRuntimeClient } fro
 import type { ClaxedoMcpClient, WorkspaceTarget } from "../client/contract"
 import { assertToolAccess, McpAccessDenied, toolListed, type McpToolAccess, type McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { assertWritableTarget, toolTarget, toolText, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
 const PERMISSION_REPLY = "permission_reply"
@@ -283,7 +283,7 @@ function namedStatus(boards: readonly WorkspacePending[], session: string): stri
   return "unknown"
 }
 
-export function registerAttentionTools(registry: ToolRegistry): void {
+export function registerAttentionTools(registry: ToolRegistrar): void {
   registry.tool("sessions_board", {
     description:
       "Everything waiting for you, grouped by workspace: pending permissions, pending questions and session status, "

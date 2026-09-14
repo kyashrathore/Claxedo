@@ -1,0 +1,63 @@
+{
+  "name": "@claxedo/tasks",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Optional Tasks and Presets kit: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes and client",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-tasks"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./http": {
+      "types": "./src/http/index.ts",
+      "bun": "./src/http/index.ts",
+      "development": "./src/http/index.ts",
+      "import": "./src/http/index.ts",
+      "default": "./src/http/index.ts"
+    },
+    "./client": {
+      "types": "./src/client/index.ts",
+      "bun": "./src/client/index.ts",
+      "development": "./src/client/index.ts",
+      "import": "./src/client/index.ts",
+      "default": "./src/client/index.ts"
+    },
+    "./conformance": {
+      "types": "./src/conformance/index.ts",
+      "bun": "./src/conformance/index.ts",
+      "development": "./src/conformance/index.ts",
+      "import": "./src/conformance/index.ts",
+      "default": "./src/conformance/index.ts"
+    },
+    "./test-support": {
+      "types": "./src/test-support/index.ts",
+      "bun": "./src/test-support/index.ts",
+      "development": "./src/test-support/index.ts",
+      "import": "./src/test-support/index.ts",
+      "default": "./src/test-support/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*",
+    "hono": "4.10.7"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:"
+  }
+}

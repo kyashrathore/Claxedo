@@ -14,7 +14,7 @@ import type {
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
-import { ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
+import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
@@ -280,6 +280,7 @@ class EventQueue {
 export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   /** Session config is durable in the Claxedo store; the SDK receives it per turn. */
   readonly sessionConfigOwner = "runtime" as const
+  readonly instructionChannel = "none" as const
   private readonly runtime: OpenCodeRuntime
   private readonly workspaceID: string
   private readonly directory: string
@@ -346,6 +347,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       configOptions: false,
       subagents: false,
       goals: false,
+      effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "none",
     })
   }
 

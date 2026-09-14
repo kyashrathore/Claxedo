@@ -1,3 +1,4 @@
+import { isHarnessEffortLevel, type HarnessEffortLevel } from "@claxedo/agent-runtime-contract"
 import type { AgentConfigOption } from "./index"
 
 /** A model entry a harness reported for the picker. */
@@ -23,18 +24,6 @@ export type SdkModelEntry = {
 const EFFORT_CONFIG_ID = "effort"
 
 /**
- * The Claude Agent SDK's closed effort union (`sdk.d.ts`: `EffortLevel`).
- * Mirrored rather than imported so this module stays harness-agnostic.
- */
-export const SDK_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const
-export type SdkEffortLevel = (typeof SDK_EFFORT_LEVELS)[number]
-
-/** Sound because `SDK_EFFORT_LEVELS` is the tuple `SdkEffortLevel` is derived from. */
-export function isSdkEffortLevel(value: string): value is SdkEffortLevel {
-  return (SDK_EFFORT_LEVELS as readonly string[]).includes(value)
-}
-
-/**
  * The effort to send with a turn, or `undefined` for "let the model decide".
  *
  * Validated against the SELECTED MODEL's own `supportedEffortLevels` rather
@@ -48,10 +37,10 @@ export function resolveTurnEffort(
   models: readonly SdkModelEntry[],
   modelId: string | undefined,
   requested: string | undefined,
-): SdkEffortLevel | undefined {
-  if (!requested || !isSdkEffortLevel(requested)) return undefined
+): HarnessEffortLevel | undefined {
+  if (!requested || !isHarnessEffortLevel(requested)) return undefined
   const resolved = resolveSupportedEffort(models, modelId, requested)
-  return resolved && isSdkEffortLevel(resolved) ? resolved : undefined
+  return resolved && isHarnessEffortLevel(resolved) ? resolved : undefined
 }
 
 /** Resolves a harness-advertised effort without imposing another harness's union. */

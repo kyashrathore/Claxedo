@@ -1,11 +1,14 @@
 import {
   isAutoLevel,
   normalizeHarnessIdentity,
+  parseSessionModelGroup,
   type AutoLevel,
   type PromptModel,
   type SessionConfig,
   type SessionConfigRequestUpdate,
   type SessionHarness,
+  type SessionModelGroup,
+  type SessionModelGroupParse,
 } from "@claxedo/agent-sdk-runtime"
 import { rec as record, str } from "./json-value"
 
@@ -14,6 +17,14 @@ import { rec as record, str } from "./json-value"
  * session a host-owned child of that parent; `clientRequestId` lets a retried
  * create resolve to the same session; `permissionCeiling` caps the session's
  * permission mode at a level, and `permissionMode` names the mode to start in.
+ *
+ * `instructions` is retained on the session so a caller never re-sends it; how
+ * it reaches the harness is the harness's own `instructionChannel`.
+ *
+ * `group` is retained too, but never reaches the harness: it is the
+ * machine-readable form of the model group, read back by whoever later resolves
+ * a slot. Both are fixed at create, and `normalizeSessionConfigUpdate` accepts
+ * neither, so a PATCH cannot rewrite them.
  */
 export type SessionCreateBody = {
   id?: string
@@ -23,6 +34,8 @@ export type SessionCreateBody = {
   clientRequestId?: string
   permissionCeiling?: AutoLevel
   permissionMode?: string
+  instructions?: string
+  group?: SessionModelGroup
 }
 
 export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
@@ -36,7 +49,19 @@ export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
     ...(str(row.clientRequestId) ? { clientRequestId: str(row.clientRequestId) } : {}),
     ...(isAutoLevel(ceiling) ? { permissionCeiling: ceiling } : {}),
     ...(str(row.permissionMode) ? { permissionMode: str(row.permissionMode) } : {}),
+    ...(str(row.instructions) ? { instructions: str(row.instructions) } : {}),
   }
+}
+
+/**
+ * The create body's `group`, or `undefined` when the caller sent none. A
+ * malformed group is returned as the failing field rather than dropped: a
+ * session whose group silently lost a slot delegates to the wrong model later.
+ */
+export function sessionCreateGroup(input: unknown): SessionModelGroupParse | undefined {
+  const row = record(input) ?? {}
+  if (!("group" in row)) return undefined
+  return parseSessionModelGroup(row.group)
 }
 
 export function normalizeSessionHarness(input: unknown): SessionHarness | undefined {

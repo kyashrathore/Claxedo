@@ -4,7 +4,7 @@ import type { SessionAccessOperation } from "@claxedo/workspace-runtime/client"
 import type { ClaxedoMcpClient } from "../client/contract"
 import type { McpAudience, McpCredential, McpToolAccess, McpToolContext } from "../context"
 import { createToolRegistry } from "./registry"
-import { CLAXEDO_MCP_TOOL_GROUPS } from "./index"
+import { CLAXEDO_MCP_TOOL_GROUPS, claxedoMcpToolGroupInventory } from "./index"
 import {
   MCP_OPERATIONS_SERVED_ELSEWHERE,
   MCP_OPERATIONS_WITHOUT_TOOLS,
@@ -39,10 +39,10 @@ const userCredential = (readOnly = false): McpCredential => ({
 })
 
 /** Registers every group against one credential and reports what it declared and what it listed. */
-function surface(credential: McpCredential) {
-  const ctx: McpToolContext = { credential, client, audit: () => undefined }
+function surface(credential: McpCredential, tasks?: ClaxedoMcpClient["tasks"]) {
+  const ctx: McpToolContext = { credential, client: { ...client, ...(tasks ? { tasks } : {}) }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
-  for (const register of CLAXEDO_MCP_TOOL_GROUPS) register(registry)
+  for (const group of CLAXEDO_MCP_TOOL_GROUPS) group.register(registry)
   return { declared: registry.declared, listed: [...registry.listed].toSorted() }
 }
 
@@ -152,6 +152,12 @@ describe("the registered surface", () => {
     ])
   })
 
+  test("adds the Tasks tools the grant covers, and nothing else", () => {
+    const granted = surface(runtimeCredential, { fetch: async () => new Response(null, { status: 204 }), operations: ["read", "create", "start"] })
+    const without = new Set(surface(runtimeCredential).listed)
+    expect(granted.listed.filter((name) => !without.has(name))).toEqual(["task_create", "task_get", "task_list", "task_start"])
+  })
+
   test("lists the outside-in set for a user credential", () => {
     expect(surface(userCredential()).listed).toEqual([
       "documents_list",
@@ -218,4 +224,39 @@ describe("the registered surface", () => {
 const CHECKPOINT_WRITE: SessionAccessOperation = "checkpoint_write"
 test("checkpoint_write is an operation the session-core routes never name", () => {
   expect(RUNTIME_OPERATIONS.has(CHECKPOINT_WRITE)).toBe(false)
+})
+
+describe("the tool names the catalog publishes", () => {
+  test("are exactly the names a real mount registers, group by group", () => {
+    const declared = surface(userCredential()).declared
+    const published = claxedoMcpToolGroupInventory()
+
+    // The catalog derives its names by running each registration against a
+    // sink with no server, no context and no credential behind it. This is the
+    // assertion that the sink sees what a real registry sees: a name reached
+    // through a constant, or registered under a branch the sink does not
+    // satisfy, would be published as absent and consented to as absent while
+    // the mount served it.
+    expect(published.flatMap((group) => group.tools).toSorted()).toEqual([...declared.keys()].toSorted())
+    expect(published.find((group) => group.id === "attention")?.tools).toContain("permission_reply")
+    expect(new Set(published.flatMap((group) => group.tools)).size).toBe(declared.size)
+  })
+
+  test("declare a reach, and only the two that leave the runtime say so", () => {
+    const published = claxedoMcpToolGroupInventory()
+    // What a project inherits is computed from these, so a group that reaches
+    // past the session and says "runtime" is granted to every project that has
+    // decided nothing. The list is short on purpose: adding to it is the
+    // decision, and this is where it gets read.
+    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["tasks"])
+    expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["documents"])
+    expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
+      "attention",
+      "processes",
+      "review",
+      "sessions",
+      "subagents",
+      "workspaces",
+    ])
+  })
 })

@@ -22,6 +22,10 @@ import {
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
 import { isTransientWranglerFailure } from "./prepare-better-auth-d1"
+import {
+  STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
+  stageWorkerControlPlaneMigrations,
+} from "./staged-control-plane-migrations"
 import { fetchUrl } from "../../src/test-support/fetch-calls"
 import { asRecord, isRecordArray, numberField, parseJson, parseJsonRecords, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
@@ -465,6 +469,13 @@ type BetterAuthD1WranglerConfigInput = {
   controlPlaneDatabaseId: string
   controlPlaneDatabaseName: string
   namespaceId: string
+  /**
+   * `migrations_dir` for CONTROL_PLANE_DB, relative to where this config is
+   * written. `prepare-better-auth-d1.ts --migrate` applies everything it
+   * names, so it must be a directory staged for this release rather than the
+   * source tree every other reader shares.
+   */
+  controlPlaneMigrationsDir: string
 }
 
 function renderBetterAuthD1WranglerConfigForArtifact(
@@ -536,7 +547,7 @@ migrations_dir = "../migrations/auth"
 binding = "CONTROL_PLANE_DB"
 database_name = ${quote(input.controlPlaneDatabaseName)}
 database_id = ${quote(input.controlPlaneDatabaseId)}
-migrations_dir = "../migrations/control-plane"
+migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
@@ -1074,6 +1085,9 @@ async function ensureCutoverLiveSyncLifecycle(input: {
     renderBetterAuthD1LiveSyncMigrationBridgeWranglerConfig({
       staging: input.staging,
       ...input.release,
+      // The bridge config is written beside the same staged migrations as the
+      // release config it runs from.
+      controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
     }),
   )
   const bridgeConfigArgs = ["--config", bridgeConfig]
@@ -1210,6 +1224,7 @@ async function main() {
   const temporary = await mkdtemp(path.join(serverRoot, ".claxedo-better-auth-release-"))
   try {
     const config = path.join(temporary, "wrangler.toml")
+    const staged = stageWorkerControlPlaneMigrations({ configDirectory: temporary })
     const bundleDirectory = path.join(temporary, "bundle")
     const bundle = path.join(
       bundleDirectory,
@@ -1221,7 +1236,10 @@ async function main() {
             : "better-auth-d1-candidate-worker.cf.js"
         : "better-auth-d1-locked-worker.cf.js",
     )
-    await writeFile(config, renderBetterAuthD1WranglerConfig({ staging, ...input }))
+    await writeFile(
+      config,
+      renderBetterAuthD1WranglerConfig({ staging, ...input, controlPlaneMigrationsDir: staged.migrationsDir }),
+    )
     const configArgs = ["--config", config]
     const publishBrowser = async () => {
       if (!cutover) return

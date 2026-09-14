@@ -69,7 +69,7 @@ describe("SQLite private-session authority", () => {
         },
       },
     })).resolves.toMatchObject({
-      lifecycle: { reserved: true, reconciled: true, compensated: true },
+      lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })

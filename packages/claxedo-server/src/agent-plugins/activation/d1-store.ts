@@ -1,3 +1,4 @@
+import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
   AgentPluginActivationStoreError,
@@ -9,7 +10,7 @@ import {
   type SignedKnownPlugin,
   type UpdateSignedArtifactPin,
 } from "@claxedo/server-core/agent-plugins/activation/store"
-import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
+import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import {
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
@@ -28,7 +29,6 @@ export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
 export const AGENT_PLUGIN_DESKTOP_WORKSPACE = "desktop"
 
 const CLAXEDO_SCOPE_KEY = "claxedo"
-const ARTIFACT_DIGEST = /^sha256:[a-f0-9]{64}$/
 
 /**
  * The authority capabilities this store consumes. Signed methods resolve the
@@ -208,10 +208,6 @@ function enabled(value: unknown) {
   return value === 1
 }
 
-function isArtifactDigest(value: unknown): value is ArtifactDigest {
-  return typeof value === "string" && ARTIFACT_DIGEST.test(value)
-}
-
 function artifactPin(row: PinRow | null): AgentPluginArtifactPin | undefined {
   if (!row) return undefined
   if (!isArtifactDigest(row.artifact_digest)) invalid("artifact digest")
@@ -232,6 +228,15 @@ function conflict(expected: number, current: number) {
     "revision-conflict",
     `Agent plugin activation revision changed from ${expected} to ${current}`,
   )
+}
+
+/**
+ * The built-in comes from no source, so there is no tree to retain and no pin
+ * to point at. The rule the pin enforces — never enable bytes this deployment
+ * does not hold — is already true of it: the bytes are the product.
+ */
+function requiresRetainedArtifact(pluginInstanceId: string) {
+  return !isBuiltinPluginInstanceId(pluginInstanceId)
 }
 
 function artifactUnavailable() {
@@ -358,7 +363,10 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const started = await this.begin(scope.orgId, input.expectedRevision, operation)
     if ("replay" in started) return started.replay
     const scopeKey = userScopeKey(scope.orgId, scope.userId)
-    if (input.choice === true && !input.artifact && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
+    if (input.choice === true
+      && requiresRetainedArtifact(input.pluginInstanceId)
+      && !input.artifact
+      && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
       throw artifactUnavailable()
     }
     const now = this.now()
@@ -407,7 +415,10 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const started = await this.begin(scope.orgId, input.expectedRevision, operation)
     if ("replay" in started) return started.replay
     const scopeKey = organizationScopeKey(scope.orgId)
-    if (input.choice === true && !input.artifact && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
+    if (input.choice === true
+      && requiresRetainedArtifact(input.pluginInstanceId)
+      && !input.artifact
+      && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
       throw artifactUnavailable()
     }
     const now = this.now()

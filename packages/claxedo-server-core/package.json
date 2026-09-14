@@ -39,11 +39,12 @@
     "vitest": "2.1.9"
   },
   "dependencies": {
-    "zod": "4.4.3",
     "@claxedo/agent-event-runtime": "workspace:*",
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
+    "@claxedo/tasks": "workspace:*",
     "@claxedo/usage-contract": "workspace:*",
     "@claxedo/workspace-relay": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
@@ -54,6 +55,7 @@
     "hono": "4.10.7",
     "jose": "6.2.4",
     "tokentracker-cli": "0.91.0",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   }
 }

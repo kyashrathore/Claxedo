@@ -2,6 +2,7 @@ import { agentPluginsModule, type AgentPluginsModule } from "@claxedo/server-cor
 import type { SignedAgentPluginActivationStore } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
+import type { BuiltinDeployment, BuiltinToolGroup } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneServices } from "../authority/services"
@@ -20,6 +21,7 @@ export function hostedAgentPluginsModule(input: {
   activations: SignedAgentPluginActivationStore
   artifacts: AgentPluginArtifactStore
   reconcile: AgentPluginReconcilePort
+  builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: HostedMcpClientMetadata
   mcpGatewayRoutes?: Hono

@@ -10,6 +10,7 @@ import {
   type WorkspacePanelNavigator,
   type WorkspacePanelState,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type { TasksPage } from "@/platform/identity/route"
 import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
 import type {
@@ -76,6 +77,13 @@ const isContentType = (v: unknown): v is ContentType =>
  * `validateMeta` has already checked — they are the same discriminant, and a
  * blob where they disagree is the entry's to name.
  */
+/** A nested Tasks page is dropped rather than trusted: a restored tab may not deep-link anywhere. */
+function validateTasksPage(input: unknown): TasksPage | undefined {
+  if (!isRecord(input) || input.kind !== "task") return undefined
+  const taskId = asString(input.taskId)
+  return taskId === undefined ? undefined : { kind: "task", taskId }
+}
+
 function validateContentPayload(input: unknown, type: ContentType): ContentPayload | undefined {
   if (!isRecord(input)) return undefined
   if (type === "page") {
@@ -83,6 +91,7 @@ function validateContentPayload(input: unknown, type: ContentType): ContentPaylo
     return pageId === undefined ? undefined : { ...input, type, pageId }
   }
   if (type === "pages-index" || type === "marketplace") return { ...input, type }
+  if (type === "tasks") return { ...input, type, page: validateTasksPage(input.page) }
   if (type === "draft-session") {
     const draftId = asString(input.draftId)
     const providerDirectory = asString(input.providerDirectory)

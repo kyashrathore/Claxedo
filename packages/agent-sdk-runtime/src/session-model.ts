@@ -1,5 +1,6 @@
+import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import type { PromptModel, SessionConfig, SessionHarness } from "./index"
-import { harnessKey } from "./harness-types"
+import { harnessKey } from "@claxedo/agent-runtime-contract"
 
 /**
  * The `modelID` a session carries while it has selected no model. Harnesses
@@ -31,4 +32,26 @@ export function defaultSessionModel(harness: SessionHarness): PromptModel {
 
 export function resolveSessionModel(config: SessionConfig): PromptModel {
   return config.model ?? defaultSessionModel(config.harness)
+}
+
+/**
+ * The system block of one turn: the session's standing instructions, then a
+ * pending handoff transcript, then whatever this turn carries.
+ *
+ * Retained instructions lead because they say who the session is; the
+ * transcript and the turn's own block are what happened after that. They are
+ * left out entirely for a channel that took them once at thread creation —
+ * that harness still holds them, and repeating them would send them twice.
+ */
+export function resolveTurnSystem(
+  config: Pick<SessionConfig, "instructions" | "handoff"> | undefined,
+  channel: HarnessInstructionChannel,
+  turnSystem?: string,
+): string | undefined {
+  const blocks = [
+    channel === "turn-system-prompt" || channel === "prompt-prefix" ? config?.instructions : undefined,
+    config?.handoff?.pending ? config.handoff.transcript : undefined,
+    turnSystem,
+  ].filter((block): block is string => !!block)
+  return blocks.length ? blocks.join("\n\n") : undefined
 }

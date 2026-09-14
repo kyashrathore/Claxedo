@@ -10,19 +10,22 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // Reviewed line counts for the orchestration owners that attract every
       // new feature. Each is the file's exact length at its last review, with
       // no headroom, so the next feature must name an owner rather than append.
-      // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`
-      // and per-session turn admission to `runtime/turn-admission.ts`;
-      // `harnesses/codex/driver.ts` delegates the brokered provider to
-      // `harnesses/codex/broker.ts`, the operator login to
+      // They orchestrate; the concepts they carry are owned elsewhere.
+      // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`,
+      // per-session turn admission to `runtime/turn-admission.ts`, a turn's
+      // prompt to `runtime/turn-record.ts` (whose system block is composed in
+      // `session-model.ts`) and the instruction block's admission to
+      // `session-instructions.ts`; `harnesses/codex/driver.ts` delegates the
+      // brokered provider to `harnesses/codex/broker.ts`, the operator login to
       // `harnesses/codex/operator-login.ts`, Agent Plugins validation to
       // `harnesses/codex/plugin-launch.ts` and `turn/steer` to
       // `harnesses/codex/protocol.ts`; `harnesses/shared/sdk-runtime-adapter.ts`
       // delegates steering to `harnesses/shared/turn-steering.ts` and keeps only
       // the entrypoint.
-      "runtime.ts": 819,
-      "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 625,
-      "harnesses/shared/sdk-runtime-adapter.ts": 876,
+      "runtime.ts": 834,
+      "harnesses/acp/index.ts": 831,
+      "harnesses/codex/driver.ts": 632,
+      "harnesses/shared/sdk-runtime-adapter.ts": 885,
       // Its one growth is the import of the trim that stops a blank
       // `PI_CODING_AGENT_DIR` from putting the profile in the process cwd.
       "harnesses/pi/index.ts": 13,

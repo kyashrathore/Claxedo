@@ -206,7 +206,7 @@ describe("D1 private multiplayer session authority", () => {
         "canonical-actor-attribution",
         "explicit-runtime-principal",
       ],
-      lifecycle: { reserved: true, reconciled: true, compensated: true },
+      lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })
@@ -414,6 +414,26 @@ describe("D1 private multiplayer session authority", () => {
     expect(
       await input.database.prepare("select 1 from sessions where session_id = 'ses_compensate'").first(),
     ).toBeNull()
+    expect(
+      await input.database
+        .prepare("select state, state_reason from session_registration_operations where operation_id = 'op_compensate'")
+        .first<{ state: string; state_reason: string }>(),
+    ).toEqual({ state: "compensated", state_reason: "runtime confirmed deletion" })
+
+    await expect(
+      input.sessions.reserveSession(alice, {
+        operationId: "op_compensate_retry",
+        sessionId: "ses_compensate",
+        workspaceId: "ws_main",
+        kind: "create",
+      }),
+    ).resolves.toMatchObject({ changed: true, state: "reserved", sessionId: "ses_compensate" })
+    expect(
+      await input.database
+        .prepare("select operation_id from session_registration_operations where session_id = 'ses_compensate'")
+        .all<{ operation_id: string }>(),
+    ).toMatchObject({ results: [{ operation_id: "op_compensate_retry" }] })
+
     await expect(
       input.sessions.registerRuntimeSession({
         principalKind: "user",

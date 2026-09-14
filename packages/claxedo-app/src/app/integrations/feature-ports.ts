@@ -42,7 +42,7 @@ import * as SessionCache from "@/features/session/data/sync/directory-session-ca
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
-import { openSettingsProviders as showProvidersSettings } from "@/features/settings/open-settings-providers"
+import { openSettings } from "@/features/settings/open-settings"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
@@ -126,7 +126,7 @@ configureSessionAppPorts({
   sessionRefForActionWorkspace: LayoutActions.sessionRefForActionWorkspace,
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
   loadManageModelsDialog: () => import("@/app/dialogs/manage-models"),
-  openSettingsProviders: (dialog) => showProvidersSettings(dialog, () => import("@/app/dialogs/settings")),
+  openSettingsProviders: (dialog) => openSettings(dialog, () => import("@/app/dialogs/settings"), "providers"),
   listDocumentMentions: DocumentMentions.listDocumentMentions,
   documentMentionText: DocumentMentions.documentMentionText,
 })

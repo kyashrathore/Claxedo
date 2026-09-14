@@ -1,12 +1,23 @@
 import { z } from "zod"
+import {
+  harnessEffortRefusal,
+  isSessionGroupSlot,
+  parseHarnessEffortLevels,
+  parseSessionModelGroup,
+  sessionVariantForEffort,
+  HARNESS_INSTRUCTION_CHANNELS,
+  type HarnessInstructionChannel,
+  type SessionHarness,
+  type SessionModelGroup,
+} from "@claxedo/agent-runtime-contract"
 import { WorkspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import type { WorkspaceTarget } from "../client/contract"
 import { McpAccessDenied, type McpToolContext } from "../context"
 import { McpHttpError, mcpHttpError } from "../http-error"
-import { num, oneOf, record, text } from "../json"
+import { num, oneOf, record, records, text } from "../json"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 
 /** The self-identifying marker `hostSubagentBinding` looks for in a `create_subagent` result. */
 const SUBAGENT_RESULT_KIND = "claxedo.subagent"
@@ -53,7 +64,7 @@ const childLocator = {
 
 type ChildLocator = { subagentKey?: string; sessionId?: string }
 
-export function registerSubagentTools(registry: ToolRegistry): void {
+export function registerSubagentTools(registry: ToolRegistrar): void {
   registry.tool("subagent_capabilities", {
     description:
       "Whether this session may run a subagent, which harnesses the runtime can start one on, the permission ceiling a child inherits, and how many children are already active.",
@@ -63,12 +74,14 @@ export function registerSubagentTools(registry: ToolRegistry): void {
 
   registry.tool("create_subagent", {
     description:
-      "Start a child session on a chosen harness and give it one task. No history from this session is copied; the child gets the prompt and the optional role line only. `wait` returns the child's answer or times out without cancelling it; `async` returns as soon as the child exists.",
+      "Start a child session on a chosen harness and give it one task. No history from this session is copied; the child gets the prompt, the optional role line and this session's own instructions. `configuration` runs a slot of this session's model group instead of a harness named here; read the group from subagent_capabilities. `wait` returns the child's answer or times out without cancelling it; `async` returns as soon as the child exists.",
     inputSchema: {
-      harness: z.string().min(1).describe(`The harness to run the child on: ${RUNTIME_HARNESSES.join(", ")}.`),
+      harness: z.string().min(1).optional().describe(`The harness to run the child on: ${RUNTIME_HARNESSES.join(", ")}. Required unless \`configuration\` names a slot.`),
+      configuration: z.string().min(1).optional().describe("A slot of this session's model group; the child runs that slot's harness, model and effort."),
       prompt: z.string().min(1).describe("The whole task. The child cannot see this session."),
       role: z.string().min(1).optional().describe("One line naming what the child is, prefixed to the prompt."),
       model: z.object({ providerID: z.string().min(1), id: z.string().min(1) }).optional(),
+      effort: z.string().min(1).optional().describe("The reasoning effort the child runs at. One the harness does not accept for that model is refused, never dropped."),
       mode: z.enum(["async", "wait"]),
       timeoutMs: z.number().int().min(1).max(MAX_WAIT_MS).optional(),
       permissionMode: z.string().min(1).optional().describe("A permission mode at or below this session's; a wider one is refused."),
@@ -118,22 +131,22 @@ export function registerSubagentTools(registry: ToolRegistry): void {
 }
 
 async function createSubagent(
-  args: {
-    harness: string
-    prompt: string
-    role?: string
-    model?: { providerID: string; id: string }
-    mode: "async" | "wait"
-    timeoutMs?: number
-    permissionMode?: string
-    clientRequestId?: string
-  },
+  args: CreateSubagentArgs,
   ctx: McpToolContext,
 ): Promise<McpToolResult> {
   const parent = requireParentSession(ctx)
-  const child = await createChildSession(ctx, parent, args)
+  const config = await parentSessionConfig(ctx, parent)
+  const choice = resolveChoice(args, config.group)
+  const { instructionChannel } = await refuseUnsupportedChoice(ctx, choice)
+  const instructions = childInstructions(config.instructions, choice)
+  // A harness with no instruction channel refuses a create that carries one;
+  // the block then rides at the head of the child's first prompt, the same
+  // delivery the runtime gives a prompt-prefix harness.
+  const carries = instructionChannel !== "none"
+  const child = await createChildSession(ctx, parent, args, choice, carries ? instructions : undefined)
+  const task = args.role ? `Role: ${args.role}\n\n${args.prompt}` : args.prompt
   try {
-    await promptChild(ctx, child.sessionId, args.role ? `Role: ${args.role}\n\n${args.prompt}` : args.prompt)
+    await promptChild(ctx, child.sessionId, carries ? task : `${instructions}\n\n${task}`)
   } catch (error) {
     const refusal = refusalMessage(error)
     if (!refusal) throw error
@@ -156,28 +169,26 @@ async function createSubagent(
 /**
  * `POST /session` with the harness in the query and the child fields in the
  * body. Not `session.create`: the typed client sends every member of its input
- * as the body, and `nativeHarness` selects the adapter from the query string.
+ * as the body, and the harness query selects the adapter.
  */
 async function createChildSession(
   ctx: McpToolContext,
   parentID: string,
-  args: {
-    harness: string
-    role?: string
-    model?: { providerID: string; id: string }
-    permissionMode?: string
-    clientRequestId?: string
-  },
+  args: { role?: string; permissionMode?: string; clientRequestId?: string },
+  choice: Choice,
+  instructions: string | undefined,
 ): Promise<{ subagentKey: string; sessionId: string }> {
   // A credential that declares no level leaves `permissionCeiling` off rather
   // than falling back to `ask` the way a parentless `session_create` must: the
   // route already caps a child at the parent session's own current mode, and
   // naming the floor here would refuse a child under a parent that is wider.
   const ceiling = oneOf(ctx.credential.kind === "runtime" ? ctx.credential.permissionMode : undefined, PERMISSION_LEVELS)
-  const body = await postRuntimeJson(ctx, `/session`, { nativeHarness: args.harness }, {
+  const body = await postRuntimeJson(ctx, `/session`, harnessQuery(choice.harness), {
     parentID,
     ...(args.role ? { role: args.role, title: args.role } : {}),
-    ...(args.model ? { model: args.model } : {}),
+    ...(choice.model ? { model: choice.model } : {}),
+    ...sessionVariantForEffort(choice.effort),
+    ...(instructions ? { instructions } : {}),
     ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
     ...(args.clientRequestId ? { clientRequestId: args.clientRequestId } : {}),
     ...(ceiling ? { permissionCeiling: ceiling } : {}),
@@ -189,6 +200,149 @@ async function createChildSession(
     throw new McpHttpError(502, "subagent_row_missing", "The runtime created the child session without a subagent key")
   }
   return { subagentKey, sessionId }
+}
+
+type CreateSubagentArgs = {
+  harness?: string
+  configuration?: string
+  prompt: string
+  role?: string
+  model?: { providerID: string; id: string }
+  effort?: string
+  mode: "async" | "wait"
+  timeoutMs?: number
+  permissionMode?: string
+  clientRequestId?: string
+}
+
+/** What the child will actually run, after a `configuration` slot has been resolved. */
+type Choice = {
+  harness: SessionHarness
+  /** The create route's own model shape, which names the model `id`. */
+  model?: { providerID: string; id: string }
+  effort?: string
+  slot?: string
+}
+
+type ParentSessionConfig = {
+  instructions?: string
+  group: SessionModelGroup
+}
+
+const harnessQuery = (harness: SessionHarness): Record<string, string> =>
+  harness.access === "connection" ? { connectionId: harness.id } : { nativeHarness: harness.id }
+
+const describeChoice = (choice: Choice): string =>
+  `${choice.harness.id}${choice.model ? `, ${choice.model.providerID}/${choice.model.id}` : ""}, effort: ${choice.effort ?? "not set"}`
+
+/**
+ * The slot's harness, model and effort, or the caller's own three fields. A
+ * slot and an explicit field that disagree are refused rather than ranked:
+ * either answer would run a configuration nobody asked for.
+ */
+function resolveChoice(args: CreateSubagentArgs, group: SessionModelGroup): Choice {
+  if (!args.configuration) {
+    if (!args.harness) {
+      throw new McpHttpError(400, "subagent_harness_required", "Name a harness, or a configuration from this session's model group")
+    }
+    return {
+      harness: { id: args.harness, access: "native" },
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.effort ? { effort: args.effort } : {}),
+    }
+  }
+  const entry = isSessionGroupSlot(args.configuration) ? group[args.configuration] : undefined
+  if (!entry) {
+    const slots = Object.keys(group)
+    throw new McpHttpError(400, "subagent_configuration_unknown", slots.length > 0
+      ? `This session's model group has no "${args.configuration}" configuration; it has ${slots.join(", ")}`
+      : `This session was started with no model group, so "${args.configuration}" names nothing`)
+  }
+  contradiction("harness", args.harness, entry.harness.id, args.configuration)
+  contradiction("effort", args.effort, entry.effort, args.configuration)
+  if (args.model) {
+    contradiction("model", `${args.model.providerID}/${args.model.id}`, `${entry.model.providerID}/${entry.model.modelID}`, args.configuration)
+  }
+  return {
+    harness: entry.harness,
+    model: { providerID: entry.model.providerID, id: entry.model.modelID },
+    ...(entry.effort ? { effort: entry.effort } : {}),
+    slot: args.configuration,
+  }
+}
+
+function contradiction(field: string, requested: string | undefined, resolved: string | undefined, slot: string): void {
+  if (!requested || requested === resolved) return
+  throw new McpHttpError(400, "subagent_configuration_contradicted",
+    `The ${slot} configuration runs ${field} ${resolved ?? "unset"}, not ${requested}; drop one of the two`)
+}
+
+/**
+ * What the harness registered for this workspace says about the choice. An
+ * unregistered harness answers through the capability read's own refusal, so
+ * only the model and the effort are judged here; the instruction channel is
+ * returned for the caller to deliver the block the way this harness takes it.
+ */
+async function refuseUnsupportedChoice(
+  ctx: McpToolContext,
+  choice: Choice,
+): Promise<{ instructionChannel: HarnessInstructionChannel | undefined }> {
+  const body = record(await getRuntimeJson(ctx, "/session/capabilities", harnessQuery(choice.harness)))
+  const selection = record(body?.modelSelection)
+  if (choice.model && selection?.status === "unsupported") {
+    throw new McpHttpError(400, "subagent_model_unavailable",
+      `The ${choice.harness.id} harness selects its own model and would ignore ${choice.model.providerID}/${choice.model.id}`)
+  }
+  const chosen = choice.model
+  const offered = records(selection?.models)
+  if (chosen && offered.length > 0
+    && !offered.some((model) => model.providerId === chosen.providerID && model.modelId === chosen.id)) {
+    throw new McpHttpError(400, "subagent_model_unavailable",
+      `${chosen.providerID}/${chosen.id} is not offered by the ${choice.harness.id} harness here`)
+  }
+  const refusal = harnessEffortRefusal({
+    harness: choice.harness.id,
+    catalog: parseHarnessEffortLevels(body?.effortLevels),
+    modelID: choice.model?.id,
+    effort: choice.effort,
+  })
+  if (refusal) throw new McpHttpError(400, "subagent_effort_unsupported", refusal)
+  return { instructionChannel: oneOf(body?.instructionChannel, HARNESS_INSTRUCTION_CHANNELS) }
+}
+
+async function parentSessionConfig(ctx: McpToolContext, parent: string): Promise<ParentSessionConfig> {
+  const body = record(await getRuntimeJson(ctx, `/session/${encodeURIComponent(parent)}/config`, {}))
+  const instructions = text(body?.instructions)
+  if (body?.group === undefined || body.group === null) {
+    return { ...(instructions ? { instructions } : {}), group: {} }
+  }
+  const parsed = parseSessionModelGroup(body.group)
+  // The runtime wrote this group through this same parser, so a field refused
+  // here is a corrupt row rather than a caller mistake.
+  if ("field" in parsed) {
+    throw new McpHttpError(502, "session_group_unreadable",
+      `This session's model group cannot be read: ${parsed.field} ${parsed.message}`)
+  }
+  return { ...(instructions ? { instructions } : {}), group: parsed.group }
+}
+
+/**
+ * The parent's own instruction block, then what the child cannot otherwise
+ * know: which configuration it is running.
+ *
+ * A block over the runtime's cap is refused there by byte count rather than
+ * trimmed here — silently dropping the tail of what the parent was told is the
+ * one outcome worse than the create failing with a reason.
+ */
+function childInstructions(parent: string | undefined, choice: Choice): string {
+  return [
+    ...(parent ? [parent] : []),
+    [
+      "## This subagent",
+      `Started by another session${choice.slot ? ` as its ${choice.slot} configuration` : ""}: ${describeChoice(choice)}.`,
+      "You run under that session's permissions and its workspace's own skills and plugins, and you cannot start subagents of your own.",
+    ].join("\n"),
+  ].join("\n\n")
 }
 
 /**
@@ -211,9 +365,10 @@ async function promptChild(ctx: McpToolContext, sessionId: string, prompt: strin
  * harness `create_subagent` names, so the answer is the harness list with that
  * state named on every row rather than a failed call.
  */
-async function runtimeDefaultHarness(ctx: McpToolContext): Promise<{ harness: string } | { unconfigured: string }> {
+async function runtimeDefaultHarness(ctx: McpToolContext) {
   try {
-    return { harness: (await (await ownRuntimeClient(ctx)).session.harnessCapabilities()).data.harness }
+    const { harness, effortLevels } = (await (await ownRuntimeClient(ctx)).session.harnessCapabilities()).data
+    return { harness, ...(effortLevels ? { effortLevels } : {}) }
   } catch (error) {
     if (error instanceof WorkspaceRuntimeClientError && error.code === "workspace_harness_not_configured") {
       return { unconfigured: error.message }
@@ -238,6 +393,10 @@ async function capabilities(ctx: McpToolContext) {
       })
   const shared = {
     ...(runtimeHarness ? { runtimeHarness } : {}),
+    // Only this runtime's own harness answers a capability read without a
+    // harness named, so the effort catalog here is that harness's; a child on
+    // another one has its effort judged by the create's own read.
+    ...("effortLevels" in runtime && runtime.effortLevels ? { effortLevels: runtime.effortLevels } : {}),
     harnesses,
     maxActiveChildren: MAX_ACTIVE_CHILDREN,
     waitTimeoutMaxMs: MAX_WAIT_MS,
@@ -252,6 +411,7 @@ async function capabilities(ctx: McpToolContext) {
   }
   const rows = await children(ctx, parent)
   const activeChildren = rows.filter((row) => childActive(row.status)).length
+  const group = (await parentSessionConfig(ctx, parent)).group
   return {
     canSpawn: activeChildren < MAX_ACTIVE_CHILDREN,
     ...(activeChildren < MAX_ACTIVE_CHILDREN
@@ -260,6 +420,9 @@ async function capabilities(ctx: McpToolContext) {
     parentSessionId: parent,
     ...(permissionCeiling ? { permissionCeiling } : {}),
     activeChildren,
+    // The slot keys `create_subagent`'s `configuration` accepts; a session
+    // started outside a model group reports the empty set.
+    configurations: group,
     ...shared,
   }
 }
@@ -351,22 +514,28 @@ const ownWorkspaceTarget = (ctx: McpToolContext): WorkspaceTarget => ctx.client.
 
 const ownRuntimeClient = (ctx: McpToolContext): Promise<WorkspaceRuntimeClient> => ctx.client.server(ownWorkspaceTarget(ctx))
 
-async function postRuntimeJson(
+const postRuntimeJson = (ctx: McpToolContext, path: string, query: Record<string, string>, body: unknown) =>
+  ownWorkspaceJson(ctx, path, query, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+const getRuntimeJson = (ctx: McpToolContext, path: string, query: Record<string, string>) =>
+  ownWorkspaceJson(ctx, path, query, { headers: { accept: "application/json" } })
+
+async function ownWorkspaceJson(
   ctx: McpToolContext,
   path: string,
   query: Record<string, string>,
-  body: unknown,
+  init: RequestInit,
 ): Promise<unknown> {
   const resolved = await ctx.client.resolveTarget(ownWorkspaceTarget(ctx))
   const runtime = await ctx.client.runtime(ownWorkspaceTarget(ctx))
   const search = new URLSearchParams(query)
   if (resolved.directory) search.set("directory", resolved.directory)
   if (resolved.workspaceId) search.set("workspace", resolved.workspaceId)
-  const response = await runtime(`${path}?${search.toString()}`, {
-    method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
+  const response = await runtime(`${path}?${search.toString()}`, init)
   const payload: unknown = await response.json().catch(() => undefined)
   if (!response.ok) throw mcpHttpError(response.status, payload)
   return payload

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
@@ -31,6 +32,7 @@ function fixture(input: { parentMode?: string } = {}) {
   const config: SessionConfig = { harness: { id: "codex", access: "native" }, variant: null, agent: null }
   let counter = 0
   const adapter: AgentHarnessAdapter = {
+    instructionChannel: "turn-system-prompt",
     getSession: async (binding) => store.getSession(binding.sessionId) ?? null,
     createSession: async (_directory, _title, id) => {
       const sessionId = id ?? `ses_created_${++counter}`
@@ -42,7 +44,7 @@ function fixture(input: { parentMode?: string } = {}) {
       return store.updateSession(binding.sessionId, updates)
     },
     getSessionConfig: async (binding) => store.getSessionConfig(binding.sessionId) ?? config,
-    updateSessionConfig: async () => config,
+    updateSessionConfig: async (binding, patch) => store.updateSessionConfig(binding.sessionId, patch) ?? config,
     deleteSession: async (binding) => {
       calls.deleted.push(binding.sessionId)
       store.deleteSession(binding.sessionId)
@@ -61,6 +63,8 @@ function fixture(input: { parentMode?: string } = {}) {
       unrevert: false,
       configOptions: false,
       subagents: true,
+      effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "turn-system-prompt",
       goals: false,
     }),
     executeTurn: (binding, prompt) => {
@@ -120,7 +124,12 @@ function fixture(input: { parentMode?: string } = {}) {
         ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
         agentSessionId: session.id,
       })
-      store.updateSessionConfig(session.id, { ...config, ...(create?.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}) })
+      store.updateSessionConfig(session.id, {
+        ...config,
+        ...(create?.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
+        ...(create?.instructions ? { instructions: create.instructions } : {}),
+        ...(create?.group ? { group: create.group } : {}),
+      })
       return session
     },
     listSessions: async (_c, directory) => store.listSessions(directory),
@@ -155,6 +164,50 @@ describe("POST /session with parentID", () => {
     const response = await item.create({ parentID: "parent", title: "Child" })
     expect(response.status).toBe(201)
     expect(item.calls.projected).toEqual([expect.objectContaining({ parentID: "parent", title: "Child", time: expect.any(Object) })])
+  })
+
+  test("a child starts under the variant, instructions and group its create named", async () => {
+    const item = fixture()
+    item.seedParent("parent")
+    const group = {
+      implementation: {
+        harness: { id: "codex", access: "native" },
+        model: { providerID: "openai", modelID: "gpt-5-codex" },
+        effort: "high",
+      },
+    }
+
+    const response = await item.create({
+      parentID: "parent",
+      title: "Implement",
+      variant: "high",
+      instructions: "Only touch the runtime package.",
+      group,
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", id: "gpt-5-codex" },
+    })
+    expect(response.status).toBe(201)
+    const child = await response.json() as { id: string; parentID: string }
+    expect(child.parentID).toBe("parent")
+
+    const config = await item.app.request(`http://localhost/session/${child.id}/config?directory=${encodeURIComponent(DIRECTORY)}`)
+    expect(await config.json()).toMatchObject({
+      variant: "high",
+      instructions: "Only touch the runtime package.",
+      group,
+      model: { providerID: "openai", modelID: "gpt-5-codex" },
+    })
+    expect(item.store.getSessionConfig("parent")?.variant).toBeNull()
+    expect(item.store.getSessionConfig("parent")?.instructions).toBeUndefined()
+  })
+
+  test("refuses a child whose group names a slot the contract does not have", async () => {
+    const item = fixture()
+    item.seedParent("parent")
+    const response = await item.create({ parentID: "parent", group: { archivist: {} } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_group_invalid" } })
+    expect(item.calls.created).toEqual([])
   })
 
   test("refuses a ceiling when the target cannot enforce permission modes", async () => {

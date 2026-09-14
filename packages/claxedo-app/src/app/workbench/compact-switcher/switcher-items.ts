@@ -4,7 +4,7 @@ import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { SessionTitleTarget } from "@/features/session/store/session-title-projection"
 
 export type SwitcherStatus = "idle" | "working" | "permission" | "done"
-export type SwitcherKind = "session" | "terminal" | "page" | "marketplace"
+export type SwitcherKind = "session" | "terminal" | "page" | "marketplace" | "tasks"
 
 export type SwitcherItem = {
   contentId: string
@@ -30,7 +30,7 @@ export type SwitcherItemOptions = {
 }
 
 /** All SwitcherKind values mapKindFromMeta can ever return, for parity testing against ContentType. */
-export const SWITCHER_KINDS = ["session", "terminal", "page", "marketplace"] as const satisfies readonly SwitcherKind[]
+export const SWITCHER_KINDS = ["session", "terminal", "page", "marketplace", "tasks"] as const satisfies readonly SwitcherKind[]
 
 export function mapKindFromMeta(type: ContentType): SwitcherKind {
   switch (type) {
@@ -44,6 +44,8 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
       return "page"
     case "marketplace":
       return "marketplace"
+    case "tasks":
+      return "tasks"
     case "context":
       return "page"
     default: {
@@ -80,6 +82,8 @@ function titleFromMeta(meta: ContentMeta, options: SwitcherItemOptions): string 
       return meta.filePath?.split("/").at(-1) || "Document"
     case "marketplace":
       return "Marketplace"
+    case "tasks":
+      return "Tasks"
     default: {
       const exhaustive: never = meta.type
       return exhaustive

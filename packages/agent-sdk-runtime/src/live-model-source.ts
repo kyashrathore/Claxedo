@@ -1,5 +1,5 @@
 import { Log } from "./log"
-import type { NativeSdkHarnessId } from "./harness-types"
+import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
 import type { SdkModelEntry } from "./sdk-model-options"
 
 const log = Log.create({ service: "live-model-source" })

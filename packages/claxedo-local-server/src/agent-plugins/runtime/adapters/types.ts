@@ -53,5 +53,15 @@ export type AgentPluginHarnessProjectionAdapter = {
     generationRoot: string
     plugins: readonly GenerationPluginRoot[]
     mcpServers?: readonly RuntimeMcpServerProjection[]
+    /**
+     * This projection is one root's explicit capability set, so the inventory
+     * the harness ends up with must be exactly these plugins. An adapter that
+     * writes into harness-owned state the harness also loads from on its own —
+     * Codex's config, Cursor's local plugin directory — refuses when it finds
+     * anything there it did not put there, because leaving it alone (what
+     * default activation correctly does) would add capabilities nobody
+     * selected.
+     */
+    selected?: boolean
   }): Promise<HarnessPluginProjection>
 }

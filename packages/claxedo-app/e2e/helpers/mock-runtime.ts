@@ -9,10 +9,9 @@
 // `route.fulfill` cannot drip a body over time, so the app's own SSE-reconnect loop is
 // the delivery mechanism).
 import type { Page, Route } from "@playwright/test"
-import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { normalizeHarnessIdentity, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { SessionHarness } from "../../../agent-sdk-runtime/src"
 import type { SessionMeta } from "../../../claxedo-server-core/src/session/meta/types"
-import { normalizeHarnessIdentity } from "../../../agent-sdk-runtime/src/harness-types"
 import {
   runtimeEventEnvelope,
   type RuntimeEventEnvelope,
@@ -108,7 +107,7 @@ import {
  *     connections catalog advertises, the app selects, and the session config
  *     round-trips as `{id: "claude-acp", access: "connection"}`.
  *
- * `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts) is the
+ * `normalizeHarnessIdentity` (agent-runtime-contract's `harnesses.ts`) is the
  * server's own validator: a native id, or a connection id matching
  * `ACP_CONNECTION_ID_PATTERN` (`^[a-z][a-z0-9-]{0,63}$`). A colon-form
  * `acp:claude` is NOT a connection id the product can produce.

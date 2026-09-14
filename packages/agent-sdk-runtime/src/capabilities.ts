@@ -1,6 +1,10 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
-import type { SessionHarnessId } from "./harness-types"
-import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentCapabilities,
+  HarnessEffortLevels,
+  HarnessInstructionChannel,
+  SessionHarnessId,
+} from "@claxedo/agent-runtime-contract"
 
 export type HarnessCapabilityTarget = SessionHarnessId
 export type AdapterCapability = "runtime-config"
@@ -22,6 +26,18 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
   subagents: boolean
   /** Runtime availability only. Detailed support is read from `SupportsGoals.goals`. */
   goals: boolean
+  /**
+   * Which effort levels this harness accepts, per model. Required because a
+   * missing catalog reads as `unresolved` to every consumer, which accepts —
+   * so an adapter that forgot one would silently drop the effort it was given.
+   */
+  effortLevels: HarnessEffortLevels
+  /**
+   * How this harness takes a session's standing instruction block. A host that
+   * composes one decides from this whether it arrives as instruction or at the
+   * head of the user's own prompt text.
+   */
+  instructionChannel: HarnessInstructionChannel
   }
 
 export type HarnessCapabilityContext = {

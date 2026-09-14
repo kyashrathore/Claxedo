@@ -1,6 +1,11 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
-import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentExecutionBinding,
+  AgentQuestionAnswer,
+  HarnessInstructionChannel,
+  SessionModelGroup,
+} from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
@@ -84,6 +89,21 @@ export type AgentHandoffSessionOptions = {
   system: string
 }
 
+export type AgentSessionCreateOptions = {
+  /**
+   * Standing instructions for the new session. An adapter whose
+   * `instructionChannel` is `none` is never given them: dropping the block
+   * would leave the session running under something its creator never chose.
+   */
+  instructions?: string
+  /**
+   * The resolved model group the session runs under. Runtime metadata, not a
+   * harness input: it is retained so a later delegation resolves the same
+   * harness/model/effort the creator chose.
+   */
+  group?: SessionModelGroup
+}
+
 export type AgentPreparedHandoffSession = {
   id: string
   agentSessionId?: string
@@ -97,6 +117,13 @@ export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 
 export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
+  /**
+   * How this adapter takes a session's standing instruction block. It decides
+   * both admission — `none` refuses a create that carries one — and where the
+   * block is delivered, so nothing composes it into a turn a harness already
+   * holds it for.
+   */
+  readonly instructionChannel: HarnessInstructionChannel
   readonly commitsStreamEvents?: boolean
   /**
    * Where durable SessionConfig is authoritative. Most SDK harnesses own and
@@ -106,7 +133,7 @@ export interface AgentHarnessAdapterCore {
   readonly sessionConfigOwner?: "adapter" | "runtime"
 
   getSession(binding: AgentExecutionBinding): Promise<AgentSession | null>
-  createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string; agentSessionId?: string }>
+  createSession(directory: RuntimeDirectory, title?: string, id?: string, options?: AgentSessionCreateOptions): Promise<{ id: string; agentSessionId?: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
   createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
   /** Release the no-longer-authoritative source resources after a handoff commits. */

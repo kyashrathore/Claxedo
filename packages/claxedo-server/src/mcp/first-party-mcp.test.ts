@@ -51,14 +51,14 @@ const signed = (subject: string, actorId?: string): SignedControlPlaneAuth => ({
     : {}),
 })
 
-const tools: McpToolGroup = (registry) => {
+const tools: McpToolGroup = { id: "fixture", reach: "runtime", register: (registry) => {
   registry.tool("session_send", {
     description: "write",
     inputSchema: { session: z.string() },
     access: { audiences: ["runtime", "user"], write: true, scope: "act" },
     sessionIdOf: (args) => args.session,
   }, async (args) => ({ content: [{ type: "text", text: `sent:${args.session}` }] }))
-}
+} }
 
 function compose(overrides: Partial<FirstPartyMcpContributionInput> = {}) {
   const app = new Hono().get("/api/echo", (c) => c.json({ authorization: c.req.header("authorization") ?? null }))

@@ -680,6 +680,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           sessionInventoryQuery.dataUpdatedAt,
         ] as const,
       ([ready, wsId, workspaceRouteId, workspaceBacking, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
+        const parsed = shellRoute()
         route.receive({
           ready,
           workspaceId: wsId,
@@ -687,6 +688,8 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           workspaceBacking,
           sessionId: id,
           marketplace: routeKind === "marketplace",
+          tasks: routeKind === "tasks",
+          tasksPage: parsed.kind === "tasks" ? parsed.page : undefined,
           pageId: pid,
           terminalId: tid,
           workspaceBrowse: routeKind === "workspace",

@@ -3,6 +3,7 @@ import { focusedSurfaceRouteTarget, routeMatchesSurface, surfaceRoute } from "./
 import {
   marketplaceRoute,
   sessionRoute as canonicalSessionRoute,
+  tasksRoute,
   workspacePageRoute,
   workspaceRoute as canonicalWorkspaceRoute,
   workspaceSessionRoute,
@@ -350,6 +351,48 @@ describe("surface route mirroring", () => {
         },
       }),
     ).toBe(workspaceTerminalRoute("ws_main", "pty_new"))
+  })
+
+  test("mirrors tasks surfaces to the global tasks route", () => {
+    expect(
+      focusedSurfaceRouteTarget({
+        route: route("ws_main", { id: "ses_1" }),
+        routeWorkspaceKey: "ws_main",
+        activeRouteId: "ws_main",
+        surface: { id: "surface_1", type: "tasks", scope: "global" },
+      }),
+    ).toBe(tasksRoute())
+
+    expect(
+      focusedSurfaceRouteTarget({
+        route: { tasks: true },
+        activeRouteId: "ws_main",
+        surface: { id: "surface_1", type: "tasks", scope: "global" },
+      }),
+    ).toBeUndefined()
+  })
+
+  test("mirrors a nested Tasks page to its own URL and back", () => {
+    const surface: ContentMeta = {
+      id: "surface_1",
+      type: "tasks",
+      scope: "global",
+      content: { type: "tasks", page: { kind: "task", taskId: "tsk_1" } },
+    }
+
+    expect(surfaceRoute("", surface)).toBe(tasksRoute({ kind: "task", taskId: "tsk_1" }))
+    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "task", taskId: "tsk_1" } }, "", surface)).toBe(true)
+    // The list URL and a task URL are different places, so one does not satisfy the other.
+    expect(routeMatchesSurface({ tasks: true }, "", surface)).toBe(false)
+    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "task", taskId: "tsk_2" } }, "", surface)).toBe(false)
+
+    expect(
+      focusedSurfaceRouteTarget({
+        route: { tasks: true },
+        activeRouteId: "ws_main",
+        surface,
+      }),
+    ).toBe(tasksRoute({ kind: "task", taskId: "tsk_1" }))
   })
 
   test("mirrors marketplace surfaces to the global marketplace route", () => {

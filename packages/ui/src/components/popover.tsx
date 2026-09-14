@@ -4,6 +4,7 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
+import { createPopoverDismissal, portalRootUnder } from "./popover-dismissal"
 
 export interface PopoverProps<T extends ValidComponent = "div">
   extends ParentProps,
@@ -61,13 +62,20 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
   createEffect(() => {
     if (!opened()) return
 
-    const inside = (node: Node | null | undefined) => {
-      if (!node) return false
-      const content = state.contentRef
-      if (content && content.contains(node)) return true
-      const trigger = state.triggerRef
-      if (trigger && trigger.contains(node)) return true
-      return false
+    const dismissal = createPopoverDismissal<Node>({
+      owns: (node) => Boolean(state.contentRef?.contains(node) || state.triggerRef?.contains(node)),
+      portalRoot: (node) => portalRootUnder(document.body, node),
+      contains: (layer, node) => layer.contains(node),
+      isConnected: (layer) => layer.isConnected,
+    })
+
+    // The listeners below run at capture, ahead of the control's own handler
+    // that mounts and focuses a nested layer, so the flag they set is what
+    // that layer's first focus is judged by; it is cleared once the event
+    // has finished dispatching.
+    const beginInteraction = (target: Node) => {
+      dismissal.beginInteraction(target)
+      setTimeout(dismissal.endInteraction, 0)
     }
 
     const close = (reason: "escape" | "outside") => {
@@ -76,7 +84,10 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
+      if (event.key !== "Escape") {
+        if (event.target instanceof Node) beginInteraction(event.target)
+        return
+      }
       close("escape")
       event.preventDefault()
       event.stopPropagation()
@@ -85,14 +96,17 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (inside(target)) return
+      if (dismissal.inside(target)) {
+        beginInteraction(target)
+        return
+      }
       close("outside")
     }
 
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (inside(target)) return
+      if (dismissal.focusIn(target) !== "outside") return
       close("outside")
     }
 

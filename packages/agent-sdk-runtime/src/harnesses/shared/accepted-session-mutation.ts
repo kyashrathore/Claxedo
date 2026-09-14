@@ -37,6 +37,12 @@ export function acceptedSessionConfig(
       : update.model ? { model: update.model } : {}),
     variant: update.variant === undefined ? current.variant ?? null : update.variant,
     agent: update.agent === undefined ? current.agent ?? null : update.agent,
+    ...(update.instructions === undefined
+      ? current.instructions ? { instructions: current.instructions } : {}
+      : update.instructions ? { instructions: update.instructions } : {}),
+    ...(update.group === undefined
+      ? current.group ? { group: current.group } : {}
+      : update.group ? { group: update.group } : {}),
     ...(update.handoff === undefined
       ? current.handoff !== undefined ? { handoff: current.handoff } : {}
       : { handoff: update.handoff }),

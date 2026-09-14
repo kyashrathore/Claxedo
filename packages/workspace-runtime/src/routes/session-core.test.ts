@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
 import type {
   AgentHarnessFactory,
@@ -8,6 +9,7 @@ import type {
   AgentRuntime,
   AgentRuntimeStreamEvent,
   AgentSession,
+  HarnessCapabilities,
   RuntimeDirectory,
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
@@ -37,6 +39,7 @@ function adapter(input: {
   ) => Promise<AgentMessagePage>
 } = {}): AgentHarnessAdapter {
   return {
+    instructionChannel: "turn-system-prompt",
     getSession: async (binding) => {
       input.onDirectory?.(binding.directory)
       return { id: binding.sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }
@@ -75,6 +78,8 @@ function adapter(input: {
         unrevert: true,
         configOptions: false,
         subagents: true,
+        effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "turn-system-prompt",
         goals: false,
       }
     },
@@ -1553,6 +1558,8 @@ describe("createSessionRoutes directory-less sessions", () => {
           unrevert: false,
           configOptions: false,
           subagents: false,
+          effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "turn-system-prompt",
         }),
         shell: undefined,
       }) as unknown as AgentHarnessAdapter,
@@ -1654,6 +1661,8 @@ describe("createSessionRoutes directory-less sessions", () => {
           unrevert: false,
           configOptions: false,
           subagents: false,
+          effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "turn-system-prompt",
         }),
         summarize: undefined,
       }) as unknown as AgentHarnessAdapter,
@@ -2005,4 +2014,388 @@ test("late approval is not found without resolving a retired harness", async () 
   })
   expect(result.status).toBe(404)
   expect(resolved).toBe(false)
+})
+
+describe("createSessionRoutes session instructions", () => {
+  function instructionRoutes(input: { instructionChannel: HarnessInstructionChannel }) {
+    const creates: Array<{ id?: string; options?: { instructions?: string } }> = []
+    const turns: Array<string | undefined> = []
+    let stored: string | undefined
+    const configRead = { fails: false }
+    const fixture: AgentHarnessAdapter = {
+      ...adapter(),
+      instructionChannel: input.instructionChannel,
+      getSession: async () => null,
+      createSession: async (_directory, _title, id, options) => {
+        creates.push({ id, options })
+        stored = options?.instructions
+        return { id: id ?? "ses_instructions" }
+      },
+      getSessionConfig: async () => {
+        if (configRead.fails) throw new Error("session config store unreachable")
+        return {
+          harness: { id: "codex", access: "native" },
+          variant: null,
+          agent: null,
+          ...(stored ? { instructions: stored } : {}),
+        }
+      },
+      executeTurn: (_binding, prompt) => (async function* () {
+        entered.push(prompt.system)
+        notify()
+        if (held) await held
+        turns.push(prompt.system)
+        notify()
+      })(),
+    }
+    const entered: Array<string | undefined> = []
+    let held: Promise<void> | undefined
+    let release: (() => void) | undefined
+    const model = {
+      hold() {
+        held = new Promise<void>((resolve) => {
+          release = resolve
+        })
+      },
+      release() {
+        release?.()
+      },
+    }
+    const events: CompatEnvelope[] = []
+    const watchers = new Set<() => void>()
+    function notify() {
+      for (const watcher of watchers) watcher()
+    }
+    // prompt_async answers before its turn runs, so every assertion about what
+    // the detached turn did has to wait for the turn itself rather than a timer.
+    function settled(done: () => boolean) {
+      return new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          watchers.delete(check)
+          reject(new Error("detached prompt_async turn never reached the expected state"))
+        }, 1_000)
+        const check = () => {
+          if (!done()) return
+          watchers.delete(check)
+          clearTimeout(timer)
+          resolve()
+        }
+        watchers.add(check)
+        check()
+      })
+    }
+    const app = createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal(event) {
+        events.push(event)
+        notify()
+      },
+    })
+    return { app, creates, turns, entered, model, configRead, events, settled }
+  }
+
+  function sessionErrors(events: CompatEnvelope[]) {
+    return events.filter((event) => event.payload.type === "session.error")
+  }
+
+  function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
+    return app.request("http://localhost/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  }
+
+  function promptTurn(app: ReturnType<typeof createSessionRoutes>, id: string) {
+    return app.request(`http://localhost/session/${id}/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "go" }],
+        agent: "build",
+        model: { providerID: "test", modelID: "fixture" },
+        variant: "fixture",
+      }),
+    })
+  }
+
+  function promptAsync(app: ReturnType<typeof createSessionRoutes>, id: string, messageID: string) {
+    return app.request(`http://localhost/session/${id}/prompt_async`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "go" }],
+        messageID,
+        agent: "build",
+        model: { providerID: "test", modelID: "fixture" },
+        variant: "fixture",
+      }),
+    })
+  }
+
+  test("carries the block to session creation and reads it back on the config", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    const created = await create(app, { id: "ses_instructions", instructions: "Answer only in haiku." })
+    expect(created.status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_instructions", options: { instructions: "Answer only in haiku." } }])
+
+    const config = await app.request("http://localhost/session/ses_instructions/config")
+    expect(await config.json()).toMatchObject({ instructions: "Answer only in haiku." })
+  })
+
+  test("leaves the create options empty when no block was sent", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_plain", options: {} }])
+  })
+
+  test("refuses a block over the cap before the harness is asked to create anything", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    const response = await create(app, { id: "ses_big", instructions: "x".repeat(65_537) })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_instructions_too_large" } })
+    expect(creates).toEqual([])
+  })
+
+  test("measures the cap in UTF-8 bytes rather than code units", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    const response = await create(app, { id: "ses_utf8", instructions: "🙂".repeat(16_385) })
+    expect(response.status).toBe(400)
+    expect(creates).toEqual([])
+  })
+
+  test("refuses a harness with no instruction channel instead of dropping the block", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: "none" })
+    const response = await create(app, { id: "ses_unsupported", instructions: "Answer only in haiku." })
+    expect(response.status).toBe(501)
+    expect(await response.json()).toMatchObject({ error: { code: "session_instructions_unsupported" } })
+    expect(creates).toEqual([])
+  })
+
+  // The prompt names agent, model and variant: that combination once skipped
+  // the config read entirely, which is the door the retained block arrives
+  // through.
+  test("a later turn carries the retained block even when the caller named agent, model and variant", async () => {
+    const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await create(app, { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)
+
+    expect((await promptTurn(app, "ses_resume")).status).toBe(200)
+    expect(turns).toEqual(["Answer only in haiku."])
+  })
+
+  test("a session that retained nothing still prompts, with no instruction channel used", async () => {
+    const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+
+    expect((await promptTurn(app, "ses_plain")).status).toBe(200)
+    expect(turns).toEqual([undefined])
+  })
+
+  test("refuses the turn when the config read fails, with the same coded answer prompt_async gives", async () => {
+    const { app, turns, configRead } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await create(app, { id: "ses_unreadable", instructions: "Answer only in haiku." })).status).toBe(201)
+
+    configRead.fails = true
+    const refused = await promptTurn(app, "ses_unreadable")
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
+    expect(turns).toEqual([])
+  })
+
+  // prompt_async's 204 is a delivery receipt — the Tasks bridge records the turn
+  // as handed off on it — so a turn refused before anything ran has to be the
+  // response, and the refused message id has to submit again.
+  test("answers the config-read refusal, and the same id then runs once with the retained block", async () => {
+    const { app, turns, configRead, events, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await create(app, { id: "ses_recover", instructions: "Answer only in haiku." })).status).toBe(201)
+
+    configRead.fails = true
+    const refused = await promptAsync(app, "ses_recover", "msg_recover")
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
+    expect(turns).toEqual([])
+    expect(sessionErrors(events)).toEqual([])
+
+    configRead.fails = false
+    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    await settled(() => turns.length > 0)
+    expect(turns).toEqual(["Answer only in haiku."])
+
+    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(turns).toEqual(["Answer only in haiku."])
+  })
+
+  test("answers 204 while the model is still running the turn", async () => {
+    const { app, turns, entered, model, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
+    expect((await create(app, { id: "ses_slow" })).status).toBe(201)
+
+    model.hold()
+    expect((await promptAsync(app, "ses_slow", "msg_slow")).status).toBe(204)
+    await settled(() => entered.length > 0)
+    expect(turns).toEqual([])
+
+    model.release()
+    await settled(() => turns.length > 0)
+    expect(turns).toEqual([undefined])
+  })
+})
+
+describe("createSessionRoutes session model group", () => {
+  const GROUP = {
+    primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-opus-4-1" }, effort: "high" },
+    review: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5-codex" } },
+  }
+
+  function groupRoutes() {
+    const creates: Array<{ id?: string; options?: { group?: unknown } }> = []
+    let stored: SessionConfig["group"]
+    const fixture: AgentHarnessAdapter = {
+      ...adapter(),
+      instructionChannel: "turn-system-prompt",
+      getSession: async () => null,
+      createSession: async (_directory, _title, id, options) => {
+        creates.push({ id, options })
+        stored = options?.group
+        return { id: id ?? "ses_group" }
+      },
+      getSessionConfig: async () => ({
+        harness: { id: "codex", access: "native" },
+        variant: null,
+        agent: null,
+        ...(stored ? { group: stored } : {}),
+      }),
+    }
+    const app = createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+    return { app, creates }
+  }
+
+  function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
+    return app.request("http://localhost/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  }
+
+  test("retains the group at create and reads it back on the session config", async () => {
+    const { app, creates } = groupRoutes()
+    expect((await create(app, { id: "ses_group", group: GROUP })).status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_group", options: { group: GROUP } }])
+
+    const config = await app.request("http://localhost/session/ses_group/config")
+    expect(await config.json()).toMatchObject({ group: GROUP })
+  })
+
+  test("leaves the create options empty when no group was sent", async () => {
+    const { app, creates } = groupRoutes()
+    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_plain", options: {} }])
+  })
+
+  test("refuses a malformed group by field before the harness is asked to create anything", async () => {
+    const { app, creates } = groupRoutes()
+    const response = await create(app, { id: "ses_bad", group: { archivist: GROUP.primary } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: { code: "session_group_invalid", message: expect.stringContaining("group.archivist") },
+    })
+    expect(creates).toEqual([])
+  })
+
+  test("names the slot field a caller got wrong rather than dropping the slot", async () => {
+    const { app, creates } = groupRoutes()
+    const response = await create(app, { id: "ses_bad", group: { primary: { harness: "claude" } } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: { message: expect.stringContaining("group.primary.model") },
+    })
+    expect(creates).toEqual([])
+  })
+
+  test("refuses a PATCH that carries a group instead of changing what the session was created under", async () => {
+    const { app } = groupRoutes()
+    expect((await create(app, { id: "ses_group", group: GROUP })).status).toBe(201)
+
+    const patched = await app.request("http://localhost/session/ses_group/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ group: { primary: GROUP.review } }),
+    })
+    expect(patched.status).toBe(409)
+    expect(await patched.json()).toMatchObject({ error: { code: "session_group_immutable" } })
+
+    const config = await app.request("http://localhost/session/ses_group/config")
+    expect(await config.json()).toMatchObject({ group: GROUP })
+  })
+
+  test("refuses a PATCH that carries instructions the same way, instead of answering 200 and dropping it", async () => {
+    const { app } = groupRoutes()
+    expect((await create(app, { id: "ses_fixed", group: GROUP })).status).toBe(201)
+
+    const patched = await app.request("http://localhost/session/ses_fixed/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructions: "Answer only in haiku." }),
+    })
+    expect(patched.status).toBe(409)
+    expect(await patched.json()).toMatchObject({ error: { code: "session_instructions_immutable" } })
+  })
+})
+
+describe("GET /session/capabilities effort levels", () => {
+  function capabilityRoutes(effortLevels: HarnessCapabilities["effortLevels"]) {
+    const fixture: AgentHarnessAdapter = {
+      ...adapter(),
+      readHarnessCapabilities: () => ({
+        harness: "codex",
+        abort: true,
+        reconnect: false,
+        replay: true,
+        permissions: true,
+        questions: true,
+        todos: true,
+        commands: true,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: false,
+        subagents: true,
+        goals: false,
+        effortLevels,
+        instructionChannel: "turn-system-prompt",
+      }),
+    }
+    return createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+  }
+
+  test("reports each harness's own effort catalog on the global and per-session reads", async () => {
+    const resolved = { status: "resolved", models: [{ modelID: "gpt-5-codex", levels: ["low", "high"], default: "high" }] } as const
+    const app = capabilityRoutes(resolved)
+    expect(await (await app.request("http://localhost/session/capabilities")).json())
+      .toMatchObject({ harness: "codex", effortLevels: resolved })
+    expect(await (await app.request("http://localhost/session/ses_1/capabilities")).json())
+      .toMatchObject({ effortLevels: resolved })
+  })
+
+  test("carries an unsupported catalog through rather than omitting the field", async () => {
+    const app = capabilityRoutes(NO_HARNESS_EFFORT)
+    expect(await (await app.request("http://localhost/session/capabilities")).json())
+      .toMatchObject({ effortLevels: { status: "unsupported", models: [] } })
+  })
 })

@@ -15,6 +15,7 @@ import {
   workspaceRuntimeRequestError,
   type WorkspaceRuntimeClientOptions,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
+import { sessionCreateRequest } from "@claxedo/server-core/workspace/http/session-create-request"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
 import { asRecord, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
@@ -27,6 +28,10 @@ export type MachineSessionCreate = {
   title?: string
   harness?: SessionHarness
   model?: { providerID: string; modelID: string }
+  /** Reasoning effort, under the runtime's own name for it. */
+  variant?: string
+  /** Retained on the session and reapplied by the runtime on every later turn. */
+  instructions?: string
 }
 export type MachineSessionDispatch = ReturnType<typeof createMachineSessionDispatch>
 
@@ -163,14 +168,15 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
           throw new Error("Machine session reservation did not match admission")
         headers["x-claxedo-session-registration-operation"] = operationId
       }
-      const query = input.harness
-        ? `?${input.harness.access === "native" ? "nativeHarness" : "connectionId"}=${encodeURIComponent(input.harness.id)}`
-        : ""
-      const response = await client.request(`/session${query}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ...(id ? { id } : {}), title: input.title, model: input.model }),
+      const create = sessionCreateRequest({
+        ...(id ? { id } : {}),
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.model ? { model: input.model } : {}),
+        ...(input.variant ? { variant: input.variant } : {}),
+        ...(input.instructions ? { instructions: input.instructions } : {}),
+        ...(input.harness ? { harness: input.harness } : {}),
       })
+      const response = await client.request(create.path, { method: "POST", headers, body: create.body })
       if (!response.ok) throw await workspaceRuntimeRequestError("session creation", response)
       const session = await readJsonRecord(response)
       const sessionId = stringField(session, "id")

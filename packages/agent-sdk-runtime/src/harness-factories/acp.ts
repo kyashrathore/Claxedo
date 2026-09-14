@@ -1,5 +1,5 @@
 import type { AgentHarnessFactory } from "../runtime"
-import { isAcpConnectionId } from "../harness-types"
+import { isAcpConnectionId } from "@claxedo/agent-runtime-contract"
 import { AcpHarnessAdapter } from "../harnesses/acp"
 import type { ACPConnection, ACPTransportFactory } from "../harnesses/acp"
 import { harnessFactory, type ProcessObservedFactoryOptions } from "./factory"

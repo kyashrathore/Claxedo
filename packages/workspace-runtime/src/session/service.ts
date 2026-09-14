@@ -1,7 +1,12 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
-import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
-import { AgentRuntimeContractError, assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
+import {
+  AgentRuntimeContractError,
+  assertAgentExecutionBinding,
+  type AgentExecutionBinding,
+  type AgentRuntimeError,
+} from "@claxedo/agent-runtime-contract"
 import type {
   AgentMessage,
   AgentRuntime,
@@ -148,11 +153,11 @@ export type PromptDeliveryObserver = (delivery: PromptDelivery) => void
 
 export type SessionPromptTurnInput = {
   adapter: AgentHarnessAdapter
-  /** Canonical persisted execution binding for this Claxedo-owned session. */
-  binding: AgentExecutionBinding
   sessionId: string
   directory: RuntimeDirectory
   body: SessionPromptBody
+  /** Decided by the caller, so a refusal is the answer its client is waiting on. */
+  admitted: AdmittedSessionPromptTurn
   publishGlobal: (event: CompatEnvelope) => void
   publishStatus: (event: RuntimeSessionBusEvent) => void
   createActiveTurnScope?: (input: {
@@ -248,7 +253,7 @@ export function compatScope(directory: RuntimeDirectory, sessionId: string) {
   return directory ?? sessionId
 }
 
-function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
+function prompt(adapter: AgentHarnessAdapter, body: SessionPromptBody, config?: SessionConfig): PromptInput {
   // Always assign a userMessageId so adapters publish a `message.updated`
   // event for the user prompt. Without this, reload-resume can lose user input.
   const userMessageId = body.messageID ?? mkUserMessageId()
@@ -258,6 +263,7 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
   const defaultModel = config
     ? defaultSessionModel(config.harness)
     : { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
+  const system = resolveTurnSystem(config, adapter.instructionChannel, body.system)
   return {
     parts: body.parts ?? [],
     userMessageId,
@@ -269,19 +275,92 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
     },
     ...(body.tools ? { tools: body.tools } : {}),
     ...(body.format ? { format: body.format } : {}),
-    ...(body.system ? { system: body.system } : {}),
+    ...(system ? { system } : {}),
     ...(body.permissionMode ? { permissionMode: body.permissionMode } : {}),
     ...(body.variant !== undefined ? { variant: body.variant } : config?.variant ? { variant: config.variant } : {}),
   }
 }
 
+export type SessionTurnRefusalCode = "session_configuration_unavailable"
+
+/**
+ * Raised only while nothing has been asked to execute, which is what lets a
+ * caller resubmit the same message id: the cause is external to the turn and
+ * may be gone by the retry. Any refusal added here must keep that guarantee —
+ * an error thrown once the harness is running is an ordinary turn failure and
+ * must not become a `SessionTurnRefusedError`.
+ */
+export class SessionTurnRefusedError extends AgentRuntimeContractError {
+  constructor(readonly refusal: SessionTurnRefusalCode, detail: AgentRuntimeError) {
+    super(detail)
+    this.name = "SessionTurnRefusedError"
+  }
+}
+
+export function sessionTurnRefusal(error: unknown): SessionTurnRefusalCode | undefined {
+  return error instanceof SessionTurnRefusedError ? error.refusal : undefined
+}
+
+/**
+ * The config read is unconditional, and a failure refuses the turn: a session's
+ * retained instructions live only there, so skipping the read whenever the
+ * caller happened to name agent, model and variant — or treating a failed read
+ * as "no config" — would run the turn under none of the instructions the
+ * session was created with. A session that retained nothing reads back a config
+ * without an instruction block, which is a successful read.
+ */
 async function promptForSession(
   adapter: AgentHarnessAdapter,
   binding: AgentExecutionBinding,
   body: SessionPromptBody,
 ) {
-  if (body.agent && body.model?.providerID && body.model?.modelID && body.variant !== undefined) return prompt(body)
-  return prompt(body, await adapter.getSessionConfig(binding).catch(() => undefined))
+  let config: SessionConfig | undefined
+  try {
+    config = (await adapter.getSessionConfig(binding)) ?? undefined
+  } catch (cause) {
+    throw new SessionTurnRefusedError("session_configuration_unavailable", {
+      code: "upstream_error",
+      connectionId: binding.connectionId,
+      message: `Session ${binding.sessionId} configuration is unavailable, so its instructions cannot be applied: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+    })
+  }
+  return prompt(adapter, body, config)
+}
+
+export type AdmittedSessionPromptTurn = {
+  binding: AgentExecutionBinding
+  prompt: PromptInput
+}
+
+/**
+ * Everything an adapter turn can be refused on before the harness is asked to
+ * run anything: a complete execution binding and the session's configuration. A
+ * caller that answers its client before the turn finishes decides admission
+ * here first, so a refusal is that answer rather than an event the client is
+ * not waiting for.
+ */
+export async function admitSessionPromptTurn(input: {
+  adapter: AgentHarnessAdapter
+  binding: AgentExecutionBinding | undefined
+  sessionId: string
+  directory: RuntimeDirectory
+  body: SessionPromptBody
+}): Promise<AdmittedSessionPromptTurn> {
+  if (!input.binding) {
+    throw new AgentRuntimeContractError({
+      code: "invalid_execution_binding",
+      field: "upstreamSessionId",
+      message: `Session ${input.sessionId} has no complete execution binding`,
+    })
+  }
+  const binding = assertAgentExecutionBinding(input.binding, {
+    ...input.binding,
+    sessionId: input.sessionId,
+    directory: input.directory ?? "",
+  })
+  return { binding, prompt: await promptForSession(input.adapter, binding, input.body) }
 }
 
 function isMessage(input: unknown): input is AgentMessage {
@@ -473,19 +552,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
 }
 
 export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promise<SessionPromptTurnResult> {
-  if (!input.binding) {
-    throw new AgentRuntimeContractError({
-      code: "invalid_execution_binding",
-      field: "upstreamSessionId",
-      message: `Session ${input.sessionId} has no complete execution binding`,
-    })
-  }
-  const binding = assertAgentExecutionBinding(input.binding, {
-    ...input.binding,
-    sessionId: input.sessionId,
-    directory: input.directory ?? "",
-  })
-  const promptInput = await promptForSession(input.adapter, binding, input.body)
+  const { binding, prompt: promptInput } = input.admitted
   const scope = compatScope(input.directory, input.sessionId)
 
   let assistantId = promptInput.assistantMessageId ?? mkAssistantId(promptInput.userMessageId)

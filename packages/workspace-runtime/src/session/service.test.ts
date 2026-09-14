@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeContractError, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -9,10 +9,13 @@ import {
   type CompatEnvelope,
 } from "../compat-events"
 import {
+  admitSessionPromptTurn,
   runRuntimePromptTurn,
   runSessionPromptTurn,
   sessionPromptReply,
+  sessionTurnRefusal,
   type RuntimeSessionBusEvent,
+  type SessionPromptTurnInput,
 } from "./service"
 
 function adapter(input: {
@@ -21,6 +24,7 @@ function adapter(input: {
   getSessionConfig?: AgentHarnessAdapter["getSessionConfig"]
 }) {
   return {
+    instructionChannel: "turn-system-prompt",
     executeTurn: input.executeTurn ?? (async function* () {}) as NonNullable<AgentHarnessAdapter["executeTurn"]>,
     getMessages: input.getMessages ?? (async () => []),
     getSessionConfig: input.getSessionConfig ?? (async () => ({
@@ -40,6 +44,21 @@ const executionBinding: AgentExecutionBinding = {
   upstreamSessionId: "s1",
 }
 
+/** The order every route uses: admit the turn, then run what admission produced. */
+async function promptTurn(
+  input: Omit<SessionPromptTurnInput, "admitted"> & { binding?: AgentExecutionBinding },
+) {
+  const { binding = executionBinding, ...rest } = input
+  const admitted = await admitSessionPromptTurn({
+    adapter: rest.adapter,
+    binding,
+    sessionId: rest.sessionId,
+    directory: rest.directory,
+    body: rest.body,
+  })
+  return runSessionPromptTurn({ ...rest, admitted })
+}
+
 describe("session service", () => {
   it("rejects a binding for another session before adapter execution", async () => {
     let executed = false
@@ -49,7 +68,7 @@ describe("session service", () => {
       },
     })
 
-    await expect(runSessionPromptTurn({
+    await expect(promptTurn({
       adapter: fixture,
       binding: { ...executionBinding, sessionId: "another-session" },
       sessionId: "s1",
@@ -61,10 +80,43 @@ describe("session service", () => {
     expect(executed).toBe(false)
   })
 
+  it("refuses the turn with an upstream error when the session config cannot be read", async () => {
+    let executed = false
+    const fixture = adapter({
+      getSessionConfig: async () => {
+        throw new Error("session config store unreachable")
+      },
+      async *executeTurn() {
+        executed = true
+      },
+    })
+
+    const refusal = await promptTurn({
+      adapter: fixture,
+      binding: executionBinding,
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [], agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture" },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    }).then(() => undefined, (error: unknown) => error)
+
+    expect(refusal).toBeInstanceOf(AgentRuntimeContractError)
+    expect((refusal as AgentRuntimeContractError).detail).toEqual({
+      code: "upstream_error",
+      connectionId: "native:codex",
+      message: "Session s1 configuration is unavailable, so its instructions cannot be applied: session config store unreachable",
+    })
+    // The refusal code is what frees the message id for a retry: without it the
+    // failure is indistinguishable from one raised while the harness was running.
+    expect(sessionTurnRefusal(refusal)).toBe("session_configuration_unavailable")
+    expect(executed).toBe(false)
+  })
+
   it("runs a prompt turn without a Hono route", async () => {
     const events: CompatEnvelope[] = []
     const statuses: RuntimeSessionBusEvent[] = []
-    const turn = await runSessionPromptTurn({
+    const turn = await promptTurn({
       binding: executionBinding,
       adapter: adapter({
         async *executeTurn(binding, input) {
@@ -128,7 +180,7 @@ describe("session service", () => {
 
   it("carries the requested permission mode into the adapter turn", async () => {
     const modes: Array<string | undefined> = []
-    await runSessionPromptTurn({
+    await promptTurn({
       binding: executionBinding,
       adapter: adapter({
         async *executeTurn(_binding, input) {
@@ -147,7 +199,7 @@ describe("session service", () => {
 
   it("uses the agent-owned default model when an ACP session has no selected model", async () => {
     const models: unknown[] = []
-    await runSessionPromptTurn({
+    await promptTurn({
       binding: executionBinding,
       adapter: adapter({
         getSessionConfig: async () => ({
@@ -277,7 +329,7 @@ describe("session service", () => {
   it("does not synthesize prompt events when the adapter yields none", async () => {
     const events: CompatEnvelope[] = []
 
-    await runSessionPromptTurn({
+    await promptTurn({
       binding: executionBinding,
       adapter: adapter({}),
       sessionId: "s1",

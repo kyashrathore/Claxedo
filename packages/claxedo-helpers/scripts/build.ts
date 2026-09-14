@@ -18,6 +18,7 @@ const DIST = path.join(ROOT, "dist")
 
 const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "node" }[] = [
   { entry: "index", target: "browser" },
+  { entry: "crypto", target: "browser" },
   { entry: "guards", target: "browser" },
   { entry: "string", target: "browser" },
   { entry: "claxedo-credentials", target: "node" },

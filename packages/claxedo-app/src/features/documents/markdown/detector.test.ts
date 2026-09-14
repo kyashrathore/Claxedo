@@ -9,6 +9,51 @@ import {
   type RichMarkdown,
 } from "./detector"
 
+describe("Markdown fidelity", () => {
+  /**
+   * Documents edits a user's file, so anything the serializer would rewrite
+   * opens in source mode. An app-owned record has no such promise to keep.
+   */
+  const normalized = ["* item", "__bold__", "1) x", "- a\n\n- b", "a | b\n--|--"]
+
+  test("exact mode keeps every document the serializer would reformat in source mode", () => {
+    for (const markdown of normalized) {
+      const result = detectMarkdown(markdown)
+      expect(result.status, markdown).toBe("source")
+      if (result.status === "source") expect(result.reason.code, markdown).toBe("roundtrip_mismatch")
+    }
+  })
+
+  test("normalizing mode opens the same documents rich", () => {
+    for (const markdown of normalized) {
+      expect(detectMarkdown(markdown, "normalizing").status, markdown).toBe("rich")
+    }
+  })
+
+  test("exact is the default, so a caller that says nothing gets the byte-stable gate", () => {
+    expect(detectMarkdown("* item").status).toBe("source")
+  })
+
+  // Relaxing the round-trip check is not relaxing the contract: what the
+  // editor cannot represent at all is still refused in both modes.
+  test("syntax outside the contract stays in source mode however forgiving the caller is", () => {
+    for (const markdown of ["<div>html</div>", "text[^1]", "$$x$$", "[ref]: https://example.com"]) {
+      expect(detectMarkdown(markdown, "normalizing").status, markdown).toBe("source")
+      expect(detectMarkdown(markdown).status, markdown).toBe("source")
+    }
+  })
+
+  test("the size limits gate both modes", () => {
+    const large = "a".repeat(RICH_MARKDOWN_MAX_BYTES + 1)
+    expect(detectMarkdown(large, "normalizing").status).toBe("source")
+    expect(detectMarkdown("a".repeat(MARKDOWN_MAX_BYTES + 1), "normalizing").status).toBe("rejected")
+  })
+
+  test("a CRLF body is not byte-stable in either mode", () => {
+    expect(detectMarkdown("a\r\nb", "normalizing").status).toBe("source")
+  })
+})
+
 describe("Markdown rich-mode detector", () => {
   test("round-trips a supported document without changing its bytes", () => {
     const markdown = "\uFEFF---\ntitle: Detector contract\n---\n# Heading\n\nA **supported** paragraph."

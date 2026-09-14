@@ -230,8 +230,8 @@ export function NewSessionDesignView(props: {
 
   const environmentLabel = (kind: WorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
   // The server's own account of itself: whether it runs workspaces on its
-  // filesystem. That, not the platform or the URL, decides whether "Local"
-  // and "Select project" (a folder on this machine) exist here.
+  // filesystem. That, not the platform or the URL, decides whether "Local" and
+  // the folder source of "Create project…" exist here.
   const [serverHealth] = createResource(
     () => server.url,
     async (url) => {
@@ -286,10 +286,8 @@ export function NewSessionDesignView(props: {
         // `icon` is the fallback the chip uses when no avatar resolves; in practice
         // `projectRoot()` always does, so the avatar is what renders.
         icon: <Icon name="folder" size="small" />,
-        // The empty canvas mounts this composer with no project at all: the
-        // chip then reads "Select project" and is the one place to create one.
-        avatar: projectRoot() ? projectAvatar(projectRoot()) : undefined,
-        label: projectRoot() ? projectLabel(projectRoot()) : "Select project",
+        avatar: projectAvatar(projectRoot()),
+        label: projectLabel(projectRoot()),
         ariaLabel: "Project",
         search: { placeholder: "Search projects" },
         groupLabel: "Projects",
@@ -351,8 +349,6 @@ export function NewSessionDesignView(props: {
         },
       },
     ]
-    // No project yet: nothing to choose an environment, workspace or branch for.
-    if (!projectRoot()) return chips
     if (selfHostedWorkspace()) return chips
 
     if (environmentOptions().length > 0) {

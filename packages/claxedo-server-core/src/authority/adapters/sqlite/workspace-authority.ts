@@ -909,6 +909,29 @@ export function createSqliteWorkspaceAuthority(
       `).run(Date.now(), args.teamId, args.projectId)
       return { revoked: result.changes > 0 }
     },
+    /**
+     * Who a credential this box minted for one of its own sessions acts as.
+     *
+     * `userId` is the workspace owner's token SUBJECT, because that is what
+     * this adapter's signed Tasks actor carries as its `ownerId`: a grant that
+     * resolved to anything else would own a different preset catalog than the
+     * person whose workspace it is.
+     */
+    async resolveWorkspaceOwner(workspaceId: string) {
+      const db = database()
+      const workspace = workspaceByPublicId(db, workspaceId)
+      if (!workspace || workspace.deleted_at !== null) return undefined
+      const owner = db.prepare<unknown[], { subject: string; token_identifier: string }>(
+        `SELECT subject, token_identifier FROM users WHERE token_identifier = ?`,
+      ).get(workspace.owner_token_identifier)
+      if (!owner?.subject) return undefined
+      return {
+        userId: owner.subject,
+        actorId: owner.token_identifier,
+        orgId: workspace.org_id,
+        projectId: workspace.project_id,
+      }
+    },
     async resolveOrgId(auth: SignedControlPlaneAuth) {
       const db = database()
       const who = user(auth)

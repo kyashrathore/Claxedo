@@ -15,8 +15,19 @@ import { readPluginSkill } from "@claxedo/server-core/agent-plugins/catalog/read
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import {
+  builtinCatalogEntry,
+  builtinPluginInstanceId,
+  builtinToolGroupId,
+  isBuiltinFamilyName,
+  isBuiltinPluginInstanceId,
+  resolveBuiltinGroupActivation,
+  type BuiltinDeployment,
+  type BuiltinToolGroup,
+} from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
   isAgentPluginHarnessId,
+  type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { isRecord } from "../../platform/json"
 
@@ -179,8 +190,21 @@ export function LocalAgentPluginActivationRoutes(input: {
   artifacts: AgentPluginArtifactStore
   activations: UnsignedAgentPluginActivationStore
   reconcile: AgentPluginReconcilePort
+  /** The first-party server's tool groups; required so no composition can serve a catalog without it. */
+  builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
 }) {
   const app = new Hono()
+
+  const builtInEnabled = (group: BuiltinToolGroup, harnessId: AgentPluginHarnessId) => {
+    const { machineOverride } = input.activations.read(builtinPluginInstanceId(group.id), harnessId)
+    return resolveBuiltinGroupActivation({
+      group,
+      harnessId,
+      deployment: input.builtIn.deployment,
+      mode: "unsigned",
+      ...(machineOverride === undefined ? {} : { machineOverride }),
+    })
+  }
 
   async function reconciliation(revision: number) {
     try {
@@ -208,18 +232,21 @@ export function LocalAgentPluginActivationRoutes(input: {
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
     const candidates = resolved.candidates.map((candidate) => candidateView(candidate, input.activations))
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
+    // A group's activation row is the built-in entry's own state; listed on
+    // its own it would be a plugin with no source and no artifact.
     const retained = await Promise.all(input.activations.listKnown()
-      .filter((plugin) => !candidateIds.has(plugin.pluginInstanceId))
+      .filter((plugin) => !candidateIds.has(plugin.pluginInstanceId) && !isBuiltinPluginInstanceId(plugin.pluginInstanceId))
       .map((plugin) => retainedView({
         pluginInstanceId: plugin.pluginInstanceId,
         pin: plugin.pin,
         activations: input.activations,
         artifacts: input.artifacts,
       })))
+    const builtIn = builtinCatalogEntry({ ...input.builtIn, enabled: builtInEnabled })
     return c.json({
       revision: after,
       supportedHarnesses: SUPPORTED_AGENT_PLUGIN_HARNESSES,
-      candidates: [...candidates, ...retained],
+      candidates: [...candidates, ...retained, builtIn],
       errors: resolved.errors,
     })
   }
@@ -250,9 +277,28 @@ export function LocalAgentPluginActivationRoutes(input: {
       return c.json(errorBody("agent_plugins_unsupported_harness", "Activation contains an unsupported harness"), 400)
     }
 
+    if (isBuiltinFamilyName(body.pluginInstanceId)) {
+      return c.json(errorBody(
+        "agent_plugins_tool_group_required",
+        "The first-party server is activated one tool group at a time; name claxedo:<group>",
+      ), 400)
+    }
     let revision: number | undefined
     const existingPin = input.activations.read(body.pluginInstanceId, body.harnessIds[0]).pins.localMachine
-    if (body.choice === true && !existingPin) {
+    // The built-in comes from no source: there is nothing to fetch, hash or
+    // retain, so a choice about one of its groups is only ever the row.
+    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      const groupId = builtinToolGroupId(body.pluginInstanceId)
+      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+        return c.json(errorBody("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+      }
+      revision = input.activations.mutate({
+        pluginInstanceId: body.pluginInstanceId,
+        harnessIds: body.harnessIds,
+        choice: body.choice ?? undefined,
+        expectedRevision: body.expectedRevision,
+      })
+    } else if (body.choice === true && !existingPin) {
       const candidate = await currentCandidate(input.sources, body.pluginInstanceId)
       if (!candidate) return c.json(errorBody("agent_plugins_candidate_unavailable", "Plugin is not available in the current catalog"), 409)
       await acquirePluginArtifact({
@@ -288,6 +334,12 @@ export function LocalAgentPluginActivationRoutes(input: {
   app.post("/update", async (c) => {
     const body = updateBody(await c.req.json().catch(() => undefined))
     if (!body) return c.json(errorBody("agent_plugins_invalid_body", "Invalid Agent Plugins update request"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId) || isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      return c.json(errorBody(
+        "agent_plugins_builtin_not_updatable",
+        "The first-party server ships with this deployment and has no artifact to update",
+      ), 400)
+    }
     const candidate = await currentCandidate(input.sources, body.pluginInstanceId)
     if (!candidate) return c.json(errorBody("agent_plugins_candidate_unavailable", "Plugin is not available in the current catalog"), 409)
     let revision: number | undefined

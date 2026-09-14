@@ -119,6 +119,8 @@ const icons = {
   "circle-alert": `<path d="M10 6.66667V10.4167M10 13.325V13.3333M17.9154 10.0007C17.9154 14.3729 14.371 17.9173 9.9987 17.9173C5.62644 17.9173 2.08203 14.3729 2.08203 10.0007C2.08203 5.6284 5.62644 2.08398 9.9987 2.08398C14.371 2.08398 17.9154 5.6284 17.9154 10.0007Z" stroke="currentColor" stroke-linecap="square"/>`,
   "circle-dashed": `<circle cx="10" cy="10" r="7.91667" stroke="currentColor" stroke-dasharray="2.5 2.5"/>`,
   "circle-half": `<circle cx="10" cy="10" r="7.91667" stroke="currentColor"/><path d="M10 2.08333A7.91667 7.91667 0 0 0 10 17.9167Z" fill="currentColor"/>`,
+  // The ring the two above draw, with nothing in it and nothing broken out of it.
+  circle: `<circle cx="10" cy="10" r="7.91667" stroke="currentColor"/>`,
   "chevron-double-left": `<path d="M8.33464 13.3346L5.0013 10.0013L8.33464 6.66797M14.168 13.3346L10.8346 10.0013L14.168 6.66797" stroke="currentColor" stroke-linecap="square"/>`,
   file: `<path d="M12.5 1.66667H5C4.07953 1.66667 3.33333 2.41286 3.33333 3.33333V16.6667C3.33333 17.5871 4.07953 18.3333 5 18.3333H15C15.9205 18.3333 16.6667 17.5871 16.6667 16.6667V5.83333L12.5 1.66667Z" stroke="currentColor" stroke-linecap="square"/><path d="M11.6667 1.66667V4.16667C11.6667 5.08714 12.4129 5.83333 13.3333 5.83333H16.6667" stroke="currentColor" stroke-linecap="square"/>`,
   "page-plus": `<path d="M9.5 2.5H4.5C3.94772 2.5 3.5 2.94772 3.5 3.5V16.5C3.5 17.0523 3.94772 17.5 4.5 17.5H10M9.5 2.5L12.5 5.5M9.5 2.5V4.5C9.5 5.05228 9.94772 5.5 10.5 5.5H12.5V9.5M14.5 11.5V17.5M11.5 14.5H17.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,

@@ -112,7 +112,12 @@ let configuredFirstPartyMcpLaunch: EmbeddedFirstPartyMcpLaunch | undefined
  * it serves; an unsigned desktop passes no user. Each embedded runtime mints
  * its own credential under this origin.
  */
-export type EmbeddedFirstPartyMcpLaunch = { baseUrl: string; userId?: string }
+export type EmbeddedFirstPartyMcpLaunch = {
+  baseUrl: string
+  userId?: string
+  /** The groups this machine has turned on; read per launch, so a switch needs no restart. */
+  enabledToolGroups: () => readonly string[]
+}
 
 /**
  * How THIS process's embedded workspace runtimes composed their session
@@ -196,6 +201,7 @@ function options(
       ? {
           firstPartyMcpLaunch: {
             baseUrl: configuredFirstPartyMcpLaunch.baseUrl,
+            enabledToolGroups: configuredFirstPartyMcpLaunch.enabledToolGroups,
             issuer: createRuntimeCredentialIssuer({
               runtimeId: crypto.randomUUID(),
               workspaceId: ws.id,

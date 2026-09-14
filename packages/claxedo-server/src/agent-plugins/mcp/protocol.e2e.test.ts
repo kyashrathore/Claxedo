@@ -19,6 +19,8 @@ const scope: McpGatewayTokenScope = {
   pluginInstanceId: "claxedo:protocol-fixture",
   serverName: "fixture",
   integrationId: "mcp-protocol-fixture",
+  artifactDigest: `sha256:${"c".repeat(64)}`,
+  execution: "default",
 }
 
 const temporaryRoots: string[] = []

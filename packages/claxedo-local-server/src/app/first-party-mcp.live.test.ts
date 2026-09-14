@@ -85,10 +85,12 @@ describe("the first-party MCP a local session is launched with", () => {
     const client = await live.connect(sessionId)
     expect(client.getServerVersion()).toMatchObject({ name: "claxedo" })
 
-    // The runtime audience, in full: a model inside a session drives sessions,
-    // subagents, processes and documents, answers only its own children's
-    // questions, and never approves a permission, rejects a question, deletes
-    // a session or touches workspace compute.
+    // The runtime audience a machine that has decided nothing serves: a model
+    // inside a session drives sessions, subagents, processes and documents,
+    // answers only its own children's questions, and never approves a
+    // permission, rejects a question, deletes a session or touches workspace
+    // compute. No `task_*`: the Tasks group starts off, so the tools are
+    // unregistered and the grant they would act with is never issued.
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
       "create_subagent",
       "documents_list",
@@ -109,6 +111,42 @@ describe("the first-party MCP a local session is launched with", () => {
       "subagent_list",
       "subagent_status",
     ])
+  })
+
+  test("the Marketplace switch is what puts the Tasks tools on the next connection", async () => {
+    const plugins = `http://127.0.0.1:${live.port}/api/claxedo/plugins`
+    const before = await (await fetch(plugins)).json() as {
+      revision: number
+      candidates: Array<{ pluginInstanceId: string; builtIn?: boolean; groups?: Array<{ id: string; enabled: boolean; tools: string[] }> }>
+    }
+    const builtIn = before.candidates.find((candidate) => candidate.builtIn)
+    expect(builtIn?.pluginInstanceId).toBe("claxedo")
+    expect(builtIn?.groups?.find((group) => group.id === "tasks"))
+      .toMatchObject({ enabled: false, tools: ["task_list", "task_get", "task_create", "task_start"] })
+
+    const written = await fetch(`${plugins}/activation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        choice: true,
+        expectedRevision: before.revision,
+      }),
+    })
+    expect(written.status).toBe(200)
+
+    // A fresh connection, not a fresh session: the mount reads the consent per
+    // request, so the machine did not have to restart to serve the new answer.
+    const reconnected = await live.connect(sessionId)
+    const names = (await reconnected.listTools()).tools.map((tool) => tool.name)
+    expect(names).toEqual(expect.arrayContaining(["task_list", "task_get", "task_create", "task_start"]))
+
+    const after = await (await fetch(plugins)).json() as {
+      candidates: Array<{ builtIn?: boolean; groups?: Array<{ id: string; enabled: boolean }> }>
+    }
+    expect(after.candidates.find((candidate) => candidate.builtIn)?.groups?.find((group) => group.id === "tasks"))
+      .toMatchObject({ enabled: true })
   })
 
   test("reaches the runtime that injected it, so the tools answer about this workspace's own sessions", async () => {

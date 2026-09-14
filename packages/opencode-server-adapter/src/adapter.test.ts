@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { AgentWorkspaceExecutionBinding, PromptInput } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT, type AgentWorkspaceExecutionBinding, type PromptInput } from "@claxedo/agent-runtime-contract"
 import { createConnectionProviderRegistry, type HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider, OPENCODE_SERVER_CONNECTION_PROVIDER_KEY } from "./index"
 import type { OpenCodeServerConnectionConfig } from "./config"
@@ -465,6 +465,8 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
       configOptions: false,
       subagents: false,
       goals: false,
+      effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "none",
     })
     expect(adapter).not.toHaveProperty("listSessions")
     expect(adapter).not.toHaveProperty("discoverSessions")

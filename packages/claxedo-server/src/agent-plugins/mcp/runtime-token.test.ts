@@ -23,6 +23,8 @@ const scope = {
   pluginInstanceId: "collection:docs",
   serverName: "docs",
   integrationId: "mcp-integration",
+  artifactDigest: `sha256:${"e".repeat(64)}`,
+  execution: "default",
 } as const
 
 describe("MCP gateway runtime token", () => {

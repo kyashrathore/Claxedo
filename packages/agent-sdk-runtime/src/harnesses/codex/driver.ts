@@ -17,6 +17,7 @@ import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "..
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { Log } from "../../log"
+import { harnessEffortLevels } from "../../harness-effort"
 import { createLiveModelSource } from "../../live-model-source"
 import {
   resolveSupportedEffort,
@@ -85,6 +86,8 @@ type CodexDriverOptions = {
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
+  // `thread/start` keeps `developerInstructions` for the life of the thread.
+  readonly instructionChannel = "thread-start" as const
   readonly interactions = { permissions: true, questions: true } as const
   private readonly broker: CodexBrokerProvider
   private readonly operatorLogin: CodexOperatorLogin
@@ -522,6 +525,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
     return codexConfigOptions(this.modelSource.peek(directory), currentModel)
+  }
+
+  effortLevels(directory?: string) {
+    return harnessEffortLevels(this.modelSource.peek(directory))
   }
 
   private async fetchModels(directory?: string) {

@@ -1,6 +1,6 @@
 import type { AgentHarnessFactory } from "../runtime"
 import type { AgentHarnessFactoryContext } from "../runtime/contracts"
-import type { AgentHarnessAccess, SessionHarnessId } from "../harness-types"
+import type { AgentHarnessAccess, SessionHarnessId } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "../adapter-contract"
 import type { AgentProcessObserver } from "../process-observer"
 

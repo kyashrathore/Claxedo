@@ -222,7 +222,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
 
     const existing = await this.registration(intent.operationId)
-    if (existing) {
+    if (existing && existing.state !== "compensated") {
       requireSameRegistration(existing, intent, workspace, who.actorId)
       return registrationResult(existing, false)
     }
@@ -231,6 +231,16 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const assertionId = this.randomId("assert")
     await this.guardedBatch(
       [
+        // The batch is one transaction, so an insert the assertion refuses
+        // takes this release of a compensated row back with it.
+        this.database
+          .prepare(
+            `
+        delete from session_registration_operations
+        where state = 'compensated' and (session_id = ? or operation_id = ?)
+      `,
+          )
+          .bind(intent.sessionId, intent.operationId),
         this.database
           .prepare(
             `

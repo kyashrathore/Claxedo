@@ -116,6 +116,7 @@ export async function hostedConnectionInfo(
       extraHosts: options.sandboxEgressExtraHosts,
     }),
     ...(preparation?.secrets !== undefined ? { secrets: preparation.secrets } : {}),
+    ...(preparation?.env ? { env: preparation.env } : {}),
   })
   captureWorkspaceTelemetry({
     services,

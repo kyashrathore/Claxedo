@@ -5,9 +5,9 @@ const SRC = "packages/claxedo-local-server/src"
 /**
  * The desktop-local server, from the entry the desktop actually starts.
  *
- * `claxedo-desktop/scripts/claxedo-server-entry.ts` imports exactly one thing —
- * `@claxedo/local-server/self-hosted-execution` — and that import is the
- * unsigned desktop's entire server-side closure. So that subpath is the entry
+ * `claxedo-desktop/scripts/claxedo-server-entry.ts` starts the server through
+ * `@claxedo/local-server/self-hosted-execution` and mounts the feature
+ * compositions the same package publishes beside it. That subpath is the entry
  * here, rather than the package's whole `exports` surface: the package-wide
  * walk is `src/architecture/local-closure.test.ts`'s job and answers "what may
  * a consumer import", while this answers "what does the shipped product load".
@@ -117,26 +117,34 @@ export const localServer: Policy = {
   // `@hono/node-server`, both already in this closure. It belongs to this
   // product because the desktop-local server is the process that holds the
   // credential value and the harness never does.
-  // +1 module: `credentials/destinations.ts`, the one table naming each
-  // provider's vendor host, allowed methods and paths, and the header shape it
-  // accepts. It belongs beside the broker for the same reason the broker
-  // belongs to this product, and reaches only the credential registry and the
-  // secret-shape reader this closure already holds. No new package edge.
+  // The table naming each provider's vendor host, allowed methods and paths
+  // and header shape is a fact about the vendor rather than about this
+  // machine, so it is owned by server-core, where the cloud delivery adapter
+  // reads the same rows; it adds no module or package edge here.
   // +1 module: `credentials/machine-credentials.ts`, the credential port for a
   // server running on the machine the harnesses live on. Asking a CLI what it
   // is signed in as, and withdrawing the stored mark so a harness runs on that
   // login, are operations with no referent on a host where no harness is
   // installed, so they are composed here and left off the shared default.
   // It reaches only the machine-login reader and the registry.
-  // +1 module: `credentials/turn-usage.ts`, which files the quota windows a
-  // harness reports mid-turn against the account that spent them. It belongs
-  // beside the broker because only the broker can say which stored account a
-  // binding a harness was handed stands for, and Claude Code has no headless
-  // usage read, so a turn is the only moment anything learns how full that
-  // plan is. It reaches the credential contract and this server's own JSON
-  // readers. No new package edge.
-  // Full closure measured at 61 modules / 25 packages.
-  ceilings: { modules: 61, packages: 25 },
+  // +1 module: `credentials/operations/drop-copied-harness-logins.ts`, the
+  // one-time delete of the harness logins an older Claxedo copied off this
+  // machine. It belongs to this product because this is the process that ran
+  // that scan, and it reaches only the registry and the machine-login reader.
+  // +1 module: `usage/adapters/token-tracker-usage-limits.ts`, the plan probe
+  // for every agent installed on this machine, which only a server running on
+  // that machine can ask. It reaches tokentracker-cli and this package's JSON
+  // narrowing, both already here — the history adapter beside it already
+  // carries that dependency. No new package edge.
+  // +1 module: reviewed owner `agent-plugins/builtin-groups.ts`, reading the
+  // `agent-plugins/activation/sqlite-store.ts` this closure already holds. The
+  // first-party MCP endpoint this product mounts serves only the tool groups
+  // this machine consented to, and those rows are the Marketplace's own,
+  // written by the activation routes in this same package — a second
+  // resolution on the server side would be a second answer to the same
+  // question. No new package edge.
+  // Full closure measured at 62 modules / 25 packages.
+  ceilings: { modules: 62, packages: 25 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

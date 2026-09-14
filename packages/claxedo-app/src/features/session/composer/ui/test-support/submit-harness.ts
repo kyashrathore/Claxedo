@@ -23,7 +23,7 @@
  * Test support lives outside test discovery and production source accounting.
  */
 import { createStore } from "solid-js/store"
-import { normalizeHarnessIdentity } from "../../../../../../../agent-sdk-runtime/src/harness-types"
+import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
 import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"

@@ -40,6 +40,7 @@ function driverStub(capture: (host: SdkRuntimeDriverHost) => void): (host: SdkRu
     capture(host)
     return {
       type: "codex",
+      instructionChannel: "thread-start",
       interactions: { permissions: true, questions: true },
         applyConfig() {},
       createAgentSession: async () => ({ id: "thread-1" }),

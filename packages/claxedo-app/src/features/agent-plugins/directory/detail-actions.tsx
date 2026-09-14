@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import type { AgentPluginHarness, PluginCandidate, PluginCatalog } from "../api"
 import { OverflowItem, OverflowMenu } from "./overflow-menu"
-import { defaultOutcome, isInstalled, pluginLabel } from "./view"
+import { defaultOutcome, isBuiltIn, isInstalled, pluginLabel } from "./view"
 
 /**
  * The pane's action row: exactly one main button, everything else behind "…".
@@ -16,6 +16,12 @@ import { defaultOutcome, isInstalled, pluginLabel } from "./view"
  *
  * Organization items are absent, not disabled, when the account cannot manage
  * them: a greyed-out row invites a support question, an absent one does not.
+ *
+ * The built-in has no artifact to add, take or hand to an organization, so it
+ * reaches only the main button and the one item that gives the decision back
+ * to the defaults. Its off state is restored rather than enabled: turning every
+ * group on would turn Tasks on, and the deployment default leaves it off, so a
+ * button saying "Enable" would hand back six groups of eight and read as a bug.
  */
 export function PluginActions(props: {
   plugin: PluginCandidate
@@ -29,14 +35,17 @@ export function PluginActions(props: {
   onOrganizationDefault: (choice: true | null) => void
 }) {
   const installed = () => isInstalled(props.plugin)
-  const retained = () => Boolean(props.plugin.retainedDigest)
-  const mutable = () => props.plugin.sourceAvailable || retained()
+  const builtIn = () => isBuiltIn(props.plugin)
+  /** Nothing left to acquire before enabling: bytes already retained, or the product itself. */
+  const acquired = () => builtIn() || Boolean(props.plugin.retainedDigest)
+  const mutable = () => props.plugin.sourceAvailable || acquired()
   const organizationDefaultEnabled = () => props.harnesses
     .some((harness) => props.plugin.harnesses[harness].organizationDefault)
   const organizationEligible = () => props.plugin.sourceKind === "claxedo"
     || props.plugin.sourceKind === "organization"
     || Object.values(props.plugin.harnesses).some((state) => state.organizationDefault)
   const canManageOrganization = () => props.signed
+    && !builtIn()
     && props.catalog.canManageOrganizationDefaults === true
     && organizationEligible()
   const outcome = () => defaultOutcome({ plugin: props.plugin, harnesses: props.harnesses })
@@ -48,7 +57,7 @@ export function PluginActions(props: {
         when={installed()}
         fallback={
           <Show
-            when={retained()}
+            when={acquired()}
             fallback={
               <Button size="small" variant="primary" disabled={props.pending || !mutable()} onClick={() => props.onAdd()}>
                 Add
@@ -56,7 +65,7 @@ export function PluginActions(props: {
             }
           >
             <Button size="small" variant="primary" disabled={props.pending || !mutable()} onClick={() => props.onActivate(true)}>
-              {props.pending ? "Applying…" : "Enable"}
+              {props.pending ? "Applying…" : builtIn() ? "Restore defaults" : "Enable"}
             </Button>
           </Show>
         }
@@ -67,13 +76,26 @@ export function PluginActions(props: {
       </Show>
 
       <OverflowMenu label={`More actions for ${pluginLabel(props.plugin)}`}>
-        <OverflowItem
-          disabled={props.pending}
-          onSelect={() => props.onActivate(null)}
-          hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
+        <Show
+          when={builtIn()}
+          fallback={
+            <OverflowItem
+              disabled={props.pending}
+              onSelect={() => props.onActivate(null)}
+              hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
+            >
+              Clear my override
+            </OverflowItem>
+          }
         >
-          Clear my override
-        </OverflowItem>
+          <OverflowItem
+            disabled={props.pending}
+            onSelect={() => props.onActivate(null)}
+            hint="Every group goes back to its default"
+          >
+            Restore defaults
+          </OverflowItem>
+        </Show>
         <Show when={canManageOrganization()}>
           <Show
             when={organizationDefaultEnabled()}
@@ -88,7 +110,7 @@ export function PluginActions(props: {
             </OverflowItem>
           </Show>
         </Show>
-        <Show when={props.plugin.updateAvailable}>
+        <Show when={!builtIn() && props.plugin.updateAvailable}>
           <OverflowItem disabled={props.pending} onSelect={() => props.onUpdate()}>
             {version() ? `Update to ${version()}` : "Update to the latest version"}
           </OverflowItem>

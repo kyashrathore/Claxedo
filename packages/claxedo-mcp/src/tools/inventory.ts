@@ -12,6 +12,7 @@ import {
   sessionAccessRequiresWrite,
   type SessionAccessOperation,
 } from "@claxedo/workspace-runtime/client"
+import type { TasksOperation } from "../client/contract"
 import type { McpAudience, McpScope, McpToolAccess } from "../context"
 
 export type RuntimeOperationEntry = Readonly<{
@@ -150,15 +151,21 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
 /**
  * Access for a tool over a surface the session-core inventory does not cover —
  * the managed-process routes, the diff routes, the control plane's workspace
- * routes and the documents service. Their write class is declared because no
- * machine-checked table classifies them; anything over a session-core route
- * must take `runtimeToolAccess` instead.
+ * routes, the documents service and the Tasks routes. Their write class is
+ * declared because no machine-checked table classifies them; anything over a
+ * session-core route must take `runtimeToolAccess` instead.
+ *
+ * `operation` is the Tasks grant a tool needs, and is the one part of an access
+ * declaration checked against the client rather than the credential.
  */
-export function declaredToolAccess(gating: McpToolGating & Readonly<{ write: boolean }>): McpToolAccess {
+export function declaredToolAccess(
+  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation }>,
+): McpToolAccess {
   return {
     audiences: gating.audiences,
     write: gating.write,
     scope: gating.scope,
     ...(gating.destructive ? { destructive: true } : {}),
+    ...(gating.operation ? { operation: gating.operation } : {}),
   }
 }

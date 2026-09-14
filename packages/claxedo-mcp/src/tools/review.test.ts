@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -57,6 +58,7 @@ function runtimeApp() {
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
+      instructionChannel: "none" as const,
       getSession: async (binding) => sessions.find((row) => row.id === binding.sessionId) ?? null,
       createSession: async () => ({ id: "ses_new" }),
       updateSession: async () => null,
@@ -78,6 +80,8 @@ function runtimeApp() {
         configOptions: false,
         subagents: false,
         goals: false,
+        effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "none",
       }),
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],
@@ -111,7 +115,7 @@ async function listen() {
         deployment: "node",
         local: { fetch: inProcessFetch((request) => app.fetch(request)), workspace: { workspaceId: "ws_local", directory: repository } },
       }),
-    registerTools: [registerReviewTools],
+    registerTools: [{ id: "review", reach: "runtime", register: registerReviewTools }],
     audit: () => undefined,
   })
   mounts.push(routes)

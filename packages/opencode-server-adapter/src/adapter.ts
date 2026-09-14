@@ -1,6 +1,7 @@
-import { assertAgentExecutionBinding, parseAgentMessage } from "@claxedo/agent-runtime-contract"
+import { assertAgentExecutionBinding, NO_HARNESS_EFFORT, parseAgentMessage } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding, AgentMessage, AgentSession, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import type { HarnessCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -28,6 +29,7 @@ type UpstreamMessage = Record<string, unknown> & {
 
 export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   readonly sessionConfigOwner = "runtime" as const
+  readonly instructionChannel = "none" as const
   private readonly streams = new Map<string, AbortController>()
   private compatibility: Promise<void> | undefined
   private disposed = false
@@ -39,12 +41,14 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   readHarnessCapabilities(directory?: string): HarnessCapabilities {
     this.assertSourceDirectory(directory)
-    return {
+    return harnessCapabilities({
       harness: this.config.connectionId,
       modelSelection: { status: "unsupported" },
       ...OPENCODE_SERVER_CONNECTION_CAPABILITIES,
       goals: false,
-    }
+      effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: this.instructionChannel,
+    })
   }
 
   async createSession(directory: string | undefined, title?: string, id?: string): Promise<{ id: string; agentSessionId: string }> {

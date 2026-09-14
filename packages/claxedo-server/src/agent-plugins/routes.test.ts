@@ -1,3 +1,5 @@
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -153,7 +155,9 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     const pin = this.writablePin(input.pluginInstanceId)
     if (input.artifact) pin.user = input.artifact
     if (input.choice === true && !pin.user) {
-      throw new AgentPluginActivationStoreError("artifact-unavailable", "User artifact is unavailable")
+      if (!isBuiltinPluginInstanceId(input.pluginInstanceId)) {
+        throw new AgentPluginActivationStoreError("artifact-unavailable", "User artifact is unavailable")
+      }
     }
     for (const harnessId of harnesses) {
       if (input.target.scope === "all-projects") {
@@ -180,7 +184,9 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     const pin = this.writablePin(input.pluginInstanceId)
     if (input.artifact) pin.organization = input.artifact
     if (input.choice === true && !pin.organization) {
-      throw new AgentPluginActivationStoreError("artifact-unavailable", "Organization artifact is unavailable")
+      if (!isBuiltinPluginInstanceId(input.pluginInstanceId)) {
+        throw new AgentPluginActivationStoreError("artifact-unavailable", "Organization artifact is unavailable")
+      }
     }
     for (const harnessId of harnesses) {
       const key = mapKey(this.org(auth), input.pluginInstanceId, harnessId)
@@ -277,6 +283,7 @@ async function fixture(options: {
     activations,
     artifacts,
     reconcile,
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },
     ...(options.mcpAuthentication ? { mcpAuthentication: options.mcpAuthentication } : {}),
     ...(options.mcpClientMetadata ? { mcpClientMetadata: options.mcpClientMetadata } : {}),
   })
@@ -576,13 +583,131 @@ describe("hosted Agent Plugins routes", () => {
 
     await fs.rm(subject.collection, { recursive: true })
     const gone = await (await request(subject.app, "/projects/project-a/refresh")).json()
-    expect(gone.candidates).toHaveLength(1)
+    // The retained plugin and the built-in, which no disappearing source can take.
+    expect(gone.candidates).toHaveLength(2)
+    expect(gone.candidates.at(-1)).toMatchObject({ pluginInstanceId: "claxedo", builtIn: true })
     expect(gone.candidates[0]).toMatchObject({
       pluginInstanceId: plugin.pluginInstanceId,
       sourceAvailable: false,
       artifactAvailable: true,
     })
     expect(gone.candidates[0].harnesses.opencode.effective.effective).toBe(true)
+  })
+
+  test("serves the built-in with its deployment defaults and every group's tools", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const builtIn = catalog.candidates.find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+    expect(builtIn).toMatchObject({ builtIn: true, sourceId: null, sourceAvailable: false, retainedDigest: null })
+    expect(Object.fromEntries(builtIn.groups.map((group: { id: string; enabled: boolean }) => [group.id, group.enabled])))
+      .toEqual({
+        attention: true,
+        documents: false,
+        processes: true,
+        review: true,
+        sessions: true,
+        subagents: true,
+        tasks: false,
+        workspaces: true,
+      })
+    const tasks = builtIn.groups.find((group: { id: string }) => group.id === "tasks")
+    expect(tasks).toMatchObject({ pluginInstanceId: "claxedo:tasks" })
+    expect(tasks.tools).toEqual(["task_list", "task_get", "task_create", "task_start"])
+  })
+
+  test("a group switch writes through the ordinary activation route, with nothing to acquire", async () => {
+    const subject = await fixture()
+    const before = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        choice: true,
+        expectedRevision: before.revision,
+        target: { scope: "projects", projectIds: ["project-a"] },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(subject.artifacts.values.size).toBe(0)
+    const after = await (await request(subject.app, "/projects/project-a")).json()
+    const group = after.candidates
+      .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+      .groups.find((entry: { id: string }) => entry.id === "tasks")
+    expect(group.enabled).toBe(true)
+    expect(after.candidates.map((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId)).not.toContain("claxedo:tasks")
+    const elsewhere = await (await request(subject.app, "/projects/project-b")).json()
+    expect(elsewhere.candidates
+      .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+      .groups.find((entry: { id: string }) => entry.id === "tasks").enabled).toBe(false)
+  })
+
+  test("a group the first-party server does not register cannot be activated", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:invented",
+        harnessIds: ["opencode"],
+        choice: true,
+        expectedRevision: catalog.revision,
+        target: { scope: "projects", projectIds: ["project-a"] },
+      }),
+    })
+    expect(response.status).toBe(404)
+  })
+
+  test("the built-in's own name is not an activation subject, so no write pretends it is", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const body = (extra: Record<string, unknown>) => JSON.stringify({
+      pluginInstanceId: "claxedo",
+      expectedRevision: catalog.revision,
+      ...extra,
+    })
+    const activation = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: body({ harnessIds: ["opencode"], choice: false, target: { scope: "projects", projectIds: ["project-a"] } }),
+    })
+    expect(activation.status).toBe(400)
+    expect(await activation.json()).toMatchObject({ error: { code: "agent_plugins_tool_group_required" } })
+
+    const organization = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: body({ harnessIds: ["opencode"], choice: null }),
+    })
+    expect(organization.status).toBe(400)
+
+    const update = await request(subject.app, "/update", "member", {
+      method: "POST",
+      body: body({ authority: "user" }),
+    })
+    expect(await update.json()).toMatchObject({ error: { code: "agent_plugins_builtin_not_updatable" } })
+
+    // A refused write leaves nothing behind, which is what made the silent
+    // version of this worse than the error: the caller was told it worked.
+    expect(await subject.activations.revision()).toBe(catalog.revision)
+  })
+
+  test("an organization default names one tool group and needs no artifact", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        choice: true,
+        expectedRevision: catalog.revision,
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(subject.artifacts.values.size).toBe(0)
+    const after = await (await request(subject.app, "/projects/project-a")).json()
+    expect(after.candidates
+      .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+      .groups.find((group: { id: string }) => group.id === "tasks").enabled).toBe(true)
   })
 
   test("allows only an admin and a non-personal source to write or update an organization default", async () => {

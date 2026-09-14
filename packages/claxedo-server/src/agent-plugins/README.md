@@ -59,6 +59,16 @@ Projection ownership is:
 
 Harness launch code receives only the selected projection or generated config. It cannot read catalog sources, choose activation, or resolve credentials.
 
+## Explicit execution selection
+
+A caller that owns a whole workspace — today, one Tasks cloud root — may ask for an exact capability set instead of the workspace's activation defaults. The apply request's `version` is the contract revision a runtime must implement: ordinary default activation is `1`, an explicit selection is `2`, and a runtime that reads only version 1 refuses the request rather than applying the defaults the selection replaced.
+
+A selection names catalog plugins and skills. It resolves against the retained artifact pins the user, organization, or Claxedo hold for that workspace, which is an entitlement and not a preference: a plugin the project has disabled is still selectable, and a plugin nobody retained is not. A selected plugin contributes its bundled skills and its declared MCP servers; a directly selected skill contributes that skill's directory and nothing else, so the plugin supplying it grants no tools. Identities are deduplicated by plugin instance and artifact, and a same-name skill pair that the target harness cannot keep apart (`skillNamespace: "flat"`, today OpenCode) is refused.
+
+The resolved projection has a selection hash, carried through MCP preparation, provisioner coalescing, the apply request and the runtime's receipt. The same activation revision under a different selection is therefore a different generation, and a caller whose receipt does not echo its own hash refuses to start a session. Pruning happens once, in the materializer, so every adapter receives only the bytes the contribution covers. An adapter that writes into harness-owned state the harness also discovers on its own — Codex's `config.toml`, Cursor's `~/.cursor/plugins/local` — refuses a selected projection when it finds entries it did not write, because an exact capability set cannot be promised beside them.
+
+Gateway capabilities follow the same manifest: one is minted only for a selected plugin's own server, and its token names the artifact digest and the execution it was issued under. At the gateway a selected credential is authorized against that retained pin rather than the project's effective activation, so withdrawing the pin, the membership, or the project access revokes it.
+
 ## Remote MCP authentication
 
 `streamable-http` MCP servers use the existing Connections domain. Agent Plugins contributes a deterministic dynamic integration for a retained `(plugin instance, server)` and implements MCP protected-resource/authorization-server discovery. Connections remains authoritative for connection rows, one-time OAuth attempts, PKCE state/verifier, encrypted credentials, refresh, status, disconnect, and personal-over-organization selection. There is no Agent Plugins credential, OAuth-session, or connection table.

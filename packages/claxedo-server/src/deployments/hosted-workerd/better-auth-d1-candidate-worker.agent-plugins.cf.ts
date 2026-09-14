@@ -9,12 +9,23 @@ import {
 } from "./better-auth-d1-candidate-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
+import { hostedTasksRouteContributions } from "./tasks-contributions"
+import { createTasksRootCapability } from "../../tasks/root-capability"
 
 export { LiveSyncRoom }
 
 export type BetterAuthD1AgentPluginsCandidateWorkerEnv = BetterAuthD1CandidateWorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
   CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
+}
+
+/** The string-valued half of a Worker env, for the composers that read configuration rather than bindings. */
+export function stringEnvironment(
+  env: BetterAuthD1AgentPluginsCandidateWorkerEnv,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
 }
 
 /**
@@ -36,17 +47,29 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     ...(env.CLAXEDO_CREDENTIALS ? { credentialsNamespace: env.CLAXEDO_CREDENTIALS } : {}),
     ...extra,
   })
+  // One signing key decides both halves: the deployment that mints a root's
+  // Tasks grant is exactly the one whose routes will verify it.
+  const signingEnv = stringEnvironment(env)
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
+    tasksGrant: createTasksRootCapability({ signingEnv }),
+  })
+  const tasks = hostedTasksRouteContributions({
+    services: base.plane.services,
+    database: env.CONTROL_PLANE_DB,
+    authentication: base.options.authentication,
+    selectedCapabilities: feature.selectedCapabilities,
+    rootEnvironment: feature.rootEnvironment,
+    signingEnv,
   })
   return {
     ...base,
     options: {
       ...base.options,
-      routeContributions: feature.routeContributions,
+      routeContributions: [...feature.routeContributions, ...tasks],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,

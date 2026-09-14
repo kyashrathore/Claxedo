@@ -22,6 +22,16 @@ import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plu
 import type { ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import {
+  builtinCatalogEntry,
+  builtinPluginInstanceId,
+  builtinToolGroupId,
+  isBuiltinFamilyName,
+  isBuiltinPluginInstanceId,
+  resolveBuiltinGroupActivation,
+  type BuiltinDeployment,
+  type BuiltinToolGroup,
+} from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
@@ -313,6 +323,8 @@ export function HostedAgentPluginRoutes(input: {
   artifacts: AgentPluginArtifactStore
   activations: SignedAgentPluginActivationStore
   reconcile: AgentPluginReconcilePort
+  /** The first-party server's tool groups; required so no composition can serve a catalog without it. */
+  builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: HostedMcpClientMetadata
   /** The signed user's own runtime world for a machine they own; absent in compositions without one. */
@@ -342,6 +354,31 @@ export function HostedAgentPluginRoutes(input: {
     const me: unknown = await input.services.authority.usersMe(result.auth)
     return { auth: result.auth, me }
   }
+  const builtInEntry = async (auth: SignedControlPlaneAuth, projectId: string | undefined) => {
+    const snapshots = new Map<string, boolean>()
+    await Promise.all(input.builtIn.groups.flatMap((group) =>
+      SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) => {
+        const snapshot = await input.activations.read(auth, {
+          pluginInstanceId: builtinPluginInstanceId(group.id),
+          harnessId,
+          ...(projectId ? { projectId } : {}),
+        })
+        snapshots.set(`${group.id}:${harnessId}`, resolveBuiltinGroupActivation({
+          group,
+          harnessId,
+          deployment: input.builtIn.deployment,
+          mode: "signed",
+          ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
+          ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
+          ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
+        }))
+      })))
+    return builtinCatalogEntry({
+      ...input.builtIn,
+      enabled: (group, harnessId) => snapshots.get(`${group.id}:${harnessId}`) ?? false,
+    })
+  }
+
   const apply = async (revision: number) => {
     try {
       return await input.reconcile.reconcile(revision)
@@ -393,7 +430,8 @@ export function HostedAgentPluginRoutes(input: {
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
     timing.mark("state")
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
-    const [candidates, retained] = await Promise.all([
+    const [builtIn, candidates, retained] = await Promise.all([
+      builtInEntry(auth, projectId),
       Promise.all(resolved.candidates.map((candidate) => candidateView({
         candidate,
         known,
@@ -403,8 +441,10 @@ export function HostedAgentPluginRoutes(input: {
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
       }))),
+      // A group's activation row is the built-in entry's own state; listed
+      // on its own it would be a plugin with no source and no artifact.
       Promise.all(known
-        .filter((entry) => !candidateIds.has(entry.pluginInstanceId))
+        .filter((entry) => !candidateIds.has(entry.pluginInstanceId) && !isBuiltinPluginInstanceId(entry.pluginInstanceId))
         .map((entry) => retainedView({
           known: entry,
           auth,
@@ -435,7 +475,7 @@ export function HostedAgentPluginRoutes(input: {
       supportedHarnesses: SUPPORTED_AGENT_PLUGIN_HARNESSES,
       projects,
       selectedProjectId: projectId ?? null,
-      candidates: [...candidates, ...retained],
+      candidates: [...candidates, ...retained, builtIn],
       errors: resolved.errors,
     })
   }
@@ -491,6 +531,23 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = userMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid signed Agent Plugins activation request"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId)) {
+      return c.json(error(
+        "agent_plugins_tool_group_required",
+        "The first-party server is activated one tool group at a time; name claxedo:<group>",
+      ), 400)
+    }
+    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      const groupId = builtinToolGroupId(body.pluginInstanceId)
+      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+        return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+      }
+      // The built-in comes from no source: there is nothing to fetch, hash or
+      // retain, so a choice about one of its groups is only ever the row.
+      const committed = await input.activations.mutateUser(auth, body)
+      const applied = await apply(committed)
+      return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
+    }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     let revision: number | undefined
     if (body.choice === true && !known?.pins.user) {
@@ -516,6 +573,21 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = organizationMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Organization defaults accept only true or return-to-default"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId)) {
+      return c.json(error(
+        "agent_plugins_tool_group_required",
+        "The first-party server is activated one tool group at a time; name claxedo:<group>",
+      ), 400)
+    }
+    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      const groupId = builtinToolGroupId(body.pluginInstanceId)
+      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+        return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+      }
+      const committed = await input.activations.mutateOrganizationDefault(auth, body)
+      const applied = await apply(committed)
+      return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
+    }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     let revision: number | undefined
     if (body.choice === true && !known?.pins.organization) {
@@ -544,6 +616,12 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = updateMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid Agent Plugins update request"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId) || isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      return c.json(error(
+        "agent_plugins_builtin_not_updatable",
+        "The first-party server ships with this deployment and has no artifact to update",
+      ), 400)
+    }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     const ownedPin = body.authority === "user" ? known?.pins.user : known?.pins.organization
     if (!ownedPin) return c.json(error("agent_plugins_pin_not_owned", `No retained ${body.authority} artifact exists for this plugin`), 409)

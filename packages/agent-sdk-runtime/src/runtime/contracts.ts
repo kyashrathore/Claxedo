@@ -1,4 +1,5 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
+import type { SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type {
   AgentRuntimeStreamEvent,
   PromptDelivery,
@@ -6,7 +7,6 @@ import type {
   PromptInput,
   PromptModel,
   RuntimeDirectory,
-  SessionHarness,
 } from "../index"
 import type { AgentHarnessAdapter } from "../adapter-contract"
 import type { CompatEvent } from "../compat-events"
@@ -117,6 +117,10 @@ export type AgentRuntimeSessionCreateInput = {
   model?: PromptModel
   variant?: string | null
   agent?: string | null
+  /** Retained standing instructions; refused by a harness with no instruction channel. */
+  instructions?: string
+  /** Retained resolved model group; runtime metadata, never sent to the harness. */
+  group?: SessionModelGroup
   title?: string
 }
 

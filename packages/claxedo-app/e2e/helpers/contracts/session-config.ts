@@ -44,7 +44,7 @@ export const SESSION_CONFIG_PATCH_FIELDS = {
         return `harness must be an object, got ${typeOf(value)}`
       }
       const harness = value as Record<string, unknown>
-      // `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts)
+      // `normalizeHarnessIdentity` (agent-runtime-contract's `harnesses.ts`)
       // accepts a native id, or `{ id: <connection id>, access: "connection" }`
       // for an operator connection (`claude-acp`); the retired `type` alias and
       // the colon-form `acp:<slug>` presentation resolve to nothing.

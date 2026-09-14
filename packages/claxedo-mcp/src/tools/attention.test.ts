@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -81,6 +82,7 @@ function runtimeApp(state: Harness) {
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
+      instructionChannel: "none" as const,
       getSession: async (binding) => state.sessions.find((row) => row.id === binding.sessionId) ?? null,
       createSession: async () => ({ id: "ses_new" }),
       updateSession: async (binding) => state.sessions.find((row) => row.id === binding.sessionId) ?? null,
@@ -102,6 +104,8 @@ function runtimeApp(state: Harness) {
         configOptions: false,
         subagents: true,
         goals: false,
+        effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "none",
       }),
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],
@@ -183,7 +187,8 @@ async function listen(input: MountInput) {
         ...(mount === "hosted" ? {} : { local: { fetch: inProcessFetch(runtime), workspace: { workspaceId: "ws_local", directory: DIRECTORY } } }),
         ...(control ? { controlPlane: { fetch: control } } : {}),
       }),
-    registerTools: [registerAttentionTools],
+    registerTools: [{ id: "attention", reach: "runtime", register: registerAttentionTools }],
+    enabledToolGroups: () => ["attention"],
     audit: (event) => { audits.push(event) },
   })
   mounts.push(routes)

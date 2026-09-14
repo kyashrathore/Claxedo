@@ -2,6 +2,7 @@ import { agentPluginsModule, type AgentPluginsModule } from "@claxedo/server-cor
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { UnsignedAgentPluginActivationStore } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
+import type { BuiltinDeployment, BuiltinToolGroup } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { LocalAgentPluginActivationRoutes } from "./activation/routes"
 import { SignedAgentPluginRuntimeRoutes } from "./activation/signed-runtime-routes"
 import { MachineInstalledDiscoveryRoutes } from "./discovery/routes"
@@ -12,6 +13,7 @@ export function createLocalAgentPluginsModule(input: {
   artifacts: AgentPluginArtifactStore
   activations: UnsignedAgentPluginActivationStore
   reconcile: AgentPluginReconcilePort
+  builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
   /** The signed world's loopback surface; a composition without an account seam passes none. */
   signedRuntime?: LocalAgentPluginsComposition["signedRuntime"]
 }): AgentPluginsModule {

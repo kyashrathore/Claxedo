@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 
-import { AGENT_HARNESS_DEFINITIONS } from "../../../../agent-sdk-runtime/src/harness-types"
+import { AGENT_HARNESS_DEFINITIONS } from "../../../../agent-runtime-contract/src/harnesses"
 import { harnessInventory, SPAWN_INVENTORY } from "./spawn-inventory"
 
 const root = join(import.meta.dirname, "../../../../..")

@@ -14,7 +14,7 @@ import { record, records, text } from "../json"
 import type { ClaxedoFetch } from "../client/contract"
 import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
 import { toolJson, WORKSPACE_TARGET_SCHEMA } from "./target"
 
@@ -45,7 +45,7 @@ const SCOPE_SCHEMA = {
   directory: WORKSPACE_TARGET_SCHEMA.directory.describe("Local project directory, when the project id is not to hand. Defaults to this workspace's own."),
 } as const
 
-export function registerDocumentTools(registry: ToolRegistry) {
+export function registerDocumentTools(registry: ToolRegistrar) {
   registry.tool(
     "documents_list",
     {

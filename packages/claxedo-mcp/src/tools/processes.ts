@@ -10,7 +10,7 @@
 import { z } from "zod"
 import { WorkspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
 import { bool, num, oneOf, record, records, strings, stringRecord, text } from "../json"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
 import { assertWritableTarget, toolJson, toolTarget, toolText, WORKSPACE_TARGET_SCHEMA } from "./target"
 
@@ -233,7 +233,7 @@ export function launchText(id: string, result: LaunchResult): { text: string; is
 
 const PROCESS_ARG = { process: z.string().trim().min(1).describe("Process config id.") } as const
 
-export function registerProcessTools(registry: ToolRegistry) {
+export function registerProcessTools(registry: ToolRegistrar) {
   registry.tool(
     "processes",
     {

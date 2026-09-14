@@ -54,13 +54,13 @@ function recordingAdapter(configurations: Record<string, unknown>[]): AgentHarne
   } as unknown as AgentHarnessAdapter
 }
 
-function fixture(input: { firstParty: boolean }) {
+function fixture(input: { firstParty: boolean; groups?: readonly string[] }) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "first-party-injection-"))
   const storeRoot = path.join(directory, "store")
   cleanups.push(() => fs.rmSync(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws-1", directory }
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt-1", workspaceId: "ws-1", userId: "user-1" })
-  const launch = { baseUrl: "http://127.0.0.1:2593", issuer }
+  const launch = { baseUrl: "http://127.0.0.1:2593", issuer, enabledToolGroups: () => input.groups ?? ["sessions"] }
   const configurations: Record<string, unknown>[] = []
   const host = createWorkspaceHost({
     target,
@@ -97,7 +97,7 @@ describe("first-party MCP injection through the workspace runtime", () => {
       expect(f.issuer.verify(entry.headers.Authorization.replace(/^Bearer /, ""))).toMatchObject({
         runtimeId: "rt-1", workspaceId: "ws-1", userId: "user-1", sessionId: "session-a",
       })
-      expect(entry).toEqual(firstPartyMcpServerFor(f.launch, "session-a"))
+      expect(entry).toEqual(firstPartyMcpServerFor(f.launch, "session-a")!)
     }
     expect(JSON.stringify(f.configurations[0]?.mcp)).not.toContain("claxedo")
   })
@@ -120,6 +120,15 @@ describe("first-party MCP injection through the workspace runtime", () => {
     expect((await f.createSession("session-a")).status).toBe(201)
     expect(f.configurations.every((config) => !(FIRST_PARTY_MCP_CONFIG_KEY in config))).toBe(true)
     expect(f.host.runtimeCredentialIssuer()).toBeUndefined()
+  })
+
+  test("a project with every group off gets no entry, so no session is handed an endpoint with no tools", async () => {
+    const f = fixture({ firstParty: true, groups: [] })
+    await f.host.apply({ version: 4, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
+    expect((await f.createSession("session-a")).status).toBe(201)
+    expect(f.configurations.length).toBeGreaterThan(0)
+    expect(f.configurations.every((config) => !(FIRST_PARTY_MCP_CONFIG_KEY in config))).toBe(true)
+    expect(f.host.firstPartyMcpServer("session-a")).toBeUndefined()
   })
 
   test("the host exposes the issuer it injects with, for the endpoint mount to verify callers", () => {

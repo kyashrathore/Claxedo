@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createMemoryRuntimeStore } from "../stores/memory"
+import { harnessEffortLevels } from "../harness-effort"
+import { sdkHarnessCapabilities } from "./shared/sdk-runtime-capabilities"
 import type { WithInternals } from "../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./acp/index"
 import { ClaudeHarnessAdapter } from "./claude/index"
@@ -142,6 +144,38 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     const caps = adapter.readHarnessCapabilities()
     assertCompleteShape(caps)
     expect(caps).toMatchObject({ harness: "pi", goals: true, subagents: false, permissions: false, questions: true, replay: true, configOptions: true })
+  })
+
+  test("only the harnesses with an effort control leave the unsupported catalog behind", () => {
+    // Claude and Codex read per-model levels off a live catalog, so a cold
+    // driver is unresolved, not unsupported; Cursor, Pi and ACP have no effort
+    // control at all and say so.
+    for (const type of ["claude", "codex"] as const) {
+      expect(sdkAdapterWithDriver(type).readHarnessCapabilities().effortLevels, type)
+        .toEqual({ status: "unresolved", models: [] })
+    }
+    expect(sdkAdapterWithDriver("cursor").readHarnessCapabilities().effortLevels)
+      .toEqual({ status: "unsupported", models: [] })
+    expect(new PiHarnessAdapter({ store: createMemoryRuntimeStore() }).readHarnessCapabilities().effortLevels)
+      .toEqual({ status: "unsupported", models: [] })
+    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().effortLevels)
+      .toEqual({ status: "unsupported", models: [] })
+  })
+
+  test("a resolved driver catalog reaches the capability response per model", () => {
+    const driver = {
+      ...sdkDriver("claude"),
+      effortLevels: (directory?: string) => harnessEffortLevels(
+        directory === "/work"
+          ? [{ id: "opus", name: "Opus", supportsEffort: true, supportedEffortLevels: ["low", "max"] }]
+          : [],
+      ),
+    }
+    expect(sdkHarnessCapabilities(driver, "/work").effortLevels).toEqual({
+      status: "resolved",
+      models: [{ modelID: "opus", levels: ["low", "max"] }],
+    })
+    expect(sdkHarnessCapabilities(driver, "/elsewhere").effortLevels).toEqual({ status: "unresolved", models: [] })
   })
 
   test("configOptions declares ACP model probing", () => {

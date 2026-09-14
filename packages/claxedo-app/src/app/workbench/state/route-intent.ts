@@ -28,7 +28,7 @@
  */
 import type { Accessor } from "solid-js"
 import { sessionPerf } from "@/platform/performance/session-perf"
-import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
+import { workspaceSessionRoute, workspaceTerminalRoute, type TasksPage } from "@/platform/identity/route"
 import { sameSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
@@ -52,6 +52,9 @@ type Badge = {
 export type RouteIntent = {
   ready: boolean
   marketplace: boolean
+  tasks: boolean
+  /** The nested Tasks page the URL names; absent is the task list. */
+  tasksPage: TasksPage | undefined
   workspaceId: string | undefined
   workspaceRouteId?: string
   workspaceBacking?: WorkspaceSessionBacking
@@ -625,6 +628,10 @@ export function createRouteIntentAdapter(input: {
     if (suppressedByFastSessionSwitch(intent)) return
     if (intent.marketplace) {
       state.layout.openMarketplace()
+      return
+    }
+    if (intent.tasks) {
+      state.layout.openTasks(intent.tasksPage)
       return
     }
     const workspaceId = intent.workspaceId

@@ -93,6 +93,11 @@ export function contentSurface(type: string | undefined, context: ContributionGa
   )
 }
 
+/** A content type nothing has contributed keeps the grip, which is the shell's own default. */
+export function contentSurfacePaneDraggable(type: string | undefined, registry = contentSurfaceRegistry) {
+  return contentSurface(type, {}, registry)?.draggablePane !== false
+}
+
 function draftSessionMeta(meta: ContentMeta): ContentMeta {
   const directory = meta.directory ?? meta.providerDirectory
   return {

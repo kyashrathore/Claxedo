@@ -1,5 +1,6 @@
 import type { SessionConfig } from "../../index"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 
 export function acpSessionConfig(
   harness: string,
@@ -31,5 +32,7 @@ export function acpHarnessCapabilities(input: {
     configOptions: true,
     subagents: false,
     goals: input.goals,
+    effortLevels: NO_HARNESS_EFFORT,
+    instructionChannel: "prompt-prefix",
   })
 }

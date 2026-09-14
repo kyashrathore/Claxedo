@@ -62,6 +62,10 @@ export function emittedManifestFindings(policy: Policy, root = REPO_ROOT): strin
     const hits = manifest.modules.filter((module) => matchesPrefix(module, forbidden))
     if (hits.length > 0) findings.push(`forbidden emitted package ${forbidden}: ${hits.join(", ")}`)
   }
+  for (const marker of policy.emitted.requiredChunkMarkers ?? []) {
+    const hits = manifest.chunks.filter((chunk) => chunk.toLowerCase().includes(marker.toLowerCase()))
+    if (hits.length === 0) findings.push(`required emitted chunk marker missing: ${marker}`)
+  }
   for (const marker of policy.emitted.forbiddenChunkMarkers ?? []) {
     const hits = manifest.chunks.filter((chunk) => chunk.toLowerCase().includes(marker.toLowerCase()))
     if (hits.length > 0) findings.push(`forbidden emitted chunk marker ${marker}: ${hits.join(", ")}`)

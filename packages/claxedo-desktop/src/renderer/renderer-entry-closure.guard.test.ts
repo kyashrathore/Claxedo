@@ -312,6 +312,7 @@ describe("the renderer build keeps one local base document", () => {
       hostedActivation: "true",
     })
   })
+
 })
 
 describe("the local base document reaches main and the renderer build", () => {

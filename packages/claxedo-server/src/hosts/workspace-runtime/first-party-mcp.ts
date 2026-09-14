@@ -4,6 +4,7 @@ import {
   createClaxedoMcpRoutes,
   inProcessFetch,
   mcpAuditRecord,
+  type TasksGrant,
   type VerifyRuntimeCredential,
 } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -21,11 +22,18 @@ export const FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID = "claxedo-mcp"
  * from its own process instead.
  *
  * The tools re-enter this runtime through the seam's in-process fetch, so they
- * reach exactly the routes this workspace serves and nothing outside it.
+ * reach exactly the routes this workspace serves and nothing outside it. The
+ * Tasks grant is the exception and the reason it is passed in rather than
+ * built here: those tools leave the workspace for the control plane, carrying
+ * the capability this root was launched with.
  */
-export function firstPartyMcpRuntimeContribution(
-  verifyRuntimeCredential: VerifyRuntimeCredential,
-): WorkspaceRuntimeRouteContribution {
+export function firstPartyMcpRuntimeContribution(input: {
+  verifyRuntimeCredential: VerifyRuntimeCredential
+  /** This root's consented groups, read once at boot; the mount registers no others. */
+  enabledToolGroups: readonly string[]
+  tasks?: TasksGrant
+}): WorkspaceRuntimeRouteContribution {
+  const { verifyRuntimeCredential, tasks } = input
   return {
     id: FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID,
     mount(context) {
@@ -37,8 +45,10 @@ export function firstPartyMcpRuntimeContribution(
         createClient: () => createClaxedoMcpClient({
           deployment: "loopback",
           local: { fetch: inProcessFetch((call) => context.fetch(call)), workspace },
+          ...(tasks ? { tasks } : {}),
         }),
         registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+        enabledToolGroups: () => input.enabledToolGroups,
         audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),
       })
       return { path: CLAXEDO_MCP_PATH, routes: mount.routes, dispose: mount.dispose }

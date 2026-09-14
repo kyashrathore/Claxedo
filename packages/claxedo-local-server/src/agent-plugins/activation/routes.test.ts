@@ -8,6 +8,7 @@ import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platfo
 import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import { LocalAgentPluginArtifactStore } from "../artifacts/local-store"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { createLocalAgentPluginsModule } from "../module"
 import { SqliteUnsignedAgentPluginActivationStore } from "./sqlite-store"
 
@@ -40,7 +41,8 @@ async function fixture() {
   const activations = new SqliteUnsignedAgentPluginActivationStore(new Database(":memory:"))
   const artifacts = new LocalAgentPluginArtifactStore(path.join(root, "data"))
   const reconcile = { reconcile: vi.fn(async () => ({ state: "applied" as const })) }
-  const module = createLocalAgentPluginsModule({ sources, activations, artifacts, reconcile })
+  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } }
+  const module = createLocalAgentPluginsModule({ sources, activations, artifacts, reconcile, builtIn })
   const app = new Hono()
   mountControlPlaneRouteContributions({
     contributions: module.routeContributions,
@@ -97,7 +99,9 @@ describe("unsigned Agent Plugins public route contribution", () => {
 
     await fs.rm(subject.collection, { recursive: true })
     const sourceGone = await catalog(subject.app, "/refresh")
-    expect(sourceGone.candidates).toHaveLength(1)
+    // The retained plugin and the built-in, which no disappearing source can take.
+    expect(sourceGone.candidates).toHaveLength(2)
+    expect(sourceGone.candidates.at(-1)).toMatchObject({ pluginInstanceId: "claxedo", builtIn: true })
     expect(sourceGone.candidates[0]).toMatchObject({
       pluginInstanceId: candidate.pluginInstanceId,
       retainedDigest: candidate.candidateDigest,
@@ -286,4 +290,44 @@ describe("unsigned Agent Plugins public route contribution", () => {
     expect(response.status).toBe(409)
     expect(subject.activations.read(candidate.pluginInstanceId, "cursor").machineOverride).toBe(true)
   })
+
+  test("refuses a write against the built-in's own name instead of writing a row nothing reads", async () => {
+    const subject = await fixture()
+    const before = subject.activations.revision()
+    const response = await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo",
+        harnessIds: ["opencode"],
+        choice: false,
+        expectedRevision: before,
+      }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "agent_plugins_tool_group_required" } })
+    expect(subject.activations.revision()).toBe(before)
+  })
+
+  test("a group switch changes the built-in's row and adds no row of its own", async () => {
+    const subject = await fixture()
+    const written = await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        choice: true,
+        expectedRevision: subject.activations.revision(),
+      }),
+    })
+    expect(written.status).toBe(200)
+    const catalog = await (await subject.app.request("http://local.test/api/claxedo/plugins")).json() as {
+      candidates: Array<{ pluginInstanceId: string; builtIn?: boolean; groups?: Array<{ id: string; enabled: boolean }> }>
+    }
+    expect(catalog.candidates.map((candidate) => candidate.pluginInstanceId)).not.toContain("claxedo:tasks")
+    expect(catalog.candidates.find((candidate) => candidate.builtIn)?.groups?.find((group) => group.id === "tasks"))
+      .toMatchObject({ enabled: true })
+  })
+
 })

@@ -41,3 +41,11 @@ export const MANIFEST_READS = [
   "packages/claxedo-app/src/app/dialogs/settings.tsx -> packages/claxedo-app/package.json",
   "packages/claxedo-desktop/src/renderer/shell.tsx -> packages/claxedo-desktop/package.json",
 ]
+
+/**
+ * The chunk Rollup derives from `app/integrations/tasks-contributions.ts`, the
+ * module `secondary-feature-ports.ts` dynamic-imports. Asserted PRESENT in the
+ * emitted manifest and absent from the boot chunks: a forbidden marker alone
+ * passes when a rename makes the name unfindable anywhere.
+ */
+export const TASKS_CHUNK_MARKER = "tasks-contributions"

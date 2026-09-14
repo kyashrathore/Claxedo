@@ -1,5 +1,6 @@
+import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import type { PromptInput, SessionConfig } from "../index"
-import { resolveSessionModel } from "../session-model"
+import { resolveSessionModel, resolveTurnSystem } from "../session-model"
 import type { AgentRuntimeTurnStartInput } from "./contracts"
 
 /**
@@ -15,9 +16,10 @@ export function turnPrompt(input: {
   config: SessionConfig
   userMessageId: string
   assistantMessageId: string
-  handoff: string | undefined
+  channel: HarnessInstructionChannel
 }): PromptInput {
-  const { turn, config, handoff } = input
+  const { turn, config } = input
+  const system = resolveTurnSystem(config, input.channel, turn.system)
   return {
     parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
     userMessageId: input.userMessageId,
@@ -26,7 +28,7 @@ export function turnPrompt(input: {
     model: turn.model ?? resolveSessionModel(config),
     ...(turn.tools ? { tools: turn.tools } : {}),
     ...(turn.format ? { format: turn.format } : {}),
-    ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
+    ...(system ? { system } : {}),
     ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
     ...(turn.variant !== undefined ? { variant: turn.variant } : config.variant ? { variant: config.variant } : {}),
     ...(turn.author ? { author: turn.author } : {}),

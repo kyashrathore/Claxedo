@@ -16,6 +16,13 @@ export type HostedCoreConfigInput = Readonly<{
   limiter: RateLimitNamespaceAllocation
   authDatabase: Readonly<{ name: string; id: string }>
   controlPlaneDatabase: Readonly<{ name: string; id: string }>
+  /**
+   * `migrations_dir` for CONTROL_PLANE_DB, relative to where this config is
+   * written. It names a directory staged by
+   * `stageWorkerControlPlaneMigrations` rather than the source tree every
+   * other reader shares.
+   */
+  controlPlaneMigrationsDir: string
   userDeployedOrganization?: Readonly<{ id: string; name: string }>
 }>
 
@@ -25,6 +32,7 @@ const INPUT_KEYS = new Set([
   "limiter",
   "authDatabase",
   "controlPlaneDatabase",
+  "controlPlaneMigrationsDir",
   "userDeployedOrganization",
 ])
 
@@ -114,7 +122,7 @@ migrations_dir = "migrations/auth"
 binding = "CONTROL_PLANE_DB"
 database_name = ${quote(input.controlPlaneDatabase.name)}
 database_id = ${quote(input.controlPlaneDatabase.id)}
-migrations_dir = "migrations/control-plane"
+migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
