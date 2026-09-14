@@ -20,6 +20,7 @@
 
   [data-slot="question-card-header"] .ui-icon {
     flex-shrink: 0;
+    stroke-width: 1.5;
     color: var(--v2-text-text-faint);
   }
 
