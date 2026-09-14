@@ -94,3 +94,38 @@ export function invitationTokenParts(token: string): { invitationId: string; sec
   if (prefix !== INVITATION_TOKEN_PREFIX || !isBase64Url(invitationId) || !isBase64Url(secret)) return undefined
   return { invitationId, secret }
 }
+
+/**
+ * Collapses `.`, `..`, empty segments and trailing slashes of an absolute
+ * POSIX path; `..` above the root stays at the root, as the kernel resolves
+ * it. Undefined for a relative or empty path. Text-only: the host repeats
+ * the check on the `realpath`, which is where symlinks are resolved.
+ */
+export function normalizePosixDirectory(input: string): string | undefined {
+  if (!input.startsWith("/")) return undefined
+  const segments: string[] = []
+  for (const segment of input.split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment === "..") {
+      segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  return `/${segments.join("/")}`
+}
+
+/**
+ * The P1.4 root rule: `directory` is one of `roots` or under one of them,
+ * segment-aware (`/srv/api` is under `/srv`; `/srvx` is not). Empty roots
+ * admit nothing; a root that is not an absolute path admits nothing.
+ */
+export function directoryWithinRoots(directory: string, roots: readonly string[]): boolean {
+  const target = normalizePosixDirectory(directory)
+  if (target === undefined) return false
+  return roots.some((candidate) => {
+    const root = normalizePosixDirectory(candidate)
+    if (root === undefined) return false
+    return target === root || target.startsWith(root === "/" ? "/" : `${root}/`)
+  })
+}

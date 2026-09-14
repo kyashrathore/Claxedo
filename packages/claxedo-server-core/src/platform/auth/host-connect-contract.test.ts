@@ -9,11 +9,13 @@ import {
   MACHINE_REQUEST_DOMAIN,
   MACHINE_REQUEST_HEADERS,
   MACHINE_REQUEST_SKEW_MS,
+  directoryWithinRoots,
   invitationRedeemPayload,
   invitationToken,
   invitationTokenParts,
   isMachineNonce,
   machineRequestPayload,
+  normalizePosixDirectory,
   publicKeyFingerprint,
 } from "./host-connect-contract"
 
@@ -120,5 +122,60 @@ describe("publicKeyFingerprint", () => {
   test("refuses a non P-256 shape", async () => {
     await expect(publicKeyFingerprint({ kty: "RSA", n: "x", e: "AQAB" })).rejects.toThrow(TypeError)
     await expect(publicKeyFingerprint({ kty: "EC", crv: "P-256", x: "a+b", y: "AAAA" })).rejects.toThrow(TypeError)
+  })
+})
+
+describe("normalizePosixDirectory", () => {
+  test("collapses dot segments, repeats and trailing slashes", () => {
+    expect(normalizePosixDirectory("/srv/api/")).toBe("/srv/api")
+    expect(normalizePosixDirectory("/srv//api/./v1/../v2")).toBe("/srv/api/v2")
+    expect(normalizePosixDirectory("/")).toBe("/")
+    expect(normalizePosixDirectory("///")).toBe("/")
+    expect(normalizePosixDirectory("/srv/..")).toBe("/")
+    expect(normalizePosixDirectory("/../../etc")).toBe("/etc")
+  })
+
+  test("refuses relative and empty paths", () => {
+    expect(normalizePosixDirectory("")).toBeUndefined()
+    expect(normalizePosixDirectory("srv/api")).toBeUndefined()
+    expect(normalizePosixDirectory("./srv")).toBeUndefined()
+    expect(normalizePosixDirectory("~/srv")).toBeUndefined()
+    expect(normalizePosixDirectory("C:\\srv")).toBeUndefined()
+  })
+})
+
+describe("directoryWithinRoots", () => {
+  const roots = ["/srv", "/home/alice/projects/"]
+
+  test("segment-aware containment", () => {
+    expect(directoryWithinRoots("/srv", roots)).toBe(true)
+    expect(directoryWithinRoots("/srv/", roots)).toBe(true)
+    expect(directoryWithinRoots("/srv/api", roots)).toBe(true)
+    expect(directoryWithinRoots("/srv/api/deep/er", roots)).toBe(true)
+    expect(directoryWithinRoots("/home/alice/projects/x", roots)).toBe(true)
+    expect(directoryWithinRoots("/srvx", roots)).toBe(false)
+    expect(directoryWithinRoots("/srvx/api", roots)).toBe(false)
+    expect(directoryWithinRoots("/home/alice", roots)).toBe(false)
+    expect(directoryWithinRoots("/", roots)).toBe(false)
+  })
+
+  test("dot segments are collapsed before comparing", () => {
+    expect(directoryWithinRoots("/srv/api/../../etc", roots)).toBe(false)
+    expect(directoryWithinRoots("/srv/../srv/api", roots)).toBe(true)
+    expect(directoryWithinRoots("/tmp/../srv/api", roots)).toBe(true)
+    expect(directoryWithinRoots("/srv/./api", roots)).toBe(true)
+  })
+
+  test("relative directories, empty roots and non-absolute roots admit nothing", () => {
+    expect(directoryWithinRoots("srv/api", roots)).toBe(false)
+    expect(directoryWithinRoots("/srv/api", [])).toBe(false)
+    expect(directoryWithinRoots("/srv/api", ["srv"])).toBe(false)
+    expect(directoryWithinRoots("/srv/api", [""])).toBe(false)
+  })
+
+  test("a root of / admits every absolute path", () => {
+    expect(directoryWithinRoots("/anything/at/all", ["/"])).toBe(true)
+    expect(directoryWithinRoots("/", ["/"])).toBe(true)
+    expect(directoryWithinRoots("relative", ["/"])).toBe(false)
   })
 })
