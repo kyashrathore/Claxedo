@@ -504,18 +504,18 @@
       },
     },
     "packages/cli": {
-      "name": "@opencode-ai/cli",
-      "version": "1.17.13",
+      "name": "@claxedo/cli",
+      "version": "0.1.0",
       "bin": {
-        "lildax": "./bin/lildax.cjs",
+        "claxedo": "./dist/index.mjs",
       },
       "dependencies": {
-        "@claxedo/helpers": "workspace:*",
-        "@claxedo/host-connector": "workspace:*",
-        "@claxedo/host-serving": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
       },
       "devDependencies": {
+        "@claxedo/helpers": "workspace:*",
+        "@claxedo/host-connector": "workspace:*",
+        "@claxedo/host-serving": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "catalog:",
@@ -1211,6 +1211,8 @@
 
     "@claxedo/channels": ["@claxedo/channels@workspace:packages/claxedo-channels"],
 
+    "@claxedo/cli": ["@claxedo/cli@workspace:packages/cli"],
+
     "@claxedo/connections": ["@claxedo/connections@workspace:packages/claxedo-connections"],
 
     "@claxedo/desktop": ["@claxedo/desktop@workspace:packages/claxedo-desktop"],
@@ -1782,8 +1784,6 @@
     "@open-draft/until": ["@open-draft/until@2.1.0", "", {}, "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg=="],
 
     "@opencode-ai/ai": ["@opencode-ai/ai@0.0.0-beta-18684", "", { "dependencies": { "@opencode-ai/schema": "0.0.0-beta-18684", "@smithy/eventstream-codec": "4.2.14", "@smithy/util-utf8": "4.2.2", "aws4fetch": "1.0.20", "effect": "4.0.0-rc.112", "google-auth-library": "10.5.0" } }, "sha512-gZTPELkm9aSv0cxWt9gGSdN9fecO9/GlplzUT4knrBD70vxQGnOYx7LGDUPZokW8Fzn7gjD824Qh9AIVjyb07g=="],
-
-    "@opencode-ai/cli": ["@opencode-ai/cli@workspace:packages/cli"],
 
     "@opencode-ai/client": ["@opencode-ai/client@0.0.0-beta-18684", "", { "dependencies": { "@opencode-ai/protocol": "0.0.0-beta-18684", "@opencode-ai/schema": "0.0.0-beta-18684" }, "peerDependencies": { "effect": "4.0.0-rc.112", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-Qjq07sTId3gZcqqMsPg+gtqU3PXneOWje+BSzBXepimAfPNqL0aIpH+em2Y4KL3lxEuJK3vdfyx8UXI8gzGRlQ=="],
 

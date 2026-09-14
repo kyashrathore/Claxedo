@@ -56,7 +56,7 @@ All 12 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 - `packages/workspace-runtime`, `workspace-relay*`, `sandbox-manager` — session execution + routing
 - `packages/{channels,connections,wakes,mcp,agent-*}` — first-party `@claxedo/*` capabilities
 - `packages/{ui,session-ui}` — shared OpenCode UI used by the app and desktop
-- `packages/cli` — the `lildax` CLI (`up`, `down`, `status`, `deploy`, `creds`, `logout`)
+- `packages/cli` — the `claxedo` CLI (`@claxedo/cli`: `login`, `connect`, `host`, `status`, `deploy`, `documents`, `logout`); one-line install in [its README](./packages/cli/README.md)
 
 ## OpenCode heritage
 
