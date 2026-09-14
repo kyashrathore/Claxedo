@@ -71,6 +71,17 @@ re-resolved against `resolveWorkspaceOwner`
 (`packages/claxedo-server/src/authority/adapters/d1/channel-runtime-authority.ts`)
 on every use.
 
+Since 2026-09-14 that shape has one owner, `mintSandboxPass` /
+`verifySandboxPass` in `packages/claxedo-server/src/platform/auth/sandbox-pass.ts`:
+standard claims (`iss`, `aud`, `sub` = user, `jti`, `iat`, `exp`), the scope
+(`user_id`, `org_id`, `workspace_id`, optional `project_id` and `session_id`),
+an `operations` list, and whatever claims the audience adds under its own
+names. The Tasks capability and the Agent Plugins gateway token are adapters
+over it, each keeping its audience, its operation vocabulary and its own
+misconfiguration error. A new grant is a new audience over the same family;
+renewal and revocation (by `jti`) are built once, on the family, before any
+grant in this plan lands.
+
 ---
 
 ## S1 — Hosted `create_subagent` identity
