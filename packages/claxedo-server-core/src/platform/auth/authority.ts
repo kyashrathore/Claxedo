@@ -368,6 +368,11 @@ export type WorkspaceAuthority = {
     args: { enrollmentId: string; scope: HostScopeDefinition },
   ) => Promise<HostScopeUpdateResult>
   listHostEnrollments?: (auth: SignedControlPlaneAuth) => Promise<HostEnrollmentListRow[]>
+  /** The caller's non-revoked enrollment of one machine, for a reader that needs one row and not the fleet. */
+  hostEnrollmentByHost?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId: string },
+  ) => Promise<Pick<HostEnrollmentListRow, "enrollment_id" | "host_id" | "enrolled_via"> | undefined>
   /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
   machineAuth?: MachineAuthAdapter
   markSecondDeviceOpen: (
