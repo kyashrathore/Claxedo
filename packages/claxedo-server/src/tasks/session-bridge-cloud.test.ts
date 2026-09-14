@@ -7,7 +7,12 @@
 import { existsSync } from "node:fs"
 import path from "node:path"
 import { beforeEach, describe, expect, test, vi } from "vitest"
-import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
+import {
+  createSandboxManager,
+  type SandboxDriver,
+  type SandboxDriverEnsureInput,
+  type SandboxManager,
+} from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -169,6 +174,7 @@ function services(sandboxManager: SandboxManager | undefined) {
       authority,
       projectionStore,
       sandbox: { ...(sandboxManager ? { sandboxManager } : {}), defaultDriver: "daytona" },
+      relay: { relayUrls: { "us-east": "https://relay.claxedo.test" } },
       defaultHomeRegion: "us-east",
     } as unknown as ControlPlaneServices,
   }
@@ -202,6 +208,7 @@ function bridge(
     }) as unknown as SignedControlPlaneAuth,
     ...(port ? { selectedCapabilities: port } : {}),
     ...(capability ? { capability } : {}),
+    sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test", extraHosts: ["registry.acme.test"] },
   })
 }
 
@@ -329,6 +336,37 @@ describe("hosted tasks cloud roots", () => {
 
     // Each root clones the project's own authorized source at its ref.
     expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", repo_url: REPO, git_branch: "main" })
+  })
+
+  test("boots a root under the same egress allowlist as every other hosted root", async () => {
+    runtime()
+    const seen: SandboxDriverEnsureInput[] = []
+    const { driver } = fakeDriver()
+    const sandboxManager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore(),
+      driver: {
+        ...driver,
+        ensureHost: async (input) => {
+          seen.push(input)
+          return driver.ensureHost(input)
+        },
+      },
+    })
+    const kit = bridge(services(sandboxManager))
+
+    const started = await start(kit, "tsk_one")
+    expect(started.started).toMatchObject({ ok: true })
+    // A ready lease is re-ensured, so every ensure the driver saw is checked.
+    expect(seen.length).toBeGreaterThan(0)
+    for (const ensure of seen) {
+      expect(ensure.source).toEqual({ kind: "git", repoUrl: REPO, branch: "main" })
+      expect(ensure.net?.mode).toBe("restricted")
+      const hosts = ensure.net?.hosts ?? []
+      expect(hosts).toContain("relay.claxedo.test")
+      expect(hosts).toContain("cp.claxedo.test")
+      expect(hosts).toContain("github.com")
+      expect(hosts).toContain("registry.acme.test")
+    }
   })
 
   test("a retried start recovers the same root instead of allocating a second", async () => {

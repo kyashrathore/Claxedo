@@ -11,6 +11,7 @@ import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
 import { createTasksRootCapability } from "../../tasks/root-capability"
+import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 
 export { LiveSyncRoom }
 
@@ -63,6 +64,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     authentication: base.options.authentication,
     selectedCapabilities: feature.selectedCapabilities,
     rootEnvironment: feature.rootEnvironment,
+    sandboxEgress: { controlPlaneOrigin: hostedControlPlaneOrigin(signingEnv) },
     signingEnv,
   })
   return {

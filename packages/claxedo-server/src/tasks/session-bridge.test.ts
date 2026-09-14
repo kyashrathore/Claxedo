@@ -146,7 +146,7 @@ function services(input: { meta?: Map<string, { workspaceID?: string; archived?:
     metas,
     // No sandbox manager, which is the deployment the cloud-placement case
     // below is about: one with no isolated root to allocate.
-    value: { authority, projectionStore, sandbox: {} } as unknown as ControlPlaneServices,
+    value: { authority, projectionStore, sandbox: {}, relay: {} } as unknown as ControlPlaneServices,
   }
 }
 
@@ -242,6 +242,7 @@ function bridge(
   return createHostedTasksSessionBridge({
     services: input.value,
     runtimeClient: {},
+    sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
     ...(principal ? { principal } : {}),
   })
 }

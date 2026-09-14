@@ -21,7 +21,7 @@ import {
 } from "@claxedo/tasks"
 import { allocateOriginCloudWorkspace } from "../workspace/origin-cloud-workspace"
 import type { TasksRootIdentity } from "./root-capability"
-import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
+import { configuredRelayUrl, type WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
 
 export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
@@ -65,6 +65,12 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * tools, which is what a control plane those sessions cannot reach means.
    */
   capability?: (root: TasksRootIdentity, auth: SignedControlPlaneAuth) => Promise<Record<string, string>>
+  /**
+   * The rest of what a cloud root's egress allowlist is built from: the
+   * origin the runtime reports back to this control plane at, and the
+   * operator's extra hosts. The relay comes from the services, per region.
+   */
+  sandboxEgress: Readonly<{ controlPlaneOrigin: string | undefined; extraHosts?: readonly string[] }>
 }
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
@@ -146,6 +152,17 @@ function createTasksCloudTarget(
         return { ...(preparation.secrets ? { secrets: preparation.secrets } : {}), ...(env ? { env } : {}) }
       },
       services: input.services,
+      egress: {
+        controlPlane: [
+          configuredRelayUrl({
+            ...(input.services.relay.relayUrl ? { relayUrl: input.services.relay.relayUrl } : {}),
+            ...(input.services.relay.relayUrls ? { relayUrls: input.services.relay.relayUrls } : {}),
+            ...(input.services.defaultHomeRegion ? { defaultHomeRegion: input.services.defaultHomeRegion } : {}),
+          }),
+          input.sandboxEgress.controlPlaneOrigin,
+        ],
+        ...(input.sandboxEgress.extraHosts ? { extraHosts: input.sandboxEgress.extraHosts } : {}),
+      },
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       projectId: origin.task.projectId,
       displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,

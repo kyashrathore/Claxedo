@@ -26,6 +26,7 @@ export function hostedTasksRouteContributions(
      * task's root is launched by the bridge, so it is handed the same one.
      */
     rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
+    sandboxEgress: HostedTasksSessionBridgeInput["sandboxEgress"]
   },
 ): readonly ControlPlaneRouteContribution[] {
   return createHostedTasksComposition({
@@ -39,6 +40,7 @@ export function hostedTasksRouteContributions(
         auth,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
         ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
+        sandboxEgress: input.sandboxEgress,
       }),
   }).routeContributions
 }

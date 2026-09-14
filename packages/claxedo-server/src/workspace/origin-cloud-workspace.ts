@@ -1,4 +1,9 @@
-import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
+import {
+  hostedSandboxNetworkPolicy,
+  type SandboxBrokeredSecret,
+  type SandboxNetworkPolicy,
+  type SandboxSource,
+} from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -43,6 +48,13 @@ export type OriginCloudWorkspaceInput = {
   /** The project whose authorized remote and environment this root clones. */
   projectId: string
   displayName: string
+  /**
+   * What every hosted root's egress allowlist is built from besides the git
+   * host this allocation clones: the relay and control-plane endpoints the
+   * runtime reports back to, and the operator's extra hosts. Blanks are
+   * ignored, as the workspace routes ignore them.
+   */
+  egress: Readonly<{ controlPlane: ReadonlyArray<string | undefined>; extraHosts?: readonly string[] }>
   /**
    * Records the allocation with the deployment's workspace authority, as the
    * caller. A deployment whose authority never learns of the workspace can
@@ -115,11 +127,21 @@ export async function allocateOriginCloudWorkspace(
     return { code: "source_unavailable", detail: `Cloud root ${workspace.id} has no remote to clone` }
   }
 
+  const source: SandboxSource = {
+    kind: "git",
+    repoUrl,
+    ...(workspace.git_branch ? { branch: workspace.git_branch } : {}),
+  }
   const prepared = (await input.prepare?.(workspace)) ?? {}
   const ready = await awaitSandboxReady(sandboxManager, workspace, {
     homeRegion: input.services.defaultHomeRegion ?? "us-east",
     projectId: input.projectId,
-    repoUrl,
+    source,
+    net: hostedSandboxNetworkPolicy({
+      controlPlane: [...input.egress.controlPlane],
+      source,
+      ...(input.egress.extraHosts ? { extraHosts: input.egress.extraHosts } : {}),
+    }),
     // The project's own environment first: a prepared value names this one
     // root and must not be shadowed by a project-wide variable of the same
     // name.
@@ -219,7 +241,8 @@ async function awaitSandboxReady(
   run: {
     homeRegion: string
     projectId: string
-    repoUrl: string
+    source: SandboxSource
+    net: SandboxNetworkPolicy
     env: Record<string, string>
     secrets: readonly SandboxBrokeredSecret[]
   },
@@ -232,7 +255,8 @@ async function awaitSandboxReady(
       workspaceRoot: workspace.remote_directory ?? WORKSPACE_DIR,
       ...(Object.keys(run.env).length ? { env: run.env } : {}),
       ...(run.secrets.length ? { secrets: [...run.secrets] } : {}),
-      source: { kind: "git", repoUrl: run.repoUrl, ...(workspace.git_branch ? { branch: workspace.git_branch } : {}) },
+      source: run.source,
+      net: run.net,
     })
     if (result.status !== "provisioning") return result
     if (Date.now() >= deadline) return result

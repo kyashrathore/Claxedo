@@ -5,6 +5,7 @@ import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 
 import { HostedWorkerCompositionError } from "../../composition-error"
+import { hostedControlPlaneOrigin } from "./control-plane-origin"
 import {
   positiveInteger,
   workspaceRuntimePort,
@@ -30,7 +31,7 @@ function trimmedOrigin(value: string) {
  */
 export function sandboxRuntimeControlEnv(env: HostedWorkerEnv) {
   const relayUrl = trimToUndefined(env.CLAXEDO_WORKSPACE_RELAY_URL)
-  const apiOrigin = trimToUndefined(env.BETTER_AUTH_URL) ?? trimToUndefined(env.CLAXEDO_PUBLIC_URL)
+  const apiOrigin = hostedControlPlaneOrigin(env)
   return {
     ...(relayUrl ? { relayJwksUrl: `${trimmedOrigin(relayUrl)}/.well-known/jwks.json` } : {}),
     ...(trimToUndefined(env.CLAXEDO_RELAY_HOST_VERIFY_PEM) ? { relayVerifyPem: trimToUndefined(env.CLAXEDO_RELAY_HOST_VERIFY_PEM) } : {}),
