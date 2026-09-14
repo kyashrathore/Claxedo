@@ -610,7 +610,7 @@ describe("claxedo connect", () => {
       expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
       expect(await connect(["--reset"], h.deps), "reset is not serving").toBe(0)
     } finally {
-      daemon.stop()
+      await daemon.stop()
     }
   })
 
@@ -785,10 +785,10 @@ describe("desktop daemon discovery", () => {
       expect(await verifyDesktopDaemon({ ...live, pid: process.pid }), "another process holds the pid").toBe(false)
       expect(await verifyDesktopDaemon({ ...live, generation: "gen-0" }), "an older daemon's file").toBe(false)
       expect(await verifyDesktopDaemon({ ...live, protocol: 2 })).toBe(false)
-      daemon.stop()
+      await daemon.stop()
       expect(await verifyDesktopDaemon(live), "nothing on the port").toBe(false)
     } finally {
-      daemon.stop()
+      await daemon.stop()
     }
   })
 })

@@ -152,7 +152,7 @@ async function machine(input: { linger: boolean }): Promise<Machine> {
   }
 }
 
-const enrollmentIdOf = (m: Machine) => [...m.cp.enrollments.keys()][0]!
+const enrollmentIdOf = (m: Machine) => [...m.cp.enrollments.keys()][0]
 
 /** The invitation minted on the owner's laptop, then the box's user-data: token file, repo, `claxedo connect … --install-service`. */
 async function cloudInit(m: Machine) {

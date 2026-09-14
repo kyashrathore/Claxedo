@@ -33,7 +33,7 @@ export function splitSystemdWords(line: string): string[] {
   let quote: '"' | "'" | undefined
   let inWord = false
   for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i]!
+    const ch = line[i]
     if (quote) {
       if (ch === "\\" && quote === '"' && i + 1 < line.length) {
         current += line[i + 1]
@@ -136,15 +136,15 @@ function xmlUnescape(value: string) {
 export function parseLaunchdPlist(text: string): LaunchdJob {
   const stringAfter = (key: string) => {
     const match = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(text)
-    return match ? xmlUnescape(match[1]!) : undefined
+    return match ? xmlUnescape(match[1]) : undefined
   }
   const label = stringAfter("Label")
   if (!label) throw new Error("plist has no Label")
   const argsBlock = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text)?.[1] ?? ""
-  const programArguments = [...argsBlock.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((match) => xmlUnescape(match[1]!))
+  const programArguments = [...argsBlock.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((match) => xmlUnescape(match[1]))
   const environment: Record<string, string> = {}
   const envBlock = /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(text)?.[1] ?? ""
-  for (const match of envBlock.matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) environment[match[1]!] = xmlUnescape(match[2]!)
+  for (const match of envBlock.matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) environment[match[1]] = xmlUnescape(match[2])
   const keepAlive = /<key>KeepAlive<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(text)?.[1] ?? ""
   return {
     label,
@@ -423,7 +423,7 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
     // "Failed to connect to bus": every answer is empty, including is-system-running's.
     if (!busReachable()) return { code: 1, stdout: "" }
     const verb = args[1]
-    const name = args[args.length - 1]!
+    const name = args[args.length - 1]
     try {
       if (verb === "is-system-running") return { code: 0, stdout: "running\n" }
       if (verb === "daemon-reload") {
@@ -434,7 +434,7 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
         const unit = await load(name)
         await fs.mkdir(wantsDir, { recursive: true })
         await fs.symlink(path.join("..", name), path.join(wantsDir, name)).catch((error: unknown) => {
-          if ((error as { code?: string }).code !== "EEXIST") throw error
+          if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error
         })
         if (args.includes("--now")) start(unit)
         return { code: 0, stdout: "" }
@@ -633,10 +633,10 @@ export function createFakeLaunchd(options: FakeLaunchdOptions): FakeServiceManag
     try {
       if (verb === "bootstrap") {
         if (args[1] !== domain) return { code: 1, stdout: "" }
-        return await bootstrap(args[2]!)
+        return await bootstrap(args[2])
       }
       if (verb === "bootout" || verb === "print") {
-        const label = (args[1] ?? "").startsWith(`${domain}/`) ? args[1]!.slice(domain.length + 1) : undefined
+        const label = (args[1] ?? "").startsWith(`${domain}/`) ? args[1].slice(domain.length + 1) : undefined
         const job = label ? jobs.get(label) : undefined
         if (!job || !job.loaded) return { code: verb === "bootout" ? 3 : 113, stdout: "" }
         if (verb === "print") return { code: 0, stdout: print(job) }

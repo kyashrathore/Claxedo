@@ -131,7 +131,7 @@ export function createFakeControlPlane(
     url?: string
     relayUrl?: string
     /** Every request that is not a machine route; absent, they are 404. A `FakeRefusal` thrown here is answered as its status. */
-    owner?: (request: FakeOwnerRequest) => Promise<unknown> | unknown
+    owner?: (request: FakeOwnerRequest) => unknown
   } = {},
 ) {
   const now = options.now ?? (() => Date.now())

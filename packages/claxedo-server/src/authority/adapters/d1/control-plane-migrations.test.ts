@@ -278,9 +278,9 @@ describe("workspace assignment revision counter", () => {
   test("the backfill run again never lowers a counter that has moved past the live assignment's revision", async () => {
     const target = await seeded()
     const [addColumn, backfill] = await statements("0028_workspace_host_assignment_revision.sql")
-    await target.prepare(addColumn!).run()
+    await target.prepare(addColumn).run()
     await target.prepare("update workspaces set host_assignment_revision = 5 where workspace_id = 'ws-assigned'").run()
-    await target.prepare(backfill!).run()
+    await target.prepare(backfill).run()
     expect(await counters(target)).toEqual([
       { workspace_id: "ws-assigned", host_assignment_revision: 5 },
       { workspace_id: "ws-free", host_assignment_revision: 0 },

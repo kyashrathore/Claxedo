@@ -598,7 +598,7 @@ export function createHostConnector(options: ConnectorOptions) {
       draining = true
       timer?.cancel()
       timer = undefined
-      while (inFlight) await inFlight.catch(() => undefined)
+      for (let beat = inFlight; beat; beat = inFlight) await beat.catch(() => undefined)
       acked.clear()
       pending.clear()
       await runMachineBeat(options, "drain")
