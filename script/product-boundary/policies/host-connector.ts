@@ -45,11 +45,14 @@ export const hostConnector: Policy = {
   forbiddenModules: [],
 
   control: {
-    // Four source files, two of them tests. The production graph is genuinely
-    // two modules — so this is the one policy where the minimum is small
-    // enough that the required list below is doing the real work.
-    minModules: 2,
-    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-identity.ts`],
+    // The connector entry reaches three modules: the identity it signs with,
+    // and host-state.ts, because `ack` validates a description's resolved
+    // directory against the effective roots inside the connector — the one
+    // place no caller can bypass. The transport, bootstrap and node adapter
+    // are separate entries and stay out of this graph. Small enough that the
+    // required list below is doing the real work.
+    minModules: 3,
+    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-identity.ts`, `${SRC}/host-state.ts`],
     // Deliberately EMPTY, and this is the only policy for which that is
     // allowed: the package declares no runtime dependency and imports no bare
     // specifier at all. `requiredModules` above is what proves the walk read
@@ -57,7 +60,7 @@ export const hostConnector: Policy = {
     requiredPackages: [],
   },
 
-  ceilings: { modules: 2, packages: 0 },
+  ceilings: { modules: 3, packages: 0 },
 
   emitted: {
     file: "packages/claxedo-host-connector/.artifacts/u8-package-split/manifests/host-connector.json",

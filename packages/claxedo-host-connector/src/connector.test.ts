@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { createHostConnector, type ConnectorTransport } from "./connector"
+import { createHostConnector, type ConnectorErrorStage, type ConnectorTransport } from "./connector"
 import {
   createHostKeyPair,
   enrollmentPayload,
@@ -67,7 +67,7 @@ const DISRUPTION = 'HOSTED_HTTP 503 {"error":{"code":"deployment_candidate_unava
 
 async function connector(
   overrides: Partial<ConnectorTransport> = {},
-  onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void,
+  onError?: (stage: ConnectorErrorStage, error: unknown) => void,
   onServing?: (tunnel: Record<string, unknown> | undefined) => void,
   onLeaseRenewed?: (state: { status: "enrolled"; enrollment: { expires_at: number } }) => void,
   sessionAuthority?: "local" | "managed-private",

@@ -6,6 +6,12 @@
  * design put here — which projects are shared, what a workspace id is, when to
  * register a new one — is now decided by the control plane at request time.
  *
+ * Two callers speak it. The desktop's ACCOUNT mode enrolls with a bearer held
+ * by Electron main and consents to workspaces it shares itself. A `claxedo
+ * connect` host's MACHINE mode is already enrolled (an invitation was
+ * redeemed, `./bootstrap`), signs every request with its key, and learns what
+ * to serve from the control plane's assignment descriptions.
+ *
  * What this deliberately does not do:
  *
  *   - **Serve anything.** The connector is a client. A laptop that listens is a
@@ -21,6 +27,7 @@
  */
 
 import { enrollmentPayload, heartbeatPayloadV2, type HostKeyPair } from "./host-identity"
+import { pathWithinRoots, type HostScope } from "./host-state"
 
 /**
  * How a runtime composed its session access, mirroring
@@ -33,6 +40,47 @@ export type HostSessionAuthority = "local" | "managed-private"
 
 export type EnrollmentRequest = { request_id: string; nonce: string; expires_at: number }
 export type Enrollment = { enrollment_id: string; host_id: string; expires_at: number }
+
+/** The owner's statement of what this machine should serve, versioned per workspace. */
+export type AssignmentDescription = {
+  workspaceId: string
+  remoteDirectory: string
+  displayName?: string
+  /** Strictly increasing; bumped with every change to the directory. */
+  revision: number
+}
+
+export type AssignmentAck = { workspaceId: string; revision: number }
+
+export type HostEndpoints = {
+  relay?: { url: string; jwksUrl: string }
+  authority?: { sessionAuthorityUrl: string }
+}
+
+export type HeartbeatResponse = {
+  expires_at: number
+  assigned_workspace_ids?: readonly string[]
+  /** ONE credential covering the whole assigned∩ready set, or absent. */
+  hostTunnel?: Record<string, unknown>
+  assignments?: readonly AssignmentDescription[]
+  scope?: HostScope
+} & HostEndpoints
+
+export type AccountHeartbeatInput = {
+  hostId: string
+  signature: string
+  ttlMs?: number
+  workspaceIds: readonly string[]
+  sessionAuthority?: HostSessionAuthority
+}
+
+/** Body v3: the request signature covers it, so it carries no payload signature. */
+export type MachineHeartbeatInput = {
+  generation: number
+  acks: readonly AssignmentAck[]
+  ttlMs?: number
+  sessionAuthority?: HostSessionAuthority
+}
 
 export type ConnectorTransport = {
   createRequest: (input: { hostId: string }) => Promise<EnrollmentRequest>
@@ -50,25 +98,26 @@ export type ConnectorTransport = {
    * workspace that is both assigned and just acked — the serving side opens
    * its relay tunnels from the same answer that renewed the lease.
    */
-  heartbeat: (input: {
-    hostId: string
-    signature: string
-    ttlMs?: number
-    workspaceIds: readonly string[]
-    sessionAuthority?: HostSessionAuthority
-  }) => Promise<{
-    expires_at: number
-    assigned_workspace_ids?: readonly string[]
-    /** ONE credential covering the whole assigned∩acked set, or absent. */
-    hostTunnel?: Record<string, unknown>
-  }>
+  heartbeat: (input: AccountHeartbeatInput) => Promise<HeartbeatResponse>
 }
 
-export type ConnectorOptions = {
+/**
+ * The same three names, so a machine transport drops into the desktop's slot;
+ * `createRequest` and `enroll` throw there, because a machine-mode connector is
+ * enrolled before it exists and never asks for a nonce.
+ */
+export type MachineTransport = Omit<ConnectorTransport, "heartbeat"> & {
+  /** Claim the next serving generation; every earlier instance's beats are refused from then on. */
+  acquire: () => Promise<{ generation: number }>
+  heartbeat: (input: MachineHeartbeatInput) => Promise<HeartbeatResponse>
+}
+
+export type ConnectorErrorStage = "enroll" | "heartbeat" | "share" | "acquire" | "reconcile"
+
+type CommonConnectorOptions = {
   hostId: string
   displayName?: string
   keys: HostKeyPair
-  transport: ConnectorTransport
   /** How often to prove the machine is still here. */
   heartbeatIntervalMs: number
   /**
@@ -85,7 +134,7 @@ export type ConnectorOptions = {
   sessionAuthority?: HostSessionAuthority
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
-  onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void
+  onError?: (stage: ConnectorErrorStage, error: unknown) => void
   /**
    * The serving credential from the latest ack — one token whose claim is
    * exactly the workspaces this machine is currently routable for, or
@@ -106,6 +155,40 @@ export type ConnectorOptions = {
    */
   onLeaseRenewed?: (state: Extract<ConnectorState, { status: "enrolled" }>) => void
 }
+
+export type AccountConnectorOptions = CommonConnectorOptions & {
+  mode?: "account"
+  transport: ConnectorTransport
+}
+
+export type MachineConnectorOptions = CommonConnectorOptions & {
+  mode: "machine"
+  transport: MachineTransport
+  /** The enrollment this key redeemed; the machine signs and presents this, not its host id. */
+  enrollmentId: string
+  /**
+   * The effective roots as the caller currently holds them (control-plane
+   * scope ∩ `--root`, see `effectiveRoots` in `./host-state`). Read at every
+   * `ack`, after `onScope` has delivered any newer scope, so a description is
+   * always validated against the roots in force when it is accepted.
+   */
+  roots: () => readonly string[]
+  /** `realpath`: a symlink out of the roots is refused on the resolved path, not the lexical one. */
+  resolvePath: (path: string) => Promise<string>
+  /**
+   * The complete current description list, every time it changes. Anything
+   * whose revision is not the one the caller already serves has ALREADY been
+   * unacked here: the caller closes that workspace's tunnel and runtime,
+   * validates, prepares the new directory, then `ack`s the new revision. A
+   * workspace the caller serves that is absent from the list is retired.
+   */
+  onAssignments?: (descriptions: AssignmentDescription[]) => void | Promise<void>
+  /** A newer scope revision, delivered before the same beat's assignments are reconciled. */
+  onScope?: (scope: HostScope) => void | Promise<void>
+  onEndpoints?: (endpoints: HostEndpoints) => void | Promise<void>
+}
+
+export type ConnectorOptions = AccountConnectorOptions | MachineConnectorOptions
 
 export type ConnectorState =
   | { status: "idle" }
@@ -172,16 +255,273 @@ export function createHostConnector(options: ConnectorOptions) {
    */
   let era = 0
 
+  /**
+   * Machine mode's view of the owner's intent and this host's consent.
+   *
+   * `descriptions` is the last applied assignment list, `acked` the subset
+   * this host has said it serves, by revision. The two disagree by design
+   * between a change arriving and the caller re-acking it: that gap is the
+   * withdrawal, and the control plane stops routing the workspace for exactly
+   * as long as it lasts.
+   */
+  const descriptions = new Map<string, AssignmentDescription>()
+  const acked = new Map<string, number>()
+  let generation: number | undefined
+  let scopeRevision: number | undefined
+  let deliveredEndpoints: string | undefined
+
   const stop = (reason: Extract<ConnectorState, { status: "stopped" }>["reason"], detail: string) => {
     era++
     timer?.cancel()
     timer = undefined
     links.clear()
+    descriptions.clear()
+    acked.clear()
     state = { status: "stopped", reason, detail }
+  }
+
+  const installTimer = (beat: () => Promise<unknown>) => {
+    // The previous loop, if any, before installing this one: an overwritten
+    // handle is a timer nothing holds and `close()` can no longer cancel.
+    timer?.cancel()
+    timer = options.setInterval(() => {
+      void beat()
+    }, options.heartbeatIntervalMs)
+  }
+
+  const settleFailedBeat = (startedIn: number, error: unknown) => {
+    // A beat that was already open when the user paused comes back rejected —
+    // the enrollment is being allowed to lapse, so of course it does — and
+    // reporting that as `revoked` tells the user their access was taken away
+    // when they turned it off themselves. The era check is the same one the
+    // success path applies to a late answer.
+    if (startedIn !== era) return
+    options.onError?.("heartbeat", error)
+    // A beat can fail for two completely different reasons, and treating
+    // them alike is what made remote access fragile.
+    //
+    // A decision — the control plane no longer recognises this machine
+    // (revoked, paused past expiry, enrolled elsewhere, or in machine mode a
+    // newer instance acquired the generation) — must stop the connector.
+    // Re-enrolling itself would be overruling the user.
+    //
+    // A disruption — the control plane briefly unreachable, or mid
+    // release — must not revoke. Deploying the control plane can make it
+    // answer `503 deployment_candidate_unavailable` for the seconds
+    // between the upload and the phase opening; treating that as
+    // revocation would stop the machine permanently even while its
+    // credential lease has not expired and its relay sockets are still
+    // open — the same "Workspace host is offline" symptom as a genuine
+    // revocation, with none of the same cause.
+    //
+    // So a disruption keeps the enrollment and lets the next beat retry.
+    // The lease is the backstop: if the control plane really is gone, the
+    // enrollment expires there on its own and stops routing without this
+    // side having to guess.
+    if (transientHeartbeatFailure(error)) return
+    stop("revoked", String(error))
+  }
+
+  /**
+   * Apply one machine-mode response, in the order the control plane's own
+   * state changes: scope before assignments (a tightened root retires an
+   * assignment in the same batch, so the roots must be in force before any
+   * description is validated), then the credential, then the lease listener.
+   */
+  const reconcile = async (machine: MachineConnectorOptions, result: HeartbeatResponse) => {
+    if (result.scope && (scopeRevision === undefined || result.scope.revision > scopeRevision)) {
+      scopeRevision = result.scope.revision
+      await machine.onScope?.(result.scope)
+    }
+    if (result.relay || result.authority) {
+      const endpoints: HostEndpoints = {
+        ...(result.relay ? { relay: result.relay } : {}),
+        ...(result.authority ? { authority: result.authority } : {}),
+      }
+      const serialized = JSON.stringify(endpoints)
+      if (serialized !== deliveredEndpoints) {
+        deliveredEndpoints = serialized
+        await machine.onEndpoints?.(endpoints)
+      }
+    }
+    if (!result.assignments) return
+    let changed = false
+    const present = new Set<string>()
+    for (const description of result.assignments) {
+      present.add(description.workspaceId)
+      const current = descriptions.get(description.workspaceId)
+      // A description at or below the applied revision is old news — either
+      // unchanged, or a stale snapshot overlapping a newer one — and cannot
+      // reinstate a directory the owner has already moved on from.
+      if (current && current.revision >= description.revision) continue
+      descriptions.set(description.workspaceId, description)
+      // The withdrawal: the ack was for the previous revision, so it is gone
+      // before the caller hears about the change. The next beat sends the
+      // smaller set and the control plane stops minting for this workspace
+      // until the new revision is acked.
+      acked.delete(description.workspaceId)
+      changed = true
+    }
+    for (const workspaceId of [...descriptions.keys()]) {
+      if (present.has(workspaceId)) continue
+      descriptions.delete(workspaceId)
+      acked.delete(workspaceId)
+      changed = true
+    }
+    if (!changed) return
+    await machine.onAssignments?.(currentDescriptions())
+  }
+
+  const currentAcks = (): AssignmentAck[] =>
+    [...acked]
+      .map(([workspaceId, revision]) => ({ workspaceId, revision }))
+      .sort((a, b) => (a.workspaceId < b.workspaceId ? -1 : a.workspaceId > b.workspaceId ? 1 : 0))
+
+  const currentDescriptions = () =>
+    [...descriptions.values()].sort((a, b) => (a.workspaceId < b.workspaceId ? -1 : a.workspaceId > b.workspaceId ? 1 : 0))
+
+  /**
+   * Beats are serialized in machine mode: one in flight, at most one queued
+   * behind it, and a queued beat sends the acks as they stand when it starts.
+   * Reconciliation callbacks run inside the beat, so the caller's `ack` from
+   * `onAssignments` queues the very beat that carries it.
+   */
+  let inFlight: Promise<ConnectorState> | undefined
+  let queued: Promise<ConnectorState> | undefined
+
+  const machineBeat = (machine: MachineConnectorOptions): Promise<ConnectorState> => {
+    if (inFlight) {
+      queued ??= inFlight
+        .catch(() => undefined)
+        .then(() => {
+          queued = undefined
+          return machineBeat(machine)
+        })
+      return queued
+    }
+    inFlight = runMachineBeat(machine).finally(() => {
+      inFlight = undefined
+    })
+    return inFlight
+  }
+
+  const runMachineBeat = async (machine: MachineConnectorOptions): Promise<ConnectorState> => {
+    if (state.status !== "enrolled" || generation === undefined) return state
+    const startedIn = era
+    const enrollment = state.enrollment
+    try {
+      const result = await machine.transport.heartbeat({
+        generation,
+        acks: currentAcks(),
+        ...(options.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
+      })
+      // The instance this beat was proving ended while it was in flight —
+      // stopped, or superseded by a newer generation. Its answer describes a
+      // machine the control plane has already stopped recognising.
+      if (startedIn !== era) return state
+      state = { status: "enrolled", enrollment: { ...enrollment, expires_at: result.expires_at } }
+      try {
+        await reconcile(machine, result)
+      } catch (error) {
+        options.onError?.("reconcile", error)
+      }
+      if (startedIn !== era) return state
+      options.onServing?.(result.hostTunnel)
+      options.onLeaseRenewed?.(state)
+    } catch (error) {
+      settleFailedBeat(startedIn, error)
+    }
+    return state
+  }
+
+  /**
+   * Consent to serve one description at one revision, and request the beat
+   * that carries it so the readiness row lands within a round trip. The beat
+   * is requested, not awaited: `onAssignments` runs inside a beat, and an ack
+   * issued there that waited for the next beat would wait for the one it is
+   * inside — the queued beat runs the moment this one settles.
+   *
+   * Refused — and never sent — for a revision that is not the current one
+   * (the owner moved on again) and for a directory whose RESOLVED path is
+   * outside the effective roots (a symlink out of a root is the case the
+   * lexical check at the control plane cannot see).
+   */
+  const machineAck = async (machine: MachineConnectorOptions, input: AssignmentAck) => {
+    if (state.status !== "enrolled") throw new Error("remote access is not active on this machine")
+    const current = descriptions.get(input.workspaceId)
+    if (!current) throw new Error(`no assignment for workspace ${input.workspaceId} on this machine`)
+    if (current.revision !== input.revision) {
+      throw new Error(
+        `assignment ${input.workspaceId} moved to revision ${current.revision} while revision ${input.revision} was being prepared`,
+      )
+    }
+    const roots = await Promise.all(
+      machine.roots().map((root) => machine.resolvePath(root).catch(() => undefined)),
+    )
+    const resolved = await machine.resolvePath(current.remoteDirectory).catch((error: unknown) => {
+      throw new Error(`assignment ${input.workspaceId}: ${current.remoteDirectory} cannot be resolved: ${String(error)}`)
+    })
+    if (!pathWithinRoots(resolved, roots.filter((root): root is string => root !== undefined))) {
+      throw new Error(`assignment ${input.workspaceId}: ${current.remoteDirectory} is outside this host's roots`)
+    }
+    // A beat may have reconciled while the paths were resolving; consent is
+    // for the description that was validated, not whatever arrived since.
+    if (descriptions.get(input.workspaceId)?.revision !== input.revision || state.status !== "enrolled") {
+      throw new Error(`assignment ${input.workspaceId} changed while revision ${input.revision} was being validated`)
+    }
+    acked.set(input.workspaceId, input.revision)
+    void machineBeat(machine)
+  }
+
+  const machineStart = async (machine: MachineConnectorOptions): Promise<ConnectorState> => {
+    try {
+      const acquired = await machine.transport.acquire()
+      era++
+      generation = acquired.generation
+      state = {
+        status: "enrolled",
+        enrollment: { enrollment_id: machine.enrollmentId, host_id: options.hostId, expires_at: 0 },
+      }
+    } catch (error) {
+      options.onError?.("acquire", error)
+      stop(transientHeartbeatFailure(error) ? "error" : "revoked", String(error))
+      return state
+    }
+    installTimer(() => machineBeat(machine))
+    // The first beat is part of starting: it is what turns a claimed
+    // generation into a live lease and delivers the assignments, and a
+    // decision there (revoked between redeem and now) belongs to `start`.
+    return await machineBeat(machine)
   }
 
   return {
     state: () => state,
+
+    /** Machine mode: the serving generation this instance acquired, once started. */
+    generation: () => generation,
+
+    /** Machine mode: the current description list, as last applied. */
+    assignments: currentDescriptions,
+
+    /** Machine mode: what this host has consented to serve, by revision. */
+    acked: currentAcks,
+
+    async ack(input: AssignmentAck): Promise<void> {
+      if (options.mode !== "machine") throw new Error("ack is for machine-mode connectors; use shareWorkspace")
+      await machineAck(options, input)
+    },
+
+    /**
+     * Withdraw consent for one workspace and beat so the control plane stops
+     * routing it. Awaited, unlike `ack`: a withdrawal is issued by the caller
+     * on its own initiative, never from inside a reconciliation.
+     */
+    async unack(workspaceId: string): Promise<void> {
+      if (options.mode !== "machine") throw new Error("unack is for machine-mode connectors; use unshareWorkspace")
+      if (!acked.delete(workspaceId)) return
+      if (state.status !== "enrolled") return
+      await machineBeat(options)
+    },
 
     /** Workspaces this machine currently publishes, sorted for stable display. */
     sharedWorkspaceIds: () => [...links.keys()].sort(),
@@ -197,6 +537,7 @@ export function createHostConnector(options: ConnectorOptions) {
      * in the owner's assignment view: consent without intent is not a share.
      */
     async shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<void> {
+      if (options.mode === "machine") throw new Error("a machine-mode connector discovers assignments; use ack")
       if (state.status !== "enrolled") {
         throw new Error("remote access is not active on this machine — enable it first")
       }
@@ -219,12 +560,14 @@ export function createHostConnector(options: ConnectorOptions) {
 
     /** Stop serving one workspace: drop consent, ack the smaller set now. */
     async unshareWorkspace(workspaceId: string): Promise<void> {
+      if (options.mode === "machine") throw new Error("a machine-mode connector discovers assignments; use unack")
       if (!links.delete(workspaceId)) return
       if (state.status !== "enrolled") return
       await this.beat()
     },
 
     async start(): Promise<ConnectorState> {
+      if (options.mode === "machine") return await machineStart(options)
       try {
         // Inside the try, not before it. Asking for the nonce is a call to the
         // control plane and fails for all the usual reasons — offline, 503, a
@@ -254,17 +597,13 @@ export function createHostConnector(options: ConnectorOptions) {
         return state
       }
 
-      // The previous loop, if any, before installing this one: an overwritten
-      // handle is a timer nothing holds and `close()` can no longer cancel.
-      timer?.cancel()
-      timer = options.setInterval(() => {
-        void this.beat()
-      }, options.heartbeatIntervalMs)
+      installTimer(() => this.beat())
       return state
     },
 
     /** One heartbeat. Exposed so a caller can force one after a wake from sleep. */
-    async beat() {
+    async beat(): Promise<ConnectorState> {
+      if (options.mode === "machine") return await machineBeat(options)
       if (state.status !== "enrolled") return state
       // `era` is what makes the answer's currency checkable below, and it is
       // the guard that actually decides the outcome.
@@ -318,35 +657,7 @@ export function createHostConnector(options: ConnectorOptions) {
         // than leaving it to notice on its own next read.
         options.onLeaseRenewed?.(state)
       } catch (error) {
-        // Same test on the failing path, for the opposite mistake. A beat that
-        // was already open when the user paused comes back rejected — the
-        // enrollment is being allowed to lapse, so of course it does — and
-        // reporting that as `revoked` tells the user their access was taken
-        // away when they turned it off themselves.
-        if (startedIn !== era) return state
-        options.onError?.("heartbeat", error)
-        // A beat can fail for two completely different reasons, and treating
-        // them alike is what made remote access fragile.
-        //
-        // A decision — the control plane no longer recognises this machine
-        // (revoked, paused past expiry, enrolled elsewhere) — must stop the
-        // connector. Re-enrolling itself would be overruling the user.
-        //
-        // A disruption — the control plane briefly unreachable, or mid
-        // release — must not revoke. Deploying the control plane can make it
-        // answer `503 deployment_candidate_unavailable` for the seconds
-        // between the upload and the phase opening; treating that as
-        // revocation would stop the machine permanently even while its
-        // credential lease has not expired and its relay sockets are still
-        // open — the same "Workspace host is offline" symptom as a genuine
-        // revocation, with none of the same cause.
-        //
-        // So a disruption keeps the enrollment and lets the next beat retry.
-        // The lease is the backstop: if the control plane really is gone, the
-        // enrollment expires there on its own and stops routing without this
-        // side having to guess.
-        if (transientHeartbeatFailure(error)) return state
-        stop("revoked", String(error))
+        settleFailedBeat(startedIn, error)
       }
       return state
     },

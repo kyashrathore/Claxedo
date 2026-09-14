@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The laptop side of machine-wide remote access: a signing identity, the enrollment handshake, and a heartbeat \u2014 with no server, no routes, and no account credential",
+  "description": "The host side of machine-wide remote access: a signing identity, invitation redeem, durable host state, a machine-signed heartbeat and assignment discovery — with no server, no routes, and no account credential",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -11,6 +11,13 @@
     "directory": "packages/claxedo-host-connector"
   },
   "exports": {
+    "./bootstrap": {
+      "types": "./src/bootstrap.ts",
+      "bun": "./src/bootstrap.ts",
+      "development": "./src/bootstrap.ts",
+      "import": "./dist/bootstrap.mjs",
+      "default": "./dist/bootstrap.mjs"
+    },
     "./connector": {
       "types": "./src/connector.ts",
       "bun": "./src/connector.ts",
@@ -24,6 +31,27 @@
       "development": "./src/host-identity.ts",
       "import": "./dist/host-identity.mjs",
       "default": "./dist/host-identity.mjs"
+    },
+    "./host-state": {
+      "types": "./src/host-state.ts",
+      "bun": "./src/host-state.ts",
+      "development": "./src/host-state.ts",
+      "import": "./dist/host-state.mjs",
+      "default": "./dist/host-state.mjs"
+    },
+    "./host-state-node": {
+      "types": "./src/host-state-node.ts",
+      "bun": "./src/host-state-node.ts",
+      "development": "./src/host-state-node.ts",
+      "import": "./dist/host-state-node.mjs",
+      "default": "./dist/host-state-node.mjs"
+    },
+    "./machine-transport": {
+      "types": "./src/machine-transport.ts",
+      "bun": "./src/machine-transport.ts",
+      "development": "./src/machine-transport.ts",
+      "import": "./dist/machine-transport.mjs",
+      "default": "./dist/machine-transport.mjs"
     }
   },
   "files": [

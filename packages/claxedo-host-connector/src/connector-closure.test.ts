@@ -80,6 +80,20 @@ describe("Host Connector's dependency closure", () => {
     expect(offenders).toEqual([])
   })
 
+  test("touches Node's filesystem only through the one adapter entry", () => {
+    // `host-state-node.ts` is the deliberate exception, on its own export so
+    // the desktop's utility child never imports it. Every other module stays
+    // runtime-neutral: the state store takes its fs injected.
+    const offenders = externalImports().filter(
+      (entry) => entry.specifier.startsWith("node:") && entry.file !== "host-state-node.ts",
+    )
+
+    expect(offenders).toEqual([])
+    expect(externalImports().filter((entry) => entry.file === "host-state-node.ts").map((entry) => entry.specifier)).toEqual([
+      "node:fs/promises",
+    ])
+  })
+
   test("has no runtime dependencies declared", () => {
     // The closure above is about what the source imports. This is about what
     // installing the package would pull, and they can disagree — a dependency
