@@ -188,6 +188,9 @@ CREATE TABLE IF NOT EXISTS workspaces (
   repo_name TEXT,
   git_branch TEXT,
   remote_directory TEXT,
+  -- 0 withholds the implicit org-member role; direct, project, team and
+  -- org-admin access are unaffected. Set from the host's scope at assignment.
+  org_member_visible INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER
@@ -247,12 +250,51 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   -- heartbeat. NULL means it declared nothing, and a connection minted from
   -- this row then carries no stream scope at all.
   session_authority TEXT,
+  -- Bumped whenever the account re-enroll replaces public_key; a machine
+  -- request verified against an older version writes nothing.
+  key_version INTEGER NOT NULL DEFAULT 1,
+  -- Server-issued instance fence: only an explicit acquire moves it, and a
+  -- beat carrying a lower value is refused. 0 = no instance has acquired.
+  serving_generation INTEGER NOT NULL DEFAULT 0,
+  generation_acquired_at INTEGER,
+  enrolled_via TEXT NOT NULL DEFAULT 'account',
+  -- NULL for an account enrollment: it has no roots and no visibility rule.
+  scope_json TEXT,
+  scope_revision INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (owner_token_identifier, host_id)
 );
 CREATE INDEX IF NOT EXISTS host_enrollments_by_owner ON host_enrollments (owner_token_identifier);
 CREATE INDEX IF NOT EXISTS host_enrollments_by_expires_at ON host_enrollments (expires_at);
+-- Machine-signed request replay store: insert-or-fail on the primary key is
+-- the consumption. Swept by expiry inside the heartbeat transaction.
+CREATE TABLE IF NOT EXISTS host_request_nonces (
+  enrollment_id TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  PRIMARY KEY (enrollment_id, nonce)
+);
+CREATE INDEX IF NOT EXISTS host_request_nonces_by_expires_at ON host_request_nonces (expires_at);
+-- Single-use bearer invitations. Only sha256(secret) is stored; the id is not
+-- secret. org_id is nullable because this adapter has one tenant.
+CREATE TABLE IF NOT EXISTS host_invitations (
+  invitation_id TEXT PRIMARY KEY,
+  owner_token_identifier TEXT NOT NULL,
+  org_id TEXT,
+  secret_hash TEXT NOT NULL,
+  display_name TEXT,
+  scope_json TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  redeemed_at INTEGER,
+  redeemed_enrollment_id TEXT,
+  redeemed_host_id TEXT,
+  redeemed_public_key_fingerprint TEXT,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS host_invitations_by_owner ON host_invitations (owner_token_identifier);
 -- The OWNER's declaration that host H serves workspace X (machine-wide
 -- enrollment, assignment grain). Pure data: no liveness of its own — the
 -- enrollment lease answers "is the machine here", the machine's consent is the
@@ -265,6 +307,9 @@ CREATE TABLE IF NOT EXISTS host_workspace_assignments (
   host_id TEXT NOT NULL,
   owner_token_identifier TEXT NOT NULL,
   second_device_open_at INTEGER,
+  -- Strictly increasing per workspace, bumped in the same transaction as the
+  -- directory it describes; a host acks a revision, never a timestamp.
+  revision INTEGER NOT NULL DEFAULT 1,
   assigned_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -272,6 +317,18 @@ CREATE INDEX IF NOT EXISTS host_workspace_assignments_by_host
   ON host_workspace_assignments (host_id);
 CREATE INDEX IF NOT EXISTS host_workspace_assignments_by_owner
   ON host_workspace_assignments (owner_token_identifier);
+-- The host's last statement that it serves a workspace at a given
+-- (enrollment, generation, revision). Routing requires this row to match the
+-- assignment's current revision and the enrollment's current generation.
+CREATE TABLE IF NOT EXISTS host_assignment_readiness (
+  workspace_id TEXT PRIMARY KEY,
+  enrollment_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  revision INTEGER NOT NULL,
+  ready_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS host_assignment_readiness_by_enrollment
+  ON host_assignment_readiness (enrollment_id);
 -- The one-use nonce a machine signs to prove it holds the private key. It
 -- carries no workspace: enrollment is machine-wide.
 --
@@ -858,6 +915,25 @@ function dropRetiredProviderOrgAlias(db: SqliteAuthorityDb) {
   }
 }
 
+/**
+ * Columns the host-connect tables gained after the CREATE above already ran
+ * on a database. Every default is what the pre-connect rows meant: one key
+ * version, no acquired instance, enrolled through the account, first
+ * assignment revision, visible to org members. Runs after the tenancy
+ * migration because that one rebuilds `workspaces` from an explicit column
+ * list and would drop `org_member_visible` if it were added first.
+ */
+function migrateHostConnectSchema(db: SqliteAuthorityDb) {
+  addColumn(db, "host_enrollments", "key_version", "INTEGER NOT NULL DEFAULT 1")
+  addColumn(db, "host_enrollments", "serving_generation", "INTEGER NOT NULL DEFAULT 0")
+  addColumn(db, "host_enrollments", "generation_acquired_at", "INTEGER")
+  addColumn(db, "host_enrollments", "enrolled_via", "TEXT NOT NULL DEFAULT 'account'")
+  addColumn(db, "host_enrollments", "scope_json", "TEXT")
+  addColumn(db, "host_enrollments", "scope_revision", "INTEGER NOT NULL DEFAULT 0")
+  addColumn(db, "host_workspace_assignments", "revision", "INTEGER NOT NULL DEFAULT 1")
+  addColumn(db, "workspaces", "org_member_visible", "INTEGER NOT NULL DEFAULT 1")
+}
+
 function addColumn(db: SqliteAuthorityDb, table: string, column: string, definition: string) {
   if (!hasTable(db, table)) return
   if (hasColumn(db, table, column)) return
@@ -1022,6 +1098,7 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         addColumn(db, "host_enrollments", "session_authority", "TEXT")
         migrateAuthorityTenancySchema(db)
         addColumn(db, "session_messages", "author_actor_id", "TEXT")
+        migrateHostConnectSchema(db)
       } catch (error) {
         db.close()
         throw error
@@ -1098,6 +1175,7 @@ export type WorkspaceRow = {
   repo_name: string | null
   git_branch: string | null
   remote_directory: string | null
+  org_member_visible: number
   created_at: number
   updated_at: number
   deleted_at: number | null
@@ -1341,6 +1419,18 @@ function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string
   return undefined
 }
 
+/**
+ * The org branch of a WORKSPACE rank: the implicit org-member role is withheld
+ * when the workspace's host scope says so; org admins and owners keep theirs.
+ * Project ranks (`projectRoleForUser`) have no workspace row and are not gated.
+ */
+function workspaceOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, workspace: WorkspaceRow): WorkspaceRole | undefined {
+  if (!workspace.org_id) return undefined
+  const role = directOrgRole(db, user, workspace.org_id)
+  if (role === "viewer" && workspace.org_member_visible === 0) return undefined
+  return role
+}
+
 export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
   if (!orgId) return false
   const org = db.prepare<unknown[], {
@@ -1421,7 +1511,7 @@ export function workspaceRoleForUser(
   return maxRole([
     directWorkspaceRole(db, user, workspace.workspace_id),
     project ? directProjectRole(db, user, project.project_id) : undefined,
-    workspace.org_id ? directOrgRole(db, user, workspace.org_id) : undefined,
+    workspaceOrgRole(db, user, workspace),
     teamProjectRole(db, user, project?.project_id ?? workspace.project_id, workspace.org_id),
     shareRole(db, user, workspace.workspace_id),
     orgShareRole(db, user, workspace.workspace_id),

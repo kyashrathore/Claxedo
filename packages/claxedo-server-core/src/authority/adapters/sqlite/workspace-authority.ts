@@ -1,15 +1,37 @@
+import { timingSafeEqual } from "node:crypto"
+import { sha256Hex } from "@claxedo/helpers/crypto"
+import { isRecord } from "@claxedo/helpers/guards"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
-import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { hostEnrollmentScope, hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type {
+  HostAssignmentAck,
+  HostAssignmentDescription,
+  HostConnectErrorCode,
   HostEnrollment,
+  HostEnrollmentListRow,
+  HostEnrollmentScope,
+  HostInvitationRow,
+  HostScopeDefinition,
+  HostSessionAuthority,
+  MachineAuthAdapter,
+  MachinePrincipal,
   ProjectAction,
   ProjectRoleResult,
   SessionShareFanoutTarget,
   WorkspaceAuthority,
   WorkspaceShareTarget,
 } from "@claxedo/server-core/platform/auth/authority"
+import {
+  directoryWithinRoots,
+  invitationRedeemPayload,
+  invitationToken,
+  normalizePosixDirectory,
+  publicKeyFingerprint,
+} from "@claxedo/server-core/platform/auth/host-connect-contract"
+import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
@@ -83,6 +105,50 @@ const ENROLLMENT_REQUEST_SWEEP_LIMIT = 500
 /** A signed heartbeat payload must stay small; 200 shares per machine is generous. Mirrors the D1 authority. */
 const MAX_ACKED_WORKSPACES = 200
 
+/** Consumed machine-request nonces one heartbeat may sweep; the rest wait for the next beat. */
+const NONCE_SWEEP_LIMIT = 500
+
+const INVITATION_DEFAULT_TTL_MS = 60 * 60_000
+const INVITATION_MIN_TTL_MS = 5 * 60_000
+const INVITATION_MAX_TTL_MS = 24 * 60 * 60_000
+
+type SqliteHostConnectErrorCode =
+  | HostConnectErrorCode
+  | MachineAuthRefusal["code"]
+  | "host_attestation_denied"
+  | "invalid_input"
+  | "host_enrollment_not_found"
+
+const HOST_CONNECT_ERROR_STATUS: Record<SqliteHostConnectErrorCode, number> = {
+  invitation_invalid: 403,
+  invitation_expired: 410,
+  invitation_revoked: 410,
+  invitation_redeemed: 409,
+  invitation_host_conflict: 409,
+  enrollment_generation_superseded: 409,
+  host_assignment_outside_scope: 400,
+  machine_headers_invalid: 400,
+  machine_body_invalid: 400,
+  machine_timestamp_skew: 401,
+  machine_enrollment_unknown: 401,
+  machine_signature_invalid: 401,
+  machine_nonce_replayed: 401,
+  enrollment_revoked: 403,
+  enrollment_paused: 403,
+  enrollment_owner_ineligible: 403,
+  enrollment_key_invalid: 403,
+  enrollment_key_version_mismatch: 403,
+  host_attestation_denied: 403,
+  invalid_input: 400,
+  host_enrollment_not_found: 404,
+}
+
+export class SqliteHostConnectError extends ClaxedoError<SqliteHostConnectErrorCode> {
+  constructor(code: SqliteHostConnectErrorCode, message: string, public readonly details?: Record<string, unknown>) {
+    super({ code, message, status: HOST_CONNECT_ERROR_STATUS[code] })
+  }
+}
+
 function ttl(input?: number) {
   if (!input || !Number.isFinite(input)) return DEFAULT_TTL_MS
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
@@ -144,7 +210,84 @@ type HostEnrollmentRow = {
   acked_workspace_ids: string | null
   acked_at: number | null
   session_authority: string | null
+  key_version: number
+  serving_generation: number
+  generation_acquired_at: number | null
+  enrolled_via: string
+  scope_json: string | null
+  scope_revision: number
   created_at: number
+}
+
+type HostInvitationRowRecord = {
+  invitation_id: string
+  owner_token_identifier: string
+  org_id: string | null
+  secret_hash: string
+  display_name: string | null
+  scope_json: string
+  expires_at: number
+  redeemed_at: number | null
+  redeemed_enrollment_id: string | null
+  redeemed_host_id: string | null
+  redeemed_public_key_fingerprint: string | null
+  created_at: number
+  revoked_at: number | null
+}
+
+function enrollmentScope(row: Pick<HostEnrollmentRow, "scope_json" | "scope_revision">) {
+  return hostEnrollmentScope(row.scope_json, row.scope_revision)
+}
+
+/** 0 withholds the implicit org-member role; an account enrollment has no scope and hides nothing. */
+function orgMemberVisible(scope: HostScopeDefinition | undefined) {
+  return scope?.visibility === "owner" ? 0 : 1
+}
+
+function validatedScope(input: HostScopeDefinition): HostScopeDefinition {
+  if (!Array.isArray(input.allowed_roots) || (input.visibility !== "owner" && input.visibility !== "org")) {
+    throw new SqliteHostConnectError("invalid_input", "scope requires allowed_roots and a visibility")
+  }
+  const roots = input.allowed_roots.map((root) => {
+    const normalized = typeof root === "string" ? normalizePosixDirectory(root) : undefined
+    if (normalized === undefined) {
+      throw new SqliteHostConnectError("invalid_input", `scope root must be an absolute POSIX path: ${JSON.stringify(root)}`)
+    }
+    return normalized
+  })
+  return { allowed_roots: [...new Set(roots)], visibility: input.visibility }
+}
+
+function scopeDefinitionJson(json: string): HostScopeDefinition {
+  const scope = hostEnrollmentScope(json, 0)
+  if (!scope) throw new Error("host_invitation_scope_malformed")
+  return { allowed_roots: scope.allowed_roots, visibility: scope.visibility }
+}
+
+/**
+ * The public P-256 JWK a machine presents, or a refusal. `d` must be absent:
+ * a private key stored as the public one would still verify and would leak
+ * through every later read of the row.
+ */
+function publicHostKey(publicKey: string): JsonWebKey | undefined {
+  let jwk: unknown
+  try {
+    jwk = JSON.parse(publicKey)
+  } catch {
+    return undefined
+  }
+  if (!isRecord(jwk)) return undefined
+  const { kty, crv, x, y, d } = jwk
+  if (kty !== "EC" || crv !== "P-256" || typeof x !== "string" || typeof y !== "string" || d !== undefined) {
+    return undefined
+  }
+  return { kty, crv, x, y }
+}
+
+function secretHashMatches(stored: string, presented: string) {
+  const a = Buffer.from(stored, "utf8")
+  const b = Buffer.from(presented, "utf8")
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 type HostEnrollmentRequestRow = {
@@ -193,28 +336,209 @@ async function verifyHostSignature(input: {
 }
 
 /**
- * A user-hosted workspace exists in the inventory exactly as long as a machine
- * is assigned to serve it: unsharing it or revoking its machine retires the
- * row, and sharing it again revives the same record. Cloud rows are never
- * touched here — their lifetime is the sandbox's.
- */
-/**
  * The one definition of "a host is serving this workspace right now": an
  * enrollment that is neither revoked nor paused, whose lease has not expired,
- * and whose last signed heartbeat acked this workspace. Written against an
- * `assignment`/`enrollment` join, and binding exactly one value — `now`.
+ * and whose readiness row for this workspace names the enrollment's current
+ * serving generation and the assignment's current revision. Written against
+ * an `assignment`/`enrollment` join, and binding exactly one value — `now`.
  *
  * `activeWorkspaceHost` answers it for one workspace; `listWorkspaces` stamps
  * it on every user-hosted row so the rail can say "host offline" before any
  * pane opens the workspace, and both must mean the same thing. Mirrors the D1
- * adapter's `HOST_SERVING_WORKSPACE_SQL`.
+ * adapter's `HOST_SERVING_WORKSPACE_SQL`. A re-pointed directory (new
+ * revision) or a superseded instance (new generation) stops routing on the
+ * next read, not on the next token.
  */
 const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
           AND enrollment.expires_at > ?
           AND EXISTS (
-            SELECT 1 FROM json_each(COALESCE(enrollment.acked_workspace_ids, '[]'))
-            WHERE json_each.value = assignment.workspace_id
+            SELECT 1 FROM host_assignment_readiness readiness
+            WHERE readiness.workspace_id = assignment.workspace_id
+              AND readiness.enrollment_id = enrollment.enrollment_id
+              AND readiness.generation = enrollment.serving_generation
+              AND readiness.revision = assignment.revision
           )`
+
+/**
+ * Owner eligibility in this adapter: the owner's `users` row exists. The
+ * table has no state or deleted column and there is no actors table, so row
+ * existence is the whole predicate. `alias` names the enrollment row in the
+ * enclosing statement.
+ */
+function ownerEligibleSql(alias: string) {
+  return `EXISTS (SELECT 1 FROM users WHERE users.token_identifier = ${alias}.owner_token_identifier)`
+}
+
+/**
+ * The predicate every machine-caller mutation re-asserts inside its own
+ * transaction, binding `enrollment_id` then `key_version`: a key replaced or
+ * an owner removed between verification and write makes the write a no-op.
+ */
+function machineMutationGuardSql(alias: string) {
+  return `${alias}.enrollment_id = ? AND ${alias}.key_version = ?
+    AND ${alias}.revoked_at IS NULL AND ${alias}.paused_at IS NULL AND ${ownerEligibleSql(alias)}`
+}
+
+/**
+ * Why a guarded machine mutation wrote nothing, read back after the fact.
+ * The verifier already refused the cheap cases; this names the one that
+ * changed between verification and the write.
+ */
+function machineMutationRefusal(db: SqliteAuthorityDb, machine: MachinePrincipal, input: { generation?: number }) {
+  const row = db.prepare<unknown[], HostEnrollmentRow & { owner_eligible: number }>(`
+    SELECT enrollment.*, ${ownerEligibleSql("enrollment")} AS owner_eligible
+    FROM host_enrollments enrollment WHERE enrollment.enrollment_id = ?
+  `).get(machine.enrollmentId)
+  if (!row) return new SqliteHostConnectError("machine_enrollment_unknown", "Host enrollment not found")
+  if (row.revoked_at !== null) return new SqliteHostConnectError("enrollment_revoked", "Host enrollment was revoked")
+  if (row.paused_at !== null) return new SqliteHostConnectError("enrollment_paused", "Host enrollment is paused")
+  if (row.owner_eligible !== 1) return new SqliteHostConnectError("enrollment_owner_ineligible", "Enrollment owner is not eligible")
+  if (row.key_version !== machine.keyVersion) {
+    return new SqliteHostConnectError("enrollment_key_version_mismatch", "Host key was replaced")
+  }
+  if (input.generation !== undefined && row.serving_generation > input.generation) {
+    return new SqliteHostConnectError(
+      "enrollment_generation_superseded",
+      "A newer instance of this machine has acquired the serving generation",
+      { serving_generation: row.serving_generation },
+    )
+  }
+  return new Error("host_enrollment_mutation_refused")
+}
+
+function recordHostAudit(db: SqliteAuthorityDb, input: {
+  tokenIdentifier: string
+  action: string
+  workspaceId?: string
+  metadata?: Record<string, unknown>
+}) {
+  db.prepare(`
+    INSERT INTO audit_events (token_identifier, workspace_id, action, result, metadata, created_at)
+    VALUES (?, ?, ?, 'allow', ?, ?)
+  `).run(input.tokenIdentifier, input.workspaceId ?? null, input.action, input.metadata ? JSON.stringify(input.metadata) : null, Date.now())
+}
+
+function redeemResult(db: SqliteAuthorityDb, input: {
+  resumed: boolean
+  enrollment: HostEnrollmentRow
+  invitation: HostInvitationRowRecord
+}) {
+  const owner = db.prepare<unknown[], { name: string | null }>(`SELECT name FROM users WHERE token_identifier = ?`)
+    .get(input.invitation.owner_token_identifier)
+  const scope = enrollmentScope(input.enrollment)
+  if (!scope) throw new Error("host_enrollment_scope_missing")
+  return {
+    resumed: input.resumed,
+    enrollment: toHostEnrollment(input.enrollment),
+    owner_user_id: input.invitation.owner_token_identifier,
+    owner_actor_id: input.invitation.owner_token_identifier,
+    ...(input.invitation.org_id ? { org_id: input.invitation.org_id } : {}),
+    ...(owner?.name ? { owner_display_name: owner.name } : {}),
+    key_version: input.enrollment.key_version,
+    serving_generation: input.enrollment.serving_generation,
+    scope,
+  }
+}
+
+type LeaseRenewal = {
+  expires_at: number
+  last_seen_at: number
+  assignments: HostAssignmentDescription[]
+  scope: HostEnrollmentScope | undefined
+  assigned_workspace_ids: string[]
+}
+
+/**
+ * The lease renewal both heartbeat callers share. Must run inside the caller's
+ * transaction: the guarded enrollment UPDATE and the readiness rewrite are
+ * one statement group, or a refused beat could still mark workspaces ready.
+ * Returns undefined when `where` admitted no row.
+ */
+function renewLease(db: SqliteAuthorityDb, input: {
+  enrollmentId: string
+  ttlMs?: number
+  /** `"current"` acks whatever revision the assignment holds now (account v2 callers, which do not see revisions). */
+  acks: Array<{ workspaceId: string; revision: number | "current" }>
+  sessionAuthority?: HostSessionAuthority
+  where: { sql: string; params: unknown[] }
+}): LeaseRenewal | undefined {
+  const now = Date.now()
+  const expiresAt = now + ttl(input.ttlMs)
+  const ackedIds = input.acks.map((ack) => ack.workspaceId).sort()
+  const changed = db.prepare(`
+    UPDATE host_enrollments SET
+      last_seen_at = ?, expires_at = ?, updated_at = ?, acked_workspace_ids = ?, acked_at = ?,
+      session_authority = ?
+    WHERE ${input.where.sql}
+  `).run(
+    now,
+    expiresAt,
+    now,
+    JSON.stringify(ackedIds),
+    now,
+    // The latest beat is the whole truth about the machine's composition:
+    // a host that stops declaring is undeclared again, so this assigns
+    // rather than coalesces.
+    hostSessionAuthority(input.sessionAuthority) ?? null,
+    ...input.where.params,
+  ).changes
+  if (changed !== 1) return undefined
+  const row = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`)
+    .get(input.enrollmentId)
+  if (!row) throw new Error("host_enrollment_missing_after_renewal")
+
+  // Readiness is rewritten from this beat alone: an ack for a revision the
+  // assignment no longer holds writes nothing, and a workspace the host
+  // stopped acking loses its row.
+  const ready = db.prepare(`
+    INSERT INTO host_assignment_readiness (workspace_id, enrollment_id, generation, revision, ready_at)
+    SELECT assignment.workspace_id, ?, ?, assignment.revision, ?
+    FROM host_workspace_assignments assignment
+    WHERE assignment.workspace_id = ? AND assignment.host_id = ? AND assignment.owner_token_identifier = ?
+      AND (? IS NULL OR assignment.revision = ?)
+    ON CONFLICT (workspace_id) DO UPDATE SET
+      enrollment_id = excluded.enrollment_id,
+      generation = excluded.generation,
+      revision = excluded.revision,
+      ready_at = excluded.ready_at
+  `)
+  for (const ack of input.acks) {
+    const revision = ack.revision === "current" ? null : ack.revision
+    ready.run(row.enrollment_id, row.serving_generation, now, ack.workspaceId, row.host_id, row.owner_token_identifier, revision, revision)
+  }
+  db.prepare(`
+    DELETE FROM host_assignment_readiness
+    WHERE enrollment_id = ? AND workspace_id NOT IN (SELECT value FROM json_each(?))
+  `).run(row.enrollment_id, JSON.stringify(ackedIds))
+
+  // The owner's assignment view rides back on every ack so the machine can
+  // reconcile its persisted set — without this, machine consent and owner
+  // intent drift apart silently forever.
+  const assignments = db.prepare<unknown[], {
+    workspace_id: string
+    revision: number
+    remote_directory: string | null
+    display_name: string | null
+  }>(`
+    SELECT assignment.workspace_id, assignment.revision, workspace.remote_directory, workspace.display_name
+    FROM host_workspace_assignments assignment
+    JOIN workspaces workspace ON workspace.workspace_id = assignment.workspace_id
+    WHERE assignment.host_id = ? AND assignment.owner_token_identifier = ? AND workspace.deleted_at IS NULL
+    ORDER BY assignment.workspace_id
+  `).all(row.host_id, row.owner_token_identifier)
+  return {
+    expires_at: expiresAt,
+    last_seen_at: now,
+    assignments: assignments.map((assignment) => ({
+      workspace_id: assignment.workspace_id,
+      remote_directory: assignment.remote_directory ?? "",
+      ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
+      revision: assignment.revision,
+    })),
+    scope: enrollmentScope(row),
+    assigned_workspace_ids: assignments.map((assignment) => assignment.workspace_id),
+  }
+}
 
 /** Of these workspaces, the ones a live enrollment currently serves. */
 function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]) {
@@ -230,6 +554,12 @@ function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]
   return new Set(rows.map((row) => row.workspace_id))
 }
 
+/**
+ * A user-hosted workspace exists in the inventory exactly as long as a machine
+ * is assigned to serve it: unsharing it or revoking its machine retires the
+ * row, and sharing it again revives the same record. Cloud rows are never
+ * touched here — their lifetime is the sandbox's.
+ */
 function retireUserHostedWorkspaceSql(where: string) {
   return `
     UPDATE workspaces SET deleted_at = ?, updated_at = ?
@@ -1408,6 +1738,13 @@ export function createSqliteWorkspaceAuthority(
             last_seen_at, expires_at, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (owner_token_identifier, host_id) DO UPDATE SET
+            -- Compared as stored text: the desktop re-presents the exact
+            -- serialization it persisted, and a spurious bump only makes the
+            -- machine re-learn a version it is handed in the same response.
+            key_version = CASE
+              WHEN host_enrollments.public_key = excluded.public_key THEN host_enrollments.key_version
+              ELSE host_enrollments.key_version + 1
+            END,
             public_key = excluded.public_key,
             display_name = COALESCE(excluded.display_name, host_enrollments.display_name),
             last_seen_at = excluded.last_seen_at,
@@ -1456,39 +1793,82 @@ export function createSqliteWorkspaceAuthority(
         payload: heartbeatEnrollmentPayloadV2({ host_id: args.hostId, ttl_ms: args.ttlMs, workspace_ids: workspaceIds }),
         signature: args.signature,
       })
-      const now = Date.now()
-      const expiresAt = now + ttl(args.ttlMs)
-      db.prepare(`
-        UPDATE host_enrollments SET
-          last_seen_at = ?, expires_at = ?, updated_at = ?, acked_workspace_ids = ?, acked_at = ?,
-          session_authority = ?
-        WHERE owner_token_identifier = ? AND host_id = ?
-      `).run(
-        now,
-        expiresAt,
-        now,
-        JSON.stringify(workspaceIds),
-        now,
-        // The latest beat is the whole truth about the machine's composition:
-        // a host that stops declaring is undeclared again, so this assigns
-        // rather than coalesces.
-        hostSessionAuthority(args.sessionAuthority) ?? null,
-        who.token_identifier,
-        args.hostId,
-      )
-      // The owner's assignment view rides back on every ack so the machine can
-      // reconcile its persisted set — without this, machine consent and owner
-      // intent drift apart silently forever.
-      const assigned = db.prepare<unknown[], { workspace_id: string }>(`
-        SELECT workspace_id FROM host_workspace_assignments
-        WHERE host_id = ? AND owner_token_identifier = ?
-        ORDER BY workspace_id
-      `).all(args.hostId, who.token_identifier)
+      // A v2 caller consents to a workspace set, not to revisions: each ack
+      // lands at the assignment's current revision.
+      const renewed = db.transaction(() => renewLease(db, {
+        enrollmentId: row.enrollment_id,
+        ttlMs: args.ttlMs,
+        acks: workspaceIds.map((workspaceId) => ({ workspaceId, revision: "current" as const })),
+        sessionAuthority: args.sessionAuthority,
+        where: { sql: "host_enrollments.enrollment_id = ? AND host_enrollments.revoked_at IS NULL", params: [row.enrollment_id] },
+      }))()
+      if (!renewed) throw new Error("Host enrollment not found")
       return {
-        expires_at: expiresAt,
-        last_seen_at: now,
-        assigned_workspace_ids: assigned.map((assignment) => assignment.workspace_id),
+        expires_at: renewed.expires_at,
+        last_seen_at: renewed.last_seen_at,
+        assigned_workspace_ids: renewed.assignments.map((assignment) => assignment.workspace_id),
       }
+    },
+    async heartbeatHostEnrollmentByMachine(machine: MachinePrincipal, args) {
+      const db = database()
+      if (!Array.isArray(args.acks)) throw new SqliteHostConnectError("invalid_input", "acks is required")
+      if (!Number.isInteger(args.generation) || args.generation < 0) {
+        throw new SqliteHostConnectError("invalid_input", "generation must be a non-negative integer")
+      }
+      const acks = new Map<string, number>()
+      for (const ack of args.acks) {
+        const workspaceId = requiredText(ack?.workspaceId, "acks[].workspaceId")
+        if (!Number.isInteger(ack.revision) || ack.revision < 1) {
+          throw new SqliteHostConnectError("invalid_input", "acks[].revision must be a positive integer")
+        }
+        acks.set(workspaceId, ack.revision)
+      }
+      if (acks.size > MAX_ACKED_WORKSPACES) throw new SqliteHostConnectError("invalid_input", "acks exceeds the served-set cap")
+      return db.transaction(() => {
+        db.prepare(`
+          DELETE FROM host_request_nonces WHERE rowid IN (
+            SELECT rowid FROM host_request_nonces WHERE expires_at <= ? LIMIT ?
+          )
+        `).run(Date.now(), NONCE_SWEEP_LIMIT)
+        const renewed = renewLease(db, {
+          enrollmentId: machine.enrollmentId,
+          ttlMs: args.ttlMs,
+          acks: [...acks].map(([workspaceId, revision]) => ({ workspaceId, revision })),
+          sessionAuthority: args.sessionAuthority,
+          where: {
+            sql: `${machineMutationGuardSql("host_enrollments")} AND host_enrollments.serving_generation <= ?`,
+            params: [machine.enrollmentId, machine.keyVersion, args.generation],
+          },
+        })
+        if (!renewed) throw machineMutationRefusal(db, machine, { generation: args.generation })
+        return renewed
+      })()
+    },
+    async acquireHostServingGeneration(machine: MachinePrincipal) {
+      const db = database()
+      return db.transaction(() => {
+        const now = Date.now()
+        const changed = db.prepare(`
+          UPDATE host_enrollments SET
+            serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
+          WHERE ${machineMutationGuardSql("host_enrollments")}
+        `).run(now, now, machine.enrollmentId, machine.keyVersion).changes
+        if (changed !== 1) throw machineMutationRefusal(db, machine, {})
+        const row = db.prepare<unknown[], Pick<HostEnrollmentRow, "serving_generation" | "owner_token_identifier">>(`
+          SELECT serving_generation, owner_token_identifier FROM host_enrollments WHERE enrollment_id = ?
+        `).get(machine.enrollmentId)
+        if (!row) throw new Error("host_enrollment_missing_after_acquire")
+        // A superseded instance's readiness must not keep a workspace routable
+        // once the fence has moved past it.
+        db.prepare(`DELETE FROM host_assignment_readiness WHERE enrollment_id = ? AND generation < ?`)
+          .run(machine.enrollmentId, row.serving_generation)
+        recordHostAudit(db, {
+          tokenIdentifier: row.owner_token_identifier,
+          action: "host_enrollment.generation_acquired",
+          metadata: { enrollment_id: machine.enrollmentId, host_id: machine.hostId, generation: row.serving_generation },
+        })
+        return { generation: row.serving_generation, generation_acquired_at: now }
+      })()
     },
     async pauseHostEnrollment(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -1536,27 +1916,36 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const now = Date.now()
-      const revoked = db.prepare(`
-        UPDATE host_enrollments SET revoked_at = ?, updated_at = ?
-        WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?) AND revoked_at IS NULL
-      `).run(now, now, who.token_identifier, args.hostId ?? null, args.hostId ?? null).changes
-      // A revoked key's host id never returns (a later enable enrolls a NEW
-      // id), so its assignments could never become routable again — leaving
-      // them would only accumulate dangling rows that a later re-share must
-      // displace. The cascade keeps "revoke = nothing routable" exactly true.
-      db.prepare(retireUserHostedWorkspaceSql(`workspace_id IN (
-        SELECT workspace_id FROM host_workspace_assignments
-        WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
-      )`)).run(now, now, who.token_identifier, args.hostId ?? null, args.hostId ?? null)
-      db.prepare(`
-        DELETE FROM host_workspace_assignments
-        WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
-      `).run(who.token_identifier, args.hostId ?? null, args.hostId ?? null)
-      const runtimeTokensRevoked = db.prepare(`
-        UPDATE runtime_access_tokens SET revoked_at = ?
-        WHERE actor_id = ? AND (? IS NULL OR host_id = ?) AND revoked_at IS NULL
-      `).run(now, who.token_identifier, args.hostId ?? null, args.hostId ?? null).changes
-      return { revoked, runtime_tokens_revoked: runtimeTokensRevoked }
+      const hostId = args.hostId ?? null
+      return db.transaction(() => {
+        const revoked = db.prepare(`
+          UPDATE host_enrollments SET revoked_at = ?, updated_at = ?
+          WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?) AND revoked_at IS NULL
+        `).run(now, now, who.token_identifier, hostId, hostId).changes
+        // A revoked key's host id never returns (a later enable enrolls a NEW
+        // id), so its assignments could never become routable again — leaving
+        // them would only accumulate dangling rows that a later re-share must
+        // displace. The cascade keeps "revoke = nothing routable" exactly true.
+        db.prepare(retireUserHostedWorkspaceSql(`workspace_id IN (
+          SELECT workspace_id FROM host_workspace_assignments
+          WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
+        )`)).run(now, now, who.token_identifier, hostId, hostId)
+        db.prepare(`
+          DELETE FROM host_assignment_readiness WHERE workspace_id IN (
+            SELECT workspace_id FROM host_workspace_assignments
+            WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
+          )
+        `).run(who.token_identifier, hostId, hostId)
+        db.prepare(`
+          DELETE FROM host_workspace_assignments
+          WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
+        `).run(who.token_identifier, hostId, hostId)
+        const runtimeTokensRevoked = db.prepare(`
+          UPDATE runtime_access_tokens SET revoked_at = ?
+          WHERE actor_id = ? AND (? IS NULL OR host_id = ?) AND revoked_at IS NULL
+        `).run(now, who.token_identifier, hostId, hostId).changes
+        return { revoked, runtime_tokens_revoked: runtimeTokensRevoked }
+      })()
     },
     /**
      * The OWNER's declaration that host H serves workspace X. Pure data: no
@@ -1583,14 +1972,33 @@ export function createSqliteWorkspaceAuthority(
       // valid under, and a revoke landing between the check and the insert
       // would otherwise be admitted.
       return db.transaction(() => {
-        const enrollment = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
-          .get(who.token_identifier, args.hostId)
+        const enrollment = db.prepare<unknown[], HostEnrollmentRow & { invitation_org_id: string | null }>(`
+          SELECT enrollment.*, invitation.org_id AS invitation_org_id
+          FROM host_enrollments enrollment
+          LEFT JOIN host_invitations invitation ON invitation.redeemed_enrollment_id = enrollment.enrollment_id
+          WHERE enrollment.owner_token_identifier = ? AND enrollment.host_id = ?
+        `).get(who.token_identifier, args.hostId)
         if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
+        const scope = enrollmentScope(enrollment)
         db.prepare(`
           UPDATE workspaces SET deleted_at = NULL, updated_at = ?
           WHERE workspace_id = ? AND access = 'user-hosted' AND deleted_at IS NOT NULL
         `).run(now, args.workspaceId)
         const existing = workspaceByPublicId(db, args.workspaceId)
+        const directory = args.remoteDirectory ?? existing?.remote_directory ?? undefined
+        if (scope && (directory === undefined || !directoryWithinRoots(directory, scope.allowed_roots))) {
+          throw new SqliteHostConnectError(
+            "host_assignment_outside_scope",
+            `${directory ?? "(no directory)"} is not under any root this machine may serve`,
+          )
+        }
+        const invitationOrgId = enrollment.invitation_org_id ?? undefined
+        if (invitationOrgId && (existing?.org_id ?? args.orgId ?? invitationOrgId) !== invitationOrgId) {
+          throw new SqliteHostConnectError(
+            "host_assignment_outside_scope",
+            "This machine was invited into a different organization than the workspace's",
+          )
+        }
         if (existing) {
           if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
           refuseCloudWorkspace(existing)
@@ -1603,6 +2011,7 @@ export function createSqliteWorkspaceAuthority(
               repo_name = COALESCE(?, repo_name),
               git_branch = COALESCE(?, git_branch),
               remote_directory = COALESCE(?, remote_directory),
+              org_member_visible = ?,
               updated_at = ?
             WHERE workspace_id = ?
           `).run(
@@ -1611,17 +2020,18 @@ export function createSqliteWorkspaceAuthority(
             args.repoName ?? null,
             args.gitBranch ?? null,
             args.remoteDirectory ?? null,
+            orgMemberVisible(scope),
             now,
             args.workspaceId,
           )
         } else {
-          const { orgId, projectId } = ownedProject(db, who, args)
+          const { orgId, projectId } = ownedProject(db, who, { ...args, orgId: args.orgId ?? invitationOrgId })
           db.prepare(`
             INSERT INTO workspaces (
               workspace_id, org_id, project_id, owner_token_identifier, backing, access,
               display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?)
+              org_member_visible, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             args.workspaceId,
             orgId,
@@ -1633,17 +2043,21 @@ export function createSqliteWorkspaceAuthority(
             args.repoName ?? null,
             args.gitBranch ?? null,
             args.remoteDirectory ?? null,
+            orgMemberVisible(scope),
             now,
             now,
           )
         }
+        // Same transaction as the directory write above: a description is
+        // never a new directory under an old revision.
         db.prepare(`
           INSERT INTO host_workspace_assignments (
-            workspace_id, host_id, owner_token_identifier, second_device_open_at, assigned_at, updated_at
-          ) VALUES (?, ?, ?, NULL, ?, ?)
+            workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
+          ) VALUES (?, ?, ?, NULL, 1, ?, ?)
           ON CONFLICT (workspace_id) DO UPDATE SET
             host_id = excluded.host_id,
             owner_token_identifier = excluded.owner_token_identifier,
+            revision = host_workspace_assignments.revision + 1,
             updated_at = excluded.updated_at
         `).run(args.workspaceId, args.hostId, who.token_identifier, now, now)
         return { assigned: true as const, workspace_id: args.workspaceId, host_id: args.hostId }
@@ -1657,6 +2071,7 @@ export function createSqliteWorkspaceAuthority(
       return db.transaction(() => {
         const result = db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`)
           .run(args.workspaceId)
+        db.prepare(`DELETE FROM host_assignment_readiness WHERE workspace_id = ?`).run(args.workspaceId)
         db.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).run(now, now, args.workspaceId)
         return { unassigned: result.changes > 0 }
       })()
@@ -1742,6 +2157,257 @@ export function createSqliteWorkspaceAuthority(
       }
       return [...groups.values()]
     },
+
+    async createHostInvitation(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const scope = validatedScope(args.scope)
+      const orgId = await workspaceAuthority.resolveOrgId(auth)
+      const now = Date.now()
+      const expiresIn = Number.isFinite(args.expiresInMs) && args.expiresInMs !== undefined
+        ? Math.max(INVITATION_MIN_TTL_MS, Math.min(args.expiresInMs, INVITATION_MAX_TTL_MS))
+        : INVITATION_DEFAULT_TTL_MS
+      const invitationId = base64url(crypto.getRandomValues(new Uint8Array(16)))
+      const secret = base64url(crypto.getRandomValues(new Uint8Array(32)))
+      const expiresAt = now + expiresIn
+      db.prepare(`
+        INSERT INTO host_invitations (
+          invitation_id, owner_token_identifier, org_id, secret_hash, display_name, scope_json,
+          expires_at, created_by_token_identifier, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        invitationId,
+        who.token_identifier,
+        orgId,
+        await sha256Hex(secret),
+        args.displayName?.trim() || null,
+        JSON.stringify(scope),
+        expiresAt,
+        who.token_identifier,
+        now,
+      )
+      return { invitationId, token: invitationToken({ invitationId, secret }), expiresAt }
+    },
+    async listHostInvitations(auth: SignedControlPlaneAuth) {
+      const db = database()
+      const who = user(auth)
+      return db.prepare<unknown[], HostInvitationRowRecord>(`
+        SELECT * FROM host_invitations WHERE owner_token_identifier = ? ORDER BY created_at DESC, invitation_id
+      `).all(who.token_identifier).map((row): HostInvitationRow => ({
+        invitation_id: row.invitation_id,
+        ...(row.display_name ? { display_name: row.display_name } : {}),
+        scope: scopeDefinitionJson(row.scope_json),
+        ...(row.org_id ? { org_id: row.org_id } : {}),
+        created_at: row.created_at,
+        expires_at: row.expires_at,
+        ...(row.redeemed_at !== null ? { redeemed_at: row.redeemed_at } : {}),
+        ...(row.redeemed_host_id ? { redeemed_host_id: row.redeemed_host_id } : {}),
+        ...(row.redeemed_enrollment_id ? { redeemed_enrollment_id: row.redeemed_enrollment_id } : {}),
+        ...(row.revoked_at !== null ? { revoked_at: row.revoked_at } : {}),
+      }))
+    },
+    async revokeHostInvitation(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      // Never after redemption: the enrollment it created is revoked through
+      // `revokeHostEnrollment`, and a redeem and a revoke cannot both win.
+      const changed = db.prepare(`
+        UPDATE host_invitations SET revoked_at = ?
+        WHERE invitation_id = ? AND owner_token_identifier = ? AND revoked_at IS NULL AND redeemed_at IS NULL
+      `).run(Date.now(), args.invitationId, who.token_identifier).changes
+      return { revoked: changed > 0 }
+    },
+    async redeemHostInvitation(args) {
+      const db = database()
+      const invitationId = requiredText(args.invitationId, "invitationId")
+      const secret = requiredText(args.secret, "secret")
+      const hostId = requiredText(args.hostId, "hostId")
+      const jwk = publicHostKey(args.publicKey)
+      if (!jwk) throw new SqliteHostConnectError("invalid_input", "publicKey must be a public P-256 JWK")
+      const fingerprint = await publicKeyFingerprint(jwk)
+      try {
+        await verifyHostSignature({
+          public_key: JSON.stringify(jwk),
+          payload: invitationRedeemPayload({ invitationId, hostId, publicKeySha256: fingerprint }),
+          signature: args.signature,
+        })
+      } catch {
+        throw new SqliteHostConnectError("host_attestation_denied", "Invalid host attestation")
+      }
+      const secretHash = await sha256Hex(secret)
+      const publicKey = JSON.stringify(jwk)
+      return db.transaction(() => {
+        const now = Date.now()
+        const invitation = db.prepare<unknown[], HostInvitationRowRecord>(`SELECT * FROM host_invitations WHERE invitation_id = ?`)
+          .get(invitationId)
+        // One answer for a wrong id and a wrong secret: the id is not secret,
+        // but which half failed would tell a guesser it has half.
+        if (!invitation || !secretHashMatches(invitation.secret_hash, secretHash)) {
+          throw new SqliteHostConnectError("invitation_invalid", "Invitation is invalid")
+        }
+        if (invitation.redeemed_at !== null) {
+          const resumable = invitation.redeemed_public_key_fingerprint === fingerprint && invitation.redeemed_host_id === hostId
+          const enrollment = resumable && invitation.redeemed_enrollment_id
+            ? db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`)
+              .get(invitation.redeemed_enrollment_id)
+            : undefined
+          if (enrollment && enrollment.revoked_at === null) {
+            return redeemResult(db, { resumed: true, enrollment, invitation })
+          }
+          throw new SqliteHostConnectError("invitation_redeemed", "Invitation was already redeemed", {
+            redeemed_host_id: invitation.redeemed_host_id,
+            redeemed_at: invitation.redeemed_at,
+          })
+        }
+        if (invitation.revoked_at !== null) throw new SqliteHostConnectError("invitation_revoked", "Invitation was revoked")
+        if (invitation.expires_at <= now) throw new SqliteHostConnectError("invitation_expired", "Invitation has expired")
+        // The (owner, host_id) pair is occupied for ever: a revoked row keeps
+        // it, and a different key does not free it.
+        const occupied = db.prepare(`SELECT 1 FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+          .get(invitation.owner_token_identifier, hostId)
+        if (occupied) {
+          throw new SqliteHostConnectError("invitation_host_conflict", "This owner already has an enrollment for that host id")
+        }
+        const enrollmentId = base64url(crypto.getRandomValues(new Uint8Array(16)))
+        const claimed = db.prepare(`
+          UPDATE host_invitations SET
+            redeemed_at = ?, redeemed_host_id = ?, redeemed_public_key_fingerprint = ?, redeemed_enrollment_id = ?
+          WHERE invitation_id = ? AND secret_hash = ? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+        `).run(now, hostId, fingerprint, enrollmentId, invitationId, invitation.secret_hash, now).changes
+        if (claimed !== 1) throw new SqliteHostConnectError("invitation_invalid", "Invitation is invalid")
+        db.prepare(`
+          INSERT INTO host_enrollments (
+            enrollment_id, owner_token_identifier, host_id, public_key, display_name,
+            last_seen_at, expires_at, key_version, serving_generation, enrolled_via, scope_json, scope_revision,
+            created_at, updated_at
+          )
+          SELECT redeemed_enrollment_id, owner_token_identifier, redeemed_host_id, ?, ?,
+            ?, ?, 1, 0, 'invitation', scope_json, 1, ?, ?
+          FROM host_invitations WHERE invitation_id = ? AND redeemed_enrollment_id = ?
+        `).run(
+          publicKey,
+          args.displayName?.trim() || invitation.display_name,
+          now,
+          now + ttl(undefined),
+          now,
+          now,
+          invitationId,
+          enrollmentId,
+        )
+        const enrollment = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`)
+          .get(enrollmentId)
+        if (!enrollment) throw new Error("host_enrollment_missing_after_redeem")
+        recordHostAudit(db, {
+          tokenIdentifier: invitation.owner_token_identifier,
+          action: "host_enrollment.redeemed",
+          metadata: { enrollment_id: enrollmentId, host_id: hostId, invitation_id: invitationId },
+        })
+        return redeemResult(db, { resumed: false, enrollment, invitation })
+      })()
+    },
+    async updateHostEnrollmentScope(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const scope = validatedScope(args.scope)
+      return db.transaction(() => {
+        const now = Date.now()
+        const enrollment = db.prepare<unknown[], HostEnrollmentRow>(`
+          SELECT * FROM host_enrollments WHERE enrollment_id = ? AND owner_token_identifier = ? AND revoked_at IS NULL
+        `).get(args.enrollmentId, who.token_identifier)
+        if (!enrollment) throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
+        const revision = enrollment.scope_revision + 1
+        db.prepare(`
+          UPDATE host_enrollments SET scope_json = ?, scope_revision = ?, updated_at = ? WHERE enrollment_id = ?
+        `).run(JSON.stringify(scope), revision, now, enrollment.enrollment_id)
+        const assigned = db.prepare<unknown[], { workspace_id: string; remote_directory: string | null }>(`
+          SELECT assignment.workspace_id, workspace.remote_directory
+          FROM host_workspace_assignments assignment
+          JOIN workspaces workspace ON workspace.workspace_id = assignment.workspace_id
+          WHERE assignment.host_id = ? AND assignment.owner_token_identifier = ?
+          ORDER BY assignment.workspace_id
+        `).all(enrollment.host_id, enrollment.owner_token_identifier)
+        const retired: string[] = []
+        for (const assignment of assigned) {
+          if (assignment.remote_directory !== null && directoryWithinRoots(assignment.remote_directory, scope.allowed_roots)) {
+            db.prepare(`UPDATE workspaces SET org_member_visible = ?, updated_at = ? WHERE workspace_id = ?`)
+              .run(orgMemberVisible(scope), now, assignment.workspace_id)
+            continue
+          }
+          db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`).run(assignment.workspace_id)
+          db.prepare(`DELETE FROM host_assignment_readiness WHERE workspace_id = ?`).run(assignment.workspace_id)
+          db.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).run(now, now, assignment.workspace_id)
+          retired.push(assignment.workspace_id)
+        }
+        recordHostAudit(db, {
+          tokenIdentifier: who.token_identifier,
+          action: "host_enrollment.scope_updated",
+          metadata: { enrollment_id: enrollment.enrollment_id, scope_revision: revision, retired_workspace_ids: retired },
+        })
+        return { scope: { ...scope, revision }, retired_workspace_ids: retired }
+      })()
+    },
+    async listHostEnrollments(auth: SignedControlPlaneAuth) {
+      const db = database()
+      const who = user(auth)
+      const rows = db.prepare<unknown[], HostEnrollmentRow>(`
+        SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND revoked_at IS NULL
+        ORDER BY last_seen_at DESC, enrollment_id
+      `).all(who.token_identifier)
+      const acked = db.prepare<unknown[], { workspace_id: string; revision: number }>(`
+        SELECT workspace_id, revision FROM host_assignment_readiness
+        WHERE enrollment_id = ? AND generation = ? ORDER BY workspace_id
+      `)
+      const out: HostEnrollmentListRow[] = []
+      for (const row of rows) {
+        const jwk = publicHostKey(row.public_key)
+        out.push({
+          enrollment_id: row.enrollment_id,
+          ...(row.display_name ? { display_name: row.display_name } : {}),
+          host_id: row.host_id,
+          public_key_fingerprint: jwk ? await publicKeyFingerprint(jwk) : "",
+          key_version: row.key_version,
+          enrolled_via: row.enrolled_via === "invitation" ? "invitation" : "account",
+          last_seen_at: row.last_seen_at,
+          expires_at: row.expires_at,
+          serving_generation: row.serving_generation,
+          ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
+          acked: acked.all(row.enrollment_id, row.serving_generation)
+            .map((ack): HostAssignmentAck => ({ workspaceId: ack.workspace_id, revision: ack.revision })),
+          scope: enrollmentScope(row),
+        })
+      }
+      return out
+    },
+    machineAuth: {
+      async lookupEnrollment(enrollmentId) {
+        const db = database()
+        const row = db.prepare<unknown[], HostEnrollmentRow & { owner_eligible: number }>(`
+          SELECT enrollment.*, ${ownerEligibleSql("enrollment")} AS owner_eligible
+          FROM host_enrollments enrollment WHERE enrollment.enrollment_id = ?
+        `).get(enrollmentId)
+        if (!row) return undefined
+        return {
+          enrollment_id: row.enrollment_id,
+          host_id: row.host_id,
+          owner_user_id: row.owner_token_identifier,
+          owner_actor_id: row.owner_token_identifier,
+          public_key_json: row.public_key,
+          key_version: row.key_version,
+          serving_generation: row.serving_generation,
+          revoked_at: row.revoked_at,
+          paused_at: row.paused_at,
+          scope: enrollmentScope(row),
+          ownerEligible: row.owner_eligible === 1,
+        }
+      },
+      async consumeNonce(input) {
+        const db = database()
+        return db.prepare(`
+          INSERT INTO host_request_nonces (enrollment_id, nonce, expires_at) VALUES (?, ?, ?)
+          ON CONFLICT (enrollment_id, nonce) DO NOTHING
+        `).run(input.enrollmentId, input.nonce, input.expiresAt).changes === 1
+      },
+    } satisfies MachineAuthAdapter,
 
     async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args) {
       const db = database()
