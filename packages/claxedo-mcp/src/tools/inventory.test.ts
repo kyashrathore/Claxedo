@@ -260,3 +260,13 @@ describe("the tool names the catalog publishes", () => {
     ])
   })
 })
+
+describe("the transcript's first-party roster", () => {
+  // A relative import rather than a package edge: session-ui is a UI package this
+  // server package must not depend on, and the roster module itself is pure.
+  test("names exactly the tools the groups register, so a renamed or added tool cannot render as a generic row", async () => {
+    const { CLAXEDO_TOOL_TITLE_KEYS } = await import("../../../session-ui/src/components/claxedo-tool-view")
+    const registered = claxedoMcpToolGroupInventory().flatMap((group) => group.tools).sort()
+    expect(Object.keys(CLAXEDO_TOOL_TITLE_KEYS).sort()).toEqual(registered)
+  })
+})

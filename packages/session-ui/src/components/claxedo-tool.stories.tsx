@@ -55,7 +55,7 @@ const child: SubagentView = {
   ambient: false,
 }
 
-function Harness(props: ParentProps) {
+function ClaxedoToolHarness(props: ParentProps) {
   return (
     <FileComponentProvider component={FileStub}>
       <DataProvider
@@ -143,7 +143,7 @@ const PARTS: Array<{ part: AgentToolPart; open?: boolean }> = [
   },
 ]
 
-function Gallery() {
+function ClaxedoToolGallery() {
   return (
     <For each={PARTS.filter((entry) => entry.part.tool !== "task_send_placeholder")}>
       {(entry) => <Part part={entry.part} message={message} defaultOpen={entry.open} />}
@@ -167,8 +167,8 @@ export default {
 export const Basic = {
   name: "Gallery",
   render: () => (
-    <Harness>
-      <Gallery />
-    </Harness>
+    <ClaxedoToolHarness>
+      <ClaxedoToolGallery />
+    </ClaxedoToolHarness>
   ),
 }
