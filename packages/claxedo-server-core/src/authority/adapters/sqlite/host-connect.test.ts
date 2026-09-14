@@ -296,6 +296,10 @@ describe("machine heartbeat, readiness and generations", () => {
     const { enrollment, keys, hostId } = await enrollByAccount(api, { displayName: "Laptop" })
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a" })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_a" })).toEqual({ active: false })
+    // The owner's declaration is listed before the machine has acked anything.
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([
+      { assignments: [{ workspace_id: "ws_a", remote_directory: "/srv/a", revision: 1 }], acked: [] },
+    ])
 
     const before = enrollmentRow(db, enrollment.enrollment_id)
     const beat = await machineBeat(api, keys, {
@@ -926,6 +930,7 @@ describe("scope", () => {
       last_seen_at: enrollment.last_seen_at,
       expires_at: enrollment.expires_at,
       serving_generation: 0,
+      assignments: [],
       acked: [],
       scope: undefined,
     }])

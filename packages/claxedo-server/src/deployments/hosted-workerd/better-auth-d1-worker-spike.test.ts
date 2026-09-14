@@ -58,6 +58,7 @@ const CONTROL_PLANE_MIGRATION_PATHS = [
   "0016_host_session_authority.sql",
   "0026_workspace_org_member_visible.sql",
   "0027_host_connect.sql",
+  "0028_workspace_host_assignment_revision.sql",
 ].map((name) => fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url)))
 
 function body(input: Record<string, string>) {

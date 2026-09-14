@@ -98,6 +98,7 @@ type WorkspaceRow = {
   access: "user-hosted" | "cloud"
   home_region: string | null
   remote_directory: string | null
+  host_assignment_revision: number
   role_rank: number
 }
 
@@ -262,12 +263,14 @@ export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enr
         )`
 
 /**
- * The organization branch of a workspace's role rank, shared by the three
- * workspace-scoped rank computations (`workspaceAccessCte` here,
- * `workspaceAccessSql` in workspace-authority, the session authority's actor
- * rank). The ordinary org member's implicit viewer rank is gated on the
- * workspace's `org_member_visible`; owners and admins are not. Project access
- * has no workspace row and does not use this.
+ * The organization branch of a workspace's role rank: every workspace-scoped
+ * rank computation — `workspaceAccessCte` here, workspace-authority's
+ * `workspaceAccessSql`, channel-runtime-authority's `workspaceAccessSql`, the
+ * session authority's actor rank and the Agent Plugins store's
+ * `WORKSPACE_ACCESS_SQL` — builds its org branch from this one string. The
+ * ordinary org member's implicit viewer rank is gated on the workspace's
+ * `org_member_visible`; owners and admins are not. Project access has no
+ * workspace row and does not use this.
  */
 export function organizationRoleRankSql(input: {
   orgOwnerUserId: string
@@ -373,10 +376,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * heartbeat's readiness row, and routing requires all three. Cold-registers
    * the workspace row exactly as the retired per-workspace registration did.
    *
-   * The directory and the assignment revision land in one batch, so a host
-   * never reads a new directory under an old revision; the enrollment's scope
-   * decides both whether the directory is allowed and whether ordinary org
-   * members see the workspace.
+   * The owner's rank is decided against the record as it stands — a retired
+   * user-hosted row included, since assigning it is what revives it — so a
+   * refused request writes nothing. The revival, the directory and the next
+   * assignment revision then land in one batch guarded on the workspace
+   * counter and the enrollment's scope revision this call validated; the
+   * enrollment's scope decides both whether the directory is allowed and
+   * whether ordinary org members see the workspace.
    */
   async assignWorkspaceHost(
     auth: SignedControlPlaneAuth,
@@ -397,7 +403,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
     const displayName = optionalText(args.displayName, "displayName", 200)
-    const remoteDirectory = optionalText(args.remoteDirectory, "remoteDirectory", MAX_SCOPE_ROOT_LENGTH)
+    const remoteDirectory = storedDirectory(optionalText(args.remoteDirectory, "remoteDirectory", MAX_SCOPE_ROOT_LENGTH))
     const enrollment = await this.enrollment(who.actorId, hostId)
     if (!enrollment || enrollment.revoked_at !== null) {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
@@ -409,25 +415,22 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (invitationOrgId && args.orgId && args.orgId !== invitationOrgId) {
       throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
     }
-    await this.database.prepare(`
-      update workspaces set deleted_at = null, updated_at = ?
-      where workspace_id = ? and access = 'user-hosted' and deleted_at is not null
-    `).bind(this.now(), workspaceId).run()
-    let workspace = await this.workspace(workspaceId)
+    const orgMemberVisible = scope?.visibility !== "owner"
+    let workspace: WorkspaceRow | undefined
+    if (await this.assignableWorkspaceExists(workspaceId)) {
+      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin", true)
+      requireLocalWorkspace(workspace)
+      if (invitationOrgId && workspace.org_id !== invitationOrgId) {
+        throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
+      }
+    }
     if (scope && !directoryWithinRoots(remoteDirectory ?? workspace?.remote_directory ?? "", scope.allowed_roots)) {
       throw new D1HostAccessAuthorityError(
         "host_assignment_outside_scope",
         "Workspace directory is outside the roots this machine may serve",
       )
     }
-    const orgMemberVisible = scope?.visibility !== "owner"
-    if (workspace) {
-      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-      requireLocalWorkspace(workspace)
-      if (invitationOrgId && workspace.org_id !== invitationOrgId) {
-        throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
-      }
-    } else {
+    if (!workspace) {
       if (!this.options.registerLocalForSharing) {
         throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
       }
@@ -457,25 +460,45 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ...(remoteDirectory ? [["remote_directory", remoteDirectory] as [string, string]] : []),
       ["org_member_visible", orgMemberVisible ? 1 : 0],
     ]
+    const revision = workspace.host_assignment_revision + 1
     const now = this.now()
-    await this.database.batch([
+    const assertionId = this.randomId("assert")
+    await this.guardedBatch([
       this.database.prepare(`
-        update workspaces set ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
-        where workspace_id = ?
-      `).bind(...description.map(([, value]) => value), now, workspaceId),
+        update workspaces set deleted_at = null, host_assignment_revision = ?,
+          ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
+        where workspace_id = ? and host_assignment_revision = ? and access = 'user-hosted'
+          and exists (
+            select 1 from host_enrollments
+            where owner_actor_id = ? and host_id = ? and revoked_at is null and scope_revision = ?
+          )
+      `).bind(
+        revision,
+        ...description.map(([, value]) => value),
+        now,
+        workspaceId,
+        workspace.host_assignment_revision,
+        who.actorId,
+        hostId,
+        enrollment.scope_revision,
+      ),
+      this.wonAssertion(assertionId),
       this.database.prepare(`
         insert into host_workspace_assignments (
           workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
           second_device_open_at, assigned_at, updated_at, revision
-        ) values (?, ?, ?, ?, ?, null, ?, ?, 1)
+        )
+        select workspace_id, ?, org_id, ?, ?, null, ?, ?, host_assignment_revision
+        from workspaces where workspace_id = ?
         on conflict (workspace_id) do update set
           host_id = excluded.host_id,
           owner_user_id = excluded.owner_user_id,
           owner_actor_id = excluded.owner_actor_id,
           updated_at = excluded.updated_at,
-          revision = host_workspace_assignments.revision + 1
-      `).bind(workspaceId, hostId, workspace.org_id, who.userId, who.actorId, now, now),
-    ])
+          revision = excluded.revision
+      `).bind(hostId, who.userId, who.actorId, now, now, workspaceId),
+      this.deleteAssertion(assertionId),
+    ], "Host assignment raced with a scope or assignment change")
     return { assigned: true as const, workspace_id: workspaceId, host_id: hostId }
   }
 
@@ -846,6 +869,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
           where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ?
         `).bind(now, now, machine.enrollmentId, machine.keyVersion, machine.generation),
+        this.wonAssertion(assertionId),
         this.database.prepare(`
           delete from host_assignment_readiness where enrollment_id = ? and generation < ?
         `).bind(machine.enrollmentId, generation),
@@ -855,13 +879,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           metadata: { enrollmentId: machine.enrollmentId, hostId: machine.hostId, generation },
           now,
         }),
-        this.database.prepare(`
-          insert into authority_batch_assertions (assertion_id, passed)
-          values (?, case when exists (
-            select 1 from host_enrollments
-            where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ? and generation_acquired_at = ?
-          ) then 1 else 0 end)
-        `).bind(assertionId, machine.enrollmentId, machine.keyVersion, generation, now),
         this.deleteAssertion(assertionId),
       ])
     } catch (error) {
@@ -929,6 +946,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       expires_at: row.expires_at,
       serving_generation: row.serving_generation,
       ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
+      ...(row.paused_at !== null ? { paused_at: row.paused_at } : {}),
+      assignments: (await this.assignmentDescriptions(row.host_id, row.owner_actor_id))
+        .flatMap((entry) => entry.description ? [entry.description] : []),
       acked: acked.get(row.enrollment_id) ?? [],
       scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
     })))
@@ -946,48 +966,61 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
     }
     const revision = row.scope_revision + 1
-    const assigned = await this.assignmentDescriptions(row.host_id, row.owner_actor_id)
-    const retired = assigned
-      .filter((entry) => !directoryWithinRoots(entry.remote_directory ?? "", scope.allowed_roots))
-      .map((entry) => entry.workspace_id)
-    const retiredJson = JSON.stringify(retired)
+    const rootsJson = JSON.stringify(scope.allowed_roots)
     const now = this.now()
+    const auditId = this.randomId("audit")
     const assertionId = this.randomId("assert")
+    // The assignments of this host whose directory is neither one of the new
+    // roots nor under one, read inside the batch against the rows it deletes;
+    // binds host_id, owner_actor_id and the roots JSON, in that order. A row
+    // with no directory is outside every root, as in `directoryWithinRoots`.
+    const outsideRootsSql = `
+      select assignment.workspace_id from host_workspace_assignments assignment
+      left join workspaces workspace on workspace.workspace_id = assignment.workspace_id
+      where assignment.host_id = ? and assignment.owner_actor_id = ?
+        and not exists (
+          select 1 from json_each(?) root
+          where workspace.remote_directory = root.value
+            or (root.value = '/' and substr(workspace.remote_directory, 1, 1) = '/')
+            or substr(workspace.remote_directory, 1, length(root.value) + 1) = root.value || '/'
+        )`
+    const outsideRoots = () => [row.host_id, row.owner_actor_id, rootsJson]
     await this.guardedBatch([
       this.database.prepare(`
         update host_enrollments set scope_json = ?, scope_revision = ?, updated_at = ?
         where enrollment_id = ? and owner_actor_id = ? and scope_revision = ? and revoked_at is null
       `).bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
+      this.wonAssertion(assertionId),
+      this.database.prepare(retireUserHostedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
+        .bind(now, now, ...outsideRoots()),
       this.database.prepare(`
-        delete from host_workspace_assignments
-        where host_id = ? and owner_actor_id = ?
-          and workspace_id in (select value from json_each(?))
-      `).bind(row.host_id, row.owner_actor_id, retiredJson),
+        delete from host_assignment_readiness where workspace_id in (${outsideRootsSql})
+      `).bind(...outsideRoots()),
+      this.auditRow({
+        eventId: auditId,
+        enrollmentId,
+        action: "host_enrollment.scope_updated",
+        metadata: new SqlJson(
+          `json_object('enrollmentId', ?, 'hostId', ?, 'scopeRevision', ?, 'retiredWorkspaceIds',
+            json((select json_group_array(workspace_id) from (${outsideRootsSql} order by assignment.workspace_id))))`,
+          [enrollmentId, row.host_id, revision, ...outsideRoots()],
+        ),
+        now,
+      }),
       this.database.prepare(`
-        delete from host_assignment_readiness where workspace_id in (select value from json_each(?))
-      `).bind(retiredJson),
-      this.database.prepare(retireUserHostedWorkspaceSql("workspace_id in (select value from json_each(?))"))
-        .bind(now, now, retiredJson),
+        delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
+      `).bind(...outsideRoots()),
       this.database.prepare(`
         update workspaces set org_member_visible = ?, updated_at = ?
         where workspace_id in (
           select workspace_id from host_workspace_assignments where host_id = ? and owner_actor_id = ?
         )
       `).bind(scope.visibility === "owner" ? 0 : 1, now, row.host_id, row.owner_actor_id),
-      this.auditRow({
-        enrollmentId,
-        action: "host_enrollment.scope_updated",
-        metadata: { enrollmentId, hostId: row.host_id, scopeRevision: revision, retiredWorkspaceIds: retired },
-        now,
-      }),
-      this.database.prepare(`
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from host_enrollments where enrollment_id = ? and scope_revision = ? and revoked_at is null
-        ) then 1 else 0 end)
-      `).bind(assertionId, enrollmentId, revision),
       this.deleteAssertion(assertionId),
     ], "Host enrollment scope changed concurrently")
+    const audit = await this.database.prepare(`select metadata_json from authority_audit_events where event_id = ?`)
+      .bind(auditId).first<{ metadata_json: string }>()
+    const retired = stringList(asRecord(parseJson(audit?.metadata_json ?? "{}"))?.retiredWorkspaceIds)
     return { scope: { ...scope, revision }, retired_workspace_ids: retired }
   }
 
@@ -1480,20 +1513,25 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return { userId: row.user_id, actorId, actorKind: row.actor_kind }
   }
 
-  private async requireWorkspaceAccess(actor: Principal, workspaceId: string, action: "read" | "admin") {
+  private async requireWorkspaceAccess(
+    actor: Principal,
+    workspaceId: string,
+    action: "read" | "admin",
+    revivable = false,
+  ) {
     const row = await this.database.prepare(`
-      ${workspaceAccessCte(action === "read" ? 1 : 3)}
+      ${workspaceAccessCte(action === "read" ? 1 : 3, revivable)}
       select * from authorized_workspace
     `).bind(actor.actorId, workspaceId).first<WorkspaceRow>()
     if (!row) throw denied()
     return row
   }
 
-  private async workspace(workspaceId: string) {
-    return await this.database.prepare(`
-      select workspace_id, org_id, project_id, backing, access, home_region, remote_directory, 0 as role_rank
-      from workspaces where workspace_id = ? and deleted_at is null
-    `).bind(workspaceId).first<WorkspaceRow>()
+  /** Whether an assignment would write to an existing record: a live row, or a retired user-hosted one it revives. */
+  private async assignableWorkspaceExists(workspaceId: string) {
+    return !!await this.database.prepare(`
+      select 1 from workspaces where workspace_id = ? and (deleted_at is null or access = 'user-hosted')
+    `).bind(workspaceId).first()
   }
 
   private async shareTargetInOrganization(target: ReturnType<typeof normalizeShareTarget>, orgId: string) {
@@ -1730,23 +1768,48 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     `).bind(now, JSON.stringify(acks), enrollmentId)
   }
 
-  /** An audit row attributed to the enrollment's owner, written inside the caller's batch. */
-  private auditRow(input: { enrollmentId: string; action: string; metadata: Record<string, unknown>; now: number }) {
+  /**
+   * An audit row attributed to the enrollment's owner, written inside the
+   * caller's batch. Metadata given as `SqlJson` is computed by the batch
+   * itself, which is how a batch records the rows it deleted.
+   */
+  private auditRow(input: {
+    eventId?: string
+    enrollmentId: string
+    action: string
+    metadata: Record<string, unknown> | SqlJson
+    now: number
+  }) {
+    const metadata = input.metadata instanceof SqlJson
+      ? input.metadata
+      : new SqlJson("?", [JSON.stringify(input.metadata)])
     return this.database.prepare(`
       insert into authority_audit_events (
         event_id, deployment_id, user_id, actor_id, org_id, project_id, workspace_id,
         unverified_attempted_workspace_id, action, result, reason, metadata_json, created_at
       )
-      select ?, ?, owner_user_id, owner_actor_id, null, null, null, null, ?, 'allow', null, ?, ?
+      select ?, ?, owner_user_id, owner_actor_id, null, null, null, null, ?, 'allow', null, ${metadata.sql}, ?
       from host_enrollments where enrollment_id = ?
     `).bind(
-      this.randomId("audit"),
+      input.eventId ?? this.randomId("audit"),
       this.options.deploymentId,
       input.action,
-      JSON.stringify(input.metadata),
+      ...metadata.bind,
       input.now,
       input.enrollmentId,
     )
+  }
+
+  /**
+   * Passes only when the statement immediately before it in the batch
+   * changed a row: SQLite's `changes()` is per connection and a D1 batch runs
+   * its statements in order on one, so this is the batch's own write being
+   * counted, not a state another caller could have produced.
+   */
+  private wonAssertion(assertionId: string) {
+    return this.database.prepare(`
+      insert into authority_batch_assertions (assertion_id, passed) values (?, changes())
+    `).bind(assertionId)
   }
 
   private deleteAssertion(assertionId: string) {
@@ -1785,11 +1848,21 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   }
 }
 
+/** A JSON value expressed in SQL, with the bindings its placeholders take in order. */
+class SqlJson {
+  constructor(readonly sql: string, readonly bind: unknown[]) {}
+}
+
 function hostRoleRank(role: "viewer" | "editor" | "admin" | "owner") {
   return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
 }
 
-function workspaceAccessCte(rank: 1 | 3) {
+/**
+ * `revivable` admits a retired user-hosted row: its assignment is what
+ * revives it, so the owner's rank is decided against the record as it is
+ * before anything is written. Every other reader sees live rows only.
+ */
+function workspaceAccessCte(rank: 1 | 3, revivable = false) {
   return `with current_actor as (
     select actor.actor_id, actor.user_id
     from actors actor join users user on user.user_id = actor.user_id and user.state = 'active'
@@ -1797,6 +1870,7 @@ function workspaceAccessCte(rank: 1 | 3) {
   ), authorized_workspace as (
     select workspace.workspace_id, workspace.org_id, workspace.project_id,
       workspace.backing, workspace.access, workspace.home_region, workspace.remote_directory,
+      workspace.host_assignment_revision,
       max(
         case when workspace.owner_user_id = current_actor.user_id then 4 else 0 end,
         coalesce(case direct.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
@@ -1809,7 +1883,8 @@ function workspaceAccessCte(rank: 1 | 3) {
         })}
       ) as role_rank
     from current_actor
-    join workspaces workspace on workspace.workspace_id = ? and workspace.deleted_at is null
+    join workspaces workspace on workspace.workspace_id = ?
+      and ${revivable ? "(workspace.deleted_at is null or workspace.access = 'user-hosted')" : "workspace.deleted_at is null"}
     join projects project
       on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
     join orgs organization on organization.org_id = workspace.org_id and organization.deleted_at is null
@@ -1986,6 +2061,17 @@ export function retireUserHostedWorkspaceSql(where: string) {
   `
 }
 
+/**
+ * An absolute POSIX directory is recorded in its normalized form (no `.`,
+ * `..`, repeated or trailing separators) so the scope root check the scope
+ * PATCH runs in SQL, a prefix comparison, agrees with `directoryWithinRoots`.
+ * Anything else — a Windows path on an account machine — is recorded as given.
+ */
+function storedDirectory(input: string | undefined) {
+  if (input === undefined) return undefined
+  return normalizePosixDirectory(input) ?? input
+}
+
 function requireLocalWorkspace(workspace: WorkspaceRow) {
   if (workspace.backing !== "local-worktree" || workspace.access !== "user-hosted") {
     throw new D1HostAccessAuthorityError(
@@ -2113,11 +2199,14 @@ function isUniqueFailure(error: unknown) {
 /** A stored JSON array of ids; a column that is not one contributes no ids. */
 function storedStringList(raw: string): string[] {
   try {
-    const parsed = parseJson(raw)
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []
+    return stringList(parseJson(raw))
   } catch {
     return []
   }
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 }
 
 /** A stored JWK, read as the record it is; the caller checks the key material itself. */

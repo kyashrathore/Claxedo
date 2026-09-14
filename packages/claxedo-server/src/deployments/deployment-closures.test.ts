@@ -96,13 +96,14 @@ const ENTRIES = [
   // binary shares with the desktop composition rather than hand-typing. It
   // holds the credential values and may bind 0.0.0.0, so it is a broker host;
   // the package reaches only jose, @hono/node-server and the runtime contract.
-  // +4 modules: the host-connect control plane this node serves for a
-  // `claxedo connect` fleet — `routes/hosted/host-enrollment.ts` (invitations,
-  // machine beats, acquire, scope), `routes/hosted/host-assignment.ts` (the
-  // owner assigning a directory on an enrolled machine, dispatched from the
-  // self-host workspace routes on a `hostId` body), hosted-shared's
-  // `hosted-remote-access-service.ts` (revoke), and `platform/http/status.ts`
-  // that the first two answer authority refusals through. 125/40.
+  // The host-connect control plane this node serves for a `claxedo connect`
+  // fleet is four modules of the closure: `routes/hosted/host-enrollment.ts`
+  // owns invitations, machine beats, acquire and scope;
+  // `routes/hosted/host-assignment.ts` owns the owner assigning a directory
+  // on an enrolled machine, which the self-host workspace routes dispatch to
+  // on a `hostId` body; hosted-shared's `hosted-remote-access-service.ts`
+  // owns revoke; `platform/http/status.ts` is how the two routes answer an
+  // authority refusal with its own status. 125/40.
   { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 125, packages: 40 },
 ] as const
 

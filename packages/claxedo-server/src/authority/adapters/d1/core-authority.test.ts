@@ -29,6 +29,7 @@ const MIGRATIONS = [
   "0024_session_last_human_turn.sql",
   "0026_workspace_org_member_visible.sql",
   "0027_host_connect.sql",
+  "0028_workspace_host_assignment_revision.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -453,6 +454,38 @@ describe("composed Better Auth + D1 authority", () => {
         externalUserId: "telegram-user-7",
       }),
     ).toEqual({ revoked: false })
+  })
+
+  test("a channel-bound org member is refused on an owner-visibility workspace and admitted with a direct share", async () => {
+    const { authority, database } = await setup()
+    const alice = await signed(authority, "visibility-alice")
+    const bob = await signed(authority, "visibility-bob")
+    await authority.createHostedOrganization(alice, { name: "Visibility", orgId: "org_visibility" })
+    await authority.addOrganizationMember(alice, { orgId: "org_visibility", userId: bob.principal!.userId, role: "member" })
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_hidden",
+      orgId: "org_visibility",
+      displayName: "hidden",
+      backing: "local-worktree",
+      access: "user-hosted",
+    })
+    // The column an owner-visibility host assignment writes.
+    await database.prepare("update workspaces set org_member_visible = 0 where workspace_id = 'ws_hidden'").run()
+    await authority.bindChannelIdentity(bob, { channel: "telegram", externalUserId: "telegram-user-9" })
+    const request = {
+      channel: "telegram",
+      externalUserId: "telegram-user-9",
+      threadKey: "telegram:thread-9",
+      workspaceId: "ws_hidden",
+      action: "read" as const,
+    }
+    await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
+    await authority.grantWorkspaceShare(alice, {
+      workspaceId: "ws_hidden",
+      role: "viewer",
+      target: { kind: "user", userId: bob.principal!.userId },
+    })
+    expect(await authority.authorizeChannelWorkspace(request)).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
   })
 
   test("records only the configured canonical service actor and enforces deployment, workspace, JTI, and revocation", async () => {

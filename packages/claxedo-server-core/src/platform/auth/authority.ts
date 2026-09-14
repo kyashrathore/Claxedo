@@ -810,6 +810,8 @@ export type HostEnrollmentListRow = {
   serving_generation: number
   generation_acquired_at?: number
   paused_at?: number
+  /** The owner's declarations for this host, as the heartbeat ack delivers them; a directory-less assignment is not one. */
+  assignments: HostAssignmentDescription[]
   acked: HostAssignmentAck[]
   scope: HostEnrollmentScope | undefined
 }

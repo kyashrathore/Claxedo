@@ -8,6 +8,7 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { organizationRoleRankSql } from "./host-access-authority"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
@@ -538,9 +539,12 @@ const workspaceAccessSql = `
       case when workspace.owner_user_id = ? then 4 else 0 end,
       coalesce(case direct.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
       coalesce(case project_member.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-      case when org.owner_user_id = ? then 3
-        when org_member.role in ('owner', 'admin') then 3
-        when org_member.role = 'member' then 1 else 0 end
+      ${organizationRoleRankSql({
+        orgOwnerUserId: "org.owner_user_id",
+        userId: "?",
+        orgMemberRole: "org_member.role",
+        workspaceAlias: "workspace",
+      })}
     ) as role_rank
   from workspaces workspace
   join projects project on project.project_id = workspace.project_id and project.deleted_at is null

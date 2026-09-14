@@ -1,7 +1,11 @@
 import type { Context } from "hono"
 import { z } from "zod"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import {
+  ControlPlaneAuthError,
+  controlPlaneAuthErrorBody,
+  type SignedControlPlaneAuth,
+} from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -27,8 +31,13 @@ import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards
  * body) and withdrawing the assignment (`DELETE`). Sharing under machine-wide
  * enrollment has no challenge and no machine signature here — liveness is the
  * enrollment lease and the machine's consent is its heartbeat-acked served
- * set; routing needs all three. The Host Tunnel Token is minted immediately
- * so the machine can open its relay tunnel without waiting for a beat.
+ * set; routing needs all three.
+ *
+ * Only an account-enrolled machine (the desktop) gets a Host Tunnel Token in
+ * the answer: that credential names no enrollment or generation and is not
+ * fenced on readiness, and the desktop opens its relay tunnel from it before
+ * its first beat. A machine enrolled any other way is served the fenced
+ * credential by its heartbeat ack and nothing here.
  *
  * One module for both control planes: the hosted Worker mounts these inside
  * `HostedWorkspaceRoutes`; the self-hosted node answers its own machine's
@@ -77,6 +86,11 @@ function regionalHostTunnel(
     homeRegion,
     ...(relayUrl ? { relayUrl } : {}),
   }
+}
+
+async function accountEnrolled(authority: WorkspaceAuthority, auth: SignedControlPlaneAuth, hostId: string) {
+  const machines = await authority.listHostEnrollments?.(auth)
+  return machines?.some((row) => row.host_id === hostId && row.enrolled_via === "account") ?? false
 }
 
 export type HostAssignmentHandlers = {
@@ -132,7 +146,9 @@ export function hostAssignmentHandlers(
           workspaceId,
           properties: { hostId: body.hostId },
         })
-        const hostTunnel = await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
+        const hostTunnel = await accountEnrolled(authority, auth, body.hostId)
+          ? await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
+          : undefined
         return c.json({
           assignment,
           hostTunnel: regionalHostTunnel(options, undefined, hostTunnel),

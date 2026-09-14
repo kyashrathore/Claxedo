@@ -519,7 +519,23 @@ function renewLease(db: SqliteAuthorityDb, input: {
   // The owner's assignment view rides back on every ack so the machine can
   // reconcile its persisted set — without this, machine consent and owner
   // intent drift apart silently forever.
-  const assignments = db.prepare<unknown[], {
+  const assignments = hostAssignments(db, row.host_id, row.owner_token_identifier)
+  return {
+    expires_at: expiresAt,
+    last_seen_at: now,
+    assignments: assignments.descriptions,
+    scope: enrollmentScope(row),
+    assigned_workspace_ids: assignments.workspace_ids,
+  }
+}
+
+/**
+ * The owner's assignments to one host. A workspace with no directory is
+ * assigned but not describable: it is in `workspace_ids` for reconciliation
+ * and absent from `descriptions`.
+ */
+function hostAssignments(db: SqliteAuthorityDb, hostId: string, ownerTokenIdentifier: string) {
+  const rows = db.prepare<unknown[], {
     workspace_id: string
     revision: number
     remote_directory: string | null
@@ -530,20 +546,15 @@ function renewLease(db: SqliteAuthorityDb, input: {
     JOIN workspaces workspace ON workspace.workspace_id = assignment.workspace_id
     WHERE assignment.host_id = ? AND assignment.owner_token_identifier = ? AND workspace.deleted_at IS NULL
     ORDER BY assignment.workspace_id
-  `).all(row.host_id, row.owner_token_identifier)
+  `).all(hostId, ownerTokenIdentifier)
   return {
-    expires_at: expiresAt,
-    last_seen_at: now,
-    // A workspace with no directory is assigned but not describable; it stays
-    // in the id set for reconciliation and out of the descriptions.
-    assignments: assignments.flatMap((assignment) => assignment.remote_directory === null ? [] : [{
+    workspace_ids: rows.map((assignment) => assignment.workspace_id),
+    descriptions: rows.flatMap((assignment): HostAssignmentDescription[] => assignment.remote_directory === null ? [] : [{
       workspace_id: assignment.workspace_id,
       remote_directory: assignment.remote_directory,
       ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
       revision: assignment.revision,
     }]),
-    scope: enrollmentScope(row),
-    assigned_workspace_ids: assignments.map((assignment) => assignment.workspace_id),
   }
 }
 
@@ -2420,6 +2431,7 @@ export function createSqliteWorkspaceAuthority(
           serving_generation: row.serving_generation,
           ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
           ...(row.paused_at !== null ? { paused_at: row.paused_at } : {}),
+          assignments: hostAssignments(db, row.host_id, row.owner_token_identifier).descriptions,
           acked: acked.all(row.enrollment_id, row.serving_generation)
             .map((ack): HostAssignmentAck => ({ workspaceId: ack.workspace_id, revision: ack.revision })),
           scope: enrollmentScope(row),

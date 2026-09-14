@@ -3013,11 +3013,12 @@ describe("workspace routes signed control plane authority", () => {
   test("a hostId naming an enrolled machine assigns a directory on it through the authority, not this machine", async () => {
     const svc = services()
     const assignments = hostAssignments()
+    const hostTunnelTokenSigner = vi.fn(async () => ({ hostTunnelToken: "htt_box", tokenExpiresAt: 456_000, jti: "htt_jti_box" }))
     const app = WorkspaceRoutes(svc, {
       authConfig,
       verifier,
       hostAssignments: assignments,
-      hostTunnelTokenSigner: vi.fn(async () => ({ hostTunnelToken: "htt_box", tokenExpiresAt: 456_000, jti: "htt_jti_box" })),
+      hostTunnelTokenSigner,
       relayUrl: "http://relay.test",
     })
 
@@ -3036,16 +3037,12 @@ describe("workspace routes signed control plane authority", () => {
     })
 
     expect(res.status).toBe(200)
+    // A `claxedo connect` machine is not account-enrolled: the fenced tunnel
+    // credential rides its heartbeat ack, so the assignment answer mints none.
     await expect(res.json()).resolves.toEqual({
       assignment: { assigned: true, workspace_id: "ws_box", host_id: "host_box" },
-      hostTunnel: {
-        hostTunnelToken: "htt_box",
-        tokenExpiresAt: 456_000,
-        jti: "htt_jti_box",
-        homeRegion: "us-east",
-        relayUrl: "http://relay.test",
-      },
     })
+    expect(hostTunnelTokenSigner).not.toHaveBeenCalled()
     // Cold-registered by the authority: the workspace need not exist in this
     // node's own store, and this machine's served set is untouched.
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()

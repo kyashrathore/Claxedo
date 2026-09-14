@@ -35,6 +35,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0025_claxedo_tasks.sql",
   "0026_workspace_org_member_visible.sql",
   "0027_host_connect.sql",
+  "0028_workspace_host_assignment_revision.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(
@@ -213,5 +214,47 @@ describe("control-plane adapter rebuild", () => {
         .prepare("update user_deployed_owner_bootstrap_claims set consumed_subject = 'other' where deployment_id = 'deployment-kept'")
         .run(),
     ).rejects.toThrow(/bootstrap owner identity is immutable/)
+  })
+})
+
+describe("workspace assignment revision counter", () => {
+  test("starts an assigned workspace at its assignment's revision and an unassigned one at 0", async () => {
+    const target = await database()
+    const before = CONTROL_PLANE_MIGRATIONS.slice(
+      0,
+      CONTROL_PLANE_MIGRATIONS.indexOf("0028_workspace_host_assignment_revision.sql"),
+    )
+    await apply(target, before)
+    await target.prepare("insert into users values ('user-a', 'active', 1, 1, null, null)").run()
+    await target.prepare(
+      "insert into actors (actor_id, user_id, kind, state, created_at, updated_at) values ('actor-a', 'user-a', 'human', 'active', 1, 1)",
+    ).run()
+    await target.prepare(
+      "insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values ('org-a', 'A', 'personal', 'user-a', 1, 1)",
+    ).run()
+    await target.prepare(
+      "insert into projects (project_id, org_id, repo_key, owner_user_id, created_at, updated_at) values ('prj-a', 'org-a', 'a', 'user-a', 1, 1)",
+    ).run()
+    for (const id of ["ws-assigned", "ws-free"]) {
+      await target.prepare(
+        `insert into workspaces (workspace_id, org_id, project_id, owner_user_id, backing, access, display_name, created_at, updated_at)
+         values (?, 'org-a', 'prj-a', 'user-a', 'local-worktree', 'user-hosted', ?, 1, 1)`,
+      ).bind(id, id).run()
+    }
+    await target.prepare(
+      `insert into host_workspace_assignments
+         (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, second_device_open_at, assigned_at, updated_at, revision)
+       values ('ws-assigned', 'host-a', 'org-a', 'user-a', 'actor-a', null, 1, 1, 3)`,
+    ).run()
+
+    await apply(target, ["0028_workspace_host_assignment_revision.sql"])
+
+    const counters = await target
+      .prepare("select workspace_id, host_assignment_revision from workspaces order by workspace_id")
+      .all<{ workspace_id: string; host_assignment_revision: number }>()
+    expect(counters.results).toEqual([
+      { workspace_id: "ws-assigned", host_assignment_revision: 3 },
+      { workspace_id: "ws-free", host_assignment_revision: 0 },
+    ])
   })
 })

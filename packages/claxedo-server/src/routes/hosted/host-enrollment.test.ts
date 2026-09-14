@@ -555,9 +555,9 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     const { signedCall } = await mountedRoutes(api)
     const forger = await machineKey()
     const refusals: Array<[Promise<Response>, number, string]> = [
-      [signedCall(forger, "/heartbeat", beat()), 401, "machine_signature_invalid"],
-      [signedCall(key, "/heartbeat", beat(), { tamper: (text) => text.replace('"generation":2', '"generation":9') }), 401, "machine_signature_invalid"],
-      [signedCall(key, "/heartbeat", beat({ enrollmentId: "enr_2" }), { enrollmentId: "enr_2" }), 401, "machine_enrollment_unknown"],
+      [signedCall(forger, "/heartbeat", beat()), 401, "machine_request_denied"],
+      [signedCall(key, "/heartbeat", beat(), { tamper: (text) => text.replace('"generation":2', '"generation":9') }), 401, "machine_request_denied"],
+      [signedCall(key, "/heartbeat", beat({ enrollmentId: "enr_2" }), { enrollmentId: "enr_2" }), 401, "machine_request_denied"],
       [signedCall(key, "/heartbeat", beat(), { ts: NOW - 60_001 }), 401, "machine_timestamp_skew"],
       [signedCall(key, "/heartbeat", beat(), { headers: { [MACHINE_REQUEST_HEADERS.nonce]: "short" } }), 400, "machine_headers_invalid"],
     ]
@@ -667,11 +667,12 @@ describe("POST /acquire", () => {
     expect(api.acquireHostServingGeneration).toHaveBeenCalledWith(expect.objectContaining({ enrollmentId: "enr_1", generation: 2 }))
   })
 
-  test("a body naming another host than the row is a signature refusal", async () => {
+  test("a body naming another host than the row is refused by the verifier as an invalid body", async () => {
     const key = await machineKey()
     const { signedCall, api } = await mountedRoutes(machineAuthority(enrollmentRow(key)))
     const response = await signedCall(key, "/acquire", { enrollmentId: "enr_1", hostId: "host_other" })
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "machine_body_invalid" } })
     expect(api.acquireHostServingGeneration).not.toHaveBeenCalled()
   })
 })
@@ -810,8 +811,11 @@ describe("PATCH /:id/scope and GET / machines", () => {
     expect(await response.json()).toEqual({ error: { code: "host_enrollment_not_found", message: "Host enrollment not found" } })
   })
 
-  test("GET / keeps the desktop's single-row shape and adds machines", async () => {
-    const machines = [{ enrollment_id: "enr_1", host_id: "host_1", public_key_fingerprint: "fp", key_version: 1, enrolled_via: "account", last_seen_at: 1, expires_at: 9_999, serving_generation: 0, acked: [], scope: undefined }]
+  test("GET / keeps the desktop's single-row shape and adds machines, a paused one saying when", async () => {
+    const machines = [
+      { enrollment_id: "enr_1", host_id: "host_1", public_key_fingerprint: "fp", key_version: 1, enrolled_via: "account", last_seen_at: 1, expires_at: 9_999, serving_generation: 0, acked: [], scope: undefined },
+      { enrollment_id: "enr_2", host_id: "host_2", public_key_fingerprint: "fp2", key_version: 1, enrolled_via: "invitation", last_seen_at: 1, expires_at: 9_999, serving_generation: 1, paused_at: 7, acked: [], scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 } },
+    ]
     const { call } = routes({ listHostEnrollments: vi.fn(async () => machines) })
     const response = await call("/", { method: "GET" })
     expect(response.status).toBe(200)
@@ -822,7 +826,7 @@ describe("PATCH /:id/scope and GET / machines", () => {
       expires_at: 9_999,
       last_seen_at: 1,
       created_at: 1,
-      machines: [{ ...machines[0], scope: undefined }],
+      machines: [{ ...machines[0], scope: undefined }, machines[1]],
     })
   })
 })
