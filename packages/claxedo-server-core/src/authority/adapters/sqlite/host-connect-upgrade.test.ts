@@ -92,6 +92,7 @@ describe("SQLite host-connect upgrade", () => {
     expect(columns(db, "host_enrollments")).not.toContain("key_version")
     expect(columns(db, "host_workspace_assignments")).not.toContain("revision")
     expect(columns(db, "workspaces")).not.toContain("org_member_visible")
+    expect(columns(db, "workspaces")).not.toContain("host_assignment_revision")
     expect(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('host_invitations', 'host_request_nonces', 'host_assignment_readiness')`).all())
       .toEqual([])
     db.close()
@@ -125,10 +126,10 @@ describe("SQLite host-connect upgrade", () => {
       { workspace_id: "ws_idle", host_id: "host_live", revision: 1, second_device_open_at: null },
       { workspace_id: "ws_served", host_id: "host_live", revision: 1, second_device_open_at: 3 },
     ])
-    expect(db.prepare(`SELECT workspace_id, org_member_visible, remote_directory FROM workspaces ORDER BY workspace_id`).all())
+    expect(db.prepare(`SELECT workspace_id, org_member_visible, remote_directory, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
       .toEqual([
-        { workspace_id: "ws_idle", org_member_visible: 1, remote_directory: "/srv/idle" },
-        { workspace_id: "ws_served", org_member_visible: 1, remote_directory: "/srv/app" },
+        { workspace_id: "ws_idle", org_member_visible: 1, remote_directory: "/srv/idle", host_assignment_revision: 1 },
+        { workspace_id: "ws_served", org_member_visible: 1, remote_directory: "/srv/app", host_assignment_revision: 1 },
       ])
     expect(db.prepare(`SELECT session_id, creator_actor_id, operation_id FROM session_history`).all())
       .toEqual([{ session_id: "ses_1", creator_actor_id: OWNER, operation_id: "op_1" }])
@@ -152,6 +153,38 @@ describe("SQLite host-connect upgrade", () => {
     closeAuthorityDatabases()
     const reopened = openAuthorityDb({ path: file })()
     expect(reopened.prepare(`SELECT * FROM host_enrollments ORDER BY enrollment_id`).all()).toEqual(before)
+  })
+
+  test("the revision counter starts at the revision a connect-era database already issued", async () => {
+    // A database from before the counter existed but after assignments carried
+    // revisions: its live assignment is at 4, so the next re-point must be 5.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-host-connect-upgrade-"))
+    roots.push(root)
+    const file = path.join(root, "authority.db")
+    const api = createSqliteWorkspaceAuthority({ path: file })
+    const request = await api.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
+    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    await api.enrollHost(ownerAuth, {
+      hostId: "host_live",
+      publicKey: LIVE_PUBLIC_KEY,
+      requestId: request.request_id,
+      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+    })
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a" })
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_b", hostId: "host_live", remoteDirectory: "/srv/b" })
+    await api.unassignWorkspaceHost(ownerAuth, { workspaceId: "ws_b" })
+    const db = openAuthorityDb({ path: file })()
+    db.exec(`
+      ALTER TABLE workspaces DROP COLUMN host_assignment_revision;
+      UPDATE host_workspace_assignments SET revision = 4 WHERE workspace_id = 'ws_a';
+    `)
+    closeAuthorityDatabases()
+
+    const upgraded = openAuthorityDb({ path: file })()
+    expect(upgraded.prepare(`SELECT workspace_id, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
+      .toEqual([{ workspace_id: "ws_a", host_assignment_revision: 4 }, { workspace_id: "ws_b", host_assignment_revision: 0 }])
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a-moved" })
+    expect(upgraded.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get()).toEqual({ revision: 5 })
   })
 
   test("a pre-connect acked set no longer routes on its own; the next account beat re-establishes readiness", async () => {

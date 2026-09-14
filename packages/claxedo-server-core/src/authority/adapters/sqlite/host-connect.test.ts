@@ -256,18 +256,22 @@ describe("machine verifier through the SQLite adapter", () => {
       .toMatchObject({ ok: false, status: 403, code: "enrollment_owner_ineligible" })
   })
 
-  test("an unknown enrollment id, and a revoked or paused one, are refused before any signature work", async () => {
+  test("an unknown enrollment id is refused; a revoked or paused one only tells the key holder", async () => {
     const { api } = setup()
     const { enrollment, keys, hostId } = await enrollByAccount(api)
-    expect(await verify(api, keys, { enrollmentId: "enr_nope", pathname: HEARTBEAT_PATH, body: {} }))
-      .toMatchObject({ ok: false, status: 401, code: "machine_enrollment_unknown" })
+    const stranger = hostKeyPair()
+    const probe = { enrollmentId: enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }
+    expect(await verify(api, keys, { ...probe, enrollmentId: "enr_nope" }))
+      .toMatchObject({ ok: false, status: 401, code: "machine_request_denied" })
     await api.pauseHostEnrollment(owner, { hostId, paused: true })
-    expect(await verify(api, keys, { enrollmentId: enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
-      .toMatchObject({ ok: false, status: 403, code: "enrollment_paused" })
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([{ enrollment_id: enrollment.enrollment_id, paused_at: expect.any(Number) }])
+    expect(await verify(api, stranger, probe)).toMatchObject({ ok: false, status: 401, code: "machine_request_denied" })
+    expect(await verify(api, keys, probe)).toMatchObject({ ok: false, status: 403, code: "enrollment_paused" })
     await api.pauseHostEnrollment(owner, { hostId, paused: false })
+    expect((await api.listHostEnrollments!(owner))[0]).not.toHaveProperty("paused_at")
     await api.revokeHostEnrollment(owner, { hostId })
-    expect(await verify(api, keys, { enrollmentId: enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
-      .toMatchObject({ ok: false, status: 403, code: "enrollment_revoked" })
+    expect(await verify(api, stranger, probe)).toMatchObject({ ok: false, status: 401, code: "machine_request_denied" })
+    expect(await verify(api, keys, probe)).toMatchObject({ ok: false, status: 403, code: "enrollment_revoked" })
   })
 
   test("the account re-enroll bumps key_version only when the key changes, and the old key stops verifying", async () => {
@@ -280,7 +284,7 @@ describe("machine verifier through the SQLite adapter", () => {
     await enrollByAccount(api, { hostId, keys: replacement })
     expect(enrollmentRow(db, enrollment.enrollment_id)).toMatchObject({ key_version: 2, public_key: replacement.publicKey })
     expect(await verify(api, keys, { enrollmentId: enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
-      .toMatchObject({ ok: false, code: "machine_signature_invalid" })
+      .toMatchObject({ ok: false, code: "machine_request_denied" })
     expect(await verify(api, replacement, { enrollmentId: enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
       .toMatchObject({ ok: true, machine: { keyVersion: 2 } })
   })
@@ -412,6 +416,61 @@ describe("machine heartbeat, readiness and generations", () => {
     expect(second.generation).toBe(first.generation + 1)
     const refused = await failure(machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId: "host_laptop", generation: first.generation, acks: [] }))
     expect(refused).toMatchObject({ code: "enrollment_generation_superseded" })
+  })
+
+  test("a beat naming a generation never issued is refused as invalid input, and nothing is written", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, hostId } = await enrollByAccount(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a" })
+    const original = await principalFor(api, keys, enrollment.enrollment_id)
+    expect(await acquire(api, keys, enrollment.enrollment_id)).toMatchObject({ generation: 1 })
+    const holder = await principalFor(api, keys, enrollment.enrollment_id)
+    expect(holder.generation).toBe(1)
+    expect(await acquire(api, keys, enrollment.enrollment_id)).toMatchObject({ generation: 2 })
+    const before = enrollmentRow(db, enrollment.enrollment_id)
+
+    const body: BeatBody = { enrollmentId: enrollment.enrollment_id, hostId, generation: 999, acks: [{ workspaceId: "ws_a", revision: 1 }] }
+    for (const principal of [original, holder]) {
+      const refused = await failure(machineBeat(api, keys, body, principal))
+      expect(refused).toMatchObject({ code: "invalid_input", status: 400 })
+    }
+    // Its own, now superseded, generation is the 409 the host restarts on,
+    // naming the generation the row holds now.
+    expect(await failure(machineBeat(api, keys, { ...body, generation: 1 }, holder)))
+      .toMatchObject({ code: "enrollment_generation_superseded", status: 409, details: { serving_generation: 2 } })
+    // The stored generation moved past what the verifier read: the guard inside the transaction refuses.
+    const current = await principalFor(api, keys, enrollment.enrollment_id)
+    expect(await acquire(api, keys, enrollment.enrollment_id)).toMatchObject({ generation: 3 })
+    expect(await failure(machineBeat(api, keys, { ...body, generation: 2 }, current)))
+      .toMatchObject({ code: "enrollment_generation_superseded", status: 409, details: { serving_generation: 3 } })
+
+    expect(enrollmentRow(db, enrollment.enrollment_id)).toMatchObject({
+      serving_generation: 3,
+      last_seen_at: before.last_seen_at,
+      expires_at: before.expires_at,
+      acked_workspace_ids: before.acked_workspace_ids,
+    })
+    expect(db().prepare(`SELECT COUNT(*) AS count FROM host_assignment_readiness`).get()).toEqual({ count: 0 })
+    expect(await online(api)).toEqual({ ws_a: false })
+  })
+
+  test("two acquires from the same verified generation issue exactly one new generation", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys } = await enrollByAccount(api)
+    const principal = await principalFor(api, keys, enrollment.enrollment_id)
+    const results = await Promise.allSettled([
+      api.acquireHostServingGeneration!(principal),
+      api.acquireHostServingGeneration!({ ...principal }),
+    ])
+    const won = results.filter((result) => result.status === "fulfilled")
+    const lost = results.filter((result) => result.status === "rejected")
+    expect(won).toHaveLength(1)
+    expect(won[0]).toMatchObject({ value: { generation: 1 } })
+    expect(lost).toHaveLength(1)
+    expect(lost[0]).toMatchObject({ reason: { code: "enrollment_generation_superseded", details: { serving_generation: 1 } } })
+    expect(enrollmentRow(db, enrollment.enrollment_id)).toMatchObject({ serving_generation: 1 })
+    expect(db().prepare(`SELECT COUNT(*) AS count FROM audit_events WHERE action = 'host_enrollment.generation_acquired'`).get())
+      .toEqual({ count: 1 })
   })
 
   test("a beat verified against a replaced key or a removed owner writes nothing", async () => {
@@ -778,6 +837,59 @@ describe("scope", () => {
     expect(beat.scope).toEqual({ allowed_roots: ["/srv/api"], visibility: "owner", revision: 2 })
     expect(await failure(api.assignWorkspaceHost(owner, { workspaceId: "ws_gone", hostId: "host_build", remoteDirectory: "/srv/web" })))
       .toMatchObject({ code: "host_assignment_outside_scope" })
+  })
+
+  test("the assignment revision keeps rising across unassign and re-share to another directory", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, hostId } = await enrollByAccount(api)
+    const revision = () => db().prepare<unknown[], { revision: number }>(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get()
+    const counter = () => db().prepare<unknown[], { host_assignment_revision: number }>(`SELECT host_assignment_revision FROM workspaces WHERE workspace_id = 'ws_a'`).get()
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a" })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a-moved" })
+    expect(revision()).toEqual({ revision: 2 })
+    await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [{ workspaceId: "ws_a", revision: 2 }] })
+    expect(await online(api)).toEqual({ ws_a: true })
+
+    expect(await api.unassignWorkspaceHost(owner, { workspaceId: "ws_a" })).toEqual({ unassigned: true })
+    expect(revision()).toBeUndefined()
+    expect(counter()).toEqual({ host_assignment_revision: 2 })
+    expect(db().prepare(`SELECT deleted_at FROM workspaces WHERE workspace_id = 'ws_a'`).get()).toMatchObject({ deleted_at: expect.any(Number) })
+
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a-again" })
+    expect(revision()).toEqual({ revision: 3 })
+    expect(counter()).toEqual({ host_assignment_revision: 3 })
+    expect(db().prepare(`SELECT deleted_at, remote_directory FROM workspaces WHERE workspace_id = 'ws_a'`).get())
+      .toEqual({ deleted_at: null, remote_directory: "/srv/a-again" })
+    // The host that still believes revision 2 is not routable until it acks 3.
+    const stale = await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [{ workspaceId: "ws_a", revision: 2 }] })
+    expect(stale.assignments).toEqual([{ workspace_id: "ws_a", remote_directory: "/srv/a-again", display_name: "ws_a", revision: 3 }])
+    expect(await online(api)).toEqual({ ws_a: false })
+    await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [{ workspaceId: "ws_a", revision: 3 }] })
+    expect(await online(api)).toEqual({ ws_a: true })
+  })
+
+  test("a refused assignment writes nothing: a retired workspace stays retired and the counter holds", async () => {
+    const { api, db } = setup()
+    const { hostId } = await enrollByAccount(api)
+    const invitation = await invite(api, { scope: { allowed_roots: ["/srv/allowed"], visibility: "owner" } })
+    const scoped = await redeem(api, { token: invitation.token, hostId: "host_scoped", keys: hostKeyPair() })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a" })
+    await api.unassignWorkspaceHost(owner, { workspaceId: "ws_a" })
+    const row = () => db().prepare(`SELECT deleted_at, remote_directory, host_assignment_revision, updated_at FROM workspaces WHERE workspace_id = 'ws_a'`).get()
+    const before = row()
+    expect(before).toMatchObject({ deleted_at: expect.any(Number) })
+
+    expect(await failure(api.assignWorkspaceHost(owner, { workspaceId: "ws_a", hostId: scoped.enrollment.host_id, remoteDirectory: "/srv/elsewhere" })))
+      .toMatchObject({ code: "host_assignment_outside_scope", status: 400 })
+    expect(row()).toEqual(before)
+    expect(await failure(api.assignWorkspaceHost(other, { workspaceId: "ws_a", hostId, remoteDirectory: "/srv/a" })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(row()).toEqual(before)
+    const { hostId: othersHost } = await enrollByAccount(api, { auth: other, hostId: "host_other" })
+    expect(await failure(api.assignWorkspaceHost(other, { workspaceId: "ws_a", hostId: othersHost, remoteDirectory: "/srv/a" })))
+      .toMatchObject({ code: "workspace_not_found", status: 404 })
+    expect(row()).toEqual(before)
+    expect(db().prepare(`SELECT COUNT(*) AS count FROM host_workspace_assignments`).get()).toEqual({ count: 0 })
   })
 
   test("an invited machine cannot be assigned a workspace of another org", async () => {

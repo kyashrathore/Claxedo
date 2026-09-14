@@ -17,6 +17,13 @@ import {
  * themselves; it is not a member of `ControlPlaneAuthContext`, so no other
  * route can accept a machine as an owner-equivalent caller by accident.
  *
+ * Nothing about the enrollment row is disclosed to a caller that has not
+ * proven the key: an unknown id, a stored key that will not import and a
+ * signature that does not verify are the one refusal
+ * `machine_request_denied`. Only a verified signature earns the distinct
+ * eligibility codes (revoked, paused, owner ineligible, key version
+ * replaced) — the host exits on those, so they have to be true and specific.
+ *
  * The verifier reads the enrollment once and returns what it read
  * (`keyVersion`, `generation`); the mutation re-asserts both inside its batch.
  * The refusals here are the cheap ones; the in-batch predicate is the
@@ -41,13 +48,11 @@ export type MachineAuthRefusal = {
     | "machine_headers_invalid"
     | "machine_body_invalid"
     | "machine_timestamp_skew"
-    | "machine_enrollment_unknown"
-    | "machine_signature_invalid"
+    | "machine_request_denied"
     | "machine_nonce_replayed"
     | "enrollment_revoked"
     | "enrollment_paused"
     | "enrollment_owner_ineligible"
-    | "enrollment_key_invalid"
     | "enrollment_key_version_mismatch"
 }
 
@@ -64,21 +69,13 @@ export async function verifyMachineRequest(request: MachineRequest, deps: Machin
   const body = bodyIdentity(request.bodyText)
   if (!body.ok) return machineRefusal(400, "machine_body_invalid")
   if (body.enrollmentId !== undefined && body.enrollmentId !== headers.enrollmentId) {
-    return machineRefusal(401, "machine_signature_invalid")
+    return machineRefusal(400, "machine_body_invalid")
   }
 
   const row = await deps.lookupEnrollment(headers.enrollmentId)
-  if (!row) return machineRefusal(401, "machine_enrollment_unknown")
-  if (row.revoked_at !== null) return machineRefusal(403, "enrollment_revoked")
-  if (row.paused_at !== null) return machineRefusal(403, "enrollment_paused")
-  if (!row.ownerEligible) return machineRefusal(403, "enrollment_owner_ineligible")
-  if (body.keyVersion !== undefined && body.keyVersion !== row.key_version) {
-    return machineRefusal(403, "enrollment_key_version_mismatch")
-  }
+  if (!row) return machineRefusal(401, "machine_request_denied")
   const key = await importVerifyKey(row.public_key_json)
-  if (!key) return machineRefusal(403, "enrollment_key_invalid")
-  if (body.hostId !== undefined && body.hostId !== row.host_id) return machineRefusal(401, "machine_signature_invalid")
-
+  if (!key) return machineRefusal(401, "machine_request_denied")
   const payload = machineRequestPayload({
     method: request.method,
     pathname: request.pathname,
@@ -93,7 +90,15 @@ export async function verifyMachineRequest(request: MachineRequest, deps: Machin
     headers.signature,
     new TextEncoder().encode(payload),
   )
-  if (!verified) return machineRefusal(401, "machine_signature_invalid")
+  if (!verified) return machineRefusal(401, "machine_request_denied")
+
+  if (row.revoked_at !== null) return machineRefusal(403, "enrollment_revoked")
+  if (row.paused_at !== null) return machineRefusal(403, "enrollment_paused")
+  if (!row.ownerEligible) return machineRefusal(403, "enrollment_owner_ineligible")
+  if (body.keyVersion !== undefined && body.keyVersion !== row.key_version) {
+    return machineRefusal(403, "enrollment_key_version_mismatch")
+  }
+  if (body.hostId !== undefined && body.hostId !== row.host_id) return machineRefusal(400, "machine_body_invalid")
 
   const consumed = await deps.consumeNonce({
     enrollmentId: headers.enrollmentId,
@@ -148,8 +153,9 @@ type BodyIdentity =
 /**
  * The fields of the body that name the caller. They are optional at this
  * layer — the route's own schema demands what it needs — but when present
- * they must agree with the header and the row, so a body signed for one
- * enrollment cannot be presented under another's headers.
+ * they must agree with the header and the row. `hostId` and `keyVersion` are
+ * compared only after the signature verified: before that they would let an
+ * unsigned caller probe the row.
  */
 function bodyIdentity(bodyText: string): BodyIdentity {
   if (bodyText === "") return { ok: true }

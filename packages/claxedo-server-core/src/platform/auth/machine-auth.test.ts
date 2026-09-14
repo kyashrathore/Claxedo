@@ -203,30 +203,70 @@ describe("verifyMachineRequest", () => {
     })
   })
 
-  test("unknown enrollment → 401 without consuming the nonce", async () => {
-    const d = deps({ row: undefined })
-    expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toEqual({
-      ok: false,
-      status: 401,
-      code: "machine_enrollment_unknown",
+  const DENIED = { ok: false, status: 401, code: "machine_request_denied" }
+
+  describe("before the signature verifies, every refusal is the same one", () => {
+    test("unknown enrollment → 401 without consuming the nonce", async () => {
+      const d = deps({ row: undefined })
+      expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toEqual(DENIED)
+      expect(d.consumed).toEqual([])
     })
-    expect(d.consumed).toEqual([])
+
+    const unimportable: Array<[string, Partial<MachineEnrollmentRow>]> = [
+      ["unparseable stored key", { public_key_json: "{" }],
+      ["private key stored", { public_key_json: JSON.stringify({ kty: "EC", crv: "P-256", x: "a", y: "b", d: "c" }) }],
+      ["wrong curve", { public_key_json: JSON.stringify({ kty: "EC", crv: "P-384", x: "a", y: "b" }) }],
+    ]
+    for (const [name, overrides] of unimportable) {
+      test(`${name} → the same refusal as an unknown enrollment`, async () => {
+        const d = deps({ row: row(overrides) })
+        expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toEqual(DENIED)
+        expect(d.consumed).toEqual([])
+      })
+    }
+
+    const ineligible: Array<[string, Partial<MachineEnrollmentRow>]> = [
+      ["revoked", { revoked_at: NOW - 1 }],
+      ["paused", { paused_at: NOW - 1 }],
+      ["suspended owner", { ownerEligible: false }],
+      ["replaced key version declared", { key_version: 2 }],
+    ]
+    for (const [name, overrides] of ineligible) {
+      test(`${name}, signed by a stranger → indistinguishable from an unknown enrollment`, async () => {
+        const d = deps({ row: row(overrides) })
+        const body = JSON.stringify({ enrollmentId: "enr_1", hostId: "host-a", keyVersion: 1 })
+        expect(await verifyMachineRequest(await signedRequest({ by: stranger, body }), d.deps)).toEqual(DENIED)
+        expect(d.consumed).toEqual([])
+      })
+    }
+
+    test("an unsigned probe of the row's key version learns nothing", async () => {
+      const d = deps({ row: row({ key_version: 2 }) })
+      for (const keyVersion of [1, 2]) {
+        const body = JSON.stringify({ enrollmentId: "enr_1", hostId: "host-a", keyVersion })
+        expect(await verifyMachineRequest(await signedRequest({ by: stranger, body }), d.deps)).toEqual(DENIED)
+      }
+    })
+
+    test("an unsigned probe of the row's host id learns nothing", async () => {
+      const d = deps()
+      for (const hostId of ["host-a", "host-b"]) {
+        const body = JSON.stringify({ enrollmentId: "enr_1", hostId })
+        expect(await verifyMachineRequest(await signedRequest({ by: stranger, body }), d.deps)).toEqual(DENIED)
+      }
+    })
   })
 
-  describe("eligibility → 403, checked before the signature", () => {
+  describe("eligibility → 403, only once the signature verified", () => {
     const cases: Array<[string, Partial<MachineEnrollmentRow>, string]> = [
       ["revoked", { revoked_at: NOW - 1 }, "enrollment_revoked"],
       ["paused", { paused_at: NOW - 1 }, "enrollment_paused"],
       ["suspended owner", { ownerEligible: false }, "enrollment_owner_ineligible"],
-      ["unparseable stored key", { public_key_json: "{" }, "enrollment_key_invalid"],
-      ["private key stored", { public_key_json: JSON.stringify({ kty: "EC", crv: "P-256", x: "a", y: "b", d: "c" }) }, "enrollment_key_invalid"],
-      ["wrong curve", { public_key_json: JSON.stringify({ kty: "EC", crv: "P-384", x: "a", y: "b" }) }, "enrollment_key_invalid"],
     ]
     for (const [name, overrides, code] of cases) {
       test(name, async () => {
         const d = deps({ row: row(overrides) })
-        // Signed by a stranger: the refusal must come from eligibility, not the signature.
-        expect(await verifyMachineRequest(await signedRequest({ by: stranger }), d.deps)).toEqual({ ok: false, status: 403, code })
+        expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toEqual({ ok: false, status: 403, code })
         expect(d.consumed).toEqual([])
       })
     }
@@ -258,11 +298,7 @@ describe("verifyMachineRequest", () => {
 
     test("a signature from the key the row no longer holds is refused", async () => {
       const d = deps({ row: row({ key_version: 2, public_key_json: stranger.publicKeyJson }) })
-      expect(await verifyMachineRequest(await signedRequest({ by: machine }), d.deps)).toEqual({
-        ok: false,
-        status: 401,
-        code: "machine_signature_invalid",
-      })
+      expect(await verifyMachineRequest(await signedRequest({ by: machine }), d.deps)).toEqual(DENIED)
       expect(d.consumed).toEqual([])
     })
   })
@@ -270,45 +306,40 @@ describe("verifyMachineRequest", () => {
   describe("signature", () => {
     test("another key → 401 without consuming the nonce", async () => {
       const d = deps()
-      expect(await verifyMachineRequest(await signedRequest({ by: stranger }), d.deps)).toEqual({
-        ok: false,
-        status: 401,
-        code: "machine_signature_invalid",
-      })
+      expect(await verifyMachineRequest(await signedRequest({ by: stranger }), d.deps)).toEqual(DENIED)
       expect(d.consumed).toEqual([])
     })
 
     test("body tampering after signing", async () => {
       const request = await signedRequest({})
       const tampered = { ...request, bodyText: JSON.stringify({ enrollmentId: "enr_1", hostId: "host-a", generation: 99, acks: [] }) }
-      expect(await verifyMachineRequest(tampered, deps().deps)).toMatchObject({ ok: false, status: 401, code: "machine_signature_invalid" })
+      expect(await verifyMachineRequest(tampered, deps().deps)).toEqual(DENIED)
     })
 
     test("a whitespace-only change to the body is a different body", async () => {
       const request = await signedRequest({ body: '{"a":1}' })
-      expect(await verifyMachineRequest({ ...request, bodyText: '{"a": 1}' }, deps().deps)).toMatchObject({ code: "machine_signature_invalid" })
+      expect(await verifyMachineRequest({ ...request, bodyText: '{"a": 1}' }, deps().deps)).toEqual(DENIED)
     })
 
     test("the signature binds method and pathname", async () => {
       const request = await signedRequest({})
-      expect(await verifyMachineRequest({ ...request, method: "PUT" }, deps().deps)).toMatchObject({ code: "machine_signature_invalid" })
-      expect(await verifyMachineRequest({ ...request, pathname: "/api/claxedo/host/enrollments/acquire" }, deps().deps))
-        .toMatchObject({ code: "machine_signature_invalid" })
+      expect(await verifyMachineRequest({ ...request, method: "PUT" }, deps().deps)).toEqual(DENIED)
+      expect(await verifyMachineRequest({ ...request, pathname: "/api/claxedo/host/enrollments/acquire" }, deps().deps)).toEqual(DENIED)
     })
 
     test("the signature binds ts and nonce headers", async () => {
       const request = await signedRequest({})
       const retimed = await signedRequest({ headerOverrides: { [MACHINE_REQUEST_HEADERS.ts]: String(NOW + 1) } })
-      expect(await verifyMachineRequest(retimed, deps().deps)).toMatchObject({ code: "machine_signature_invalid" })
+      expect(await verifyMachineRequest(retimed, deps().deps)).toEqual(DENIED)
       const renonced = { ...request, headers: { get: (name: string) => name === MACHINE_REQUEST_HEADERS.nonce ? "other-nonce-0123456789" : request.headers.get(name) } }
-      expect(await verifyMachineRequest(renonced, deps().deps)).toMatchObject({ code: "machine_signature_invalid" })
+      expect(await verifyMachineRequest(renonced, deps().deps)).toEqual(DENIED)
     })
 
     test("a valid signature presented under another enrollment's headers", async () => {
-      const request = await signedRequest({})
+      const request = await signedRequest({ body: "{}" })
       const other = { ...request, headers: { get: (name: string) => name === MACHINE_REQUEST_HEADERS.enrollmentId ? "enr_2" : request.headers.get(name) } }
       const d = deps({ row: row({ enrollment_id: "enr_2" }) })
-      expect(await verifyMachineRequest(other, d.deps)).toMatchObject({ ok: false, status: 401, code: "machine_signature_invalid" })
+      expect(await verifyMachineRequest(other, d.deps)).toEqual(DENIED)
     })
   })
 
@@ -318,19 +349,21 @@ describe("verifyMachineRequest", () => {
       const body = JSON.stringify({ enrollmentId: "enr_2", hostId: "host-a" })
       expect(await verifyMachineRequest(await signedRequest({ body }), d.deps)).toEqual({
         ok: false,
-        status: 401,
-        code: "machine_signature_invalid",
+        status: 400,
+        code: "machine_body_invalid",
       })
       expect(d.lookups).toEqual([])
     })
 
-    test("body hostId must equal the row's", async () => {
+    test("body hostId must equal the row's, checked after the signature", async () => {
+      const d = deps()
       const body = JSON.stringify({ enrollmentId: "enr_1", hostId: "host-b" })
-      expect(await verifyMachineRequest(await signedRequest({ body }), deps().deps)).toEqual({
+      expect(await verifyMachineRequest(await signedRequest({ body }), d.deps)).toEqual({
         ok: false,
-        status: 401,
-        code: "machine_signature_invalid",
+        status: 400,
+        code: "machine_body_invalid",
       })
+      expect(d.consumed).toEqual([])
     })
 
     test("a body without identity fields relies on the signature alone", async () => {

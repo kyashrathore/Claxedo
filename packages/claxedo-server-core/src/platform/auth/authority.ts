@@ -809,6 +809,7 @@ export type HostEnrollmentListRow = {
   expires_at: number
   serving_generation: number
   generation_acquired_at?: number
+  paused_at?: number
   acked: HostAssignmentAck[]
   scope: HostEnrollmentScope | undefined
 }

@@ -118,6 +118,7 @@ type SqliteHostConnectErrorCode =
   | "host_attestation_denied"
   | "invalid_input"
   | "host_enrollment_not_found"
+  | "workspace_not_found"
 
 const HOST_CONNECT_ERROR_STATUS: Record<SqliteHostConnectErrorCode, number> = {
   invitation_invalid: 403,
@@ -130,17 +131,16 @@ const HOST_CONNECT_ERROR_STATUS: Record<SqliteHostConnectErrorCode, number> = {
   machine_headers_invalid: 400,
   machine_body_invalid: 400,
   machine_timestamp_skew: 401,
-  machine_enrollment_unknown: 401,
-  machine_signature_invalid: 401,
+  machine_request_denied: 401,
   machine_nonce_replayed: 401,
   enrollment_revoked: 403,
   enrollment_paused: 403,
   enrollment_owner_ineligible: 403,
-  enrollment_key_invalid: 403,
   enrollment_key_version_mismatch: 403,
   host_attestation_denied: 403,
   invalid_input: 400,
   host_enrollment_not_found: 404,
+  workspace_not_found: 404,
 }
 
 export class SqliteHostConnectError extends ClaxedoError<SqliteHostConnectErrorCode> {
@@ -390,21 +390,25 @@ function machineMutationRefusal(db: SqliteAuthorityDb, machine: MachinePrincipal
     SELECT enrollment.*, ${ownerEligibleSql("enrollment")} AS owner_eligible
     FROM host_enrollments enrollment WHERE enrollment.enrollment_id = ?
   `).get(machine.enrollmentId)
-  if (!row) return new SqliteHostConnectError("machine_enrollment_unknown", "Host enrollment not found")
+  if (!row) return new SqliteHostConnectError("machine_request_denied", "Host enrollment not found")
   if (row.revoked_at !== null) return new SqliteHostConnectError("enrollment_revoked", "Host enrollment was revoked")
   if (row.paused_at !== null) return new SqliteHostConnectError("enrollment_paused", "Host enrollment is paused")
   if (row.owner_eligible !== 1) return new SqliteHostConnectError("enrollment_owner_ineligible", "Enrollment owner is not eligible")
   if (row.key_version !== machine.keyVersion) {
     return new SqliteHostConnectError("enrollment_key_version_mismatch", "Host key was replaced")
   }
-  if (input.generation !== undefined && row.serving_generation > input.generation) {
-    return new SqliteHostConnectError(
-      "enrollment_generation_superseded",
-      "A newer instance of this machine has acquired the serving generation",
-      { serving_generation: row.serving_generation },
-    )
+  if (input.generation !== undefined && row.serving_generation !== input.generation) {
+    return sqliteGenerationSuperseded(row.serving_generation)
   }
   return new Error("host_enrollment_mutation_refused")
+}
+
+function sqliteGenerationSuperseded(servingGeneration: number) {
+  return new SqliteHostConnectError(
+    "enrollment_generation_superseded",
+    "A newer instance of this machine has acquired the serving generation",
+    { serving_generation: servingGeneration },
+  )
 }
 
 function recordHostAudit(db: SqliteAuthorityDb, input: {
@@ -1783,7 +1787,7 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const row = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
         .get(who.token_identifier, args.hostId)
-      if (!row || row.revoked_at) throw new Error("Host enrollment not found")
+      if (!row || row.revoked_at) throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
       if (!Array.isArray(args.workspaceIds)) {
         throw new Error("workspaceIds is required — the heartbeat signature covers the served set")
       }
@@ -1805,7 +1809,7 @@ export function createSqliteWorkspaceAuthority(
         sessionAuthority: args.sessionAuthority,
         where: { sql: "host_enrollments.enrollment_id = ? AND host_enrollments.revoked_at IS NULL", params: [row.enrollment_id] },
       }))()
-      if (!renewed) throw new Error("Host enrollment not found")
+      if (!renewed) throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
       return {
         expires_at: renewed.expires_at,
         last_seen_at: renewed.last_seen_at,
@@ -1817,6 +1821,10 @@ export function createSqliteWorkspaceAuthority(
       if (!Array.isArray(args.acks)) throw new SqliteHostConnectError("invalid_input", "acks is required")
       if (!Number.isInteger(args.generation) || args.generation < 0) {
         throw new SqliteHostConnectError("invalid_input", "generation must be a non-negative integer")
+      }
+      if (args.generation < machine.generation) throw sqliteGenerationSuperseded(machine.generation)
+      if (args.generation > machine.generation) {
+        throw new SqliteHostConnectError("invalid_input", "generation was never issued to this enrollment")
       }
       const acks = new Map<string, number>()
       for (const ack of args.acks) {
@@ -1839,7 +1847,7 @@ export function createSqliteWorkspaceAuthority(
           acks: [...acks].map(([workspaceId, revision]) => ({ workspaceId, revision })),
           sessionAuthority: args.sessionAuthority,
           where: {
-            sql: `${machineMutationGuardSql("host_enrollments")} AND host_enrollments.serving_generation <= ?`,
+            sql: `${machineMutationGuardSql("host_enrollments")} AND host_enrollments.serving_generation = ?`,
             params: [machine.enrollmentId, machine.keyVersion, args.generation],
           },
         })
@@ -1983,13 +1991,22 @@ export function createSqliteWorkspaceAuthority(
           LEFT JOIN host_invitations invitation ON invitation.redeemed_enrollment_id = enrollment.enrollment_id
           WHERE enrollment.owner_token_identifier = ? AND enrollment.host_id = ?
         `).get(who.token_identifier, args.hostId)
-        if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
+        if (!enrollment || enrollment.revoked_at) {
+          throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
+        }
         const scope = enrollmentScope(enrollment)
-        db.prepare(`
-          UPDATE workspaces SET deleted_at = NULL, updated_at = ?
-          WHERE workspace_id = ? AND access = 'user-hosted' AND deleted_at IS NOT NULL
-        `).run(now, args.workspaceId)
         const existing = workspaceByPublicId(db, args.workspaceId)
+        // A retired user-hosted row is the same workspace coming back, so it
+        // is authorized as live; any other deleted row stays gone. Nothing is
+        // written until every refusal below has had its chance.
+        const revivable = existing !== undefined && existing.deleted_at !== null && existing.access === "user-hosted"
+        if (existing) {
+          const candidate = revivable ? { ...existing, deleted_at: null } : existing
+          if (candidate.deleted_at || !authorizeWorkspaceForUser(db, candidate, who, "admin")) {
+            throw new SqliteHostConnectError("workspace_not_found", "Workspace not found")
+          }
+          refuseCloudWorkspace(existing)
+        }
         const directory = args.remoteDirectory ?? existing?.remote_directory ?? undefined
         if (scope && (directory === undefined || !directoryWithinRoots(directory, scope.allowed_roots))) {
           throw new SqliteHostConnectError(
@@ -2005,12 +2022,11 @@ export function createSqliteWorkspaceAuthority(
           )
         }
         if (existing) {
-          if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
-          refuseCloudWorkspace(existing)
           // The assigning machine describes the workspace it serves — name,
           // repository, branch, directory — and that description is the record.
           db.prepare(`
             UPDATE workspaces SET
+              deleted_at = NULL,
               display_name = COALESCE(?, display_name),
               repo_url = COALESCE(?, repo_url),
               repo_name = COALESCE(?, repo_name),
@@ -2054,17 +2070,38 @@ export function createSqliteWorkspaceAuthority(
           )
         }
         // Same transaction as the directory write above: a description is
-        // never a new directory under an old revision.
+        // never a new directory under an old revision. The revision comes
+        // from the workspace row's counter, which an unassign leaves in
+        // place, so a re-share never reissues a revision a host already acked.
         db.prepare(`
+          UPDATE workspaces SET host_assignment_revision = host_assignment_revision + 1 WHERE workspace_id = ?
+        `).run(args.workspaceId)
+        const assigned = db.prepare(`
           INSERT INTO host_workspace_assignments (
             workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
-          ) VALUES (?, ?, ?, NULL, 1, ?, ?)
+          )
+          SELECT workspace.workspace_id, ?, ?, NULL, workspace.host_assignment_revision, ?, ?
+          FROM workspaces workspace
+          WHERE workspace.workspace_id = ?
+            AND EXISTS (
+              SELECT 1 FROM host_enrollments enrollment
+              WHERE enrollment.enrollment_id = ? AND enrollment.scope_revision = ? AND enrollment.revoked_at IS NULL
+            )
           ON CONFLICT (workspace_id) DO UPDATE SET
             host_id = excluded.host_id,
             owner_token_identifier = excluded.owner_token_identifier,
-            revision = host_workspace_assignments.revision + 1,
+            revision = excluded.revision,
             updated_at = excluded.updated_at
-        `).run(args.workspaceId, args.hostId, who.token_identifier, now, now)
+        `).run(
+          args.hostId,
+          who.token_identifier,
+          now,
+          now,
+          args.workspaceId,
+          enrollment.enrollment_id,
+          enrollment.scope_revision,
+        ).changes
+        if (assigned !== 1) throw new Error("host_assignment_scope_raced")
         return { assigned: true as const, workspace_id: args.workspaceId, host_id: args.hostId }
       })()
     },
@@ -2325,9 +2362,11 @@ export function createSqliteWorkspaceAuthority(
         `).get(args.enrollmentId, who.token_identifier)
         if (!enrollment) throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
         const revision = enrollment.scope_revision + 1
-        db.prepare(`
-          UPDATE host_enrollments SET scope_json = ?, scope_revision = ?, updated_at = ? WHERE enrollment_id = ?
-        `).run(JSON.stringify(scope), revision, now, enrollment.enrollment_id)
+        const updated = db.prepare(`
+          UPDATE host_enrollments SET scope_json = ?, scope_revision = ?, updated_at = ?
+          WHERE enrollment_id = ? AND scope_revision = ? AND revoked_at IS NULL
+        `).run(JSON.stringify(scope), revision, now, enrollment.enrollment_id, enrollment.scope_revision).changes
+        if (updated !== 1) throw new Error("host_enrollment_scope_raced")
         const assigned = db.prepare<unknown[], { workspace_id: string; remote_directory: string | null }>(`
           SELECT assignment.workspace_id, workspace.remote_directory
           FROM host_workspace_assignments assignment
@@ -2380,6 +2419,7 @@ export function createSqliteWorkspaceAuthority(
           expires_at: row.expires_at,
           serving_generation: row.serving_generation,
           ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
+          ...(row.paused_at !== null ? { paused_at: row.paused_at } : {}),
           acked: acked.all(row.enrollment_id, row.serving_generation)
             .map((ack): HostAssignmentAck => ({ workspaceId: ack.workspace_id, revision: ack.revision })),
           scope: enrollmentScope(row),

@@ -191,6 +191,10 @@ CREATE TABLE IF NOT EXISTS workspaces (
   -- 0 withholds the implicit org-member role; direct, project, team and
   -- org-admin access are unaffected. Set from the host's scope at assignment.
   org_member_visible INTEGER NOT NULL DEFAULT 1,
+  -- The highest host_workspace_assignments.revision ever issued for this
+  -- workspace. Outlives the assignment row so a re-share after an unassign
+  -- continues the sequence instead of restarting at 1.
+  host_assignment_revision INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER
@@ -307,8 +311,10 @@ CREATE TABLE IF NOT EXISTS host_workspace_assignments (
   host_id TEXT NOT NULL,
   owner_token_identifier TEXT NOT NULL,
   second_device_open_at INTEGER,
-  -- Strictly increasing per workspace, bumped in the same transaction as the
-  -- directory it describes; a host acks a revision, never a timestamp.
+  -- Strictly increasing per workspace for the workspace's whole life (the
+  -- counter is workspaces.host_assignment_revision), written in the same
+  -- transaction as the directory it describes; a host acks a revision, never
+  -- a timestamp.
   revision INTEGER NOT NULL DEFAULT 1,
   assigned_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -932,12 +938,24 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
   addColumn(db, "host_enrollments", "scope_revision", "INTEGER NOT NULL DEFAULT 0")
   addColumn(db, "host_workspace_assignments", "revision", "INTEGER NOT NULL DEFAULT 1")
   addColumn(db, "workspaces", "org_member_visible", "INTEGER NOT NULL DEFAULT 1")
+  // A database that already issued revisions must not reissue one: the
+  // counter starts at whatever the live assignment holds.
+  if (addColumn(db, "workspaces", "host_assignment_revision", "INTEGER NOT NULL DEFAULT 0")) {
+    db.exec(`
+      UPDATE workspaces SET host_assignment_revision = (
+        SELECT assignment.revision FROM host_workspace_assignments assignment
+        WHERE assignment.workspace_id = workspaces.workspace_id
+      ) WHERE workspace_id IN (SELECT workspace_id FROM host_workspace_assignments)
+    `)
+  }
 }
 
+/** Whether the column was added by this call; an existing column is left as it is. */
 function addColumn(db: SqliteAuthorityDb, table: string, column: string, definition: string) {
-  if (!hasTable(db, table)) return
-  if (hasColumn(db, table, column)) return
+  if (!hasTable(db, table)) return false
+  if (hasColumn(db, table, column)) return false
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+  return true
 }
 
 function userOrganizationIds(db: SqliteAuthorityDb, tokenIdentifier: string) {
