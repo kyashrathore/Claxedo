@@ -295,6 +295,7 @@
       "name": "@claxedo/local-server",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",
         "@claxedo/helpers": "workspace:*",
@@ -354,6 +355,7 @@
         "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/channels": "workspace:*",
         "@claxedo/connections": "workspace:*",
+        "@claxedo/egress-broker": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/local-server": "workspace:*",
         "@claxedo/mcp": "workspace:*",
@@ -402,7 +404,9 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/agent-event-runtime": "workspace:*",
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/agent-sdk-runtime": "workspace:*",
+        "@claxedo/egress-broker": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@claxedo/usage-contract": "workspace:*",
@@ -483,7 +487,7 @@
     },
     "packages/egress-broker": {
       "name": "@claxedo/egress-broker",
-      "version": "0.8.0",
+      "version": "0.1.0",
       "dependencies": {
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@hono/node-server": "1.19.11",
@@ -644,6 +648,9 @@
     "packages/usage-contract": {
       "name": "@claxedo/usage-contract",
       "version": "0.7.0",
+      "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
+      },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
         "typescript": "catalog:",
