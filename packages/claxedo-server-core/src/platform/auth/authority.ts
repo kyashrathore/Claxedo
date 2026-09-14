@@ -368,6 +368,8 @@ export type WorkspaceAuthority = {
     args: { enrollmentId: string; scope: HostScopeDefinition },
   ) => Promise<HostScopeUpdateResult>
   listHostEnrollments?: (auth: SignedControlPlaneAuth) => Promise<HostEnrollmentListRow[]>
+  /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
+  machineAuth?: MachineAuthAdapter
   markSecondDeviceOpen: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
@@ -684,6 +686,29 @@ export type MachinePrincipal = {
   scope: HostEnrollmentScope | undefined
   keyVersion: number
   generation: number
+}
+
+/** The enrollment as the verifier needs it, read once by `enrollment_id`. */
+export type MachineEnrollmentRow = {
+  enrollment_id: string
+  host_id: string
+  owner_user_id: string
+  owner_actor_id: string
+  /** Public P-256 JWK JSON as stored. */
+  public_key_json: string
+  key_version: number
+  serving_generation: number
+  revoked_at: number | null
+  paused_at: number | null
+  scope: HostEnrollmentScope | undefined
+  /** Owner eligibility is adapter-specific (D1: user and actor `active`; SQLite: the users row exists), so the adapter answers it. */
+  ownerEligible: boolean
+}
+
+export type MachineAuthAdapter = {
+  lookupEnrollment: (enrollmentId: string) => Promise<MachineEnrollmentRow | undefined>
+  /** Insert-or-fail on `(enrollmentId, nonce)`; false when the nonce was already consumed. */
+  consumeNonce: (input: { enrollmentId: string; nonce: string; expiresAt: number }) => Promise<boolean>
 }
 
 /** One workspace the owner points at this machine, versioned per re-point. */

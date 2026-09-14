@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, test } from "vitest"
 import { base64UrlEncode, sha256Hex } from "@claxedo/helpers/crypto"
 import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_HEADERS, MACHINE_REQUEST_SKEW_MS, machineRequestPayload } from "./host-connect-contract"
-import { type MachineAuthDeps, type MachineEnrollmentRow, type MachineRequest, verifyMachineRequest } from "./machine-auth"
+import type { MachineEnrollmentRow } from "./authority"
+import { type MachineAuthDeps, type MachineRequest, verifyMachineRequest } from "./machine-auth"
 
 const NOW = 1_726_000_000_000
 const PATH = "/api/claxedo/host/enrollments/heartbeat"
