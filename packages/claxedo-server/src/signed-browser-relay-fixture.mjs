@@ -45,15 +45,38 @@ import {
   signHostPayload,
 } from "./workspace/local-host.ts"
 import { createFixedWindowConnectionRateLimiter } from "./platform/auth/rate-limit.ts"
+import { hostConnectEndpointOptions } from "./workspace/route-support.ts"
+import { hostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import {
+  connectFixtureRoutes,
+  createConnectInstances,
+  createFaults,
+  ownerControlPlane,
+  provisionConnectRoots,
+  relayHostPublicKeyFrom,
+  userHostedTargetResolver,
+} from "./connect-host-fixture.mjs"
 
 const execFileAsync = promisify(execFile)
 const workspaceId = process.env.CLAXEDO_E2E_WORKSPACE_ID?.trim() || "ws_signed_browser_relay"
 const projectId = "proj_signed_browser_relay"
 const access = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ACCESS === "cloud" ? "cloud" : "user-hosted"
+// `embedded`: this process is the host (the desktop shape) and registers,
+// assigns and beats for one workspace in-process. `connect`: no host in this
+// process at all — the spec spawns real `claxedo connect` children through
+// `/__fixture/connect/*`, the owner assigns folders through `claxedo host …`,
+// and the relay child asks this control plane for targets, revocation and
+// serving generations exactly as a deployed relay does.
+const hostMode = process.env.CLAXEDO_E2E_RELAY_FIXTURE_HOST === "connect" ? "connect" : "embedded"
+if (hostMode === "connect" && access === "cloud") throw new Error("connect host mode is user-hosted only")
 const requestedRole = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ROLE?.trim()
 const role =
   requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner" ? requestedRole : "editor"
 const backendPort = Number(process.env.CLAXEDO_E2E_BACKEND_PORT || 0)
+// The relay child dials the control plane's resolver routes by URL from the
+// moment it starts, before this process has bound anything, so connect mode
+// needs the port decided up front.
+if (hostMode === "connect" && !backendPort) throw new Error("connect host mode needs CLAXEDO_E2E_BACKEND_PORT")
 const scriptedModelUrl = process.env.CLAXEDO_E2E_SCRIPTED_MODEL_URL?.trim()
 if (scriptedModelUrl && !process.env.PI_CODING_AGENT_DIR)
   throw new Error("Scripted Pi requires the provider fixture's native PI_CODING_AGENT_DIR")
@@ -101,9 +124,10 @@ await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "nat
 // the same machine identity. Use the product's canonical persisted identity
 // for both; a fixture-only host id creates a live relay tunnel that
 // `GET /api/workspace/:id/connection` correctly refuses as unregistered.
-const fixtureLocalHostIdentity = access === "cloud" ? undefined : await localHostIdentity()
+const fixtureLocalHostIdentity = access === "cloud" || hostMode === "connect" ? undefined : await localHostIdentity()
 const hostId =
   fixtureLocalHostIdentity?.hostId ?? process.env.CLAXEDO_E2E_HOST_ID?.trim() ?? "host_signed_browser_relay"
+const resolverToken = hostMode === "connect" ? `resolver_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}` : undefined
 
 async function run(cwd, ...args) {
   await execFileAsync(args[0], args.slice(1), { cwd })
@@ -263,6 +287,14 @@ async function startRelayFixture(input) {
       CLAXEDO_RELAY_FIXTURE_HOST_ID: hostId,
       CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(input.runtimePublicKeyJwk),
       CLAXEDO_RELAY_FIXTURE_HOST_PRIVATE_KEY_JWK: JSON.stringify(input.relayHostPrivateKeyJwk),
+      ...(hostMode === "connect"
+        ? {
+            CLAXEDO_RELAY_FIXTURE_MODE: "connect",
+            CLAXEDO_RELAY_RESOLVER_URL: `${input.controlPlaneUrl}/internal/relay`,
+            CLAXEDO_RELAY_RESOLVER_TOKEN: resolverToken,
+            CLAXEDO_RELAY_HOST_GENERATION_URL: `${input.controlPlaneUrl}/internal/relay/host-generation`,
+          }
+        : {}),
     },
     // EOF is the child-owned parent-death signal. If this fixture is killed
     // before its JS shutdown handler can run, the relay still tears itself
@@ -344,14 +376,23 @@ process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = await exportPKCS8(run
 process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(runtime.publicKey)
 process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
 
+const backendUrl = `http://127.0.0.1:${backendPort || 0}`
+const relayHostPrivateKeyJwk = await exportJWK(relayHost.privateKey)
 const relay = await startRelayFixture({
   runtimePublicKeyJwk: await exportJWK(runtime.publicKey),
-  relayHostPrivateKeyJwk: await exportJWK(relayHost.privateKey),
+  relayHostPrivateKeyJwk,
+  controlPlaneUrl: backendUrl,
 })
 const relayUrl = relay.url
 const publicRelayUrl = process.env.CLAXEDO_E2E_RELAY_PUBLIC_URL?.trim() || relayUrl
-const backendUrl = `http://127.0.0.1:${backendPort || 0}`
 if (backendPort) configureRuntimeSessionAuthorityUrl(backendUrl)
+if (hostMode === "connect") {
+  // What a `claxedo connect` host is told on redeem and on every beat, read by
+  // the enrollment routes through `hostConnectEndpointOptions(process.env)`
+  // the same way the hosted and self-host compositions read it.
+  process.env.CLAXEDO_RELAY_HOST_JWKS_URL = `${relayUrl}/.well-known/jwks.json`
+  process.env.CLAXEDO_SESSION_AUTHORITY_URL = `${backendUrl}/api/runtime-authority/session-authorize`
+}
 configureWorkspaceSupervisor({
   server_url: backendUrl,
 })
@@ -474,7 +515,10 @@ if (collaborativeOrgName) {
   fixtureDefaultTeamId = org.default_team_id
 }
 const collaborativeOrgArgs = collaborativeOrgName ? { orgId: fixtureOrgId } : {}
-const workspace = await ensureWorkspace({
+// Connect mode has no fixed workspace: rows are cold-registered by the owner's
+// `claxedo host assign`, and the directories live under the provisioned roots.
+const connectRoots = hostMode === "connect" ? await provisionConnectRoots(path.join(root, "hosts")) : undefined
+const workspace = hostMode === "connect" ? undefined : await ensureWorkspace({
   workspaceId,
   project_id: projectId,
   directory: workspaceDir,
@@ -486,10 +530,13 @@ const workspace = await ensureWorkspace({
   // `updateWorkspace`'s patch type does not include `org_id`.
   ...(access === "cloud" ? { org_id: fixtureOrgId } : {}),
 })
-if (!workspace) throw new Error("Signed browser relay workspace was not stored")
+if (!workspace && hostMode === "embedded") throw new Error("Signed browser relay workspace was not stored")
 
 let effectiveWorkspace = workspace
-if (access === "cloud") {
+if (hostMode === "connect") {
+  // Nothing to register: the host, its enrollment and its assignments are all
+  // created by the spec through the real CLI against the routes below.
+} else if (access === "cloud") {
   cloudRuntime = await startCloudRuntime({
     relayHostPublicKey: relayHost.publicKey,
     controlPlaneUrl: backendUrl,
@@ -691,6 +738,7 @@ const services = createControlPlaneServices(
     relay: {
       relayUrl: publicRelayUrl,
       runtimeAccessTokenSigner,
+      ...(hostMode === "connect" ? { resolverToken, hostTunnelTokenSigner: hostTunnelTokenSigner(process.env) } : {}),
       // `proxy.ts`'s `localWorkspaceRelayProxy` is the path the
       // app actually takes for a relay-backed workspace on a LOOPBACK server URL
       // (`workspace-runtime-request.ts:223` — the relay is used directly only
@@ -760,115 +808,119 @@ const services = createControlPlaneServices(
   },
 )
 const sessionTitle = access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session"
-await services.projectionStore.sync_session_meta(effectiveWorkspace, {
-  id: "signed-browser-relay-session",
-  title: sessionTitle,
-  directory: workspaceDir,
-  time: { created: 1, updated: 2 },
-})
-services.durableSessionLog.persist_message_event("signed-browser-relay-session", {
-  type: "message.updated",
-  properties: {
-    info: {
-      id: "msg_signed_browser_relay",
-      sessionID: "signed-browser-relay-session",
-      role: "user",
-      time: { created: 1 },
-    },
-  },
-})
-services.durableSessionLog.persist_message_event("signed-browser-relay-session", {
-  type: "message.part.updated",
-  properties: {
-    part: {
-      id: "part_signed_browser_relay",
-      sessionID: "signed-browser-relay-session",
-      messageID: "msg_signed_browser_relay",
-      type: "text",
-      text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
-    },
-  },
-})
-const sessionMessages = [
-  {
-    info: {
-      id: "msg_signed_browser_relay",
-      sessionID: "signed-browser-relay-session",
-      role: "user",
-      time: { created: 1 },
-    },
-    parts: [
-      {
-        id: "part_signed_browser_relay",
-        sessionID: "signed-browser-relay-session",
-        messageID: "msg_signed_browser_relay",
-        type: "text",
-        text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
-      },
-    ],
-  },
-]
-// Seed the canned session into the REAL private-session authority through the
-// SAME protocol a real host runs, under the SAME identity that registered the
-// workspace above.
-//
-// Both stores are seeded because they answer different routes: `GET /sessions`
-// on a signed-hosted-browser request answers ONLY from
-// `requireAuthority(services).listSessions` (`session/routes/control-plane-
-// session.ts`), so the session appears in the sidebar only via the authority;
-// `GET /sessions/:id/messages` prefers `projectionStore`'s replay log when
-// non-empty and falls back to the authority, so the durable-log writes above
-// are what serve message content.
-//
-// The authority half is a four-step protocol, not a single write, and every
-// step is the production one:
-//   1. `reserveSession` — the authenticated reservation boundary the runtime
-//      crosses before creating a session (`routes/private-session-registration
-//      .ts`'s `POST /reserve`).
-//   2. `registerRuntimeSession` — the RHT-authenticated runtime half that
-//      creates the `session_history` row and its creator participant.
-//   3. `acquireSessionTurn` — turn admission. It mints the fencing token AND
-//      records the admitted producer for `turnId`; `syncSessionMessages`
-//      rejects a snapshot whose user message has no admitted producer, and
-//      stamps that producer as the message's canonical author, so `turnId`
-//      must be the user message's own id.
-//   4. `syncSessionMessages` carrying that fencing token, then
-//      `releaseSessionTurn` — exactly what a host does when it checkpoints a
-//      completed turn (`authority/hosted-session-pull.ts` forwards the
-//      runtime snapshot's `fencingToken` the same way).
 const sessionRegistration = {
   operationId: "op_signed_browser_relay",
   sessionId: "signed-browser-relay-session",
   workspaceId,
   title: sessionTitle,
 }
-const seedRuntimePrincipal = {
-  principalKind: "user",
-  actorId: browserActor.actor_id,
-  actorKind: browserActor.actor_kind,
+// The embedded host's canned session, seeded through the real private-session
+// protocol; connect mode has no workspace at boot to seed one into.
+if (hostMode === "embedded") {
+  await services.projectionStore.sync_session_meta(effectiveWorkspace, {
+    id: "signed-browser-relay-session",
+    title: sessionTitle,
+    directory: workspaceDir,
+    time: { created: 1, updated: 2 },
+  })
+  services.durableSessionLog.persist_message_event("signed-browser-relay-session", {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: "msg_signed_browser_relay",
+        sessionID: "signed-browser-relay-session",
+        role: "user",
+        time: { created: 1 },
+      },
+    },
+  })
+  services.durableSessionLog.persist_message_event("signed-browser-relay-session", {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: "part_signed_browser_relay",
+        sessionID: "signed-browser-relay-session",
+        messageID: "msg_signed_browser_relay",
+        type: "text",
+        text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
+      },
+    },
+  })
+  const sessionMessages = [
+    {
+      info: {
+        id: "msg_signed_browser_relay",
+        sessionID: "signed-browser-relay-session",
+        role: "user",
+        time: { created: 1 },
+      },
+      parts: [
+        {
+          id: "part_signed_browser_relay",
+          sessionID: "signed-browser-relay-session",
+          messageID: "msg_signed_browser_relay",
+          type: "text",
+          text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
+        },
+      ],
+    },
+  ]
+  // Seed the canned session into the REAL private-session authority through the
+  // SAME protocol a real host runs, under the SAME identity that registered the
+  // workspace above.
+  //
+  // Both stores are seeded because they answer different routes: `GET /sessions`
+  // on a signed-hosted-browser request answers ONLY from
+  // `requireAuthority(services).listSessions` (`session/routes/control-plane-
+  // session.ts`), so the session appears in the sidebar only via the authority;
+  // `GET /sessions/:id/messages` prefers `projectionStore`'s replay log when
+  // non-empty and falls back to the authority, so the durable-log writes above
+  // are what serve message content.
+  //
+  // The authority half is a four-step protocol, not a single write, and every
+  // step is the production one:
+  //   1. `reserveSession` — the authenticated reservation boundary the runtime
+  //      crosses before creating a session (`routes/private-session-registration
+  //      .ts`'s `POST /reserve`).
+  //   2. `registerRuntimeSession` — the RHT-authenticated runtime half that
+  //      creates the `session_history` row and its creator participant.
+  //   3. `acquireSessionTurn` — turn admission. It mints the fencing token AND
+  //      records the admitted producer for `turnId`; `syncSessionMessages`
+  //      rejects a snapshot whose user message has no admitted producer, and
+  //      stamps that producer as the message's canonical author, so `turnId`
+  //      must be the user message's own id.
+  //   4. `syncSessionMessages` carrying that fencing token, then
+  //      `releaseSessionTurn` — exactly what a host does when it checkpoints a
+  //      completed turn (`authority/hosted-session-pull.ts` forwards the
+  //      runtime snapshot's `fencingToken` the same way).
+  const seedRuntimePrincipal = {
+    principalKind: "user",
+    actorId: browserActor.actor_id,
+    actorKind: browserActor.actor_kind,
+  }
+  await authority.reserveSession(browserAuth, { ...sessionRegistration, kind: "create" })
+  await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration })
+  const seedTurn = await authority.acquireSessionTurn({
+    ...seedRuntimePrincipal,
+    sessionId: sessionRegistration.sessionId,
+    workspaceId,
+    turnId: "msg_signed_browser_relay",
+  })
+  await authority.syncSessionMessages(browserAuth, {
+    sessionId: sessionRegistration.sessionId,
+    workspaceId,
+    messages: sessionMessages,
+    fencingToken: seedTurn.fencingToken,
+  })
+  await authority.releaseSessionTurn({
+    ...seedRuntimePrincipal,
+    sessionId: seedTurn.sessionId,
+    workspaceId,
+    turnId: seedTurn.turnId,
+    leaseId: seedTurn.leaseId,
+    fencingToken: seedTurn.fencingToken,
+  })
 }
-await authority.reserveSession(browserAuth, { ...sessionRegistration, kind: "create" })
-await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration })
-const seedTurn = await authority.acquireSessionTurn({
-  ...seedRuntimePrincipal,
-  sessionId: sessionRegistration.sessionId,
-  workspaceId,
-  turnId: "msg_signed_browser_relay",
-})
-await authority.syncSessionMessages(browserAuth, {
-  sessionId: sessionRegistration.sessionId,
-  workspaceId,
-  messages: sessionMessages,
-  fencingToken: seedTurn.fencingToken,
-})
-await authority.releaseSessionTurn({
-  ...seedRuntimePrincipal,
-  sessionId: seedTurn.sessionId,
-  workspaceId,
-  turnId: seedTurn.turnId,
-  leaseId: seedTurn.leaseId,
-  fencingToken: seedTurn.fencingToken,
-})
 
 // The full production entry point configures embedded execution immediately
 // after building this app. This focused fixture injects its own services and
@@ -885,7 +937,7 @@ const built = createSelfHostedApp(services, {
   // for that workload.
   connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 10_000, windowMs: 60_000 }),
 })
-if (access === "user-hosted") {
+if (access === "user-hosted" && hostMode === "embedded") {
   // Tunnel startup can create/cache the workspace runtime, and runtime policy
   // configuration is intentionally not retroactive. Start only after the
   // authority-backed factory above is ready.
@@ -910,13 +962,33 @@ if (access === "user-hosted") {
 // canonical hosted route module beside it for the signed desktop lane. This is
 // the production handler against the real SQLite authority, not a fixture
 // response; the fixture wrapper below only observes/delays requests.
-const desktopHostedRoutes = new Hono().route(
+const hostedRouteOptions = {
+  authConfig: services.auth.config,
+  ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+}
+// Connect mode widens the hosted surface to everything `claxedo host …` and
+// the relay child call, with the machine-facing endpoints the redeem and
+// heartbeat responses carry (`connect-host-fixture.mjs`).
+const ownerPlane = hostMode === "connect"
+  ? ownerControlPlane(services, {
+      ...hostedRouteOptions,
+      relayUrl: publicRelayUrl,
+      runtimeAccessTokenSigner,
+      hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner,
+      ...hostConnectEndpointOptions(process.env),
+      resolverToken,
+      userHostedResolver: userHostedTargetResolver(authority, browserAuth),
+    })
+  : undefined
+const desktopHostedRoutes = ownerPlane?.app ?? new Hono().route(
   "/api/claxedo/host/enrollments",
-  HostEnrollmentRoutes(services, {
-    authConfig: services.auth.config,
-    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-  }),
+  HostEnrollmentRoutes(services, hostedRouteOptions),
 )
+const faults = createFaults()
+const connectInstances = createConnectInstances({
+  homesRoot: path.join(root, "connect-homes"),
+  controlPlaneUrl: backendUrl,
+})
 built.app.post("/__fixture/oauth/token", async (c) => {
   const form = new URLSearchParams(await c.req.text())
   if (form.get("grant_type") !== "refresh_token" || form.get("refresh_token") !== currentDesktopRefreshToken) {
@@ -949,7 +1021,7 @@ built.app.get("/__fixture/desktop-stats", (c) =>
 // minting and the real user-hosted tunnel lifecycle
 // (start/stopUserHostedWorkspaceTunnel) are exercised either way — this is
 // test orchestration, not a mocked response.
-built.app.get("/__fixture/mint", async (c) => {
+if (hostMode === "embedded") built.app.get("/__fixture/mint", async (c) => {
   const role = c.req.query("role")
   if (role !== "viewer" && role !== "editor" && role !== "owner" && role !== "admin") {
     return c.json({ error: "role must be one of viewer|editor|owner|admin" }, 400)
@@ -985,6 +1057,9 @@ built.app.get("/__fixture/authority-identity", async (c) => {
   const name = c.req.query("name")?.trim()
   const grantWorkspaceShare = c.req.query("grantWorkspaceShare") !== "0"
   const joinOrg = c.req.query("joinOrg") === "1"
+  // Connect mode has no fixed workspace, so the share names the one the
+  // owner assigned; the embedded lanes keep their single workspace.
+  const sharedWorkspaceId = c.req.query("workspaceId") ?? workspaceId
   if (!subject) return c.json({ error: "subject is required" }, 400)
   if (role !== "viewer" && role !== "editor" && role !== "admin") {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
@@ -1027,7 +1102,7 @@ built.app.get("/__fixture/authority-identity", async (c) => {
   // share (default) to prove workspace access alone does not unlock sessions.
   if (grantWorkspaceShare) {
     await authority.grantWorkspaceShare(browserAuth, {
-      workspaceId,
+      workspaceId: sharedWorkspaceId,
       role,
       target: { kind: "actor", actorId: tokenIdentifier },
     })
@@ -1035,7 +1110,24 @@ built.app.get("/__fixture/authority-identity", async (c) => {
   const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })
   return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token, ...(name ? { name } : {}) })
 })
-if (access !== "cloud") {
+if (hostMode === "connect") {
+  connectFixtureRoutes(built.app, {
+    instances: connectInstances,
+    faults,
+    authority,
+    ownerSubject: browserSubject,
+    orgId: fixtureOrgId,
+    runtimePrivateKey: runtime.privateKey,
+    relayHostPrivateKey: relayHost.privateKey,
+    relayHostPublicKey: relayHostPublicKeyFrom(relayHostPrivateKeyJwk),
+    hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner,
+    authFor: (subject) => ({
+      mode: "signed",
+      token: "",
+      user: { subject, tokenIdentifier: `${jwksIssuer.issuer}|${subject}`, issuer: jwksIssuer.issuer },
+    }),
+  })
+} else if (access !== "cloud") {
   built.app.post("/__fixture/tunnel/pause", async (c) => {
     const stopped = stopUserHostedWorkspaceTunnel({ workspaceId, hostId })
     return c.json({ paused: stopped })
@@ -1090,6 +1182,11 @@ function withConnectionClose(response) {
 const server = serve({
   fetch: async (request, ...rest) => {
     const url = new URL(request.url)
+    const outage = faults.outage(url)
+    if (outage) return withConnectionClose(outage)
+    if (ownerPlane?.owns(url) && !url.pathname.startsWith("/api/claxedo/host/enrollments")) {
+      return withConnectionClose(await ownerPlane.app.fetch(request, ...rest))
+    }
     if (url.pathname.startsWith("/api/claxedo/host/enrollments")) {
       const body =
         request.method === "POST"
@@ -1108,12 +1205,16 @@ const server = serve({
       if (url.pathname.endsWith("/heartbeat") && hostHeartbeatDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, hostHeartbeatDelayMs))
       }
-      const response = await desktopHostedRoutes.fetch(request, ...rest)
+      const response = await faults.holdRedeem(url, await desktopHostedRoutes.fetch(request, ...rest))
       desktopHostRequests.push({
         method: request.method,
         path: url.pathname,
         phase: "completed",
         status: response.status,
+        // The redeem answer is the one machine-side response a spec cannot
+        // read from the CLI's own output, so its body is kept for assertions
+        // on what a refusal discloses.
+        ...(url.pathname.endsWith("/redeem") ? { body: await response.clone().json().catch(() => undefined) } : {}),
         at: Date.now(),
       })
       return withConnectionClose(response)
@@ -1128,7 +1229,26 @@ built.injectWebSocket(server)
 const boundPort = await serverPort(server, "Signed browser relay backend")
 configureRuntimeSessionAuthorityUrl(`http://127.0.0.1:${boundPort}`)
 
-console.log(
+const connectInfo = () => ({
+  hostMode,
+  backendUrl: `http://127.0.0.1:${boundPort}`,
+  relayUrl,
+  orgId: fixtureOrgId,
+  roots: connectRoots,
+  resolverToken,
+  hostJwksUrl: process.env.CLAXEDO_RELAY_HOST_JWKS_URL,
+  sessionAuthorityUrl: process.env.CLAXEDO_SESSION_AUTHORITY_URL,
+  controlPlaneToken: browserControlPlaneToken,
+  controlPlaneIssuer: jwksIssuer.issuer,
+  ownerSubject: browserSubject,
+  ownerActor: {
+    actor_id: browserActor.actor_id,
+    actor_public_id: browserActor.actor_public_id,
+    actor_name: browserActor.actor_name,
+  },
+})
+if (hostMode === "connect") console.log(JSON.stringify(connectInfo()))
+else console.log(
   JSON.stringify({
     backendUrl: `http://127.0.0.1:${boundPort}`,
     relayUrl,
@@ -1180,6 +1300,8 @@ function shutdown() {
   shutdownPromise = (async () => {
     if (localHostHeartbeatTimer) clearInterval(localHostHeartbeatTimer)
     await localHostHeartbeatPromise
+    faults.setRedeemResponseDrop(false)
+    await connectInstances.stopAll()
     await closeHttp(server)
     await relay.close()
     stopAllUserHostedWorkspaceTunnels()
