@@ -141,36 +141,61 @@ describe("roots", () => {
     expect(pathWithin(inner, outer)).toBe(expected)
   })
 
-  test("no scope yet, or an empty allowed_roots, is deny-all", () => {
-    expect(effectiveRoots({ cli_roots: ["/srv"] })).toEqual([])
-    expect(effectiveRoots({ cli_roots: [], scope: { revision: 1, allowed_roots: [], visibility: "owner" } })).toEqual([])
+  /** Lexical identity: every path resolves to itself. */
+  const lexical = async (path: string) => path
+
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots, visibility: "owner" as const })
+
+  test("no scope yet, or an empty allowed_roots, is deny-all", async () => {
+    expect(await effectiveRoots({ cli_roots: ["/srv"] }, lexical)).toEqual([])
+    expect(await effectiveRoots({ cli_roots: [], scope: scope([]) }, lexical)).toEqual([])
   })
 
-  test("no cli roots ⇒ the control plane's roots", () => {
-    expect(effectiveRoots({ cli_roots: [], scope: { revision: 1, allowed_roots: ["/srv/", "/home/u/code"], visibility: "owner" } })).toEqual([
-      "/home/u/code",
-      "/srv",
+  test("no cli roots ⇒ the control plane's roots", async () => {
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["/srv/", "/home/u/code"]) }, lexical)).toEqual(["/home/u/code", "/srv"])
+  })
+
+  test("a cli root inside a control-plane root narrows to the cli root", async () => {
+    expect(await effectiveRoots({ cli_roots: ["/srv/api"], scope: scope(["/srv"]) }, lexical)).toEqual(["/srv/api"])
+  })
+
+  test("a control-plane root inside a cli root keeps the control-plane root", async () => {
+    expect(await effectiveRoots({ cli_roots: ["/srv"], scope: scope(["/srv/api"]) }, lexical)).toEqual(["/srv/api"])
+  })
+
+  test("disjoint roots leave nothing servable", async () => {
+    expect(await effectiveRoots({ cli_roots: ["/home"], scope: scope(["/srv"]) }, lexical)).toEqual([])
+  })
+
+  test("relative roots contribute nothing", async () => {
+    expect(await effectiveRoots({ cli_roots: ["srv"], scope: scope(["srv", "/srv"]) }, lexical)).toEqual([])
+  })
+
+  test("roots are resolved on each side before they intersect, so a cli symlink cannot widen a control-plane root", async () => {
+    const links: Record<string, string> = { "/srv/link": "/private" }
+    const resolve = async (path: string) => links[path] ?? path
+
+    // Lexically `/srv/link` narrows `/srv`; resolved it is `/private`, which
+    // is nowhere under `/srv`.
+    expect(await effectiveRoots({ cli_roots: ["/srv/link"], scope: scope(["/srv"]) }, resolve)).toEqual([])
+    // The control plane naming the same link resolves to the same place.
+    expect(await effectiveRoots({ cli_roots: ["/srv/link"], scope: scope(["/srv/link"]) }, resolve)).toEqual(["/private"])
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["/srv/link", "/srv"]) }, resolve)).toEqual(["/private", "/srv"])
+  })
+
+  test("a root that does not exist yet is the resolved form of its nearest existing ancestor plus the rest", async () => {
+    const existing: Record<string, string> = { "/": "/", "/srv": "/srv", "/srv/link": "/private/data" }
+    const resolve = async (path: string) => {
+      const resolved = existing[path]
+      if (resolved === undefined) throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" })
+      return resolved
+    }
+
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["/srv/link/new/deeper", "/srv/new"]) }, resolve)).toEqual([
+      "/private/data/new/deeper",
+      "/srv/new",
     ])
-  })
-
-  test("a cli root inside a control-plane root narrows to the cli root", () => {
-    expect(effectiveRoots({ cli_roots: ["/srv/api"], scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" } })).toEqual([
-      "/srv/api",
-    ])
-  })
-
-  test("a control-plane root inside a cli root keeps the control-plane root", () => {
-    expect(effectiveRoots({ cli_roots: ["/srv"], scope: { revision: 1, allowed_roots: ["/srv/api"], visibility: "owner" } })).toEqual([
-      "/srv/api",
-    ])
-  })
-
-  test("disjoint roots leave nothing servable", () => {
-    expect(effectiveRoots({ cli_roots: ["/home"], scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" } })).toEqual([])
-  })
-
-  test("relative roots contribute nothing", () => {
-    expect(effectiveRoots({ cli_roots: ["srv"], scope: { revision: 1, allowed_roots: ["srv", "/srv"], visibility: "owner" } })).toEqual([])
+    expect(await effectiveRoots({ cli_roots: ["/srv/link/new"], scope: scope(["/private"]) }, resolve)).toEqual(["/private/data/new"])
   })
 })
 

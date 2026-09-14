@@ -167,12 +167,15 @@ export type MachineConnectorOptions = CommonConnectorOptions & {
   /** The enrollment this key redeemed; the machine signs and presents this, not its host id. */
   enrollmentId: string
   /**
-   * The effective roots as the caller currently holds them (control-plane
-   * scope ∩ `--root`, see `effectiveRoots` in `./host-state`). Read at every
-   * `ack`, after `onScope` has delivered any newer scope, so a description is
-   * always validated against the roots in force when it is accepted.
+   * The effective roots as the caller currently holds them, already resolved
+   * (`effectiveRoots` in `./host-state` with the same `resolvePath`). Read at
+   * every `ack`, after `onScope` has delivered any newer scope, so a
+   * description is always validated against the roots in force when it is
+   * accepted. A description's resolved directory is compared against these as
+   * they are: a root handed over unresolved would be compared in a different
+   * coordinate space from the directory.
    */
-  roots: () => readonly string[]
+  roots: () => readonly string[] | Promise<readonly string[]>
   /** `realpath`: a symlink out of the roots is refused on the resolved path, not the lexical one. */
   resolvePath: (path: string) => Promise<string>
   /**
@@ -456,13 +459,11 @@ export function createHostConnector(options: ConnectorOptions) {
         `assignment ${input.workspaceId} moved to revision ${current.revision} while revision ${input.revision} was being prepared`,
       )
     }
-    const roots = await Promise.all(
-      machine.roots().map((root) => machine.resolvePath(root).catch(() => undefined)),
-    )
+    const roots = await machine.roots()
     const resolved = await machine.resolvePath(current.remoteDirectory).catch((error: unknown) => {
       throw new Error(`assignment ${input.workspaceId}: ${current.remoteDirectory} cannot be resolved: ${String(error)}`)
     })
-    if (!pathWithinRoots(resolved, roots.filter((root): root is string => root !== undefined))) {
+    if (!pathWithinRoots(resolved, roots)) {
       throw new Error(`assignment ${input.workspaceId}: ${current.remoteDirectory} is outside this host's roots`)
     }
     // A beat may have reconciled while the paths were resolving; consent is

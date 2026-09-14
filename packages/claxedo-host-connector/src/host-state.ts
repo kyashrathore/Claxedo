@@ -317,20 +317,55 @@ export function pathWithinRoots(path: string, roots: readonly string[]) {
   return roots.some((root) => pathWithin(path, root))
 }
 
+export type ResolvePath = (path: string) => Promise<string>
+
 /**
- * CP `allowed_roots` ∩ `cli_roots` by containment: a cli root inside a CP root
- * narrows to the cli root, a CP root inside a cli root keeps the CP root,
- * disjoint pairs contribute nothing. No cli roots ⇒ the CP roots. No scope
- * yet, or an EMPTY `allowed_roots` ⇒ nothing is servable — "unrestricted" is
- * never an answer this function gives.
+ * A root in the same coordinate space the assignment directories are checked
+ * in: `resolve` (realpath) of the root itself, or, for a root that does not
+ * exist yet, of its nearest existing ancestor with the remaining segments
+ * appended. A symlinked ancestor therefore lands the root where the link
+ * points, the same place a directory created under it later resolves to.
+ * Nothing resolvable at all (not even `/`) drops the root.
  */
-export function effectiveRoots(state: Pick<HostState, "scope" | "cli_roots">): string[] {
-  const controlPlane = (state.scope?.allowed_roots ?? [])
-    .map(normalizeAbsolutePath)
-    .filter((root): root is string => root !== undefined)
+export async function canonicalRoot(root: string, resolve: ResolvePath): Promise<string | undefined> {
+  const normalized = normalizeAbsolutePath(root)
+  if (normalized === undefined) return undefined
+  let head = normalized
+  const tail: string[] = []
+  for (;;) {
+    let resolved: string | undefined
+    try {
+      resolved = await resolve(head)
+    } catch {
+      if (head === "/") return undefined
+      const cut = head.lastIndexOf("/")
+      tail.unshift(head.slice(cut + 1))
+      head = cut === 0 ? "/" : head.slice(0, cut)
+      continue
+    }
+    return normalizeAbsolutePath([resolved, ...tail].join("/"))
+  }
+}
+
+async function canonicalRoots(roots: readonly string[], resolve: ResolvePath) {
+  const resolved = await Promise.all(roots.map((root) => canonicalRoot(root, resolve)))
+  return resolved.filter((root): root is string => root !== undefined)
+}
+
+/**
+ * CP `allowed_roots` ∩ `cli_roots` by containment, each side resolved first:
+ * a cli root inside a CP root narrows to the cli root, a CP root inside a cli
+ * root keeps the CP root, disjoint pairs contribute nothing. Resolving before
+ * intersecting is what stops a cli root that is a symlink under a CP root
+ * from carrying the CP root's authority to wherever the link points. No cli
+ * roots ⇒ the CP roots. No scope yet, or an EMPTY `allowed_roots` ⇒ nothing
+ * is servable — "unrestricted" is never an answer this function gives.
+ */
+export async function effectiveRoots(state: Pick<HostState, "scope" | "cli_roots">, resolve: ResolvePath): Promise<string[]> {
+  const controlPlane = await canonicalRoots(state.scope?.allowed_roots ?? [], resolve)
   if (controlPlane.length === 0) return []
   if (state.cli_roots.length === 0) return [...new Set(controlPlane)].sort()
-  const cli = state.cli_roots.map(normalizeAbsolutePath).filter((root): root is string => root !== undefined)
+  const cli = await canonicalRoots(state.cli_roots, resolve)
   const roots = new Set<string>()
   for (const local of cli) {
     for (const remote of controlPlane) {

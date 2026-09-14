@@ -1,3 +1,4 @@
+import fs from "node:fs/promises"
 import { hostPublicKeyFingerprint } from "@claxedo/host-connector/host-identity"
 import { effectiveRoots, type HostState } from "@claxedo/host-connector/host-state"
 import { connectPaths, connectStateStore, LEASE_TTL_MS } from "../connect/paths"
@@ -5,6 +6,7 @@ import { connectPaths, connectStateStore, LEASE_TTL_MS } from "../connect/paths"
 export type StatusDeps = {
   load: () => Promise<HostState | undefined>
   stateFile: string
+  resolvePath: (target: string) => Promise<string>
   pidAlive: (pid: number) => boolean
   now: () => number
   log: (line: string) => void
@@ -23,6 +25,7 @@ export function defaultStatusDeps(): StatusDeps {
   return {
     load: () => connectStateStore().load(),
     stateFile: connectPaths().stateFile,
+    resolvePath: (target) => fs.realpath(target),
     pidAlive: processAlive,
     now: () => Date.now(),
     log: (line) => console.log(line),
@@ -67,7 +70,7 @@ export async function statusLines(deps: StatusDeps): Promise<string[]> {
     `  status       ${online ? "online" : "offline"}${run && !online ? ` (pid ${run.pid} ${deps.pidAlive(run.pid) ? "alive, lease stale" : "gone"})` : ""}`,
   )
   if (run?.last_beat_error) lines.push(`  last error   ${run.last_beat_error}`)
-  const roots = effectiveRoots(state)
+  const roots = await effectiveRoots(state, deps.resolvePath)
   lines.push(`  roots        ${roots.length ? roots.join(", ") : "none (nothing is servable)"}`)
   if (state.service) lines.push(`  service      ${state.service.kind} ${state.service.unit}`)
   const served = run?.served ?? []

@@ -215,6 +215,7 @@ describe("claxedo connect", () => {
     const status = await statusLines({
       load: () => h.deps.store.load(),
       stateFile: h.deps.paths.stateFile,
+      resolvePath: (target) => fs.realpath(target),
       pidAlive: () => true,
       now: () => Date.now(),
       log: () => undefined,

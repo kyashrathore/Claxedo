@@ -202,6 +202,8 @@ export async function runHost(input: HostRunInput): Promise<number> {
     })
   }
 
+  const canonicalRoots = () => effectiveRoots(state, deps.resolvePath)
+
   const prepare = async (description: AssignmentDescription) => {
     const { workspaceId } = description
     const relay = state.relay
@@ -209,9 +211,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     if (!relay || !authority) {
       throw new Error("the control plane has not delivered relay and authority endpoints yet")
     }
-    const roots = (
-      await Promise.all(effectiveRoots(state).map((root) => deps.resolvePath(root).catch(() => undefined)))
-    ).filter((root): root is string => root !== undefined)
+    const roots = await canonicalRoots()
     const directory = await deps.resolvePath(description.remoteDirectory).catch((error: unknown) => {
       throw new Error(`${description.remoteDirectory} cannot be resolved: ${errorMessage(error)}`)
     })
@@ -247,7 +247,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
     enrollmentId: enrollment.enrollment_id,
     heartbeatIntervalMs: BEAT_INTERVAL_MS,
     sessionAuthority: "managed-private",
-    roots: () => effectiveRoots(state),
+    roots: canonicalRoots,
     resolvePath: deps.resolvePath,
     setInterval: deps.setInterval,
     onScope: (scope: HostScope) => persist({ ...state, scope }),

@@ -43,6 +43,7 @@ async function machineHost(
     fetch: cp.fetch,
   })
   const transport = input.wrap ? input.wrap(real) : real
+  const resolvePath = input.resolvePath ?? (async (p: string) => p)
   const seen: AssignmentDescription[][] = []
   const scopes: HostScope[] = []
   const tunnels: Array<Record<string, unknown> | undefined> = []
@@ -57,8 +58,8 @@ async function machineHost(
     enrollmentId: enrolled.enrollmentId,
     heartbeatIntervalMs: 25_000,
     sessionAuthority: "managed-private",
-    roots: () => effectiveRoots(state),
-    resolvePath: input.resolvePath ?? (async (p) => p),
+    roots: () => effectiveRoots(state, resolvePath),
+    resolvePath,
     setInterval: (fn) => {
       tick = fn
       return { cancel: () => undefined }
@@ -561,5 +562,28 @@ describe("with a real filesystem", () => {
       expect.stringContaining("ws_missing"),
     ])
     expect(String(h.ackFailures[1])).toContain("cannot be resolved")
+  })
+
+  test("a --root that is a symlink under the control plane's root cannot carry that root's authority to the link target", async () => {
+    const base = await realpath(await mkdtemp(path.join(tmpdir(), "connect-roots-")))
+    dirs.push(base)
+    const srv = path.join(base, "srv")
+    const elsewhere = path.join(base, "elsewhere")
+    await mkdir(srv)
+    await mkdir(path.join(elsewhere, "repo"), { recursive: true })
+    await symlink(elsewhere, path.join(srv, "link"))
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp, { allowedRoots: [srv], cliRoots: [path.join(srv, "link")], resolvePath: (p) => realpath(p) })
+    await h.connector.start()
+
+    // Lexically `<srv>/link/repo` is under both `<srv>` and `<srv>/link`;
+    // resolved it is `<elsewhere>/repo`, outside the owner's root.
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_escape", remoteDirectory: path.join(srv, "link", "repo") })
+    h.tick()
+    await vi.waitFor(() => expect(h.ackFailures).toHaveLength(1))
+
+    expect(String(h.ackFailures[0])).toContain("outside this host's roots")
+    expect(await effectiveRoots(h.state(), (p) => realpath(p))).toEqual([])
+    expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
   })
 })
