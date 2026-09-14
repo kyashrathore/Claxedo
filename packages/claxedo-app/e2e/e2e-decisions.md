@@ -819,7 +819,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: correct native session creation and durable identity ownership, then enable the existing journey.
   - **B**: explicitly distinguish new-session startup from resuming native history in the canonical contract.
   - **C**: defer exposing the affected native first-send flow until corrected.
-- **Decision**:
+- **Decision**: Option A applied 2026-09-14 (`20fdb18874`): the driver recreates a session id it created but never saw persisted, via `pi --session-id`, when the live process was lost (e.g. per-request credential rotation); unknown ids still refuse. The rerun journeys now reach the model request and fail on a real OpenAI 401 — the seeded `local_only` credential is brokered to hardcoded `https://api.openai.com`, so the scripted endpoint is unreachable. Resolving that is a credential-delivery decision (destination override or unbrokered local delivery) outside this entry; the session-file defect itself is closed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/`.
 
 ### 71. real-harness-local — Codex first send references missing native history
 
