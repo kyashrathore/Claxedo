@@ -8,7 +8,7 @@ import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/server-cor
 import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
-import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityOwner, TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { signedOrError } from "../workspace/route-support"
@@ -27,9 +27,10 @@ export type HostedTasksCompositionInput = {
    * Built here rather than passed in, because the bridge has to reserve each
    * session — and create a cloud root's own workspace — as the person who
    * started it, and only this composition holds the registry that maps a Tasks
-   * actor back to that person.
+   * actor back to that person: the signed request it was minted from, or the
+   * workspace owner its grant resolved to.
    */
-  bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth) => TasksSessionBridgePort
+  bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth, owner: TasksGrantOwner) => TasksSessionBridgePort
   /**
    * Whether this deployment can project a cloud root's selected capability
    * set. It is the build's Agent Plugins wiring, not a runtime flag: an
@@ -50,6 +51,9 @@ export type HostedTasksCompositionInput = {
 
 /** The signed request a Tasks actor was minted from, for authority calls that act as the caller. */
 export type TasksSignedAuth = (actor: TasksActor) => SignedControlPlaneAuth | undefined
+
+/** The workspace owner a Tasks actor's grant resolved to, for an actor minted from a grant rather than a signature. */
+export type TasksGrantOwner = (actor: TasksActor) => TasksCapabilityOwner | undefined
 
 /**
  * The runtime principal Tasks dispatches as. Start reserves and creates a
@@ -131,7 +135,14 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
         store,
         authorization: identity.authorization,
         authenticate: identity.authenticate,
-        bridge: identity.bridge(input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor)), store),
+        bridge: identity.bridge(
+          input.bridge(
+            identity.runtimePrincipal,
+            (actor) => identity.principals.authOf(actor),
+            (actor) => identity.principals.capabilityOf(actor)?.owner,
+          ),
+          store,
+        ),
         capabilities: createTasksCapabilities({
           placements,
           // A root's own machine is half of the promise; the other half is the

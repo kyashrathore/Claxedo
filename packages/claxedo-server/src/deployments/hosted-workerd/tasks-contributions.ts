@@ -39,12 +39,13 @@ export function hostedTasksRouteContributions(
   const composition = createHostedTasksComposition({
     ...input,
     cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
-    bridge: (principal, auth) =>
+    bridge: (principal, auth, owner) =>
       createHostedTasksSessionBridge({
         services: input.services,
         runtimeClient: hostedTasksRuntimeClient(input.services),
         principal,
         auth,
+        owner,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
         ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
         ...(input.releaseRuntime ? { releaseRuntime: input.releaseRuntime } : {}),

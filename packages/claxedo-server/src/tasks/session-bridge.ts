@@ -12,7 +12,8 @@ import {
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
 import {
   startOriginId,
   type StartBlocker,
@@ -36,6 +37,16 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * selects the workspace row as the caller's own actor.
    */
   auth?: (actor: TasksActor) => SignedControlPlaneAuth | undefined
+  /**
+   * The workspace owner a Tasks actor's grant resolved to, for an actor with
+   * no signed request behind it: a session's agent starting a task through
+   * the grant its root was launched with. The root is created as that
+   * owner's canonical actor through the authority's runtime-principal path,
+   * so the owner can open it and the reservation that follows, made as the
+   * same actor, is admitted. An actor that neither resolver names is refused
+   * before anything is allocated.
+   */
+  owner?: (actor: TasksActor) => TasksCapabilityOwner | undefined
   /**
    * Projects a cloud root's capability set onto the workspace it will run in,
    * and resolves only once the runtime has acknowledged that exact selection.
@@ -64,7 +75,7 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * deployment that names none launches roots whose agents have no Tasks
    * tools, which is what a control plane those sessions cannot reach means.
    */
-  capability?: (root: TasksRootIdentity, auth: SignedControlPlaneAuth) => Promise<Record<string, string>>
+  capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>
   /** The withdrawal the workspace routes run on deletion; a discarded root is deleted here, so it runs here too. */
   releaseRuntime?: (context: { workspaceId: string }) => Promise<void>
   /**
@@ -117,15 +128,17 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
  * The origin key is the kit's own `(scope, task, slot, attempt)` string, so
  * the workspace belongs to the same root as the session id and the reservation
  * derived from it, and a retry of that attempt recovers all three. The
- * workspace is created as the signed caller against the task's own project, so
- * the authority resolves the same organization it resolved to admit the task.
+ * workspace is created against the task's own project as the person the
+ * actor was minted from — the signed caller, or the owner a grant resolved
+ * to — so the authority resolves the same organization it resolved to admit
+ * the task.
  */
 function createTasksCloudTarget(
   input: HostedTasksSessionBridgeInput,
 ): NonNullable<TasksSessionHost["cloudTarget"]> {
   return async (origin): Promise<TasksCloudTargetChoice> => {
     const port = input.selectedCapabilities
-    const auth = input.auth?.(origin.actor)
+    const creator = rootCreator(input, origin)
     let projected: (() => Promise<void>) | undefined
     // Resolving the capability set inside the allocation is what orders these
     // two refusals: a deployment with no driver never reaches it and says so,
@@ -139,17 +152,12 @@ function createTasksCloudTarget(
         const preparation = await port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities })
         projected = () => port.apply({ workspaceId: workspace.id, preparation })
         // The capability names the workspace's owner, and `admit` below makes
-        // this caller that owner. The application user id is the authority's
+        // this creator that owner. The application user id is the authority's
         // own name for them; the actor's `ownerId` is the token subject, which
         // no workspace row records.
-        const owner = auth?.principal?.userId
-        const env = owner && auth
-          ? await input.capability?.({
-              userId: owner,
-              orgId: origin.actor.scopeId,
-              projectId: origin.task.projectId,
-              workspaceId: workspace.id,
-            }, auth)
+        const owner = creator?.owner
+        const env = owner
+          ? await input.capability?.({ ...owner, projectId: origin.task.projectId, workspaceId: workspace.id })
           : undefined
         return { ...(preparation.secrets ? { secrets: preparation.secrets } : {}), ...(env ? { env } : {}) }
       },
@@ -169,10 +177,12 @@ function createTasksCloudTarget(
       projectId: origin.task.projectId,
       displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
       admit: async (workspace) => {
-        if (!auth) {
-          throw new Error("this host creates a cloud root as the person starting it, and this caller is not signed")
+        if (!creator) {
+          throw new Error(
+            "this host creates a cloud root as the person starting it, and this caller is neither signed nor a grant this host resolved to an owner",
+          )
         }
-        await requireAuthority(input.services).createCloudWorkspace(auth, {
+        await creator.admit(requireAuthority(input.services), {
           workspaceId: workspace.id,
           projectId: origin.task.projectId,
           displayName: workspace.workspace_name ?? workspace.id,
@@ -183,8 +193,8 @@ function createTasksCloudTarget(
         })
       },
       discard: async (workspace) => {
-        if (!auth) return
-        await requireAuthority(input.services).deleteWorkspace(auth, { workspaceId: workspace.id })
+        if (!creator) return
+        await creator.discard(requireAuthority(input.services), { workspaceId: workspace.id })
         await input.releaseRuntime?.({ workspaceId: workspace.id })
       },
     })
@@ -208,6 +218,63 @@ function createTasksCloudTarget(
         detail: `Cloud root ${allocated.workspace.id} is not reachable from this control plane`,
       },
     }
+  }
+}
+
+type RootWorkspaceArgs = {
+  workspaceId: string
+  projectId: string
+  displayName: string
+  repoUrl?: string
+  repoName?: string
+  gitBranch?: string
+  homeRegion?: string
+}
+
+/**
+ * Who a cloud root is created as, and through which authority door.
+ *
+ * `owner` is what the root's own grant is minted for: absent for a signed
+ * principal the authority never resolved to an application user, and then
+ * the root launches with no Tasks grant rather than one naming nobody.
+ */
+type RootCreator = {
+  owner: { userId: string; orgId: string } | undefined
+  admit(authority: WorkspaceAuthority, args: RootWorkspaceArgs): Promise<void>
+  discard(authority: WorkspaceAuthority, args: { workspaceId: string }): Promise<void>
+}
+
+/**
+ * A signed caller creates as themselves; a grant's actor creates as the owner
+ * the grant resolved to, by canonical actor, because a grant carries no signed
+ * bearer to create with and none is fabricated for it. The owner's
+ * organization stands in for the actor's scope on that path — the two are
+ * one value, and the owner is the authoritative one.
+ */
+function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOrigin): RootCreator | undefined {
+  const auth = input.auth?.(origin.actor)
+  if (auth) {
+    const userId = auth.principal?.userId
+    return {
+      owner: userId ? { userId, orgId: origin.actor.scopeId } : undefined,
+      admit: (authority, args) => authority.createCloudWorkspace(auth, args).then(() => undefined),
+      discard: (authority, args) => authority.deleteWorkspace(auth, args).then(() => undefined),
+    }
+  }
+  const owner = input.owner?.(origin.actor)
+  if (!owner) return undefined
+  const principal = { principalKind: "user", actorId: owner.actorId, actorKind: "human" } as const
+  return {
+    owner: { userId: owner.userId, orgId: owner.orgId },
+    admit: async (authority, args) => {
+      if (!authority.createRuntimeCloudWorkspace) {
+        throw new Error("this control plane cannot create a cloud root for a session's grant")
+      }
+      await authority.createRuntimeCloudWorkspace(principal, { ...args, orgId: owner.orgId })
+    },
+    discard: async (authority, args) => {
+      await authority.deleteRuntimeWorkspace?.(principal, args)
+    },
   }
 }
 
