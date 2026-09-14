@@ -7,7 +7,13 @@ import { setUserHostedServing, stopUserHostedServing, userHostedServingState } f
 import { parseConnectArgs } from "../connect/args"
 import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlPlane } from "../connect/fake-control-plane.test-support"
 import { BEAT_INTERVAL_MS, servingCredential, transientBootstrapFailure, withBootstrapRetry, type HostDeps } from "../connect/host"
-import { desktopDaemonDiscoveryFile, liveDesktopDaemon, parseDesktopDaemonDiscovery } from "../connect/desktop-daemon"
+import {
+  desktopDaemonDiscoveryFiles,
+  liveDesktopDaemon,
+  parseDesktopDaemonDiscovery,
+  verifyDesktopDaemon,
+  type DesktopDaemonDiscovery,
+} from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import type { ServiceDeps } from "../connect/service"
 import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
@@ -52,6 +58,41 @@ function relayStub() {
   return {
     url: `http://127.0.0.1:${server.port}`,
     sockets,
+    stop: () => server.stop(true),
+  }
+}
+
+/** The desktop daemon's identity route, as `claxedo-local-server` serves it: bearer-checked, answering who it is. */
+function fakeDesktopDaemon(identity: { pid: number; generation: string; token: string }) {
+  const requests: Array<{ path: string; authorization: string | null }> = []
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url)
+      requests.push({ path: url.pathname, authorization: request.headers.get("authorization") })
+      if (url.pathname !== "/api/claxedo/daemon") return new Response("not found", { status: 404 })
+      if (request.headers.get("authorization") !== `Bearer ${identity.token}`) {
+        return Response.json({ error: { code: "daemon_identity_unauthorized" } }, { status: 401 })
+      }
+      return Response.json({ service: "claxedo-local-daemon", protocol: 1, generation: identity.generation, pid: identity.pid })
+    },
+  })
+  const port = server.port!
+  return {
+    port,
+    requests,
+    record: (overrides: Partial<{ pid: number; port: number; token: string; generation: string }> = {}) =>
+      JSON.stringify({
+        service: "claxedo-local-daemon",
+        protocol: 1,
+        generation: identity.generation,
+        token: identity.token,
+        pid: identity.pid,
+        port,
+        startedAt: "now",
+        ...overrides,
+      }),
     stop: () => server.stop(true),
   }
 }
@@ -151,7 +192,7 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
     controlPlaneUrl: cp.url,
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
-    desktopDaemon: () => liveDesktopDaemon({ file: path.join(home, "desktop", "local-daemon.json"), pidAlive: (pid) => pid === process.pid }),
+    desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles({}, home) }),
   }
   return {
     home,
@@ -563,37 +604,54 @@ describe("claxedo connect", () => {
     expect(hostOnline({ ...enrolled, run }, { pidAlive: () => false, now: () => 10_001 })).toBe(false)
   })
 
-  test("a live desktop daemon on this machine refuses connect with 78 unless --alongside-desktop is passed", async () => {
+  test("a live desktop daemon on any channel's data dir refuses connect with 78 unless --alongside-desktop is passed; a recycled pid is no daemon", async () => {
     const { file } = await invitationFile(h, [h.root])
-    const discovery = path.join(h.home, "desktop", "local-daemon.json")
-    await fs.mkdir(path.dirname(discovery), { recursive: true })
-    const record = (pid: number) =>
-      JSON.stringify({ service: "claxedo-local-daemon", protocol: 1, generation: "g", token: "t", pid, port: 4321, startedAt: "now" })
-    await fs.writeFile(discovery, record(process.pid))
+    const daemon = fakeDesktopDaemon({ pid: 4242, generation: "gen-1", token: "secret" })
+    try {
+      // The desktop's beta channel keeps its data under ~/.claxedo-beta; the
+      // default channel's dir has no file at all.
+      const discovery = path.join(h.home, ".claxedo-beta", "local-daemon.json")
+      await fs.mkdir(path.dirname(discovery), { recursive: true })
+      await fs.writeFile(discovery, daemon.record())
 
-    expect(await connect(["--token-file", file], h.deps)).toBe(78)
-    expect(h.lines.at(-1)).toBe(
-      `the Claxedo desktop app's daemon is running on this machine (pid ${process.pid}, port 4321, ${discovery}) and already serves it under its own enrollment; pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
-    )
-    expect(h.cp.log, "refused before any request").toHaveLength(0)
-    expect(await fs.readFile(file, "utf8")).toContain("chx_inv_1.")
-    expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(78)
-    expect(h.serviceCalls).toEqual([])
+      expect(await connect(["--token-file", file], h.deps)).toBe(78)
+      expect(h.lines.at(-1)).toBe(
+        `the Claxedo desktop app's daemon is running on this machine (pid 4242, port ${daemon.port}, ${discovery}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+      )
+      expect(h.cp.log, "refused before any request").toHaveLength(0)
+      expect(daemon.requests.at(-1)).toEqual({ path: "/api/claxedo/daemon", authorization: "Bearer secret" })
+      expect(await fs.readFile(file, "utf8")).toContain("chx_inv_1.")
+      expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(78)
+      expect(h.serviceCalls).toEqual([])
 
-    // A stale file — the daemon it names has exited — is no daemon.
-    await fs.writeFile(discovery, record(process.pid + 1))
-    const staleRun = connect(["--token-file", file, "--alongside-desktop"], h.deps)
-    await until(() => h.cp.beats().length >= 1, "first beat")
-    h.stop()
-    expect(await staleRun).toBe(0)
-    await fs.writeFile(discovery, record(process.pid))
+      // The desktop crashed and this test's own process now holds its pid: a
+      // `kill(pid, 0)` guard would refuse for as long as the pid is taken, and
+      // with restarts prevented on 78 that is for ever. The daemon on the
+      // port answers as itself, not as the file's pid, so the file is stale.
+      await fs.writeFile(discovery, daemon.record({ pid: process.pid }))
+      const recycled = connect(["--token-file", file], h.deps)
+      await until(() => h.cp.beats().length >= 1, "first beat")
+      h.stop()
+      expect(await recycled).toBe(0)
 
-    // Beside a live daemon, only when told to; the unit carries the choice.
-    expect(await connect(["--install-service", "--alongside-desktop"], h.deps)).toBe(0)
-    const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
-    expect(await fs.readFile(unit, "utf8")).toContain(`"connect" "--foreground" "--alongside-desktop"`)
-    expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
-    expect(await connect(["--reset"], h.deps), "reset is not serving").toBe(0)
+      // A daemon whose port nothing answers on is stale too.
+      await fs.writeFile(discovery, daemon.record({ port: daemon.port + 1 }))
+      const beatsBefore = h.cp.beats().length
+      const gone = connect([], h.deps)
+      await until(() => h.cp.beats().length > beatsBefore, "resumed beat")
+      h.stop()
+      expect(await gone).toBe(0)
+
+      // Beside a live daemon, only when told to; the unit carries the choice.
+      await fs.writeFile(discovery, daemon.record())
+      expect(await connect(["--install-service", "--alongside-desktop"], h.deps)).toBe(0)
+      const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
+      expect(await fs.readFile(unit, "utf8")).toContain(`"connect" "--foreground" "--alongside-desktop"`)
+      expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
+      expect(await connect(["--reset"], h.deps), "reset is not serving").toBe(0)
+    } finally {
+      daemon.stop()
+    }
   })
 
   test("--reset prints what goes and removes the state directory", async () => {
@@ -623,22 +681,66 @@ describe("claxedo connect", () => {
 })
 
 describe("desktop daemon discovery", () => {
-  test("the file lives under CLAXEDO_DATA_DIR, else ~/.claxedo, and only the daemon's own record counts", () => {
-    expect(desktopDaemonDiscoveryFile({ CLAXEDO_DATA_DIR: "/data" }, "/home/u")).toBe("/data/local-daemon.json")
-    expect(desktopDaemonDiscoveryFile({ CLAXEDO_DATA_DIR: "  " }, "/home/u")).toBe("/home/u/.claxedo/local-daemon.json")
-    expect(desktopDaemonDiscoveryFile({}, "/home/u")).toBe("/home/u/.claxedo/local-daemon.json")
-    expect(parseDesktopDaemonDiscovery(JSON.stringify({ service: "claxedo-local-daemon", pid: 7, port: 8 }))).toEqual({ pid: 7, port: 8 })
-    expect(parseDesktopDaemonDiscovery(JSON.stringify({ service: "other", pid: 7, port: 8 }))).toBeUndefined()
-    expect(parseDesktopDaemonDiscovery(JSON.stringify({ service: "claxedo-local-daemon", pid: "7", port: 8 }))).toBeUndefined()
+  const record: DesktopDaemonDiscovery = { pid: 7, port: 8, token: "t", generation: "g", protocol: 1 }
+  const text = (overrides: Record<string, unknown> = {}) =>
+    JSON.stringify({ service: "claxedo-local-daemon", protocol: 1, generation: "g", token: "t", pid: 7, port: 8, startedAt: "now", ...overrides })
+
+  test("every channel's data dir is probed, CLAXEDO_DATA_DIR first", () => {
+    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "/data" }, "/home/u")).toEqual([
+      "/data/local-daemon.json",
+      "/home/u/.claxedo/local-daemon.json",
+      "/home/u/.claxedo-dev/local-daemon.json",
+      "/home/u/.claxedo-beta/local-daemon.json",
+    ])
+    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "  " }, "/home/u")).toEqual([
+      "/home/u/.claxedo/local-daemon.json",
+      "/home/u/.claxedo-dev/local-daemon.json",
+      "/home/u/.claxedo-beta/local-daemon.json",
+    ])
+    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "/home/u/.claxedo-dev" }, "/home/u")).toHaveLength(3)
+  })
+
+  test("only the daemon's own record, with a positive-integer pid and port and its token, parses", () => {
+    expect(parseDesktopDaemonDiscovery(text())).toEqual(record)
+    expect(parseDesktopDaemonDiscovery(text({ service: "other" }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ pid: "7" }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ pid: 0 }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ pid: 7.5 }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ port: 70_000 }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ port: -1 }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ token: "" }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(text({ generation: undefined }))).toBeUndefined()
     expect(parseDesktopDaemonDiscovery("{not json")).toBeUndefined()
   })
 
-  test("a missing file, a stale pid or a dead process is no daemon", async () => {
-    const text = JSON.stringify({ service: "claxedo-local-daemon", pid: 7, port: 8 })
-    expect(await liveDesktopDaemon({ file: "/f", readFile: async () => undefined, pidAlive: () => true })).toBeUndefined()
-    expect(await liveDesktopDaemon({ file: "/f", readFile: async () => text, pidAlive: () => false })).toBeUndefined()
-    expect(await liveDesktopDaemon({ file: "/f", readFile: async () => text, pidAlive: (pid) => pid === 7 })).toEqual({ pid: 7, port: 8, file: "/f" })
-    expect(await liveDesktopDaemon({ file: path.join(os.tmpdir(), "claxedo-no-such-file", "local-daemon.json") })).toBeUndefined()
+  test("a missing file, an unparseable record, or a daemon that does not answer as itself is no daemon", async () => {
+    const yes = async () => true
+    const no = async () => false
+    expect(await liveDesktopDaemon({ files: ["/f"], readFile: async () => undefined, verify: yes })).toBeUndefined()
+    expect(await liveDesktopDaemon({ files: ["/f"], readFile: async () => text(), verify: no })).toBeUndefined()
+    expect(await liveDesktopDaemon({ files: ["/f"], readFile: async () => text({ token: "" }), verify: yes })).toBeUndefined()
+    expect(await liveDesktopDaemon({ files: ["/a", "/b"], readFile: async (file) => (file === "/b" ? text() : undefined), verify: yes })).toEqual({
+      pid: 7,
+      port: 8,
+      file: "/b",
+    })
+    expect(await liveDesktopDaemon({ files: [path.join(os.tmpdir(), "claxedo-no-such-file", "local-daemon.json")] })).toBeUndefined()
+  })
+
+  test("verification is the daemon identity route answering with the file's identity for the file's token", async () => {
+    const daemon = fakeDesktopDaemon({ pid: 4242, generation: "gen-1", token: "secret" })
+    try {
+      const live = { pid: 4242, port: daemon.port, token: "secret", generation: "gen-1", protocol: 1 }
+      expect(await verifyDesktopDaemon(live)).toBe(true)
+      expect(await verifyDesktopDaemon({ ...live, token: "wrong" }), "401").toBe(false)
+      expect(await verifyDesktopDaemon({ ...live, pid: process.pid }), "another process holds the pid").toBe(false)
+      expect(await verifyDesktopDaemon({ ...live, generation: "gen-0" }), "an older daemon's file").toBe(false)
+      expect(await verifyDesktopDaemon({ ...live, protocol: 2 })).toBe(false)
+      daemon.stop()
+      expect(await verifyDesktopDaemon(live), "nothing on the port").toBe(false)
+    } finally {
+      daemon.stop()
+    }
   })
 })
 

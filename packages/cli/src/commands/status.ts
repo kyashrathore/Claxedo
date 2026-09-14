@@ -1,7 +1,6 @@
 import fs from "node:fs/promises"
 import { hostPublicKeyFingerprint } from "@claxedo/host-connector/host-identity"
 import { effectiveRoots, type HostState } from "@claxedo/host-connector/host-state"
-import { processAlive } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 
 export type StatusDeps = {
@@ -11,6 +10,15 @@ export type StatusDeps = {
   pidAlive: (pid: number) => boolean
   now: () => number
   log: (line: string) => void
+}
+
+export function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function defaultStatusDeps(): StatusDeps {

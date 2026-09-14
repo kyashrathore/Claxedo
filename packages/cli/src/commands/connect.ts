@@ -7,7 +7,7 @@ import { config } from "../config"
 import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
 import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../connect/host"
-import { desktopDaemonDiscoveryFile, liveDesktopDaemon, type LiveDesktopDaemon } from "../connect/desktop-daemon"
+import { desktopDaemonDiscoveryFiles, liveDesktopDaemon, type LiveDesktopDaemon } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { defaultServiceDeps, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 
@@ -33,7 +33,7 @@ export function defaultConnectDeps(): ConnectDeps {
     controlPlaneUrl: config().controlPlaneUrl,
     displayName: os.hostname(),
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
-    desktopDaemon: () => liveDesktopDaemon({ file: desktopDaemonDiscoveryFile(process.env, os.homedir()) }),
+    desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles(process.env, os.homedir()) }),
   }
 }
 
@@ -45,7 +45,7 @@ export const connectHelp = `${connectUsage}
   --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
   --uninstall-service   stop and remove that service
   --foreground          serve in this process (the default when no service flag is given)
-  --alongside-desktop   serve even while the Claxedo desktop app's daemon is running on this machine; without it, connect refuses to start beside a live daemon (exit 78), since the desktop already serves this machine under its own enrollment
+  --alongside-desktop   serve even while the Claxedo desktop app's daemon is running on this machine; without it, connect refuses to start beside a live daemon (exit 78), since the desktop serves this machine under its own enrollment when its remote access is on
   --reset               delete the host state — key, enrollment and endpoints — after printing what goes; a fresh state is a fresh host id
 
 Exit codes: 0 after SIGTERM/SIGINT drained every runtime and tunnel; 78 when the
@@ -164,7 +164,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       const daemon = await deps.desktopDaemon()
       if (daemon) {
         throw new HostConnectDecisionError(
-          `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}) and already serves it under its own enrollment; pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+          `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
           {},
         )
       }
