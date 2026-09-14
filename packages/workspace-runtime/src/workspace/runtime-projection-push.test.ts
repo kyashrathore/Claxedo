@@ -85,7 +85,7 @@ test("a snapshot carrying an unreadable projection leaves the binding already in
       ...snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }),
       auth: { "cursor-sdk": { baseUrl: "", placeholder: "", authMode: "bearer", expiresAt: 0 } },
     } as unknown as RuntimeSnapshot
-    await runtime.host.apply(rejected).catch(() => {})
+    await expect(runtime.host.apply(rejected)).rejects.toThrow("Invalid runtime config snapshot")
 
     expect(process.env[BACKEND_URL]).toBe("http://127.0.0.1:2595/bindings/cursor1")
   } finally {

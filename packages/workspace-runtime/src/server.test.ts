@@ -895,8 +895,9 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   test("does not expose the removed session-env bridge", async () => {
     const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
     try {
-      const exists = await runtime.app.request("http://localhost/api/wr/session-env/file/exists?path=definitely-missing.txt")
-      expect(exists.status).toBe(404)
+      const paths = runtime.app.routes.map((route) => route.path)
+      expect(paths).toContain("/api/wr/capabilities")
+      expect(paths.filter((route) => route.includes("session-env"))).toEqual([])
     } finally {
       await runtime.host.dispose()
     }
