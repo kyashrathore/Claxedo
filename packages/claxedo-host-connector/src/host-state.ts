@@ -48,6 +48,8 @@ export type HostState = {
     generation: number
     last_beat_ok_at?: number
     last_beat_error?: string
+    /** What the last successful beat acked, with whether its tunnel is open; what `claxedo status` lists. */
+    served?: Array<{ workspace_id: string; revision: number; connected: boolean }>
   }
 }
 
