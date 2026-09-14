@@ -124,6 +124,7 @@ describe("UsageDashboard", () => {
 
   test("a throttled quota refresh reaches the Usage limits tab as a line naming the next read", async () => {
     const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    vi.useFakeTimers({ now: Date.now(), toFake: ["Date"] })
     mocks.fetchUnifiedUsage.mockImplementation(async (request) => ({
       ...(await answer(request)),
       quota: {
@@ -155,9 +156,10 @@ describe("UsageDashboard", () => {
 
       await waitFor(() =>
         expect(container.querySelector('[data-component="usage-quota-throttled"]')?.textContent)
-          .toMatch(/^Refreshed 1m ago · next refresh in 4[3-6]s$/),
+          .toBe("Refreshed 1m ago · next refresh in 46s"),
       )
     } finally {
+      vi.useRealTimers()
       mocks.fetchUnifiedUsage.mockImplementation(answer)
     }
   })

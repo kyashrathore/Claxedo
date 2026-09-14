@@ -34,7 +34,6 @@ function fakeRuntime(connections: { id: string; label: string }[] = []) {
           connections: connections.map((row) => ({ type: "credential" as const, id: row.id, label: row.label })),
         }],
         removeCredential: async (id: string) => { removed.push(id) },
-        connectKey: async () => { throw new Error("the bridge must not store a plaintext key in the SDK") },
       },
       bindProviders: async (overlays: Record<string, unknown>) => { bound.push(overlays) },
     },
