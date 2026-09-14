@@ -99,7 +99,7 @@ const ENTRIES = [
   // The host-connect control plane this node serves for a `claxedo connect`
   // fleet is four modules of the closure: `routes/hosted/host-enrollment.ts`
   // owns invitations, machine beats, acquire and scope;
-  // `routes/hosted/host-assignment.ts` owns the owner assigning a directory
+  // `workspace/host-assignment-handlers.ts` owns the owner assigning a directory
   // on an enrolled machine, which the self-host workspace routes dispatch to
   // on a `hostId` body; hosted-shared's `hosted-remote-access-service.ts`
   // owns revoke; `platform/http/status.ts` is how the two routes answer an

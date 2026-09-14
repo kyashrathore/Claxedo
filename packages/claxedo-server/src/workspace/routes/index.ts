@@ -40,7 +40,7 @@ import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/san
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
-import { hostAssignmentHandlers } from "../../routes/hosted/host-assignment"
+import { hostAssignmentHandlers } from "../host-assignment-handlers"
 
 const createBody = z
   .object({

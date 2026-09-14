@@ -9,9 +9,9 @@ import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { ControlPlaneServices } from "../../authority/services"
-import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { contentfulStatus } from "../../platform/http/status"
+import type { ControlPlaneServices } from "../authority/services"
+import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
+import { contentfulStatus } from "../platform/http/status"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -22,8 +22,8 @@ import {
   signedOrError,
   txt,
   type WorkspaceRouteOptions,
-} from "../../workspace/route-support"
-import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
+} from "./route-support"
+import { controlPlaneRateLimitError } from "./runtime-token-guards"
 
 /**
  * The OWNER's `/api/workspace/:id/host-assignment` verbs against an enrolled

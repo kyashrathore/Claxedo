@@ -84,7 +84,7 @@ export const serverSelfHosted: Policy = {
    * The host-connect control plane this box serves for a `claxedo connect`
    * fleet, four modules and no package edge: `src/routes/hosted/host-enrollment.ts`
    * (invitations, the machine's own beats and acquire, scope, the enrollment
-   * list) and `src/routes/hosted/host-assignment.ts` (the owner assigning a
+   * list) and `src/workspace/host-assignment-handlers.ts` (the owner assigning a
    * directory on an enrolled machine), the same modules the hosted Worker
    * mounts, over this box's SQLite authority; `src/deployments/hosted-shared/
    * hosted-remote-access-service.ts`, whose revoke the self-hosted

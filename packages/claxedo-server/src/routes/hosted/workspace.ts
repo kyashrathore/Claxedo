@@ -3,7 +3,7 @@
  *
  * Sharing a LOCAL workspace runs on machine-wide enrollment: the OWNER
  * assigns the workspace to one of their enrolled hosts
- * (`routes/hosted/host-assignment.ts`, mounted here), the machine's consent
+ * (`workspace/host-assignment-handlers.ts`, mounted here), the machine's consent
  * and liveness ride the enrollment heartbeat (`routes/hosted/host-enrollment.ts`),
  * and routing requires assignment AND acked set AND a live lease. There is no
  * per-workspace challenge or signature — that grain is retired.
@@ -26,7 +26,7 @@ import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/backgr
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
-import { hostAssignmentHandlers } from "./host-assignment"
+import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
