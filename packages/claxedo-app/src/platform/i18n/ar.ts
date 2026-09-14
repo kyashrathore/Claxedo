@@ -569,6 +569,7 @@ export const dict = {
   "usage.quota.check": "افحص",
   "usage.quota.reconnect": "أعد الاتصال من الإعدادات",
   "usage.quota.otherAgents": "وكلاء آخرون على هذا الجهاز",
+  "usage.quota.throttled": "تم التحديث قبل {{ago}} · التحديث التالي بعد {{wait}}",
   "usage.quota.summary": "تبقّى {{percent}}% من {{window}}",
   "usage.quota.summaryForAccount": "تبقّى {{percent}}% من {{window}} لـ {{account}}",
   "usage.quota.summaryReset": "{{summary}}، يعود خلال {{reset}}",

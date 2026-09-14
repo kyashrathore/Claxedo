@@ -642,6 +642,7 @@ export const dict = {
   "usage.quota.check": "ตรวจสอบ",
   "usage.quota.reconnect": "เชื่อมต่ออีกครั้งในการตั้งค่า",
   "usage.quota.otherAgents": "เอเจนต์อื่นบนเครื่องนี้",
+  "usage.quota.throttled": "รีเฟรชเมื่อ {{ago}} ที่แล้ว · รีเฟรชครั้งถัดไปใน {{wait}}",
   "usage.quota.summary": "เหลือ {{percent}}% ใน {{window}}",
   "usage.quota.summaryForAccount": "เหลือ {{percent}}% ใน {{window}} สำหรับ {{account}}",
   "usage.quota.summaryReset": "{{summary}} รีเซ็ตในอีก {{reset}}",

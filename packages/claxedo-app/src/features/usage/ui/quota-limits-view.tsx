@@ -141,14 +141,30 @@ export function quotaSummary(snapshot: QuotaSnapshot | undefined) {
 /** What a card says in place of bars, and whether the reader can ask for them. */
 type Note = { text: string; check?: true }
 
+/** The last moment any card's figures were read, which a refresh moves for every card it could read. */
+export function lastReadAt(snapshot: QuotaSnapshot | undefined): number | undefined {
+  const read = (snapshot?.accounts ?? []).flatMap((account) => (account.usageAt === undefined ? [] : [account.usageAt]))
+  return read.length === 0 ? undefined : Math.max(...read)
+}
+
 export function QuotaLimitsView(props: {
   snapshot?: QuotaSnapshot
   error?: string
+  throttledUntil?: number
   onCheck?: () => void
   busy?: boolean
 }) {
   const language = useLanguage()
   const say = (words: Words) => ("key" in words ? language.t(words.key) : words.text)
+  /** The compact age, and seconds below its smallest bucket: a refresh is spaced by less than a minute. */
+  const span = (value: number) =>
+    formatCompactAge(value) ?? `${Math.max(1, Math.round(Math.abs(value - Date.now()) / 1000))}s`
+  const throttledWords = createMemo(() => {
+    const until = props.throttledUntil
+    const read = lastReadAt(props.snapshot)
+    if (until === undefined || read === undefined || until <= Date.now()) return undefined
+    return language.t("usage.quota.throttled", { ago: span(read), wait: span(until) })
+  })
   /**
    * How long until a window comes back, in the one unit the line has room for.
    * Shorter than the smallest bucket, and already past it, are the same news.
@@ -196,6 +212,9 @@ export function QuotaLimitsView(props: {
       </div>
       <Show when={summaryWords()}>
         {(words) => <p class="usage-quota-summary">{words()}</p>}
+      </Show>
+      <Show when={throttledWords()}>
+        {(words) => <p class="usage-quota-throttled" data-component="usage-quota-throttled">{words()}</p>}
       </Show>
       <Show
         when={groups().length}

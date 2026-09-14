@@ -44,7 +44,9 @@ export function createUsageQuotaReader(input: {
   const interval = input.refreshIntervalMs ?? REFRESH_INTERVAL_MS
   const lastRefresh = new Map<string, number>()
   return async ({ org, refresh }) => {
-    const since = now() - (lastRefresh.get(org) ?? Number.NEGATIVE_INFINITY)
+    const last = lastRefresh.get(org)
+    const since = now() - (last ?? Number.NEGATIVE_INFINITY)
+    let throttledUntil: number | undefined
     if (refresh && since >= interval) {
       lastRefresh.set(org, now())
       await runChecks(input.credentials, org, {
@@ -52,15 +54,20 @@ export function createUsageQuotaReader(input: {
         ...(input.fetch ? { fetch: input.fetch } : {}),
         ...(input.agentUsage ? { agentUsage: input.agentUsage } : {}),
       })
-    } else if (refresh) {
+    } else if (refresh && last !== undefined) {
       // A Check spends a vendor request per stored account, so a second Refresh
       // inside the interval answers from what the first one wrote. Said out
-      // loud: the figures not moving is otherwise indistinguishable from a
-      // refresh that ran and found nothing changed.
+      // loud, and on the wire: the figures not moving is otherwise
+      // indistinguishable from a refresh that ran and found nothing changed.
+      throttledUntil = last + interval
       log.info("Quota refresh answered from the last one", { org, since_ms: since, interval_ms: interval })
     }
     const snapshot = await composeSnapshot(input.credentials, org, now, input.agentUsage)
-    return { status: quotaStatus(snapshot), snapshot }
+    return {
+      status: quotaStatus(snapshot),
+      snapshot,
+      ...(throttledUntil === undefined ? {} : { throttledUntil }),
+    }
   }
 }
 

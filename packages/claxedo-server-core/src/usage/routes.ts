@@ -1167,7 +1167,10 @@ export function LocalUsageRoutes(input: {
       const quota: UnifiedUsageResponse["quota"] = input.quota
         ? await deadline(input.quota({ request: c.req.raw, refresh }), "quota read")
             .then((answer) => {
-              if (answer.snapshot) rememberQuota(quotaKey, answer)
+              // The plans are what a later failed read stands in with; the
+              // spacing of the refresh that produced them expires on its own
+              // and would date a held answer as if it had just been throttled.
+              if (answer.snapshot) rememberQuota(quotaKey, { status: answer.status, snapshot: answer.snapshot })
               return answer
             })
             .catch((error: unknown) => {

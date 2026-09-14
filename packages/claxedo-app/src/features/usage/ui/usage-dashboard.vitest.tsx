@@ -76,6 +76,7 @@ vi.mock("../data/usage-api", async (original) => ({
 }))
 
 import { UsageDashboard } from "./usage-dashboard"
+import { LanguageProvider } from "@/platform/i18n/provider"
 
 afterEach(() => {
   cleanup()
@@ -119,6 +120,46 @@ describe("UsageDashboard", () => {
     )
     expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.group === "model")).toBe(false)
     expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.group === "provider")).toBe(true)
+  })
+
+  test("a throttled quota refresh reaches the Usage limits tab as a line naming the next read", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => ({
+      ...(await answer(request)),
+      quota: {
+        status: "available" as const,
+        throttledUntil: Date.now() + 45_500,
+        snapshot: {
+          accounts: [{
+            harness: "claude",
+            credentialId: "cred_work",
+            label: "work@example.com",
+            inUse: true,
+            windows: [{ window: "session", usedPercent: 25, resetsAt: null }],
+            usageAt: Date.now() - 60_000,
+          }],
+        },
+      },
+    }))
+    try {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      clients.add(client)
+      const { container } = render(() => (
+        <QueryClientProvider client={client}>
+          <LanguageProvider locale="en">
+            <UsageDashboard />
+          </LanguageProvider>
+        </QueryClientProvider>
+      ))
+      fireEvent.click(screen.getByRole("button", { name: "Usage limits" }))
+
+      await waitFor(() =>
+        expect(container.querySelector('[data-component="usage-quota-throttled"]')?.textContent)
+          .toMatch(/^Refreshed 1m ago · next refresh in 4[3-6]s$/),
+      )
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
   })
 
   test("sends a distinct nonce for a manual refresh", async () => {

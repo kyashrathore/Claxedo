@@ -649,6 +649,7 @@ export const dict = {
   "usage.quota.check": "Provjeri",
   "usage.quota.reconnect": "Ponovo poveži u Postavkama",
   "usage.quota.otherAgents": "Drugi agenti na ovoj mašini",
+  "usage.quota.throttled": "Osvježeno prije {{ago}} · sljedeće osvježavanje za {{wait}}",
   "usage.quota.summary": "Preostalo {{percent}}% na {{window}}",
   "usage.quota.summaryForAccount": "Preostalo {{percent}}% na {{window}} za {{account}}",
   "usage.quota.summaryReset": "{{summary}}, obnavlja se za {{reset}}",

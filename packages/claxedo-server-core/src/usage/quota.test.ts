@@ -255,6 +255,23 @@ describe("usage quota reader", () => {
     expect(credentials.resolveCredentialSecretById).toHaveBeenCalledTimes(2)
   })
 
+  test("a refresh answered from the last one says when the next one will run", async () => {
+    const credentials = store({ rows: [credential({ id: "a", provider_id: "anthropic", account_id: "acct_a" })] })
+    let clock = 1_000
+    const read = createUsageQuotaReader({ credentials, now: () => clock, refreshIntervalMs: 60_000 })
+
+    expect(await read({ org: ORG, refresh: false })).not.toHaveProperty("throttledUntil")
+    expect(await read({ org: ORG, refresh: true })).not.toHaveProperty("throttledUntil")
+
+    clock = 30_000
+    expect(await read({ org: ORG, refresh: true })).toMatchObject({ throttledUntil: 61_000 })
+    // The spacing dates the refresh, not the read that was answered from it.
+    expect(await read({ org: ORG, refresh: false })).not.toHaveProperty("throttledUntil")
+
+    clock = 61_000
+    expect(await read({ org: ORG, refresh: true })).not.toHaveProperty("throttledUntil")
+  })
+
   test("one account's failed check leaves every other plan on screen", async () => {
     // Two accounts, and the first one is the one that fails: a refresh that
     // gave up there would take the second account's plan down with it.

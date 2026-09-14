@@ -642,6 +642,7 @@ export const dict = {
   "usage.quota.check": "检查",
   "usage.quota.reconnect": "在设置中重新连接",
   "usage.quota.otherAgents": "本机上的其他代理",
+  "usage.quota.throttled": "{{ago}}前已刷新 · {{wait}}后再次刷新",
   "usage.quota.summary": "{{window}} 剩余 {{percent}}%",
   "usage.quota.summaryForAccount": "{{account}} 的 {{window}} 剩余 {{percent}}%",
   "usage.quota.summaryReset": "{{summary}}，{{reset}} 后重置",

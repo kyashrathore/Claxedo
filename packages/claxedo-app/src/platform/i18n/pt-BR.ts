@@ -576,6 +576,7 @@ export const dict = {
   "usage.quota.check": "Verificar",
   "usage.quota.reconnect": "Reconectar em Configurações",
   "usage.quota.otherAgents": "Outros agentes nesta máquina",
+  "usage.quota.throttled": "Atualizado há {{ago}} · próxima atualização em {{wait}}",
   "usage.quota.summary": "Resta {{percent}}% em {{window}}",
   "usage.quota.summaryForAccount": "Resta {{percent}}% em {{window}} para {{account}}",
   "usage.quota.summaryReset": "{{summary}}, redefine em {{reset}}",

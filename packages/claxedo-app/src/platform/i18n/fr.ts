@@ -582,6 +582,7 @@ export const dict = {
   "usage.quota.check": "Vérifier",
   "usage.quota.reconnect": "Reconnecter dans les Paramètres",
   "usage.quota.otherAgents": "Autres agents sur cette machine",
+  "usage.quota.throttled": "Actualisé il y a {{ago}} · prochaine actualisation dans {{wait}}",
   "usage.quota.summary": "{{percent}}% restants sur {{window}}",
   "usage.quota.summaryForAccount": "{{percent}}% restants sur {{window}} pour {{account}}",
   "usage.quota.summaryReset": "{{summary}}, réinitialisé dans {{reset}}",

@@ -649,6 +649,7 @@ export const dict = {
   "usage.quota.check": "Проверить",
   "usage.quota.reconnect": "Переподключить в Настройках",
   "usage.quota.otherAgents": "Другие агенты на этом компьютере",
+  "usage.quota.throttled": "Обновлено {{ago}} назад · следующее обновление через {{wait}}",
   "usage.quota.summary": "Осталось {{percent}}% в {{window}}",
   "usage.quota.summaryForAccount": "Осталось {{percent}}% в {{window}} для {{account}}",
   "usage.quota.summaryReset": "{{summary}}, сброс через {{reset}}",

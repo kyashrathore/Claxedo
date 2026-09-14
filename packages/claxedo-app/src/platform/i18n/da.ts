@@ -640,6 +640,7 @@ export const dict = {
   "usage.quota.check": "Tjek",
   "usage.quota.reconnect": "Tilslut igen i Indstillinger",
   "usage.quota.otherAgents": "Andre agenter på denne maskine",
+  "usage.quota.throttled": "Opdateret for {{ago}} siden · næste opdatering om {{wait}}",
   "usage.quota.summary": "{{percent}}% tilbage på {{window}}",
   "usage.quota.summaryForAccount": "{{percent}}% tilbage på {{window}} for {{account}}",
   "usage.quota.summaryReset": "{{summary}}, nulstilles om {{reset}}",

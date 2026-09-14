@@ -659,6 +659,7 @@ export const dict = {
   "usage.quota.check": "Kontrol et",
   "usage.quota.reconnect": "Ayarlar'dan yeniden bağlan",
   "usage.quota.otherAgents": "Bu makinedeki diğer aracılar",
+  "usage.quota.throttled": "{{ago}} önce yenilendi · sonraki yenileme {{wait}} sonra",
   "usage.quota.summary": "{{window}} için %{{percent}} kaldı",
   "usage.quota.summaryForAccount": "{{account}} hesabının {{window}} penceresinde %{{percent}} kaldı",
   "usage.quota.summaryReset": "{{summary}}, {{reset}} sonra sıfırlanır",

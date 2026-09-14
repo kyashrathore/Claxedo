@@ -573,6 +573,7 @@ export const dict = {
   "usage.quota.check": "確認",
   "usage.quota.reconnect": "設定で再接続",
   "usage.quota.otherAgents": "このマシン上の他のエージェント",
+  "usage.quota.throttled": "{{ago}}前に更新 · 次の更新まで{{wait}}",
   "usage.quota.summary": "{{window}} は残り {{percent}}%",
   "usage.quota.summaryForAccount": "{{account}} の {{window}} は残り {{percent}}%",
   "usage.quota.summaryReset": "{{summary}}、{{reset}} 後にリセット",

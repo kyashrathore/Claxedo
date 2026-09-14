@@ -569,6 +569,7 @@ export const dict = {
   "usage.quota.check": "확인",
   "usage.quota.reconnect": "설정에서 다시 연결",
   "usage.quota.otherAgents": "이 컴퓨터의 다른 에이전트",
+  "usage.quota.throttled": "{{ago}} 전에 새로고침됨 · {{wait}} 후 다음 새로고침",
   "usage.quota.summary": "{{window}} {{percent}}% 남음",
   "usage.quota.summaryForAccount": "{{account}}의 {{window}} {{percent}}% 남음",
   "usage.quota.summaryReset": "{{summary}}, {{reset}} 후 초기화",

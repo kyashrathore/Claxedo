@@ -172,10 +172,20 @@ describe("quota limits view", () => {
     expect(reach("gemini-4")).toBeNull()
   })
 
-  test("the tab states no whole-read verdict of its own", async () => {
-    const { container } = await renderView({ snapshot })
-    expect(container.querySelector(".usage-source-state")).toBeNull()
-    expect(screen.queryByText("available")).toBeNull()
+  test("a refresh the server answered from its last one says when it read and when it will read again", async () => {
+    const { container } = await renderView({ snapshot, throttledUntil: Date.now() + 45_500 })
+    // The cards were last read a minute ago; the next refresh is 45.5 s out and
+    // the line has no room for a fraction, so it names the second it lands in.
+    expect(container.querySelector('[data-component="usage-quota-throttled"]')?.textContent)
+      .toBe("usage.quota.throttled:1m|46s")
+  })
+
+  test("a read that was not throttled draws no refresh line, and neither does a spacing already past", async () => {
+    const { container, unmount } = await renderView({ snapshot })
+    expect(container.querySelector('[data-component="usage-quota-throttled"]')).toBeNull()
+    unmount()
+    const past = await renderView({ snapshot, throttledUntil: Date.now() - 1 })
+    expect(past.container.querySelector('[data-component="usage-quota-throttled"]')).toBeNull()
   })
 
   test("the summary line names the constrained window, its account and when it comes back", async () => {

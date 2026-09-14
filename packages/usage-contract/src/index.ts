@@ -139,7 +139,18 @@ export type UnifiedUsageResponse = {
    * `unavailable` means only that there is nothing to draw, and it carries the
    * `error` when a failure is why.
    */
-  quota: { status: "available" | "unavailable"; snapshot?: QuotaSnapshot; error?: string }
+  quota: {
+    status: "available" | "unavailable"
+    snapshot?: QuotaSnapshot
+    error?: string
+    /**
+     * Epoch ms of the earliest moment a refresh will run the checks again.
+     * Present only on a refresh the reader answered from its last one because
+     * the spacing had not elapsed: without it, figures that did not move are
+     * indistinguishable from a refresh that ran and found nothing changed.
+     */
+    throttledUntil?: number
+  }
   claxedo: UsageSeries & {
     cost: UsageCost
     locationShare: { localTokens: number; cloudTokens: number }
