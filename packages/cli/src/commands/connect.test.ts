@@ -77,14 +77,20 @@ type Harness = {
   serviceCalls: string[]
 }
 
+/** A Linux box whose user manager is up: lingering on, a runtime dir, `systemctl --user` answering. */
 function serviceDeps(home: string, calls: string[]): ServiceDeps {
   return {
     platform: "linux",
     homedir: home,
+    username: "svc",
     command: ["/usr/bin/node", "/opt/claxedo/index.mjs"],
     claxedoHome: home,
+    env: { XDG_RUNTIME_DIR: "/run/user/1000" },
     run: async (file, args) => {
       calls.push([file, ...args].join(" "))
+      if (file === "loginctl") return { code: 0, stdout: "yes\n" }
+      if (args.includes("is-system-running")) return { code: 0, stdout: "running\n" }
+      return { code: 0, stdout: "" }
     },
     writeFile: async (file, text) => {
       calls.push(`write ${file}`)
@@ -395,16 +401,43 @@ describe("claxedo connect", () => {
     expect(text).toContain(`Environment=CLAXEDO_HOME="${h.home}"`)
     expect(h.serviceCalls).toEqual([
       `write ${unit}`,
+      "loginctl show-user svc --property=Linger --value",
+      "systemctl --user is-system-running",
       "systemctl --user daemon-reload",
       "systemctl --user enable --now claxedo-connect.service",
     ])
     expect((await h.deps.store.load())?.service).toEqual({ kind: "systemd-user", unit, installed_at: 1_700_000_000_000 })
-    expect(h.lines.some((line) => line.includes("loginctl enable-linger"))).toBe(true)
+    expect(h.lines.some((line) => line.startsWith("Installed and started claxedo-connect.service"))).toBe(true)
     expect(h.cp.beats()).toHaveLength(0)
 
     expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
     expect(await fs.readFile(unit, "utf8").catch(() => "gone")).toBe("gone")
     expect((await h.deps.store.load())?.service).toBeUndefined()
+  })
+
+  test("--install-service on a box without a user manager writes and records the unit, prints the linger command and exits 78", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const service = serviceDeps(h.home, h.serviceCalls)
+    h.deps.service = () => ({
+      ...service,
+      env: {},
+      run: async (bin, args) => {
+        h.serviceCalls.push([bin, ...args].join(" "))
+        // cloud-init: no login session, so loginctl knows no such user yet.
+        return { code: 1, stdout: "" }
+      },
+    })
+
+    expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(78)
+    const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
+    expect(await fs.readFile(unit, "utf8")).toContain("RestartPreventExitStatus=78")
+    expect(h.serviceCalls).toEqual([`write ${unit}`, "loginctl show-user svc --property=Linger --value"])
+    expect((await h.deps.store.load())?.service).toEqual({ kind: "systemd-user", unit, installed_at: 1_700_000_000_000 })
+    expect((await h.deps.store.load())?.enrollment).toBeDefined()
+    expect(h.lines.some((line) => line.startsWith("Wrote claxedo-connect.service") && line.includes("did not start it"))).toBe(true)
+    expect(h.lines).toContain("  sudo loginctl enable-linger svc")
+    expect(h.lines.some((line) => line.includes("Installed and started"))).toBe(false)
+    expect(h.cp.beats()).toHaveLength(0)
   })
 
   test("--install-service records the service before the unit starts, so the child's own saves keep it", async () => {
@@ -414,11 +447,12 @@ describe("claxedo connect", () => {
     h.deps.service = () => ({
       ...service,
       run: async (bin, args) => {
-        await service.run(bin, args)
-        if (!args.includes("--now")) return
+        const result = await service.run(bin, args)
+        if (!args.includes("--now")) return result
         // The unit's process: it loads the state file on its own and rewrites it on every beat.
         child = connect([], h.deps)
         await until(() => h.cp.beats().length >= 1, "the service's first beat")
+        return result
       },
     })
 

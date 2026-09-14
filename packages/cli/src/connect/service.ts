@@ -9,14 +9,21 @@ const execFileAsync = promisify(execFile)
 
 export type ServiceKind = NonNullable<HostState["service"]>["kind"]
 
+export type CommandResult = { code: number; stdout: string }
+
 export type ServiceDeps = {
   platform: NodeJS.Platform
   homedir: string
+  /** Named in the linger hint; `loginctl` is asked about this user. */
+  username: string
   /** The interpreter and script the unit re-runs; `[process.execPath, process.argv[1]]` for a real install. */
   command: readonly string[]
   /** Passed to the unit so the service reads the same state dir this install did. */
   claxedoHome?: string
-  run: (file: string, args: readonly string[]) => Promise<void>
+  /** `XDG_RUNTIME_DIR` is what `systemctl --user` needs to find the user manager's bus. */
+  env: NodeJS.ProcessEnv
+  /** Resolves for every exit, including a command that could not be spawned (`code` -1); never rejects. */
+  run: (file: string, args: readonly string[]) => Promise<CommandResult>
   writeFile: (file: string, text: string) => Promise<void>
   unlink: (file: string) => Promise<void>
   now: () => number
@@ -31,10 +38,21 @@ export function defaultServiceDeps(): ServiceDeps {
   return {
     platform: process.platform,
     homedir: os.homedir(),
+    username: os.userInfo().username,
     command: [process.execPath, path.resolve(script)],
     ...(process.env.CLAXEDO_HOME ? { claxedoHome: process.env.CLAXEDO_HOME } : {}),
+    env: process.env,
     run: async (file, args) => {
-      await execFileAsync(file, [...args])
+      try {
+        const { stdout } = await execFileAsync(file, [...args])
+        return { code: 0, stdout }
+      } catch (error) {
+        const failed = error as { code?: unknown; stdout?: unknown }
+        return {
+          code: typeof failed.code === "number" ? failed.code : -1,
+          stdout: typeof failed.stdout === "string" ? failed.stdout : "",
+        }
+      }
     },
     writeFile: async (file, text) => {
       await fs.mkdir(path.dirname(file), { recursive: true })
@@ -156,34 +174,100 @@ export async function writeServiceUnit(deps: ServiceDeps, options: ServiceUnitOp
   return { kind, unit, installed_at: deps.now() }
 }
 
-export async function startService(deps: ServiceDeps, service: InstalledService): Promise<string[]> {
-  if (service.kind === "systemd-user") {
-    await deps.run("systemctl", ["--user", "daemon-reload"])
-    await deps.run("systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT])
-    return [
-      `Installed and started ${SYSTEMD_UNIT} (${service.unit}).`,
-      `A user service stops at logout unless lingering is on: run \`loginctl enable-linger ${os.userInfo().username}\`.`,
-      `Restart=on-failure with RestartPreventExitStatus=78: a control-plane decision (exit 78) is not retried; fix the cause, then \`systemctl --user start ${SYSTEMD_UNIT}\`.`,
-    ]
+async function must(deps: ServiceDeps, file: string, args: readonly string[]) {
+  const result = await deps.run(file, args)
+  if (result.code !== 0) throw new Error(`${[file, ...args].join(" ")} exited with ${result.code}`)
+}
+
+export type UserManagerCheck = { reachable: true } | { reachable: false; reason: string; remedy: string[] }
+
+/**
+ * Whether `systemctl --user` can start anything for this user right now.
+ *
+ * A user manager exists only while the user has a login session or lingering
+ * is on, and `systemctl --user` finds it through `XDG_RUNTIME_DIR`. A cloud-init
+ * script runs as the service user with neither, so `enable --now` fails after
+ * the unit is written; the check runs first so the install stops with the
+ * exact commands instead.
+ */
+export async function linuxUserManager(deps: ServiceDeps): Promise<UserManagerCheck> {
+  const linger = await deps.run("loginctl", ["show-user", deps.username, "--property=Linger", "--value"])
+  const enableLinger = `sudo loginctl enable-linger ${deps.username}`
+  if (linger.code !== 0 || linger.stdout.trim() !== "yes") {
+    return {
+      reachable: false,
+      reason: `lingering is off for ${deps.username}, so no user manager runs outside a login session`,
+      remedy: [enableLinger, `claxedo connect --install-service`],
+    }
   }
-  await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`]).catch(() => undefined)
-  await deps.run("launchctl", ["bootstrap", launchdDomain(), service.unit])
-  return [
-    `Installed and started ${LAUNCHD_LABEL} (${service.unit}).`,
-    `KeepAlive/SuccessfulExit=false restarts the job after any failure except a control-plane decision (exit 78), which unloads it until the next login or \`launchctl bootstrap ${launchdDomain()} ${service.unit}\`.`,
-  ]
+  const runtimeDir = deps.env.XDG_RUNTIME_DIR?.trim()
+  const exportRuntimeDir = `export XDG_RUNTIME_DIR=/run/user/$(id -u ${deps.username})`
+  if (!runtimeDir) {
+    return {
+      reachable: false,
+      reason: "XDG_RUNTIME_DIR is unset, so systemctl --user cannot find the user manager's bus",
+      remedy: [exportRuntimeDir, `claxedo connect --install-service`],
+    }
+  }
+  const manager = await deps.run("systemctl", ["--user", "is-system-running"])
+  // `is-system-running` exits non-zero for a degraded manager too; only an
+  // empty answer means nothing answered on the bus.
+  if (manager.stdout.trim() === "") {
+    return {
+      reachable: false,
+      reason: `systemctl --user reached no user manager for ${deps.username} (XDG_RUNTIME_DIR=${runtimeDir})`,
+      remedy: [enableLinger, exportRuntimeDir, `claxedo connect --install-service`],
+    }
+  }
+  return { reachable: true }
+}
+
+export type StartServiceResult = { started: boolean; lines: string[] }
+
+export async function startService(deps: ServiceDeps, service: InstalledService): Promise<StartServiceResult> {
+  if (service.kind === "systemd-user") {
+    const manager = await linuxUserManager(deps)
+    if (!manager.reachable) {
+      return {
+        started: false,
+        lines: [
+          `Wrote ${SYSTEMD_UNIT} (${service.unit}) but did not start it: ${manager.reason}.`,
+          `Run, as ${deps.username}:`,
+          ...manager.remedy.map((line) => `  ${line}`),
+        ],
+      }
+    }
+    await must(deps, "systemctl", ["--user", "daemon-reload"])
+    await must(deps, "systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT])
+    return {
+      started: true,
+      lines: [
+        `Installed and started ${SYSTEMD_UNIT} (${service.unit}).`,
+        `Restart=on-failure with RestartPreventExitStatus=78: a control-plane decision (exit 78) is not retried; fix the cause, then \`systemctl --user start ${SYSTEMD_UNIT}\`.`,
+      ],
+    }
+  }
+  await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`])
+  await must(deps, "launchctl", ["bootstrap", launchdDomain(), service.unit])
+  return {
+    started: true,
+    lines: [
+      `Installed and started ${LAUNCHD_LABEL} (${service.unit}).`,
+      `KeepAlive/SuccessfulExit=false restarts the job after any failure except a control-plane decision (exit 78), which unloads it until the next login or \`launchctl bootstrap ${launchdDomain()} ${service.unit}\`.`,
+    ],
+  }
 }
 
 export async function uninstallService(deps: ServiceDeps, installed: InstalledService | undefined): Promise<string[]> {
   const kind = installed?.kind ?? serviceKind(deps.platform)
   const unit = installed?.unit ?? serviceUnitPath(deps)
   if (kind === "systemd-user") {
-    await deps.run("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]).catch(() => undefined)
+    await deps.run("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT])
     await deps.unlink(unit)
-    await deps.run("systemctl", ["--user", "daemon-reload"]).catch(() => undefined)
+    await deps.run("systemctl", ["--user", "daemon-reload"])
     return [`Stopped and removed ${SYSTEMD_UNIT} (${unit}).`]
   }
-  await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`]).catch(() => undefined)
+  await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`])
   await deps.unlink(unit)
   return [`Stopped and removed ${LAUNCHD_LABEL} (${unit}).`]
 }

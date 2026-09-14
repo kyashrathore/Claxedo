@@ -55,9 +55,11 @@ into it; 1 for anything else, including a control plane unreachable for 5 minute
 during enrollment or acquire.
 
 The service is a systemd --user unit on Linux (Restart=on-failure,
-RestartPreventExitStatus=78; prints the loginctl enable-linger command) and a
-LaunchAgent on macOS (KeepAlive/SuccessfulExit=false; exit 78 unloads the agent
-until the next login). A user service isolates this process from OTHER users
+RestartPreventExitStatus=78) and a LaunchAgent on macOS
+(KeepAlive/SuccessfulExit=false; exit 78 unloads the agent until the next
+login). On Linux the unit is written and recorded but NOT started, exit 78,
+until \`loginctl enable-linger <user>\` is on and XDG_RUNTIME_DIR reaches the
+user manager — the state a cloud-init run without a login session is in. A user service isolates this process from OTHER users
 only. An agent running as the same user can read the key file; what the key can
 do is serve the owner-assigned folders under the roots, nothing about the account.
 
@@ -128,9 +130,8 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
     }),
   )
   const enrollment = outcome.state.enrollment
-  log(
-    `${outcome.resumed ? "Resumed" : "Enrolled"} as ${enrollment?.enrollment_id} for ${enrollment?.owner_display || "the inviting account"} (host ${outcome.state.host_id})`,
-  )
+  const owner = enrollment?.owner_display ? ` for ${enrollment.owner_display}` : ""
+  log(`${outcome.resumed ? "Resumed" : "Enrolled"} as ${enrollment?.enrollment_id}${owner} (host ${outcome.state.host_id})`)
   return outcome.state
 }
 
@@ -189,8 +190,9 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       const service = deps.service()
       const installed = await writeServiceUnit(service, { alongsideDesktop: args.alongsideDesktop })
       await deps.store.save({ ...state, service: installed })
-      for (const line of await startService(service, installed)) log(line)
-      return 0
+      const start = await startService(service, installed)
+      for (const line of start.lines) log(line)
+      return start.started ? 0 : DECISION_EXIT_CODE
     }
     return await runHost({ store: deps.store, state, deps: deps.host })
   } catch (error) {
