@@ -1,0 +1,28 @@
+{
+  "command": [
+    "npx",
+    "playwright",
+    "test",
+    "--config",
+    "playwright.config.ts",
+    "e2e/playwright/real-harness-local.spec.ts",
+    "--grep",
+    "workspace Pi executes a provider-issued bash tool|Pi reports unsupported subagents",
+    "--project=chromium",
+    "--workers=1",
+    "--retries=0",
+    "--output=/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-unsigned-artifacts",
+    "--reporter=line,json"
+  ],
+  "cwd": "packages/claxedo-app",
+  "env": {
+    "CLAXEDO_E2E_SUITE": "core",
+    "CLAXEDO_TIER_REAL_E2E": "1",
+    "CLAXEDO_E2E_AUTH_MODE": "local-unsigned",
+    "CLAXEDO_E2E_SERVE_MODE": "build-preview",
+    "CLAXEDO_TIER_REAL_BACKEND_PORT": "14342",
+    "PLAYWRIGHT_PORT": "4470",
+    "PLAYWRIGHT_VIDEO": "1",
+    "PLAYWRIGHT_JSON_OUTPUT_NAME": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-unsigned.json"
+  }
+}

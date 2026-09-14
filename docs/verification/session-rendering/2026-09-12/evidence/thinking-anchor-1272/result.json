@@ -1,0 +1,16 @@
+{
+  "auth_mode": "local-unsigned",
+  "passed": 0,
+  "failed": 1,
+  "retries": 0,
+  "failed_assertion": "every post-submit Thinking sample must be owned by the new prompt's user message; 496 consecutive samples carried ses_core_busy_abort_errors_prev instead",
+  "passed_assertions": [
+    "prompt dispatched once (promptCount = 1)",
+    "Thinking did eventually anchor to the new prompt's messageID once the new assistant envelope arrived",
+    "follow-up reply ack 1: Thinking ownership probe rendered"
+  ],
+  "mechanism": "The previous turn's assistant envelope lacks time.completed (reply parts painted, completion envelope still in flight) while the session reports busy. activeMessageID resolves pending() -> the stale assistant -> its parentID = the OLD user message, so the old turn stays isActive + unsettled and emits the Thinking row inside its own block — beneath the completed-looking reply and ABOVE the newly sent prompt bubbles, matching the original codex-thinking-placement capture. When the new turn's message.updated(pending) lands, pending() re-resolves to it and Thinking relocates.",
+  "visual_verified": true,
+  "visual_scope": "Per-frame DOM sampling attributes each painted Thinking row to a data-message-id; 496 post-submit frames carried the previous turn's id while the new user bubble was rendered below it. Failure screenshot, video, and trace retained.",
+  "command": "CLAXEDO_E2E_AUTH_MODE=local-unsigned CLAXEDO_E2E_SERVE_MODE=build-preview CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-busy-abort-errors.spec.ts --grep 'completion envelope is in flight' --workers=1 --retries=0 --trace on"
+}

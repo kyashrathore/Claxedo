@@ -1,0 +1,16 @@
+{
+  "auth_mode": "test-user",
+  "passed": 0,
+  "failed": 1,
+  "retries": 0,
+  "failed_assertion": "the settled reply's streamed text rendered more than once after its deltas replayed (sampled copy count reached 2)",
+  "passed_assertions": [
+    "stored reply text renders once on first load",
+    "reply restored after rail return and reload",
+    "replayed text-delta frames reached the session's conversation (both copies visible)"
+  ],
+  "mechanism": "Same as run 1274: replayed text-delta frames drained during the delayed canonical fetch; the fresh projection's message.updated un-settled the stored envelope and minted a fresh part id, so the REST merge kept the stored part and the replayed part side by side and the reply text rendered twice.",
+  "visual_verified": true,
+  "visual_scope": "dup-after-replay.png shows the identical reply text painted twice under one turn.",
+  "command": "CLAXEDO_E2E_AUTH_MODE=test-user CLAXEDO_E2E_SERVE_MODE=build-preview CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-harness-rendering-matrix.spec.ts --grep 'settled reply does not re-render' --workers=1 --retries=0"
+}
