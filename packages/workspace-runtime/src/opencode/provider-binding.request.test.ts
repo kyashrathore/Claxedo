@@ -54,12 +54,7 @@ function recordingEndpoint(refuse?: { status: number; body: string }) {
   }
 }
 
-/**
- * `options` names no `baseURL` or `apiKey`, because a provider whose config
- * carries either keeps it: the engine merges the config over every plugin's
- * catalog transform, per key. A binding is the only routing this provider has.
- */
-function engine(root: string): { runtime: OpenCodeRuntime; scope: WorkspaceScope } {
+function engine(root: string, options?: Record<string, unknown>): { runtime: OpenCodeRuntime; scope: WorkspaceScope } {
   const directory = path.join(root, "work")
   fs.mkdirSync(directory, { recursive: true })
   return {
@@ -74,6 +69,7 @@ function engine(root: string): { runtime: OpenCodeRuntime; scope: WorkspaceScope
             npm: "@ai-sdk/openai-compatible",
             name: "Proof",
             models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } },
+            ...(options ? { options } : {}),
           },
         },
       }),
@@ -197,3 +193,51 @@ test("a broker refusal reaches the operator in the broker's own words", async ()
     cleanup()
   }
 }, 90_000)
+
+// The engine merges an `opencode.json` provider's `options` over the catalog
+// after every plugin's transform, per key. A file naming `apiKey` or `baseURL`
+// for a bound provider would route the turn to the file's key on the vendor's
+// own origin; the selected account must win over both sources of that file.
+test("a bound provider ignores the apiKey and baseURL its config content carries", async () => {
+  const fromConfig = recordingEndpoint()
+  const fromBinding = recordingEndpoint()
+  const configUrl = await fromConfig.listen()
+  const bindingUrl = await fromBinding.listen()
+  const { root, cleanup } = fixture()
+  const { runtime, scope } = engine(root, { apiKey: "from-config", baseURL: configUrl })
+  try {
+    await runtime.bindProviders({ proof: { baseURL: bindingUrl, apiKey: "placeholder" } })
+    await turn(runtime, scope, () => fromConfig.requests.length + fromBinding.requests.length > 0)
+    expect(fromConfig.requests).toEqual([])
+    expect(fromBinding.requests).toEqual([{ path: "/v1/chat/completions", authorization: "Bearer placeholder", model: "proof" }])
+  } finally {
+    await runtime.close()
+    await fromConfig.close()
+    await fromBinding.close()
+    cleanup()
+  }
+}, 60_000)
+
+test("a bound provider ignores the apiKey and baseURL the workspace's opencode.json carries", async () => {
+  const fromConfig = recordingEndpoint()
+  const fromBinding = recordingEndpoint()
+  const configUrl = await fromConfig.listen()
+  const bindingUrl = await fromBinding.listen()
+  const { root, cleanup } = fixture()
+  fs.mkdirSync(path.join(root, "work"), { recursive: true })
+  fs.writeFileSync(path.join(root, "work", "opencode.json"), JSON.stringify({
+    provider: { proof: { options: { apiKey: "from-project-file", baseURL: configUrl } } },
+  }))
+  const { runtime, scope } = engine(root)
+  try {
+    await runtime.bindProviders({ proof: { baseURL: bindingUrl, apiKey: "placeholder" } })
+    await turn(runtime, scope, () => fromConfig.requests.length + fromBinding.requests.length > 0)
+    expect(fromConfig.requests).toEqual([])
+    expect(fromBinding.requests).toEqual([{ path: "/v1/chat/completions", authorization: "Bearer placeholder", model: "proof" }])
+  } finally {
+    await runtime.close()
+    await fromConfig.close()
+    await fromBinding.close()
+    cleanup()
+  }
+}, 60_000)
