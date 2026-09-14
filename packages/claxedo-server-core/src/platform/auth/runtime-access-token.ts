@@ -178,7 +178,7 @@ async function keyIdentity(key: ExportableKey) {
  * public-key fallback then keeps JWKS publication and mint headers coherent
  * without explicit `kid` configuration.
  */
-async function resolveMintKid(env: NodeJS.ProcessEnv, privateKey: ExportableKey): Promise<string> {
+export async function resolveMintKid(env: NodeJS.ProcessEnv, privateKey: ExportableKey): Promise<string> {
   const publicPem = pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
   if (!publicPem) {
     throw new RuntimeAccessTokenConfigurationError(

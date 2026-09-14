@@ -1,7 +1,7 @@
 import { jwtVerify, SignJWT, type JWTPayload } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
-import { RUNTIME_ACCESS_TOKEN_ALGORITHM } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { RUNTIME_ACCESS_TOKEN_ALGORITHM, resolveMintKid } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import {
   requiredCredentialField,
   runtimeTokenSigningKey,
@@ -15,11 +15,12 @@ import type { SandboxPassRegister } from "./sandbox-pass-register"
  * verify: the Tasks capability, the Agent Plugins gateway token, and every
  * grant plan 004 adds after them.
  *
- * All of them are signed with the runtime access-token key, name the
- * control plane as issuer, carry their own audience so none can be replayed
- * as another, name one user (the subject), one organization and one
- * workspace, list the operations they permit, and carry a `jti` so one pass
- * can be revoked without ending the rest. What differs between passes — the
+ * All of them are signed with the runtime access-token key under its
+ * published `kid` (a JWKS verifier holding the current and the next key can
+ * pick one only by it), name the control plane as issuer, carry their own
+ * audience so none can be replayed as another, name one user (the subject),
+ * one organization and one workspace, list the operations they permit, and
+ * carry a `jti` so one pass can be revoked without ending the rest. What differs between passes — the
  * audience, the operation vocabulary, and any claims beyond the scope — is
  * the audience's own rule, applied over the result of {@link verifySandboxPass}.
  *
@@ -101,6 +102,7 @@ export async function mintSandboxPass(input: SandboxPassInput, env: Record<strin
   }
   const ttl = lifetimeSeconds(input.ttlSeconds, fault)
   const { alg, key } = await runtimeTokenSigningKey(env, fault)
+  const kid = await resolveMintKid(env, key)
   const now = Math.floor((input.now?.() ?? Date.now()) / 1_000)
   const jti = randomToken()
   const token = await new SignJWT({
@@ -112,7 +114,7 @@ export async function mintSandboxPass(input: SandboxPassInput, env: Record<strin
     ...(scope.sessionId === undefined ? {} : { [SCOPE_CLAIMS.sessionId]: scope.sessionId }),
     operations: [...input.operations],
   })
-    .setProtectedHeader({ alg })
+    .setProtectedHeader({ alg, kid })
     .setIssuer(runtimeAccessTokenIssuer)
     .setAudience(input.audience)
     .setSubject(scope.userId)

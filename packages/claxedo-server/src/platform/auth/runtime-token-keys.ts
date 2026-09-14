@@ -27,7 +27,9 @@ export function requiredCredentialField(value: string | undefined, name: string,
 export async function runtimeTokenSigningKey(env: Record<string, string | undefined>, fault: CredentialFault) {
   const alg = runtimeAccessTokenAlgorithm(env)
   const key = requiredCredentialField(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM), "runtime signing key", fault)
-  return { alg, key: await importPKCS8(key, alg) }
+  requiredCredentialField(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM), "runtime verification key", fault)
+  // jose imports keys non-extractable by default, and deriving the published `kid` exports this one.
+  return { alg, key: await importPKCS8(key, alg, { extractable: true }) }
 }
 
 export async function runtimeTokenVerificationKey(env: Record<string, string | undefined>, fault: CredentialFault) {

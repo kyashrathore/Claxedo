@@ -22,7 +22,7 @@ import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
 import type { ControlPlaneServices } from "../authority/services"
 import { HostedAgentPluginRoutes } from "../agent-plugins/routes"
-import { createTasksGroupReader } from "../agent-plugins/runtime/cloud-root-environment"
+import { createBuiltinGroupReader } from "../agent-plugins/runtime/cloud-root-environment"
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
@@ -154,7 +154,7 @@ async function fixture() {
   const authentication = aliceOnlyAuthentication()
   const withdrawal = createTasksGrantWithdrawal({
     passes,
-    tasksGroupEnabled: createTasksGroupReader({ activations, builtIn }),
+    tasksGroupEnabled: createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP),
   })
   const plugins = HostedAgentPluginRoutes({
     services,

@@ -10,7 +10,9 @@ import {
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
+import { createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
@@ -60,12 +62,17 @@ export function composeBetterAuthD1AgentPluginsCandidate(
   // One input for the launch grant and the renewed one, so `start` follows
   // the account's setting at both.
   const tasksRoot = { signingEnv, passes, crossMachineWrites: d1CrossMachineWrites(env.CONTROL_PLANE_DB) }
+  const authority = requireAuthority(base.plane.services)
+  if (!authority.resolveWorkspaceOwner) {
+    throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
+  }
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
     tasksGrant: createTasksRootCapability(tasksRoot),
+    ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
   })
   const tasks = hostedTasksRouteContributions({

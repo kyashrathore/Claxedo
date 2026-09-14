@@ -32,7 +32,7 @@ import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cac
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
-import { createCloudRootEnvironment, createTasksGroupReader, type CloudRootIdentity } from "./runtime/cloud-root-environment"
+import { createBuiltinGroupReader, createCloudRootEnvironment, type CloudRootIdentity } from "./runtime/cloud-root-environment"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
@@ -168,10 +168,13 @@ export function createHostedAgentPluginsComposition(input: {
   authentication: RequestAuthenticationAdapter
   /** The grant a root whose project turned Tasks on is launched with. */
   tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /** The grant a root whose project turned subagents on is launched with: its runtime acts as the workspace's owner. */
+  ownerGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /**
    * The register every pass a root is launched with is written to, and the
-   * one its gateway checks. The Tasks grant is minted by `tasksGrant` and
-   * has to be minted into the same register, which is the entry's to hold.
+   * one its gateway checks. The Tasks and owner grants are minted by
+   * `tasksGrant` and `ownerGrant` and have to be minted into the same
+   * register, which is the entry's to hold.
    */
   passes: SandboxPassRegister
 }): HostedAgentPluginsComposition {
@@ -323,8 +326,8 @@ export function createHostedAgentPluginsComposition(input: {
       .first<{ backing: string; access: string }>()
     return row?.backing === "cloud-vm" && row.access === "cloud"
   }
-  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant })
-  const tasksGroupEnabled = createTasksGroupReader({ activations, builtIn })
+  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant })
+  const tasksGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP)
   const withdrawal = createTasksGrantWithdrawal({ passes: input.passes, tasksGroupEnabled })
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (!(await cloudWorkspace(workspaceId))) return {}

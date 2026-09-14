@@ -49,6 +49,25 @@ export function workspaceRuntimeTasksCapabilityEnv(input: {
   }
 }
 
+export const WORKSPACE_RUNTIME_OWNER_GRANT = "WORKSPACE_RUNTIME_OWNER_GRANT"
+
+/**
+ * The owner grant a cloud root's runtime presents to act as the workspace's
+ * canonical owner: on its own in-process session calls, and to the control
+ * plane's session authority behind them.
+ *
+ * Readable like the Tasks grant: the control plane re-resolves the owner on
+ * every use, so a sandbox that reads it holds nothing it could not already
+ * ask its own runtime to do.
+ */
+export function workspaceRuntimeOwnerGrantEnv(input: { token: string }): Record<string, string> {
+  return { [WORKSPACE_RUNTIME_OWNER_GRANT]: input.token }
+}
+
+export function workspaceRuntimeOwnerGrant(env: Record<string, string | undefined>): string | undefined {
+  return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
+}
+
 export function workspaceRuntimeTargetEnv(input: {
   workspaceId: string
   hostId?: string

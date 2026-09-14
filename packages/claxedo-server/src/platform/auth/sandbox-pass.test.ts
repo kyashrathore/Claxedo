@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
-import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
+import { decodeJwt, decodeProtectedHeader, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
+import { sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
 import { mintSandboxPass, SandboxPassError, verifySandboxPass } from "./sandbox-pass"
 import { memorySandboxPassRegister } from "./sandbox-pass-register"
 
@@ -56,6 +57,16 @@ describe("sandbox pass family", () => {
       issuedAt: now,
       expiresAt: now + 120_000,
     })
+  })
+
+  test("carries the published key id in its header, so a JWKS verifier holding two keys can pick this one", async () => {
+    const { env, key } = await fixture()
+    const { token } = await mintSandboxPass({ audience: ONE, scope, operations: ["read"] }, env, fault)
+    const published = await sha256Hex16((await exportJWK(key.publicKey)).x ?? "")
+    expect(decodeProtectedHeader(token)).toEqual({ alg: "EdDSA", kid: published })
+    expect(decodeProtectedHeader((await mintSandboxPass({ audience: ONE, scope, operations: ["read"] }, { ...env, CLAXEDO_RUNTIME_ACCESS_TOKEN_KID: "named" }, fault)).token).kid).toBe("named")
+    const { CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: _unpublished, ...signingOnly } = env
+    await expect(mintSandboxPass({ audience: ONE, scope, operations: ["read"] }, signingOnly, fault)).rejects.toThrow("pass requires runtime verification key")
   })
 
   test("omits the optional scope claims it was not given and reads them back as absent", async () => {
