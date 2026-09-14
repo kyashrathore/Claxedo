@@ -42,8 +42,8 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
 }
 
 describe("publish-claxedo-packages", () => {
-  test("covers the 12 public packages, on four version tracks", () => {
-    expect(claxedoPackages).toHaveLength(12)
+  test("covers the 13 public packages, on five version tracks", () => {
+    expect(claxedoPackages).toHaveLength(13)
     expect(selectPackages("all")).toEqual(claxedoPackages)
     expect(selectPackages("helpers").map((item) => item.name)).toEqual(["@claxedo/helpers"])
     expect(selectPackages("runtime").map((item) => item.name).sort()).toEqual([
@@ -61,6 +61,7 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/connections",
     ])
     expect(selectPackages("wakes").map((item) => item.name)).toEqual(["@claxedo/wakes"])
+    expect(selectPackages("cli").map((item) => item.name)).toEqual(["@claxedo/cli"])
   })
 
   test("is listed in dependency order, so an exact @claxedo pin always resolves on npm", () => {
@@ -113,6 +114,19 @@ describe("publish-claxedo-packages", () => {
       name: "@claxedo/connections",
       dependencies: { "@claxedo/server": "workspace:*" },
     }, versions)).toThrow(/not published/)
+  })
+
+  test("drops a private sibling from devDependencies, which npm never installs, and pins a public one", () => {
+    const versions = new Map([["@claxedo/wakes", "0.4.0"]])
+    expect(materializeWorkspacePins({
+      name: "@claxedo/cli",
+      dependencies: { "@claxedo/wakes": "workspace:*" },
+      devDependencies: { "@claxedo/wakes": "workspace:*", "@claxedo/host-connector": "workspace:*", esbuild: "0.25.12" },
+    }, versions)).toEqual({
+      name: "@claxedo/cli",
+      dependencies: { "@claxedo/wakes": "0.4.0" },
+      devDependencies: { "@claxedo/wakes": "0.4.0", esbuild: "0.25.12" },
+    })
   })
 
   test("separates breaking protocol specifiers from cosmetic devDependency ones", () => {

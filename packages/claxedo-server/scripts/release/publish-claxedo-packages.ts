@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
 import { publishedVersionDrift } from "./check-published-versions"
 
-export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes"
+export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes" | "cli"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -47,7 +47,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 12 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 13 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -69,6 +69,8 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime" },
   // Tier 3
   { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
+  // Tier 4
+  { name: "@claxedo/cli", dir: "packages/cli", track: "cli" },
 ]
 
 export type PackageSelector = "all" | PackageTrack
@@ -127,22 +129,33 @@ export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<st
 
 /**
  * The manifest npm sees: every `workspace:` specifier replaced by the exact
- * in-repo version of that package. A `workspace:` reference to a package that
- * is not public cannot be materialized and is an error, not a silent pass.
+ * in-repo version of that package. In a section consumers install, a
+ * `workspace:` reference to a package that is not public cannot be
+ * materialized and is an error, not a silent pass. In `devDependencies` —
+ * which npm never installs from a published package — a private sibling is
+ * dropped instead: it is a build-time input (the CLI bundles `host-connector`
+ * and `host-serving` into `dist/index.mjs`) that has no registry name to pin.
  */
 export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap<string, string>): PackageJson {
   const next: PackageJson = { ...pkg }
   for (const section of ALL_SECTIONS) {
     const deps = pkg[section]
     if (!deps) continue
-    next[section] = Object.fromEntries(
-      Object.entries(deps).map(([dep, spec]) => {
-        if (typeof spec !== "string" || !spec.startsWith("workspace:")) return [dep, spec]
-        const version = versions.get(dep)
-        if (!version) throw new Error(`${pkg.name ?? "package"}: ${section}.${dep}=${spec} references a package that is not published`)
-        return [dep, version]
-      }),
-    )
+    const materialized: [string, string][] = []
+    for (const [dep, spec] of Object.entries(deps)) {
+      if (typeof spec !== "string" || !spec.startsWith("workspace:")) {
+        materialized.push([dep, spec])
+        continue
+      }
+      const version = versions.get(dep)
+      if (version) {
+        materialized.push([dep, version])
+        continue
+      }
+      if (section === "devDependencies") continue
+      throw new Error(`${pkg.name ?? "package"}: ${section}.${dep}=${spec} references a package that is not published`)
+    }
+    next[section] = Object.fromEntries(materialized)
   }
   return next
 }
@@ -427,7 +440,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes", "cli"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track") ?? "others"

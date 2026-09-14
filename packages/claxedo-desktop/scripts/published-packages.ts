@@ -6,7 +6,9 @@ import { jsonRecord } from "@claxedo/helpers"
 /**
  * The sibling packages the server bundle consumes through their published
  * `dist` rather than their source (see `script/published-exports-plugin.ts`):
- * every `@claxedo/*` workspace package that is not private and has a build.
+ * every `@claxedo/*` workspace package that is not private, has a build, and
+ * declares `exports`. A public package with only a `bin` (`@claxedo/cli`) has
+ * nothing a bundle can import, so its build is not a prerequisite here.
  */
 export function publishedPackageNames(repoRoot: string): string[] {
   return publishedPackages(repoRoot).map((entry) => entry.name)
@@ -31,6 +33,7 @@ function publishedPackages(repoRoot: string): { name: string; dir: string }[] {
     if (typeof name !== "string" || !name.startsWith("@claxedo/")) continue
     if (record.private === true) continue
     if (typeof scripts !== "object" || scripts === null || !("build" in scripts)) continue
+    if (!("exports" in record)) continue
     entries.push({ name, dir: path.join(packagesDir, entry.name) })
   }
   return entries.sort((a, b) => a.name.localeCompare(b.name))
