@@ -11,7 +11,7 @@ import {
   type WorkspaceRelayBunOptions,
 } from "./bun"
 import { TUNNEL_PROTOCOL_VERSION, type TunnelPong } from "@claxedo/workspace-relay-protocol"
-import { createCachedHostGenerationClient, type HostGenerationLookup, type HostGenerationResult } from "./server"
+import { createCachedHostGenerationClient, type HostGenerationLookup, type HostGenerationResult, type WorkspaceRelayAuditEvent } from "./server"
 
 type DirectoryObserver = {
   waitForPresence(): Promise<NonNullable<ReturnType<WorkspaceRelayDirectory["activeHost"]>>>
@@ -4591,11 +4591,15 @@ describe("workspace relay Bun adapter host generation fence", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
+    const auditEvents: WorkspaceRelayAuditEvent[] = []
     const relayHandler = createWorkspaceRelayBun({
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
       directory,
+      audit: (event) => {
+        auditEvents.push(event)
+      },
       ...(input.resolveHostGeneration ? { resolveHostGeneration: input.resolveHostGeneration } : {}),
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
@@ -4619,6 +4623,7 @@ describe("workspace relay Bun adapter host generation fence", () => {
       relay,
       directory,
       runtime,
+      auditEvents,
       token: (generation: number | undefined, workspaceIds = ["ws_1"], hostId = "host_1") => mintHostTunnelToken({
         subject: "user_1",
         hostId,
@@ -4724,6 +4729,67 @@ describe("workspace relay Bun adapter host generation fence", () => {
       await expect(unknown.json()).resolves.toMatchObject({ error: { code: "host_enrollment_unknown" } })
 
       expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeUndefined()
+    } finally {
+      await harness.stop()
+    }
+  })
+
+  test("every admission refusal is audited as a host_tunnel.denied with the refusal code", async () => {
+    let answer: HostGenerationResult | undefined = current(3)
+    const harness = await fenceHarness({ resolveHostGeneration: async () => answer })
+    try {
+      const denied = () => harness.auditEvents.filter((event) => event.action === "host_tunnel.denied")
+
+      await harness.admit(2)
+      expect(denied().at(-1)).toEqual({
+        action: "host_tunnel.denied",
+        result: "deny",
+        reason: "host_generation_superseded",
+        hostId: "host_1",
+        method: "WEBSOCKET",
+        path: "/host-tunnels/host_1",
+      })
+
+      answer = current(3, true)
+      await harness.admit(3)
+      expect(denied().at(-1)).toMatchObject({ reason: "host_enrollment_revoked", hostId: "host_1" })
+
+      answer = undefined
+      await harness.admit(3)
+      expect(denied().at(-1)).toMatchObject({ reason: "host_enrollment_unknown" })
+
+      const badToken = await fetch(harness.relay.url + "host-tunnels/host_1?workspaceId=ws_1", {
+        headers: { upgrade: "websocket", authorization: "Bearer not-a-token" },
+      })
+      expect(badToken.status).toBe(403)
+      expect(denied().at(-1)).toMatchObject({ reason: "host_tunnel_token_invalid", hostId: "host_1" })
+
+      // An incumbent at a higher generation refuses a lower one per workspace,
+      // and the audit names the workspace the incumbent holds.
+      answer = current(3)
+      const incumbent = await harness.connect(3)
+      await waitForPresence(harness, "ws_1", true)
+      const lower = await harness.admit(2)
+      expect(lower.status).toBe(403)
+      expect(denied().at(-1)).toMatchObject({ reason: "host_generation_superseded", hostId: "host_1" })
+      incumbent.ws.close()
+      expect(denied()).toHaveLength(5)
+      expect(harness.auditEvents.filter((event) => event.action === "relay.request.denied")).toEqual([])
+    } finally {
+      await harness.stop()
+    }
+  })
+
+  test("a superseded incumbent's refusal names the workspace the incumbent still serves", async () => {
+    const harness = await fenceHarness()
+    try {
+      const incumbent = await harness.connect(3)
+      await waitForPresence(harness, "ws_1", true)
+      await harness.admit(2)
+      expect(harness.auditEvents.filter((event) => event.action === "host_tunnel.denied")).toEqual([
+        expect.objectContaining({ reason: "host_generation_superseded", hostId: "host_1", workspaceId: "ws_1" }),
+      ])
+      incumbent.ws.close()
     } finally {
       await harness.stop()
     }

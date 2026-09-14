@@ -149,6 +149,7 @@ export type WorkspaceRelayAuditEvent = {
     | "relay.request.suppressed_summary"
     | "host_tunnel.connected"
     | "host_tunnel.disconnected"
+    | "host_tunnel.denied"
   result: "allow" | "deny"
   reason?: string
   actorId?: string

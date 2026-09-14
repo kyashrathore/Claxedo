@@ -769,6 +769,29 @@ async function audit(
   })
 }
 
+/**
+ * A host-tunnel registration the relay refused, recorded the way a client
+ * request denial is (`server.ts`'s `deny`): a superseded or revoked
+ * generation, a lookup outage, a bad token, or the reconnect cap. Never
+ * sampled, so an operator can read a fence decision off the audit log
+ * without reproducing the admission.
+ */
+async function denyHostTunnel(
+  options: WorkspaceRelayOptions,
+  input: { code: string; message: string; status: number; hostId: string; workspaceId?: string },
+) {
+  await options.audit?.({
+    action: "host_tunnel.denied",
+    result: "deny",
+    reason: input.code,
+    hostId: input.hostId,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    method: "WEBSOCKET",
+    path: `/host-tunnels/${input.hostId}`,
+  })
+  return jsonError(input.code, input.message, input.status)
+}
+
 // Per-tunnel-identity debounce of host_tunnel.connected / host_tunnel.disconnected
 // audit emissions. Coalesces flapping (close + immediate reopen) within the
 // debounce window so a wifi flicker that disconnects and reconnects under
@@ -1182,11 +1205,6 @@ async function authorizeHostTunnel(
   }
 }
 
-function hostGenerationDenied(decision: Awaited<ReturnType<typeof checkHostTunnelGeneration>>) {
-  if (decision.ok) return undefined
-  return jsonError(decision.code, decision.reason, decision.retryable ? 503 : 403)
-}
-
 function clearHostGenerationWatcher(data: RelayHostTunnelWebSocketData) {
   if (data.generationCheckTimer) clearInterval(data.generationCheckTimer)
   data.generationCheckTimer = undefined
@@ -1472,29 +1490,44 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         }
         const authorization = await authorizeHostTunnel(options, bunOptions, request, { hostId, workspaceIds })
         if (!authorization.authorized) {
+          await denyHostTunnel(options, { code: "host_tunnel_token_invalid", message: "Host tunnel registration denied", status: 403, hostId })
           return new Response("Host tunnel registration denied", { status: 403 })
         }
         const claims = authorization.claims
-        const denied = hostGenerationDenied(await checkHostTunnelGeneration(options.resolveHostGeneration, {
+        const generation = await checkHostTunnelGeneration(options.resolveHostGeneration, {
           enrollment_id: claims?.enrollment_id,
           generation: claims?.generation,
-        }))
-        if (denied) return denied
+        })
+        if (!generation.ok) {
+          return denyHostTunnel(options, {
+            code: generation.code,
+            message: generation.reason,
+            status: generation.retryable ? 503 : 403,
+            hostId,
+          })
+        }
         for (const workspaceId of workspaceIds) {
           const incumbent = hostTunnels.get(tunnelKey(hostId, workspaceId))
           if (incumbent && outranks(incumbent, claims?.generation)) {
-            return jsonError("host_generation_superseded", "Host tunnel generation was superseded", 403)
+            return denyHostTunnel(options, {
+              code: "host_generation_superseded",
+              message: "Host tunnel generation was superseded",
+              status: 403,
+              hostId,
+              workspaceId,
+            })
           }
         }
         const tracker = getRegistrationTracker(hostId)
         const now = Date.now()
         pruneReconnects(tracker, now)
         if (tracker.recent.length >= HOST_TUNNEL_REGISTRATION_RECONNECT_CAP) {
-          return jsonError(
-            "too_many_host_tunnel_reconnects",
-            "Too many host-tunnel reconnects for this host within the last 60 seconds",
-            429,
-          )
+          return denyHostTunnel(options, {
+            code: "too_many_host_tunnel_reconnects",
+            message: "Too many host-tunnel reconnects for this host within the last 60 seconds",
+            status: 429,
+            hostId,
+          })
         }
         // The Host Tunnel Token (HTT) authenticates only this registration
         // upgrade; the long-lived host-tunnel WebSocket survives past HTT TTL
