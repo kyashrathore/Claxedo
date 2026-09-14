@@ -1,37 +1,56 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterAll, describe, expect, test, vi } from "vitest"
+import os from "os"
+import path from "path"
+import { randomUUID } from "crypto"
 import { createCredentialDiscovery, type CredentialDiscoveryProbe } from "./discovery"
-import type { LocalCredentialItem } from "./sync"
+import { collectLocalCredentialItems, type LocalCredentialItem } from "./sync"
 import type { CredentialHealth, CredentialWrite } from "@claxedo/server-core/credentials/types"
 
-// One provider handed to us twice in different shapes, which is what
-// `collectLocalCredentials` produces for a machine holding both a subscription
-// token in the environment and a pasted key in the agent config.
-const items: LocalCredentialItem[] = [
-  {
-    provider_id: "claude-sdk",
-    kind: "oauth_token",
-    source: "env",
-    label: "Synced from CLAUDE_CODE_OAUTH_TOKEN",
-    origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
-    secret: "first-secret",
-  },
-  {
-    provider_id: "claude-sdk",
-    kind: "api_key",
-    source: "local_only",
-    label: "Synced from local config",
-    origin: "Claxedo local config",
-    secret: "second-secret",
-  },
-  {
-    provider_id: "anthropic",
-    kind: "api_key",
-    source: "env",
-    label: "Anthropic API key",
-    origin: "ANTHROPIC_API_KEY",
-    secret: "third-secret",
-  },
-]
+// The candidates come from the real collector, run against an environment
+// holding one provider in two shapes — a Claude subscription token beside an
+// Anthropic API key — plus a second provider. Every other variable the
+// collector reads is blanked so the host machine's own keys cannot leak in,
+// and the data dir points at nothing so no user config on this machine does.
+vi.stubEnv("CLAXEDO_DATA_DIR", path.join(os.tmpdir(), `credential-discovery-${randomUUID().slice(0, 8)}`))
+for (const name of [
+  "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "DAYTONA_API_KEY", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET",
+  "VERCEL_TOKEN", "VERCEL_OIDC_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID",
+  "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_SANDBOX_WORKER_URL",
+]) vi.stubEnv(name, "")
+vi.stubEnv("CLAUDE_CODE_OAUTH_TOKEN", "first-secret")
+vi.stubEnv("ANTHROPIC_API_KEY", "second-secret")
+vi.stubEnv("CURSOR_API_KEY", "third-secret")
+const items = await collectLocalCredentialItems()
+afterAll(() => vi.unstubAllEnvs())
+
+test("the collector hands discovery one provider in two shapes and a second provider", () => {
+  expect(items).toEqual([
+    {
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      source: "env",
+      label: "Synced from CLAUDE_CODE_OAUTH_TOKEN",
+      origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
+      secret: JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "first-secret" } }),
+    },
+    {
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "env",
+      label: "Synced from ANTHROPIC_API_KEY",
+      origin: "ANTHROPIC_API_KEY",
+      secret: "second-secret",
+    },
+    {
+      provider_id: "cursor-sdk",
+      kind: "api_key",
+      source: "env",
+      label: "Synced from CURSOR_API_KEY",
+      origin: "CURSOR_API_KEY",
+      secret: "third-secret",
+    },
+  ])
+})
 
 function setup(input?: {
   now?: () => number
@@ -85,7 +104,7 @@ describe("credential discovery", () => {
     expect(result.items.map((item) => [item.provider_id, item.kind, item.already_connected === true])).toEqual([
       ["claude-sdk", "oauth_token", false],
       ["claude-sdk", "api_key", true],
-      ["anthropic", "api_key", false],
+      ["cursor-sdk", "api_key", false],
     ])
   })
 
@@ -111,7 +130,7 @@ describe("credential discovery", () => {
       scope: "shared",
       consent: { at: 100, surface: "desktop_discovery" },
     }), undefined)
-    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ secret: "first-secret" }), undefined)
+    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ secret: items[0].secret }), undefined)
   })
 
   test("two candidates for one provider stay distinct, so a selection saves the secret it named", async () => {
@@ -125,7 +144,7 @@ describe("credential discovery", () => {
       items: [{ provider_id: "claude-sdk", kind: "oauth_token", scope: "local" }],
     })
 
-    expect(save.mock.calls.map(([item]) => [item.kind, item.secret])).toEqual([["oauth_token", "first-secret"]])
+    expect(save.mock.calls.map(([item]) => [item.kind, item.secret])).toEqual([["oauth_token", items[0].secret]])
   })
 
   test("forwards the caller's org so a discovered credential lands in the right tenant", async () => {
@@ -165,7 +184,7 @@ describe("credential discovery", () => {
     })
 
     expect(save).toHaveBeenCalledTimes(2)
-    expect(save.mock.calls.map(([item]) => item.secret)).toEqual(["first-secret", "second-secret"])
+    expect(save.mock.calls.map(([item]) => item.secret)).toEqual([items[0].secret, items[1].secret])
   })
 
   test("refuses the same candidate named twice in one save", async () => {
@@ -175,8 +194,8 @@ describe("credential discovery", () => {
     await expect(service.save({
       discovery_id: discovery.discovery_id,
       items: [
-        { provider_id: "anthropic", kind: "api_key", scope: "local" },
-        { provider_id: "anthropic", kind: "api_key", scope: "shared" },
+        { provider_id: "cursor-sdk", kind: "api_key", scope: "local" },
+        { provider_id: "cursor-sdk", kind: "api_key", scope: "shared" },
       ],
     })).rejects.toMatchObject({ code: "discovery_duplicate_item" })
     expect(save).not.toHaveBeenCalled()
@@ -194,7 +213,7 @@ describe("credential discovery", () => {
     await expect(service.save({ ...selection, discovery_id: "unknown" })).rejects.toMatchObject({ code: "discovery_not_found" })
     await expect(service.save({
       ...selection,
-      items: [{ provider_id: "anthropic", kind: "oauth_token", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "oauth_token", scope: "local" }],
     })).rejects.toMatchObject({ code: "discovery_item_not_found" })
     expect(save).not.toHaveBeenCalled()
 
@@ -202,18 +221,18 @@ describe("credential discovery", () => {
     now = 100 + 5 * 60 * 1000 + 1
     await expect(service.save({
       discovery_id: next.discovery_id,
-      items: [{ provider_id: "anthropic", kind: "api_key", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })).rejects.toMatchObject({ code: "discovery_expired" })
 
     now = 100
     const singleUse = await service.discover()
     await service.save({
       discovery_id: singleUse.discovery_id,
-      items: [{ provider_id: "anthropic", kind: "api_key", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
     await expect(service.save({
       discovery_id: singleUse.discovery_id,
-      items: [{ provider_id: "anthropic", kind: "api_key", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })).rejects.toMatchObject({ code: "discovery_not_found" })
   })
 })
@@ -282,10 +301,10 @@ describe("live probing during discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "anthropic", kind: "api_key", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
 
-    expect(recorded).toEqual([{ id: "saved-anthropic-api_key", health: "ok", validatedAt: 100 }])
+    expect(recorded).toEqual([{ id: "saved-cursor-sdk-api_key", health: "ok", validatedAt: 100 }])
   })
 
   test("a verdict the probe could not reach writes no health at all", async () => {
@@ -294,7 +313,7 @@ describe("live probing during discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "anthropic", kind: "api_key", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
 
     expect(recorded).toEqual([])
@@ -309,7 +328,7 @@ describe("live probing during discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "anthropic", kind: "api_key", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
 
     expect(save).toHaveBeenCalledTimes(1)

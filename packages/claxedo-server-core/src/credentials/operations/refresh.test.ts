@@ -62,7 +62,6 @@ function tokenResponse(body: unknown, init: { ok?: boolean; status?: number } = 
 describe("isRefreshableCredential", () => {
   test("accepts OAuth logins for providers that mint renewable tokens", () => {
     expect(isRefreshableCredential(credential({ provider_id: "codex-app-server" }))).toBe(true)
-    expect(isRefreshableCredential(credential({ provider_id: "codex-app-server" }))).toBe(true)
     expect(isRefreshableCredential(credential({ provider_id: "openai" }))).toBe(true)
   })
 
