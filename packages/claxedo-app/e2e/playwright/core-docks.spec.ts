@@ -332,6 +332,43 @@ test.describe("core docks — permission @core", () => {
     await expect(composerTextbox(page)).toHaveCount(0)
     expect(counters.permissionRespond.count).toBe(2)
   })
+
+  test("a child session's permission request reaches a decision dock on the parent", async ({ page }, testInfo) => {
+    const childId = "ses_child_permission"
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID,
+      harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+      existingSession: { prompt: "parent prompt", reply: "parent reply" },
+      childSessions: [{ id: childId, parentId: SESSION_ID, title: "Child task", prompt: "child prompt", reply: "child reply" }],
+    })
+    await seedOneProject(page, DIR)
+    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
+    await expectAssistantReplyVisible(page, "parent reply")
+
+    // The child's shell call needs approval. The runtime routes the ask with
+    // the child's sessionID; the only place that can show a decision is the
+    // parent's composer — the child's own tab is read-only.
+    mock.emit({
+      type: "permission.asked",
+      properties: {
+        id: "perm_child_1",
+        sessionID: childId,
+        permission: "bash",
+        patterns: ["/tmp/child-target"],
+        metadata: { command: "printf QA > /tmp/child-target" },
+        always: [],
+      },
+    })
+    await expect(permissionDock(page), "the child session's permission ask produced no decision dock on its parent").toBeVisible({ timeout: 20_000 })
+    await page.screenshot({ path: testInfo.outputPath("child-permission-dock.png") })
+
+    // Answering through the parent's dock must reach the child's request id on
+    // the child's session route, then clear it.
+    await page.getByRole("button", { name: "Deny", exact: true }).click()
+    await expect.poll(() => mock.requests.permissionResponses, { timeout: 10_000 }).toEqual(["reject"])
+    mock.emit({ type: "permission.replied", properties: { sessionID: childId, requestID: "perm_child_1" } })
+    await expect(permissionDock(page)).toHaveCount(0, { timeout: 20_000 })
+  })
 })
 
 test.describe("core docks — question wizard @core", () => {
