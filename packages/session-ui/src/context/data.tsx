@@ -59,8 +59,6 @@ export type NavigateToSessionFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
-export type NavigateToTaskFn = (taskId: string) => void
-
 export type TaskHrefFn = (taskId: string) => string
 
 export type SubagentView = {
@@ -85,7 +83,6 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     directory: string
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
-    onNavigateToTask?: NavigateToTaskFn
     onTaskHref?: TaskHrefFn
     resolveSubagents?: (parentSessionId: string, toolCallId?: string) => SubagentView[]
     /**
@@ -103,7 +100,6 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
-      navigateToTask: props.onNavigateToTask,
       taskHref: props.onTaskHref,
       resolveSubagents: props.resolveSubagents,
       fileUrl: props.fileUrl,

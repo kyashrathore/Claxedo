@@ -1,5 +1,5 @@
 import { cleanup, render } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import type { AgentAssistantMessage, AgentToolPart, AgentToolState } from "@claxedo/agent-runtime-contract"
 import { DataProvider } from "@/ui/session-kit-context"
@@ -38,7 +38,7 @@ function completed(input: Record<string, unknown>, output: unknown): AgentToolSt
   }
 }
 
-function mount(part: AgentToolPart, navigate?: { task?: (id: string) => void; session?: (id: string) => void }) {
+function mount(part: AgentToolPart) {
   return render(() => (
     <DialogProvider>
       <DataProvider
@@ -46,8 +46,7 @@ function mount(part: AgentToolPart, navigate?: { task?: (id: string) => void; se
         directory="/repo"
         onSessionHref={(id) => `/s/${id}`}
         onTaskHref={(id) => tasksRoute({ kind: "task", taskId: id })}
-        onNavigateToTask={navigate?.task}
-        onNavigateToSession={navigate?.session}
+        onNavigateToSession={() => {}}
       >
         <Part part={part} message={message} />
       </DataProvider>
@@ -113,28 +112,26 @@ describe("a first-party Claxedo tool renders as its own card", () => {
     expect(view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="session"]')?.getAttribute("href")).toBe("/s/ses_tasks_1")
   })
 
-  test("a task link hands an unmodified click to the surface's navigator and leaves a modified one to the browser", () => {
-    const task = vi.fn()
+  test("a click on a task link leaves the anchor's own navigation alone and does not toggle the row", () => {
     const view = mount(toolPart("task_create", completed(
       { server: "claxedo", tool: "task_create", arguments: { title: "From codex" } },
-      { task: { id: TASK_ID, number: 6, title: "From codex", status: "todo" }, replayed: false },
-    )), { task })
+      { task: { id: TASK_ID, number: 6, title: "From codex", status: "todo", parent: "tsk_parent" }, replayed: false },
+    )))
     const link = view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="task"]')!
+    const trigger = view.container.querySelector('[data-slot="collapsible-trigger"]')!
     const plain = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })
     link.dispatchEvent(plain)
-    expect(task).toHaveBeenCalledWith(TASK_ID)
-    expect(plain.defaultPrevented).toBe(true)
-    const modified = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, metaKey: true })
-    link.dispatchEvent(modified)
-    expect(task).toHaveBeenCalledTimes(1)
-    expect(modified.defaultPrevented).toBe(false)
+    expect(plain.defaultPrevented).toBe(false)
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    trigger.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }))
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
   })
 
   test("a refused task_start shows the refusal under the tool's own title, with the task linked", () => {
     const view = mount(toolPart("mcp__claxedo__task_start", {
       status: "error",
       input: { task: TASK_ID, preset: "Alt voice", intent: "mcp" },
-      error: "Starting a task's session from inside a session needs the account setting that lets agents act on other machines",
+      error: "No preset is named Nonexistent preset. The presets are: tpr_1 (Alt voice).",
       time: { start: 1, end: 2 },
     }))
     const card = view.container.querySelector('[data-kind="tool-error-card"]')
@@ -143,7 +140,7 @@ describe("a first-party Claxedo tool renders as its own card", () => {
     const subtitle = card?.querySelector<HTMLAnchorElement>('a[data-slot="basic-tool-tool-subtitle"]')
     expect(subtitle?.getAttribute("href")).toBe(`/tasks/${encodeURIComponent(TASK_ID)}`)
     open(view)
-    expect(card?.textContent).toContain("needs the account setting that lets agents act on other machines")
+    expect(card?.textContent).toContain("No preset is named Nonexistent preset. The presets are: tpr_1 (Alt voice).")
     expect(card?.textContent).not.toContain("mcp__claxedo__task_start")
   })
 

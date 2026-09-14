@@ -16,22 +16,19 @@ const STATUS_ICONS: Record<string, IconProps["name"]> = {
 }
 
 /**
- * A link in a tool row: an anchor, so cmd/middle-click reach the browser's own
- * new-tab behaviour, that otherwise hands the open to the surface's navigator
- * when the surface gave one. It stops the click so the row does not toggle.
+ * A link in a tool row: a plain anchor to the surface's own route for the task
+ * or session, so the app's router takes the click and its route sync opens the
+ * page, while cmd/middle-click keep the browser's new-tab behaviour. The click
+ * is stopped so the row it sits in does not toggle. The data context's
+ * `navigateToSession` is deliberately not used: a pane that never wired it
+ * still defines the function, and taking the click there went nowhere.
  */
 function CardLink(props: { link: ClaxedoLink; slot: string; class?: string }) {
   const data = useData()
   const href = () =>
     props.link.kind === "task" ? data.taskHref?.(props.link.id) : data.sessionHref?.(props.link.id)
-  const navigate = () => (props.link.kind === "task" ? data.navigateToTask : data.navigateToSession)
   const activate = (event: MouseEvent) => {
     event.stopPropagation()
-    if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-    const go = navigate()
-    if (!go) return
-    event.preventDefault()
-    go(props.link.id)
   }
   return (
     <Show
