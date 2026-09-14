@@ -39,6 +39,7 @@ const WINDOWS_PREFIXES = [
   "packages/agent-sdk-runtime/",
   "packages/claxedo-desktop/",
   "packages/claxedo-host-connector/",
+  "packages/claxedo-host-serving/",
   "packages/claxedo-local-server/",
   "packages/claxedo-server/",
   "packages/claxedo-server-core/",
