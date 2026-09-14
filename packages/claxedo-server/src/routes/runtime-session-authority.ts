@@ -27,8 +27,6 @@ import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { isOwnerGrantToken, verifyOwnerGrant, type OwnerGrantScope } from "../session/owner-grant"
 
 const bodyLimitBytes = 16 * 1024
 const streamLeaseIssuer = "claxedo-control-plane"
@@ -56,6 +54,19 @@ type RuntimeSessionAuthorityPort = Pick<
 
 /** The workspace's owner as the authority records them now, or nothing for a workspace that has none. */
 export type ResolveWorkspaceOwner = (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
+
+/**
+ * How a plane that mints owner grants recognises and verifies one. Supplied
+ * by the composition that mints them; a plane without it accepts none, and
+ * carries none of the pass family in its closure.
+ */
+export type OwnerGrantProof = {
+  /** Whether a bearer names the owner-grant audience, read without verifying: which verifier to run, not whether to trust it. */
+  names(token: string): boolean
+  /** The grant's scope; rejects a bearer that does not verify, is expired, or was revoked. */
+  verify(token: string): Promise<{ userId: string; actorId: string; orgId: string; workspaceId: string }>
+  resolveWorkspaceOwner: ResolveWorkspaceOwner
+}
 
 /**
  * How the runtime holding a lease proved its identity, and therefore what a
@@ -189,11 +200,7 @@ export type RuntimeSessionAuthorityOptions = {
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
   env?: Record<string, string | undefined>
-  /** What makes an owner grant a proof here; a plane without it accepts none. */
-  resolveWorkspaceOwner?: ResolveWorkspaceOwner
-  /** Where a revoked owner grant is refused before its expiry. */
-  sandboxPasses?: Pick<SandboxPassRegister, "revoked">
-  verifyOwnerGrant?: (token: string) => Promise<OwnerGrantScope>
+  ownerGrants?: OwnerGrantProof
   verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
   mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyStreamLease?: (lease: string) => Promise<SessionStreamLeaseClaims>
@@ -285,17 +292,16 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     return context.json({ allowed: true })
   }
 
-  const verifyOwnerGrantProof = options.verifyOwnerGrant
-    ?? ((token: string) => verifyOwnerGrant(token, env, options.sandboxPasses ? { revoked: options.sandboxPasses.revoked } : {}))
+  const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
 
   async function verifySessionProof(context: Context, request: SessionAuthorityRequest) {
     const { sessionId, action, lease, turnId, turnLeaseId, fencingToken } = request
     let claims: SessionStreamLeaseClaims
     let ownedTurn: TurnLeaseClaims | undefined
     const bearer = bearerToken(context.req.header("authorization") ?? null)
-    if (bearer && isOwnerGrantToken(bearer) && !lease && !turnLeaseId) {
-      const grant = await verifyOwnerGrantProof(bearer).catch(() => undefined)
-      if (!grant || !options.resolveWorkspaceOwner || (await ownerGrantDenial(options.resolveWorkspaceOwner, grant))) {
+    if (bearer && options.ownerGrants?.names(bearer) && !lease && !turnLeaseId) {
+      const grant = await options.ownerGrants.verify(bearer).catch(() => undefined)
+      if (!grant || (await ownerGrantDenial(resolveWorkspaceOwner, grant))) {
         return context.json({ error: OWNER_GRANT_INVALID }, 401)
       }
       claims = {
@@ -407,7 +413,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
-    const denial = rechecked ? undefined : await proofDenial(options, claims)
+    const denial = rechecked ? undefined : await proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims)
     if (denial) return context.json({ error: denial }, 401)
     if (!options.turnAuthority) {
       return context.json(
@@ -546,7 +552,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         const decision = await authorizeRuntimeSessionStream(
           {
             authority: options.authority,
-            ...(options.resolveWorkspaceOwner ? { resolveWorkspaceOwner: options.resolveWorkspaceOwner } : {}),
+            ...(resolveWorkspaceOwner ? { resolveWorkspaceOwner } : {}),
             ...(options.mintStreamLease ? { mintStreamLease: options.mintStreamLease } : {}),
             env,
           },

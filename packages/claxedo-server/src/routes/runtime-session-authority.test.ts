@@ -7,7 +7,7 @@ import { SessionTurnConflictError } from "@claxedo/server-core/platform/auth/ses
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal, ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { mintOwnerGrant } from "../session/owner-grant"
+import { createOwnerGrantProof, mintOwnerGrant } from "../session/owner-grant"
 import { mintTasksCapability } from "../tasks/capability"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 
@@ -422,7 +422,7 @@ describe("the owner grant as a session proof", () => {
       authority,
       turnAuthority,
       env,
-      ...(input.resolver === false ? {} : { resolveWorkspaceOwner, sandboxPasses: passes }),
+      ...(input.resolver === false ? {} : { ownerGrants: createOwnerGrantProof({ env, passes, resolveWorkspaceOwner }) }),
     })
     const grant = (overrides: Partial<typeof scope> = {}, minting: { now?: () => number; ttlSeconds?: number } = {}) =>
       mintOwnerGrant({ ...scope, ...overrides }, env, { register: passes, ...minting })
@@ -474,7 +474,7 @@ describe("the owner grant as a session proof", () => {
     }
   })
 
-  test("refuses a grant signed with another key, a Tasks capability, an expired grant, a revoked one, and any grant where no owner can be resolved", async () => {
+  test("refuses a grant signed with another key, a Tasks capability, an expired grant, a revoked one, and every grant on a plane that mints none", async () => {
     const { env, target, authority, resolveWorkspaceOwner, grant, passes } = await fixture()
     const foreignKey = await generateKeyPair("EdDSA", { extractable: true })
     const forged = await mintOwnerGrant(scope, {
@@ -494,10 +494,12 @@ describe("the owner grant as a session proof", () => {
     expect(resolveWorkspaceOwner).not.toHaveBeenCalled()
     expect(authority.authorizeRuntimeSession).not.toHaveBeenCalled()
 
+    // A plane composed without owner grants knows no such bearer: it is read as the relay proof it is not.
     const unresolvable = await fixture({ resolver: false })
     const refused = await request(unresolvable.target, (await unresolvable.grant()).token, { action: "read", sessionId: "ses_parent" })
     expect(refused.status).toBe(401)
-    expect(await refused.json()).toMatchObject({ error: { code: "owner_grant_invalid" } })
+    expect(await refused.json()).toMatchObject({ error: { code: "relay_host_token_invalid" } })
+    expect(unresolvable.authority.authorizeRuntimeSession).not.toHaveBeenCalled()
   })
 
   test("reserves a child for the owner only after the owner can read its parent", async () => {

@@ -22,7 +22,7 @@ import {
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
-import { mintOwnerGrant } from "../../session/owner-grant"
+import { createOwnerGrantProof, mintOwnerGrant } from "../../session/owner-grant"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
@@ -227,8 +227,7 @@ beforeAll(async () => {
       authority,
       turnAuthority: authority,
       env: { ...signingEnv, CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(relayKey.publicKey) },
-      resolveWorkspaceOwner: async (workspaceId) => records.owners[workspaceId],
-      sandboxPasses: passes,
+      ownerGrants: createOwnerGrantProof({ env: signingEnv, passes, resolveWorkspaceOwner: async (workspaceId) => records.owners[workspaceId] }),
     }),
   )
 

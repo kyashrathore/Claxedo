@@ -30,6 +30,7 @@ import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-r
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { createOwnerGrantProof } from "../../session/owner-grant"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import {
   UserDeployedIdentityAdmissionRoutes,
@@ -411,9 +412,14 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         authority: plane.runtimeSessionAuthority,
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
         ...(services.authority?.resolveWorkspaceOwner
-          ? { resolveWorkspaceOwner: services.authority.resolveWorkspaceOwner.bind(services.authority) }
+          ? {
+              ownerGrants: createOwnerGrantProof({
+                env: plane.env,
+                ...(options.sandboxPasses ? { passes: options.sandboxPasses } : {}),
+                resolveWorkspaceOwner: services.authority.resolveWorkspaceOwner.bind(services.authority),
+              }),
+            }
           : {}),
-        ...(options.sandboxPasses ? { sandboxPasses: options.sandboxPasses } : {}),
         env: plane.env,
       }),
     )

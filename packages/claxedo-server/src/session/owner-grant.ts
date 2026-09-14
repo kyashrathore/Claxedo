@@ -3,6 +3,7 @@ import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capabi
 import { workspaceRuntimeOwnerGrantEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import type { OwnerGrantProof, ResolveWorkspaceOwner } from "../routes/runtime-session-authority"
 
 export const OWNER_GRANT_AUDIENCE = "workspace-runtime-owner" as const
 /** The one thing the grant permits: acting on the workspace's sessions as its owner. */
@@ -73,6 +74,19 @@ export async function verifyOwnerGrant(
     throw new Error("Owner grant scope is invalid")
   }
   return { userId, actorId, orgId, projectId, workspaceId }
+}
+
+/** The proof the session authority takes an owner grant as, over this deployment's key, register and owner rows. */
+export function createOwnerGrantProof(input: {
+  env: Record<string, string | undefined>
+  passes?: Pick<SandboxPassRegister, "revoked">
+  resolveWorkspaceOwner: ResolveWorkspaceOwner
+}): OwnerGrantProof {
+  return {
+    names: isOwnerGrantToken,
+    verify: (token) => verifyOwnerGrant(token, input.env, input.passes ? { revoked: input.passes.revoked } : {}),
+    resolveWorkspaceOwner: input.resolveWorkspaceOwner,
+  }
 }
 
 /** One cloud root as the workspace authority records it. */

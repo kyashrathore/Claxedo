@@ -55,7 +55,11 @@
     "waitForWorkspaceRuntimeServerPort",
     "workspaceRuntimeListenHostname",
     "workspaceRuntimeRoute",
-    "workspaceStorageRoot"
+    "workspaceStorageRoot",
+    "WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE",
+    "WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER",
+    "ownerGrantIdentity",
+    "ownerGrantIdentityFromEnv"
   ],
   "routePrefixes": [
     "/api/wr/health",
