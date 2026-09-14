@@ -107,8 +107,12 @@ export type ConnectorTransport = {
  * enrolled before it exists and never asks for a nonce.
  */
 export type MachineTransport = Omit<ConnectorTransport, "heartbeat"> & {
-  /** Claim the next serving generation; every earlier instance's beats are refused from then on. */
-  acquire: () => Promise<{ generation: number }>
+  /**
+   * Claim the next serving generation; every earlier instance's beats are
+   * refused from then on. `timeoutMs` bounds this one request below the
+   * transport's own bound, for a caller spending a retry budget.
+   */
+  acquire: (input?: { timeoutMs?: number }) => Promise<{ generation: number }>
   heartbeat: (input: MachineHeartbeatInput) => Promise<HeartbeatResponse>
 }
 
@@ -195,6 +199,9 @@ export type MachineConnectorOptions = CommonConnectorOptions & {
 }
 
 export type ConnectorOptions = AccountConnectorOptions | MachineConnectorOptions
+
+/** Machine mode: the deadline for the acquire request; account mode has no request this applies to. */
+export type StartInput = { acquireTimeoutMs?: number }
 
 export type ConnectorState =
   | { status: "idle" }
@@ -524,9 +531,9 @@ export function createHostConnector(options: ConnectorOptions) {
     void machineBeat(machine)
   }
 
-  const machineStart = async (machine: MachineConnectorOptions): Promise<ConnectorState> => {
+  const machineStart = async (machine: MachineConnectorOptions, input: StartInput): Promise<ConnectorState> => {
     try {
-      const acquired = await machine.transport.acquire()
+      const acquired = await machine.transport.acquire(input.acquireTimeoutMs === undefined ? undefined : { timeoutMs: input.acquireTimeoutMs })
       era++
       generation = acquired.generation
       state = {
@@ -640,8 +647,8 @@ export function createHostConnector(options: ConnectorOptions) {
       await this.beat()
     },
 
-    async start(): Promise<ConnectorState> {
-      if (options.mode === "machine") return await machineStart(options)
+    async start(input: StartInput = {}): Promise<ConnectorState> {
+      if (options.mode === "machine") return await machineStart(options, input)
       try {
         // Inside the try, not before it. Asking for the nonce is a call to the
         // control plane and fails for all the usual reasons — offline, 503, a

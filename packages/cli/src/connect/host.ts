@@ -9,6 +9,7 @@ import {
   decisionCode,
   HostedHttpError,
   HostedRequestTimeoutError,
+  MACHINE_REQUEST_TIMEOUT_MS,
   type FetchLike,
 } from "@claxedo/host-connector/machine-transport"
 import { createHostRuntimeListener, type HostRuntimeListener, type HostWorkspaceRuntimeOptions } from "@claxedo/host-serving/runtime"
@@ -39,7 +40,10 @@ export type HostDeps = {
   setTimeout: (fn: () => void, ms: number) => { cancel: () => void }
   /** Subscribe to the process's stop request; the returned function unsubscribes. */
   onStopSignal: (fn: (signal: string) => void) => () => void
+  /** Wall clock, for the persisted run record. */
   now: () => number
+  /** Monotonic milliseconds, for budgets: a wall clock stepped by NTP or a sleep would lengthen or cut them. */
+  monotonicNow: () => number
   sleep: (ms: number) => Promise<void>
   log: (line: string) => void
   pid: number
@@ -73,6 +77,7 @@ export function defaultHostDeps(): HostDeps {
       }
     },
     now: () => Date.now(),
+    monotonicNow: () => performance.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     log: (line) => console.log(line),
     pid: process.pid,
@@ -82,12 +87,13 @@ export function defaultHostDeps(): HostDeps {
 export const BEAT_INTERVAL_MS = Math.min(LEASE_TTL_MS / 3, 20_000)
 
 /**
- * Transport failures are retried until this much wall-clock time has passed
- * since the first attempt, then the process gives up with exit 1. Every
- * request the attempts make is bounded by the transport's own deadline, so
- * the last attempt overruns the budget by at most one request timeout.
+ * Transport failures are retried until this much time has passed since the
+ * first attempt, then the process gives up with exit 1. Each attempt is
+ * handed what is left of the budget as its request deadline, and no attempt
+ * starts with less than `MIN_ATTEMPT_BUDGET_MS`, so the budget is the bound.
  */
 export const BOOTSTRAP_RETRY_BUDGET_MS = 5 * 60_000
+export const MIN_ATTEMPT_BUDGET_MS = 1_000
 const RETRY_CAP_MS = 30_000
 
 const DECISION_STATUSES = new Set([400, 401, 403, 404, 409, 410])
@@ -101,24 +107,30 @@ export function transientBootstrapFailure(error: unknown) {
 }
 
 export async function withBootstrapRetry<T>(
-  deps: Pick<HostDeps, "sleep" | "now" | "log">,
+  deps: Pick<HostDeps, "sleep" | "monotonicNow" | "log">,
   label: string,
-  attempt: () => Promise<T>,
+  attempt: (budget: { timeoutMs: number }) => Promise<T>,
   transient: (error: unknown) => boolean = transientBootstrapFailure,
 ): Promise<T> {
-  const started = deps.now()
+  const started = deps.monotonicNow()
   const deadline = started + BOOTSTRAP_RETRY_BUDGET_MS
+  const giveUp = (error: unknown) =>
+    new Error(`${label} failed for ${Math.round((deps.monotonicNow() - started) / 1000)}s: ${errorMessage(error)}`, { cause: error })
   let delay = 1_000
+  let lastError: unknown
   for (;;) {
+    const remaining = deadline - deps.monotonicNow()
+    // Reached only when a sleep overshot: the pause below always leaves at least the minimum.
+    if (remaining < MIN_ATTEMPT_BUDGET_MS) throw giveUp(lastError)
     try {
-      return await attempt()
+      return await attempt({ timeoutMs: remaining })
     } catch (error) {
       if (!transient(error)) throw error
-      const remaining = deadline - deps.now()
-      if (remaining <= 0) {
-        throw new Error(`${label} failed for ${Math.round((deps.now() - started) / 1000)}s: ${errorMessage(error)}`, { cause: error })
-      }
-      const wait = Math.min(delay, remaining)
+      lastError = error
+      const left = deadline - deps.monotonicNow()
+      // A retry is a pause and then an attempt with the minimum; anything less is over.
+      if (left <= MIN_ATTEMPT_BUDGET_MS) throw giveUp(error)
+      const wait = Math.min(delay, left - MIN_ATTEMPT_BUDGET_MS)
       deps.log(`${label} failed (${errorMessage(error)}); retrying in ${wait / 1000}s`)
       await deps.sleep(wait)
       delay = Math.min(delay * 2, RETRY_CAP_MS)
@@ -353,8 +365,8 @@ export async function runHost(input: HostRunInput): Promise<number> {
     const started = await withBootstrapRetry(
       deps,
       "acquire",
-      async () => {
-        const result = await connector.start()
+      async ({ timeoutMs }) => {
+        const result = await connector.start({ acquireTimeoutMs: Math.min(MACHINE_REQUEST_TIMEOUT_MS, timeoutMs) })
         if (result.status === "stopped" && result.reason === "error") throw new StartFailure(result.detail)
         return result
       },

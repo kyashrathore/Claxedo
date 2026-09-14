@@ -213,7 +213,7 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   const nonce = options.nonce ?? randomNonce
   const timeoutMs = options.requestTimeoutMs ?? MACHINE_REQUEST_TIMEOUT_MS
 
-  const signedPost = async (pathname: string, body: Record<string, unknown>) => {
+  const signedPost = async (pathname: string, body: Record<string, unknown>, requestTimeoutMs = timeoutMs) => {
     const url = controlPlaneRequestUrl(options.controlPlaneUrl, pathname)
     const bodyText = JSON.stringify({ enrollmentId: options.enrollmentId, hostId: options.hostId, ...body })
     // Fresh per request, never reused: the nonce is single-use at the
@@ -233,7 +233,7 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
       [MACHINE_REQUEST_HEADERS.ts]: String(ts),
       [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
       [MACHINE_REQUEST_HEADERS.signature]: signature,
-    }, timeoutMs)
+    }, requestTimeoutMs)
   }
 
   return {
@@ -243,8 +243,12 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
     enroll: async () => {
       throw new Error("a machine-signed transport is already enrolled; enrollment is by invitation")
     },
-    acquire: async () => {
-      const value = await signedPost(HOST_ENROLLMENT_ACQUIRE_PATH, { keyVersion: options.keyVersion })
+    acquire: async (input) => {
+      const value = await signedPost(
+        HOST_ENROLLMENT_ACQUIRE_PATH,
+        { keyVersion: options.keyVersion },
+        input?.timeoutMs === undefined ? timeoutMs : Math.min(timeoutMs, input.timeoutMs),
+      )
       if (!isPlainRecord(value)) throw new Error("control plane returned no acquire body")
       return { generation: requireNumber(value.generation, "generation") }
     },

@@ -3,6 +3,7 @@ import os from "node:os"
 import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
 import { newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { REDEEM_REQUEST_TIMEOUT_MS } from "@claxedo/host-connector/machine-transport"
 import { config } from "../config"
 import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
@@ -119,7 +120,7 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
     })
   }
   const pending = state
-  const outcome = await withBootstrapRetry(deps.host, "redeem", () =>
+  const outcome = await withBootstrapRetry(deps.host, "redeem", ({ timeoutMs }) =>
     redeemInvitation({
       tokenFile,
       store: deps.store,
@@ -127,6 +128,7 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
       keys,
       fetch: deps.host.fetch,
       displayName: args.name ?? deps.displayName,
+      requestTimeoutMs: Math.min(REDEEM_REQUEST_TIMEOUT_MS, timeoutMs),
     }),
   )
   const enrollment = outcome.state.enrollment

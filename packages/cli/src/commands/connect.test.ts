@@ -180,6 +180,7 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
       return () => undefined
     },
     now: () => Date.now(),
+    monotonicNow: () => performance.now(),
     sleep: async () => undefined,
     log: (line) => lines.push(line),
     pid: process.pid,
@@ -779,45 +780,69 @@ describe("exit-code mapping and bootstrap retry", () => {
     expect(transientBootstrapFailure(new Error("invitation token is not of the form"))).toBe(false)
   })
 
-  test("retries with doubling delays until the five-minute budget, then fails with the last error", async () => {
+  test("retries with doubling delays, each attempt given the remaining budget as its deadline, until less than a second is left", async () => {
     let clock = 0
     const delays: number[] = []
-    const attempts: number[] = []
+    const attempts: Array<{ at: number; timeoutMs: number }> = []
     await expect(
       withBootstrapRetry(
-        { now: () => clock, sleep: async (ms) => { delays.push(ms); clock += ms }, log: () => undefined },
+        { monotonicNow: () => clock, sleep: async (ms) => { delays.push(ms); clock += ms }, log: () => undefined },
         "redeem",
-        async () => {
-          attempts.push(clock)
+        async ({ timeoutMs }) => {
+          attempts.push({ at: clock, timeoutMs })
           throw new HostedHttpError(503, { error: { code: "deploying" } })
         },
       ),
-    ).rejects.toThrow(/^redeem failed for \d+s: HOSTED_HTTP 503/)
+    ).rejects.toThrow(/^redeem failed for 299s: HOSTED_HTTP 503/)
     expect(delays.slice(0, 6)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
-    expect(delays.reduce((sum, ms) => sum + ms, 0)).toBe(5 * 60_000)
-    expect(attempts.at(-1)).toBe(5 * 60_000)
+    expect(attempts.map((attempt) => attempt.timeoutMs)).toEqual(attempts.map((attempt) => 5 * 60_000 - attempt.at))
+    expect(attempts.at(-1)!.at, "the last sleep was cut to leave exactly the minimum, and that attempt ran").toBe(5 * 60_000 - 1_000)
+    expect(attempts.at(-1)!.timeoutMs).toBe(1_000)
+    expect(delays.at(-1)).toBeLessThan(30_000)
+    expect(clock, "nothing ran past the budget").toBeLessThanOrEqual(5 * 60_000)
   })
 
-  test("the budget is wall-clock across attempts: slow attempts eat it, and a request that never answers is transient", async () => {
+  test("the budget is wall-clock across attempts; a request that runs to its deadline never overruns the budget", async () => {
     let clock = 0
-    const delays: number[] = []
-    const attempts: number[] = []
+    const attempts: Array<{ at: number; timeoutMs: number }> = []
     const error = await withBootstrapRetry(
-      { now: () => clock, sleep: async (ms) => { delays.push(ms); clock += ms }, log: () => undefined },
+      { monotonicNow: () => clock, sleep: async (ms) => { clock += ms }, log: () => undefined },
       "acquire",
-      async () => {
-        attempts.push(clock)
-        // Each attempt is one request abandoned at the transport's 15 s deadline.
-        clock += 15_000
-        throw new HostedRequestTimeoutError("/api/claxedo/host/enrollments/acquire", 15_000)
+      async ({ timeoutMs }) => {
+        attempts.push({ at: clock, timeoutMs })
+        // The request honours the deadline it was given, capped at the transport's own 15 s.
+        const ran = Math.min(15_000, timeoutMs)
+        clock += ran
+        throw new HostedRequestTimeoutError("/api/claxedo/host/enrollments/acquire", ran)
       },
     ).catch((e: unknown) => e)
 
-    expect(String(error)).toMatch(/^Error: acquire failed for 3\d\ds: control plane did not answer POST/)
+    expect(String(error)).toMatch(/^Error: acquire failed for 300s: control plane did not answer POST/)
     expect(transientBootstrapFailure(new HostedRequestTimeoutError("/p", 1))).toBe(true)
-    expect(attempts.at(-1)! + 15_000, "the last attempt started inside the budget and overran it by one request").toBeGreaterThanOrEqual(5 * 60_000)
-    expect(attempts.at(-1)!).toBeLessThan(5 * 60_000)
-    expect(delays.reduce((sum, ms) => sum + ms, 0) + attempts.length * 15_000).toBeGreaterThanOrEqual(5 * 60_000)
+    for (const attempt of attempts) {
+      expect(attempt.timeoutMs, "the deadline handed to the request is what is left of the budget").toBe(5 * 60_000 - attempt.at)
+      expect(attempt.at + Math.min(15_000, attempt.timeoutMs)).toBeLessThanOrEqual(5 * 60_000)
+    }
+    expect(attempts.at(-1)!.timeoutMs).toBeGreaterThanOrEqual(1_000)
+    expect(clock).toBe(5 * 60_000)
+  })
+
+  test("an attempt that would start with less than a second of budget is not started", async () => {
+    let clock = 0
+    const attempts: number[] = []
+    const error = await withBootstrapRetry(
+      { monotonicNow: () => clock, sleep: async (ms) => { clock += ms }, log: () => undefined },
+      "acquire",
+      async () => {
+        attempts.push(clock)
+        // A slow first request that comes back with 900 ms of budget left.
+        clock = 5 * 60_000 - 900
+        throw new HostedHttpError(503, {})
+      },
+    ).catch((e: unknown) => e)
+
+    expect(attempts).toEqual([0])
+    expect(String(error)).toMatch(/^Error: acquire failed for 299s: HOSTED_HTTP 503/)
   })
 
   test("the beat interval is a third of the lease, capped at 20 s", () => {

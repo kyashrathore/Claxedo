@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { asRecordOrEmpty, isNonNegativeSafeInteger, nonEmptyString } from "@claxedo/helpers/guards"
 
 /**
  * Whether the Claxedo desktop app's local daemon is running on this machine.
@@ -30,12 +30,8 @@ export function desktopDaemonDiscoveryFiles(env: NodeJS.ProcessEnv, homedir: str
   return [...new Set(dirs)].map((dir) => path.join(dir, "local-daemon.json"))
 }
 
-function positiveInteger(value: unknown, max = Number.MAX_SAFE_INTEGER) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= max ? value : undefined
-}
-
-function nonEmptyString(value: unknown) {
-  return typeof value === "string" && value.length > 0 ? value : undefined
+function integerBetween(value: unknown, min: number, max: number) {
+  return isNonNegativeSafeInteger(value) && value >= min && value <= max ? value : undefined
 }
 
 export function parseDesktopDaemonDiscovery(text: string): DesktopDaemonDiscovery | undefined {
@@ -46,11 +42,11 @@ export function parseDesktopDaemonDiscovery(text: string): DesktopDaemonDiscover
     return undefined
   }
   const record = asRecordOrEmpty(parsed)
-  const pid = positiveInteger(record.pid)
-  const port = positiveInteger(record.port, 65_535)
+  const pid = integerBetween(record.pid, 1, Number.MAX_SAFE_INTEGER)
+  const port = integerBetween(record.port, 1, 65_535)
   const token = nonEmptyString(record.token)
   const generation = nonEmptyString(record.generation)
-  const protocol = positiveInteger(record.protocol)
+  const protocol = integerBetween(record.protocol, 1, Number.MAX_SAFE_INTEGER)
   if (record.service !== DAEMON_SERVICE || !pid || !port || !token || !generation || !protocol) return undefined
   return { pid, port, token, generation, protocol }
 }
