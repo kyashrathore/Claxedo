@@ -67,7 +67,7 @@ type RelayHostTunnelWebSocketData = {
   kind: "host-tunnel"
   hostId: string
   workspaceIds: string[]
-  /** Fence pair from the admitting Host Tunnel Token; absent for tokens without one. */
+  /** Fence pair from the last verified Host Tunnel Token (connect or registration update); absent for tokens without one. */
   enrollmentId?: string
   generation?: number
   pending: Map<string, PendingTunnelHttpResponse>
@@ -770,9 +770,9 @@ async function audit(
  * sampled, so an operator can read a fence decision off the audit log
  * without reproducing the admission.
  */
-async function denyHostTunnel(
+async function auditHostTunnelDenial(
   options: WorkspaceRelayOptions,
-  input: { code: string; message: string; status: number; hostId: string; workspaceId?: string },
+  input: { code: string; hostId: string; workspaceId?: string },
 ) {
   await options.audit?.({
     action: "host_tunnel.denied",
@@ -783,7 +783,28 @@ async function denyHostTunnel(
     method: "WEBSOCKET",
     path: `/host-tunnels/${input.hostId}`,
   })
+}
+
+async function denyHostTunnel(
+  options: WorkspaceRelayOptions,
+  input: { code: string; message: string; status: number; hostId: string; workspaceId?: string },
+) {
+  await auditHostTunnelDenial(options, input)
   return jsonError(input.code, input.message, input.status)
+}
+
+/**
+ * The socket-level form of `denyHostTunnel`, for a fence decision reached
+ * after the upgrade: at open, or on a registration update. 1012 is the code
+ * the host treats as "reconnect"; every other refusal closes 1008.
+ */
+async function refuseHostTunnelSocket(
+  options: WorkspaceRelayOptions,
+  ws: RelayHostTunnelWebSocket,
+  input: { code: string; close: 1008 | 1012; reason: string; workspaceId?: string },
+) {
+  await auditHostTunnelDenial(options, { code: input.code, hostId: ws.data.hostId, ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}) })
+  closeWebSocket(ws, input.close, input.reason, input.close)
 }
 
 // Per-tunnel-identity debounce of host_tunnel.connected / host_tunnel.disconnected
@@ -1216,7 +1237,7 @@ function watchHostGeneration(
   bunOptions: WorkspaceRelayBunOptions,
 ) {
   const intervalMs = bunOptions.hostGenerationCheckIntervalMs ?? HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT
-  if (!options.resolveHostGeneration || ws.data.generation === undefined || intervalMs <= 0) return
+  if (ws.data.generationCheckTimer || !options.resolveHostGeneration || ws.data.generation === undefined || intervalMs <= 0) return
   const graceAttempts = bunOptions.hostGenerationOutageGraceAttempts ?? HOST_GENERATION_OUTAGE_GRACE_ATTEMPTS_DEFAULT
   ws.data.generationCheckTimer = setInterval(() => {
     void checkHostTunnelGeneration(options.resolveHostGeneration, {
@@ -1383,21 +1404,19 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
   /**
    * Points every identity in `workspaceIds` at `ws`. An incumbent that loses
    * its last identity is closed as replaced; one that keeps another workspace
-   * stays up for it. Returns false — closing `ws` — when an incumbent outranks
-   * the candidate (`hostTunnelIncumbentOutranks`), so a fenced socket is never
-   * displaced by a lower or absent generation even if both sockets were
-   * admitted before either opened.
+   * stays up for it. Returns the first workspace whose incumbent outranks the
+   * candidate (`hostTunnelIncumbentOutranks`) with no routing entry touched,
+   * so a fenced socket is never displaced by a lower or absent generation
+   * even if both sockets were admitted before either opened; `undefined`
+   * once every identity points at `ws`.
    */
-  function claimTunnelIdentities(ws: RelayHostTunnelWebSocket, workspaceIds: string[]) {
+  function claimTunnelIdentities(ws: RelayHostTunnelWebSocket, workspaceIds: string[]): string | undefined {
     const hostId = ws.data.hostId
     const displaced = new Set<RelayHostTunnelWebSocket>()
     for (const workspaceId of workspaceIds) {
       const previous = hostTunnels.get(tunnelKey(hostId, workspaceId))
       if (!previous || previous === ws) continue
-      if (outranks(previous, ws.data.generation)) {
-        closeWebSocket(ws, 1008, "Host tunnel generation was superseded", 1008)
-        return false
-      }
+      if (outranks(previous, ws.data.generation)) return workspaceId
       displaced.add(previous)
     }
     for (const workspaceId of workspaceIds) hostTunnels.set(tunnelKey(hostId, workspaceId), ws)
@@ -1416,7 +1435,75 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       clearHostGenerationWatcher(previous.data)
       closeWebSocket(previous, 1012, "Host tunnel replaced by a newer connection", 1012)
     }
-    return true
+    return undefined
+  }
+
+  /**
+   * A registration update is re-admitted the way a connect is, with the
+   * socket's own claims as the first incumbent: the update's token must not
+   * be outranked by the generation the socket already holds, must pass the
+   * control-plane check, and must not be outranked by any incumbent for a
+   * workspace it claims. The socket then carries the update's verified claims
+   * and, if it became fenced, starts the periodic check. Between the awaits
+   * the socket may have lost every identity or closed; the update is then
+   * moot and dropped.
+   */
+  async function applyRegistrationUpdate(hostSocket: RelayHostTunnelWebSocket, workspaceIds: string[], token: string) {
+    const hostId = hostSocket.data.hostId
+    const authorizationRequest = new Request(
+      `http://relay.local/host-tunnels/${encodeURIComponent(hostId)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    )
+    const authorization = await authorizeHostTunnel(options, bunOptions, authorizationRequest, { hostId, workspaceIds })
+    if (!authorization.authorized) {
+      await refuseHostTunnelSocket(options, hostSocket, {
+        code: "host_tunnel_token_invalid",
+        close: 1008,
+        reason: "Host tunnel registration update denied",
+      })
+      return
+    }
+    const claims = authorization.claims
+    if (hostTunnelIncumbentOutranks(hostSocket.data.generation, claims?.generation)) {
+      await refuseHostTunnelSocket(options, hostSocket, {
+        code: "host_generation_superseded",
+        close: 1008,
+        reason: "Host tunnel registration update superseded",
+      })
+      return
+    }
+    const generation = await checkHostTunnelGeneration(options.resolveHostGeneration, {
+      enrollment_id: claims?.enrollment_id,
+      generation: claims?.generation,
+    })
+    if (!generation.ok) {
+      await refuseHostTunnelSocket(options, hostSocket, {
+        code: generation.code,
+        close: generation.retryable ? 1012 : 1008,
+        reason: generation.retryable ? "Host generation check unavailable" : generation.reason,
+      })
+      return
+    }
+    const owned = ownedWorkspaceIds(hostTunnels, hostSocket)
+    if (owned.length === 0 || hostSocket.readyState !== WebSocket.OPEN) return
+    const released = owned.filter((workspaceId) => !workspaceIds.includes(workspaceId))
+    for (const workspaceId of released) hostTunnels.delete(tunnelKey(hostId, workspaceId))
+    if (released.length) options.directory?.disconnectHost(hostId, released)
+    hostSocket.data.enrollmentId = claims?.enrollment_id
+    hostSocket.data.generation = claims?.generation
+    const outranked = claimTunnelIdentities(hostSocket, workspaceIds)
+    if (outranked) {
+      await refuseHostTunnelSocket(options, hostSocket, {
+        code: "host_generation_superseded",
+        close: 1008,
+        reason: "Host tunnel generation was superseded",
+        workspaceId: outranked,
+      })
+      return
+    }
+    hostSocket.data.workspaceIds = workspaceIds
+    options.directory?.registerHostTunnel({ hostId, workspaceIds })
+    watchHostGeneration(hostSocket, options, bunOptions)
   }
 
   function pruneReconnects(tracker: HostTunnelRegistrationTracker, now: number) {
@@ -1687,40 +1774,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             options.directory?.recordPong(ws.data.hostId, ownedWorkspaceIds(hostTunnels, ws))
           }
           if (parsed?.type === "host.registration.update") {
-            const update = parsed
-            const workspaceIds = [...new Set(update.workspace_ids)]
             const hostSocket = ws
-            const hostId = hostSocket.data.hostId
-            const authorizationRequest = new Request(
-              `http://relay.local/host-tunnels/${encodeURIComponent(hostId)}`,
-              { headers: { authorization: `Bearer ${update.token}` } },
-            )
-            void authorizeHostTunnel(options, bunOptions, authorizationRequest, {
-              hostId,
-              workspaceIds,
-            }).then((authorization) => {
-              if (!authorization.authorized) {
-                closeWebSocket(hostSocket, 1008, "Host tunnel registration update denied", 1008)
-                return
-              }
-              const generation = authorization.claims?.generation
-              if (hostSocket.data.generation !== undefined && generation !== undefined && generation < hostSocket.data.generation) {
-                closeWebSocket(hostSocket, 1008, "Host tunnel registration update superseded", 1008)
-                return
-              }
-              const owned = ownedWorkspaceIds(hostTunnels, hostSocket)
-              if (owned.length === 0 || hostSocket.readyState !== WebSocket.OPEN) return
-              const released = owned.filter((workspaceId) => !workspaceIds.includes(workspaceId))
-              for (const workspaceId of released) hostTunnels.delete(tunnelKey(hostId, workspaceId))
-              if (released.length) options.directory?.disconnectHost(hostId, released)
-              if (generation !== undefined && (hostSocket.data.generation === undefined || generation > hostSocket.data.generation)) {
-                hostSocket.data.generation = generation
-                hostSocket.data.enrollmentId = authorization.claims?.enrollment_id
-              }
-              if (!claimTunnelIdentities(hostSocket, workspaceIds)) return
-              hostSocket.data.workspaceIds = workspaceIds
-              options.directory?.registerHostTunnel({ hostId, workspaceIds })
-            }).catch(() => closeWebSocket(hostSocket, 1008, "Host tunnel registration update denied", 1008))
+            void applyRegistrationUpdate(hostSocket, [...new Set(parsed.workspace_ids)], parsed.token)
+              .catch(() => closeWebSocket(hostSocket, 1008, "Host tunnel registration update denied", 1008))
             return
           }
           if (parsed?.type === "error") {
@@ -1859,7 +1915,16 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       },
       open(ws: RelayWebSocket) {
         if (isHostTunnelSocket(ws)) {
-          if (!claimTunnelIdentities(ws, ws.data.workspaceIds)) return
+          const outranked = claimTunnelIdentities(ws, ws.data.workspaceIds)
+          if (outranked) {
+            void refuseHostTunnelSocket(options, ws, {
+              code: "host_generation_superseded",
+              close: 1008,
+              reason: "Host tunnel generation was superseded",
+              workspaceId: outranked,
+            })
+            return
+          }
           options.directory?.registerHostTunnel({
             hostId: ws.data.hostId,
             workspaceIds: ws.data.workspaceIds,

@@ -2967,6 +2967,26 @@ describe("workspace relay Cloudflare room host generation fence", () => {
     }))
   }
 
+  async function admitUnfenced(harness: Awaited<ReturnType<typeof roomHarness>>) {
+    return await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: { upgrade: "websocket", authorization: `Bearer ${await harness.hostTunnelToken()}` },
+    }))
+  }
+
+  /**
+   * A control plane whose serving generation is whatever the caller holds,
+   * as long as it is at least `floor`: every token passes the admission
+   * check, so the ordering between sockets is what a test observes, and
+   * raising `floor` supersedes every socket below it.
+   */
+  function acceptingFrom(state: { floor: number }): HostGenerationLookup {
+    return async ({ generation }) => current(Math.max(generation, state.floor))
+  }
+
+  function updateMessage(token: string, workspaceIds: string[]) {
+    return JSON.stringify({ type: "host.registration.update", protocol: 1, workspace_ids: workspaceIds, token })
+  }
+
   function fakeAlarms() {
     const scheduled: number[] = []
     let currentAlarm: number | null = null
@@ -3058,8 +3078,8 @@ describe("workspace relay Cloudflare room host generation fence", () => {
     expect(lookups).toEqual([2, 3])
   })
 
-  test("a lower-generation socket never replaces a higher-generation incumbent, even without a resolver", async () => {
-    const harness = await roomHarness()
+  test("a lower-generation socket never replaces a higher-generation incumbent the control plane still accepts", async () => {
+    const harness = await roomHarness({ resolveHostGeneration: acceptingFrom({ floor: 0 }) })
     expect((await admit(harness, 3)).status).toBe(101)
     const lower = await admit(harness, 2)
     expect(lower.status).toBe(403)
@@ -3072,19 +3092,30 @@ describe("workspace relay Cloudflare room host generation fence", () => {
     expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
   })
 
-  test("a token without a generation never displaces a fenced incumbent, with or without a resolver", async () => {
-    for (const resolver of [undefined, async () => current(3)]) {
-      const harness = await roomHarness(resolver ? { resolveHostGeneration: resolver } : {})
-      expect((await admit(harness, 3)).status).toBe(101)
-      const unfenced = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
-        headers: { upgrade: "websocket", authorization: `Bearer ${await harness.hostTunnelToken()}` },
-      }))
-      expect(unfenced.status).toBe(403)
-      await expect(unfenced.json()).resolves.toMatchObject({ error: { code: "host_generation_superseded" } })
-      expect(harness.socket(0).closed).toBeUndefined()
-      expect(harness.pairs).toHaveLength(1)
-      expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
-    }
+  test("a token without a generation never displaces a fenced incumbent", async () => {
+    const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
+    expect((await admit(harness, 3)).status).toBe(101)
+    const unfenced = await admitUnfenced(harness)
+    expect(unfenced.status).toBe(403)
+    await expect(unfenced.json()).resolves.toMatchObject({ error: { code: "host_generation_superseded" } })
+    expect(harness.socket(0).closed).toBeUndefined()
+    expect(harness.pairs).toHaveLength(1)
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
+  })
+
+  test("without a resolver, a token without a generation is admitted and one with a generation is refused as unverifiable", async () => {
+    const harness = await roomHarness()
+    expect((await admitUnfenced(harness)).status).toBe(101)
+    const fenced = await admit(harness, 3)
+    expect(fenced.status).toBe(403)
+    await expect(fenced.json()).resolves.toEqual({
+      error: {
+        code: "host_generation_unverifiable",
+        message: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
+      },
+    })
+    expect(harness.socket(0).closed).toBeUndefined()
+    expect(harness.pairs).toHaveLength(1)
   })
 
   test("an unfenced incumbent is displaced by any later token, fenced or not", async () => {
@@ -3104,32 +3135,115 @@ describe("workspace relay Cloudflare room host generation fence", () => {
   test("refuses a registration update whose token carries a lower generation than the socket", async () => {
     const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
     expect((await admit(harness, 3)).status).toBe(101)
-    ;harness.socket(0).message(JSON.stringify({
-      type: "host.registration.update",
-      protocol: 1,
-      workspace_ids: ["ws_1", "ws_2"],
-      token: await harness.fencedHostTunnelToken(2, ["ws_1", "ws_2"]),
-    }))
+    ;harness.socket(0).message(updateMessage(await harness.fencedHostTunnelToken(2, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
     await waitForClosed(harness.socket(0))
     expect(harness.socket(0).closed).toEqual({ code: 1008, reason: "Host tunnel registration update superseded" })
     expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0 })
   })
 
+  test("refuses a registration update whose token carries no generation on a fenced socket", async () => {
+    const harness = await roomHarness({ hibernation: true, resolveHostGeneration: async () => current(3) })
+    expect((await admit(harness, 3)).status).toBe(101)
+    await harness.room.webSocketMessage(harness.socket(0), updateMessage(await harness.hostTunnelToken(["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    expect(harness.socket(0).closed).toEqual({ code: 1008, reason: "Host tunnel registration update superseded" })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0 })
+    expect(harness.socket(0).attachment).toMatchObject({ workspaceIds: ["ws_1"], generation: 3 })
+  })
+
   test("preserves the socket's generation through an equal-generation registration update", async () => {
     const harness = await roomHarness({ hibernation: true, resolveHostGeneration: async () => current(3) })
     expect((await admit(harness, 3)).status).toBe(101)
-    await harness.room.webSocketMessage(harness.socket(0), JSON.stringify({
-      type: "host.registration.update",
-      protocol: 1,
-      workspace_ids: ["ws_1", "ws_2"],
-      token: await harness.fencedHostTunnelToken(3, ["ws_1", "ws_2"]),
-    }))
+    await harness.room.webSocketMessage(harness.socket(0), updateMessage(await harness.fencedHostTunnelToken(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
     expect(harness.socket(0).closed).toBeUndefined()
     expect(harness.socket(0).attachment).toMatchObject({
       workspaceIds: ["ws_1", "ws_2"],
       enrollmentId: "enr_1",
       generation: 3,
     })
+  })
+
+  test("a higher-generation registration update replaces the socket's claims", async () => {
+    const control = { floor: 0 }
+    const harness = await roomHarness({
+      resolveHostGeneration: acceptingFrom(control),
+      hostGenerationCheckIntervalMs: 10,
+    })
+    expect((await admit(harness, 3)).status).toBe(101)
+    ;harness.socket(0).message(updateMessage(await harness.fencedHostTunnelToken(4, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    await waitFor("update applied", () => harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })?.workspaceIds.join() === "ws_1,ws_2")
+    // Generation 3 is superseded now; the socket survives the checks only because it holds 4.
+    control.floor = 4
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(harness.socket(0).closed).toBeUndefined()
+    control.floor = 5
+    await waitFor("superseded close", () => harness.socket(0).closed !== undefined)
+    expect(harness.socket(0).closed).toEqual({ code: 1008, reason: "Host tunnel generation was superseded" })
+  })
+
+  test("a registration update that fences an unfenced socket starts the periodic check", async () => {
+    const control = { floor: 0 }
+    const harness = await roomHarness({
+      resolveHostGeneration: acceptingFrom(control),
+      hostGenerationCheckIntervalMs: 10,
+    })
+    expect((await admitUnfenced(harness)).status).toBe(101)
+    ;harness.socket(0).message(updateMessage(await harness.fencedHostTunnelToken(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    await waitFor("update applied", () => harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })?.workspaceIds.join() === "ws_1,ws_2")
+    control.floor = 4
+    await waitFor("superseded close", () => harness.socket(0).closed !== undefined)
+    expect(harness.socket(0).closed).toEqual({ code: 1008, reason: "Host tunnel generation was superseded" })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0 })
+  })
+
+  test("a registration update that fences an unfenced hibernated socket arms the alarm", async () => {
+    const alarmState = fakeAlarms()
+    const harness = await roomHarness({
+      hibernation: true,
+      hibernatedRevocationCheckIntervalMs: 30_000,
+      alarms: alarmState.alarms,
+      resolveHostGeneration: async () => current(3),
+    })
+    expect((await admitUnfenced(harness)).status).toBe(101)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(alarmState.scheduled).toHaveLength(0)
+    await harness.room.webSocketMessage(harness.socket(0), updateMessage(await harness.fencedHostTunnelToken(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(alarmState.scheduled).toHaveLength(1)
+    expect(harness.socket(0).attachment).toMatchObject({ workspaceIds: ["ws_1", "ws_2"], enrollmentId: "enr_1", generation: 3 })
+  })
+
+  test("a registration update is refused by the control plane the way a connect is", async () => {
+    let answer: HostGenerationResult | undefined = current(3)
+    const harness = await roomHarness({
+      hibernation: true,
+      resolveHostGeneration: async () => {
+        if (!answer) throw new Error("control plane down")
+        return answer
+      },
+    })
+    expect((await admit(harness, 3)).status).toBe(101)
+    answer = current(4)
+    await harness.room.webSocketMessage(harness.socket(0), updateMessage(await harness.fencedHostTunnelToken(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    expect(harness.socket(0).closed).toEqual({ code: 1008, reason: "Host tunnel generation was superseded" })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0 })
+
+    expect((await admit(harness, 4)).status).toBe(101)
+    answer = undefined
+    await harness.room.webSocketMessage(harness.socket(1), updateMessage(await harness.fencedHostTunnelToken(4, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    expect(harness.socket(1).closed).toEqual({ code: 1012, reason: "Host generation check unavailable" })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0 })
+    expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeUndefined()
+  })
+
+  test("without a resolver, a registration update that carries a generation is refused as unverifiable", async () => {
+    const harness = await roomHarness({ hibernation: true })
+    expect((await admitUnfenced(harness)).status).toBe(101)
+    await harness.room.webSocketMessage(harness.socket(0), updateMessage(await harness.fencedHostTunnelToken(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"]))
+    expect(harness.socket(0).closed).toEqual({
+      code: 1008,
+      reason: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
+    })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 0 })
   })
 
   test("the periodic check closes a tunnel whose generation was superseded", async () => {

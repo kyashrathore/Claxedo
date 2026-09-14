@@ -224,8 +224,9 @@ export type WorkspaceRelayAuthOptions = {
   runtimeAccessKey: RelayKey
   /**
    * Serving-generation fence for host tunnels. Unset on desktop and
-   * self-hosted relays, where nothing asks the control plane; the ordering
-   * between sockets (`hostTunnelIncumbentOutranks`) still applies.
+   * self-hosted relays, where nothing asks the control plane: tokens without
+   * a generation are admitted newest-wins, tokens with one are refused
+   * `host_generation_unverifiable`.
    */
   resolveHostGeneration?: HostGenerationLookup
   /**
@@ -529,7 +530,12 @@ export type HostTunnelGenerationDecision =
   | {
       ok: false
       retryable: false
-      code: "host_generation_superseded" | "host_generation_unknown" | "host_enrollment_revoked" | "host_enrollment_unknown"
+      code:
+        | "host_generation_superseded"
+        | "host_generation_unknown"
+        | "host_generation_unverifiable"
+        | "host_enrollment_revoked"
+        | "host_enrollment_unknown"
       reason: string
     }
   | {
@@ -541,17 +547,28 @@ export type HostTunnelGenerationDecision =
 
 /**
  * The one admission/re-check verdict both relay adapters apply to a host
- * tunnel. Without a resolver, or for a token that carries no generation, the
- * verdict is always `ok` — that is the pre-fence behaviour desktop and
- * self-hosted relays keep. `retryable` separates "the control plane said no"
- * (the host must not simply reconnect) from "the control plane could not be
- * asked" (it should).
+ * tunnel, on connect and on every registration update. A token without a
+ * generation is always `ok` — that is the pre-fence behaviour desktop and
+ * self-hosted relays keep. A token WITH a generation asserts a fence, so a
+ * relay composed without a resolver refuses it rather than admit what it
+ * cannot verify; that refusal is not retryable because the resolver is a
+ * property of the composition, not of the moment. `retryable` otherwise
+ * separates "the control plane said no" (the host must not simply reconnect)
+ * from "the control plane could not be asked" (it should).
  */
 export async function checkHostTunnelGeneration(
   lookup: HostGenerationLookup | undefined,
   claims: Pick<HostTunnelTokenClaims, "enrollment_id" | "generation">,
 ): Promise<HostTunnelGenerationDecision> {
-  if (!lookup || claims.generation === undefined || !claims.enrollment_id) return { ok: true }
+  if (claims.generation === undefined || !claims.enrollment_id) return { ok: true }
+  if (!lookup) {
+    return {
+      ok: false,
+      retryable: false,
+      code: "host_generation_unverifiable",
+      reason: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
+    }
+  }
   let result: HostGenerationResult | undefined
   try {
     result = await lookup({ enrollmentId: claims.enrollment_id, generation: claims.generation })

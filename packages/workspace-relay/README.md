@@ -147,12 +147,25 @@ never displaces a socket that carries a generation: for one host+workspace
 identity (Bun) or one room (Cloudflare), an incumbent with a generation yields
 only to an equal or higher generation, and an incumbent without one yields to
 any later socket. Every refusal is audited as `host_tunnel.denied` with the
-code as `reason`.
+code as `reason` (Bun; the Cloudflare room has no audit hook).
+
+A `host.registration.update` frame is re-admitted the same way, with the
+socket's own claims as the first incumbent: an update whose token carries no
+generation, or a lower one than the socket holds, is refused (closed `1008
+Host tunnel registration update superseded`); one that passes is then checked
+against the control plane exactly as a connect is and closed with the table's
+established-tunnel code on refusal (`1012` for an unavailable lookup, without
+the outage grace). An accepted update replaces the socket's claims and
+identities, and a socket that became fenced starts the 30 s re-check (or arms
+the hibernation alarm).
 
 A relay composed directly from `createWorkspaceRelayBun` /
-`createWorkspaceRelayDurableObjectRoom` without `resolveHostGeneration` runs no
-fence: every token is admitted and ordered newest-wins, which is the desktop and
-self-hosted composition.
+`createWorkspaceRelayDurableObjectRoom` without `resolveHostGeneration` — the
+desktop and self-hosted composition — admits tokens without a generation
+newest-wins and refuses any token that carries one with
+`403 host_generation_unverifiable` (an update: closed `1008`). A generation is
+a fence the relay cannot verify without the resolver, and the refusal is not
+retryable because the resolver is a property of the composition.
 
 ### Forwarding Boundary
 

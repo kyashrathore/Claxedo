@@ -632,16 +632,25 @@ describe("checkHostTunnelGeneration", () => {
     return { enrollmentId: "enr_1", generation, revoked }
   }
 
-  test("admits without a resolver, and without a generation claim, and never asks the resolver for the latter", async () => {
+  test("admits a token without a generation claim and never asks the resolver for it", async () => {
     let calls = 0
     const lookup = async () => {
       calls += 1
       return current(9)
     }
-    await expect(checkHostTunnelGeneration(undefined, { enrollment_id: "enr_1", generation: 1 })).resolves.toEqual({ ok: true })
     await expect(checkHostTunnelGeneration(lookup, {})).resolves.toEqual({ ok: true })
     await expect(checkHostTunnelGeneration(lookup, { enrollment_id: "enr_1" })).resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(undefined, {})).resolves.toEqual({ ok: true })
     expect(calls).toBe(0)
+  })
+
+  test("refuses a token that carries a generation when there is no resolver to verify it, non-retryably", async () => {
+    await expect(checkHostTunnelGeneration(undefined, { enrollment_id: "enr_1", generation: 1 })).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      code: "host_generation_unverifiable",
+      reason: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
+    })
   })
 
   test("grades every conclusive answer as non-retryable", async () => {

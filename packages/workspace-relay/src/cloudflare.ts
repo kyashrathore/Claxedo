@@ -1368,7 +1368,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
   const watchHostGeneration = (tunnel: HostTunnelSocket) => {
     const intervalMs = options.hostGenerationCheckIntervalMs ?? HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT
-    if (hibernation || !fenced(tunnel) || intervalMs <= 0) return
+    if (tunnel.generationWatcher || hibernation || !fenced(tunnel) || intervalMs <= 0) return
     tunnel.generationWatcher = setInterval(() => {
       void recheckHostGeneration(tunnel).catch(() => {})
     }, intervalMs)
@@ -1789,6 +1789,51 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!sent) closeSocket(socket, 1011, "User-hosted tunnel unavailable")
   }
 
+  /**
+   * A registration update is re-admitted the way a connect is, with the
+   * socket's own claims as the incumbent: the update's token must not be
+   * outranked by the generation the tunnel already holds and must pass the
+   * control-plane check. The tunnel then carries the update's verified claims
+   * and, if it became fenced, starts the periodic check (or, hibernating,
+   * arms the alarm). A refusal closes the way the periodic check does — 1012
+   * for an unreachable lookup, 1008 otherwise — with the room's presence
+   * cleaned up here because a server-initiated close raises no close event
+   * under hibernation. Between the awaits the tunnel may have been replaced;
+   * the update is then moot and dropped.
+   */
+  const applyRegistrationUpdate = async (tunnel: HostTunnelSocket, workspaceIds: string[], token: string) => {
+    const hostId = tunnel.hostId
+    const refuse = (code: 1008 | 1012, reason: string) => {
+      cleanupHostTunnel(hostId, tunnel.socket, reason)
+      closeSocket(tunnel.socket, code, reason)
+    }
+    let claims: HostTunnelTokenClaims
+    try {
+      claims = await verifyHostTunnelToken(token, options.runtimeAccessKey, { hostId, workspaceIds })
+    } catch {
+      if (hostTunnels.get(hostId) === tunnel) refuse(1008, "Host tunnel registration update denied")
+      return
+    }
+    if (hostTunnels.get(hostId) !== tunnel) return
+    if (hostTunnelIncumbentOutranks(tunnel.generation, claims.generation)) {
+      refuse(1008, "Host tunnel registration update superseded")
+      return
+    }
+    const decision = await checkHostTunnelGeneration(options.resolveHostGeneration, claims)
+    if (hostTunnels.get(hostId) !== tunnel) return
+    if (!decision.ok) {
+      refuse(decision.retryable ? 1012 : 1008, decision.retryable ? "Host generation check unavailable" : decision.reason)
+      return
+    }
+    tunnel.workspaceIds = workspaceIds
+    tunnel.enrollmentId = claims.enrollment_id
+    tunnel.generation = claims.generation
+    tunnel.socket.serializeAttachment?.(hostTunnelAttachment(tunnel))
+    directory.registerHostTunnel({ hostId, workspaceIds })
+    watchHostGeneration(tunnel)
+    void scheduleHibernatedRevocationCheck()
+  }
+
   const handleTunnelMessage = async (hostId: string, event: { data: unknown }) => {
     const row = parseTunnelMessageData(event.data)
     if (!row.ok) return
@@ -1806,27 +1851,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "host.registration.update") {
-      const update = parsed.message
-      const workspaceIds = [...new Set(update.workspace_ids)]
-      let claims: HostTunnelTokenClaims
-      try {
-        claims = await verifyHostTunnelToken(update.token, options.runtimeAccessKey, { hostId, workspaceIds })
-      } catch {
-        closeSocket(tunnel.socket, 1008, "Host tunnel registration update denied")
-        return
-      }
-      if (hostTunnels.get(hostId) !== tunnel) return
-      if (tunnel.generation !== undefined && claims.generation !== undefined && claims.generation < tunnel.generation) {
-        closeSocket(tunnel.socket, 1008, "Host tunnel registration update superseded")
-        return
-      }
-      tunnel.workspaceIds = workspaceIds
-      if (claims.generation !== undefined && (tunnel.generation === undefined || claims.generation > tunnel.generation)) {
-        tunnel.generation = claims.generation
-        tunnel.enrollmentId = claims.enrollment_id
-      }
-      tunnel.socket.serializeAttachment?.(hostTunnelAttachment(tunnel))
-      directory.registerHostTunnel({ hostId, workspaceIds })
+      await applyRegistrationUpdate(tunnel, [...new Set(parsed.message.workspace_ids)], parsed.message.token)
       return
     }
     if (parsed.message.type === "error" && parsed.message.request_id) {
