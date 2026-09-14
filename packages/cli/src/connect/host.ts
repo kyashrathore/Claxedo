@@ -175,6 +175,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
     return saving
   }
 
+  // A SIGKILLed instance leaves its `run` record behind; this process's own
+  // start is what the next record carries, never the dead one's.
+  const startedAt = deps.now()
   const listener = await deps.createListener()
   const composition = { localBaseUrl: listener.url, sessionAuthority: () => "managed-private" as const }
   const owned = new Map<string, { directory: string; runtime: OwnedOpenCodeRuntime | undefined }>()
@@ -284,7 +287,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
         ...state,
         run: {
           pid: deps.pid,
-          started_at: state.run?.started_at ?? deps.now(),
+          started_at: startedAt,
           generation: connector.generation() ?? 0,
           last_beat_ok_at: deps.now(),
           lease_expires_at: renewed.enrollment.expires_at,

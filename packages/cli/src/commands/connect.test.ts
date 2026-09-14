@@ -249,6 +249,28 @@ describe("claxedo connect", () => {
     expect(await second).toBe(0)
   })
 
+  test("a boot after SIGKILL records its own start, not the dead instance's", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    let clock = 1_700_000_000_000
+    h.deps.host.now = () => clock
+    const first = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    await until(async () => (await h.deps.store.load())?.run?.started_at === clock, "the first run record")
+    // SIGKILL: the process is gone and its `run` record stays on disk.
+    h.stop()
+    expect(await first).toBe(0)
+    const killed = await h.deps.store.load()
+    await h.deps.store.save({ ...killed!, run: { pid: 4242, started_at: clock, generation: 1, last_beat_ok_at: clock, lease_expires_at: clock + 60_000, served: [] } })
+
+    clock += 90_000
+    const second = connect([], h.deps)
+    await until(() => h.cp.beats().length >= 2, "resumed beat")
+    await until(async () => (await h.deps.store.load())?.run?.pid === process.pid, "the second run record")
+    expect((await h.deps.store.load())?.run).toMatchObject({ pid: process.pid, started_at: clock, generation: 2 })
+    h.stop()
+    expect(await second).toBe(0)
+  })
+
   test("a redeem whose response was lost is recovered on the next boot as resumed", async () => {
     const { file } = await invitationFile(h, [h.root])
     h.cp.faults.dropRedeemResponse = true
