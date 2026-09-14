@@ -1,14 +1,13 @@
 import path from "node:path"
-import { config, url } from "../config"
-import { requestJson } from "../http"
-import { object } from "../json"
+import { config } from "../config"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { asFiniteNumber } from "@claxedo/helpers/guards"
 import {
   clearClaxedoCredentials,
   loadClaxedoCredentials,
   storeClaxedoCredentials,
 } from "@claxedo/helpers/claxedo-credentials"
+import { cliAuthBinding, type FetchLike } from "./auth-descriptor"
+import { tokenRequest } from "./oauth"
 
 /** The file's credential once this CLI's own control-plane default has filled in the origin. */
 export type Credentials = {
@@ -44,21 +43,43 @@ export async function removeCredentials() {
   await clearClaxedoCredentials(credentialsPath())
 }
 
-function needsRefresh(input: Credentials) {
-  return !!input.expiresAt && input.expiresAt - Date.now() < 60_000
+function needsRefresh(input: Credentials, now: number) {
+  return !!input.expiresAt && input.expiresAt - now < 60_000
 }
 
-function tokenResponse(input: unknown, current: Credentials): Credentials {
-  const row = object(input)
-  const accessToken = trimToUndefined(row.access_token) ?? trimToUndefined(row.accessToken)
-  if (!accessToken) throw new Error("Token response is missing access_token")
-  const expiresIn = asFiniteNumber(row.expires_in) ?? asFiniteNumber(row.expiresIn)
+/**
+ * The `identity` the desktop writes when it mirrors its own credential into
+ * this file (`cli-credential-file.ts`, `DESKTOP_CLI_IDENTITY`). That refresh
+ * token was issued to the desktop's OAuth client, and a public client's
+ * refresh must name the client the token belongs to.
+ */
+const DESKTOP_WRITTEN_IDENTITY = "claxedo-desktop"
+
+export type RefreshDeps = { fetch?: FetchLike; now: () => number }
+
+/** A refresh-token grant at the issuer's token endpoint, for the client that holds the refresh token. */
+export async function refreshCredentials(current: Credentials, deps: RefreshDeps): Promise<Credentials> {
+  if (!current.refreshToken) {
+    throw new Error("Stored token expired and no refresh_token is available. Run `claxedo login` again.")
+  }
+  const binding = await cliAuthBinding(current.controlPlaneUrl, deps)
+  const client = current.identity === DESKTOP_WRITTEN_IDENTITY ? binding.desktop : binding.cli
+  const tokens = await tokenRequest({
+    url: binding.tokenUrl,
+    params: {
+      grant_type: "refresh_token",
+      refresh_token: current.refreshToken,
+      client_id: client.clientId,
+      resource: client.resource,
+    },
+    ...(deps.fetch ? { fetch: deps.fetch } : {}),
+  })
   return {
     controlPlaneUrl: current.controlPlaneUrl,
-    accessToken,
-    refreshToken: trimToUndefined(row.refresh_token) ?? trimToUndefined(row.refreshToken) ?? current.refreshToken,
-    tokenType: trimToUndefined(row.token_type) ?? trimToUndefined(row.tokenType) ?? current.tokenType,
-    ...(expiresIn ? { expiresAt: Date.now() + expiresIn * 1000 } : {}),
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken ?? current.refreshToken,
+    ...((tokens.tokenType ?? current.tokenType) ? { tokenType: tokens.tokenType ?? current.tokenType } : {}),
+    ...(tokens.expiresIn ? { expiresAt: deps.now() + tokens.expiresIn * 1000 } : {}),
     ...(current.identity ? { identity: current.identity } : {}),
   }
 }
@@ -66,19 +87,8 @@ function tokenResponse(input: unknown, current: Credentials): Credentials {
 export async function requireAccessToken() {
   const current = await readCredentials()
   if (!current) throw new Error("Not signed in. Run `claxedo login` or set CLAXEDO_DEV_TOKEN.")
-  if (!needsRefresh(current)) return current.accessToken
-  if (!current.refreshToken)
-    throw new Error("Stored token expired and no refresh_token is available. Run `claxedo login` again.")
-  const refreshed = tokenResponse(
-    await requestJson({
-      url: url(current.controlPlaneUrl, "/api/auth/device/token"),
-      body: {
-        grant_type: "refresh_token",
-        refresh_token: current.refreshToken,
-      },
-    }),
-    current,
-  )
+  if (!needsRefresh(current, Date.now())) return current.accessToken
+  const refreshed = await refreshCredentials(current, { now: () => Date.now() })
   await writeCredentials(refreshed)
   return refreshed.accessToken
 }
