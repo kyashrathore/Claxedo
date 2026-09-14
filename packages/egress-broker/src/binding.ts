@@ -47,6 +47,13 @@ export type BindingFailure = Readonly<{
 export interface BindingAuthority {
   resolve(bindingId: string): Promise<{ binding: Binding; value: string } | undefined>
   currentRuntime(identity: RuntimeIdentity): Promise<boolean>
+  /**
+   * Called for a request the broker is about to forward, never from `resolve`:
+   * a placeholder minted before an account switch resolves to the account that
+   * replaced it and is then refused, so a use recorded at resolution would
+   * stamp the new account for a request that spent nothing.
+   */
+  markUsed(bindingId: string): Promise<void>
   reportFailure(failure: BindingFailure): Promise<void>
 }
 

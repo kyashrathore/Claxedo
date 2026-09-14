@@ -805,24 +805,59 @@ describe("local binding authority", () => {
 
   test("a brokered request marks the row used at most once a minute", async () => {
     const credential = await activeRow("sk-ant-api03-used")
-    let clock = Date.parse("2026-09-13T00:00:00.000Z")
+    // The placeholder's own expiry is verified against the wall clock.
+    let clock = Date.now()
     const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
-    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const turn = () => local.handler(new Request(`${projection.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": projection.placeholder },
+      }))
+      expect((await turn()).status).toBe(200)
+      const marked = credentialById(credential.id, { onOutage: "throw" })!.last_used_at
+      expect(marked).toBe(clock)
 
-    await local.authority.resolve(id)
-    const marked = credentialById(credential.id, { onOutage: "throw" })!.last_used_at
-    expect(marked).toBe(clock)
+      // A streaming turn resolves once per request; a write each time turns it
+      // into a stream of registry writes.
+      clock += 30_000
+      await turn()
+      await turn()
+      expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(marked)
 
-    // A streaming turn resolves once per request; a write each time turns it
-    // into a stream of registry writes.
-    clock += 30_000
-    await local.authority.resolve(id)
-    await local.authority.resolve(id)
-    expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(marked)
+      clock += 31_000
+      await turn()
+      expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(clock)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 
-    clock += 31_000
-    await local.authority.resolve(id)
-    expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(clock)
+  test("a placeholder refused after a switch leaves the account it resolved to unmarked", async () => {
+    await activeRow("sk-ant-api03-mark-first")
+    let clock = Date.now()
+    const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const second = await activeRow("sk-ant-api03-mark-second")
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const turn = (placeholder: string) => local.handler(new Request(`${first.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": placeholder },
+      }))
+      expect((await turn(first.placeholder)).status).toBe(403)
+      expect(credentialById(second.id, { onOutage: "throw" })?.last_used_at).toBeNull()
+
+      const renewed = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+      clock += 1
+      expect((await turn(renewed.placeholder)).status).toBe(200)
+      expect(credentialById(second.id, { onOutage: "throw" })?.last_used_at).toBe(clock)
+    } finally {
+      globalThis.fetch = realFetch
+    }
   })
 
   test("a key file shorter than the signing key is repaired by hand, never overwritten", async () => {
@@ -869,16 +904,18 @@ describe("local binding authority", () => {
 
   test("a lost generation counter starts past every generation this machine minted", async () => {
     const dataDir = path.join(root, `generation-${randomUUID().slice(0, 8)}`)
-    const before = Date.now()
+    const booted = Date.parse("2026-09-13T00:00:00.000Z")
     const counter = path.join(dataDir, "credentials", "broker-generation")
-    const first = broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration
-    expect(first).toBeGreaterThanOrEqual(before)
+    const first = createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted })
+      .runtimeIdentity(workspaceId).leaseGeneration
+    expect(first).toBe(booted)
 
     await fs.rm(counter)
-    const relaunched = broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration
+    const relaunched = createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted + 5_000 })
+      .runtimeIdentity(workspaceId).leaseGeneration
 
     // Counting from 1 again would re-issue a generation an old placeholder
     // already names, and that placeholder would validate a second time.
-    expect(relaunched).toBeGreaterThanOrEqual(first)
+    expect(relaunched).toBeGreaterThan(first)
   })
 })

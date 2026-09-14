@@ -14,6 +14,7 @@ async function fixture() {
   let current = true
   let value = "real-key"
   const failures: BindingFailure[] = []
+  const used: string[] = []
   let reportingUnavailable = false
   const upstream: Request[] = []
   let respond = async () => new Response("streamed result", { headers: { "content-type": "text/event-stream", "x-api-key": "real-key", "set-cookie": "secret=value" } })
@@ -23,6 +24,7 @@ async function fixture() {
     authority: {
       resolve: async () => ({ binding, value }),
       currentRuntime: async () => current,
+      markUsed: async (bindingId) => { used.push(bindingId) },
       reportFailure: async (failure) => { if (reportingUnavailable) throw Error("failure store unavailable"); failures.push(failure) },
     },
     fetch: (async (url, init) => { upstream.push(new Request(url, init)); return respond() }) as typeof fetch,
@@ -31,7 +33,7 @@ async function fixture() {
     method: "POST", headers: { "x-api-key": token, cookie: "local=private" }, body: "prompt", ...init,
   }))
   const broker404 = (url: string) => broker(new Request(url, { method: "POST" }))
-  return { request, broker404, token, upstream, failures, failReporting: () => { reportingUnavailable = true }, update: (patch: Partial<Binding>) => { binding = { ...binding, ...patch } }, unreadable: () => { value = "" }, stop: () => { current = false }, respond: (fn: typeof respond) => { respond = fn } }
+  return { request, broker404, token, upstream, failures, used, failReporting: () => { reportingUnavailable = true }, update: (patch: Partial<Binding>) => { binding = { ...binding, ...patch } }, unreadable: () => { value = "" }, stop: () => { current = false }, respond: (fn: typeof respond) => { respond = fn } }
 }
 
 describe("binding broker HTTP entrypoint", () => {
@@ -65,6 +67,17 @@ describe("binding broker HTTP entrypoint", () => {
     f.update(patch)
     expect((await f.request()).status).toBe(403)
     expect(f.upstream).toHaveLength(0)
+  })
+
+  test("marks the binding used only for a request it forwards", async () => {
+    const f = await fixture()
+    f.update({ leaseGeneration: 2 })
+    expect((await f.request()).status).toBe(403)
+    expect(f.used).toEqual([])
+
+    f.update({ leaseGeneration: 1 })
+    expect((await f.request()).status).toBe(200)
+    expect(f.used).toEqual(["binding"])
   })
 
   test("rejects replay after runtime withdrawal", async () => {

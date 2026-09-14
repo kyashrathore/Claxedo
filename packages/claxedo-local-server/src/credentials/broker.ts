@@ -108,10 +108,10 @@ function loadSigningKey(dir: string): Uint8Array {
  * loss already name, and those validate again; a wall-clock start is past every
  * generation this machine can have reached by counting.
  */
-function openGenerationCounter(dir: string) {
+function openGenerationCounter(dir: string, now: () => number) {
   const file = path.join(dir, "broker-generation")
   const stored = fs.existsSync(file) ? Number.parseInt(fs.readFileSync(file, "utf8").trim(), 10) : Number.NaN
-  let last = Number.isSafeInteger(stored) && stored > 0 ? stored : Date.now() - 1
+  let last = Number.isSafeInteger(stored) && stored > 0 ? stored : now() - 1
   return function issue(): number {
     last += 1
     fs.writeFileSync(file, String(last), { mode: 0o600 })
@@ -175,7 +175,7 @@ export function createLocalCredentialBroker(input: {
   function brokerState() {
     if (opened) return opened
     const dir = credentialsDir(input.dataDir)
-    const issueGeneration = openGenerationCounter(dir)
+    const issueGeneration = openGenerationCounter(dir, now)
     opened = { signingKey: loadSigningKey(dir), bootGeneration: issueGeneration(), issueGeneration }
     return opened
   }
@@ -212,9 +212,10 @@ export function createLocalCredentialBroker(input: {
    * placeholder the workspace holds names the old generation and is refused
    * until the next projection re-mints them.
    */
-  function bindCurrentAccount(entry: MintedBinding, credential: CredentialMetadata) {
+  function bindCurrentAccount(id: string, entry: MintedBinding, credential: CredentialMetadata) {
     if (entry.credentialId === credential.id) return false
     entry.credentialId = credential.id
+    usedAt.delete(id)
     leaseGenerations.set(leaseKey(entry.orgId, entry.workspaceId), brokerState().issueGeneration())
     return true
   }
@@ -283,11 +284,7 @@ export function createLocalCredentialBroker(input: {
       if (!row || row.unavailable) return undefined
       const destination = await destinationFor(row.credential, entry.orgId)
       if (!destination) return undefined
-      const at = now()
-      if (!bindCurrentAccount(entry, row.credential) && at - (usedAt.get(id) ?? 0) >= USE_MARK_INTERVAL_MS) {
-        usedAt.set(id, at)
-        markCredentialUsed(row.credential.id, at, entry.orgId)
-      }
+      bindCurrentAccount(id, entry, row.credential)
       return {
         binding: binding(id, runtimeIdentity(entry.workspaceId, entry.orgId), row.credential, destination),
         value: destination.value,
@@ -296,6 +293,14 @@ export function createLocalCredentialBroker(input: {
     async currentRuntime(identity) {
       return projected.has(leaseKey(identity.orgId, identity.workspaceId))
         && sameRuntime(runtimeIdentity(identity.workspaceId, identity.orgId), identity)
+    },
+    async markUsed(id) {
+      const entry = minted.get(id)
+      if (!entry) return
+      const at = now()
+      if (at - (usedAt.get(id) ?? 0) < USE_MARK_INTERVAL_MS) return
+      usedAt.set(id, at)
+      markCredentialUsed(entry.credentialId, at, entry.orgId)
     },
     /**
      * One vendor 401 does not take an account off its provider.
@@ -405,7 +410,7 @@ export function createLocalCredentialBroker(input: {
         }
         const id = bindingId(org, workspaceId, credential.provider_id)
         const entry = minted.get(id)
-        if (entry) bindCurrentAccount(entry, credential)
+        if (entry) bindCurrentAccount(id, entry, credential)
         else minted.set(id, { providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id })
         bindable.push({ id, credential, destination })
       }

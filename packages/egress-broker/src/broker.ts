@@ -83,6 +83,7 @@ export function createEgressBroker(options: BrokerOptions) {
         if (name.toLowerCase() === injection.header.toLowerCase()) return brokerErrorResponse(503, "binding_injection_invalid")
         if (companion !== null) headers.set(name, companion)
       }
+      await options.authority.markUsed(bindingId)
       let upstream: Response
       try {
         upstream = await (options.fetch ?? fetch)(target, {
