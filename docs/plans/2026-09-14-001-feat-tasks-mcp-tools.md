@@ -149,3 +149,76 @@ account service (hosted).
   the group is off; the directory row's switches write activation.
 - Live: on the local stack, turn Tasks off in the Marketplace and a fresh
   session's tool list has no `task_*`; turn it on and it does.
+
+## Decisions taken at merge (2026-09-14)
+
+- **Hosted user-credential MCP mount stays ungated by activation.** A signed
+  CLI or OAuth client is the account holder's own client, not a sandbox: it
+  carries no project, so the per-project switches cannot apply to it, and the
+  hosted worker mints no Tasks grant for it, so the Tasks tools are absent
+  there regardless. The Marketplace switches govern sessions. Gating these
+  callers by the user's all-projects activation is follow-up F4 below.
+- **The built-in card's whole-plugin action is "Restore defaults" and posts
+  a return-to-defaults, never an enable.** An enable on the whole built-in
+  would turn the Tasks group on, and turning that group on mints a
+  capability that leaves the project; that consent belongs to the Tasks
+  switch alone.
+- **Onboarding v1 repair is parked behind this merge.** Its plan
+  (`2026-09-14-002-feat-onboarding-v1-repair.md`) touches the app shell and
+  route files another session is editing; it starts on its own branch once
+  `dev` carries this merge.
+
+## Follow-ups (recorded, not built)
+
+F1 — **Hosted cloud Start from inside a session.** A capability actor has no
+signed principal (`principals.authOf(actor)` is undefined), and cloud
+allocation in `tasks/hosted-composition.ts` and `tasks/session-bridge.ts`
+requires one, so `task_start` on a cloud preset from a hosted session is
+refused with "this caller is not signed". Minimal design: carry the grant's
+resolved owner (`TasksCapabilityOwner`: userId, actorId, orgId, projectId)
+into the bridge and add an authority operation that creates and deletes a
+cloud workspace for a canonical owner principal, the way
+`reserveRuntimeSession` already takes a runtime principal. No fabricated
+signed principal. Also wire an account `crossMachineWrites` reader into the
+capability minter; today the production composition supplies none, so hosted
+grants never carry `start`.
+
+F2 — **Capability renewal.** `tasks/capability.ts` mints with a 30-minute
+TTL and `hosts/workspace-runtime/tasks-grant.ts` captures the token at boot.
+A cloud root older than 30 minutes loses the Tasks tools for every session,
+including new ones. Design: the runtime asks the control plane for a fresh
+capability through the same channel it reports checkpoints on; the control
+plane re-resolves the workspace owner and the Tasks group's activation before
+re-minting; the runtime swaps the grant's bearer in place. Keep the expiry
+check as is.
+
+F3 — **Hosted `create_subagent`.** Refused today with 403
+`session_actor_required` before the reservation gate, because the runtime's
+issuer is built without a user identity. Needs the authority contract change
+across the runtime issuer, the session reservation and the private-session
+authority. The two-line version that stamps any actor is a privilege bypass
+and must not be taken.
+
+F4 — **Gate hosted user-credential MCP callers by activation.** Resolve the
+user's all-projects world (`runtimeSnapshotForUser`) for signed CLI callers,
+add an OAuth-claims-to-auth mapping for OAuth callers, and hand the mount an
+`enabledToolGroups` resolver for both.
+
+F5 — **Self-hosted Tasks handles accumulate per MCP session.** `revoke` had
+no caller and was removed; a handle now lives until the process ends and is
+bounded by the request-time owner read. If lifetimes matter, the hook point is
+`createMachineSessionDispatch` in `deployments/self-hosted-node/app.ts`, where
+a session's end is observable.
+
+F6 — **Cursor spelling of first-party tool names is not pinned.** The
+transcript resolver covers Claude (`mcp__claxedo__<tool>`), Codex (bare tool
+with `input.server`) and the embedded engine (`claxedo_<tool>`); Cursor emits
+`mcp*` names and is covered by whichever of the first two shapes it uses, but
+no fixture asserts it.
+
+F7 — **Dev-side reds this branch does not own.** The isolated
+`verify:closure` step for the self-hosted server cannot find
+`@claxedo/egress-broker`'s dist (dev's own build order); claxedo-mcp
+`sessions.test.ts` has three `session_create` cap cases red; claxedo-server
+`deployment-closures`, `local-product-contract`, `codebase-shape` and the Pi
+document round-trip are red on dev alone.
