@@ -23,7 +23,7 @@ import {
 } from "./destinations"
 import {
   readSecretById,
-  requireActiveCredentialsForScope,
+  activeCredentialsForScope,
   SINGLE_TENANT_ORG,
   type CredentialOrgScope,
 } from "./registry"
@@ -183,7 +183,7 @@ export async function nativeProviderDeliveries(input: {
   // identity the turn spends. The most recently marked account claims it,
   // because that mark is the last thing the operator said about the two.
   const claimed = new Map<string, string>()
-  for (const row of byMostRecentMark(requireActiveCredentialsForScope("shared", org))) {
+  for (const row of byMostRecentMark(activeCredentialsForScope("shared", { onOutage: "throw" }, org))) {
     const providerId = row.credential.provider_id
     if (row.unavailable) {
       deliveries.push(undeliverable(row.credential, row.unavailable))

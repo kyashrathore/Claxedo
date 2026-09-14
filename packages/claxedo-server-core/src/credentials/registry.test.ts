@@ -16,8 +16,8 @@ const { createTestBackend, setBackendOverride } = await import("./backend-regist
 const {
   putCredential,
   listCredentials,
-  getCredentialByProvider,
-  getCredential,
+  credentialByProvider,
+  credentialById,
   resolveSecret,
   resolveSecretById,
   updateCredentialStatus,
@@ -28,7 +28,8 @@ const {
   updateCredentialLabel,
   deleteCredential,
   deleteCredentialsByProvider,
-  selectCredentialsForScope,
+  activeCredentialsForScope,
+  usableCredentials,
   setActiveCredentials,
   clearActiveCredentials,
 } = await import("./registry")
@@ -45,6 +46,7 @@ describe("credential registry", () => {
   beforeEach(async () => {
     backend = createTestBackend()
     setBackendOverride(backend)
+    ClaxedoDB.use((db) => db.delete(ClaxedoProviderCredentialTable).run())
   })
 
   afterAll(async () => {
@@ -133,14 +135,14 @@ describe("credential registry", () => {
     })
 
     expect(updateCredentialScope(credential.id, "shared", 456)).toBe(true)
-    expect(getCredential(credential.id)).toMatchObject({
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({
       scope: "shared",
       source: "managed",
       consent: { at: 456, surface: "scope_change" },
       last_used_at: null,
     })
     await expect(resolveSecretById(credential.id)).resolves.toBe("secret")
-    expect(getCredential(credential.id)?.last_used_at).toEqual(expect.any(Number))
+    expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toEqual(expect.any(Number))
   })
 
   test("Pi credential mapping validates aliases, status, and credential kind", async () => {
@@ -318,16 +320,21 @@ describe("credential registry", () => {
     expect(all).toEqual(["api_key", "sandbox_driver"])
   })
 
-  test("listCredentials returns all metadata without secrets", () => {
+  test("listCredentials returns every row's metadata and never its secret", async () => {
+    const key = await putCredential({ provider_id: "list-a", kind: "api_key", source: "managed", secret: "sk-list-a" })
+    const token = await putCredential({ provider_id: "list-b", kind: "oauth_token", source: "managed", secret: "tok-list-b" })
+
     const creds = listCredentials()
-    expect(Array.isArray(creds)).toBe(true)
-    // Metadata never contains raw secret material — only secure_ref
+
+    expect(creds.map((cred) => cred.id).sort()).toEqual([key.id, token.id].sort())
     for (const cred of creds) {
-      expect(cred.secure_ref?.startsWith("test:")).toBeTruthy()
+      expect(cred.secure_ref?.startsWith("test:")).toBe(true)
+      expect(JSON.stringify(cred)).not.toContain("sk-list-a")
+      expect(JSON.stringify(cred)).not.toContain("tok-list-b")
     }
   })
 
-  test("getCredentialByProvider finds by provider ID", async () => {
+  test("credentialByProvider finds by provider ID", async () => {
     await putCredential({
       provider_id: "lookup-test",
       kind: "api_key",
@@ -335,7 +342,7 @@ describe("credential registry", () => {
       secret: "my-key",
     })
 
-    const found = getCredentialByProvider("lookup-test")
+    const found = credentialByProvider("lookup-test", { onOutage: "throw" })
     expect(found).toBeTruthy()
     expect(found!.provider_id).toBe("lookup-test")
   })
@@ -365,7 +372,7 @@ describe("credential registry", () => {
 
     updateCredentialHealth(cred.id, "no_billing", 1234)
 
-    expect(getCredential(cred.id)).toMatchObject({
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({
       health: "no_billing",
       status: "error",
       last_validated_at: 1234,
@@ -393,7 +400,7 @@ describe("credential registry", () => {
 
     expect(reconnected.id).toBe(cred.id)
     expect(reconnected).toMatchObject({ health: null, status: "available", last_validated_at: null })
-    expect(getCredential(cred.id)).toMatchObject({ health: null, status: "available", last_validated_at: null })
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ health: null, status: "available", last_validated_at: null })
   })
 
   test("replacing the secret supersedes the verdict reached against the old one", async () => {
@@ -407,7 +414,7 @@ describe("credential registry", () => {
 
     expect(await updateCredentialSecret(credential.id, "renewed-token")).toBe(true)
 
-    expect(getCredential(credential.id)).toMatchObject({
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({
       health: null,
       status: "available",
       last_validated_at: null,
@@ -429,7 +436,7 @@ describe("credential registry", () => {
 
     expect(updateCredentialLabel(credential.id, "Personal key")).toBe(true)
 
-    expect(getCredential(credential.id)).toMatchObject({
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({
       label: "Personal key",
       health: "auth_failed",
       status: "error",
@@ -449,7 +456,7 @@ describe("credential registry", () => {
 
     expect(updateCredentialLabel(credential.id, "Renamed by a stranger", "some-other-org")).toBe(false)
 
-    expect(getCredential(credential.id)).toMatchObject({ label: "Only name" })
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ label: "Only name" })
   })
 
   test("a rejected account keeps its verdict when another key is added beside it", async () => {
@@ -470,7 +477,7 @@ describe("credential registry", () => {
 
     expect(added.id).not.toBe(rejected.id)
     expect(added).toMatchObject({ health: null, status: "available", last_validated_at: null })
-    expect(getCredential(rejected.id)).toMatchObject({ health: "auth_failed", status: "error" })
+    expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ health: "auth_failed", status: "error" })
   })
 
   test("keeps lifecycle status updates from exposing stale provider health", async () => {
@@ -483,10 +490,10 @@ describe("credential registry", () => {
     updateCredentialHealth(cred.id, "ok", 1234)
 
     updateCredentialStatus(cred.id, "revoked", "removed")
-    expect(getCredential(cred.id)).toMatchObject({ status: "revoked", health: null })
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ status: "revoked", health: null })
 
     updateCredentialStatus(cred.id, "expired")
-    expect(getCredential(cred.id)).toMatchObject({ status: "expired", health: "expired" })
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ status: "expired", health: "expired" })
   })
 
   test("keeps the quota windows a verification read, and leaves an unread row with none", async () => {
@@ -513,11 +520,11 @@ describe("credential registry", () => {
     ]
     updateCredentialUsage(read.id, windows, 1234)
 
-    expect(getCredential(read.id)).toMatchObject({ usage_windows: windows, usage_at: 1234 })
+    expect(credentialById(read.id, { onOutage: "throw" })).toMatchObject({ usage_windows: windows, usage_at: 1234 })
     expect(listCredentials().find((row) => row.id === read.id))
       .toMatchObject({ usage_windows: windows, usage_at: 1234 })
-    expect(getCredential(unread.id)?.usage_windows ?? null).toBeNull()
-    expect(getCredential(unread.id)?.usage_at ?? null).toBeNull()
+    expect(credentialById(unread.id, { onOutage: "throw" })?.usage_windows ?? null).toBeNull()
+    expect(credentialById(unread.id, { onOutage: "throw" })?.usage_at ?? null).toBeNull()
   })
 
   test("a quota read leaves the write clock that orders two accounts alone", async () => {
@@ -528,20 +535,20 @@ describe("credential registry", () => {
       account_id: "acct_order",
       secret: "usage-order-secret",
     })
-    const before = getCredential(cred.id)?.updated_at
+    const before = credentialById(cred.id, { onOutage: "throw" })?.updated_at
     // `updated_at` is the wall clock. Without a gap either side, a write that
     // DID move it is indistinguishable from one that did not.
     const gap = () => new Promise((resolve) => setTimeout(resolve, 5))
 
     await gap()
     updateCredentialUsage(cred.id, [{ window: "session", usedPercent: 90, resetsAt: null }], 9999)
-    expect(getCredential(cred.id)).toMatchObject({ updated_at: before, usage_at: 9999 })
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ updated_at: before, usage_at: 9999 })
 
     // The contrast: a verdict about the account itself is a write, and does
     // move the clock the fanout breaks ties on.
     await gap()
     updateCredentialHealth(cred.id, "ok", 9999)
-    expect(getCredential(cred.id)?.updated_at).not.toBe(before)
+    expect(credentialById(cred.id, { onOutage: "throw" })?.updated_at).not.toBe(before)
   })
 
   test("deleteCredential removes metadata and backend secret", async () => {
@@ -554,7 +561,7 @@ describe("credential registry", () => {
 
     const deleted = await deleteCredential(cred.id)
     expect(deleted).toBe(true)
-    expect(getCredential(cred.id)).toBeUndefined()
+    expect(credentialById(cred.id, { onOutage: "throw" })).toBeUndefined()
     expect(await backend.get(cred.secure_ref!)).toBeNull()
   })
 
@@ -568,7 +575,7 @@ describe("credential registry", () => {
 
     const count = await deleteCredentialsByProvider("bulk-delete")
     expect(count).toBe(1)
-    expect(getCredentialByProvider("bulk-delete")).toBeUndefined()
+    expect(credentialByProvider("bulk-delete", { onOutage: "throw" })).toBeUndefined()
   })
 
   describe("network policy is not a credential side effect", () => {
@@ -658,7 +665,7 @@ describe("credential registry", () => {
 
       expect(replacement.is_active).toBe(true)
       // The rejected account stays listed, with the verdict that is true of it.
-      expect(getCredential(rejected.id)).toMatchObject({ is_active: false, status: "error", health: "auth_failed" })
+      expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: false, status: "error", health: "auth_failed" })
       await expect(resolveSecret("yield-test")).resolves.toBe("sk-working-bbbb")
     })
 
@@ -715,10 +722,10 @@ describe("credential registry", () => {
 
       await deleteCredential(first.id)
 
-      expect(getCredential(second.id)?.is_active).toBe(true)
-      expect(getCredential(third.id)?.is_active).toBe(false)
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(true)
+      expect(credentialById(third.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(await resolveSecret("active-remove")).toBe("second-secret")
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-remove"))
+      expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-remove"))
         .toMatchObject([{ id: second.id }])
     })
 
@@ -729,8 +736,8 @@ describe("credential registry", () => {
 
       await deleteCredential(first.id)
 
-      expect(getCredential(second.id)?.is_active).toBe(false)
-      expect(getCredential(third.id)?.is_active).toBe(true)
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
+      expect(credentialById(third.id, { onOutage: "throw" })?.is_active).toBe(true)
       expect(await resolveSecret("active-remove-skip")).toBe("third-secret")
     })
 
@@ -738,11 +745,11 @@ describe("credential registry", () => {
       const { first, second } = await twoAccounts("active-remove-all")
 
       await deleteCredential(first.id)
-      expect(getCredential(second.id)?.is_active).toBe(true)
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(true)
       await deleteCredential(second.id)
 
       expect(listCredentials().filter((row) => row.provider_id === "active-remove-all")).toEqual([])
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-remove-all")).toEqual([])
+      expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-remove-all")).toEqual([])
     })
 
     test("removing the active account marks nothing when the rest are rejected", async () => {
@@ -751,8 +758,8 @@ describe("credential registry", () => {
 
       await deleteCredential(first.id)
 
-      expect(getCredential(second.id)).toMatchObject({ is_active: false, status: "error" })
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-remove-rejected"))
+      expect(credentialById(second.id, { onOutage: "throw" })).toMatchObject({ is_active: false, status: "error" })
+      expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-remove-rejected"))
         .toEqual([])
     })
 
@@ -761,7 +768,7 @@ describe("credential registry", () => {
 
       await deleteCredential(second.id)
 
-      expect(getCredential(first.id)?.is_active).toBe(true)
+      expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
     })
 
     test("a refused active account hands the mark to the oldest account left", async () => {
@@ -771,9 +778,9 @@ describe("credential registry", () => {
 
       updateCredentialHealth(first.id, "auth_failed", 1234)
 
-      expect(getCredential(first.id)).toMatchObject({ is_active: false, health: "auth_failed" })
-      expect(getCredential(second.id)?.is_active).toBe(true)
-      expect(getCredential(third.id)?.is_active).toBe(false)
+      expect(credentialById(first.id, { onOutage: "throw" })).toMatchObject({ is_active: false, health: "auth_failed" })
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(true)
+      expect(credentialById(third.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(await resolveSecret("active-refused")).toBe("second-secret")
     })
 
@@ -781,15 +788,15 @@ describe("credential registry", () => {
       for (const health of ["expired", "no_billing"] as const) {
         const { first, second } = await twoAccounts(`active-refused-${health}`)
         updateCredentialHealth(first.id, health, 1234)
-        expect(getCredential(first.id)?.is_active, health).toBe(false)
-        expect(getCredential(second.id)?.is_active, health).toBe(true)
+        expect(credentialById(first.id, { onOutage: "throw" })?.is_active, health).toBe(false)
+        expect(credentialById(second.id, { onOutage: "throw" })?.is_active, health).toBe(true)
       }
 
       const { first, second } = await twoAccounts("active-rate-capped")
       updateCredentialHealth(first.id, "rate_capped", 1234)
 
-      expect(getCredential(first.id)).toMatchObject({ is_active: true, health: "rate_capped" })
-      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(credentialById(first.id, { onOutage: "throw" })).toMatchObject({ is_active: true, health: "rate_capped" })
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
     })
 
     test("a refused account with nowhere to hand the mark keeps it", async () => {
@@ -798,8 +805,8 @@ describe("credential registry", () => {
 
       updateCredentialHealth(first.id, "auth_failed", 1234)
 
-      expect(getCredential(first.id)).toMatchObject({ is_active: true, health: "auth_failed" })
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-refused-alone"))
+      expect(credentialById(first.id, { onOutage: "throw" })).toMatchObject({ is_active: true, health: "auth_failed" })
+      expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-refused-alone"))
         .toEqual([])
     })
 
@@ -808,8 +815,8 @@ describe("credential registry", () => {
 
       updateCredentialHealth(second.id, "auth_failed", 1234)
 
-      expect(getCredential(first.id)?.is_active).toBe(true)
-      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
     })
 
     test("clearActiveCredentials leaves the provider unmarked, so its harness runs on the machine login", async () => {
@@ -817,9 +824,9 @@ describe("credential registry", () => {
 
       expect(clearActiveCredentials(["active-clear"])).toEqual({ cleared: [first.id] })
 
-      expect(getCredential(first.id)?.is_active).toBe(false)
-      expect(getCredential(second.id)?.is_active).toBe(false)
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-clear")).toEqual([])
+      expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
+      expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-clear")).toEqual([])
     })
 
     test("clearActiveCredentials reaches only the org it was asked in", async () => {
@@ -839,17 +846,17 @@ describe("credential registry", () => {
         label: "theirs",
         secret: "theirs-secret",
       }, "org-b")
-      expect(getCredential(mine.id, "org-a")?.is_active).toBe(true)
-      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+      expect(credentialById(mine.id, { onOutage: "throw" }, "org-a")?.is_active).toBe(true)
+      expect(credentialById(theirs.id, { onOutage: "throw" }, "org-b")?.is_active).toBe(true)
 
       expect(clearActiveCredentials(["active-clear-org"], "org-a")).toEqual({ cleared: [mine.id] })
 
-      expect(getCredential(mine.id, "org-a")?.is_active).toBe(false)
-      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+      expect(credentialById(mine.id, { onOutage: "throw" }, "org-a")?.is_active).toBe(false)
+      expect(credentialById(theirs.id, { onOutage: "throw" }, "org-b")?.is_active).toBe(true)
       // And the default partition, which holds neither of them, is untouched by
       // a call naming the same provider.
       expect(clearActiveCredentials(["active-clear-org"])).toEqual({ cleared: [] })
-      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+      expect(credentialById(theirs.id, { onOutage: "throw" }, "org-b")?.is_active).toBe(true)
     })
 
     test("a sandbox driver key neither holds the mark nor inherits it", async () => {
@@ -876,8 +883,8 @@ describe("credential registry", () => {
       // …nor when the account that did hold it is refused and looks for an heir.
       updateCredentialHealth(mixed.id, "auth_failed", 1234)
 
-      expect(getCredential(driver.id)?.is_active).toBe(false)
-      expect(getCredential(mixed.id)?.is_active).toBe(true)
+      expect(credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
+      expect(credentialById(mixed.id, { onOutage: "throw" })?.is_active).toBe(true)
       expect(clearActiveCredentials(["daytona"])).toEqual({ cleared: [mixed.id] })
     })
 
@@ -889,7 +896,7 @@ describe("credential registry", () => {
       expect(clearActiveCredentials(["active-clear-a", "active-clear-b", "active-clear-missing"]).cleared.toSorted())
         .toEqual([first.id, other.first.id].toSorted())
 
-      expect(getCredential(untouched.first.id)?.is_active).toBe(true)
+      expect(credentialById(untouched.first.id, { onOutage: "throw" })?.is_active).toBe(true)
     })
 
     test("setActiveCredentials moves the mark, and the fanout sends the account it moved to", async () => {
@@ -899,9 +906,9 @@ describe("credential registry", () => {
       const result = setActiveCredentials([second.id])
 
       expect(result).toMatchObject({ ok: true, credentials: [{ id: second.id, is_active: true }] })
-      expect(getCredential(first.id)?.is_active).toBe(false)
+      expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(await resolveSecret("active-switch")).toBe("second-secret")
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-switch"))
+      expect(usableCredentials(activeCredentialsForScope("local", { onOutage: "throw" })).filter((row) => row.provider_id === "active-switch"))
         .toMatchObject([{ id: second.id }])
     })
 
@@ -917,7 +924,7 @@ describe("credential registry", () => {
       expect(setActiveCredentials([randomUUID()])).toEqual({ ok: false, reason: "not_found" })
       expect(setActiveCredentials([first.id], "some-other-org")).toEqual({ ok: false, reason: "not_found" })
       expect(setActiveCredentials([driver.id])).toEqual({ ok: false, reason: "not_eligible" })
-      expect(getCredential(driver.id)?.is_active).toBe(false)
+      expect(credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
     })
 
     test("every binding of one account is marked in a single call", async () => {
@@ -939,8 +946,8 @@ describe("credential registry", () => {
       const result = setActiveCredentials(replacing.map((row) => row.id))
 
       expect(result).toMatchObject({ ok: true })
-      expect(replacing.every((row) => getCredential(row.id)?.is_active === true)).toBe(true)
-      expect(bindings.some((row) => getCredential(row.id)?.is_active === true)).toBe(false)
+      expect(replacing.every((row) => credentialById(row.id, { onOutage: "throw" })?.is_active === true)).toBe(true)
+      expect(bindings.some((row) => credentialById(row.id, { onOutage: "throw" })?.is_active === true)).toBe(false)
       expect(await resolveSecret("binding-acp")).toBe("binding-acp-new")
       expect(await resolveSecret("binding-sdk")).toBe("binding-sdk-new")
     })
@@ -966,12 +973,12 @@ describe("credential registry", () => {
         source: "managed",
         secret: "atomic-driver-key",
       })
-      expect(getCredential(account.id)?.is_active).toBe(false)
+      expect(credentialById(account.id, { onOutage: "throw" })?.is_active).toBe(false)
 
       expect(setActiveCredentials([account.id, driver.id])).toEqual({ ok: false, reason: "not_eligible" })
 
-      expect(getCredential(account.id)?.is_active).toBe(false)
-      expect(getCredential(holder.id)?.is_active).toBe(true)
+      expect(credentialById(account.id, { onOutage: "throw" })?.is_active).toBe(false)
+      expect(credentialById(holder.id, { onOutage: "throw" })?.is_active).toBe(true)
       expect(await resolveSecret("atomic-binding")).toBe("atomic-old")
     })
 
@@ -981,8 +988,8 @@ describe("credential registry", () => {
       expect(setActiveCredentials([first.id, second.id])).toEqual({ ok: false, reason: "ambiguous" })
       expect(setActiveCredentials([second.id, second.id])).toEqual({ ok: false, reason: "ambiguous" })
 
-      expect(getCredential(first.id)?.is_active).toBe(true)
-      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
+      expect(credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
     })
 
     test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {
@@ -1003,11 +1010,11 @@ describe("credential registry", () => {
         secret: "shared-secret",
       })
 
-      expect(selectCredentialsForScope("shared").filter((row) => row.provider_id === "active-scope")).toEqual([])
+      expect(usableCredentials(activeCredentialsForScope("shared", { onOutage: "throw" })).filter((row) => row.provider_id === "active-scope")).toEqual([])
 
       setActiveCredentials([shared.id])
 
-      expect(selectCredentialsForScope("shared").filter((row) => row.provider_id === "active-scope"))
+      expect(usableCredentials(activeCredentialsForScope("shared", { onOutage: "throw" })).filter((row) => row.provider_id === "active-scope"))
         .toMatchObject([{ id: shared.id }])
     })
   })

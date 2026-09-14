@@ -32,7 +32,7 @@ async function machineLoginUsage() {
 async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string) {
   try {
     const registry = await credentialRegistry()
-    const credential = registry.getCredential(id, org)
+    const credential = registry.credentialById(id, { onOutage: "empty" }, org)
     if (!credential || !credential.account_id) return
     const codex = await import("@claxedo/server-core/credentials/operations/codex-auth-file")
     if (!codex.shouldMirrorCodexTokens(credential)) return
@@ -63,7 +63,10 @@ async function syncOpenCodeCredentials(org?: string) {
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
-    effectiveCredentials: async (scope, org) => (await credentialRegistry()).selectCredentialsForScope(scope, org),
+    effectiveCredentials: async (scope, org) => {
+      const registry = await credentialRegistry()
+      return registry.usableCredentials(registry.activeCredentialsForScope(scope, { onOutage: "empty" }, org))
+    },
     setActiveCredentials: async (ids, org) => {
       const result = (await credentialRegistry()).setActiveCredentials(ids, org)
       // The engine resolves auth from a store Claxedo does not otherwise write:
@@ -71,8 +74,9 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       if (result.ok) await syncOpenCodeCredentials(org)
       return result
     },
-    getCredentialByProvider: async (providerId, kind, org) => (await credentialRegistry()).getCredentialByProvider(providerId, kind, org),
-    getCredential: async (id, org) => (await credentialRegistry()).getCredential(id, org),
+    getCredentialByProvider: async (providerId, kind, org) =>
+      (await credentialRegistry()).credentialByProvider(providerId, { onOutage: "empty", kind }, org),
+    getCredential: async (id, org) => (await credentialRegistry()).credentialById(id, { onOutage: "empty" }, org),
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),
     resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),
     putCredential: async (input, org) => {

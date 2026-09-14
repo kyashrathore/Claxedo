@@ -37,7 +37,7 @@ import {
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
-import { getCredential, resolveSecretById } from "@claxedo/server-core/credentials/registry"
+import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 import { renewSdkCredentialsIfDue } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
@@ -80,7 +80,7 @@ let configuredConnectionProviders: readonly ConnectionProvider<unknown, unknown>
 ]
 let configuredConnectionSecretResolver: ConnectionSecretResolver = createLocalConnectionSecretResolver({
   async resolveReference({ reference }) {
-    const credential = getCredential(reference)
+    const credential = credentialById(reference, { onOutage: "empty" })
     if (!credential) return { leaseGeneration: "missing" }
     const value = await resolveSecretById(reference)
     return {

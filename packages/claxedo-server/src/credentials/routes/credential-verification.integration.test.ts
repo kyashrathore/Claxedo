@@ -12,7 +12,7 @@ const previous = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
-const { putCredential, getCredential, resolveSecretById } = await import("@claxedo/server-core/credentials/registry")
+const { putCredential, credentialById, resolveSecretById } = await import("@claxedo/server-core/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../../authority/services")
 const { CredentialRoutes } = await import("@claxedo/local-server/credentials/routes/credential")
 const { ClaxedoDB } = await import("../../platform/db")
@@ -122,8 +122,8 @@ describe("credential verification integration", () => {
     expect(stored.tokens.access_token).toBe("access_renewed")
     expect(stored.tokens.refresh_token).toBe("refresh_renewed")
     // Expiry moved forward, so the next verify does not refresh again.
-    expect(getCredential(credential.id)?.expires_at).toBe(2_000 + 55 * 60 * 1000)
-    expect(getCredential(credential.id)?.health).toBe("ok")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.expires_at).toBe(2_000 + 55 * 60 * 1000)
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("ok")
   })
 
   test("a Codex credential whose refresh token is rejected stays expired", async () => {
@@ -165,6 +165,6 @@ describe("credential verification integration", () => {
     expect(request.mock.calls.every(([url]) => fetchUrl(url) === TOKEN_URL)).toBe(true)
     const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
     expect(stored.access).toBe("access_dead")
-    expect(getCredential(credential.id)?.expires_at).toBe(1_000)
+    expect(credentialById(credential.id, { onOutage: "throw" })?.expires_at).toBe(1_000)
   })
 })

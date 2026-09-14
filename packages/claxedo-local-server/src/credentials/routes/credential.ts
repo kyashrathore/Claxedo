@@ -214,7 +214,10 @@ export function CredentialRoutes(
    * three different repairs, so they are three different status codes rather
    * than one failure.
    */
-  const checkAnswer = (id: string, outcome: CredentialCheckOutcome): readonly [unknown, 200 | 409 | 500 | 501 | 502] => {
+  const checkAnswer = (
+    id: string,
+    outcome: CredentialCheckOutcome,
+  ): readonly [Record<string, unknown>, 200 | 409 | 500 | 501 | 502] => {
     if (outcome.status === "unsupported") {
       return [errorBody("credential_verification_unavailable", "Credential verification is unavailable"), 501]
     }
@@ -415,7 +418,7 @@ export function CredentialRoutes(
         })
       }
       return c.json(
-        outcome.status === "checked" ? { ...(answer as object), stored: outcome.stored === true } : answer,
+        outcome.status === "checked" ? { ...answer, stored: outcome.stored === true } : answer,
         status,
       )
     })

@@ -10,13 +10,13 @@
 
 import { listPolicies } from "@claxedo/server-core/sandbox/network/policy"
 import { DEFAULT_ALLOWLIST, PROVIDER_TO_GROUP } from "@claxedo/server-core/sandbox/network/types"
-import { selectCredentialsForScope } from "@claxedo/server-core/credentials/registry"
+import { activeCredentialsForScope, usableCredentials } from "@claxedo/server-core/credentials/registry"
 import { resolveSandboxNetworkPolicy, type PolicyEntry, type SandboxNetworkPolicy } from "./resolve"
 
 /** The allowlist groups behind the credentials one org's sandboxes receive. */
 export function sharedCredentialGroups(org?: string): PolicyEntry[] {
   const targets = new Set<string>()
-  for (const credential of selectCredentialsForScope("shared", org)) {
+  for (const credential of usableCredentials(activeCredentialsForScope("shared", { onOutage: "empty" }, org))) {
     const group = PROVIDER_TO_GROUP[credential.provider_id]
     if (group && DEFAULT_ALLOWLIST[group]) targets.add(group)
   }

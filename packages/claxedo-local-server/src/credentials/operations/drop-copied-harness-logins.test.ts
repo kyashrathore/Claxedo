@@ -13,7 +13,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
   deleteCredential,
-  getCredential,
+  credentialById,
   listCredentials,
   putCredential,
   readSecretById,
@@ -58,7 +58,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 1 })
 
-    expect(getCredential(copied.id)).toBeUndefined()
+    expect(credentialById(copied.id, { onOutage: "throw" })).toBeUndefined()
     expect(await readSecretById(copied.id)).toBeNull()
   })
 
@@ -68,8 +68,8 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 2 })
 
-    expect(getCredential(claude.id)).toBeUndefined()
-    expect(getCredential(codex.id)).toBeUndefined()
+    expect(credentialById(claude.id, { onOutage: "throw" })).toBeUndefined()
+    expect(credentialById(codex.id, { onOutage: "throw" })).toBeUndefined()
   })
 
   test("a scanned API key, a scanned vendor token, and a key the user typed are left alone", async () => {
@@ -89,9 +89,9 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
 
-    expect(getCredential(scannedKey.id)).toBeDefined()
-    expect(getCredential(vendorToken.id)).toBeDefined()
-    expect(getCredential(typed.id)).toBeDefined()
+    expect(credentialById(scannedKey.id, { onOutage: "throw" })).toBeDefined()
+    expect(credentialById(vendorToken.id, { onOutage: "throw" })).toBeDefined()
+    expect(credentialById(typed.id, { onOutage: "throw" })).toBeDefined()
   })
 
   test("the mark moves to an account the user chose rather than being left nowhere", async () => {
@@ -103,11 +103,11 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
       label: "work key",
       secret: "sk-ant-typed",
     })
-    expect(getCredential(copied.id)?.is_active).toBe(true)
+    expect(credentialById(copied.id, { onOutage: "throw" })?.is_active).toBe(true)
 
     await dropCopiedHarnessLogins()
 
-    expect(getCredential(typed.id)?.is_active).toBe(true)
+    expect(credentialById(typed.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("it runs once, so a login imported again on purpose is not reaped on the next boot", async () => {
@@ -117,7 +117,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
     const reimported = await scanned("claude-sdk")
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
-    expect(getCredential(reimported.id)).toBeDefined()
+    expect(credentialById(reimported.id, { onOutage: "throw" })).toBeDefined()
   })
 
   test("a marker that cannot be written costs this boot's deletes rather than the next boot's rows", async () => {
@@ -126,7 +126,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     try {
       expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
-      expect(getCredential(copied.id)).toBeDefined()
+      expect(credentialById(copied.id, { onOutage: "throw" })).toBeDefined()
     } finally {
       await fs.chmod(path.dirname(MARKER), 0o700)
     }

@@ -12,11 +12,12 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
-  getCredential,
+  credentialById,
   putCredential,
   readSecretById,
   resolveSecret,
-  selectCredentialsForScope,
+  activeCredentialsForScope,
+  usableCredentials,
   setActiveCredentials,
   updateCredentialHealth,
 } = await import("@claxedo/server-core/credentials/registry")
@@ -25,7 +26,7 @@ ClaxedoDB.Drizzle()
 
 /** What a scope's fanout would send: the rows it selects, read through the real backend. */
 async function fannedOut(scope: "local" | "shared") {
-  const rows = selectCredentialsForScope(scope)
+  const rows = usableCredentials(activeCredentialsForScope(scope, { onOutage: "throw" }))
   const entries = await Promise.all(rows.map(async (row) =>
     [row.provider_id, await readSecretById(row.id)] as const))
   return Object.fromEntries(entries)
@@ -153,7 +154,7 @@ describe("credential fanout fence", () => {
     // account was never consented for a sandbox — the substitution the fence
     // forbids is a scope it was not given, not a mark the user can see move.
     updateCredentialHealth(shared.id, "expired", Date.now())
-    expect(getCredential(local.id)?.is_active).toBe(true)
+    expect(credentialById(local.id, { onOutage: "throw" })?.is_active).toBe(true)
     expect(await fannedOut("shared")).not.toHaveProperty("multi-account-scope")
     expect((await fannedOut("local"))["multi-account-scope"]).toBe("local-token")
     expect(local.id).not.toBe(shared.id)

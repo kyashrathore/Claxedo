@@ -13,7 +13,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
   deleteCredential,
-  getCredential,
+  credentialById,
   listCredentials,
   putCredential,
   setActiveCredentials,
@@ -126,7 +126,7 @@ describe("local binding authority", () => {
     expect(resolved?.binding).toMatchObject({
       credentialId: credential.id,
       status: "active",
-      revision: getCredential(credential.id)!.revision,
+      revision: credentialById(credential.id, { onOutage: "throw" })!.revision,
       destination: {
         origin: "https://api.anthropic.com",
         methods: ["POST", "GET"],
@@ -415,14 +415,14 @@ describe("local binding authority", () => {
 
       // A single mid-turn hiccup takes nothing away: the account is still the one
       // the provider runs on, and still usable.
-      expect(getCredential(rejected.id)).toMatchObject({ is_active: true, health: null })
-      expect(getCredential(heir.id)?.is_active).toBe(false)
+      expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: true, health: null })
+      expect(credentialById(heir.id, { onOutage: "throw" })?.is_active).toBe(false)
 
       expect((await turn()).status).toBe(401)
 
       expect(spent).toEqual(["sk-ant-api03-rejected-first", "sk-ant-api03-rejected-first"])
-      expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
-      expect(getCredential(heir.id)?.is_active).toBe(true)
+      expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: false, health: "auth_failed" })
+      expect(credentialById(heir.id, { onOutage: "throw" })?.is_active).toBe(true)
     } finally {
       globalThis.fetch = realFetch
     }
@@ -443,8 +443,8 @@ describe("local binding authority", () => {
     // What `POST /:id/verify` writes when the provider rejects the account.
     updateCredentialHealth(rejected.id, "auth_failed", Date.now())
 
-    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
-    expect(getCredential(heir.id)?.is_active).toBe(true)
+    expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: false, health: "auth_failed" })
+    expect(credentialById(heir.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("a Check that finds the account working resets the run of refusals", async () => {
@@ -460,7 +460,7 @@ describe("local binding authority", () => {
     const refusal = {
       bindingId: "unused",
       credentialId: account.id,
-      revision: getCredential(account.id)!.revision,
+      revision: credentialById(account.id, { onOutage: "throw" })!.revision,
       status: 401,
     }
 
@@ -470,7 +470,7 @@ describe("local binding authority", () => {
 
     // The provider's newer word stands between the two refusals, so the second
     // one starts a run rather than finishing the first.
-    expect(getCredential(account.id)).toMatchObject({ is_active: true, health: "ok" })
+    expect(credentialById(account.id, { onOutage: "throw" })).toMatchObject({ is_active: true, health: "ok" })
   })
 
   test("a refusal for a value that has since been replaced starts over", async () => {
@@ -483,32 +483,32 @@ describe("local binding authority", () => {
       secret: "sk-ant-api03-rotated-heir",
     })
     const local = broker()
-    const first = getCredential(account.id)!.revision
+    const first = credentialById(account.id, { onOutage: "throw" })!.revision
 
     await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: first, status: 401 })
     await updateCredentialSecret(account.id, "sk-ant-api03-rotated-again")
-    const second = getCredential(account.id)!.revision
+    const second = credentialById(account.id, { onOutage: "throw" })!.revision
     await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: second, status: 401 })
 
     expect(second).not.toBe(first)
-    expect(getCredential(account.id)).toMatchObject({ is_active: true })
+    expect(credentialById(account.id, { onOutage: "throw" })).toMatchObject({ is_active: true })
   })
 
   test("reportFailure marks the row only for the revision the request used", async () => {
     const credential = await activeRow("sk-ant-api03-reported")
     const local = broker()
     const failure = { bindingId: "unused", credentialId: credential.id, status: 401 }
-    const stale = { ...failure, revision: getCredential(credential.id)!.revision - 1 }
-    const current = { ...failure, revision: getCredential(credential.id)!.revision }
+    const stale = { ...failure, revision: credentialById(credential.id, { onOutage: "throw" })!.revision - 1 }
+    const current = { ...failure, revision: credentialById(credential.id, { onOutage: "throw" })!.revision }
 
     await local.authority.reportFailure(stale)
     await local.authority.reportFailure(stale)
-    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
 
     await local.authority.reportFailure(current)
     await local.authority.reportFailure(current)
-    expect(getCredential(credential.id)?.health).toBe("auth_failed")
-    expect(getCredential(credential.id)?.status).toBe("error")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.status).toBe("error")
   })
 
   test("a vendor 403 does not withdraw a working credential", async () => {
@@ -518,11 +518,11 @@ describe("local binding authority", () => {
     await local.authority.reportFailure({
       bindingId: "unused",
       credentialId: credential.id,
-      revision: getCredential(credential.id)!.revision,
+      revision: credentialById(credential.id, { onOutage: "throw" })!.revision,
       status: 403,
     })
 
-    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
   })
 
   test("a registry outage is an outage, never an empty selection", async () => {
@@ -585,7 +585,7 @@ describe("local binding authority", () => {
     const refusal = {
       bindingId: id,
       credentialId: credential.id,
-      revision: getCredential(credential.id, org)!.revision,
+      revision: credentialById(credential.id, { onOutage: "throw" }, org)!.revision,
       status: 401,
     }
     await local.authority.reportFailure(refusal)
@@ -593,7 +593,7 @@ describe("local binding authority", () => {
 
     // Read in the single-tenant org the row is not in, the revision never
     // matches and a vendor's 401 silently marks nothing at all.
-    expect(getCredential(credential.id, org)?.health).toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" }, org)?.health).toBe("auth_failed")
   })
 
   test("a provider id that names an Object prototype member binds nothing", async () => {
@@ -636,11 +636,11 @@ describe("local binding authority", () => {
 
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
-    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
 
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
-    expect(getCredential(credential.id)?.health).toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("auth_failed")
   })
 
   /**
@@ -810,7 +810,7 @@ describe("local binding authority", () => {
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
 
     await local.authority.resolve(id)
-    const marked = getCredential(credential.id)!.last_used_at
+    const marked = credentialById(credential.id, { onOutage: "throw" })!.last_used_at
     expect(marked).toBe(clock)
 
     // A streaming turn resolves once per request; a write each time turns it
@@ -818,11 +818,11 @@ describe("local binding authority", () => {
     clock += 30_000
     await local.authority.resolve(id)
     await local.authority.resolve(id)
-    expect(getCredential(credential.id)?.last_used_at).toBe(marked)
+    expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(marked)
 
     clock += 31_000
     await local.authority.resolve(id)
-    expect(getCredential(credential.id)?.last_used_at).toBe(clock)
+    expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(clock)
   })
 
   test("a key file shorter than the signing key is repaired by hand, never overwritten", async () => {

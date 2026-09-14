@@ -36,7 +36,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const userConfigFile = path.join(root, "user-agent-config.json")
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
-const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("@claxedo/server-core/credentials/registry")
+const { putCredential, resolveSecret, deleteCredentialsByProvider, credentialByProvider } = await import("@claxedo/server-core/credentials/registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
 const { credentialDiscovery } = await import("./discovery")
 const { saveUserConfig } = await import("../../agent-config")
@@ -140,8 +140,8 @@ describe("syncLocalCredentials", () => {
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect((await getCredentialByProvider("claude-sdk"))?.source).toBe("env")
-    expect((await getCredentialByProvider("claude-sdk"))?.label).toBe("Synced from CLAUDE_CODE_OAUTH_TOKEN")
+    expect((await credentialByProvider("claude-sdk", { onOutage: "throw" }))?.source).toBe("env")
+    expect((await credentialByProvider("claude-sdk", { onOutage: "throw" }))?.label).toBe("Synced from CLAUDE_CODE_OAUTH_TOKEN")
     expect(sdk).toEqual({
       type: "claude_code_oauth",
       claudeAiOauth: { accessToken: "sk-ant-oat01-env" },
@@ -222,7 +222,7 @@ describe("syncLocalCredentials", () => {
     expect(result.synced).toEqual(["cursor-sdk"])
     expect(result.missing).toEqual([])
     expect(await resolveSecret("cursor-sdk")).toBe("cursor-env-key")
-    expect((await getCredentialByProvider("cursor-sdk"))?.source).toBe("env")
+    expect((await credentialByProvider("cursor-sdk", { onOutage: "throw" }))?.source).toBe("env")
   })
 
   test("does not discover Cursor credentials from local Cursor state", async () => {

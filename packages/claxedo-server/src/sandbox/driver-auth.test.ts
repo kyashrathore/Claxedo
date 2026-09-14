@@ -11,7 +11,7 @@ const stored = new Map<string, StoredCredential>()
  * same provider name.
  */
 vi.mock("@claxedo/server-core/credentials/registry", () => ({
-  getCredentialByProvider: vi.fn((id: string, kind?: string) => {
+  credentialByProvider: vi.fn((id: string, { kind }: { kind?: string }) => {
     const row = stored.get(`${id}:${kind ?? ""}`)
     return row ? { provider_id: id, status: row.status ?? "available" } : undefined
   }),

@@ -1,7 +1,7 @@
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
-import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { getCredentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
+import { credentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
 import type { CredentialKind, CredentialSource } from "@claxedo/server-core/credentials/types"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
@@ -24,10 +24,6 @@ const nativeHarnessEnv = {
   "codex-app-server": "OPENAI_API_KEY",
   "cursor-sdk": "CURSOR_API_KEY",
 } as const
-
-function kind(providerId: string): CredentialKind {
-  return isSandboxDriverID(providerId) ? "sandbox_driver" : "api_key"
-}
 
 function itemOrigin(item: Item) {
   if (item.origin) return item.origin
@@ -286,7 +282,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
   const failed: Array<{ provider_id: string; error: string }> = []
 
   for (const providerId of list) {
-    const current = getCredentialByProvider(providerId, undefined, org)
+    const current = credentialByProvider(providerId, { onOutage: "empty" }, org)
     if (current?.source === "managed") {
       existing.push(providerId)
       continue

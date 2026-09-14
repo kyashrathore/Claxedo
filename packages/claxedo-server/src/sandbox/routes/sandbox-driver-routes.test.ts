@@ -207,9 +207,9 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
 
     // The model key must not stand in for a sandbox credential, or
     // `workspace.ts`'s create gate passes and the launch fails later instead.
-    expect(registry.getCredentialByProvider(providerId, "sandbox_driver")).toBeUndefined()
+    expect(registry.credentialByProvider(providerId, { onOutage: "throw", kind: "sandbox_driver" })).toBeUndefined()
     expect(await registry.resolveSecret(providerId, "sandbox_driver")).toBeNull()
     // Unscoped still sees it, so model-provider callers are unaffected.
-    expect(registry.getCredentialByProvider(providerId)?.kind).toBe("api_key")
+    expect(registry.credentialByProvider(providerId, { onOutage: "throw" })?.kind).toBe("api_key")
   })
 })

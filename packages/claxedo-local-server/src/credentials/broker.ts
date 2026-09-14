@@ -31,8 +31,8 @@ import type { ProviderProjectionSource } from "@claxedo/workspace-runtime/config
 import {
   markCredentialUsed,
   readSecretById,
-  requireActiveCredentialsForScope,
-  requireCredential,
+  activeCredentialsForScope,
+  credentialById,
   updateCredentialHealth,
   SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
@@ -226,7 +226,7 @@ export function createLocalCredentialBroker(input: {
    * running on the machine's own login.
    */
   function selectedCredentials(scope: SecretScope, org: string) {
-    return requireActiveCredentialsForScope(scope, org)
+    return activeCredentialsForScope(scope, { onOutage: "throw" }, org)
       .map((row) => hasProviderDestination(row.credential.provider_id)
         ? row
         : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
@@ -314,7 +314,7 @@ export function createLocalCredentialBroker(input: {
       // The org the binding was minted in. Read in the default one instead,
       // another tenant's row is never found and its 401 marks nothing.
       const org = minted.get(bindingId)?.orgId ?? defaultOrg
-      const credential = requireCredential(credentialId, org)
+      const credential = credentialById(credentialId, { onOutage: "throw" }, org)
       // The revision the request used. A 401 for a value that has since been
       // rotated says nothing about the one stored now.
       if (!credential || credential.revision !== revision) return
