@@ -150,7 +150,15 @@ export const localServer: Policy = {
   // broker — and the package is data and pure functions with no dependencies
   // of its own.
   // Full closure measured at 62 modules / 26 packages.
-  ceilings: { modules: 62, packages: 26 },
+  // -2 modules / +1 package: `workspace/user-hosted-serving.ts` and
+  // `workspace/user-hosted-surface.ts` moved verbatim to @claxedo/host-serving,
+  // the reviewed owner of the serving half of remote access, so the desktop
+  // daemon and a `claxedo connect` host dial the relay through one loop. The
+  // daemon keeps only its loopback control route, which hands the package the
+  // embedded runtimes' `sessionAuthority`. The package reaches server-core's
+  // log and peer-address leaves and the workspace-runtime relay subpath, all
+  // already here. Re-measured, not summed: 60 modules, 27 packages.
+  ceilings: { modules: 60, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

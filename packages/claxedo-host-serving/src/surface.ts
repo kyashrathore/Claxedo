@@ -1,6 +1,6 @@
 /**
  * What a remote client reaching this machine through the workspace relay
- * host tunnel (`user-hosted-serving.ts`) may reach on this machine for the
+ * host tunnel (`serving.ts`) may reach on this machine for the
  * workspace it is tunneled to, and where each admitted request lands.
  *
  * The relay strips `/workspaces/:id` before forwarding. This router selects
@@ -118,7 +118,7 @@ function normalizedBase(localBaseUrl: string): string {
  * carried.
  *
  * A relayed caller holds a connection scoped to exactly one workspace (the
- * per-workspace tunnel grain documented in `user-hosted-serving.ts`); if this
+ * per-workspace tunnel grain documented in `serving.ts`); if this
  * forwarded a caller-supplied `directory` instead, that caller could name a
  * DIFFERENT workspace id in its own query string and read that workspace's
  * `/project/current` or connect its provider credentials through THIS

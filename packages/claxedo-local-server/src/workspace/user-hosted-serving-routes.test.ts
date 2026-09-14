@@ -2,7 +2,10 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { HostTunnelTokenSignerResult } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 import { UserHostedServingRoutes } from "./user-hosted-serving-routes"
-import { stopUserHostedServing, userHostedServingState } from "./user-hosted-serving"
+import { stopUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
+import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
+
+const state = () => userHostedServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })
 
 /**
  * The PUT body's `credential` is the heartbeat ack's `hostTunnel` object
@@ -54,7 +57,7 @@ describe("user-hosted serving routes", () => {
       relayUrl: "https://relay.claxedo.test",
       workspaceIds: ["11111111-1111-4111-8111-111111111111"],
     })
-    expect(userHostedServingState()).toMatchObject({ serving: true })
+    expect(state()).toMatchObject({ serving: true })
   })
 
   test("reports this daemon's runtime composition whether or not it is serving", async () => {
@@ -86,7 +89,7 @@ describe("user-hosted serving routes", () => {
       workspaceIds: ["11111111-1111-4111-8111-111111111111"],
     })
     expect(response.status).toBe(400)
-    expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
+    expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 
   /**
@@ -99,11 +102,11 @@ describe("user-hosted serving routes", () => {
     vi.useFakeTimers()
     try {
       await put({ ...ackCredential(), tokenExpiresAt: Date.now() + 60_000 })
-      expect(userHostedServingState()).toMatchObject({ serving: true })
+      expect(state()).toMatchObject({ serving: true })
       vi.advanceTimersByTime(59_000)
-      expect(userHostedServingState(), "still leased").toMatchObject({ serving: true })
+      expect(state(), "still leased").toMatchObject({ serving: true })
       vi.advanceTimersByTime(2_000)
-      expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
+      expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
     } finally {
       vi.useRealTimers()
     }
@@ -116,7 +119,7 @@ describe("user-hosted serving routes", () => {
       vi.advanceTimersByTime(50_000)
       await put({ ...ackCredential(), tokenExpiresAt: Date.now() + 60_000 })
       vi.advanceTimersByTime(20_000)
-      expect(userHostedServingState(), "a beating machine must not be stopped").toMatchObject({ serving: true })
+      expect(state(), "a beating machine must not be stopped").toMatchObject({ serving: true })
     } finally {
       vi.useRealTimers()
     }
@@ -131,13 +134,13 @@ describe("user-hosted serving routes", () => {
    */
   test("reports the tunnel as not connected until it opens", async () => {
     await put(ackCredential())
-    expect(userHostedServingState()).toMatchObject({ serving: true, connected: false })
+    expect(state()).toMatchObject({ serving: true, connected: false })
   })
 
   test("rejects a credential without a relay to dial", async () => {
     const { relayUrl: _omitted, ...withoutRelay } = ackCredential()
     const response = await put(withoutRelay)
     expect(response.status).toBe(400)
-    expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
+    expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 })

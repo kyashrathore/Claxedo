@@ -1,12 +1,14 @@
 /**
- * The desktop machine's relay connection — the SERVING half of remote access.
+ * This machine's relay connection — the SERVING half of remote access.
  *
  * Registration was never serving: a share is routable only while this machine
  * holds an outbound tunnel to the relay for it. Under machine-wide enrollment
  * the credential arrives on every heartbeat ack (ONE Host Tunnel Token whose
- * claim is exactly the assigned∩acked workspace set), travels connector child
- * → Electron main → this daemon, and this module turns it into relay
- * connections for that set.
+ * claim is exactly the assigned∩acked workspace set) and reaches the process
+ * that owns the workspace runtimes — on the desktop it travels connector child
+ * → Electron main → the local-server daemon's `/api/claxedo/host-serving`
+ * route; a `claxedo connect` host holds it in-process — and this module turns
+ * it into relay connections for that set.
  *
  * ONE CONNECTION PER WORKSPACE, one credential for all of them. The machine is
  * enrolled as a machine and holds a single Host Tunnel Token, but the relay's
@@ -42,9 +44,9 @@ import {
   type WorkspaceRelayHostTunnel,
   type WorkspaceRelayHostTunnelEvent,
 } from "@claxedo/workspace-runtime/relay"
+import type { SessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { userHostedSurface } from "./user-hosted-surface"
-import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
+import { userHostedSurface } from "./surface"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
 const log = Log.create({ service: "user-hosted-serving" })
@@ -56,6 +58,20 @@ export type UserHostedServingCredential = {
   workspaceIds: readonly string[]
   /** When the Host Tunnel Token dies, in epoch ms — the signer's `tokenExpiresAt`. */
   expiresAt: number
+}
+
+/**
+ * How the runtimes behind the served origin composed their session access —
+ * the `sessionAuthority` marker of the policy they were mounted with.
+ *
+ * Read through a function on every call rather than captured once: the
+ * daemon derives it from a policy that is configured after this module is
+ * imported, and a host that serves both kinds would otherwise declare the
+ * composition it had at first call forever.
+ */
+export type UserHostedServingComposition = {
+  localBaseUrl: string
+  sessionAuthority: () => SessionAccessPolicy["sessionAuthority"]
 }
 
 type ActiveTunnel = {
@@ -110,7 +126,7 @@ let active: ActiveServing | undefined
  * beating always replaces this before it fires. If beats stop — the connector
  * child dies, the account goes away, the network drops — the control plane
  * expires the enrollment and refuses to route, and a tunnel left open here
- * would keep this daemon reporting `serving: true` while the workspace is
+ * would keep this process reporting `serving: true` while the workspace is
  * unreachable. Observed live: the child exited silently, the lease lapsed,
  * and the desktop kept claiming "Serving 2 workspaces" while the phone was
  * correctly told the host was offline.
@@ -159,17 +175,18 @@ function logTunnelEvent(
 }
 
 /**
- * What the daemon currently serves, for status surfaces and tests.
+ * What this process currently serves, for status surfaces and tests.
  *
  * `sessionAuthority` is reported whether or not anything is being served, and
- * it is the reason Electron main reads this route at all: the machine has to
- * DECLARE its runtime composition on every enrollment heartbeat, the control
- * plane mints the client's event-stream scope from that declaration and
- * refuses to infer one, and this daemon is the only process that knows how its
- * own embedded runtimes were composed.
+ * it is the reason Electron main reads the daemon's route at all: the machine
+ * has to DECLARE its runtime composition on every enrollment heartbeat, the
+ * control plane mints the client's event-stream scope from that declaration
+ * and refuses to infer one, and the process that composed the runtimes is the
+ * only one that knows the answer — which is why it is passed in here rather
+ * than looked up.
  */
-export function userHostedServingState() {
-  const sessionAuthority = embeddedWorkspaceRuntimeSessionAuthority()
+export function userHostedServingState(input: Pick<UserHostedServingComposition, "sessionAuthority">) {
+  const sessionAuthority = input.sessionAuthority()
   if (!active) return { serving: false as const, sessionAuthority }
   const workspaceIds = [...active.tunnels.keys()].sort()
   const connectedWorkspaceIds = workspaceIds.filter((workspaceId) => active?.tunnels.get(workspaceId)?.status.connected)
@@ -200,11 +217,11 @@ export function stopUserHostedServing() {
 
 export async function setUserHostedServing(
   credential: UserHostedServingCredential | null,
-  input: { localBaseUrl: string },
+  input: UserHostedServingComposition,
 ) {
   if (!credential || credential.workspaceIds.length === 0) {
     stopUserHostedServing()
-    return userHostedServingState()
+    return userHostedServingState(input)
   }
   const relayUrl = normalized(credential.relayUrl)
   const localBaseUrl = normalized(input.localBaseUrl)
@@ -263,7 +280,7 @@ export async function setUserHostedServing(
       expiresAt: credential.expiresAt,
     })
   }
-  return userHostedServingState()
+  return userHostedServingState(input)
 }
 
 /** The machine's relay connection FOR ONE WORKSPACE — the relay's room grain. */
@@ -287,10 +304,10 @@ function openWorkspaceTunnel(input: {
       // when the same machine happens to serve that one too.
       if (requested !== workspaceId) return undefined
       // What a remote caller on THIS workspace's tunnel may reach on this
-      // machine, and where it lands: the daemon's own families denied
+      // machine, and where it lands: the local server's own families denied
       // outright, its OpenCode-compat root family for provider auth/OAuth/
       // project metadata, everything else the workspace runtime itself
-      // (`user-hosted-surface.ts` for the full design).
+      // (`surface.ts` for the full design).
       const target = userHostedSurface({ localBaseUrl: serving.localBaseUrl, workspaceId, path })
       if (target.kind === "deny") return undefined
       return target.url

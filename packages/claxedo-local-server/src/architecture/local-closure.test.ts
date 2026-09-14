@@ -256,8 +256,15 @@ describe("@claxedo/local-server closure", () => {
     // harness table and the credential-broker error vocabulary; the desktop
     // server reads both, so it is a package of this closure in its own right.
     // Measured: 90 modules, 26 packages.
-    expect(modules.size).toBeLessThanOrEqual(90)
+    // `workspace/user-hosted-serving.ts` and `workspace/user-hosted-surface.ts`
+    // moved verbatim to @claxedo/host-serving, the one owner of the serving
+    // half of remote access for this daemon and a `claxedo connect` host; the
+    // daemon keeps only the loopback control route that hands it the embedded
+    // runtimes' `sessionAuthority`. The package reaches server-core's log and
+    // peer-address leaves and the runtime's relay subpath, all already here.
+    // Measured: 88 modules, 27 packages.
+    expect(modules.size).toBeLessThanOrEqual(88)
     // smol-toml is the hosted MCP installer's configuration validator.
-    expect(packages.size).toBeLessThanOrEqual(26)
+    expect(packages.size).toBeLessThanOrEqual(27)
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 
-import { userHostedSurface } from "./user-hosted-surface"
+import { userHostedSurface } from "./surface"
 
 const WORKSPACE_ID = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
 const OTHER_WORKSPACE_ID = "22222222-2222-4222-8222-222222222222"

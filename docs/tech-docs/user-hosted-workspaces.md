@@ -20,7 +20,8 @@ host connector child (`child-supervisor.ts`, `host-connector-entry.ts`). The
 connector's heartbeat carries the workspace ids the machine serves and, outside
 the consent signature, `sessionAuthority` — the composition of the runtime the
 machine serves. The desktop reads that declaration from its daemon's
-`GET /api/claxedo/host-serving` (`packages/claxedo-local-server/src/workspace/user-hosted-serving.ts`),
+`GET /api/claxedo/host-serving` (`packages/claxedo-local-server/src/workspace/user-hosted-serving-routes.ts`,
+over the shared serving loop in `packages/claxedo-host-serving/src/serving.ts`),
 which reports `embeddedWorkspaceRuntimeSessionAuthority()` from
 `deployments/local/embedded-workspace-runtime.ts`: the same expression the
 runtime app is composed from, so the declaration cannot drift from what is
