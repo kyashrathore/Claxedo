@@ -70,10 +70,10 @@ export function createSelfHostedTasksComposition(
         store: sqliteTasksStore,
         authorization: identity.authorization,
         authenticate: identity.authenticate,
-        bridge: createLocalTasksSessionBridge({
+        bridge: identity.bridge(createLocalTasksSessionBridge({
           reserve: createTasksSessionReserve(reservation),
           release: createTasksSessionRelease(reservation),
-        }),
+        })),
         // The local bridge this composition passes names no cloud target, so a
         // preset placed in the cloud is refused when it is saved rather than
         // saved and refused at every Start.

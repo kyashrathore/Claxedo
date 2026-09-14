@@ -13,8 +13,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { betterAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
+import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
 import { createSelfHostedTasksComposition } from "./self-hosted-composition"
+import { createTasksSessionGrants } from "./session-grants"
 
 const bridgeInputs = vi.hoisted(() => [] as unknown[])
 vi.mock("@claxedo/local-server/tasks/session-bridge", async (importOriginal) => {
@@ -234,6 +236,43 @@ describe("signed self-hosted Tasks composition", () => {
     })
     expect(beginSessionCompensation).not.toHaveBeenCalled()
     expect(completeSessionCompensation).not.toHaveBeenCalled()
+  })
+
+  test("a session's grant cannot start a task the owner pointed at another project's workspace", async () => {
+    const alice = { userId: "alice", actorId: "actor:alice", orgId: "org-1" }
+    const owners: Record<string, TasksCapabilityOwner> = {
+      ws_root: { ...alice, projectId: "project-a" },
+      ws_other: { ...alice, projectId: "project-b" },
+    }
+    const grants = createTasksSessionGrants({ workspaceOwner: async (workspaceId) => owners[workspaceId] })
+    const bare = new Hono()
+    mountControlPlaneRouteContributions({
+      contributions: createSelfHostedTasksComposition({ services: services(), grants }).routeContributions,
+      mount: (contribution) => bare.route(contribution.path, contribution.routes),
+    })
+    const token = await grants.issue({ workspaceId: "ws_root", sessionId: "ses_1" })
+    if (!token) throw new Error("the fixture issued no grant")
+    await command(bare, "alice", "owner-preset", PRESET)
+    const created = await command(bare, "alice", "owner-task", { ...TASK, input: { ...TASK.input, workspaceId: "ws_other" } })
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+    const presets = (await (await bare.request(`${ORIGIN}${TASKS}/presets`, { headers: headers("alice") })).json()) as {
+      items: Array<{ id: string }>
+    }
+
+    const preview = await bare.request(`${ORIGIN}${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        taskRevision: 1,
+        presetId: presets.items[0]?.id,
+        presetRevision: 1,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+      }),
+    })
+    expect(preview.status).toBe(403)
+    expect(await preview.json()).toMatchObject({ error: { message: "This session may act only in project project-a" } })
   })
 
   test("a task written by one request is still there for the next composition", async () => {
