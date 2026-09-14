@@ -511,6 +511,8 @@
       },
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/host-connector": "workspace:*",
+        "@claxedo/host-serving": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
       },
       "devDependencies": {
