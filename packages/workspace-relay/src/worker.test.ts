@@ -113,4 +113,40 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
       "/internal/relay/revocation",
     ])
   })
+
+  test("resolver client exposes the host-generation lookup only when its URL is bound", async () => {
+    const unfenced = workspaceRelayWorkerResolverClient({
+      CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+    }, async () => Response.json({ active: true }))
+    expect(unfenced.hostGeneration).toBeUndefined()
+
+    const requests: Request[] = []
+    let status = 200
+    const fenced = workspaceRelayWorkerResolverClient({
+      CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+      CLAXEDO_RELAY_HOST_GENERATION_URL: "https://central.test/internal/relay/host-generation",
+      CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: "10000",
+    }, async (url, init) => {
+      const request = new Request(url, init)
+      requests.push(request)
+      if (status !== 200) return new Response("", { status })
+      return Response.json({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    })
+    await expect(fenced.hostGeneration!({ enrollmentId: "enr_1", generation: 2 }))
+      .resolves.toEqual({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    // Cached: equal generation, inside the TTL.
+    await expect(fenced.hostGeneration!({ enrollmentId: "enr_1", generation: 2 }))
+      .resolves.toEqual({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe("https://central.test/internal/relay/host-generation?enrollmentId=enr_1")
+    expect(requests[0]?.headers.get("authorization")).toBe("Bearer resolver-token")
+
+    status = 404
+    await expect(fenced.hostGeneration!({ enrollmentId: "enr_2", generation: 1 })).resolves.toBeUndefined()
+    status = 503
+    await expect(fenced.hostGeneration!({ enrollmentId: "enr_3", generation: 1 }))
+      .rejects.toThrow("relay host-generation resolver failed: 503")
+  })
 })

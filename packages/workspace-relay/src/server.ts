@@ -5,9 +5,11 @@ import { isRecord } from "@claxedo/helpers/guards"
 import type { RuntimeAccessVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
+  isHostGeneration,
   mintRelayHostToken,
   validateRuntimeAccessTokenClaims,
   verifyRuntimeAccessToken,
+  type HostTunnelTokenClaims,
   type RelayClaimPair,
   type RelayJwtAlgorithm,
   type RelayKey,
@@ -74,6 +76,25 @@ export function parseRuntimeAccessTokenActiveResult(input: unknown): RuntimeAcce
   return { active: false, code: row.code, reason: row.reason }
 }
 
+/**
+ * `GET /internal/relay/host-generation?enrollmentId=` as the control plane
+ * answers it: the enrollment's current serving generation, or 404 for an
+ * enrollment it does not know (`undefined` here).
+ */
+export type HostGenerationResult = {
+  enrollmentId: string
+  generation: number
+  revoked: boolean
+}
+
+export function parseHostGenerationResult(input: unknown): HostGenerationResult | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  if (typeof row.enrollmentId !== "string" || !row.enrollmentId.trim()) return undefined
+  if (!isHostGeneration(row.generation) || typeof row.revoked !== "boolean") return undefined
+  return { enrollmentId: row.enrollmentId, generation: row.generation, revoked: row.revoked }
+}
+
 function relayClaimPair(access: unknown, backing: unknown): RelayClaimPair | undefined {
   if (access === "cloud" && backing === "cloud-vm") return { access, backing }
   if (access === "user-hosted" && backing === "local-worktree") return { access, backing }
@@ -89,6 +110,23 @@ export type RevocationLookup = (args: RevocationLookupArgs) => Promise<RuntimeAc
 
 export type CachedRevocationOptions = {
   /** TTL in milliseconds for cached revocation responses. Defaults to 10_000. */
+  ttlMs?: number
+  /** Clock injection for tests. Defaults to `Date.now`. */
+  now?: () => number
+}
+
+/**
+ * `generation` is the value the caller holds (a token's, a socket's). The
+ * cached client uses it to decide whether a cached answer may stand in for a
+ * fresh one; an uncached lookup ignores it. Resolves `undefined` for an
+ * unknown enrollment and THROWS when the control plane cannot be reached —
+ * the throw is the "unavailable" signal every consumer grades separately.
+ */
+export type HostGenerationLookupArgs = { enrollmentId: string; generation: number }
+export type HostGenerationLookup = (args: HostGenerationLookupArgs) => Promise<HostGenerationResult | undefined>
+
+export type CachedHostGenerationOptions = {
+  /** TTL in milliseconds for cached host-generation answers. Defaults to 10_000. */
   ttlMs?: number
   /** Clock injection for tests. Defaults to `Date.now`. */
   now?: () => number
@@ -131,6 +169,12 @@ export type WorkspaceRelayAuditEvent = {
 
 export type WorkspaceRelayAuthOptions = {
   runtimeAccessKey: RelayKey
+  /**
+   * Serving-generation fence for host tunnels. Unset on desktop and
+   * self-hosted relays, where admission and the established-tunnel checks
+   * behave as if the token carried no generation at all.
+   */
+  resolveHostGeneration?: HostGenerationLookup
   /**
    * Cache signature/introspection-verified Runtime Access Token claims by the
    * full token string. Revocation/active checks, role enforcement, and target
@@ -371,6 +415,104 @@ export function createCachedRevocationClient(
     cache.set(args.jti, { promise, expiresAt: at + ttlMs })
     return await promise
   }
+}
+
+/**
+ * Caches host-generation answers by enrollment id with the fence's own rules:
+ * a cached answer stands only while it is at least the caller's generation
+ * (equal admits; higher is a refusal that needs no fresh read), and a caller
+ * holding a HIGHER generation than the cache forces a refresh so a fresh
+ * `acquire` is never refused on a stale answer. Unknown enrollments and
+ * failures are not cached; concurrent misses share one lookup.
+ */
+export function createCachedHostGenerationClient(
+  inner: HostGenerationLookup,
+  options: CachedHostGenerationOptions = {},
+): HostGenerationLookup {
+  const ttlMs = options.ttlMs ?? 10_000
+  const now = options.now ?? Date.now
+  const cache = new Map<string, {
+    expiresAt: number
+    promise?: Promise<HostGenerationResult | undefined>
+    result?: HostGenerationResult
+  }>()
+
+  return async (args) => {
+    const at = now()
+    const entry = cache.get(args.enrollmentId)
+    if (entry && entry.expiresAt > at) {
+      if (entry.result && entry.result.generation >= args.generation) return entry.result
+      if (!entry.result && entry.promise) return await entry.promise
+    }
+
+    const promise = inner(args)
+      .then((result) => {
+        pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
+        if (result) cache.set(args.enrollmentId, { result, expiresAt: now() + ttlMs })
+        else cache.delete(args.enrollmentId)
+        return result
+      })
+      .catch((err) => {
+        cache.delete(args.enrollmentId)
+        throw err
+      })
+    cache.set(args.enrollmentId, { promise, expiresAt: at + ttlMs })
+    return await promise
+  }
+}
+
+export type HostTunnelGenerationDecision =
+  | { ok: true }
+  | {
+      ok: false
+      retryable: false
+      code: "host_generation_superseded" | "host_generation_unknown" | "host_enrollment_revoked" | "host_enrollment_unknown"
+      reason: string
+    }
+  | {
+      ok: false
+      retryable: true
+      code: "host_generation_lookup_unavailable"
+      reason: string
+    }
+
+/**
+ * The one admission/re-check verdict both relay adapters apply to a host
+ * tunnel. Without a resolver, or for a token that carries no generation, the
+ * verdict is always `ok` — that is the pre-fence behaviour desktop and
+ * self-hosted relays keep. `retryable` separates "the control plane said no"
+ * (the host must not simply reconnect) from "the control plane could not be
+ * asked" (it should).
+ */
+export async function checkHostTunnelGeneration(
+  lookup: HostGenerationLookup | undefined,
+  claims: Pick<HostTunnelTokenClaims, "enrollment_id" | "generation">,
+): Promise<HostTunnelGenerationDecision> {
+  if (!lookup || claims.generation === undefined || !claims.enrollment_id) return { ok: true }
+  let result: HostGenerationResult | undefined
+  try {
+    result = await lookup({ enrollmentId: claims.enrollment_id, generation: claims.generation })
+  } catch (err) {
+    return {
+      ok: false,
+      retryable: true,
+      code: "host_generation_lookup_unavailable",
+      reason: `Host generation lookup is unavailable: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (!result) {
+    return { ok: false, retryable: false, code: "host_enrollment_unknown", reason: "Host enrollment is unknown" }
+  }
+  if (result.revoked) {
+    return { ok: false, retryable: false, code: "host_enrollment_revoked", reason: "Host enrollment was revoked" }
+  }
+  if (result.generation > claims.generation) {
+    return { ok: false, retryable: false, code: "host_generation_superseded", reason: "Host tunnel generation was superseded" }
+  }
+  if (result.generation < claims.generation) {
+    return { ok: false, retryable: false, code: "host_generation_unknown", reason: "Host tunnel generation is ahead of the control plane" }
+  }
+  return { ok: true }
 }
 
 /**

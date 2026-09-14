@@ -3,7 +3,7 @@
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { WorkspaceRelayAuthError, verifyHostTunnelToken } from "./auth"
+import { WorkspaceRelayAuthError, verifyHostTunnelToken, type HostTunnelTokenClaims } from "./auth"
 import { bearerToken, errorBody } from "./http"
 import {
   makeTunnelPong,
@@ -15,6 +15,7 @@ import {
 import {
   RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
+  checkHostTunnelGeneration,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
   workspaceRelayTargetUrl,
@@ -249,8 +250,16 @@ export type WorkspaceRelayDurableObjectRoomOptions = WorkspaceRelayOptions & {
   /**
    * Interval for the alarm-based revocation re-check that covers hibernated
    * connections, where `setInterval` watchers cannot survive. 0 disables it.
+   * The hibernated host-generation check rides the same alarm.
    */
   hibernatedRevocationCheckIntervalMs?: number
+  /**
+   * How often an established host tunnel's serving generation is re-checked
+   * against `resolveHostGeneration` on the non-hibernating path. Defaults to
+   * 30s; 0 disables it. The lookup may answer from its cache, so a superseded
+   * tunnel closes within this interval plus the lookup's cache TTL.
+   */
+  hostGenerationCheckIntervalMs?: number
   /**
    * Durable Object alarm surface, supplied by the Worker (`state.storage`) so the
    * room can schedule the hibernation-safe revocation re-check. Absent on the
@@ -304,6 +313,11 @@ export type WorkspaceRelaySocketAttachment =
       hostId: string
       workspaceIds: string[]
       connectedAt: number
+      /** Fence pair from the admitting Host Tunnel Token; absent on sockets attached before the fence existed. */
+      enrollmentId?: string
+      generation?: number
+      /** Consecutive unavailable generation lookups, persisted so hibernation cannot reset the outage grace. */
+      generationCheckFailures?: number
     }
   | {
       kind: "user-hosted-client"
@@ -362,6 +376,7 @@ const RESOLVER_OUTAGE_GRACE_ATTEMPTS_DEFAULT = 3
 // hibernation; `setInterval` does not, which is why the watchers below are not
 // installed on the hibernating path at all.
 const HIBERNATED_REVOCATION_ALARM_INTERVAL_MS_DEFAULT = 30_000
+const HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
 const TRACE_FORCE_HEADER = "x-claxedo-relay-trace"
 
@@ -369,6 +384,10 @@ type HostTunnelSocket = {
   hostId: string
   workspaceIds: string[]
   connectedAt: number
+  enrollmentId?: string
+  generation?: number
+  generationCheckFailures: number
+  generationWatcher?: ReturnType<typeof setInterval>
   socket: WorkspaceRelayDurableObjectSocket
   pending: Map<string, PendingTunnelHttpResponse>
   channels: Map<string, UserHostedClientSocket>
@@ -1081,6 +1100,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   }
 
   const cleanupTunnelResources = (tunnel: HostTunnelSocket, reason: string) => {
+    if (tunnel.generationWatcher) clearInterval(tunnel.generationWatcher)
+    tunnel.generationWatcher = undefined
     for (const pending of tunnel.pending.values()) {
       clearTimeout(pending.timeout)
       if (pending.stream?.slowConsumerTimeout) clearTimeout(pending.stream.slowConsumerTimeout)
@@ -1136,6 +1157,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           hostId: attachment.hostId,
           workspaceIds: attachment.workspaceIds,
           connectedAt: attachment.connectedAt,
+          ...(attachment.enrollmentId ? { enrollmentId: attachment.enrollmentId } : {}),
+          ...(attachment.generation !== undefined ? { generation: attachment.generation } : {}),
+          generationCheckFailures: attachment.generationCheckFailures ?? 0,
           socket,
           pending: new Map(),
           channels: new Map(),
@@ -1292,6 +1316,62 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }, intervalMs)
     unrefTimer(timer)
     return timer
+  }
+
+  const hostTunnelAttachment = (tunnel: HostTunnelSocket): WorkspaceRelaySocketAttachment => ({
+    kind: "host-tunnel",
+    hostId: tunnel.hostId,
+    workspaceIds: tunnel.workspaceIds,
+    connectedAt: tunnel.connectedAt,
+    ...(tunnel.enrollmentId ? { enrollmentId: tunnel.enrollmentId } : {}),
+    ...(tunnel.generation !== undefined ? { generation: tunnel.generation } : {}),
+    ...(tunnel.generationCheckFailures ? { generationCheckFailures: tunnel.generationCheckFailures } : {}),
+  })
+
+  const fenced = (tunnel: HostTunnelSocket) => Boolean(options.resolveHostGeneration) && tunnel.generation !== undefined
+
+  /**
+   * Applies one generation re-check verdict to an established tunnel. A
+   * conclusive refusal closes 1008 at once. An unavailable lookup counts toward
+   * the same consecutive-failure grace the client checks use, then closes 1012
+   * so the host reconnects; its admission is refused 503 until the lookup
+   * answers. The failure count is written to the attachment because on the
+   * hibernating path the in-memory tunnel is rebuilt from it on every wake.
+   */
+  const recheckHostGeneration = async (tunnel: HostTunnelSocket) => {
+    if (!fenced(tunnel) || hostTunnels.get(tunnel.hostId) !== tunnel) return
+    const decision = await checkHostTunnelGeneration(options.resolveHostGeneration, {
+      enrollment_id: tunnel.enrollmentId,
+      generation: tunnel.generation,
+    })
+    if (hostTunnels.get(tunnel.hostId) !== tunnel) return
+    if (decision.ok) {
+      if (tunnel.generationCheckFailures === 0) return
+      tunnel.generationCheckFailures = 0
+      tunnel.socket.serializeAttachment?.(hostTunnelAttachment(tunnel))
+      return
+    }
+    if (decision.retryable) {
+      tunnel.generationCheckFailures += 1
+      if (tunnel.generationCheckFailures < resolverGraceAttempts) {
+        tunnel.socket.serializeAttachment?.(hostTunnelAttachment(tunnel))
+        return
+      }
+      cleanupHostTunnel(tunnel.hostId, tunnel.socket, "Host generation check unavailable")
+      closeSocket(tunnel.socket, 1012, "Host generation check unavailable")
+      return
+    }
+    cleanupHostTunnel(tunnel.hostId, tunnel.socket, decision.reason)
+    closeSocket(tunnel.socket, 1008, decision.reason)
+  }
+
+  const watchHostGeneration = (tunnel: HostTunnelSocket) => {
+    const intervalMs = options.hostGenerationCheckIntervalMs ?? HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT
+    if (hibernation || !fenced(tunnel) || intervalMs <= 0) return
+    tunnel.generationWatcher = setInterval(() => {
+      void recheckHostGeneration(tunnel).catch(() => {})
+    }, intervalMs)
+    unrefTimer(tunnel.generationWatcher)
   }
 
   const clearSlowConsumerTimer = (pending: PendingTunnelHttpResponse) => {
@@ -1587,8 +1667,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   const scheduleHibernatedRevocationCheck = async () => {
     const intervalMs = hibernatedRevocationIntervalMs()
     if (!hibernation || !options.alarms || intervalMs <= 0) return
-    // Nothing to watch: do not hold the DO awake on a timer.
-    if (clients.size === 0) return
+    // Nothing to watch: do not hold the DO awake on a timer. A host-only room
+    // counts when its tunnel carries a generation the relay can re-check.
+    if (clients.size === 0 && ![...hostTunnels.values()].some(fenced)) return
     const now = options.now ?? Date.now
     const at = now() + intervalMs
     try {
@@ -1659,6 +1740,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       if (active.active || resolverUnreachable(active.code)) continue
       revoke(client, active.reason)
     }
+    // Snapshot again: a refusal removes the tunnel from `hostTunnels`.
+    for (const tunnel of Array.from(hostTunnels.values())) {
+      await recheckHostGeneration(tunnel)
+    }
     // Re-arm while any connection remains, otherwise enforcement stops after one
     // sweep. Safe because workerd clears the alarm before calling the handler.
     await scheduleHibernatedRevocationCheck()
@@ -1722,20 +1807,24 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (parsed.message.type === "host.registration.update") {
       const update = parsed.message
       const workspaceIds = [...new Set(update.workspace_ids)]
+      let claims: HostTunnelTokenClaims
       try {
-        await verifyHostTunnelToken(update.token, options.runtimeAccessKey, { hostId, workspaceIds })
+        claims = await verifyHostTunnelToken(update.token, options.runtimeAccessKey, { hostId, workspaceIds })
       } catch {
         closeSocket(tunnel.socket, 1008, "Host tunnel registration update denied")
         return
       }
       if (hostTunnels.get(hostId) !== tunnel) return
+      if (tunnel.generation !== undefined && claims.generation !== undefined && claims.generation < tunnel.generation) {
+        closeSocket(tunnel.socket, 1008, "Host tunnel registration update superseded")
+        return
+      }
       tunnel.workspaceIds = workspaceIds
-      tunnel.socket.serializeAttachment?.({
-        kind: "host-tunnel",
-        hostId,
-        workspaceIds,
-        connectedAt: tunnel.connectedAt,
-      })
+      if (claims.generation !== undefined && (tunnel.generation === undefined || claims.generation > tunnel.generation)) {
+        tunnel.generation = claims.generation
+        tunnel.enrollmentId = claims.enrollment_id
+      }
+      tunnel.socket.serializeAttachment?.(hostTunnelAttachment(tunnel))
       directory.registerHostTunnel({ hostId, workspaceIds })
       return
     }
@@ -1888,36 +1977,46 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }
     const token = bearerToken(request.headers.get("authorization"))
     if (!token) return json("host_tunnel_token_required", "Host Tunnel Token is required", 401)
+    let claims: HostTunnelTokenClaims
     try {
-      await verifyHostTunnelToken(token, options.runtimeAccessKey, { hostId, workspaceIds })
+      claims = await verifyHostTunnelToken(token, options.runtimeAccessKey, { hostId, workspaceIds })
     } catch (err) {
       if (err instanceof WorkspaceRelayAuthError) {
         return json(err.code, "Host Tunnel Token was denied", 403)
       }
       throw err
     }
+    const decision = await checkHostTunnelGeneration(options.resolveHostGeneration, claims)
+    if (!decision.ok) return json(decision.code, decision.reason, decision.retryable ? 503 : 403)
+    const previous = hostTunnels.get(hostId)
+    if (previous?.generation !== undefined && claims.generation !== undefined && previous.generation > claims.generation) {
+      return json("host_generation_superseded", "Host tunnel generation was superseded", 403)
+    }
 
     const connectedAt = options.now?.() ?? Date.now()
-    const pair = acceptSocket({
-      kind: "host-tunnel",
+    const fence = {
+      ...(claims.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
+      ...(claims.generation !== undefined ? { generation: claims.generation } : {}),
+    }
+    const pair = acceptSocket({ kind: "host-tunnel", hostId, workspaceIds, connectedAt, ...fence })
+    const tunnel: HostTunnelSocket = {
       hostId,
       workspaceIds,
       connectedAt,
-    })
-    const previous = hostTunnels.get(hostId)
+      ...fence,
+      generationCheckFailures: 0,
+      socket: pair.server,
+      pending: new Map(),
+      channels: new Map(),
+    }
     if (previous) {
       cleanupTunnelResources(previous, "Host tunnel replaced")
       closeSocket(previous.socket, 1012, "Host tunnel replaced")
     }
-    hostTunnels.set(hostId, {
-      hostId,
-      workspaceIds,
-      connectedAt,
-      socket: pair.server,
-      pending: new Map(),
-      channels: new Map(),
-    })
+    hostTunnels.set(hostId, tunnel)
     directory.registerHostTunnel({ hostId, workspaceIds })
+    watchHostGeneration(tunnel)
+    void scheduleHibernatedRevocationCheck()
     if (!hibernation) {
       pair.server.addEventListener?.("message", (event) => {
         if (!event || event.data === undefined) return

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { decodeProtectedHeader, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
+import { decodeJwt, decodeProtectedHeader, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import {
   hostTunnelTokenSigner,
   runtimeAccessTokenSigner,
@@ -486,5 +486,52 @@ describe("hostTunnelTokenSigner", () => {
     expect(typeof header.kid).toBe("string")
     expect((header.kid as string).length).toBeGreaterThan(0)
     expect(header.alg).toBe("EdDSA")
+  })
+
+  test("omits the fence claims when the caller supplies neither", async () => {
+    const { privatePem, publicPem } = await ed25519PrivateKeyPem()
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
+
+    const result = await hostTunnelTokenSigner()({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"] })
+
+    const claims = decodeJwt(result.hostTunnelToken)
+    expect("enrollment_id" in claims).toBe(false)
+    expect("generation" in claims).toBe(false)
+  })
+
+  test("carries enrollment_id and generation when supplied together", async () => {
+    const { privatePem, publicPem } = await ed25519PrivateKeyPem()
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
+
+    const result = await hostTunnelTokenSigner()({
+      subject: "host_sub",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      enrollmentId: "enr_1",
+      generation: 4,
+    })
+
+    expect(decodeJwt(result.hostTunnelToken)).toMatchObject({ enrollment_id: "enr_1", generation: 4 })
+  })
+
+  test("refuses a fence with only one half or a non-integer generation", async () => {
+    const { privatePem, publicPem } = await ed25519PrivateKeyPem()
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
+    const sign = hostTunnelTokenSigner()
+
+    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], generation: 1 }))
+      .rejects.toThrow("enrollmentId and generation together")
+    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], enrollmentId: "enr_1" }))
+      .rejects.toThrow("enrollmentId and generation together")
+    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], enrollmentId: "enr_1", generation: 1.5 }))
+      .rejects.toThrow("non-negative integer")
+    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], enrollmentId: "enr_1", generation: -1 }))
+      .rejects.toThrow("non-negative integer")
   })
 })

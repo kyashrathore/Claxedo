@@ -15,7 +15,15 @@ import {
   validateProductionEnv,
 } from "./main"
 import { createWorkspaceRelayDirectory } from "./directory"
-import { createCachedTargetClient, type RuntimeAccessTokenActiveResult, type WorkspaceRelayTarget } from "./server"
+import {
+  checkHostTunnelGeneration,
+  createCachedHostGenerationClient,
+  createCachedTargetClient,
+  parseHostGenerationResult,
+  type HostGenerationResult,
+  type RuntimeAccessTokenActiveResult,
+  type WorkspaceRelayTarget,
+} from "./server"
 
 type Args = { jti: string; workspaceId: string; hostId: string }
 
@@ -301,6 +309,267 @@ describe("resolverClientCacheOptionsFromEnv", () => {
     })).toEqual({
       targetCacheTtlMs: 15_000,
       revocationCacheTtlMs: 5_000,
+    })
+  })
+
+  test("enables the host-generation fence only when its URL is set", () => {
+    expect(resolverClientCacheOptionsFromEnv({
+      CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: "2000",
+    })).toEqual({
+      targetCacheTtlMs: 30_000,
+      revocationCacheTtlMs: 10_000,
+    })
+    expect(resolverClientCacheOptionsFromEnv({
+      CLAXEDO_RELAY_HOST_GENERATION_URL: " https://central.test/internal/relay/host-generation ",
+    })).toEqual({
+      targetCacheTtlMs: 30_000,
+      revocationCacheTtlMs: 10_000,
+      hostGenerationUrl: "https://central.test/internal/relay/host-generation",
+      hostGenerationCacheTtlMs: 10_000,
+    })
+    expect(resolverClientCacheOptionsFromEnv({
+      CLAXEDO_RELAY_HOST_GENERATION_URL: "https://central.test/internal/relay/host-generation",
+      CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: "2000",
+    })).toMatchObject({ hostGenerationCacheTtlMs: 2_000 })
+  })
+})
+
+describe("createResolverClient host generation", () => {
+  function withFetch(handler: (url: URL, init?: RequestInit) => Response | Promise<Response>) {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input, init) => await handler(
+      new URL(input instanceof Request ? input.url : String(input)),
+      init,
+    )) as typeof fetch
+    return () => {
+      globalThis.fetch = originalFetch
+    }
+  }
+
+  test("exposes no lookup when the URL is not configured", () => {
+    const client = createResolverClient("https://resolver.test/", "resolver_token")
+    expect(client.hostGeneration).toBeUndefined()
+  })
+
+  test("queries the configured URL with the enrollment id and the relay bearer", async () => {
+    const requests: Array<{ url: URL; authorization: string | null }> = []
+    const restore = withFetch((url, init) => {
+      requests.push({ url, authorization: new Headers(init?.headers).get("authorization") })
+      return Response.json({ enrollmentId: "enr_1", generation: 3, revoked: false })
+    })
+    try {
+      const client = createResolverClient("https://resolver.test/", "resolver_token", {
+        hostGenerationUrl: "https://central.test/internal/relay/host-generation",
+      })
+      await expect(client.hostGeneration!({ enrollmentId: "enr_1", generation: 3 }))
+        .resolves.toEqual({ enrollmentId: "enr_1", generation: 3, revoked: false })
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.url.href).toBe("https://central.test/internal/relay/host-generation?enrollmentId=enr_1")
+      expect(requests[0]?.authorization).toBe("Bearer resolver_token")
+    } finally {
+      restore()
+    }
+  })
+
+  test("resolves undefined on 404 and throws on any other failure", async () => {
+    let status = 404
+    const restore = withFetch(() => new Response(status === 404 ? "" : "boom", { status }))
+    try {
+      const client = createResolverClient("https://resolver.test/", "resolver_token", {
+        hostGenerationUrl: "https://central.test/internal/relay/host-generation",
+      })
+      await expect(client.hostGeneration!({ enrollmentId: "enr_1", generation: 1 })).resolves.toBeUndefined()
+      status = 503
+      await expect(client.hostGeneration!({ enrollmentId: "enr_1", generation: 1 }))
+        .rejects.toThrow("relay host-generation resolver failed: 503")
+    } finally {
+      restore()
+    }
+  })
+
+  test("throws on a malformed body instead of trusting it", async () => {
+    const restore = withFetch(() => Response.json({ enrollmentId: "enr_1", generation: "3" }))
+    try {
+      const client = createResolverClient("https://resolver.test/", "resolver_token", {
+        hostGenerationUrl: "https://central.test/internal/relay/host-generation",
+      })
+      await expect(client.hostGeneration!({ enrollmentId: "enr_1", generation: 3 }))
+        .rejects.toThrow("malformed result")
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe("parseHostGenerationResult", () => {
+  test("accepts the route's shape and rejects everything else", () => {
+    expect(parseHostGenerationResult({ enrollmentId: "enr_1", generation: 0, revoked: false }))
+      .toEqual({ enrollmentId: "enr_1", generation: 0, revoked: false })
+    expect(parseHostGenerationResult({ enrollmentId: "enr_1", generation: 2, revoked: true }))
+      .toEqual({ enrollmentId: "enr_1", generation: 2, revoked: true })
+    for (const input of [
+      undefined,
+      null,
+      "enr_1",
+      { enrollmentId: "", generation: 1, revoked: false },
+      { enrollmentId: "enr_1", generation: -1, revoked: false },
+      { enrollmentId: "enr_1", generation: 1.5, revoked: false },
+      { enrollmentId: "enr_1", generation: "1", revoked: false },
+      { enrollmentId: "enr_1", generation: 1 },
+      { enrollmentId: "enr_1", generation: 1, revoked: "no" },
+    ]) {
+      expect(parseHostGenerationResult(input)).toBeUndefined()
+    }
+  })
+})
+
+describe("createCachedHostGenerationClient", () => {
+  type Args = { enrollmentId: string; generation: number }
+  function current(generation: number, revoked = false): HostGenerationResult {
+    return { enrollmentId: "enr_1", generation, revoked }
+  }
+
+  test("serves a cached answer that equals the caller's generation", async () => {
+    const calls: Args[] = []
+    const clock = makeFakeNow(1_000_000)
+    const cached = createCachedHostGenerationClient(async (args) => {
+      calls.push(args)
+      return current(3)
+    }, { ttlMs: 10_000, now: clock.now })
+
+    await expect(cached({ enrollmentId: "enr_1", generation: 3 })).resolves.toEqual(current(3))
+    clock.advance(5_000)
+    await expect(cached({ enrollmentId: "enr_1", generation: 3 })).resolves.toEqual(current(3))
+    expect(calls).toHaveLength(1)
+
+    clock.advance(5_001)
+    await cached({ enrollmentId: "enr_1", generation: 3 })
+    expect(calls).toHaveLength(2)
+  })
+
+  test("a caller with a higher generation than the cache forces a refresh", async () => {
+    let live = 3
+    const calls: Args[] = []
+    const clock = makeFakeNow(1_000_000)
+    const cached = createCachedHostGenerationClient(async (args) => {
+      calls.push(args)
+      return current(live)
+    }, { ttlMs: 10_000, now: clock.now })
+
+    await cached({ enrollmentId: "enr_1", generation: 3 })
+    live = 4
+    clock.advance(1_000)
+    // A freshly acquired generation must never be refused on the stale entry.
+    await expect(cached({ enrollmentId: "enr_1", generation: 4 })).resolves.toEqual(current(4))
+    expect(calls).toHaveLength(2)
+    // The refreshed answer is now the cached one.
+    await expect(cached({ enrollmentId: "enr_1", generation: 4 })).resolves.toEqual(current(4))
+    expect(calls).toHaveLength(2)
+  })
+
+  test("a caller with a lower generation than the cache is answered from the cache", async () => {
+    let calls = 0
+    const clock = makeFakeNow(1_000_000)
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      return current(4)
+    }, { ttlMs: 10_000, now: clock.now })
+
+    await cached({ enrollmentId: "enr_1", generation: 4 })
+    await expect(cached({ enrollmentId: "enr_1", generation: 2 })).resolves.toEqual(current(4))
+    expect(calls).toBe(1)
+  })
+
+  test("a revoked answer is cached as any other conclusive answer", async () => {
+    let calls = 0
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      return current(2, true)
+    }, { ttlMs: 10_000, now: makeFakeNow(1_000_000).now })
+
+    await expect(cached({ enrollmentId: "enr_1", generation: 2 })).resolves.toEqual(current(2, true))
+    await expect(cached({ enrollmentId: "enr_1", generation: 2 })).resolves.toEqual(current(2, true))
+    expect(calls).toBe(1)
+  })
+
+  test("unknown enrollments and failures are not cached", async () => {
+    let calls = 0
+    let mode: "unknown" | "throw" | "ok" = "unknown"
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      if (mode === "unknown") return undefined
+      if (mode === "throw") throw new Error("resolver down")
+      return current(1)
+    }, { ttlMs: 10_000, now: makeFakeNow(1_000_000).now })
+
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).resolves.toBeUndefined()
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).resolves.toBeUndefined()
+    expect(calls).toBe(2)
+    mode = "throw"
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).rejects.toThrow("resolver down")
+    mode = "ok"
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).resolves.toEqual(current(1))
+    expect(calls).toBe(4)
+  })
+
+  test("concurrent misses share one lookup", async () => {
+    let calls = 0
+    let release: (() => void) | undefined
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return current(1)
+    })
+
+    const first = cached({ enrollmentId: "enr_1", generation: 1 })
+    const second = cached({ enrollmentId: "enr_1", generation: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    release?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([current(1), current(1)])
+    expect(calls).toBe(1)
+  })
+})
+
+describe("checkHostTunnelGeneration", () => {
+  function current(generation: number, revoked = false): HostGenerationResult {
+    return { enrollmentId: "enr_1", generation, revoked }
+  }
+
+  test("admits without a resolver, and without a generation claim, and never asks the resolver for the latter", async () => {
+    let calls = 0
+    const lookup = async () => {
+      calls += 1
+      return current(9)
+    }
+    await expect(checkHostTunnelGeneration(undefined, { enrollment_id: "enr_1", generation: 1 })).resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(lookup, {})).resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(lookup, { enrollment_id: "enr_1" })).resolves.toEqual({ ok: true })
+    expect(calls).toBe(0)
+  })
+
+  test("grades every conclusive answer as non-retryable", async () => {
+    await expect(checkHostTunnelGeneration(async () => current(2), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(async () => current(3), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_generation_superseded" })
+    await expect(checkHostTunnelGeneration(async () => current(1), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_generation_unknown" })
+    await expect(checkHostTunnelGeneration(async () => current(2, true), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_enrollment_revoked" })
+    await expect(checkHostTunnelGeneration(async () => undefined, { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_enrollment_unknown" })
+  })
+
+  test("grades a thrown lookup as retryable", async () => {
+    await expect(checkHostTunnelGeneration(async () => {
+      throw new Error("resolver down")
+    }, { enrollment_id: "enr_1", generation: 2 })).resolves.toMatchObject({
+      ok: false,
+      retryable: true,
+      code: "host_generation_lookup_unavailable",
+      reason: "Host generation lookup is unavailable: resolver down",
     })
   })
 })
