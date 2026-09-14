@@ -19,7 +19,7 @@ const stringsOf = (value: unknown) => asArray(value).filter(isString)
 export function createFakeConnectControlPlane(options: { now?: () => number; url?: string; relayUrl?: string } = {}) {
   const cp = createFakeControlPlane({ ...options, owner: (request) => owner(request) })
 
-  /** The list route's row: what the machine has acked at its CURRENT generation, as `HostEnrollmentListRow` carries it. */
+  /** The list route's row (`HostEnrollmentListRow`): the owner's declarations for the machine, and what it acks at its CURRENT generation. */
   const machines = () =>
     [...cp.enrollments.values()]
       .filter((enrollment) => enrollment.revoked_at === undefined)
@@ -34,6 +34,14 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
         expires_at: enrollment.expires_at,
         serving_generation: enrollment.serving_generation,
         ...(enrollment.paused_at !== undefined ? { paused_at: enrollment.paused_at } : {}),
+        assignments: [...cp.assignments.values()]
+          .filter((assignment) => assignment.enrollment_id === enrollment.enrollment_id)
+          .map((assignment) => ({
+            workspace_id: assignment.workspace_id,
+            remote_directory: assignment.remote_directory,
+            ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
+            revision: assignment.revision,
+          })),
         acked: [...cp.readiness]
           .filter(([, ready]) => ready.enrollment_id === enrollment.enrollment_id && ready.generation === enrollment.serving_generation)
           .map(([workspaceId, ready]) => ({ workspaceId, revision: ready.revision })),
@@ -66,18 +74,6 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
       if (!enrollment) throw new FakeRefusal(404, "host_enrollment_not_found")
       cp.revoke(enrollment.enrollment_id)
       return { revoked: true }
-    }
-    // The catalog row names the folder and nothing about which machine serves it.
-    if (method === "GET" && pathname === "/api/workspace") {
-      return {
-        workspaces: [...cp.assignments.values()].map((assignment) => ({
-          workspace_id: assignment.workspace_id,
-          access: "user-hosted",
-          display_name: assignment.display_name ?? assignment.workspace_id,
-          remote_directory: assignment.remote_directory,
-          host_online: cp.routable(assignment.enrollment_id).includes(assignment.workspace_id),
-        })),
-      }
     }
     const assignMatch = /^\/api\/workspace\/([^/]+)\/host-assignment$/.exec(pathname)
     if (assignMatch && method === "POST") {

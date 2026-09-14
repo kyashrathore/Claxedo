@@ -139,7 +139,7 @@ describe("claxedo host", () => {
       last_seen_at: undefined,
       enrolled_via: undefined,
       paused_at: undefined,
-      acked_workspace_ids: [],
+      assignments: [],
       scope: undefined,
     })
     const machines = [row("enr_1", "alpha"), row("enr_2", "beta"), row("enr_3", "beta"), row("enr_4", "enr_1")]
@@ -163,8 +163,7 @@ describe("claxedo host", () => {
     const workspaceId = [...cp.assignments.keys()][0]
     expect(lines.at(-1)).toBe(`build-box will serve /srv/api as ${workspaceId} (API); it acks on its next beat`)
 
-    // Acked by the machine, the same folder re-points the same workspace.
-    await machine.ackAll()
+    // The same folder on the same machine re-points the same workspace.
     await host(["assign", "--machine", machine.enrollmentId, "/srv/api"], deps)
     expect(cp.assignments.size).toBe(1)
     expect(cp.assignments.get(workspaceId)).toMatchObject({ revision: 2, display_name: "API" })
@@ -175,7 +174,25 @@ describe("claxedo host", () => {
     await host(["unassign", "--machine", "build-box", "/srv/api"], deps)
     expect(cp.assignments.size).toBe(0)
     expect(lines.at(-1)).toBe(`build-box no longer serves /srv/api (${workspaceId} retired)`)
-    await expect(host(["unassign", "--machine", "build-box", "/srv/api"], deps)).rejects.toThrow("build-box acks no workspace at /srv/api")
+    await expect(host(["unassign", "--machine", "build-box", "/srv/api"], deps)).rejects.toThrow("build-box is not assigned /srv/api")
+  })
+
+  test("an offline machine assigned the same folder twice has one workspace, and it is unassignable before any ack", async () => {
+    const machine = await enrolledMachine(cp, "sleeper")
+    const { deps, lines } = owner(cp)
+
+    await host(["assign", "--machine", "sleeper", "/srv/api", "--name", "API"], deps)
+    await host(["assign", "--machine", "sleeper", "/srv/api"], deps)
+
+    expect(cp.assignments.size).toBe(1)
+    const [workspaceId] = [...cp.assignments.keys()]
+    expect(cp.assignments.get(workspaceId)).toMatchObject({ host_id: machine.hostId, revision: 2, display_name: "API" })
+    expect(cp.readiness.size, "never acked").toBe(0)
+
+    await host(["unassign", "--machine", "sleeper", "/srv/api"], deps)
+
+    expect(cp.assignments.size).toBe(0)
+    expect(lines.at(-1)).toBe(`sleeper no longer serves /srv/api (${workspaceId} retired)`)
   })
 
   test("the same directory string on two machines is two workspaces; unassign on one leaves the other's", async () => {
@@ -197,11 +214,11 @@ describe("claxedo host", () => {
     // box2 cannot retire what box1 serves, and only retires its own.
     await host(["unassign", "--machine", "box2", "/srv/api"], deps)
     expect([...cp.assignments.keys()]).toEqual([ws1])
-    await expect(host(["unassign", "--machine", "box2", "/srv/api"], deps)).rejects.toThrow("box2 acks no workspace at /srv/api")
+    await expect(host(["unassign", "--machine", "box2", "/srv/api"], deps)).rejects.toThrow("box2 is not assigned /srv/api")
     expect(cp.assignments.get(ws1)).toMatchObject({ host_id: box1.hostId, revision: 1 })
 
-    // A folder box1 was assigned but never acked (offline) is not box2's to touch either, and
-    // is not what a new assignment on box2 re-points.
+    // A folder box1 was assigned but never acked (offline) is not what a new
+    // assignment on box2 re-points either.
     cp.assign({ hostId: box1.hostId, workspaceId: "ws_pending", remoteDirectory: "/srv/web" })
     await host(["assign", "--machine", "box2", "/srv/web"], deps)
     expect(cp.assignments.get("ws_pending")).toMatchObject({ host_id: box1.hostId, revision: 1 })
