@@ -159,6 +159,14 @@ describe("VercelSandboxDriver", () => {
     transform: [{ headers: { "x-key": "v" } }],
   }
 
+  test("brokered secret with an empty host allowlist is rejected", async () => {
+    const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory() })
+    await expect(
+      driver.ensureHost({ ...input, secrets: [{ name: "X", value: "v", hosts: [], header: "x-key" }] }),
+    ).rejects.toThrow(/host/)
+    expect(() => vercelBrokeredNetworkPolicy([{ ...brokered, hosts: [] }], "deny-all")).toThrow(/host/)
+  })
+
   test("an unrestricted base merges to allow-all-plus-brokered, a deny-all base to brokered-only", async () => {
     // The base is a required argument precisely because these two differ: an
     // optional parameter defaulting to deny-all-except-brokered would let a
@@ -457,8 +465,10 @@ describe("VercelSandboxDriver", () => {
     const unavailable = createVercelSandboxDriver({
       ...baseOptions,
       sandbox: factory({
+        // A 5xx alone: the text names no marker, so what is proven is the
+        // status path rather than whichever of the two happened to match.
         create: vi.fn(async () => {
-          throw { status: 503, message: "unavailable" }
+          throw { status: 503, message: "upstream error" }
         }),
       }),
     })

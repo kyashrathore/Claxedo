@@ -662,8 +662,10 @@ describe("DaytonaSandboxDriver", () => {
   test("a transient failure reapplying the policy is provisioning, never a target", async () => {
     const flaky = sandbox({
       id: "sb_flaky",
+      // A 5xx alone: the text names no marker, so what is proven is the
+      // status path rather than whichever of the two happened to match.
       updateNetworkSettings: vi.fn(async () => {
-        throw { response: { status: 503 }, message: "unavailable" }
+        throw { response: { status: 503 }, message: "upstream error" }
       }),
     })
     const daytona = client({ list: vi.fn(async () => ({ items: [flaky] })) })

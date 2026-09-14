@@ -15,6 +15,7 @@ import {
 import { createMemoryLeaseStore } from "./stores/memory"
 import { sandboxDriverCatalog } from "./driver-catalog"
 import { sandboxDriverIds } from "@claxedo/sandbox-contract"
+import { createCloudflareSandboxDriver } from "./drivers/cloudflare"
 import { createDaytonaSandboxDriver, type DaytonaClientLike } from "./drivers/daytona"
 import { createFetchBridgeSandboxDriver } from "./drivers/fetch-bridge"
 
@@ -354,13 +355,41 @@ describe("driver egress capability declarations", () => {
     }
   })
 
-  test("cloudflare is uncontained even though it has a secret broker", () => {
-    // Native credential handlers are not a
-    // network boundary: the driver drops `net` on the floor. `secretBrokering`
-    // and `egressControl` are independent capabilities and must not be
-    // confused for one another.
-    expect(sandboxDriverCatalog.cloudflare.metadata.secretBrokering).toBe("native")
-    expect(sandboxDriverCatalog.cloudflare.metadata.egressControl).toBe("none")
+  test("cloudflare is uncontained even though it has a secret broker", async () => {
+    // Native credential delivery is not a network boundary: the worker is
+    // handed the secret to inject and no policy at all, and the gap is reported
+    // rather than hidden behind the credential's own host list.
+    const calls: { url: string; body: Record<string, unknown> }[] = []
+    const fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : {} })
+      return new Response(JSON.stringify({ ready: true, url: "https://sbx.example.com/proxy", port: 3002 }), { status: 200 })
+    }) as unknown as typeof globalThis.fetch
+    const driver = createCloudflareSandboxDriver({
+      workerUrl: "https://sbx.example.com/",
+      apiToken: "worker-secret",
+      controlEnv: {
+        relayJwksUrl: "https://relay.test/.well-known/jwks.json",
+        managementJwksUrl: "https://control.test/.well-known/jwks.json",
+      },
+      runner: "opencode",
+      fetch,
+    })
+    const { events, sink } = warnings()
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver, onEgressUnenforced: sink })
+
+    await manager.ensure("ws_cf", {
+      homeRegion: "us-east",
+      net: { mode: "restricted", hosts: ["api.anthropic.com"] },
+      secrets: [{ name: "CLAXEDO_PROVIDER_CLAUDE_SDK", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key" }],
+    })
+
+    const ensure = calls.find((call) => call.url.endsWith("/ensure-runtime"))
+    expect(ensure?.body.egress).toEqual([
+      expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK", hosts: ["api.anthropic.com"], value: "sk-ant" }),
+    ])
+    expect(events.filter((event) => event.phase === "ensure")).toMatchObject([
+      { driver: "cloudflare", egressControl: "none", workspaceId: "ws_cf" },
+    ])
   })
 
   test("daytona and vercel are the ONLY drivers that can contain a hosted workload", () => {
