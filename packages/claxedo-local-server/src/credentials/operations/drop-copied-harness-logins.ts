@@ -1,6 +1,6 @@
 import fs from "fs"
 import path from "path"
-import { harnessForProviderId } from "@claxedo/agent-runtime-contract"
+import { harnessBindingIds, harnessForProviderId } from "@claxedo/agent-runtime-contract"
 import { deleteCredential, listCredentials } from "@claxedo/server-core/credentials/registry"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -17,12 +17,16 @@ const MARKER_FILE = path.join(dataDir(), "credentials", ".harness-logins-dropped
  * subscription token rather than a key the user pasted (`oauth_token`), and it
  * is stored against a binding a harness resolves its own auth through. An API
  * key the same scan found in the environment fails the second, and a vendor
- * token for an engine to run on fails the third, so neither is reaped.
+ * token for an engine to run on fails the third, so neither is reaped. The
+ * vendor id sits in the harness table too, under the harness whose models it
+ * names, which is why the test is the binding list and not table membership.
  */
 function isCopiedHarnessLogin(credential: CredentialMetadata) {
+  const harness = harnessForProviderId(credential.provider_id)
   return credential.consent?.surface === "desktop_discovery"
     && credential.kind === "oauth_token"
-    && harnessForProviderId(credential.provider_id) !== undefined
+    && harness !== undefined
+    && harnessBindingIds(harness).includes(credential.provider_id)
 }
 
 /**

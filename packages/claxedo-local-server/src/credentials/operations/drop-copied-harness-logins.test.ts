@@ -78,6 +78,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
     // harness's own login — neither is a token a CLI rotates behind us.
     const scannedKey = await scanned("claude-sdk", "api_key")
     const vendorToken = await scanned("openrouter")
+    const harnessVendorToken = await scanned("anthropic")
     const typed = await putCredential({
       provider_id: "anthropic",
       kind: "api_key",
@@ -91,6 +92,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     expect(credentialById(scannedKey.id, { onOutage: "throw" })).toBeDefined()
     expect(credentialById(vendorToken.id, { onOutage: "throw" })).toBeDefined()
+    expect(credentialById(harnessVendorToken.id, { onOutage: "throw" })).toBeDefined()
     expect(credentialById(typed.id, { onOutage: "throw" })).toBeDefined()
   })
 
