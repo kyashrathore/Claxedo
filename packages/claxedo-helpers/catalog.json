@@ -1298,15 +1298,19 @@
       "category": "error",
       "description": "Builds a JSON error Response with an inline {error:{code,message}} shape, defaulting status to 503.",
       "generic": false,
-      "demand": 5,
+      "demand": 7,
       "distinctImpls": 6,
-      "files": 4,
+      "files": 6,
       "packages": [
+        "claxedo-server",
+        "sandbox-manager",
         "workspace-relay",
         "workspace-runtime"
       ],
       "movability": {
-        "pure": 5
+        "relative-coupled": 1,
+        "pure": 5,
+        "module-coupled": 1
       },
       "sites": [
         {
@@ -2482,15 +2486,18 @@
       "category": "crypto",
       "description": "Compares two equal-length strings char-by-char via XOR accumulation to avoid timing leaks.",
       "generic": true,
-      "demand": 3,
+      "demand": 5,
       "distinctImpls": 4,
-      "files": 3,
+      "files": 5,
       "packages": [
         "claxedo-server",
-        "claxedo-server-core"
+        "claxedo-server-core",
+        "sandbox-manager"
       ],
       "movability": {
-        "pure": 3
+        "pure": 3,
+        "portable-deps": 1,
+        "module-coupled": 1
       },
       "sites": [
         {
@@ -3436,15 +3443,17 @@
       "category": "crypto",
       "description": "Decodes a base64url string to a Uint8Array, throwing a domain-specific error on invalid format.",
       "generic": true,
-      "demand": 2,
+      "demand": 4,
       "distinctImpls": 3,
-      "files": 2,
+      "files": 4,
       "packages": [
         "claxedo-server",
-        "claxedo-server-core"
+        "claxedo-server-core",
+        "sandbox-manager"
       ],
       "movability": {
-        "pure": 2
+        "pure": 3,
+        "module-coupled": 1
       },
       "sites": [
         {
