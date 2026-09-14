@@ -19,10 +19,9 @@ import {
   createCachedHostGenerationClient,
   createCachedRevocationClient,
   createCachedTargetClient,
-  parseHostGenerationResult,
+  createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   parseWorkspaceRelayTarget,
-  type HostGenerationLookup,
   type RelayHostPublicKey,
   type RevocationLookup,
   type TargetLookup,
@@ -374,9 +373,9 @@ export type ResolverClientCacheOptions = {
   targetCacheTtlMs?: number
   revocationCacheTtlMs?: number
   /**
-   * Absolute URL of the control plane's host-generation lookup. Unset means
-   * no serving-generation fence: host tunnels are admitted and kept exactly
-   * as before it existed, which is what desktop and self-hosted relays run.
+   * Absolute URL of the control plane's host-generation lookup. Unset derives
+   * `<resolver base>/host-generation`, the route every resolver base serves
+   * next to `/target` and `/revocation`.
    */
   hostGenerationUrl?: string
   hostGenerationCacheTtlMs?: number
@@ -394,12 +393,8 @@ export function resolverClientCacheOptionsFromEnv(env: ResolverClientCacheEnv): 
   return {
     targetCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS) ?? BUN_TARGET_CACHE_TTL_MS_DEFAULT,
     revocationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS) ?? BUN_REVOCATION_CACHE_TTL_MS_DEFAULT,
-    ...(hostGenerationUrl
-      ? {
-        hostGenerationUrl,
-        hostGenerationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS) ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT,
-      }
-      : {}),
+    ...(hostGenerationUrl ? { hostGenerationUrl } : {}),
+    hostGenerationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS) ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT,
   }
 }
 
@@ -448,31 +443,14 @@ export function createResolverClient(
   const revocation = createCachedRevocationClient(revocationUncached, {
     ttlMs: options.revocationCacheTtlMs ?? BUN_REVOCATION_CACHE_TTL_MS_DEFAULT,
   })
-  const hostGenerationUrl = options.hostGenerationUrl
-  // 404 is the control plane's conclusive "no such enrollment" and resolves
-  // `undefined`; every other non-ok status throws, which the relay grades as
-  // "unavailable" (admission 503, established tunnels graced).
-  const hostGenerationUncached: HostGenerationLookup | undefined = hostGenerationUrl
-    ? async ({ enrollmentId }) => {
-      const url = new URL(hostGenerationUrl)
-      url.searchParams.set("enrollmentId", enrollmentId)
-      const res = await fetch(url, { headers })
-      if (res.status === 404) return undefined
-      if (!res.ok) throw new Error(`relay host-generation resolver failed: ${res.status} ${await res.text()}`)
-      const result = parseHostGenerationResult(await res.json())
-      if (!result) throw new Error("relay host-generation resolver returned a malformed result")
-      return result
-    }
-    : undefined
-  const hostGeneration = hostGenerationUncached
-    ? createCachedHostGenerationClient(hostGenerationUncached, {
-      ttlMs: options.hostGenerationCacheTtlMs ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT,
-    })
-    : undefined
+  const hostGeneration = createCachedHostGenerationClient(
+    createHostGenerationResolverLookup(options.hostGenerationUrl ?? `${root}/host-generation`, { headers }),
+    { ttlMs: options.hostGenerationCacheTtlMs ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT },
+  )
   return {
     target: (workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined> => target({ workspaceId, hostId }),
     revocation,
-    ...(hostGeneration ? { hostGeneration } : {}),
+    hostGeneration,
   }
 }
 
@@ -794,7 +772,7 @@ async function main() {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
       }),
-    ...(resolver.hostGeneration ? { resolveHostGeneration: resolver.hostGeneration } : {}),
+    resolveHostGeneration: resolver.hostGeneration,
     audit: (event: {
       action: string
       result: "allow" | "deny"

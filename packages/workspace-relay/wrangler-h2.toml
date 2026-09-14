@@ -15,7 +15,10 @@
 #   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM
 #   CLAXEDO_CONTROL_PLANE_JWKS_URL (or CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
 # Optional:
-#   CLAXEDO_RELAY_RESOLVER_URL or CLAXEDO_CENTRAL_URL
+#   CLAXEDO_RELAY_RESOLVER_URL or CLAXEDO_CENTRAL_URL (resolver base; /target, /revocation and
+#     /host-generation are derived from it, so the host-tunnel serving-generation fence is always on)
+#   CLAXEDO_RELAY_HOST_GENERATION_URL (absolute lookup URL; only when it is not <resolver base>/host-generation)
+#   CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS (default 10000)
 
 name = "claxedo-workspace-relay-h2-reeval"
 main = "src/worker-h2.ts"

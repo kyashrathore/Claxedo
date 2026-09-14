@@ -3072,6 +3072,35 @@ describe("workspace relay Cloudflare room host generation fence", () => {
     expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
   })
 
+  test("a token without a generation never displaces a fenced incumbent, with or without a resolver", async () => {
+    for (const resolver of [undefined, async () => current(3)]) {
+      const harness = await roomHarness(resolver ? { resolveHostGeneration: resolver } : {})
+      expect((await admit(harness, 3)).status).toBe(101)
+      const unfenced = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+        headers: { upgrade: "websocket", authorization: `Bearer ${await harness.hostTunnelToken()}` },
+      }))
+      expect(unfenced.status).toBe(403)
+      await expect(unfenced.json()).resolves.toMatchObject({ error: { code: "host_generation_superseded" } })
+      expect(harness.socket(0).closed).toBeUndefined()
+      expect(harness.pairs).toHaveLength(1)
+      expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
+    }
+  })
+
+  test("an unfenced incumbent is displaced by any later token, fenced or not", async () => {
+    const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
+    const unfencedRequest = async () => new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: { upgrade: "websocket", authorization: `Bearer ${await harness.hostTunnelToken()}` },
+    })
+    expect((await harness.room.fetch(await unfencedRequest())).status).toBe(101)
+    expect((await harness.room.fetch(await unfencedRequest())).status).toBe(101)
+    expect(harness.socket(0).closed).toEqual({ code: 1012, reason: "Host tunnel replaced" })
+    expect((await admit(harness, 3)).status).toBe(101)
+    expect(harness.socket(1).closed).toEqual({ code: 1012, reason: "Host tunnel replaced" })
+    expect(harness.socket(2).closed).toBeUndefined()
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
+  })
+
   test("refuses a registration update whose token carries a lower generation than the socket", async () => {
     const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
     expect((await admit(harness, 3)).status).toBe(101)

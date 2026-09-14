@@ -11,6 +11,7 @@ import {
   RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
   checkHostTunnelGeneration,
+  hostTunnelIncumbentOutranks,
   createWorkspaceRelay,
   createWorkspaceRelayTrace,
   workspaceRelayForwardHeaders,
@@ -490,15 +491,8 @@ function ownedWorkspaceIds(hostTunnels: Map<string, RelayHostTunnelWebSocket>, w
   return ws.data.workspaceIds.filter((workspaceId) => hostTunnels.get(tunnelKey(ws.data.hostId, workspaceId)) === ws)
 }
 
-/**
- * The fence between two sockets for one identity: an incumbent with a higher
- * generation is never displaced. Sockets without a generation (a token minted
- * before the fence, or the test authorizer) are ordered as before — newest wins.
- */
 function outranks(incumbent: RelayHostTunnelWebSocket, candidateGeneration: number | undefined) {
-  return incumbent.data.generation !== undefined
-    && candidateGeneration !== undefined
-    && incumbent.data.generation > candidateGeneration
+  return hostTunnelIncumbentOutranks(incumbent.data.generation, candidateGeneration)
 }
 
 function websocketRequest(request: Request) {
@@ -1390,8 +1384,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
    * Points every identity in `workspaceIds` at `ws`. An incumbent that loses
    * its last identity is closed as replaced; one that keeps another workspace
    * stays up for it. Returns false — closing `ws` — when an incumbent outranks
-   * the candidate, so a lower generation never displaces a higher one even
-   * if both sockets were admitted before either opened.
+   * the candidate (`hostTunnelIncumbentOutranks`), so a fenced socket is never
+   * displaced by a lower or absent generation even if both sockets were
+   * admitted before either opened.
    */
   function claimTunnelIdentities(ws: RelayHostTunnelWebSocket, workspaceIds: string[]) {
     const hostId = ws.data.hostId

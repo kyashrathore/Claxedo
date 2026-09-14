@@ -95,6 +95,58 @@ export function parseHostGenerationResult(input: unknown): HostGenerationResult 
   return { enrollmentId: row.enrollmentId, generation: row.generation, revoked: row.revoked }
 }
 
+const HOST_GENERATION_LOOKUP_TIMEOUT_MS_DEFAULT = 5_000
+
+/** The control plane's 404 body for an enrollment it does not know; any other 404 is a missing route. */
+const HOST_GENERATION_ENROLLMENT_NOT_FOUND_CODE = "relay_resolver_enrollment_not_found"
+
+export type HostGenerationResolverLookupOptions = {
+  headers: Record<string, string>
+  fetch?: (url: URL, init: RequestInit) => Promise<Response>
+  /** Deadline per lookup; past it the lookup rejects, which the relay grades as unavailable. */
+  timeoutMs?: number
+}
+
+/**
+ * The HTTP lookup behind `resolveHostGeneration`, shared by the Bun process and
+ * the Worker. Only the control plane's own "enrollment not found" 404 resolves
+ * `undefined`; a bare 404 is a control plane without the route, and like every
+ * other non-ok status, a malformed body, or a hit deadline it throws so the
+ * relay refuses fenced tokens with a retryable 503 instead of grading them as
+ * unknown enrollments.
+ */
+export function createHostGenerationResolverLookup(url: string, options: HostGenerationResolverLookupOptions): HostGenerationLookup {
+  const fetcher = options.fetch ?? ((target, init) => fetch(target, init))
+  const timeoutMs = options.timeoutMs ?? HOST_GENERATION_LOOKUP_TIMEOUT_MS_DEFAULT
+  return async ({ enrollmentId }) => {
+    const target = new URL(url)
+    target.searchParams.set("enrollmentId", enrollmentId)
+    const res = await fetcher(target, { headers: options.headers, signal: AbortSignal.timeout(timeoutMs) })
+    if (res.status === 404) {
+      const body: unknown = await res.json().catch(() => undefined)
+      const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
+      if (error?.code === HOST_GENERATION_ENROLLMENT_NOT_FOUND_CODE) return undefined
+      throw new Error(`relay host-generation resolver failed: 404 (no host-generation route at ${url})`)
+    }
+    if (!res.ok) throw new Error(`relay host-generation resolver failed: ${res.status} ${await res.text()}`)
+    const result = parseHostGenerationResult(await res.json())
+    if (!result) throw new Error("relay host-generation resolver returned a malformed result")
+    return result
+  }
+}
+
+/**
+ * The fence between two host tunnels for one identity. An incumbent that
+ * carries a generation is displaced only by a candidate at the same or a
+ * higher generation — never by a lower one, and never by a token minted
+ * without a generation. An incumbent without a generation is displaced by
+ * any candidate, which is the pre-fence "newest wins" order.
+ */
+export function hostTunnelIncumbentOutranks(incumbentGeneration: number | undefined, candidateGeneration: number | undefined) {
+  if (incumbentGeneration === undefined) return false
+  return candidateGeneration === undefined || incumbentGeneration > candidateGeneration
+}
+
 function relayClaimPair(access: unknown, backing: unknown): RelayClaimPair | undefined {
   if (access === "cloud" && backing === "cloud-vm") return { access, backing }
   if (access === "user-hosted" && backing === "local-worktree") return { access, backing }
@@ -172,8 +224,8 @@ export type WorkspaceRelayAuthOptions = {
   runtimeAccessKey: RelayKey
   /**
    * Serving-generation fence for host tunnels. Unset on desktop and
-   * self-hosted relays, where admission and the established-tunnel checks
-   * behave as if the token carried no generation at all.
+   * self-hosted relays, where nothing asks the control plane; the ordering
+   * between sockets (`hostTunnelIncumbentOutranks`) still applies.
    */
   resolveHostGeneration?: HostGenerationLookup
   /**
@@ -422,9 +474,10 @@ export function createCachedRevocationClient(
  * Caches host-generation answers by enrollment id with the fence's own rules:
  * a cached answer stands only while it is at least the caller's generation
  * (equal admits; higher is a refusal that needs no fresh read), and a caller
- * holding a HIGHER generation than the cache forces a refresh so a fresh
- * `acquire` is never refused on a stale answer. Unknown enrollments and
- * failures are not cached; concurrent misses share one lookup.
+ * holding a HIGHER generation than the cache — or than the answer an in-flight
+ * lookup settles on — forces a refresh so a fresh `acquire` is never refused
+ * on a stale answer. Unknown enrollments and failures are not cached;
+ * concurrent misses share one lookup.
  */
 export function createCachedHostGenerationClient(
   inner: HostGenerationLookup,
@@ -439,26 +492,35 @@ export function createCachedHostGenerationClient(
   }>()
 
   return async (args) => {
-    const at = now()
-    const entry = cache.get(args.enrollmentId)
-    if (entry && entry.expiresAt > at) {
-      if (entry.result && entry.result.generation >= args.generation) return entry.result
-      if (!entry.result && entry.promise) return await entry.promise
-    }
+    for (;;) {
+      const at = now()
+      const entry = cache.get(args.enrollmentId)
+      if (entry && entry.expiresAt > at) {
+        if (entry.result && entry.result.generation >= args.generation) return entry.result
+        if (!entry.result && entry.promise) {
+          // A lookup another caller started may have been answered for a
+          // lower generation than this caller holds; that answer is as stale
+          // for it as a cached one would be, so re-read after it settles.
+          const shared = await entry.promise
+          if (!shared || shared.generation >= args.generation) return shared
+          continue
+        }
+      }
 
-    const promise = inner(args)
-      .then((result) => {
-        pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
-        if (result) cache.set(args.enrollmentId, { result, expiresAt: now() + ttlMs })
-        else cache.delete(args.enrollmentId)
-        return result
-      })
-      .catch((err) => {
-        cache.delete(args.enrollmentId)
-        throw err
-      })
-    cache.set(args.enrollmentId, { promise, expiresAt: at + ttlMs })
-    return await promise
+      const promise = inner(args)
+        .then((result) => {
+          pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
+          if (result) cache.set(args.enrollmentId, { result, expiresAt: now() + ttlMs })
+          else cache.delete(args.enrollmentId)
+          return result
+        })
+        .catch((err) => {
+          cache.delete(args.enrollmentId)
+          throw err
+        })
+      cache.set(args.enrollmentId, { promise, expiresAt: at + ttlMs })
+      return await promise
+    }
   }
 }
 

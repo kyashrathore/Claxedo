@@ -3075,12 +3075,16 @@ describe("workspace relay Bun adapter", () => {
   test("limits host-tunnel reconnects per host_id to 5 within 60 seconds", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const auditEvents: WorkspaceRelayAuditEvent[] = []
     const relayHandler = createWorkspaceRelayBun({
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
       directory: createWorkspaceRelayDirectory(),
       resolveTarget: async () => undefined,
+      audit: (event) => {
+        auditEvents.push(event)
+      },
     }, {
       authorizeHostTunnel: () => true,
     })
@@ -3115,6 +3119,14 @@ describe("workspace relay Bun adapter", () => {
       expect(res.status).toBe(429)
       const body = await res.json() as { error?: { code?: string } }
       expect(body.error?.code).toBe("too_many_host_tunnel_reconnects")
+      expect(auditEvents.filter((event) => event.action === "host_tunnel.denied")).toEqual([{
+        action: "host_tunnel.denied",
+        result: "deny",
+        reason: "too_many_host_tunnel_reconnects",
+        hostId: "bob",
+        method: "WEBSOCKET",
+        path: "/host-tunnels/bob",
+      }])
     } finally {
       await stopServer(relay)
     }
@@ -4869,6 +4881,71 @@ describe("workspace relay Bun adapter host generation fence", () => {
       const { ws } = await harness.connect(undefined)
       await waitForPresence(harness, "ws_1", true)
       ws.close()
+    } finally {
+      await harness.stop()
+    }
+  })
+
+  test("a token without a generation never displaces a fenced incumbent, with or without a resolver", async () => {
+    for (const resolver of [undefined, async () => current(3)]) {
+      const harness = await fenceHarness(resolver ? { resolveHostGeneration: resolver } : {})
+      try {
+        const incumbent = await harness.connect(3)
+        await waitForPresence(harness, "ws_1", true)
+
+        const unfenced = await harness.admit(undefined)
+        expect(unfenced.status).toBe(403)
+        await expect(unfenced.json()).resolves.toMatchObject({ error: { code: "host_generation_superseded" } })
+        expect(incumbent.ws.readyState).toBe(WebSocket.OPEN)
+        expect(harness.auditEvents.filter((event) => event.action === "host_tunnel.denied")).toEqual([
+          expect.objectContaining({ reason: "host_generation_superseded", hostId: "host_1", workspaceId: "ws_1" }),
+        ])
+
+        // A workspace the fenced incumbent does not hold has no incumbent to outrank the unfenced token.
+        const other = await harness.connect(undefined, ["ws_2"])
+        await waitForPresence(harness, "ws_2", true)
+        expect(incumbent.ws.readyState).toBe(WebSocket.OPEN)
+        other.ws.close()
+        incumbent.ws.close()
+      } finally {
+        await harness.stop()
+      }
+    }
+  })
+
+  test("an unfenced incumbent is displaced by any later token, fenced or not", async () => {
+    const harness = await fenceHarness({ resolveHostGeneration: async () => current(3) })
+    try {
+      const first = await harness.connect(undefined)
+      await waitForPresence(harness, "ws_1", true)
+      const second = await harness.connect(undefined)
+      await expect(first.closed).resolves.toEqual({ code: 1012, reason: "Host tunnel replaced by a newer connection" })
+      const fenced = await harness.connect(3)
+      await expect(second.closed).resolves.toEqual({ code: 1012, reason: "Host tunnel replaced by a newer connection" })
+      expect(fenced.ws.readyState).toBe(WebSocket.OPEN)
+      fenced.ws.close()
+    } finally {
+      await harness.stop()
+    }
+  })
+
+  test("a registration update cannot claim a workspace a fenced socket holds for an unfenced socket", async () => {
+    const harness = await fenceHarness({ resolveHostGeneration: async () => current(3) })
+    try {
+      const fenced = await harness.connect(3, ["ws_1"])
+      await waitForPresence(harness, "ws_1", true)
+      const unfenced = await harness.connect(undefined, ["ws_2"])
+      await waitForPresence(harness, "ws_2", true)
+      unfenced.ws.send(JSON.stringify({
+        type: "host.registration.update",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        workspace_ids: ["ws_1", "ws_2"],
+        token: await harness.token(undefined, ["ws_1", "ws_2"]),
+      }))
+      await expect(unfenced.closed).resolves.toEqual({ code: 1008, reason: "Host tunnel generation was superseded" })
+      expect(fenced.ws.readyState).toBe(WebSocket.OPEN)
+      expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeDefined()
+      fenced.ws.close()
     } finally {
       await harness.stop()
     }

@@ -16,6 +16,7 @@ import {
   RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
   checkHostTunnelGeneration,
+  hostTunnelIncumbentOutranks,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
   workspaceRelayTargetUrl,
@@ -1989,7 +1990,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     const decision = await checkHostTunnelGeneration(options.resolveHostGeneration, claims)
     if (!decision.ok) return json(decision.code, decision.reason, decision.retryable ? 503 : 403)
     const previous = hostTunnels.get(hostId)
-    if (previous?.generation !== undefined && claims.generation !== undefined && previous.generation > claims.generation) {
+    if (previous && hostTunnelIncumbentOutranks(previous.generation, claims.generation)) {
       return json("host_generation_superseded", "Host tunnel generation was superseded", 403)
     }
 

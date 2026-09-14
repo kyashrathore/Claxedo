@@ -16,7 +16,7 @@ import {
   createCachedHostGenerationClient,
   createCachedRevocationClient,
   createCachedTargetClient,
-  parseHostGenerationResult,
+  createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   parseWorkspaceRelayTarget,
   type HostGenerationLookup,
@@ -44,9 +44,9 @@ type WorkspaceRelayWorkerBindings = {
   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS?: string
   CLAXEDO_RELAY_TARGET_CACHE_TTL_MS?: string
   /**
-   * Absolute URL of the control plane's host-generation lookup
-   * (`…/internal/relay/host-generation`). Unset means no serving-generation
-   * fence: host tunnels are admitted and kept exactly as before it existed.
+   * Absolute URL of the control plane's host-generation lookup. Unset derives
+   * `<resolver base>/host-generation` from the same base `/target` and
+   * `/revocation` are derived from.
    */
   CLAXEDO_RELAY_HOST_GENERATION_URL?: string
   CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS?: string
@@ -59,7 +59,7 @@ export type WorkspaceRelayWorkerEnv = Record<string, unknown> & WorkspaceRelayWo
 type ResolverClient = {
   target(workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined>
   revocation(args: { jti: string; workspaceId: string; hostId: string }): Promise<RuntimeAccessTokenActiveResult>
-  hostGeneration?: HostGenerationLookup
+  hostGeneration: HostGenerationLookup
 }
 
 type ResolverFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -181,37 +181,18 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)
   const target = createCachedTargetClient(targetUncached, (targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}))
   const revocation = createCachedRevocationClient(revocationUncached, (revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}))
-  const hostGenerationUrl = trimToUndefined(env.CLAXEDO_RELAY_HOST_GENERATION_URL)
-  const hostGeneration = hostGenerationUrl
-    ? createCachedHostGenerationClient(
-      hostGenerationLookup(hostGenerationUrl, headers, fetcher),
-      (positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS)
-        ? { ttlMs: positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS) }
-        : {}),
-    )
-    : undefined
+  const hostGenerationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS)
+  const hostGeneration = createCachedHostGenerationClient(
+    createHostGenerationResolverLookup(
+      trimToUndefined(env.CLAXEDO_RELAY_HOST_GENERATION_URL) ?? `${root}/host-generation`,
+      { headers, fetch: fetcher },
+    ),
+    (hostGenerationCacheTtlMs ? { ttlMs: hostGenerationCacheTtlMs } : {}),
+  )
   return {
     target: (workspaceId, hostId) => target({ workspaceId, hostId }),
     revocation,
-    ...(hostGeneration ? { hostGeneration } : {}),
-  }
-}
-
-/**
- * 404 is the control plane's conclusive "no such enrollment" and resolves
- * `undefined`; every other non-ok status throws, which the relay grades as
- * "unavailable" (admission 503, established tunnels graced).
- */
-function hostGenerationLookup(url: string, headers: Record<string, string>, fetcher: ResolverFetch): HostGenerationLookup {
-  return async ({ enrollmentId }) => {
-    const target = new URL(url)
-    target.searchParams.set("enrollmentId", enrollmentId)
-    const res = await fetcher(target, { headers })
-    if (res.status === 404) return undefined
-    if (!res.ok) throw new Error(`relay host-generation resolver failed: ${res.status}`)
-    const result = parseHostGenerationResult(await res.json())
-    if (!result) throw new Error("relay host-generation resolver returned a malformed result")
-    return result
+    hostGeneration,
   }
 }
 
@@ -237,7 +218,7 @@ export async function workspaceRelayDurableObjectOptions(
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
       }),
-    ...(resolver.hostGeneration ? { resolveHostGeneration: resolver.hostGeneration } : {}),
+    resolveHostGeneration: resolver.hostGeneration,
     audit: (event) => {
       if (event.result === "deny") {
         console.warn(`[workspace-relay] deny ${event.action} reason=${event.reason ?? ""} workspace=${event.workspaceId ?? ""} path=${event.path}`)
