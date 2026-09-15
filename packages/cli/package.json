@@ -22,7 +22,7 @@
     "node": ">=24"
   },
   "bin": {
-    "claxedo": "./dist/index.mjs"
+    "claxedo": "dist/index.mjs"
   },
   "files": [
     "dist",

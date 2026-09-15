@@ -24,7 +24,7 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "workspace-runtime": "./dist/cli.mjs"
+    "workspace-runtime": "dist/cli.mjs"
   },
   "exports": {
     ".": {
