@@ -430,39 +430,48 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       onGoal?.(goal)
       this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
     }
-    let goalSessionStore: SessionStore | undefined
-    if (onGoal) {
-      /**
-       * A WRITE-ONLY observer, not a storage adapter: this store exists solely
-       * because `append` is the only channel on which the CLI reports Goal
-       * progress. It deliberately keeps nothing.
-       *
-       * Storing (or importing) a transcript here would be worse than useless.
-       * The subprocess keeps writing its own complete local JSONL — this is a
-       * secondary copy — and the SDK redirects resume at the store only when
-       * `load()` answers with entries, which it materializes into a temporary
-       * CLAUDE_CONFIG_DIR and resumes the CLI from INSTEAD of that local
-       * transcript. Answering with nothing keeps the CLI on its own history;
-       * answering with a mirror would cost an O(transcript) import per Goal
-       * turn and, since ordinary turns run without a `sessionStore` and never
-       * reach here, would eventually resume from a copy missing them.
-       */
-      goalSessionStore = {
-        append: async (_key, entries) => {
-          if (input.abort.signal.aborted) return
-          for (const entry of entries) {
-            const goal = claudeTranscriptGoalSnapshot(
-              input.sessionId,
-              entry,
-              this.goalStore.peek(input.sessionId),
-            )
-            if (goal !== undefined) applyGoal(goal)
+    /**
+     * A WRITE-ONLY observer, not a storage adapter: `append` is the only
+     * channel on which the CLI reports Goal progress and its own session
+     * title (`ai-title` from its generator, `custom-title` from `/rename`);
+     * neither is on the SDK message stream. It deliberately keeps nothing.
+     *
+     * Storing (or importing) a transcript here would be worse than useless.
+     * The subprocess keeps writing its own complete local JSONL — this is a
+     * secondary copy — and the SDK redirects resume at the store only when
+     * `load()` answers with entries, which it materializes into a temporary
+     * CLAUDE_CONFIG_DIR and resumes the CLI from INSTEAD of that local
+     * transcript. Answering with nothing keeps the CLI on its own history.
+     */
+    const sessionStore: SessionStore = {
+      append: async (_key, entries) => {
+        if (input.abort.signal.aborted) return
+        for (const entry of entries) {
+          const row = asRecord(entry)
+          if (row?.type === "ai-title" || row?.type === "custom-title") {
+            input.ingest({
+              source: "claude.sdk",
+              method: "claude/session-store",
+              payload: row,
+            }, {
+              dir: "in",
+              method: "claude.sessionStore",
+              frame: row,
+            })
+            continue
           }
-        },
-        load: async () => null,
-        listSessions: async () => [],
-        listSubkeys: async () => [],
-      }
+          if (!onGoal) continue
+          const goal = claudeTranscriptGoalSnapshot(
+            input.sessionId,
+            entry,
+            this.goalStore.peek(input.sessionId),
+          )
+          if (goal !== undefined) applyGoal(goal)
+        }
+      },
+      load: async () => null,
+      listSessions: async () => [],
+      listSubkeys: async () => [],
     }
     const requestPermission: CanUseTool = async (toolName, toolInput, options) => {
       const grant = claudeCommandGrant(toolName, toolInput, options, input.directory, this.permissionSelection.currentId(input.sessionId))
@@ -570,7 +579,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // bundled binary. Throws an actionable install error when absent.
         pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
         includePartialMessages: true,
-        ...(goalSessionStore ? { sessionStore: goalSessionStore, sessionStoreFlush: "eager" as const } : {}),
+        sessionStore,
+        sessionStoreFlush: "eager",
         forwardSubagentText: CLAUDE_FORWARD_SUBAGENT_TEXT,
         abortController: input.abort,
         // Both are passed together on purpose. `permissionMode` decides how much

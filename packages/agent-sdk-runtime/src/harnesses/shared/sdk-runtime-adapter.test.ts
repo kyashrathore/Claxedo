@@ -574,45 +574,6 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
-  test.each(["claude", "codex", "cursor"] as const)("%s native generates and persists a title after the first turn", async (type) => {
-    const store = createMemoryRuntimeStore()
-    const adapter = new SdkRuntimeAdapter({
-      store,
-      driver: () => ({
-        ...minimalSdkRuntimeDriver(),
-        type,
-        createRuntime: () => ({
-          ingest: () => ({
-            events: [{ type: "finish", sessionId: "agent-session-1" }],
-            snapshot: { harness: type, threadId: "agent-session-1", adapterState: {} },
-          }),
-          snapshot: () => ({ harness: type, threadId: "agent-session-1", adapterState: {} }),
-        }) as never,
-        runTurn: async (input) => {
-          input.ingest({ type: "completed" } as never, { dir: "in", method: "test", frame: {} })
-        },
-      }),
-    })
-    const session = await adapter.createSession(path.resolve("/repo"))
-    const events = []
-
-    for await (const event of executeTestTurn(adapter, session.id, {
-      parts: [{ type: "text", text: `Please fix ${type} native title` }],
-      assistantMessageId: "assistant-1",
-      agent: "build",
-      model: { providerID: `${type}-native`, modelID: "test" },
-    }, path.resolve("/repo"))) events.push(event)
-
-    expect(store.getSession(session.id)).toMatchObject({ title: `fix ${type} native title` })
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "session.updated",
-      properties: expect.objectContaining({
-        info: expect.objectContaining({ title: `fix ${type} native title` }),
-      }),
-    }))
-    await adapter.dispose()
-  })
-
   test("requires a workspace directory at cwd-dependent boundaries", async () => {
     const item = new SdkRuntimeAdapter({
       store: createMemoryRuntimeStore(),

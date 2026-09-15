@@ -1,28 +1,24 @@
-import { sessionUpdated } from "../../compat-events"
-import { deriveSessionTitle, hasConcreteSessionTitle } from "../../session-title"
-import type { SdkRuntimeStore } from "./sdk-runtime-driver"
-import { extractTextFromParts } from "./sdk-runtime-values"
+import { assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import type { SessionTitleRequest } from "../../title-generation"
+import type { AgentRuntimeStoreCore } from "./runtime-store"
+import type { SdkRuntimeDriver } from "./sdk-runtime-driver"
 
-export function commitSdkAutomaticTitle(store: SdkRuntimeStore, id: string, agentSessionId: string, directory: string, parts: unknown[]) {
-  const session = store.getSession(id)
-  if (hasConcreteSessionTitle(session?.title)) return null
-  const text = extractTextFromParts(parts)
-  if (!text) return null
-  const now = Date.now()
-  const event = sessionUpdated({
-    id,
-    slug: id,
-    projectID: "",
-    directory,
-    title: deriveSessionTitle(text),
-    version: "local",
-    time: { created: now, updated: now },
-  })
-  store.appendEvent({
-    sessionId: id,
-    agentSessionId,
-    payload: event,
-    source: { dir: "in", method: "auto-title", frame: {} },
-  })
-  return event
+export type { SessionTitleRequest }
+
+type TitleStore = Pick<AgentRuntimeStoreCore, "getAgentSessionId">
+
+/** The driver's side turn for a title, or null on a driver that titles through its stream. */
+export async function generateDriverTitle(driver: SdkRuntimeDriver, store: TitleStore, binding: AgentExecutionBinding, request: SessionTitleRequest) {
+  assertAgentExecutionBinding(binding)
+  if (!driver.generateTitle) return null
+  const agentSessionId = store.getAgentSessionId(binding.sessionId)
+  if (!agentSessionId) return null
+  return await driver.generateTitle({ sessionId: binding.sessionId, agentSessionId, request })
+}
+
+/** Record an accepted title on the harness's own session, where the driver has a rename. */
+export async function pushDriverTitle(driver: SdkRuntimeDriver, store: TitleStore, binding: AgentExecutionBinding, title: string) {
+  const agentSessionId = store.getAgentSessionId(binding.sessionId)
+  if (!agentSessionId || !driver.setAgentSessionTitle) return
+  await driver.setAgentSessionTitle({ sessionId: binding.sessionId, agentSessionId, directory: binding.directory, title })
 }

@@ -387,6 +387,25 @@ describe("createClientPresentationProjection", () => {
     })
   })
 
+  test("session-info leaves the title alone when the update carries none and stamps provenance when it does", () => {
+    const projection = createClientPresentationProjection({ sessionId: "s1", directory: "/repo", now: () => 5 })
+    const untitled = projection.ingest({ type: "session-info", updatedAt: "2026-09-15T00:00:00.000Z" })[0]?.payload
+    expect(untitled?.type).toBe("session.updated")
+    expect(untitled?.type === "session.updated" ? "title" in untitled.properties.info : true).toBe(false)
+    const titled = projection.ingest({ type: "session-info", title: "Named by agent" })[0]?.payload
+    expect(titled).toMatchObject({ properties: { info: { title: "Named by agent", titleSource: "harness" } } })
+    const cleared = projection.ingest({ type: "session-info", title: null })[0]?.payload
+    expect(cleared).toMatchObject({ properties: { info: { title: null, titleSource: "harness" } } })
+  })
+
+  test("session-title carries the producer's provenance, harness by default", () => {
+    const projection = createClientPresentationProjection({ sessionId: "s1", directory: "/repo", now: () => 5 })
+    expect(projection.ingest({ type: "session-title", title: "Generated" })[0]?.payload)
+      .toMatchObject({ properties: { info: { title: "Generated", titleSource: "harness" } } })
+    expect(projection.ingest({ type: "session-title", title: "Renamed", titleSource: "user" })[0]?.payload)
+      .toMatchObject({ properties: { info: { title: "Renamed", titleSource: "user" } } })
+  })
+
   test("uses the injected clock for session title timestamps", () => {
     const projection = makeProjection()
 

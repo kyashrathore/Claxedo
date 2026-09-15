@@ -44,6 +44,7 @@ import type {
   SteerResult,
 } from "../../adapter-contract"
 import { turnWriteFence } from "../../adapter-contract"
+import { generateDriverTitle, pushDriverTitle, type SessionTitleRequest } from "./sdk-runtime-title"
 import type { HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
@@ -57,7 +58,6 @@ import {
   type SessionTurnLifecycle,
 } from "../shared/turn-lifecycle"
 import { steerActiveTurn } from "./turn-steering"
-import { commitSdkAutomaticTitle } from "./sdk-runtime-title"
 import { createSdkRuntimeProducers } from "./sdk-runtime-producers"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
@@ -361,8 +361,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     assertAgentExecutionBinding(binding)
     const id = binding.sessionId
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
+    if (updates.title !== undefined) await pushDriverTitle(this.driver, this.store, binding, updates.title)
     return acceptedSessionUpdate(this.store, id, updates)
   }
+
+  generateTitle = (binding: AgentExecutionBinding, request: SessionTitleRequest) => generateDriverTitle(this.driver, this.store, binding, request)
 
   async getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
     assertAgentExecutionBinding(binding)
@@ -412,8 +415,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
    * second prompt arriving while one is has nowhere to go, so it is refused.
    * The generator outlives the turn by hundreds of milliseconds: after the
    * terminal event the consumer (`runtime.ts`'s drain loop) still commits
-   * events, fans out to subscribers, and awaits an auto-title round-trip, and
-   * a prompt landing in that tail would be refused for a turn already over.
+   * events and fans out to subscribers, and a prompt landing in that tail
+   * would be refused for a turn already over.
    * The `finally` releases too — `enter`'s closure deletes from a Set, so a
    * second call is a no-op — so a turn that throws or is abandoned before any
    * terminal event cannot strand the session.
@@ -446,8 +449,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     try {
       for await (const event of this._sendMessage(id, input, directory, execute, writeContext)) {
         // Release BEFORE yielding: the consumer may take arbitrarily long to
-        // process this event (the auto-title round-trip is downstream of it),
-        // and every millisecond of that is a window a next prompt can lose in.
+        // process this event, and every millisecond of that is a window a
+        // next prompt can lose in.
         if (isTerminalRuntimePayload(event)) leaveBusy()
         yield event
       }
@@ -677,17 +680,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         for (const resolve of resolvers.splice(0)) resolve()
       })
 
-    let titleEmitted = false
     try {
       while (true) {
         await wait()
         let event: CompatEvent | undefined
         while ((event = queue.shift())) {
-          if (event.type === "session.idle" && !titleEmitted) {
-            titleEmitted = true
-            const titleEvent = commitSdkAutomaticTitle(this.store, id, agentSessionId, directory, input.parts)
-            if (titleEvent) yield titleEvent
-          }
           yield event
           if (isTerminalCompatEvent(event)) promptDone = true
         }

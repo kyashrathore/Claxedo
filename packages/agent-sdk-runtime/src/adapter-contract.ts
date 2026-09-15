@@ -11,6 +11,7 @@ import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
 import type { AgentProcessObserver } from "./process-observer"
 import type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
+import type { SessionTitleRequest } from "./title-generation"
 import type {
   AgentAgent,
   AgentCommand,
@@ -140,6 +141,13 @@ export interface AgentHarnessAdapterCore {
   releaseHandoffSource?(id: string, agentSessionId: string, ownerKey: string | null, directory: RuntimeDirectory): Promise<void>
   /** Apply provider/process effects and return the accepted session without writing the RuntimeStore. */
   updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null>
+  /**
+   * Ask the harness for a session title through a side turn that leaves the
+   * session's own transcript untouched. Returns the model's raw reply; the
+   * runtime cleans and ranks it. Absent on harnesses that title sessions
+   * themselves (their title arrives on the event stream instead).
+   */
+  generateTitle?(binding: AgentExecutionBinding, request: SessionTitleRequest): Promise<string | null>
   getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig>
   /** Apply the runtime-supplied complete config and return the accepted config without writing the RuntimeStore. */
   updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig>

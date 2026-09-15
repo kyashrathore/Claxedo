@@ -1,19 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
+import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "./session-title"
 
 describe("session title helpers", () => {
-  test("treats generated placeholders as untitled", () => {
-    expect(hasConcreteSessionTitle(undefined)).toBe(false)
-    expect(hasConcreteSessionTitle("")).toBe(false)
-    expect(hasConcreteSessionTitle("New Session")).toBe(false)
-    expect(hasConcreteSessionTitle("New session - 2026-07-08T09:09:30.378Z")).toBe(false)
-    expect(hasConcreteSessionTitle("Child session - 2026-07-08T09:09:30.378Z")).toBe(false)
-    expect(hasConcreteSessionTitle("Session")).toBe(false)
+  test("recognises the titles no writer chose", () => {
+    expect(isPlaceholderTitle(undefined)).toBe(true)
+    expect(isPlaceholderTitle(null)).toBe(true)
+    expect(isPlaceholderTitle("")).toBe(true)
+    expect(isPlaceholderTitle("New Session")).toBe(true)
+    expect(isPlaceholderTitle("New session - 2026-07-08T09:09:30.378Z")).toBe(true)
+    expect(isPlaceholderTitle("Child session - 2026-07-08T09:09:30.378Z")).toBe(true)
+    expect(isPlaceholderTitle("Session")).toBe(true)
   })
 
-  test("keeps real titles concrete", () => {
-    expect(hasConcreteSessionTitle("Fix terminal rendering")).toBe(true)
-    expect(hasConcreteSessionTitle("New session architecture notes")).toBe(true)
+  test("keeps chosen titles", () => {
+    expect(isPlaceholderTitle("Fix terminal rendering")).toBe(false)
+    expect(isPlaceholderTitle("New session architecture notes")).toBe(false)
   })
 
   test("derives titles from prompt text", () => {

@@ -31,10 +31,18 @@ export type AgentExecutionBindingExpectation = Readonly<{
   upstreamSessionId: string
 }>
 
+/**
+ * Who wrote the current title, ranked: a user rename beats a harness or
+ * model-generated title, which beats the first-prompt placeholder. A writer of
+ * lower rank than the stored one is dropped by the store.
+ */
+export type AgentSessionTitleSource = "prompt" | "harness" | "user"
+
 export type AgentSession = {
   id: string
   workspaceId?: string
   title?: string | null
+  titleSource?: AgentSessionTitleSource
   slug?: string
   version?: string
   directory?: string

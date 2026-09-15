@@ -27,6 +27,7 @@ import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
 import type { ProviderProjection } from "../../provider-projection"
+import type { SessionTitleRequest } from "../../title-generation"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStoreCore
@@ -177,6 +178,17 @@ export type SdkRuntimeDriver = {
   createRuntime(threadId: string, todos?: AgentTodo[]): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
   deleteAgentSession?(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
+  /**
+   * Run the title side turn and return the model's raw reply. Absent on a
+   * harness whose own title reaches the runtime through its event stream.
+   */
+  generateTitle?(input: { sessionId: string; agentSessionId: string; request: SessionTitleRequest }): Promise<string | null>
+  /**
+   * Record an accepted title on the harness's own session so its native
+   * listing (`codex resume`, Pi's `/resume`) shows the same name. Absent
+   * where the harness has no rename.
+   */
+  setAgentSessionTitle?(input: { sessionId: string; agentSessionId: string; directory: string; title: string }): Promise<void>
   dispose?(): void | Promise<void>
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]>

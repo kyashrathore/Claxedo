@@ -1,13 +1,19 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
-export function hasConcreteSessionTitle(title: unknown) {
-  if (typeof title !== "string") return false
+
+/**
+ * A title no writer chose: empty, or one of the defaults a harness mints at
+ * create (`New session - <ISO>` is OpenCode's, `Child session - <ISO>` a
+ * subagent's). Only these are replaced by the first-prompt placeholder.
+ */
+export function isPlaceholderTitle(title: unknown) {
+  if (typeof title !== "string") return true
   const cleaned = title.replace(/\s+/g, " ").trim()
-  if (!cleaned) return false
-  if (/^new session$/i.test(cleaned)) return false
-  if (/^new session\s*-\s*\d{4}-\d{2}-\d{2}t/i.test(cleaned)) return false
-  if (/^child session\s*-\s*\d{4}-\d{2}-\d{2}t/i.test(cleaned)) return false
-  if (/^session$/i.test(cleaned)) return false
-  return true
+  if (!cleaned) return true
+  if (/^new session$/i.test(cleaned)) return true
+  if (/^new session\s*-\s*\d{4}-\d{2}-\d{2}t/i.test(cleaned)) return true
+  if (/^child session\s*-\s*\d{4}-\d{2}-\d{2}t/i.test(cleaned)) return true
+  if (/^session$/i.test(cleaned)) return true
+  return false
 }
 
 export function deriveSessionTitle(text: string) {

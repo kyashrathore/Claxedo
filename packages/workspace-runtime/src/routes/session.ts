@@ -33,36 +33,26 @@ import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 
+/**
+ * A `session.updated` / `session.deleted` is a row change (title,
+ * `time.updated`, archived-at) the rail reconciles, forwarded verbatim to the
+ * workspace stream. Subscribed on the hub rather than called from the turn
+ * driver's publisher: a title generated after the turn, and every frame from
+ * a host-started turn, reach the hub without passing through that publisher.
+ */
+function bridgeRowChange(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
+  const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
+  if (payload.type !== "session.updated" && payload.type !== "session.deleted") return
+  workspaceRuntimeBus.publish({
+    type: payload.type,
+    ...(event.directory ? { directory: event.directory } : {}),
+    workspaceId: workspaceId(),
+    properties: payload.properties,
+  })
+}
+
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
-
-  // `session.updated` is forwarded verbatim rather than translated into an
-  // `agent.lifecycle` frame: it is not a lifecycle transition, it is a row
-  // change (title, `time.updated`, archived-at) the rail must reconcile.
-  //
-  // This hop is the whole reason a `claude` native-SDK session sat in the
-  // sidebar as "New Session" until an unrelated refetch happened to land. The
-  // auto-title publishes `session.updated` through `publishGlobal`, this
-  // function saw a type it had no `eventType` mapping for, and fell through to
-  // the `if (!eventType) return` below — so the frame never reached the
-  // workspace stream at all. Both other ends were already correct: the app
-  // subscribes to `session.updated` (`claxedoDirectoryEventTypes`) and
-  // reconciles it into the paginated session-list
-  // (`directory-event-projector` -> `reconcileUpdatedSessionListQueryData`).
-  //
-  // Kept ahead of the `eventType` mapping so a future compat type that is BOTH
-  // a row change and a lifecycle transition cannot be silently swallowed by
-  // whichever branch happens to be written first.
-  if (payload.type === "session.updated" || payload.type === "session.deleted") {
-    workspaceRuntimeBus.publish({
-      type: payload.type,
-      ...(event.directory ? { directory: event.directory } : {}),
-      workspaceId: workspaceId(),
-      properties: payload.properties,
-    })
-    return
-  }
-
   const sessionID = str(payload.properties?.sessionID) ?? str(payload.properties?.sessionId)
   const status = rec(payload.properties?.status)
   const eventType = payload.type === "session.status" && status?.type === "busy"
@@ -217,6 +207,7 @@ export function SessionRoutes(
   },
 ) {
   const eventHub = options?.eventHub ?? createRuntimeEventHub()
+  eventHub.subscribeGlobal(bridgeRowChange)
   /**
    * The harness a request names, or undefined when it names none.
    *

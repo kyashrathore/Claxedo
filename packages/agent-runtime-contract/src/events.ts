@@ -140,7 +140,7 @@ export type AgentRuntimeEvent = ({ harness?: string; threadId?: string; raw?: Ra
   | { type: "session-agent"; agentId: string }
   | { type: "config-update"; options: AgentConfigOption[] }
   | { type: "session-info"; title?: string | null; updatedAt?: string | null; parentID?: string }
-  | { type: "session-title"; title: string }
+  | { type: "session-title"; title: string; titleSource?: "harness" | "user" }
   | { type: "usage"; contextSize: number; contextUsed: number; observation?: RuntimeUsageObservation; cost?: { amount: number; currency: string } }
   | { type: "diagnostic"; diagnostic: { code: string; message: string; severity: "debug" | "info" | "warn" | "error"; details?: unknown } }
 )

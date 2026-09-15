@@ -835,7 +835,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         }
 
         case "thread/name/updated": {
-          const title = text(row.name) ?? text(row.title)
+          const title = text(row.threadName)
           return title ? [{ type: "session-title", title }] : []
         }
 

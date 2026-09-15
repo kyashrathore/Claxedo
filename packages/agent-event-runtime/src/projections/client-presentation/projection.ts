@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { canonicalToolName } from "@claxedo/agent-runtime-contract"
+import { canonicalToolName, type AgentSessionTitleSource } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
 import { object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
@@ -28,7 +28,6 @@ import type {
   EventSessionUsage,
   EventTodoUpdated,
   ClientPresentationPart,
-  ClientPresentationSession,
   ClientPresentationSnapshotFileDiff,
   ClientPresentationStatus,
   ClientPresentationTodo,
@@ -201,7 +200,7 @@ function sessionError(message: string, sessionID?: string): EventSessionError {
   }
 }
 
-function sessionUpdated(info: ClientPresentationSession): EventSessionUpdated {
+function sessionUpdated(info: EventSessionUpdated["properties"]["info"]): EventSessionUpdated {
   return {
     id: `session.updated:${info.id}`,
     type: "session.updated",
@@ -377,17 +376,22 @@ function lossyCompatDiagnostic(ctx: CompatContext, eventType: string, message: s
   }))
 }
 
+/**
+ * `title` absent leaves the stored title alone; `null` clears it. A harness
+ * that reports only `updatedAt` must not blank a title it never mentioned.
+ */
 function buildSession(input: {
   id: string
   directory: string
-  title: string
+  title?: string | null
+  titleSource?: AgentSessionTitleSource
   created: number
   updated: number
   parentID?: string
   sessionRef?: string
   host?: "workspace"
   workspaceID?: string
-}) {
+}): EventSessionUpdated["properties"]["info"] {
   return {
     id: input.id,
     slug: input.id,
@@ -397,7 +401,7 @@ function buildSession(input: {
     ...(input.sessionRef ? { sessionRef: input.sessionRef } : {}),
     ...(input.host ? { host: input.host } : {}),
     ...(input.workspaceID ? { workspaceID: input.workspaceID } : {}),
-    title: input.title,
+    ...(input.title !== undefined ? { title: input.title, titleSource: input.titleSource ?? "harness" } : {}),
     version: "local",
     time: { created: input.created, updated: input.updated },
   }
@@ -1529,7 +1533,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       return [withDir(ctx.directory, sessionUpdated(buildSession({
         id: ctx.sessionId,
         directory: ctx.directory,
-        title: chunk.title ?? "",
+        ...(chunk.title !== undefined ? { title: chunk.title } : {}),
         created: time,
         updated: time,
         ...(chunk.parentID ? { parentID: chunk.parentID } : {}),
@@ -1545,6 +1549,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         id: ctx.sessionId,
         directory: ctx.directory,
         title: chunk.title,
+        ...(chunk.titleSource ? { titleSource: chunk.titleSource } : {}),
         created: nowMs,
         updated: nowMs,
       })))]

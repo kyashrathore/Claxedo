@@ -10,7 +10,7 @@ import type { AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
 import { goalCapabilities, type HarnessCapabilities } from "./capabilities"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { NO_HARNESS_EFFORT, type SessionHarnessId } from "@claxedo/agent-runtime-contract"
-import type { RuntimeEventHub } from "./runtime-event-hub"
+import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
 import { claude, pi } from "./harnesses"
 import { installFakePiRpc } from "./test-utils/fake-pi-rpc.mjs"
 let nativePi: Awaited<ReturnType<typeof installFakePiRpc>>
@@ -80,6 +80,8 @@ function testHarness(options: {
   onQuestionReject?: () => void
   sessionConfigReads?: string[]
   onCreate?: (context: { eventHub: RuntimeEventHub }) => void
+  generateTitle?: AgentHarnessAdapter["generateTitle"]
+  onUpdateSession?: (updates: { title?: string; time?: { archived?: number } }) => void
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
     instructionChannel: "turn-system-prompt",
@@ -100,9 +102,11 @@ function testHarness(options: {
       options.runtimeConfigCalls?.push("createSession")
       return options.createSession?.(directory, title, id) ?? { id: "ses_test" }
     },
-    async updateSession() {
-      return null
+    async updateSession(binding, updates) {
+      options.onUpdateSession?.(updates)
+      return { id: binding.sessionId, ...(updates.title !== undefined ? { title: updates.title } : {}) }
     },
+    ...(options.generateTitle ? { generateTitle: options.generateTitle } : {}),
     async getSessionConfig(binding) {
       options.sessionConfigReads?.push(binding.sessionId)
       return { harness: { id: "pi", access: "native" }, variant: null, agent: "build" }
@@ -1870,6 +1874,118 @@ describe("createAgentRuntime", () => {
     expect((rows.getMessages(session.id) as Array<{ info: { id: string } }>).map((message) => message.info.id))
       .toContain("replacement_r")
     expect(lastTurnOf(rows, session.id)).toBeUndefined()
+    await runtime.dispose()
+  })
+
+  test("replaces the prompt placeholder with the harness-generated title after the turn", async () => {
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const published: Array<{ title?: string | null; titleSource?: string }> = []
+    eventHub.subscribeGlobal((event) => {
+      if (event.payload.type === "session.updated") published.push(event.payload.properties.info)
+    })
+    const requests: string[] = []
+    const pushed: Array<string | undefined> = []
+    const runtime = createAgentRuntime({
+      store,
+      eventHub,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          yield sessionIdle(id)
+        },
+        generateTitle: async (_binding, request) => {
+          requests.push(request.user)
+          return "  \"Fix terminal pane rendering.\"  \n"
+        },
+        onUpdateSession: (updates) => pushed.push(updates.title),
+      })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+      title: "New session - 2026-07-08T09:09:30.378Z",
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "Please fix the terminal pane" })
+    await tick()
+    await tick()
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toContain("User: Please fix the terminal pane")
+    expect(pushed).toEqual(["Fix terminal pane rendering"])
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
+      title: "Fix terminal pane rendering",
+      titleSource: "harness",
+    })
+    expect(published).toEqual([{ title: "Fix terminal pane rendering", titleSource: "harness" }].map((row) => expect.objectContaining(row)))
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_2", text: "now the sidebar" })
+    await tick()
+    await tick()
+    expect(requests).toHaveLength(1)
+    await runtime.dispose()
+  })
+
+  test("a user rename outranks a later generated title and stops further generation", async () => {
+    const store = createMemoryRuntimeStore()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          yield sessionIdle(id)
+        },
+        generateTitle: async () => {
+          await gate
+          return "Generated later"
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "Please fix the terminal pane" })
+    await tick()
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({ title: "fix the terminal pane", titleSource: "prompt" })
+    await runtime.sessions.update(session.id, { title: "My rename" })
+    release()
+    await tick()
+    await tick()
+
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({ title: "My rename", titleSource: "user" })
+    await runtime.dispose()
+  })
+
+  test("a title the harness streams during the turn is kept and skips generation", async () => {
+    const store = createMemoryRuntimeStore()
+    const requests: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          yield { type: "session-title", title: "Streamed by harness" } as never
+          yield sessionIdle(id)
+        },
+        generateTitle: async (_binding, request) => {
+          requests.push(request.user)
+          return "Generated"
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "Please fix the terminal pane" })
+    await tick()
+    await tick()
+
+    expect(requests).toEqual([])
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({ title: "Streamed by harness", titleSource: "harness" })
     await runtime.dispose()
   })
 

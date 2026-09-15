@@ -805,6 +805,23 @@ function claudeRateLimitEvent(info: Record<string, unknown>) {
   } satisfies AgentRuntimeEvent
 }
 
+/**
+ * The CLI's own session title arrives only as a transcript entry through the
+ * `sessionStore` observer, never as an SDK message: `ai-title` is the title
+ * it generates from the first prompt, `custom-title` is a `/rename`.
+ */
+function claudeTranscriptTitle(entry: Record<string, unknown>): AgentRuntimeEvent[] {
+  if (entry.type === "ai-title") {
+    const title = text(entry.aiTitle)?.trim()
+    return title ? [{ type: "session-title", title }] : []
+  }
+  if (entry.type === "custom-title") {
+    const title = text(entry.customTitle)?.trim()
+    return title ? [{ type: "session-title", title, titleSource: "user" }] : []
+  }
+  return []
+}
+
 export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
@@ -816,6 +833,8 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
         const questions = questionFromToolUse(rawMessage, context)
         return questions.length ? questions : permissionFromToolUse(rawMessage, context)
       }
+
+      if (event.method === "claude/session-store") return claudeTranscriptTitle(rawMessage)
 
       if (!isSdkMessage(rawMessage)) {
         return unmappedSdkEvent({

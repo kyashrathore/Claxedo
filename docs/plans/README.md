@@ -8,6 +8,20 @@ explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
+- [Session titles: harness-native where it exists, runtime-generated elsewhere](./2026-09-15-002-fix-session-auto-title.md) — proposed; not started.
+  - Today the title is the first 72 characters of the first prompt, written
+    by three separate owners and never replaced. Verified per harness: Claude
+    Code and OpenCode generate titles natively (Claude's arrives only through
+    `sessionStore.append` as an `ai-title` entry); ACP may
+    (`session_info_update`); Codex, Pi and Cursor-local never do — Codex's
+    own TUI generates client-side. Plan: `titleSource` rank
+    (`user` > `harness` > `prompt`) enforced in the store, `runtime.ts` as the
+    single producer, native titles ingested where they exist, and a
+    per-harness `generateTitle` side turn (ephemeral Codex thread with
+    structured output, one-shot `pi -p`, temp ACP session) written back to
+    the harness's own listing. Fixes the Codex `threadName` field and the
+    ACP `session-info` empty-title overwrite on the way.
+
 - [Remote machine connection: implementation plan](./2026-09-14-003-feat-connect-implementation-plan.md) — P1–P3 implemented on `feat/connect`, live acceptance green; P4–P7 not started. Companions: [investigation](./2026-09-14-001-feat-connect-enrollment-foundation-proposal.md), [components and flows](./2026-09-14-002-feat-connect-components-and-flows.md).
   - First slice = invitation-file bootstrap with idempotent redeem,
     route-local machine verifier keyed by enrollment id with key-version and

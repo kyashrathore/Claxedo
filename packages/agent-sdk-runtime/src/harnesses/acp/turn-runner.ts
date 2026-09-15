@@ -33,8 +33,9 @@ import {
   promptTimeoutMs,
   runtimeUsage,
 } from "./helpers"
-import { maybeAutoTitle } from "./title"
 import { AcpProcessManager } from "./process-manager"
+import { generateAcpTitle } from "./title"
+import type { SessionTitleRequest } from "../../title-generation"
 
 const log = Log.create({ service: "acp-turn-runner" })
 const activePromptCounts = new Map<string, number>()
@@ -256,6 +257,15 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     this.goalProjectionMap().set(sessionId, projection)
     this.lifecycle().set(sessionId, turn)
     return projection
+  }
+
+  /** The title side turn: a throwaway ACP session on this session's process. */
+  async generateTitle(binding: AgentExecutionBinding, request: SessionTitleRequest): Promise<string | null> {
+    assertAgentExecutionBinding(binding)
+    return await generateAcpTitle({
+      getOrSpawnProcess: (sessionId, directory) => this.getOrSpawnProcess(sessionId, directory),
+      boot: (proc, directory, title) => this.boot(proc, directory, title),
+    }, binding.sessionId, request)
   }
 
   async *executeTurn(
@@ -620,23 +630,11 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       })
     }
 
-    let titleEmitted = false
     try {
       while (true) {
         await wait()
         let event: CompatEvent | undefined
         while ((event = queue.shift())) {
-          // Before yielding session.idle, emit auto-title if needed
-          if (event.type === "session.idle" && !titleEmitted) {
-            titleEmitted = true
-            const titleEvent = maybeAutoTitle({
-              store: this.store,
-              eventHub: this.options.eventHub,
-              getOrSpawnProcess: (sessionId, workdir) => this.getOrSpawnProcess(sessionId, workdir),
-              boot: (proc, workdir, title) => this.boot(proc, workdir, title),
-            }, id, agentSessionId, directory, input.parts)
-            if (titleEvent) yield titleEvent
-          }
           yield event
           if (isTerminalCompatEvent(event)) {
             log.info("sendMessage: terminal chunk yielded, returning", {

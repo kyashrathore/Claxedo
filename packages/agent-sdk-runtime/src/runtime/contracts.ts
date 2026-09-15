@@ -66,6 +66,11 @@ export type CreateAgentRuntimeInput = {
   subscriberBufferSize?: number
   /** Per-subscriber authorization gate; requires each subscriber to carry an identity. */
   eventDelivery?: AgentRuntimeEventDeliveryPolicy
+  /**
+   * The host's hub, when the host has one. Titles generated after a turn are
+   * published here because no turn subscription is open to carry them.
+   */
+  eventHub?: RuntimeEventHub
 }
 
 export type AgentRuntimeSubscriptionIdentity = {

@@ -960,6 +960,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (existing) return existing
     const runtime = createAgentRuntime({
       store: store(),
+      eventHub,
       adapterOwnership: "caller",
       // This session's adapter is already built, so the factory hands the same
       // one back and ignores the creation context the contract offers.

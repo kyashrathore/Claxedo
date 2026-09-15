@@ -7,8 +7,6 @@ import type { AgentRuntimeTurnStartInput } from "../shared/runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
 import { ACPProcess } from "./process"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
-import { generateAITitle } from "./title"
-import type { CompatEvent } from "../../compat-events"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
@@ -1402,96 +1400,5 @@ describe("AcpHarnessAdapter fork support", () => {
         agentSessionId: "agent_forked",
       }),
     ])
-  })
-})
-
-describe("AcpHarnessAdapter event fan-out", () => {
-  test("AI title prompt timeout cancels the temporary title session", async () => {
-    const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
-    process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
-    const calls: string[] = []
-    const store = {
-      getSession() {
-        return null
-      },
-      appendEvent() {
-        calls.push("append")
-      },
-    }
-    const proc = {
-      async newSession() {
-        return "title-session"
-      },
-      async prompt() {
-        calls.push("prompt")
-        return new Promise<never>(() => {})
-      },
-      async cancel(id: string) {
-        calls.push(`cancel:${id}`)
-      },
-      dispose() {
-        calls.push("dispose")
-      },
-    }
-
-    try {
-      await generateAITitle({
-        store,
-        getOrSpawnProcess: async () => ({ proc: proc as never }),
-        boot: async (item) => item.newSession(path.resolve("/work")),
-      }, "s1", path.resolve("/work"), "please add tests")
-
-      expect(calls).toContain("prompt")
-      expect(calls).toContain("cancel:title-session")
-      expect(calls).not.toContain("append")
-    } finally {
-      if (prev === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
-      else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = prev
-    }
-  })
-
-  test("AI title updates are persisted before direct global fan-out", async () => {
-    const persisted: string[] = []
-    const global: string[] = []
-    /** Only `session.updated` carries a session row, so the title has to be read behind that check. */
-    const titleOrType = (payload: CompatEvent) => {
-      if (payload.type !== "session.updated") return payload.type
-      expect(typeof payload.properties.info.title).toBe("string")
-      return payload.properties.info.title!
-    }
-    const store = {
-      getSession() {
-        return null
-      },
-      appendEvent(input: { sessionId: string; payload: CompatEvent }) {
-        persisted.push(titleOrType(input.payload))
-      },
-    }
-    const eventHub = {
-      publishGlobal(event: { payload: CompatEvent }) {
-        global.push(titleOrType(event.payload))
-      },
-    }
-    const proc = {
-      async newSession() {
-        return "title-session"
-      },
-      dispose() {},
-      async prompt(_id: string, _input: unknown, onUpdate: (update: unknown) => void) {
-        onUpdate({ sessionUpdate: "agent_message_chunk", delta: "Better Title" })
-        return { stopReason: "end_turn" }
-      },
-      async cancel() {},
-    }
-
-    await generateAITitle({
-      store,
-      eventHub: eventHub as never,
-      getOrSpawnProcess: async () => ({ proc: proc as never }),
-      boot: async (item) => item.newSession(path.resolve("/work")),
-    }, "s1", path.resolve("/work"), "please add tests")
-
-    expect(persisted).toEqual(["Better Title"])
-    expect(global).toEqual(["Better Title"])
   })
 })

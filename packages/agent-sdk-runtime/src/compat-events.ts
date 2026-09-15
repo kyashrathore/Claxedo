@@ -6,6 +6,7 @@ import type {
   AgentPresentationEvent,
   AgentQuestion,
   AgentPresentationSession,
+  AgentSessionTitleSource,
   AgentSession,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
@@ -218,6 +219,7 @@ export function buildSession(input: {
   id: string
   directory: string
   title: string
+  titleSource?: AgentSessionTitleSource
   created?: number
   updated?: number
   projectID?: string
@@ -232,6 +234,7 @@ export function buildSession(input: {
     ...(input.workspaceID ? { workspaceID: input.workspaceID } : {}),
     directory: input.directory,
     title: input.title,
+    ...(input.titleSource ? { titleSource: input.titleSource } : {}),
     version: "local",
     time: { created, updated },
   }

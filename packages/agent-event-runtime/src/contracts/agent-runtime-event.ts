@@ -206,7 +206,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
       host?: "workspace"
       workspaceID?: string
     }
-  | { type: "session-title"; title: string }
+  | { type: "session-title"; title: string; titleSource?: "harness" | "user" }
   | {
       type: "usage"
       contextSize: number

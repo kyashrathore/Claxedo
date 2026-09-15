@@ -23,11 +23,10 @@ import type {
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import { hasAdapterCapability } from "./capabilities"
 import { admitSessionInstructions } from "./session-instructions"
-import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
+import { eventSessionId, sessionIdle, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub } from "./runtime-event-hub"
-import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
 import { DEFAULT_MODEL_ID } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
@@ -37,6 +36,7 @@ import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
 import { createRuntimeGoalController } from "./runtime/goal-controller"
+import { createSessionTitleOwner } from "./runtime/session-titles"
 import { createTurnAdmissions, deliverToBusySession } from "./runtime/turn-admission"
 
 export {
@@ -90,7 +90,7 @@ function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is
 
 /** The caller owns input.store and closes it after every sharing runtime is disposed. */
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
-  const eventHub = createRuntimeEventHub()
+  const eventHub = input.eventHub ?? createRuntimeEventHub()
   const store = input.store
   const adapters = new Map(input.harnesses.map((factory) => [
     key(factory),
@@ -228,6 +228,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return committed
   }
 
+  const titles = createSessionTitleOwner({ store, eventHub })
+
   const runTurn = async (
     binding: AgentExecutionBinding,
     prompt: PromptInput,
@@ -253,7 +255,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     // subscriber, so exactly one echo is dropped.
     let openingUserAlreadyPublished = openingUserPublished
     let outcome: AgentTurnOutcome | undefined
-    let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId
     const assistantAliases = new Map<string, string>()
     const normalizeCompatEvent = (event: CompatEvent): CompatEvent => {
@@ -376,25 +377,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (admitted()) publishTurn({ sessionId, directory, payload })
       },
     })
-    const maybeEmitTitle = async () => {
-      if (!admitted()) return
-      if (titleEmitted) return
-      titleEmitted = true
-      const session = store.getSession(sessionId)
-      if (hasConcreteSessionTitle(session?.title)) return
-      const text = extractPromptTitleText(prompt.parts)
-      if (!text) return
-      const title = deriveSessionTitle(text)
-      await adapter.updateSession(binding, { title })
-      if (!admitted()) return
-      commitAndPublish(sessionId, directory, sessionUpdated(buildSession({
-        id: sessionId,
-        directory: runtimeDirectory(directory),
-        title,
-        created: session?.time?.created,
-        updated: Date.now(),
-      })), { dir: "in", method: "auto-title" }, fence, publishTurn)
-    }
     try {
       if (!adapter.executeTurn) {
         throw new AgentRuntimeContractError({
@@ -404,6 +386,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         })
       }
       let terminal = false
+      const placeholder = titles.placeholder(sessionId, runtimeDirectory(directory), prompt)
+      if (placeholder) commitAndPublish(sessionId, directory, placeholder, { dir: "in", method: "auto-title" }, fence, publishTurn)
       for await (const payload of adapter.executeTurn(
         binding,
         prompt,
@@ -430,8 +414,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             openingUserAlreadyPublished = false
             continue
           }
-          if (compat.type === "session.idle") await maybeEmitTitle()
-          if (adapter.commitsStreamEvents) {
+            if (adapter.commitsStreamEvents) {
             publishTurn({ sessionId, directory, payload: normalizeCompatEvent(compat) })
           } else {
             commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" }, fence, publishTurn)
@@ -444,8 +427,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         publishTurn({ sessionId, directory, payload })
       }
-      if (!admitted()) return
-      await maybeEmitTitle()
       if (!admitted()) return
       if (!terminal) {
         const payload = sessionIdle(sessionId)
@@ -465,6 +446,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       })
       for (const payload of finished.events) publishTurn({ sessionId, directory, payload })
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
+      if (outcome?.status === "completed") void titles.generate(binding, runtimeDirectory(directory), adapter)
     } catch (err) {
       if (!admitted()) return
       const message = err instanceof Error ? err.message : "turn failed"

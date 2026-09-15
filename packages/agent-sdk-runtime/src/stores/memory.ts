@@ -14,6 +14,7 @@ import type {
   AgentMessageInfo,
   AgentPermission,
   AgentQuestion,
+  AgentSessionTitleSource,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
@@ -37,12 +38,20 @@ import {
   type SubagentObservation,
 } from "../subagent-admission"
 
+/**
+ * A `session.updated` without `titleSource` is ranked as the prompt
+ * placeholder, so a frame from a writer that predates the field can never
+ * overwrite a user rename.
+ */
+const TITLE_SOURCE_RANK: Record<AgentSessionTitleSource, number> = { prompt: 0, harness: 1, user: 2 }
+
 export type SessionRow = {
   scope?: "workspace"
   id: string
   parentID?: string | null
   directory: string
   title?: string | null
+  titleSource?: AgentSessionTitleSource
   agentSessionId?: string | null
   workspaceId?: string
   connectionId?: string
@@ -185,7 +194,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!prev) return null
     this.sessions.set(id, {
       ...prev,
-      title: updates.title ?? prev.title,
+      ...(updates.title !== undefined ? { title: updates.title, titleSource: "user" as const } : {}),
       time: {
         ...prev.time,
         updated: Date.now(),
@@ -651,6 +660,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       ...(session.parentID ? { parentID: session.parentID } : {}),
       directory: session.directory,
       title: session.title,
+      ...(session.titleSource ? { titleSource: session.titleSource } : {}),
       time: session.time,
       created_at: session.time.created,
       archived_at: session.time.archived ?? null,
@@ -709,10 +719,13 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const info = event.properties.info
     const previous = this.sessions.get(info.id ?? sessionId)
     if (!previous) return
+    const titleSource = info.titleSource ?? "prompt"
+    const titleAccepted = info.title !== undefined
+      && TITLE_SOURCE_RANK[titleSource] >= TITLE_SOURCE_RANK[previous.titleSource ?? "prompt"]
     this.sessions.set(previous.id, {
       ...previous,
       ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
-      ...(info.title !== undefined ? { title: info.title } : {}),
+      ...(titleAccepted ? { title: info.title, titleSource } : {}),
       time: {
         created: info.time?.created ?? previous.time.created,
         updated: info.time?.updated ?? Date.now(),

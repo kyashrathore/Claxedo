@@ -211,15 +211,13 @@ export function applySessionInventoryLifecycle(
     : []
   const isTaggedGlobal = tags.includes(GLOBAL_TAG)
   const showTaggedGlobal = tags.includes(GLOBAL_SHOW_TAG)
-  // An "updated" event (e.g. a title arriving after the session was already
-  // created) may not be able to resolve a projectID itself — the ACP harness
-  // auto-title fallback hardcodes `projectID: ""`
-  // (packages/agent-sdk-runtime/src/harnesses/acp/title.ts `maybeAutoTitle`).
-  // Falling back to the row's ALREADY-KNOWN projectID (instead of dropping
-  // the event outright) lets a title update reach a session that's already
-  // in the inventory even when this particular event can't resolve one on
-  // its own. A "created" event with no resolvable project genuinely has
-  // nowhere to live in the grouped inventory and is still dropped.
+  // An "updated" event (a title arriving after the session was already
+  // created) carries the runtime's directory as `projectID`, which may not
+  // resolve to an inventory project on its own. Falling back to the row's
+  // ALREADY-KNOWN projectID (instead of dropping the event outright) lets a
+  // title update reach a session that's already in the inventory. A
+  // "created" event with no resolvable project genuinely has nowhere to live
+  // in the grouped inventory and is still dropped.
   const existingProjectID = type === "updated"
     ? draft.sessions.find((session) => session.id === info.id)?.projectID
     : undefined

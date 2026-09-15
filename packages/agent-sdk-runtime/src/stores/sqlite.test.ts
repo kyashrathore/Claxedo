@@ -5,6 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import {
   buildAssistantMessage,
+  buildSession,
   messagePartDelta,
   messageUpdated,
   permissionAsked,
@@ -12,6 +13,7 @@ import {
   questionAsked,
   questionRejected,
   questionReplied,
+  sessionUpdated,
   todoUpdated,
 } from "../compat-events"
 import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
@@ -30,6 +32,35 @@ afterEach(() => {
 })
 
 describe("SqliteRuntimeStore", () => {
+  test("ranks title writers: a user rename survives harness and prompt writes, and reopen", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    store.bindSession({ sessionId: "titled", directory: "/repo", agentSessionId: "native-1", title: "New session - 2026-09-15T00:00:00.000Z" })
+    const write = (title: string, titleSource?: "prompt" | "harness" | "user") => store.appendEvent({
+      sessionId: "titled",
+      payload: sessionUpdated(buildSession({ id: "titled", directory: "/repo", title, ...(titleSource ? { titleSource } : {}) })),
+    })
+
+    write("first prompt", "prompt")
+    expect(store.getSession("titled")).toMatchObject({ title: "first prompt", titleSource: "prompt" })
+    write("Generated", "harness")
+    expect(store.getSession("titled")).toMatchObject({ title: "Generated", titleSource: "harness" })
+    write("second prompt", "prompt")
+    expect(store.getSession("titled")).toMatchObject({ title: "Generated", titleSource: "harness" })
+    write("Regenerated", "harness")
+    expect(store.getSession("titled")).toMatchObject({ title: "Regenerated", titleSource: "harness" })
+    store.updateSession("titled", { title: "Mine" })
+    expect(store.getSession("titled")).toMatchObject({ title: "Mine", titleSource: "user" })
+    write("Generated again", "harness")
+    write("legacy frame without provenance")
+    expect(store.getSession("titled")).toMatchObject({ title: "Mine", titleSource: "user" })
+    store.close()
+
+    const reopened = new SqliteRuntimeStore({ root })
+    expect(reopened.getSession("titled")).toMatchObject({ title: "Mine", titleSource: "user" })
+    reopened.close()
+  })
+
   test("persists permission modes through reopen and clears them on a harness change", () => {
     const root = tempRoot()
     const first = new SqliteRuntimeStore({ root })

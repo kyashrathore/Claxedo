@@ -894,6 +894,20 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
+  test("maps thread/name/updated's threadName to a session title", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/name/updated",
+      payload: { threadId: "thread-1", threadName: "Fix terminal pane" },
+    }).events).toMatchObject([{ type: "session-title", title: "Fix terminal pane" }])
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/name/updated",
+      payload: { threadId: "thread-1" },
+    }).events).toEqual([])
+  })
+
   test("maps thread/started parent identity without emitting a parent diagnostic", () => {
     const payload = {
       thread: {
