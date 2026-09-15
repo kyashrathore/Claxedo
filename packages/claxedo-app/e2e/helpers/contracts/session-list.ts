@@ -11,12 +11,8 @@ import {
 } from "../../../../claxedo-server/src/session/list"
 
 export function emptySessionNavigationListResponse(url: string): SessionListResponse {
-  return sessionNavigationListResponse(url, [])
-}
-
-export function sessionNavigationListResponse(url: string, sessions: readonly unknown[]): SessionListResponse {
   const query = parseSessionListQuery(new URL(url))
-  return buildSessionListResponse({ query, sessions })
+  return buildSessionListResponse({ query, sessions: [] })
 }
 
 /**

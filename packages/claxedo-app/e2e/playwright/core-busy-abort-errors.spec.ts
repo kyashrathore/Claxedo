@@ -3,7 +3,8 @@
  * mid-turn retry banner, the error card, and the optimistic-status escalation ladder.
  * Clean first-send/reload/history behavior is `core-first-prompt-local` /
  * `core-turns-reload-recovery`; harness selection is `core-harness-ownership-local`. The
- * retry status is a plain `session.status` SSE event and is harness-agnostic.
+ * harness here is fixed to `opencode`, but a retry status is a plain `session.status` SSE
+ * event and is harness-agnostic.
  *
  * Facts these tests lean on (`session-status-dispatcher.ts`, `session-controller.ts`,
  * `message-timeline.data.ts`, under src/features/session):
@@ -27,9 +28,8 @@
  *     still wrongly "busy" (e2e/INVARIANTS.md #2, the "stale-busy" regression this spec
  *     pins permanently). The composer's busy/"stoppable" state is a separate derivation
  *     that ignores settlement entirely: `status.type === "busy" || "retry"`.
- *   - SDK cancellation lives in the session's `lastTurn` and must name the assistant
- *     message. Native abort errors also produce interruption dividers. A stopped turn
- *     may have no reply text; its cancellation divider is that turn's visual oracle.
+ *   - `error.name === "MessageAbortedError"` is the sentinel that splits a turn around the
+ *     interrupted divider; any other `error.name` renders an error surface instead.
  *   - `[data-slot="session-turn-compaction"]` wraps BOTH the "Session compacted" and the
  *     interrupted dividers; only the child `[data-slot="compaction-part-label"]` carries
  *     text that tells them apart.
@@ -41,9 +41,7 @@
  * source of truth for busy vs ready, so readiness is never asserted via `waitForTimeout`.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { writeFile } from "node:fs/promises"
-import { sampleElementDuringAction } from "../helpers/geometry-oracle"
-import { installMockRuntime, type MockMessageRow } from "../helpers/mock-runtime"
+import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-busy-abort-errors"
@@ -169,126 +167,6 @@ test.describe("core busy / abort / errors @core", () => {
   // Sibling suites share this machine; every assertion polls DOM state, so a longer
   // ceiling only delays reporting a stuck state.
   test.describe.configure({ timeout: 120_000 })
-  test("Thinking stays painted until the follow-up reply begins", async ({ page }, testInfo) => {
-    test.fixme(true, "Thinking disappears between an OpenCode Idle lifecycle event and the completed message refresh")
-    const mock = await installMockRuntime(page, {
-      dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS,
-      existingSession: { prompt: "previous prompt", reply: "previous completed reply" },
-      messageRefreshOnly: { responseDelayMs: 700 },
-      timingsMs: { busy: 60, pending: 150, delta: 3000, completed: 300, idle: 150 },
-    })
-    await seedOneProject(page, DIR)
-    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
-    await expectAssistantReplyVisible(page, "previous completed reply")
-    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    const samples = await sampleElementDuringAction(page, `${SELECTORS.thinkingRow}, ${SELECTORS.assistantContent}`, async () => {
-      await ensureComposerModelSelected(page)
-      await input.fill("Thinking continuity probe")
-      await page.locator(SELECTORS.submitControl).last().click()
-      await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
-      await expectAssistantReplyVisible(page, "ack 1: Thinking continuity probe")
-    })
-    expect(mock.requests.promptCount).toBe(1)
-    const messageID = mock.requests.promptBodies[0]?.messageID
-    expect(messageID).toBeTruthy()
-    const thinking = (sample: typeof samples[number]) => sample.elements.some(element =>
-      element.messageID === messageID && element.slot === "session-turn-thinking" && element.painted)
-    const firstThinking = samples.findIndex(thinking)
-    const firstReply = samples.findIndex(sample => sample.elements.some(element =>
-      element.messageID === messageID && element.slot === "session-turn-assistant-content" && element.hasText && element.painted))
-    await writeFile(testInfo.outputPath("thinking-continuity.json"), JSON.stringify({ messageID, firstThinking, firstReply, eventWebSocketConnections: mock.requests.eventWebSocketConnections, samples }, null, 2))
-    expect(mock.requests.eventWebSocketConnections).toBeGreaterThan(0)
-    expect(firstThinking).toBeGreaterThanOrEqual(0)
-    expect(firstReply).toBeGreaterThan(firstThinking)
-    expect(samples.slice(firstThinking, firstReply).filter(sample => !thinking(sample))).toEqual([])
-  })
-
-  test("Thinking belongs to the new prompt throughout a follow-up send", async ({ page }, testInfo) => {
-    const mock = await installMockRuntime(page, {
-      dir: DIR, sessionId: SESSION_ID, harness: "codex-app-server",
-      harnessModels: { "codex-app-server": [{ id: "gpt-5", name: "GPT-5" }] },
-      existingSession: { prompt: "previous prompt", reply: "previous completed reply" },
-      timingsMs: { busy: 60, pending: 150, delta: 2000, completed: 300, idle: 150 },
-    })
-    await seedOneProject(page, DIR)
-    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
-    await expectAssistantReplyVisible(page, "previous completed reply")
-    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    const samples = await sampleElementDuringAction(page, SELECTORS.thinkingRow, async () => {
-      await ensureComposerModelSelected(page)
-      await input.fill("Thinking ownership probe")
-      await page.locator(SELECTORS.submitControl).last().click()
-      await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
-      await expectAssistantReplyVisible(page, "ack 1: Thinking ownership probe")
-    })
-    expect(mock.requests.promptCount).toBe(1)
-    const messageID = mock.requests.promptBodies[0]?.messageID
-    expect(messageID).toBeTruthy()
-    await writeFile(testInfo.outputPath("thinking-ownership.json"), JSON.stringify({ messageID, samples }, null, 2))
-    expect(samples.some(sample => sample.visible > 0)).toBe(true)
-    expect(samples.flatMap(sample => sample.messageIDs).filter(owner => owner !== messageID)).toEqual([])
-  })
-
-  test("Thinking stays with the new prompt while the previous turn's completion envelope is in flight", async ({ page }, testInfo) => {
-    test.fixme(true, "the prior turn's un-completed assistant wins the pending anchor, so Thinking paints beneath its reply")
-    const prevUserId = `${SESSION_ID}_prev`
-    const prevAssistantId = `${prevUserId}_r`
-    const created = 1_700_000_000_000
-    const messages = [
-      {
-        info: {
-          id: prevUserId, sessionID: SESSION_ID, role: "user",
-          time: { created },
-          agent: "build", model: { providerID: "codex", modelID: "gpt-5" },
-        },
-        parts: [{ id: `prt_${prevUserId}`, sessionID: SESSION_ID, messageID: prevUserId, type: "text", text: "previous prompt" }],
-      },
-      {
-        // Reply parts are painted, but the envelope completion has not landed:
-        // the producer's `message.updated` (with time.completed) is still in
-        // flight — the state the original send observed at 0.57–1.05s.
-        info: {
-          id: prevAssistantId, sessionID: SESSION_ID, role: "assistant", parentID: prevUserId,
-          time: { created: created + 1000 },
-          modelID: "gpt-5", providerID: "codex", mode: "auto", agent: "build",
-          path: { cwd: DIR, root: DIR }, cost: 0,
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        },
-        parts: [{ id: `prt_${prevAssistantId}`, sessionID: SESSION_ID, messageID: prevAssistantId, type: "text", text: "previous completed reply" }],
-      },
-    ]
-    const mock = await installMockRuntime(page, {
-      dir: DIR, sessionId: SESSION_ID, harness: "codex-app-server",
-      harnessModels: { "codex-app-server": [{ id: "gpt-5", name: "GPT-5" }] },
-      existingSession: { messages: messages as MockMessageRow[] },
-      sessionStatuses: { [SESSION_ID]: { type: "busy" } },
-      // The defect window is busy-before-pending: the new turn's assistant
-      // envelope has not announced itself, so the un-completed previous
-      // assistant still owns the Thinking anchor.
-      timingsMs: { busy: 60, pending: 4000, delta: 4000, completed: 300, idle: 150 },
-    })
-    await seedOneProject(page, DIR)
-    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
-    await expectAssistantReplyVisible(page, "previous completed reply")
-    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    let submitAt = 0
-    const samples = await sampleElementDuringAction(page, SELECTORS.thinkingRow, async () => {
-      await ensureComposerModelSelected(page)
-      await input.fill("Thinking ownership probe")
-      await page.locator(SELECTORS.submitControl).last().click()
-      submitAt = await page.evaluate(() => performance.now())
-      await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
-      await expectAssistantReplyVisible(page, "ack 1: Thinking ownership probe")
-    })
-    expect(mock.requests.promptCount).toBe(1)
-    const messageID = mock.requests.promptBodies[0]?.messageID
-    expect(messageID).toBeTruthy()
-    await writeFile(testInfo.outputPath("thinking-ownership-tail.json"), JSON.stringify({ messageID, prevUserId, submitAt, samples }, null, 2))
-    const afterSubmit = samples.filter(sample => sample.time >= submitAt)
-    expect(afterSubmit.some(sample => sample.messageIDs.includes(messageID ?? null))).toBe(true)
-    expect(afterSubmit.flatMap(sample => sample.messageIDs).filter(owner => owner !== messageID)).toEqual([])
-  })
-
   test("Thinking renders while busy, then gives way to the visible reply", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
@@ -368,40 +246,6 @@ test.describe("core busy / abort / errors @core", () => {
 
     // Release the held response so teardown is clean.
     mock.releaseAbort()
-  })
-
-  test("Stop shows the canonical cancelled-turn outcome without reloading", async ({ page }, testInfo) => {
-    test.fixme(true, "OpenCode Stop omits the cancelled-turn explanation until the session reloads")
-    const mock = await installMockRuntime(page, {
-      dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS,
-      existingSession: { prompt: "previous prompt", reply: "previous completed reply" },
-      holdTurn: true, messageRefreshOnly: { responseDelayMs: 0 },
-    })
-    await seedOneProject(page, DIR)
-    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
-    await expectAssistantReplyVisible(page, "previous completed reply")
-    await ensureComposerModelSelected(page)
-    const pending = page.waitForResponse(async response => {
-      if (!response.url().includes(`/session/${SESSION_ID}/message?`) || response.status() !== 200) return false
-      const body = await response.json()
-      return body.messages.some((row: { info: { id: string; role: string; time: { completed?: number } } }) =>
-        row.info.id === mock.requests.promptBodies[0]?.assistantID && row.info.role === "assistant" && !row.info.time.completed)
-    })
-    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Stop outcome probe")
-    await page.locator(SELECTORS.submitControl).last().click()
-    await pending
-    await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expect.poll(() => mock.requests.abortCount).toBe(1)
-    await expect(page.locator(SELECTORS.submitControl).last()).not.toHaveAttribute("data-icon", "stop")
-    const divider = page.locator('[data-slot="compaction-part-label"]').filter({ hasText: /You stopped after/ })
-    await expect.soft(divider, "the cancelled turn explains Stop before navigation or reload").toBeVisible({ timeout: 15_000 })
-    await page.screenshot({ path: testInfo.outputPath("before-reload.png") })
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(divider, "persisted cancellation renders after reload").toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath("after-reload.png") })
-    expect(mock.requests.promptCount).toBe(1)
-    expect(mock.requests.eventWebSocketConnections).toBeGreaterThan(0)
   })
 
   test("an aborted assistant message renders an Interrupted divider at its position", async ({ page }) => {

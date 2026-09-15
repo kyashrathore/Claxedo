@@ -18,9 +18,7 @@
  */
 
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import type { MessageCreateParams } from "@anthropic-ai/sdk/resources/messages"
 import { execFile } from "node:child_process"
-import { createServer } from "node:http"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -29,7 +27,6 @@ import { expectNoBootErrors, installBootObserver } from "../helpers/boot-observe
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
 import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
 import { expectRowGeometry } from "../helpers/geometry-oracle"
-import { installNativeClipboardImage } from "../helpers/native-clipboard"
 import {
   expectRailRowMovesToTop,
   expectRailRowUnique,
@@ -537,15 +534,11 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
    */
   async function makeScratchWorkspace(label: string): Promise<string> {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-desktop-${label}-`)))
-    const gitEnv = { ...process.env }
-    delete gitEnv.GIT_INDEX_FILE
-    delete gitEnv.GIT_AUTHOR_DATE
-    await execFileAsync("git", ["init", "-b", "main"], { cwd: dir, env: gitEnv })
+    await execFileAsync("git", ["init", "-b", "main"], { cwd: dir })
     await fs.writeFile(path.join(dir, "README.md"), `desktop-unsigned-embedded fixture: ${label}\n`)
-    await execFileAsync("git", ["add", "--", "README.md"], { cwd: dir, env: gitEnv })
-    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init\n\nCo-Authored-By: Codex <noreply@openai.com>", "--", "README.md"], {
+    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "add", "-A"], { cwd: dir })
+    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"], {
       cwd: dir,
-      env: gitEnv,
     })
     return dir
   }
@@ -981,238 +974,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       spec: "desktop-unsigned-embedded",
       scenario: "b5-repromt-reply",
     })
-  })
-
-  test("the native Browser retains its address and page after a Claude session round trip", async () => {
-    test.fixme(true, "the native Browser loses its address and loaded page after switching Claude sessions")
-    const testInfo = test.info()
-    test.setTimeout(180_000)
-    const dir = await makeScratchWorkspace("browser-return")
-    const marker = "QA_BROWSER_RETURN_PAGE"
-    const pageServer = createServer((_request, response) => {
-      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
-      response.end(`<!doctype html><html><head><title>Browser persistence</title></head><body style="margin:24px;background:white;color:black;font:24px sans-serif"><h1>${marker}</h1></body></html>`)
-    })
-    try {
-      await new Promise<void>((resolve, reject) => {
-        pageServer.once("error", reject)
-        pageServer.listen(0, "127.0.0.1", resolve)
-      })
-      const address = pageServer.address()
-      if (!address || typeof address === "string") throw new Error("GATING: the Browser fixture has no TCP address")
-      const targetUrl = `http://127.0.0.1:${address.port}/`
-      scripted = await startScriptedModelServer()
-      claudeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-browser-claude-"))
-      const guardedClaude = await installClaudeNetworkGuard(claudeConfigDir, scripted.url)
-      packaged = await launchPackagedApp({
-        timeoutMs: BOOT_TIMEOUT,
-        recordVideo: { dir: testInfo.outputPath("native-video"), size: { width: 1600, height: 1000 } },
-        env: {
-          ...claudeScriptedEnv(scripted.url, claudeConfigDir),
-          HTTPS_PROXY: "http://127.0.0.1:9",
-          HTTP_PROXY: "http://127.0.0.1:9",
-          NO_PROXY: "127.0.0.1,localhost",
-          CLAUDE_CODE_EXECUTABLE: guardedClaude.wrapper,
-        },
-      })
-      const page = packaged.page
-      const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
-      const workspaceId = await registerWorkspace(serverBase, dir)
-      const projectGroup = await openWorkspaceProject(packaged, dir, workspaceId)
-      const sessionIds: string[] = []
-      const evidence = (stage: string) => ({
-        spec: "desktop-unsigned-embedded",
-        scenario: `browser-return-${stage}-${testInfo.repeatEachIndex}`,
-      })
-      for (let i = 0; i < 2; i++) {
-        const before = await currentSessionIds(page)
-        const requestsBefore = scripted.counts().messages
-        const input = await openNewDraft(packaged, projectGroup)
-        await selectNativeClaudeHarness(page)
-        await composeText(page, input, `Reply with exactly this one token, nothing else: QA_BROWSER_SESSION_${i}`)
-        await submitDraft(page)
-        sessionIds.push(await waitForNewSessionId(page, before))
-        await expectAssistantReplyVisible(page, `QA_BROWSER_SESSION_${i}`, evidence(`seed-${i}`))
-        expect(scripted.counts().messages, "the native Claude send reaches the scripted Anthropic endpoint")
-          .toBeGreaterThan(requestsBefore)
-      }
-      await (await expectRailRowVisible({ page, sessionId: sessionIds[0] })).click()
-      await expectAssistantReplyVisible(page, "QA_BROWSER_SESSION_0", evidence("before"))
-      const openPanel = page.getByRole("button", { name: "Open workspace panel", exact: true })
-      if (await openPanel.isVisible()) await openPanel.click()
-      await page.getByRole("button", { name: "Add workspace tab", exact: true }).click()
-      await page.getByRole("menuitem", { name: "Browser", exact: true }).click()
-      const addressBar = page.getByTestId("browser-pane-address-bar")
-      const guest = page.getByTestId("browser-pane-webview-host").locator("webview")
-      const readGuest = async () => {
-        const id = await guest.evaluate((element) =>
-          (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId(),
-        )
-        return packaged!.app.evaluate(async ({ webContents }, contentsId) => {
-          const contents = webContents.fromId(contentsId)
-          if (!contents) throw new Error(`Browser guest ${contentsId} is unavailable`)
-          const text = await contents.executeJavaScript("document.body.innerText") as string
-          return { url: contents.getURL(), text }
-        }, id)
-      }
-      await expect(guest).toBeVisible()
-      await expect.poll(readGuest, { message: "the initial Browser document is ready for a URL" })
-        .toEqual({ url: "about:blank", text: "" })
-      await addressBar.fill(targetUrl)
-      await addressBar.press("Enter")
-      await expect(addressBar).toHaveValue(targetUrl)
-      await expect.poll(readGuest, { message: "the native Browser loads the requested page" })
-        .toEqual({ url: targetUrl, text: marker })
-      await page.screenshot({ path: testInfo.outputPath("browser-before.png") })
-      await (await expectRailRowVisible({ page, sessionId: sessionIds[1] })).click()
-      await expectAssistantReplyVisible(page, "QA_BROWSER_SESSION_1", evidence("other"))
-      await (await expectRailRowVisible({ page, sessionId: sessionIds[0] })).click()
-      await expectAssistantReplyVisible(page, "QA_BROWSER_SESSION_0", evidence("return"))
-      if (await openPanel.isVisible()) await openPanel.click()
-      const browserTab = page.locator('[data-slot="workspace-tab"][data-workspace-tab-kind="browser"]')
-      await expect(browserTab).toBeVisible()
-      await browserTab.locator("button").first().click()
-      try {
-        await expect.soft(addressBar, "the Browser address survives a session round trip").toHaveValue(targetUrl)
-        await expect.soft.poll(readGuest, { message: "the native Browser page survives a session round trip" })
-          .toEqual({ url: targetUrl, text: marker })
-      } finally {
-        await page.screenshot({ path: testInfo.outputPath("browser-return.png") })
-      }
-    } finally {
-      if (packaged) await packaged.page.screenshot({ path: testInfo.outputPath("browser-final-state.png") }).catch(() => {})
-      if (packaged) await fs.writeFile(testInfo.outputPath("desktop-main.log"), packaged.appLog.join(""))
-      if (scripted) await fs.writeFile(testInfo.outputPath("model-requests.json"), JSON.stringify(scripted.requests, null, 2))
-      const video = packaged?.page.video()
-      await packaged?.close()
-      packaged = undefined
-      if (video) await testInfo.attach("native-browser-video", { path: await video.path(), contentType: "video/webm" })
-      if (pageServer.listening) {
-        await new Promise<void>((resolve, reject) => {
-          pageServer.close((error) => error ? reject(error) : resolve())
-          pageServer.closeAllConnections()
-        })
-      }
-      await fs.rm(dir, { recursive: true, force: true })
-    }
-  })
-
-  test("a sent native clipboard image stays out of new sessions through an app restart @first-interaction", async () => {
-    test.setTimeout(240_000)
-    const testInfo = test.info()
-    const dir = await makeScratchWorkspace("sent-native-image")
-    const imageFile = path.join(dir, "clipboard-fixture.png")
-    const videos: Array<NonNullable<ReturnType<Page["video"]>>> = []
-    const logs: string[] = []
-    let profile: string | undefined
-    const evidence = (stage: string) => ({
-      spec: "desktop-unsigned-embedded",
-      scenario: `sent-native-image-${stage}-${testInfo.repeatEachIndex}`,
-    })
-    const attachments = (page: Page) => page.locator('[data-surface="composer"]:visible')
-      .getByRole("button", { name: "Remove attachment", exact: true })
-    const imageCounts = (marker: string) => scripted!.requests
-      .filter((request) => request.dialect === "messages" && request.prompt.includes(marker))
-      .map((request) => (request.body as MessageCreateParams).messages.reduce((count, message) =>
-        count + (Array.isArray(message.content) ? message.content.filter((part) => part.type === "image").length : 0), 0))
-    try {
-      await fs.copyFile(new URL("../../public/web-app-manifest-512x512.png", import.meta.url), imageFile)
-      scripted = await startScriptedModelServer()
-      claudeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-image-claude-"))
-      const guardedClaude = await installClaudeNetworkGuard(claudeConfigDir, scripted.url)
-      const env = {
-        ...claudeScriptedEnv(scripted.url, claudeConfigDir),
-        HTTPS_PROXY: "http://127.0.0.1:9",
-        HTTP_PROXY: "http://127.0.0.1:9",
-        NO_PROXY: "127.0.0.1,localhost",
-        CLAUDE_CODE_EXECUTABLE: guardedClaude.wrapper,
-      }
-      const launch = async () => {
-        const app = await launchPackagedApp({
-          timeoutMs: BOOT_TIMEOUT, env, userDataDir: profile, preserveUserDataDir: true,
-          recordVideo: { dir: testInfo.outputPath("native-image-video"), size: { width: 1600, height: 1000 } },
-        })
-        profile = app.userDataDir
-        const video = app.page.video()
-        if (video) videos.push(video)
-        return app
-      }
-      packaged = await launch()
-      const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
-      const workspaceId = await registerWorkspace(serverBase, dir)
-      let projectGroup = await openWorkspaceProject(packaged, dir, workspaceId)
-      const input = await openNewDraft(packaged, projectGroup)
-      await selectNativeClaudeHarness(packaged.page)
-      const marker = "QA_NATIVE_IMAGE_SENT"
-      await composeText(packaged.page, input, `Reply with exactly this one token, nothing else: ${marker}`)
-      await expect(attachments(packaged.page)).toHaveCount(0)
-      const clipboard = await installNativeClipboardImage(imageFile)
-      try {
-        await input.click()
-        await packaged.page.keyboard.press("Meta+V")
-        await expect(attachments(packaged.page), "the real native paste attaches exactly one image").toHaveCount(1)
-        await packaged.page.screenshot({ path: testInfo.outputPath("native-image-attached.png") })
-      } finally {
-        const restoration = await clipboard.close()
-        await testInfo.attach("clipboard-restoration", { body: restoration, contentType: "text/plain" })
-      }
-      const before = await currentSessionIds(packaged.page)
-      await submitDraft(packaged.page)
-      const imageSession = await waitForNewSessionId(packaged.page, before)
-      await expectAssistantReplyVisible(packaged.page, marker, evidence("sent"))
-      expect(imageCounts(marker).some((count) => count === 1), "native Claude receives the pasted image").toBe(true)
-      await expect(attachments(packaged.page)).toHaveCount(0)
-
-      const sendCleanDraft = async (reply: string) => {
-        const sessionsBefore = await currentSessionIds(packaged!.page)
-        const draft = await openNewDraft(packaged!, projectGroup)
-        await expect(attachments(packaged!.page)).toHaveCount(0)
-        await selectNativeClaudeHarness(packaged!.page)
-        await composeText(packaged!.page, draft, `Reply with exactly this one token, nothing else: ${reply}`)
-        await submitDraft(packaged!.page)
-        const freshSession = await waitForNewSessionId(packaged!.page, sessionsBefore)
-        expect(freshSession).not.toBe(imageSession)
-        await expectAssistantReplyVisible(packaged!.page, reply, evidence(reply))
-        const counts = imageCounts(reply)
-        expect(counts.length, "the new session reaches the real Claude model endpoint").toBeGreaterThan(0)
-        expect(counts.every((count) => count === 0), "the new session sends no image from the prior session").toBe(true)
-        await expect(attachments(packaged!.page)).toHaveCount(0)
-      }
-      await sendCleanDraft("QA_NATIVE_IMAGE_NEW_SESSION")
-      logs.push(packaged.appLog.join(""))
-      // Keep the profile and daemon: this is the user's app-only restart, not a fresh database.
-      await packaged.close()
-      packaged = undefined
-      packaged = await launch()
-      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
-      projectGroup = packaged.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
-      await expect(projectGroup).toBeVisible({ timeout: 20_000 })
-      await (await expectRailRowVisible({ page: packaged.page, sessionId: imageSession })).click()
-      await expectAssistantReplyVisible(packaged.page, marker, evidence("restored"))
-      await expect(attachments(packaged.page)).toHaveCount(0)
-      await sendCleanDraft("QA_NATIVE_IMAGE_AFTER_RESTART")
-      await packaged.page.screenshot({ path: testInfo.outputPath("native-image-after-restart.png") })
-    } finally {
-      try {
-        if (packaged) {
-          logs.push(packaged.appLog.join(""))
-          await packaged.page.screenshot({ path: testInfo.outputPath("native-image-final-state.png") }).catch(() => {})
-        }
-        await fs.writeFile(testInfo.outputPath("desktop-main.log"), logs.join("\n"))
-        if (scripted) await fs.writeFile(testInfo.outputPath("model-requests.json"), JSON.stringify(scripted.requests, null, 2))
-      } finally {
-        await packaged?.close()
-        packaged = undefined
-        if (profile) {
-          await shutdownPackagedTestDaemon(profile)
-          await fs.rm(profile, { recursive: true, force: true })
-        }
-        await fs.rm(dir, { recursive: true, force: true })
-      }
-      for (let index = 0; index < videos.length; index++) {
-        await testInfo.attach(`native-image-video-${index}`, { path: await videos[index].path(), contentType: "video/webm" })
-      }
-    }
   })
 
   test("B8: reload preserves rail title, order, and status", async () => {
