@@ -18,6 +18,7 @@ export const ClaxedoTaskPresetTable = sqliteTable(
     instructions: text().notNull(),
     execution: text().notNull(),
     configurations: text().notNull(),
+    agent_startable: integer().notNull().default(0),
     archived_at: integer(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),
@@ -77,9 +78,16 @@ export const ClaxedoTaskSessionLinkTable = sqliteTable(
     preset_name_at_start: text().notNull(),
     configuration_digest: text().notNull(),
     handoff_text: text(),
+    started_from_session_id: text(),
+    started_from_workspace_id: text(),
+    started_by: text().notNull().default("person"),
+    placement: text().notNull().default("local"),
     created_at: integer().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.scope_id, table.task_id, table.slot, table.attempt] })],
+  (table) => [
+    primaryKey({ columns: [table.scope_id, table.task_id, table.slot, table.attempt] }),
+    index("claxedo_task_session_link_session_idx").on(table.scope_id, table.session_id),
+  ],
 )
 
 export const ClaxedoTaskCommandReceiptTable = sqliteTable(

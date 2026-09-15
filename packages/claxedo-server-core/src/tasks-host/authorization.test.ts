@@ -7,7 +7,7 @@
  * admitted by, so the authority here answers only for sessions.
  */
 import { describe, expect, test, vi } from "vitest"
-import { fakeBridge, presetRow, taskRow } from "@claxedo/tasks/test-support"
+import { createMemoryTasksStore, fakeBridge, presetRow, taskRow } from "@claxedo/tasks/test-support"
 import type { StartPreviewCommand, TasksActor } from "@claxedo/tasks"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import type { TasksCapabilityOwner, TasksCapabilityScope } from "./capability"
@@ -31,21 +31,36 @@ const OWNERS: Record<string, TasksCapabilityOwner> = {
   ws_other: { ...ALICE, projectId: "project-b" },
 }
 
-function identity(options: { scope?: TasksCapabilityScope; authorizeRuntimeSession?: WorkspaceAuthority["authorizeRuntimeSession"] } = {}) {
+/** The sessions the control plane places in each workspace, as the session authority would answer. */
+const SESSION_WORKSPACES: Record<string, string> = { ses_1: "ws_root", ses_2: "ws_root", ses_sibling: "ws_sibling" }
+
+function identity(
+  options: {
+    scope?: TasksCapabilityScope
+    authorizeRuntimeSession?: WorkspaceAuthority["authorizeRuntimeSession"]
+    /** Whether the capability port can ask the control plane where a session lives. */
+    sessions?: boolean
+  } = {},
+) {
   const scope = options.scope ?? SCOPE
   const authority = {
     authorizeSessionRead: vi.fn(async () => undefined),
     ...(options.authorizeRuntimeSession ? { authorizeRuntimeSession: options.authorizeRuntimeSession } : {}),
   } as unknown as WorkspaceAuthority
+  const ownerMayReadSession = vi.fn(
+    async (owner: TasksCapabilityOwner, session: { sessionId: string; workspaceId: string | null }) =>
+      owner.actorId === ALICE.actorId && SESSION_WORKSPACES[session.sessionId] === session.workspaceId,
+  )
   const composed = signedTasksIdentity({
     authority,
     signed: async () => ({ error: "unsigned", status: 401 }),
     capability: {
       verify: async (token) => (token === "grant" ? scope : undefined),
       workspaceOwner: async (workspaceId) => OWNERS[workspaceId],
+      ...(options.sessions === false ? {} : { ownerMayReadSession }),
     },
   })
-  return { ...composed, authority }
+  return { ...composed, authority, ownerMayReadSession }
 }
 
 const TASKS = "https://core.test/api/claxedo/tasks"
@@ -111,13 +126,46 @@ describe("a Tasks grant creating a task", () => {
     )
   })
 
-  test("minted for no session in particular may record no provenance at all", async () => {
+  test("minted for a root rather than a session, may record a session the control plane places in its workspace", async () => {
     const { sessionId: _sessionId, ...sessionless } = SCOPE
     const composed = identity({ scope: sessionless })
     expect(await refusal(composed, createRequest({}))).toBe("admitted")
+    expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_1" } }))).toBe("admitted")
+    expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } }))).toBe("admitted")
+    expect(composed.ownerMayReadSession).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "actor:alice" }),
+      { sessionId: "ses_1", workspaceId: "ws_root" },
+    )
+    // A session of another workspace, even the owner's own sibling; a session
+    // the control plane does not place in the root; a malformed reference.
+    for (const forged of [
+      { workspaceId: "ws_sibling", sessionId: "ses_sibling" },
+      { workspaceId: "ws_root", sessionId: "ses_sibling" },
+      { workspaceId: "ws_root", sessionId: "ses_stranger" },
+      { workspaceId: null, sessionId: "ses_1" },
+      { sessionId: "ses_1" },
+    ]) {
+      expect(await refusal(composed, createRequest({ createdFrom: forged }))).toBe(
+        "403 This session may record only a session of its own workspace as provenance",
+      )
+    }
+  })
+
+  test("minted for a root on a plane that cannot place sessions, may record no provenance at all", async () => {
+    const { sessionId: _sessionId, ...sessionless } = SCOPE
+    const composed = identity({ scope: sessionless, sessions: false })
+    expect(await refusal(composed, createRequest({}))).toBe("admitted")
     expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_1" } }))).toBe(
+      "403 This session may record only a session of its own workspace as provenance",
+    )
+  })
+
+  test("minted for a session, keeps to exactly that session however the plane places others", async () => {
+    const composed = identity()
+    expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } }))).toBe(
       "403 This session may record only itself as a task's provenance",
     )
+    expect(composed.ownerMayReadSession).not.toHaveBeenCalled()
   })
 })
 
@@ -178,7 +226,7 @@ describe("a Tasks grant starting a task", () => {
     return {
       actor,
       task: taskRow({ id: "tsk_1", scopeId: actor.scopeId, projectId: "project-a", workspaceId }),
-      preset: presetRow({ id: "prs_1", scopeId: actor.scopeId, ownerId: actor.ownerId }),
+      preset: presetRow({ id: "prs_1", scopeId: actor.scopeId, ownerId: actor.ownerId, agentStartable: true }),
       slot: "primary",
       attempt: 1,
       continueFromPrevious: false,
@@ -191,7 +239,7 @@ describe("a Tasks grant starting a task", () => {
   test("reaches the bridge for a task preferring a workspace of its own project, or none", async () => {
     const composed = identity()
     const inner = fakeBridge()
-    const bridge = composed.bridge(inner)
+    const bridge = composed.bridge(inner, createMemoryTasksStore())
     const actor = await actorOf(composed)
     expect((await bridge.preview(previewCommand(actor, null))).ok).toBe(true)
     expect((await bridge.preview(previewCommand(actor, "ws_root"))).ok).toBe(true)
@@ -202,7 +250,7 @@ describe("a Tasks grant starting a task", () => {
   test("is refused before the bridge for a task whose stored preference is outside its project", async () => {
     const composed = identity()
     const inner = fakeBridge()
-    const bridge = composed.bridge(inner)
+    const bridge = composed.bridge(inner, createMemoryTasksStore())
     const actor = await actorOf(composed)
     for (const foreign of ["ws_other", "ws_unknown"]) {
       const answer = await bridge.preview(previewCommand(actor, foreign))
@@ -218,7 +266,7 @@ describe("a Tasks grant starting a task", () => {
   test("leaves a signed person's Start alone", async () => {
     const composed = identity()
     const inner = fakeBridge()
-    const bridge = composed.bridge(inner)
+    const bridge = composed.bridge(inner, createMemoryTasksStore())
     const person = composed.principals.actorOf(
       { mode: "signed", token: "jwt", user: { subject: "alice", tokenIdentifier: "t", issuer: "i" } },
       "org-1",

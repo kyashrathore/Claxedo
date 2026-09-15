@@ -6,6 +6,7 @@ import {
   type ChildListQuery,
   type PresetDraft,
   type PresetListQuery,
+  type SessionReference,
   type StartPreviewRequest,
   type StartRequest,
   type TaskListQuery,
@@ -29,6 +30,7 @@ function presetDraft(ctx: DecodeContext, row: Record<string, unknown> | undefine
     instructions: ctx.read.string(row?.instructions, `${path}instructions`) ?? "",
     execution: decodeExecution(ctx, row?.execution, `${path}execution`),
     configurations: decodeConfigurations(ctx, row?.configurations, `${path}configurations`),
+    agentStartable: ctx.read.boolean(row?.agentStartable, `${path}agentStartable`) ?? false,
   }
 }
 
@@ -119,6 +121,11 @@ export function parseCommandRequest(body: unknown): Parsed<TasksCommandRequest> 
   return finishDecode(ctx, () => ({ clientRequestId, command: commandInput(ctx, name, command?.input) }))
 }
 
+/** An absent key is the app asking; a present one is a session naming itself and is read whole. */
+function startedFrom(ctx: DecodeContext, value: unknown): { startedFrom: SessionReference } | Record<never, never> {
+  return value === undefined ? {} : { startedFrom: decodeSessionReference(ctx, value, "startedFrom") }
+}
+
 export function parseStartPreviewRequest(body: unknown): Parsed<StartPreviewRequest> {
   const ctx = decodeContext()
   const row = ctx.read.record(body, "body")
@@ -129,6 +136,7 @@ export function parseStartPreviewRequest(body: unknown): Parsed<StartPreviewRequ
     slot: decodeSlot(ctx, row?.slot, "slot"),
     attempt: ctx.read.integer(row?.attempt, "attempt") ?? 0,
     continueFromPrevious: ctx.read.boolean(row?.continueFromPrevious, "continueFromPrevious") ?? false,
+    ...startedFrom(ctx, row?.startedFrom),
   }))
 }
 
@@ -146,6 +154,7 @@ export function parseStartRequest(body: unknown): Parsed<StartRequest> {
     previewDigest: ctx.read.nonEmptyString(row?.previewDigest, "previewDigest") ?? "",
     handoffText: handoff === null ? null : (ctx.read.boundedText(handoff, "handoffText", TASKS_BOUNDS.handoffTextMaxBytes) ?? null),
     continueFromPrevious: ctx.read.boolean(row?.continueFromPrevious, "continueFromPrevious") ?? false,
+    ...startedFrom(ctx, row?.startedFrom),
   }))
 }
 

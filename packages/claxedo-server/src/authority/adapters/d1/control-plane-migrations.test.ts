@@ -33,10 +33,12 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0023_agent_plugin_sources.sql",
   "0024_session_last_human_turn.sql",
   "0025_claxedo_tasks.sql",
-  "0026_workspace_org_member_visible.sql",
-  "0027_host_connect.sql",
-  "0028_workspace_host_assignment_revision.sql",
-  "0029_normalize_user_hosted_directories.sql",
+  "0026_agent_cross_machine_writes.sql",
+  "0027_sandbox_pass_revocations.sql",
+  "0028_workspace_org_member_visible.sql",
+  "0029_host_connect.sql",
+  "0030_workspace_host_assignment_revision.sql",
+  "0031_normalize_user_hosted_directories.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(
@@ -201,6 +203,21 @@ describe("control-plane adapter rebuild", () => {
     expect(owner?.user_id).toBe("user-a")
   })
 
+  test("stores an account's agent setting as one row that is off until written", async () => {
+    const target = await database()
+    await apply(target, CONTROL_PLANE_MIGRATIONS)
+
+    await target.prepare("insert into user_agent_settings (user_id, updated_at) values ('user-a', 1)").run()
+    const row = await target
+      .prepare("select cross_machine_writes from user_agent_settings where user_id = 'user-a'")
+      .first<{ cross_machine_writes: number }>()
+    expect(row).toEqual({ cross_machine_writes: 0 })
+
+    await expect(
+      target.prepare("update user_agent_settings set cross_machine_writes = 2 where user_id = 'user-a'").run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
   test("keeps the consumed bootstrap identity immutable after the rebuild", async () => {
     const target = await database()
     await apply(target, CONTROL_PLANE_MIGRATIONS)
@@ -247,7 +264,7 @@ describe("workspace assignment revision counter", () => {
     const target = await database()
     await apply(target, CONTROL_PLANE_MIGRATIONS.slice(
       0,
-      CONTROL_PLANE_MIGRATIONS.indexOf("0028_workspace_host_assignment_revision.sql"),
+      CONTROL_PLANE_MIGRATIONS.indexOf("0030_workspace_host_assignment_revision.sql"),
     ))
     await seedOwnerAndProject(target)
     for (const id of ["ws-assigned", "ws-free"]) await seedWorkspace(target, id, "user-hosted", null)
@@ -268,7 +285,7 @@ describe("workspace assignment revision counter", () => {
 
   test("starts an assigned workspace at its assignment's revision and an unassigned one at 0", async () => {
     const target = await seeded()
-    await apply(target, ["0028_workspace_host_assignment_revision.sql"])
+    await apply(target, ["0030_workspace_host_assignment_revision.sql"])
     expect(await counters(target)).toEqual([
       { workspace_id: "ws-assigned", host_assignment_revision: 3 },
       { workspace_id: "ws-free", host_assignment_revision: 0 },
@@ -277,7 +294,7 @@ describe("workspace assignment revision counter", () => {
 
   test("the backfill run again never lowers a counter that has moved past the live assignment's revision", async () => {
     const target = await seeded()
-    const [addColumn, backfill] = await statements("0028_workspace_host_assignment_revision.sql")
+    const [addColumn, backfill] = await statements("0030_workspace_host_assignment_revision.sql")
     await target.prepare(addColumn).run()
     await target.prepare("update workspaces set host_assignment_revision = 5 where workspace_id = 'ws-assigned'").run()
     await target.prepare(backfill).run()
@@ -293,7 +310,7 @@ describe("user-hosted directory normalization", () => {
     const target = await database()
     await apply(target, CONTROL_PLANE_MIGRATIONS.slice(
       0,
-      CONTROL_PLANE_MIGRATIONS.indexOf("0029_normalize_user_hosted_directories.sql"),
+      CONTROL_PLANE_MIGRATIONS.indexOf("0031_normalize_user_hosted_directories.sql"),
     ))
     await seedOwnerAndProject(target)
     const rows: Array<[string, "user-hosted" | "cloud", string | null, string | null]> = [
@@ -312,7 +329,7 @@ describe("user-hosted directory normalization", () => {
     ]
     for (const [id, access, directory] of rows) await seedWorkspace(target, id, access, directory)
 
-    await apply(target, ["0029_normalize_user_hosted_directories.sql"])
+    await apply(target, ["0031_normalize_user_hosted_directories.sql"])
 
     const stored = await target
       .prepare("select workspace_id, remote_directory from workspaces order by workspace_id")
@@ -322,7 +339,7 @@ describe("user-hosted directory normalization", () => {
         .sort((a, b) => (a.workspace_id < b.workspace_id ? -1 : 1)),
     )
     // Re-running over normalized rows changes nothing.
-    await apply(target, ["0029_normalize_user_hosted_directories.sql"])
+    await apply(target, ["0031_normalize_user_hosted_directories.sql"])
     expect((await target.prepare("select workspace_id, remote_directory from workspaces order by workspace_id").all()).results)
       .toEqual(stored.results)
   })

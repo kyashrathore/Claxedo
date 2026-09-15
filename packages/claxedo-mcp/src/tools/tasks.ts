@@ -150,6 +150,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       const preset = await presetFor(client, args.preset)
       const attempt = nextAttempt(detail.links, slot)
       const continueFromPrevious = args.continue ?? false
+      const startedFrom = callingSession(ctx)
       const { preview } = await client.startPreview(args.task, {
         taskRevision: detail.task.revision,
         presetId: preset.id,
@@ -157,6 +158,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
         slot,
         attempt,
         continueFromPrevious,
+        ...(startedFrom ? { startedFrom } : {}),
       })
       if (!preview.available || preview.blockers.length > 0) {
         const blockers = preview.blockers.map((blocker) => blocker.detail)
@@ -176,6 +178,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
         previewDigest: preview.digest,
         handoffText: null,
         continueFromPrevious,
+        ...(startedFrom ? { startedFrom } : {}),
       })
       addressed?.(started.link.sessionRef.sessionId)
       return toolJson({
@@ -299,17 +302,38 @@ async function tasksRefusals(handle: () => Promise<McpToolResult>): Promise<McpT
   }
 }
 
+/**
+ * The answers a cloud runtime gives in the control plane's place once the
+ * grant it launched with has expired unrenewed or been withdrawn. They are
+ * not Tasks responses — the service never saw the request — so they are read
+ * here, before the client would call them unparseable.
+ */
+const RUNTIME_GRANT_REFUSALS = new Set(["tasks_grant_lapsed", "tasks_grant_withdrawn"])
+
+async function runtimeGrantRefusal(response: Response): Promise<string | undefined> {
+  if (response.status !== 503) return undefined
+  const body = record(await response.clone().json().catch(() => undefined))
+  const error = record(body?.error)
+  const code = text(error?.code)
+  const message = text(error?.message)
+  return code !== undefined && RUNTIME_GRANT_REFUSALS.has(code) && message ? message : undefined
+}
+
 function tasksClient(ctx: McpToolContext): TasksClient {
   const grant = ctx.client.tasks
   if (!grant) throw new RefusalSentence("This Claxedo deployment does not serve Tasks.")
   return createTasksClient({
     baseUrl: TASKS_ROUTE_PATH,
     request: async (path, init) => {
+      let response: Response
       try {
-        return await grant.fetch(path, init)
+        response = await grant.fetch(path, init)
       } catch (error) {
         throw new RefusalSentence(`The Tasks service could not be reached from this session: ${causeOf(error)}.`)
       }
+      const refused = await runtimeGrantRefusal(response)
+      if (refused) throw new RefusalSentence(refused)
+      return response
     },
   })
 }

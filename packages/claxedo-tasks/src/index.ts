@@ -19,16 +19,17 @@ export type { TasksAuthorizationPort } from "./ports/authorization"
 export type { HarnessDescriptor, TasksCapabilitiesPort, TasksHostCapabilities } from "./ports/capabilities"
 export type { TasksClockPort } from "./ports/clock"
 export type { TasksIdsPort } from "./ports/ids"
-export type {
-  SessionAbandonCommand,
-  SessionHandoffCommand,
-  SessionOrigin,
-  SessionStateReading,
-  StartCommand,
-  StartPreviewCommand,
-  StartedSession,
-  TasksSessionBridgePort,
-  TranscriptGrant,
+export {
+  sessionOriginOf,
+  type SessionAbandonCommand,
+  type SessionHandoffCommand,
+  type SessionOrigin,
+  type SessionStateReading,
+  type StartCommand,
+  type StartPreviewCommand,
+  type StartedSession,
+  type TasksSessionBridgePort,
+  type TranscriptGrant,
 } from "./ports/session-bridge"
 export {
   TASKS_STORE_CONFLICTS,

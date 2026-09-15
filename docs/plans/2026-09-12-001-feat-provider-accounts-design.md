@@ -1,6 +1,6 @@
 # Provider accounts: one provider, many logins, one active
 
-Status: slice 1 shipped locally on `feat/credentials-integration`; slices 2–4 proposed.
+Status: slice 1 merged to `dev` (2026-09-14); slices 2–4 proposed.
 Date: 2026-09-12
 Owner: Yash Rathore
 Revision 6, 2026-09-14: every rule, the Background and the Settings section

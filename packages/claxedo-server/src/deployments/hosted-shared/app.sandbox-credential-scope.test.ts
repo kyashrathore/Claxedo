@@ -18,8 +18,14 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { createHostedTasksComposition } from "../../tasks/hosted-composition"
+import { accountAgentSettingsRouteContribution } from "../../routes/account-agent-settings"
+import { d1AgentSettings } from "../../authority/adapters/d1/agent-settings"
+import { signedOrError } from "../../workspace/route-support"
 import { mintTasksCapability } from "../../tasks/capability"
+import { tasksGrantRenewalContribution } from "../../tasks/grant-renewal"
+import { createTasksRootGrant } from "../../tasks/root-capability"
 import { mintMcpGatewayToken } from "../../agent-plugins/mcp/runtime-token"
+import { mintOwnerGrant } from "../../session/owner-grant"
 
 /**
  * Every credential a sandbox can carry, against every route the composed
@@ -58,7 +64,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"])
   active.push(instance)
   return instance.database
 }
@@ -195,12 +201,27 @@ async function hostedApp(
 ): Promise<ProbeApp> {
   const base = plane(env)
   const authentication = knownUsersAuthentication()
+  const controlPlane = await database()
   const tasks = createHostedTasksComposition({
     services: base.services,
-    database: await database(),
+    database: controlPlane,
     authentication,
     bridge: reportingBridge,
     signingEnv: env,
+  })
+  // The account's agent setting is the one signed family a sandbox has a
+  // reason to want — it is what puts `start` in the next grant — so it is
+  // composed here and held to admitting none of the credentials.
+  const agentSettings = accountAgentSettingsRouteContribution({
+    signed: (request) => signedOrError(request, { authentication, requireSigned: true }, base.services),
+    service: d1AgentSettings(controlPlane),
+  })
+  const renewal = tasksGrantRenewalContribution({
+    signingEnv: env,
+    workspaceOwner: async (workspaceId) => WORKSPACE_OWNERS[workspaceId],
+    tasksGroupEnabled: async () => true,
+    grant: createTasksRootGrant({ signingEnv: env }),
+    audit: () => {},
   })
   return createHostedCoreApp(base, {
     authentication,
@@ -223,7 +244,7 @@ async function hostedApp(
         actorId: `actor:${input.identity.subject}`,
       })),
     },
-    routeContributions: [...tasks.routeContributions, ...extraContributions],
+    routeContributions: [...tasks.routeContributions, agentSettings, renewal, ...extraContributions],
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as ProbeApp
 }
 
@@ -285,6 +306,16 @@ const SANDBOX_CREDENTIALS: readonly SandboxCredential[] = [
       ).token,
   },
   {
+    kind: "owner grant",
+    mint: async (env) =>
+      (
+        await mintOwnerGrant(
+          { userId: "alice", actorId: "actor:alice", orgId: OWN.orgId, projectId: OWN.projectId, workspaceId: OWN.workspaceId },
+          env,
+        )
+      ).token,
+  },
+  {
     kind: "loopback runtime bearer",
     mint: async () =>
       createRuntimeCredentialIssuer({ runtimeId: "runtime_1", workspaceId: OWN.workspaceId, userId: "alice" }).current(
@@ -299,7 +330,10 @@ const SANDBOX_CREDENTIALS: readonly SandboxCredential[] = [
  * signed; the gateway token is signed with the same key and must reach none of
  * them; a host's signed token is verified by the runtime it addresses and the
  * relay in front of it, never by this plane; the runtime's own bearer never
- * leaves the sandbox's loopback and is nobody here.
+ * leaves the sandbox's loopback and is nobody here. The owner grant is for
+ * one route, `POST /api/runtime-authority/session-authorize`, which refuses
+ * the probe body before reading any bearer and so sits in nobody's set; what
+ * that route admits the grant to is held in `runtime-session-authority.test.ts`.
  *
  * The status beside each route is the answer to the caller's own names, which
  * says how far the probe body got: a 2xx or a 404 is a route that read the
@@ -311,6 +345,7 @@ const EXPECTED_ADMISSION: Record<string, readonly string[]> = {
   "Tasks capability": [
     "GET /api/claxedo/tasks/capabilities -> 200",
     "POST /api/claxedo/tasks/commands -> 200",
+    "POST /api/claxedo/tasks/grant/renew -> 200",
     "GET /api/claxedo/tasks/presets -> 200",
     "GET /api/claxedo/tasks/presets/:presetId -> 404",
     "GET /api/claxedo/tasks/tasks -> 200",
@@ -320,6 +355,7 @@ const EXPECTED_ADMISSION: Record<string, readonly string[]> = {
     "POST /api/claxedo/tasks/tasks/:taskId/start-preview -> 400",
   ],
   "gateway capability": [],
+  "owner grant": [],
   "loopback runtime bearer": [],
 }
 
@@ -330,6 +366,8 @@ const EXPECTED_ADMISSION: Record<string, readonly string[]> = {
  */
 const NAME_FREE_ROUTES: readonly string[] = [
   "GET /.well-known/jwks.json",
+  // Renewal reads the bearer and nothing else; the names it answers are the token's own.
+  "POST /api/claxedo/tasks/grant/renew",
   "GET /api/claxedo/auth/descriptor",
   "GET /api/claxedo/compatibility",
   "GET /api/claxedo/health",
@@ -446,6 +484,7 @@ const VOLATILE: readonly [RegExp, string][] = [
   [/probe-[0-9]+/g, "«request»"],
   [/\b(?:tsk|prs|cmd|ses|ckp)_[A-Za-z0-9_-]{6,}/g, "«row»"],
   [/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "«uuid»"],
+  [/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "«jwt»"],
   [/\b1[0-9]{12}\b/g, "«time»"],
 ]
 

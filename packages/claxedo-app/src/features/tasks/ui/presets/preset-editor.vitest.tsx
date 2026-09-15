@@ -230,6 +230,27 @@ describe("preset editor", () => {
     })
   })
 
+  test("a preset is not startable by agents unless the person marks it, and the mark reaches the draft that is saved", () => {
+    const { draft } = mount()
+    fireEvent.click(screen.getByTestId("stub-pick-claude-primary"))
+
+    const control = within(screen.getByTestId("preset-editor-agent-startable")).getByRole("switch")
+    expect(control.getAttribute("aria-checked")).toBe("false")
+    let parsed = parsePresetEditorDraft(draft())
+    expect(parsed.ok && parsed.draft.agentStartable).toBe(false)
+
+    fireEvent.click(control)
+
+    expect(draft().agentStartable).toBe(true)
+    parsed = parsePresetEditorDraft(draft())
+    expect(parsed.ok && parsed.draft.agentStartable).toBe(true)
+  })
+
+  test("a preset already marked for agents opens with the switch on", () => {
+    mount({ agentStartable: true })
+    expect(within(screen.getByTestId("preset-editor-agent-startable")).getByRole("switch").getAttribute("aria-checked")).toBe("true")
+  })
+
   test("an optional slot appears only once it is enabled", () => {
     mount()
 

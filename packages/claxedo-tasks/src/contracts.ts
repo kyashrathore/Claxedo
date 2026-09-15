@@ -108,6 +108,13 @@ export type Preset = {
   instructions: string
   execution: PresetExecution
   configurations: PresetConfigurations
+  /**
+   * Whether an agent inside a session may start this preset. False until a
+   * person marks it in Settings: a session's Tasks grant reaches Start, and
+   * without this a preset saved for the person's own use would be one every
+   * agent in the project could put on a machine.
+   */
+  agentStartable: boolean
   archivedAt: number | null
   createdAt: number
   updatedAt: number
@@ -188,7 +195,29 @@ export type TaskSessionLink = {
    * from, and sending the task without it would hand over a different message.
    */
   handoffText: string | null
+  /**
+   * The session whose agent started this attempt, recorded by the host from
+   * the grant it admitted and never from the request; null when a person
+   * started it from the app. With `placement`, it is what a per-project cap
+   * on agent-started cloud machines counts.
+   */
+  startedFrom: SessionReference | null
+  /**
+   * Who asked for this attempt: a person from the app, or a session's agent
+   * through its grant. Recorded beside `startedFrom` because a grant minted
+   * for a root rather than a session starts as an agent without a session to
+   * name, and a cap on agent-started machines must still count it.
+   */
+  startedBy: SessionStarter
+  placement: PresetPlacement
   createdAt: number
+}
+
+export const SESSION_STARTERS = ["person", "agent"] as const
+export type SessionStarter = (typeof SESSION_STARTERS)[number]
+
+export function isSessionStarter(value: unknown): value is SessionStarter {
+  return typeof value === "string" && SESSION_STARTERS.some((starter) => starter === value)
 }
 
 export const SESSION_LIVENESS = ["live", "archived", "deleted", "unavailable"] as const
@@ -255,6 +284,7 @@ export type PresetDraft = {
   instructions: string
   execution: PresetExecution
   configurations: PresetConfigurations
+  agentStartable: boolean
 }
 
 export type TaskDraft = {
@@ -415,6 +445,8 @@ export type StartPreviewRequest = {
   slot: ConfigurationSlot
   attempt: number
   continueFromPrevious: boolean
+  /** Sent by a session asking from inside itself; the app sends nothing. The host checks it before believing it. */
+  startedFrom?: SessionReference
 }
 
 /**
@@ -451,6 +483,8 @@ export type StartRequest = {
   previewDigest: string
   handoffText: string | null
   continueFromPrevious: boolean
+  /** Sent by a session asking from inside itself; the app sends nothing. The host checks it before believing it. */
+  startedFrom?: SessionReference
 }
 
 export type StartResponse = {

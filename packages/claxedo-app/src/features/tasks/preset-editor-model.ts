@@ -41,6 +41,7 @@ export type PresetEditorDraft = {
   plugins: readonly CapabilitySelection[]
   skills: readonly CapabilitySelection[]
   configurations: Readonly<Record<ConfigurationSlot, ConfigurationDraft | null>>
+  agentStartable: boolean
 }
 
 /**
@@ -76,6 +77,7 @@ export function emptyPresetEditorDraft(): PresetEditorDraft {
       implementation: null,
       review: null,
     },
+    agentStartable: false,
   }
 }
 
@@ -101,6 +103,7 @@ export function presetEditorDraftOf(preset: Preset): PresetEditorDraft {
     plugins: (selected?.plugins ?? []).map((entry) => ({ sourceId: entry.sourceId, name: entry.pluginName })),
     skills: (selected?.skills ?? []).map((entry) => ({ sourceId: entry.sourceId, name: entry.skillName })),
     configurations,
+    agentStartable: preset.agentStartable,
   }
 }
 
@@ -186,6 +189,7 @@ export function parsePresetEditorDraft(draft: PresetEditorDraft): PresetEditorPa
             }
           : { placement: "local", capabilities: { mode: "inherit-local" } },
       configurations: { ...configurations, primary },
+      agentStartable: draft.agentStartable,
     },
   }
 }

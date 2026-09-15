@@ -403,8 +403,14 @@ export const appLocal: Policy = {
   // route or content-surface module is reachable from here, and
   // `documents-content-surfaces` remains a forbidden chunk marker.
   //
-  // Measured 1069 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1069, packages: 58 },
+  // The account Settings section carries the "Agents may act on my other
+  // machines" switch, so `features/settings/data/agent-settings-api.ts` — the
+  // signed control plane's GET/PUT of that one setting — is reached from the
+  // General settings page beside the account section that already was. No new
+  // package edge; the module is the setting's only reader and writer.
+  //
+  // Measured 1070 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1070, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

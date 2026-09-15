@@ -22,18 +22,24 @@ export const FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID = "claxedo-mcp"
  * from its own process instead.
  *
  * The tools re-enter this runtime through the seam's in-process fetch, so they
- * reach exactly the routes this workspace serves and nothing outside it. The
- * Tasks grant is the exception and the reason it is passed in rather than
- * built here: those tools leave the workspace for the control plane, carrying
- * the capability this root was launched with.
+ * reach exactly the routes this workspace serves and nothing outside it. Each
+ * call carries the owner grant, read at the call because the grant is renewed
+ * while the root runs: the runtime verifies it and acts as the workspace's
+ * owner, and a call after a lapse carries none and acts as nobody. The Tasks
+ * grant is the exception and the reason it is passed in rather than built
+ * here: those tools leave the workspace for the control plane, carrying the
+ * capability this root was launched with. It is read per MCP session because
+ * it too is renewed: a session opened after a renewal lists what the renewed
+ * scope carries, and one opened after a lapse lists no Tasks tools at all.
  */
 export function firstPartyMcpRuntimeContribution(input: {
   verifyRuntimeCredential: VerifyRuntimeCredential
   /** This root's consented groups, read once at boot; the mount registers no others. */
   enabledToolGroups: readonly string[]
-  tasks?: TasksGrant
+  tasks?: () => TasksGrant | undefined
+  ownerGrant?: () => string | undefined
 }): WorkspaceRuntimeRouteContribution {
-  const { verifyRuntimeCredential, tasks } = input
+  const { verifyRuntimeCredential, tasks, ownerGrant } = input
   return {
     id: FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID,
     mount(context) {
@@ -42,11 +48,21 @@ export function firstPartyMcpRuntimeContribution(input: {
       const mount = createClaxedoMcpRoutes({
         mount: "loopback",
         verifyRuntimeCredential,
-        createClient: () => createClaxedoMcpClient({
-          deployment: "loopback",
-          local: { fetch: inProcessFetch((call) => context.fetch(call)), workspace },
-          ...(tasks ? { tasks } : {}),
-        }),
+        createClient: () => {
+          const grant = tasks?.()
+          return createClaxedoMcpClient({
+            deployment: "loopback",
+            local: {
+              fetch: inProcessFetch((call) => {
+                const grant = ownerGrant?.()
+                if (grant) call.headers.set("authorization", `Bearer ${grant}`)
+                return context.fetch(call)
+              }),
+              workspace,
+            },
+            ...(grant ? { tasks: grant } : {}),
+          })
+        },
         registerTools: CLAXEDO_MCP_TOOL_GROUPS,
         enabledToolGroups: () => input.enabledToolGroups,
         audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),

@@ -29,6 +29,8 @@ import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
+import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { createOwnerGrantProof } from "../../session/owner-grant"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import {
   UserDeployedIdentityAdmissionRoutes,
@@ -72,7 +74,7 @@ import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
-  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage" | "prepareRuntime" | "provisionRuntime"
+  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage" | "prepareRuntime" | "provisionRuntime" | "releaseRuntime"
 >
 
 export type HostedCoreAppOptions = {
@@ -105,6 +107,12 @@ export type HostedCoreAppOptions = {
    * verifier. Absent means no endpoint, as with every other contribution.
    */
   firstPartyMcp?: FirstPartyMcpOptions
+  /**
+   * The register the entry mints sandbox passes into, so the session
+   * authority refuses a revoked owner grant before its expiry. Absent on the
+   * base core, which mints none.
+   */
+  sandboxPasses?: Pick<SandboxPassRegister, "revoked">
 }
 
 /**
@@ -405,6 +413,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       RuntimeSessionAuthorityRoutes({
         authority: plane.runtimeSessionAuthority,
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
+        ...(services.authority?.resolveWorkspaceOwner
+          ? {
+              ownerGrants: createOwnerGrantProof({
+                env: plane.env,
+                ...(options.sandboxPasses ? { passes: options.sandboxPasses } : {}),
+                resolveWorkspaceOwner: services.authority.resolveWorkspaceOwner.bind(services.authority),
+              }),
+            }
+          : {}),
         env: plane.env,
       }),
     )

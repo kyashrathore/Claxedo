@@ -35,7 +35,6 @@ export type PiDriverOptions = {
   idleMs?: number
 }
 type Entry = {
-  id: string
   process: PiRpcProcess
   directory: string
   busy: boolean
@@ -60,11 +59,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
   private projectedProviders?: PiProviderOverrides
   private auth: Record<string, ProviderProjection> | undefined
   private entries = new Map<string, Entry>()
-  // Pi writes a session's file only at its first assistant message; a process
-  // lost before then leaves a bound id nothing on disk can name. These are the
-  // ids this driver created but has never seen persisted, so `ensure` may
-  // recreate just those while still refusing a fabricated one.
-  private readonly unpersisted = new Set<string>()
   private models: SdkModelEntry[] = []
   private thinking: string[] = []
   private selectedThinking = "off"
@@ -269,7 +263,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
       const state = record(await process.request("get_state"))
       const id = text(state?.sessionId)
       if (!id) throw new Error("Pi did not return its native session id")
-      this.unpersisted.add(id)
       this.remember(id, process, input.directory)
       const model = record(state?.model)
       const provider = text(model?.provider)
@@ -284,7 +277,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
     }
   }
   private remember(id: string, process: PiRpcProcess, directory: string) {
-    const entry: Entry = { id, process, directory, busy: false, idleGeneration: 0 }
+    const entry: Entry = { process, directory, busy: false, idleGeneration: 0 }
     this.entries.set(id, entry)
     process.onExit((error) => {
       if (entry.idle) clearTimeout(entry.idle)
@@ -312,10 +305,8 @@ class PiRpcDriver implements SdkRuntimeDriver {
               () => false,
             ))
           if (!current()) return
-          if (persisted) {
-            this.unpersisted.delete(entry.id)
-            entry.process.dispose()
-          } else this.reap(entry)
+          if (persisted) entry.process.dispose()
+          else this.reap(entry)
         })
         .catch(() => {
           if (current()) entry.process.dispose()
@@ -332,11 +323,8 @@ class PiRpcDriver implements SdkRuntimeDriver {
     // Never let an unknown session identifier cause Pi to create a fresh session.
     const files = await fs.readdir(path.join(this.agentDir, "sessions"))
     const filename = files.find((name) => name.endsWith(`_${id}.jsonl`))
-    if (filename) this.unpersisted.delete(id)
-    else if (!this.unpersisted.has(id)) throw new Error(`Pi session file is missing for ${id}`)
-    const process = await this.start(directory, filename
-      ? ["--session", path.join(this.agentDir, "sessions", filename)]
-      : ["--session-id", id])
+    if (!filename) throw new Error(`Pi session file is missing for ${id}`)
+    const process = await this.start(directory, ["--session", path.join(this.agentDir, "sessions", filename)])
     try {
       const state = record(await process.request("get_state"))
       if (state?.sessionId !== id) throw new Error("Pi resumed a different session")
@@ -570,7 +558,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
       : { status: "ok" as const }
   }
   deleteAgentSession(_sessionId: string, agentSessionId: string) {
-    this.unpersisted.delete(agentSessionId)
     this.entries.get(agentSessionId)?.process.dispose()
   }
   async dispose() {

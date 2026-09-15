@@ -29,6 +29,14 @@ export type {
 }
   from "./management-auth"
 export {
+  WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE,
+  WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER,
+  ownerGrantIdentity,
+  ownerGrantIdentityFromEnv,
+}
+  from "./owner-grant"
+export type { OwnerGrantIdentity } from "./owner-grant"
+export {
   WorkspaceRuntimeRouteManifest,
   WorkspaceRuntimeRoutes,
   workspaceRuntimeRoute,

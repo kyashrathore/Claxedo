@@ -59,6 +59,12 @@ export function isBuiltinFamilyName(pluginInstanceId: string): boolean {
 export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
 
 /**
+ * The group whose consent the owner grant is: a root that may start
+ * subagents is a root whose runtime may act as the workspace's owner.
+ */
+export const BUILTIN_SUBAGENTS_TOOL_GROUP = "subagents"
+
+/**
  * How far a group's tools reach, as its registration declares it.
  *
  * Mirrors the serving package's own vocabulary and is carried here as data,

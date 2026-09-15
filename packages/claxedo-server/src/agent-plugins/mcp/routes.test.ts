@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
 import { HostedMcpGatewayRoutes } from "./routes"
+import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 
 const scope: McpGatewayTokenScope = {
   userId: "user-1",
@@ -60,6 +61,35 @@ async function setup(overrides: {
 }
 
 describe("hosted MCP gateway route", () => {
+  test("a credential the register has revoked is refused as invalid before activation is read", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+    const passes = memorySandboxPassRegister()
+    const credential = await mintMcpGatewayToken(scope, env, { register: passes })
+    const authorize = vi.fn(async () => ({ resource: "https://mcp.example/mcp" }))
+    const app = HostedMcpGatewayRoutes({
+      env,
+      revoked: passes.revoked,
+      authorize,
+      resolveConnection: async () => ({ ok: true as const, connectionId: "c", token: "t", tokenType: "bearer" as const, fields: { resource: "https://mcp.example/mcp" } }),
+      fetch: async () => Response.json({}),
+    })
+    const request = () => app.request("http://gateway.test/mcp-docs", {
+      method: "POST",
+      headers: { authorization: `Bearer ${credential.token}`, "content-type": "application/json" },
+      body: "{}",
+    })
+    expect((await request()).status).toBe(200)
+    await passes.revoke({ workspaceId: scope.workspaceId, reason: "workspace_deleted" })
+    const refused = await request()
+    expect(refused.status).toBe(401)
+    expect(await refused.json()).toEqual({ code: "mcp_gateway_unauthorized", reason: "invalid_token" })
+    expect(authorize).toHaveBeenCalledTimes(1)
+  })
+
   test("a deployment without its verification key answers 503, not a reconnect-inviting 401", async () => {
     const subject = await setup({ routeEnv: {} })
     const response = await subject.app.request("http://gateway.test/integration-1", {

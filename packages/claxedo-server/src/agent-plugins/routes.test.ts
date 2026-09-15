@@ -221,6 +221,7 @@ async function fixture(options: {
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: ReturnType<typeof hostedMcpClientMetadata>
   authentication?: RequestAuthenticationAdapter
+  builtInConsentChanged?: (auth: SignedControlPlaneAuth, groupId: string) => Promise<void>
 } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-agent-plugins-"))
   roots.push(root)
@@ -286,6 +287,7 @@ async function fixture(options: {
     builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },
     ...(options.mcpAuthentication ? { mcpAuthentication: options.mcpAuthentication } : {}),
     ...(options.mcpClientMetadata ? { mcpClientMetadata: options.mcpClientMetadata } : {}),
+    ...(options.builtInConsentChanged ? { builtInConsentChanged: options.builtInConsentChanged } : {}),
   })
   return { app, collection, plugin, activations, artifacts, reconcile, usersMe }
 }
@@ -640,6 +642,36 @@ describe("hosted Agent Plugins routes", () => {
     expect(elsewhere.candidates
       .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
       .groups.find((entry: { id: string }) => entry.id === "tasks").enabled).toBe(false)
+  })
+
+  test("a group switch tells the composition which group's consent changed, after the commit and the reconcile", async () => {
+    const order: string[] = []
+    const consent = vi.fn(async (_auth: SignedControlPlaneAuth, groupId: string) => { order.push(`consent:${groupId}`) })
+    const subject = await fixture({ builtInConsentChanged: consent })
+    subject.reconcile.reconcile.mockImplementation(async () => { order.push("reconcile"); return { state: "applied" as const } })
+    const before = await (await request(subject.app, "/projects/project-a")).json()
+    const body = (choice: boolean | null, expectedRevision: number) => JSON.stringify({
+      pluginInstanceId: "claxedo:tasks", harnessIds: ["opencode"], choice, expectedRevision,
+      target: { scope: "projects", projectIds: ["project-a"] },
+    })
+    expect((await request(subject.app, "/activation", "member", { method: "POST", body: body(true, before.revision) })).status).toBe(200)
+    expect((await request(subject.app, "/activation", "member", { method: "POST", body: body(false, before.revision + 1) })).status).toBe(200)
+    expect(order).toEqual(["reconcile", "consent:tasks", "reconcile", "consent:tasks"])
+    expect(consent.mock.calls[0]?.[0]).toMatchObject({ user: { subject: "member" } })
+
+    const organization = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId: "claxedo:tasks", harnessIds: ["opencode"], choice: true, expectedRevision: before.revision + 2 }),
+    })
+    expect(organization.status).toBe(200)
+    expect(order.at(-1)).toBe("consent:tasks")
+
+    // The commit stands when the withdrawal fails; the answer says so the way a failed reconcile does.
+    consent.mockRejectedValueOnce(new Error("register unreachable"))
+    const failed = await request(subject.app, "/activation", "member", { method: "POST", body: body(true, before.revision + 3) })
+    expect(failed.status).toBe(202)
+    expect(await failed.json()).toMatchObject({ revision: before.revision + 4, reconciliation: { state: "failed", message: "register unreachable" } })
+    expect(await subject.activations.revision()).toBe(before.revision + 4)
   })
 
   test("a group the first-party server does not register cannot be activated", async () => {

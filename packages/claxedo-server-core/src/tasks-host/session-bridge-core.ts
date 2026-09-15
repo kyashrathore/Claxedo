@@ -644,6 +644,8 @@ async function startSession(
     session: {
       sessionRef: { sessionId, workspaceId: target.workspace.id },
       continuedFrom: resolved.handoff?.session ?? null,
+      startedFrom: null,
+      startedBy: "person",
     },
   }
 }

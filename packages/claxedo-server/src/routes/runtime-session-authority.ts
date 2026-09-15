@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import {
@@ -24,6 +25,7 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const bodyLimitBytes = 16 * 1024
@@ -46,17 +48,39 @@ type RuntimeSessionAuthorityPort = Pick<
     hostId: string
     minimumRole?: "viewer" | "editor" | "admin" | "owner"
   }) => Promise<unknown>
+  /** Absent on a plane that cannot reserve for a runtime actor; the owner grant's `reserve` then answers 503. */
+  reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
+}
+
+/** The workspace's owner as the authority records them now, or nothing for a workspace that has none. */
+export type ResolveWorkspaceOwner = (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
+
+/**
+ * How a plane that mints owner grants recognises and verifies one. Supplied
+ * by the composition that mints them; a plane without it accepts none, and
+ * carries none of the pass family in its closure.
+ */
+export type OwnerGrantProof = {
+  /** Whether a bearer names the owner-grant audience, read without verifying: which verifier to run, not whether to trust it. */
+  names(token: string): boolean
+  /** The grant's scope; rejects a bearer that does not verify, is expired, or was revoked. */
+  verify(token: string): Promise<{ userId: string; actorId: string; orgId: string; workspaceId: string }>
+  resolveWorkspaceOwner: ResolveWorkspaceOwner
 }
 
 /**
  * How the runtime holding a lease proved its identity, and therefore what a
  * renewal re-checks. A relay host presents a Relay Host Token minted from a
  * durable Runtime Access Token, so every renewal re-checks that parent token
- * is still active. An embedded runtime runs inside the control plane process
- * that mints the lease and has no token chain of its own.
+ * is still active. A workspace's own runtime presents the owner grant the
+ * control plane launched it with, so every renewal re-resolves the
+ * workspace's owner and refuses once the grant's actor is not that owner. An
+ * embedded runtime runs inside the control plane process that mints the lease
+ * and has no token chain of its own.
  */
 export type SessionStreamLeaseBinding =
   | { transport: "relay-host"; hostId: string; parentRuntimeAccessTokenJti: string }
+  | { transport: "owner-grant" }
   | { transport: "embedded" }
 
 export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionStreamLeaseBinding & {
@@ -66,8 +90,8 @@ export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionS
   action: "read" | "write"
 }
 
-/** Prompt admission is reached only over the Relay Host Token chain. */
-type TurnLeaseClaims = Extract<SessionStreamLeaseClaims, { transport: "relay-host" }> & {
+/** Prompt admission is reached over a proof a runtime presents, never from inside the plane's own process. */
+type TurnLeaseClaims = Extract<SessionStreamLeaseClaims, { transport: "relay-host" | "owner-grant" }> & {
   turnId: string
   authorityLeaseId: string
   fencingToken: number
@@ -81,6 +105,8 @@ export type RuntimeSessionStreamDecision =
 
 export type RuntimeSessionStreamOptions = {
   authority: Pick<RuntimeSessionAuthorityPort, "authorizeRuntimeSession" | "runtimeAccessTokenActive">
+  /** Absent on a plane that mints no owner grants; a lease bound to one is then refused at renewal. */
+  resolveWorkspaceOwner?: ResolveWorkspaceOwner
   mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   env?: Record<string, string | undefined>
 }
@@ -99,8 +125,10 @@ export type RuntimeSessionStreamOptions = {
 export async function authorizeRuntimeSessionStream(
   options: RuntimeSessionStreamOptions,
   claims: SessionStreamLeaseClaims,
+  /** A bearer verified on this same request was already rechecked; a lease carries no bearer and is rechecked here. */
+  proof: { rechecked: boolean } = { rechecked: false },
 ): Promise<RuntimeSessionStreamDecision> {
-  const denial = await runtimeAccessTokenDenial(options.authority, claims)
+  const denial = proof.rechecked ? undefined : await proofDenial(options, claims)
   if (denial) return { allowed: false, status: 401, ...denial }
   await options.authority.authorizeRuntimeSession({
     ...sessionLeasePrincipal(claims),
@@ -140,11 +168,39 @@ async function runtimeAccessTokenDenial(
   }
 }
 
+const OWNER_GRANT_INVALID = { code: "owner_grant_invalid", message: "Owner grant is invalid, expired, or no longer names this workspace's owner" }
+
+/**
+ * The owner grant's recheck, on every call: the grant names an actor, the
+ * authority names the workspace's owner now, and they have to be the same
+ * person in the same organization. Done for a bearer and for every lease
+ * minted from one, since a re-owned workspace ends both at the next call.
+ */
+async function ownerGrantDenial(
+  resolveWorkspaceOwner: ResolveWorkspaceOwner | undefined,
+  named: { actorId: string; orgId: string; workspaceId: string; userId?: string },
+) {
+  const owner = resolveWorkspaceOwner ? await resolveWorkspaceOwner(named.workspaceId).catch(() => undefined) : undefined
+  if (!owner || owner.actorId !== named.actorId || owner.orgId !== named.orgId || (named.userId !== undefined && owner.userId !== named.userId)) {
+    return OWNER_GRANT_INVALID
+  }
+  return undefined
+}
+
+async function proofDenial(
+  options: Pick<RuntimeSessionStreamOptions, "authority" | "resolveWorkspaceOwner">,
+  claims: SessionStreamLeaseClaims,
+) {
+  if (claims.transport === "owner-grant") return ownerGrantDenial(options.resolveWorkspaceOwner, claims)
+  return runtimeAccessTokenDenial(options.authority, claims)
+}
+
 export type RuntimeSessionAuthorityOptions = {
   authority: RuntimeSessionAuthorityPort
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
   env?: Record<string, string | undefined>
+  ownerGrants?: OwnerGrantProof
   verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
   mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyStreamLease?: (lease: string) => Promise<SessionStreamLeaseClaims>
@@ -155,9 +211,11 @@ export type RuntimeSessionAuthorityOptions = {
 /**
  * Narrow provider-neutral oracle for isolated workspace runtimes.
  *
- * Identity comes only from a verified RHT (or a short lease minted from one),
- * never from request JSON. Every stream renewal checks the durable parent RAT
- * and current private-session membership before issuing another lease.
+ * Identity comes only from a verified RHT, a verified owner grant, or a short
+ * lease minted from one of them, never from request JSON. Every stream
+ * renewal checks the proof's own chain — the durable parent RAT, or the
+ * workspace's current owner — and current private-session membership before
+ * issuing another lease.
  */
 export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOptions) {
   const env = options.env ?? process.env
@@ -234,10 +292,30 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     return context.json({ allowed: true })
   }
 
+  const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
+
   async function verifySessionProof(context: Context, request: SessionAuthorityRequest) {
     const { sessionId, action, lease, turnId, turnLeaseId, fencingToken } = request
     let claims: SessionStreamLeaseClaims
     let ownedTurn: TurnLeaseClaims | undefined
+    const bearer = bearerToken(context.req.header("authorization") ?? null)
+    if (bearer && options.ownerGrants?.names(bearer) && !lease && !turnLeaseId) {
+      const grant = await options.ownerGrants.verify(bearer).catch(() => undefined)
+      if (!grant || (await ownerGrantDenial(resolveWorkspaceOwner, grant))) {
+        return context.json({ error: OWNER_GRANT_INVALID }, 401)
+      }
+      claims = {
+        principalKind: "user",
+        actorId: grant.actorId,
+        actorKind: "human",
+        transport: "owner-grant",
+        orgId: grant.orgId,
+        workspaceId: grant.workspaceId,
+        sessionId,
+        action: action === "write" ? "write" : "read",
+      }
+      return { claims, ownedTurn, rechecked: true }
+    }
     if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
       const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
       if (
@@ -309,7 +387,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }
     }
 
-    return { claims, ownedTurn }
+    return { claims, ownedTurn, rechecked: false }
   }
 
   async function applyTurnAction(
@@ -317,24 +395,25 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     request: SessionAuthorityRequest,
     claims: SessionStreamLeaseClaims,
     ownedTurn: TurnLeaseClaims | undefined,
+    rechecked: boolean,
   ) {
     const { sessionId, action, turnId } = request
     const principal = sessionLeasePrincipal(claims)
-    // Turn admission is reached only over the Relay Host Token chain: the
-    // request validation above accepts a lease only together with
-    // `stream`, and `stream` is only ever a read/write action.
-    if (claims.transport !== "relay-host") {
+    // Turn admission is reached only over a runtime's proof: the request
+    // validation above accepts a stream lease only together with `stream`,
+    // and `stream` is only ever a read/write action.
+    if (claims.transport === "embedded") {
       return context.json(
         {
           error: {
             code: "session_turn_lease_invalid",
-            message: "Session turn admission requires a Relay Host Token chain",
+            message: "Session turn admission requires a Relay Host Token chain or an owner grant",
           },
         },
         401,
       )
     }
-    const denial = await runtimeAccessTokenDenial(options.authority, claims)
+    const denial = rechecked ? undefined : await proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims)
     if (denial) return context.json({ error: denial }, 401)
     if (!options.turnAuthority) {
       return context.json(
@@ -400,13 +479,45 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         400,
       )
     }
-    const { sessionId, action, operationId, reason, title, stream } = request
+    const { sessionId, action, operationId, reason, title, stream, parentSessionId } = request
     const verified = await verifySessionProof(context, request)
     if (verified instanceof Response) return verified
-    const { claims, ownedTurn } = verified
+    const { claims, ownedTurn, rechecked } = verified
 
     try {
       const principal = sessionLeasePrincipal(claims)
+      if (action === "reserve") {
+        // A reservation names the creator, and the only creator a runtime may
+        // name is the owner its grant re-resolves to; a relay host's actor
+        // reserved its own sessions before it ever reached the runtime.
+        if (claims.transport !== "owner-grant") {
+          return context.json(
+            { error: { code: "session_reservation_requires_owner_grant", message: "Only an owner grant may reserve a session here" } },
+            401,
+          )
+        }
+        if (!options.authority.reserveRuntimeSession) {
+          return context.json(
+            { error: { code: "session_registration_unavailable", message: "Session registration is unavailable" } },
+            503,
+          )
+        }
+        await options.authority.authorizeRuntimeSession({
+          ...principal,
+          sessionId: parentSessionId,
+          workspaceId: claims.workspaceId,
+          action: "read",
+        })
+        const reserved = await options.authority.reserveRuntimeSession(principal, {
+          operationId: `session_registration_${randomUUID()}`,
+          sessionId,
+          workspaceId: claims.workspaceId,
+          kind: "create",
+          parentSessionId,
+          ...(title ? { title } : {}),
+        })
+        return context.json({ allowed: true, operationId: reserved.operationId })
+      }
       if (action === "register") {
         await options.authority.registerRuntimeSession({
           ...principal,
@@ -435,16 +546,18 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json({ allowed: true })
       }
 
-      if (isTurnAction(action)) return await applyTurnAction(context, request, claims, ownedTurn)
+      if (isTurnAction(action)) return await applyTurnAction(context, request, claims, ownedTurn, rechecked)
 
       if (stream) {
         const decision = await authorizeRuntimeSessionStream(
           {
             authority: options.authority,
+            ...(resolveWorkspaceOwner ? { resolveWorkspaceOwner } : {}),
             ...(options.mintStreamLease ? { mintStreamLease: options.mintStreamLease } : {}),
             env,
           },
           claims,
+          { rechecked },
         )
         if (!decision.allowed) {
           return context.json({ error: { code: decision.code, message: decision.message } }, decision.status)
@@ -492,6 +605,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
   const operationId = trimToUndefined(body?.operationId)
   const reason = optionalText(body?.reason)
   const title = optionalText(body?.title)
+  const parentSessionId = trimToUndefined(body?.parentSessionId)
   const stream = body?.stream === true
   const lease = trimToUndefined(body?.lease)
   const turnId = trimToUndefined(body?.turnId)
@@ -506,8 +620,11 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
     || (!!lease && !stream)
     || (stream && action !== "read" && action !== "write")
   ) return undefined
-  const fields = { sessionId, operationId, reason, title, stream, lease, turnId, turnLeaseId, fencingToken }
+  const fields = { sessionId, operationId, reason, title, stream, lease, turnId, turnLeaseId, fencingToken, parentSessionId }
   switch (action) {
+    case "reserve":
+      if (!parentSessionId) return undefined
+      return { ...fields, action, parentSessionId }
     case "register":
       if (!operationId) return undefined
       return { ...fields, action, operationId }
@@ -533,6 +650,7 @@ type SessionAuthorityRequest = NonNullable<ReturnType<typeof parseSessionAuthori
 type AuthorityAction =
   | "read"
   | "write"
+  | "reserve"
   | "register"
   | "registration_ambiguous"
   | "compensation_begin"
@@ -550,6 +668,7 @@ function isHostAuthorityAction(value: unknown): value is HostAuthorityAction {
 function isAuthorityAction(value: unknown): value is AuthorityAction {
   return value === "read"
     || value === "write"
+    || value === "reserve"
     || value === "register"
     || value === "registration_ambiguous"
     || value === "compensation_begin"
@@ -623,9 +742,11 @@ function streamLeaseVerifier(env: Record<string, string | undefined>) {
       || (action !== "read" && action !== "write")) throw new Error("Stream lease claims are invalid")
     const binding: SessionStreamLeaseBinding = transport === "embedded"
       ? { transport: "embedded" }
-      : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
-        ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
-        : (() => { throw new Error("Stream lease binding is invalid") })()
+      : transport === "owner-grant"
+        ? { transport: "owner-grant" }
+        : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
+          ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
+          : (() => { throw new Error("Stream lease binding is invalid") })()
     const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
       ? { principalKind: "user", actorId, actorKind: "human" }
       : { principalKind: "service", actorId, actorKind: "agent" }
@@ -653,8 +774,10 @@ function turnLeaseMinter(env: Record<string, string | undefined>) {
       actor_kind: claims.actorKind,
       org_id: claims.orgId,
       workspace_id: claims.workspaceId,
-      host_id: claims.hostId,
-      parent_jti: claims.parentRuntimeAccessTokenJti,
+      transport: claims.transport,
+      ...(claims.transport === "relay-host"
+        ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
+        : {}),
       session_id: claims.sessionId,
       action: "write",
       turn_id: claims.turnId,
@@ -702,21 +825,25 @@ function turnLeaseVerifier(env: Record<string, string | undefined>) {
     const fencingToken = positiveInteger(payload.fencing_token)
     const acquiredAt = finiteTimestamp(payload.acquired_at)
     const expiresAt = finiteTimestamp(payload.authority_expires_at)
+    const transport = payload.transport
     if (
-      !actorId || !orgId || !workspaceId || !hostId || !parentRuntimeAccessTokenJti
+      !actorId || !orgId || !workspaceId
       || !sessionId || !turnId || !authorityLeaseId || !fencingToken
       || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
     ) throw new Error("Turn lease claims are invalid")
+    const binding: Extract<SessionStreamLeaseBinding, { transport: "relay-host" | "owner-grant" }> = transport === "owner-grant"
+      ? { transport: "owner-grant" }
+      : hostId && parentRuntimeAccessTokenJti
+        ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
+        : (() => { throw new Error("Turn lease binding is invalid") })()
     const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
       ? { principalKind: "user", actorId, actorKind: "human" }
       : { principalKind: "service", actorId, actorKind: "agent" }
     return {
       ...principal,
-      transport: "relay-host",
+      ...binding,
       orgId,
       workspaceId,
-      hostId,
-      parentRuntimeAccessTokenJti,
       sessionId,
       action: "write",
       turnId,

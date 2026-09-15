@@ -1,16 +1,24 @@
 /**
  * Tasks through the real hosted app, with the real signed-request path and the
- * real D1 schema. What is stubbed is the session bridge, because Start is the
- * one thing in this feature that is not this composition's: everything the
- * test asserts — who the caller is, which organization their rows belong to,
- * and what the authority lets them reach — is decided before the bridge is
- * ever consulted.
+ * real D1 schema. Most of the file stubs the session bridge, because Start is
+ * the one thing in this feature that is not this composition's: everything
+ * those tests assert — who the caller is, which organization their rows
+ * belong to, and what the authority lets them reach — is decided before the
+ * bridge is ever consulted. The journey at the end runs the real hosted
+ * bridge instead, because who a cloud root is created as is decided by the
+ * composition and the bridge together.
  */
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { Hono } from "hono"
 import type { D1Database } from "@cloudflare/workers-types"
+import { createSandboxManager, type SandboxDriver } from "@claxedo/sandbox-manager"
+import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
+import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
+import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { deleteWorkspace, ensureWorkspace, listWorkspaces } from "@claxedo/server-core/workspace/store/index"
+import { memorySandboxPassRegister, type SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
 
@@ -23,8 +31,24 @@ import {
   type ControlPlaneDatabase,
 } from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
-import { mintTasksCapability } from "./capability"
-import { createHostedTasksComposition } from "./hosted-composition"
+import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "./capability"
+import { createD1TasksStore } from "./d1-store"
+import { createHostedTasksComposition, type HostedTasksCompositionInput } from "./hosted-composition"
+import { createHostedTasksSessionBridge } from "./session-bridge"
+
+// Set before the workspace store's first read: left unset, every root the
+// journey allocates would land in the developer's own data directory.
+vi.hoisted(() => {
+  const tmp = (process.env.TMPDIR ?? "/tmp").replace(/\/+$/, "")
+  process.env.CLAXEDO_DATA_DIR = `${tmp}/claxedo-tasks-hosted-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+})
+
+const runtime = vi.hoisted(() => ({ request: vi.fn() }))
+vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
+  createWorkspaceRuntimeClient: ({ workspace }: { workspace: { id: string } }) => ({
+    request: (requestPath: string, init?: RequestInit) => runtime.request(workspace.id, requestPath, init),
+  }),
+}))
 
 const TASKS = "/api/claxedo/tasks"
 const active: ControlPlaneDatabase[] = []
@@ -34,7 +58,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"])
   active.push(instance)
   return instance.database
 }
@@ -42,14 +66,30 @@ async function database(): Promise<D1Database> {
 /** alice belongs to org-1 and may write project-a; bob belongs to org-2 and may write nothing of alice's. */
 const ORGS: Record<string, string> = { alice: "org-1", bob: "org-2" }
 
+/** The sessions the control plane places in each workspace, as the session authority answers for the owner. */
+const SESSION_WORKSPACES: Record<string, string> = { ses_1: "ws_root", ses_2: "ws_root", ses_sibling: "ws_sibling" }
+
+type WorkspaceOwner = { userId: string; actorId: string; orgId: string; projectId: string }
+
 /** The cloud root a capability is minted for, a sibling in its project, and one of alice's roots in another project. */
-const WORKSPACE_OWNERS: Record<string, { userId: string; actorId: string; orgId: string; projectId: string }> = {
+const WORKSPACE_OWNERS: Record<string, WorkspaceOwner> = {
   ws_root: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
   ws_sibling: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
   ws_other: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-b" },
 }
 
+const ALICE_PRINCIPAL = { principalKind: "user", actorId: "actor:alice", actorKind: "human" } as const
+
+/**
+ * What the authority learns as the journey runs: the roots the bridge
+ * creates, owned by alice under the task's project, and the sessions it
+ * reserves in them. The fixtures above seed both.
+ */
+const registry = { owners: new Map<string, WorkspaceOwner>(), placed: new Map<string, string>() }
+
 function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
+  registry.owners = new Map(Object.entries(WORKSPACE_OWNERS))
+  registry.placed = new Map(Object.entries(SESSION_WORKSPACES))
   const sessionAuthority = {
     reserveSession: vi.fn(async () => ({ state: "reserved" })),
     registerRuntimeSession: vi.fn(async () => ({})),
@@ -59,17 +99,44 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
     authorizeRuntimeSession: vi.fn(async () => undefined),
     runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
   }
+  const createdRoot = (workspaceId: string, orgId: string, projectId: string) => {
+    registry.owners.set(workspaceId, { userId: "alice", actorId: "actor:alice", orgId, projectId })
+    return { workspace_id: workspaceId }
+  }
   const services = {
     auth: { config: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" } },
     relay: { relayUrl: "https://relay.test", resolverToken: "resolver-token" },
     sandbox,
+    defaultHomeRegion: "us-east",
+    projectionStore: {
+      session_metas: vi.fn(async () => new Map()),
+      put_session_meta: vi.fn(async () => undefined),
+      delete_session_meta: vi.fn(async () => undefined),
+    },
     authority: {
       resolveOrgId: vi.fn(async (auth: { user: { subject: string } }) => ORGS[auth.user.subject] ?? "org-unknown"),
       authorizeProject: vi.fn(async (auth: { user: { subject: string } }, args: { projectId: string }) =>
         ORGS[auth.user.subject] === "org-1" && args.projectId === "project-a" ? { ok: true, role: "admin", orgId: "org-1" } : { ok: false },
       ),
       authorizeSessionRead: vi.fn(async () => undefined),
-      resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => WORKSPACE_OWNERS[workspaceId]),
+      authorizeRuntimeSession: vi.fn(async (input: { actorId: string; sessionId: string; workspaceId: string }) => {
+        if (input.actorId !== "actor:alice" || registry.placed.get(input.sessionId) !== input.workspaceId) throw new Error("denied")
+      }),
+      resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => registry.owners.get(workspaceId)),
+      createCloudWorkspace: vi.fn(async (auth: { user: { subject: string } }, args: { workspaceId: string; projectId: string }) =>
+        createdRoot(args.workspaceId, ORGS[auth.user.subject] ?? "org-unknown", args.projectId),
+      ),
+      createRuntimeCloudWorkspace: vi.fn(async (_principal: unknown, args: { workspaceId: string; orgId: string; projectId: string }) =>
+        createdRoot(args.workspaceId, args.orgId, args.projectId),
+      ),
+      deleteWorkspace: vi.fn(async () => ({})),
+      deleteRuntimeWorkspace: vi.fn(async () => ({})),
+      reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string; workspaceId: string }) => {
+        registry.placed.set(intent.sessionId, intent.workspaceId)
+        return { ...intent, changed: true, state: "reserved" as const }
+      }),
+      beginSessionCompensation: vi.fn(async () => ({})),
+      completeSessionCompensation: vi.fn(async () => ({})),
       usersMe: vi.fn(async () => ({ user_id: "user-1" })),
       listOrgs: vi.fn(async () => [{ org_id: "org-1" }]),
       listWorkspaces: vi.fn(async () => []),
@@ -125,18 +192,47 @@ function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePo
   }
 }
 
+/**
+ * Only the two users sign in. A capability the Tasks door refuses falls
+ * through to the signed reader, and the default test adapter admits any
+ * bearer as a user, which would answer that refusal with a 200.
+ */
+function knownUsersAuthentication(): RequestAuthenticationAdapter {
+  const admitted = testRequestAuthenticationAdapter()
+  return {
+    descriptor: admitted.descriptor,
+    authenticate: async (request) => {
+      const bearer = bearerToken(request.headers.get("authorization"))
+      if (bearer !== undefined && !(bearer in ORGS)) {
+        throw new AuthenticationError(401, "invalid_credentials", "Authentication credential is invalid")
+      }
+      return await admitted.authenticate(request)
+    },
+  }
+}
+
 async function hostedApp(
   sandbox: Record<string, unknown> = {},
-  options: { signingEnv?: Record<string, string | undefined> } = {},
+  options: {
+    signingEnv?: Record<string, string | undefined>
+    passes?: SandboxPassRegister
+    authentication?: RequestAuthenticationAdapter
+    database?: D1Database
+    /** Built against the plane's services, which exist before the app does. */
+    bridge?: (services: ControlPlaneServices) => HostedTasksCompositionInput["bridge"]
+    cloudSelectedCapabilities?: boolean
+  } = {},
 ) {
   const base = plane(sandbox)
-  const authentication = testRequestAuthenticationAdapter()
+  const authentication = options.authentication ?? testRequestAuthenticationAdapter()
   const tasks = createHostedTasksComposition({
     services: base.services,
-    database: await database(),
+    database: options.database ?? (await database()),
     authentication,
-    bridge: reportingBridge,
+    bridge: options.bridge ? options.bridge(base.services) : reportingBridge,
+    ...(options.cloudSelectedCapabilities === undefined ? {} : { cloudSelectedCapabilities: options.cloudSelectedCapabilities }),
     ...(options.signingEnv ? { signingEnv: options.signingEnv } : {}),
+    ...(options.passes ? { passes: options.passes } : {}),
   })
   const app = createHostedCoreApp(base, {
     authentication,
@@ -161,7 +257,7 @@ async function hostedApp(
     },
     routeContributions: tasks.routeContributions,
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as Hono
-  return app
+  return Object.assign(app, { services: base.services })
 }
 
 const headers = (subject: string) => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
@@ -186,6 +282,7 @@ const PRESET = {
     name: "Review the diff",
     instructions: "Read the change before proposing one.",
     execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+    agentStartable: false,
     configurations: {
       primary: {
         harness: { id: "claude", access: "native" },
@@ -355,6 +452,13 @@ describe("hosted Tasks capability", () => {
     signingEnv,
   )
 
+  /** A cloud root's own grant, minted for the root rather than for any one session. */
+  const rootGrant = (signingEnv: Record<string, string | undefined>) =>
+    mintTasksCapability(
+      { userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root", operations: ["read", "create", "start"] },
+      signingEnv,
+    )
+
   const bearer = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" })
 
   test("reads and writes the project of its own workspace", async () => {
@@ -386,6 +490,23 @@ describe("hosted Tasks capability", () => {
 
     const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
     expect(((await listed.json()) as { items: [{ title: string }] }).items[0].title).toBe(TASK.input.title)
+  })
+
+  test("is refused once the register has revoked it, with nothing left to fall through to", async () => {
+    const signingEnv = await signing()
+    const passes = memorySandboxPassRegister()
+    const app = await hostedApp({}, { signingEnv, passes, authentication: knownUsersAuthentication() })
+    const { token } = await mintTasksCapability(
+      { userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root", operations: ["read"] },
+      signingEnv,
+      { register: passes },
+    )
+    expect((await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })).status).toBe(200)
+
+    await passes.revoke({ workspaceId: "ws_root", audience: TASKS_CAPABILITY_AUDIENCE, reason: "tasks_group_disabled" })
+    const refused = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(refused.status).toBe(401)
+    expect(await refused.json()).toMatchObject({ error: { message: "This request is not signed" } })
   })
 
   test("is refused when the workspace's owner is not the user the token names", async () => {
@@ -476,6 +597,73 @@ describe("hosted Tasks capability", () => {
     expect(((await listed.json()) as { items: unknown[] }).items).toHaveLength(1)
   })
 
+  test("minted for a root, records as provenance a session the control plane places in that root", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await rootGrant(signingEnv)
+    const create = (clientRequestId: string, createdFrom: { workspaceId: string | null; sessionId: string }) =>
+      app.request(`https://core.test${TASKS}/commands`, {
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({ clientRequestId, command: { ...TASK, input: { ...TASK.input, createdFrom } } }),
+      })
+
+    const own = await create("root-own", { workspaceId: "ws_root", sessionId: "ses_2" })
+    expect(own.status).toBe(200)
+    expect(await own.json()).toMatchObject({ result: { task: { createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } } } })
+
+    for (const [clientRequestId, forged] of [
+      ["root-sibling", { workspaceId: "ws_sibling", sessionId: "ses_sibling" }],
+      ["root-elsewhere", { workspaceId: "ws_root", sessionId: "ses_sibling" }],
+      ["root-stranger", { workspaceId: "ws_root", sessionId: "ses_stranger" }],
+    ] as const) {
+      const refused = await create(clientRequestId, forged)
+      expect(refused.status).toBe(403)
+      expect(await refused.json()).toMatchObject({
+        error: { message: "This session may record only a session of its own workspace as provenance" },
+      })
+    }
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
+    const items = ((await listed.json()) as { items: { createdFrom: unknown }[] }).items
+    expect(items).toHaveLength(1)
+    expect(items[0]?.createdFrom).toEqual({ workspaceId: "ws_root", sessionId: "ses_2" })
+  })
+
+  test("minted for a root, names the calling session at Start only when the control plane places it in that root", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await rootGrant(signingEnv)
+    await command(app, "alice", "owner-preset", { ...PRESET, input: { ...PRESET.input, agentStartable: true } })
+    const created = await command(app, "alice", "owner-task", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+    const preview = async (startedFrom: { workspaceId: string | null; sessionId: string }) =>
+      app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({
+          taskRevision: 1,
+          presetId: await presetId(app, "alice"),
+          presetRevision: 1,
+          slot: "primary",
+          attempt: 1,
+          continueFromPrevious: false,
+          startedFrom,
+        }),
+      })
+
+    // The stub bridge refuses every Start naming the principal it was handed,
+    // so its sentence is the proof the provenance was admitted.
+    expect(await (await preview({ workspaceId: "ws_root", sessionId: "ses_2" })).json()).toMatchObject({
+      error: { message: "principal actor:alice" },
+    })
+    const forged = await preview({ workspaceId: "ws_root", sessionId: "ses_sibling" })
+    expect(forged.status).toBe(403)
+    expect(await forged.json()).toMatchObject({
+      error: { message: "This session may record only a session of its own workspace as provenance" },
+    })
+  })
+
   test("cannot start a task the owner pointed at another project's workspace", async () => {
     const signingEnv = await signing()
     const app = await hostedApp({}, { signingEnv })
@@ -541,11 +729,37 @@ describe("hosted Tasks capability", () => {
     expect(await archived.json()).toMatchObject({ error: { message: expect.stringContaining("cannot reach this command") } })
   })
 
-  test("reaches Start as the workspace's owner", async () => {
+  test("is refused a preset nobody marked for agents before the bridge is reached", async () => {
     const signingEnv = await signing()
     const app = await hostedApp({}, { signingEnv })
     const { token } = await grant(signingEnv)
     await command(app, "alice", "owner-preset", PRESET)
+    const created = await command(app, "alice", "owner-task", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({
+        taskRevision: 1,
+        presetId: await presetId(app, "alice"),
+        presetRevision: 1,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+      }),
+    })
+    expect(preview.status).toBe(403)
+    expect(await preview.json()).toMatchObject({
+      error: { message: "Preset Review the diff is not marked as startable by agents; a person can mark it in Settings → Presets" },
+    })
+  })
+
+  test("reaches Start as the workspace's owner", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    await command(app, "alice", "owner-preset", { ...PRESET, input: { ...PRESET.input, agentStartable: true } })
     const created = await command(app, "alice", "owner-task", TASK)
     const taskId = (created.body.result as { task: { id: string } }).task.id
 
@@ -586,5 +800,266 @@ describe("hosted Tasks capability", () => {
     const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
     expect(listed.status).toBe(403)
     expect(await listed.json()).toMatchObject({ error: { message: "No read access to project project-a" } })
+  })
+})
+
+/**
+ * The whole path a hosted session's agent takes to a cloud machine, through
+ * the real routes, the real D1 store, the real hosted bridge, the real
+ * workspace store and the real sandbox manager over a fake driver. The
+ * authority is the fixture above, which learns each root the bridge creates.
+ */
+describe("hosted Tasks cloud start from inside a session", () => {
+  const PROJECT_REPO = "https://github.com/acme/importer.git"
+  const HARNESS = { id: "claude", access: "native" as const }
+  const MODEL = { providerID: "anthropic", modelID: "sonnet" }
+
+  async function signing() {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    return {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+  }
+
+  /** The endpoints a Start touches, answered per workspace so two roots cannot read each other's sessions. */
+  function fakeRuntime() {
+    type Message = { info: { id: string; role: string; sessionID: string }; parts: unknown[] }
+    const sessions = new Map<string, Map<string, Message[]>>()
+    runtime.request.mockImplementation(async (workspaceId: string, requestPath: string, init?: RequestInit) => {
+      const rows = sessions.get(workspaceId) ?? new Map<string, Message[]>()
+      sessions.set(workspaceId, rows)
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>
+      if (requestPath.startsWith("/session/capabilities")) {
+        return Response.json({
+          harness: HARNESS.id,
+          modelSelection: { status: "optional", models: [{ providerId: MODEL.providerID, modelId: MODEL.modelID, name: "Sonnet" }] },
+        })
+      }
+      if (requestPath.startsWith("/session?")) {
+        rows.set(String(body.id), [])
+        return Response.json({ id: String(body.id), directory: "/workspace" }, { status: 201 })
+      }
+      const message = /^\/session\/([^/]+)\/message$/.exec(requestPath)
+      if (message) {
+        const messages = rows.get(message[1])
+        return messages ? Response.json(messages) : Response.json({}, { status: 404 })
+      }
+      const prompt = /^\/session\/([^/]+)\/prompt_async$/.exec(requestPath)
+      if (prompt) {
+        const messages = rows.get(prompt[1])
+        if (!messages) return Response.json({}, { status: 404 })
+        const messageID = String(body.messageID)
+        const parts = Array.isArray(body.parts) ? body.parts : []
+        messages.push({
+          info: { id: messageID, role: "user", sessionID: prompt[1] },
+          parts: parts.map((part, index) => ({ ...(typeof part === "object" && part ? part : {}), id: `prt_${messageID}_${index}`, sessionID: prompt[1], messageID })),
+        })
+        return new Response(null, { status: 204 })
+      }
+      const config = /^\/session\/([^/]+)\/config$/.exec(requestPath)
+      if (config) {
+        return rows.has(config[1])
+          ? Response.json({ harness: HARNESS, model: MODEL, variant: null, instructions: "" })
+          : Response.json({}, { status: 404 })
+      }
+      const read = /^\/session\/([^/]+)$/.exec(requestPath)
+      if (read) return rows.has(read[1]) ? Response.json({ id: read[1] }) : Response.json({}, { status: 404 })
+      return Response.json({ error: { code: "unexpected", message: requestPath } }, { status: 500 })
+    })
+  }
+
+  function fakeDriver() {
+    const ensured = new Set<string>()
+    const driver: SandboxDriver = {
+      id: "test-driver",
+      metadata: {
+        driverRunsIn: ["node"],
+        hostStopBehavior: "suspends-host",
+        hostResumeBehavior: "same-host",
+        targetAccess: "relay",
+        secretBrokering: "none",
+        egressControl: "hosts-and-cidrs",
+        persistence: {
+          resume: "same-sandbox",
+          capture: "none",
+          clone: false,
+          captureSource: "not-applicable",
+          retention: "not-applicable",
+          restoreMount: "not-applicable",
+        },
+      },
+      ensureHost: async (input) => {
+        ensured.add(input.workspaceId)
+        return {
+          sandboxId: `sandbox_${input.workspaceId}`,
+          url: `https://runtime.test/${input.workspaceId}`,
+          hostId: `host_${input.workspaceId}`,
+          labels: input.labels,
+        }
+      },
+    }
+    return { driver, ensured }
+  }
+
+  beforeEach(async () => {
+    fakeRuntime()
+    for (const workspace of await listWorkspaces()) await deleteWorkspace(workspace.id)
+    await ensureWorkspace({
+      workspaceId: "project-a",
+      project_id: "project-a",
+      project_name: "importer",
+      workspace_name: "importer",
+      directory: "/workspace",
+      kind: "cloud",
+      repo_url: PROJECT_REPO,
+      git_branch: "main",
+      remote_directory: "/workspace",
+    })
+  })
+
+  const startBody = (presetId: string, startedFrom?: { workspaceId: string; sessionId: string }) => ({
+    taskRevision: 1,
+    presetId,
+    presetRevision: 1,
+    slot: "primary",
+    attempt: 1,
+    continueFromPrevious: false,
+    ...(startedFrom ? { startedFrom } : {}),
+  })
+
+  test("a root's agent starts a cloud task as the owner, and the chain stops one machine later", async () => {
+    const signingEnv = await signing()
+    const { driver, ensured } = fakeDriver()
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const rootEnvironment = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" }))
+    const controlPlane = await database()
+    const app = await hostedApp(
+      { sandboxManager, defaultDriver: "daytona" },
+      {
+        signingEnv,
+        database: controlPlane,
+        cloudSelectedCapabilities: true,
+        bridge: (services) => (principal, auth, owner) =>
+          createHostedTasksSessionBridge({
+            services,
+            runtimeClient: {},
+            principal,
+            auth,
+            owner,
+            selectedCapabilities: { prepare: async () => ({}), apply: async () => undefined },
+            capability: rootEnvironment,
+            sandboxEgress: { controlPlaneOrigin: "https://cp.test" },
+          }),
+      },
+    )
+    const authority = app.services.authority as unknown as Record<string, ReturnType<typeof vi.fn>>
+    const bearer = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" })
+    const rootGrant = (workspaceId: string, sessionId?: string) =>
+      mintTasksCapability(
+        {
+          userId: "alice",
+          orgId: "org-1",
+          projectId: "project-a",
+          workspaceId,
+          ...(sessionId ? { sessionId } : {}),
+          operations: ["read", "create", "start"],
+        },
+        signingEnv,
+      )
+
+    // The owner marks a cloud preset for agents from the app.
+    const preset = await command(app, "alice", "owner-preset", {
+      ...CLOUD_PRESET,
+      input: { ...CLOUD_PRESET.input, agentStartable: true },
+    })
+    expect(preset.status).toBe(200)
+    const cloudPresetId = (preset.body.result as { preset: { id: string } }).preset.id
+
+    // The root's own grant, minted for no one session, creates a task from a
+    // session the plane places in that root and starts it from there.
+    const { token: rootToken } = await rootGrant("ws_root")
+    const created = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(rootToken),
+      body: JSON.stringify({
+        clientRequestId: "root-create",
+        command: { ...TASK, input: { ...TASK.input, createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } } },
+      }),
+    })
+    expect(created.status).toBe(200)
+    const taskB = ((await created.json()) as { result: { task: { id: string } } }).result.task.id
+    const startedFrom = { workspaceId: "ws_root", sessionId: "ses_2" }
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskB}/start-preview`, {
+      method: "POST",
+      headers: bearer(rootToken),
+      body: JSON.stringify(startBody(cloudPresetId, startedFrom)),
+    })
+    expect(preview.status).toBe(200)
+    const previewed = ((await preview.json()) as { preview: { digest: string; available: boolean; blockers: unknown[]; placement: string } }).preview
+    expect(previewed).toMatchObject({ available: true, blockers: [], placement: "cloud" })
+
+    const started = await app.request(`https://core.test${TASKS}/tasks/${taskB}/sessions`, {
+      method: "POST",
+      headers: bearer(rootToken),
+      body: JSON.stringify({ ...startBody(cloudPresetId, startedFrom), clientRequestId: "root-start", previewDigest: previewed.digest, handoffText: null }),
+    })
+    const link = ((await started.json()) as { created: boolean; link: { sessionRef: { sessionId: string; workspaceId: string } } })
+    expect({ status: started.status, body: link }).toMatchObject({ status: 200, body: { created: true } })
+    const rootB = link.link.sessionRef.workspaceId
+    expect(rootB).toMatch(/^ws_[0-9a-f]{24}$/)
+
+    // Created as the owner's canonical actor through the runtime-principal
+    // path, never through the signed one, and reserved as the same actor.
+    expect(authority.createCloudWorkspace).not.toHaveBeenCalled()
+    expect(authority.createRuntimeCloudWorkspace).toHaveBeenCalledWith(
+      ALICE_PRINCIPAL,
+      expect.objectContaining({ workspaceId: rootB, orgId: "org-1", projectId: "project-a", repoUrl: PROJECT_REPO }),
+    )
+    expect(authority.reserveRuntimeSession).toHaveBeenCalledWith(
+      ALICE_PRINCIPAL,
+      expect.objectContaining({ sessionId: link.link.sessionRef.sessionId, workspaceId: rootB }),
+    )
+    expect(rootEnvironment).toHaveBeenCalledWith({ userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: rootB })
+    expect([...ensured]).toEqual([rootB])
+    // Preview and Start each re-admit the one root; neither creates a second.
+    const admissions = () =>
+      (authority.createRuntimeCloudWorkspace.mock.calls as [unknown, { workspaceId: string }][]).map(([, args]) => args.workspaceId)
+    expect(new Set(admissions())).toEqual(new Set([rootB]))
+    const admittedBeforeHop = admissions().length
+
+    // The link says an agent started it, from the session it named, on a
+    // cloud machine — which is what the per-project cap counts.
+    const links = await createD1TasksStore({ database: controlPlane }).links.listAgentStartedCloud("org-1", "project-a")
+    expect(links).toMatchObject([
+      { taskId: taskB, startedBy: "agent", placement: "cloud", startedFrom, sessionRef: link.link.sessionRef },
+    ])
+
+    // The new root's own session creates a task and asks to start it: two
+    // machines from the person, and refused before anything is allocated.
+    const { token: hopToken } = await rootGrant(rootB, link.link.sessionRef.sessionId)
+    const chained = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(hopToken),
+      body: JSON.stringify({
+        clientRequestId: "hop-create",
+        command: { ...TASK, input: { ...TASK.input, title: "Two hops out", createdFrom: link.link.sessionRef } },
+      }),
+    })
+    expect(chained.status).toBe(200)
+    const taskC = ((await chained.json()) as { result: { task: { id: string } } }).result.task.id
+
+    const refused = await app.request(`https://core.test${TASKS}/tasks/${taskC}/start-preview`, {
+      method: "POST",
+      headers: bearer(hopToken),
+      body: JSON.stringify(startBody(cloudPresetId, link.link.sessionRef)),
+    })
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({
+      error: { message: `Task ${taskC} is two machines away from the person who started this chain; start it from the app` },
+    })
+    expect(admissions()).toHaveLength(admittedBeforeHop)
+    expect([...ensured]).toEqual([rootB])
   })
 })

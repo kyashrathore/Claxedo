@@ -2712,15 +2712,7 @@ ToolRegistry.register({
       </div>
     )
 
-    return (
-      <BasicTool {...props} icon="brain" trigger={trigger()}>
-        <Show when={props.output}>
-          <ScrollableOutput component="tool-output">
-            <Markdown text={props.output!} />
-          </ScrollableOutput>
-        </Show>
-      </BasicTool>
-    )
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
   },
 })
 

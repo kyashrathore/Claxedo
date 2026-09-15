@@ -14,6 +14,8 @@ function bearer(value: string | undefined) {
 /** Stateless gateway route. Durable auth and token refresh stay behind the injected owners. */
 export function HostedMcpGatewayRoutes(input: {
   env: Record<string, string | undefined>
+  /** The pass register's answer for a well-signed token; absent on a deployment that keeps no register. */
+  revoked?: (jti: string) => Promise<boolean>
   authorize(scope: McpGatewayTokenScope): Promise<{ resource: string } | undefined>
   resolveConnection(scope: McpGatewayTokenScope): Promise<ResolvedMcpConnection>
   reportAuthFailure?(scope: McpGatewayTokenScope, connectionId: string): Promise<void>
@@ -25,7 +27,12 @@ export function HostedMcpGatewayRoutes(input: {
     if (!credential) return c.json({ code: "mcp_gateway_unauthorized" }, 401)
     let scope: McpGatewayTokenScope
     try {
-      scope = await verifyMcpGatewayToken(credential, { integrationId: c.req.param("integrationId") }, input.env)
+      scope = await verifyMcpGatewayToken(
+        credential,
+        { integrationId: c.req.param("integrationId") },
+        input.env,
+        input.revoked ? { revoked: input.revoked } : {},
+      )
     } catch (cause) {
       // A deployment without its verification key is broken, not being probed:
       // answer 503 and say so in the log, instead of the 401 every harness

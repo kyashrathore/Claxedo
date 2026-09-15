@@ -22,6 +22,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Log out",
     "settings.general.account.logout.description": "Sign out of your Claxedo account",
     "settings.general.account.logout.button": "Log out",
+    "settings.general.account.agents.title": "Agents may act on my other machines",
+    "settings.general.account.agents.description": "An agent in a session may start tasks on new cloud machines.",
+    "settings.general.account.agents.unavailable": "Agent settings are unavailable right now.",
 
     // Connected applications
     "settings.general.section.connectedApps": "Connected applications",
@@ -41,6 +44,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "退出登录",
     "settings.general.account.logout.description": "退出您的 Claxedo 账户",
     "settings.general.account.logout.button": "退出登录",
+    "settings.general.account.agents.title": "允许代理在我的其他机器上操作",
+    "settings.general.account.agents.description": "会话中的代理可以在新的云端机器上启动任务。",
+    "settings.general.account.agents.unavailable": "暂时无法获取代理设置。",
 
     // Connected applications
     "settings.general.section.connectedApps": "已连接的应用",
@@ -60,6 +66,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "登出",
     "settings.general.account.logout.description": "登出您的 Claxedo 帳戶",
     "settings.general.account.logout.button": "登出",
+    "settings.general.account.agents.title": "允許代理在我的其他機器上操作",
+    "settings.general.account.agents.description": "工作階段中的代理可以在新的雲端機器上啟動任務。",
+    "settings.general.account.agents.unavailable": "暫時無法取得代理設定。",
 
     // Connected applications
     "settings.general.section.connectedApps": "已連接的應用程式",
@@ -79,6 +88,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "ログアウト",
     "settings.general.account.logout.description": "Claxedoアカウントからログアウト",
     "settings.general.account.logout.button": "ログアウト",
+    "settings.general.account.agents.title": "エージェントが他のマシンで操作できるようにする",
+    "settings.general.account.agents.description": "セッション内のエージェントが新しいクラウドマシンでタスクを開始できます。",
+    "settings.general.account.agents.unavailable": "エージェント設定は現在利用できません。",
 
     // Connected applications
     "settings.general.section.connectedApps": "連携アプリケーション",
@@ -98,6 +110,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "로그아웃",
     "settings.general.account.logout.description": "Claxedo 계정에서 로그아웃",
     "settings.general.account.logout.button": "로그아웃",
+    "settings.general.account.agents.title": "에이전트가 내 다른 머신에서 작업하도록 허용",
+    "settings.general.account.agents.description": "세션의 에이전트가 새 클라우드 머신에서 작업을 시작할 수 있습니다.",
+    "settings.general.account.agents.unavailable": "에이전트 설정을 지금은 사용할 수 없습니다.",
 
     // Connected applications
     "settings.general.section.connectedApps": "연결된 애플리케이션",
@@ -117,6 +132,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Abmelden",
     "settings.general.account.logout.description": "Von Ihrem Claxedo-Konto abmelden",
     "settings.general.account.logout.button": "Abmelden",
+    "settings.general.account.agents.title": "Agenten dürfen auf meinen anderen Maschinen handeln",
+    "settings.general.account.agents.description": "Ein Agent in einer Sitzung darf Aufgaben auf neuen Cloud-Maschinen starten.",
+    "settings.general.account.agents.unavailable": "Agenten-Einstellungen sind gerade nicht verfügbar.",
 
     // Connected applications
     "settings.general.section.connectedApps": "Verbundene Anwendungen",
@@ -136,6 +154,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Se deconnecter",
     "settings.general.account.logout.description": "Se deconnecter de votre compte Claxedo",
     "settings.general.account.logout.button": "Se deconnecter",
+    "settings.general.account.agents.title": "Les agents peuvent agir sur mes autres machines",
+    "settings.general.account.agents.description": "Un agent dans une session peut lancer des tâches sur de nouvelles machines cloud.",
+    "settings.general.account.agents.unavailable": "Les paramètres des agents sont indisponibles pour le moment.",
 
     // Connected applications
     "settings.general.section.connectedApps": "Applications connectees",
@@ -155,6 +176,9 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Cerrar sesion",
     "settings.general.account.logout.description": "Cerrar sesion de su cuenta Claxedo",
     "settings.general.account.logout.button": "Cerrar sesion",
+    "settings.general.account.agents.title": "Los agentes pueden actuar en mis otras máquinas",
+    "settings.general.account.agents.description": "Un agente en una sesión puede iniciar tareas en nuevas máquinas en la nube.",
+    "settings.general.account.agents.unavailable": "La configuración de agentes no está disponible ahora mismo.",
 
     // Connected applications
     "settings.general.section.connectedApps": "Aplicaciones conectadas",

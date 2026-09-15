@@ -102,6 +102,19 @@ export type LinkStoreOperations = {
   /** Every attempt of every slot for the task, newest attempt first within a slot. */
   listByTask(scopeId: string, taskId: string): Promise<readonly TaskSessionLink[]>
   /**
+   * The link whose session this is. A session id is derived from its origin,
+   * so at most one link in a scope names it; undefined when no Start created
+   * the session, which is how an ordinary session is told apart from a root
+   * a task was started on.
+   */
+  bySession(scopeId: string, sessionId: string): Promise<TaskSessionLink | undefined>
+  /**
+   * Every link in the project's tasks that an agent started in the cloud:
+   * `startedBy` agent and `placement` cloud, archived tasks included, because
+   * the machine a link names is not released by archiving the task.
+   */
+  listAgentStartedCloud(scopeId: string, projectId: string): Promise<readonly TaskSessionLink[]>
+  /**
    * Compare-and-set on `(scopeId, taskId, slot, attempt)`. An occupied origin
    * is never overwritten; the stored link comes back so the caller can decide
    * whether two clients converged on one session or collided on two.

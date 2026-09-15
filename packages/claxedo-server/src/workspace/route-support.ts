@@ -96,6 +96,8 @@ export type WorkspaceRouteOptions = {
   prepareRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   /** Build-composed feature provisioning that must settle before a signed runtime is handed to the caller. */
   provisionRuntime?: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  /** Build-composed withdrawal of what `prepareRuntime` issued a cloud root, once its workspace is deleted. */
+  releaseRuntime?: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
    * Entitlement choke point (ADR 014 §5, adversarial review): hosted
    * cloud-workspace capability is paid at BOTH

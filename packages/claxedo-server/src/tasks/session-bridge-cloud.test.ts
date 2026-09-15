@@ -32,7 +32,7 @@ import {
   type Task,
 } from "@claxedo/tasks"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
-import { createHostedTasksSessionBridge } from "./session-bridge"
+import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { TasksRootIdentity } from "./root-capability"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -161,6 +161,16 @@ function services(sandboxManager: SandboxManager | undefined) {
       created.delete(args.workspaceId)
       return {}
     }),
+    createRuntimeCloudWorkspace: vi.fn(
+      async (_principal: unknown, args: { workspaceId: string; orgId: string; projectId: string; displayName: string }) => {
+        created.set(args.workspaceId, { projectId: args.projectId, displayName: args.displayName })
+        return { workspace_id: args.workspaceId }
+      },
+    ),
+    deleteRuntimeWorkspace: vi.fn(async (_principal: unknown, args: { workspaceId: string }) => {
+      created.delete(args.workspaceId)
+      return {}
+    }),
   }
   const projectionStore = {
     session_metas: vi.fn(async () => new Map()),
@@ -193,19 +203,32 @@ function selectedCapabilities() {
   }
 }
 
+const OWNER = { userId: "usr_owner", actorId: "act_owner", orgId: "org", projectId: PROJECT }
+const OWNER_PRINCIPAL = { principalKind: "user", actorId: OWNER.actorId, actorKind: "human" }
+
+/**
+ * Who the Tasks actor was minted from: the signed person (the app's own
+ * Start), the workspace owner a grant resolved to (a session's agent), or
+ * nobody this host can name.
+ */
+type Identity = Pick<HostedTasksSessionBridgeInput, "auth" | "owner">
+
+const signedPerson: Identity = {
+  auth: () => ({ user: { subject: "owner" }, principal: { userId: OWNER.userId } }) as unknown as SignedControlPlaneAuth,
+}
+const grantOwner: Identity = { owner: () => OWNER }
+
 function bridge(
   composition: ReturnType<typeof services>,
   port: ReturnType<typeof selectedCapabilities> | null = selectedCapabilities(),
   capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>,
+  identity: Identity = signedPerson,
 ) {
   return createHostedTasksSessionBridge({
     services: composition.value,
     runtimeClient: {},
-    principal: async () => ({ principalKind: "user", actorId: "act_owner", actorKind: "human" }),
-    auth: () => ({
-      user: { subject: "owner" },
-      principal: { userId: "usr_owner" },
-    }) as unknown as SignedControlPlaneAuth,
+    principal: async () => ({ principalKind: "user", actorId: OWNER.actorId, actorKind: "human" }),
+    ...identity,
     ...(port ? { selectedCapabilities: port } : {}),
     ...(capability ? { capability } : {}),
     sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test", extraHosts: ["registry.acme.test"] },
@@ -221,6 +244,7 @@ function cloudPreset(): Preset {
     name: "Isolated review",
     instructions: "Read before you write.",
     execution: { placement: "cloud", capabilities: { mode: "selected", plugins: [], skills: [] } },
+    agentStartable: false,
     configurations: { primary: { harness: HARNESS, model: MODEL, effort: "high" } },
     archivedAt: null,
     createdAt: 1,
@@ -510,15 +534,126 @@ describe("hosted tasks cloud roots", () => {
     await bridge(composition, selectedCapabilities(), capability).preview(previewCommand("tsk_one"))
 
     // The grant names the workspace's owner as the authority records them, not
-    // the token subject the Tasks actor carries; the signed identity travels
-    // beside it, because what the project consented to is read as that caller.
+    // the token subject the Tasks actor carries.
     expect(capability).toHaveBeenCalledWith({
       userId: "usr_owner",
       orgId: "org",
       projectId: PROJECT,
       workspaceId: (await rootOf("tsk_one"))?.id,
-    }, expect.objectContaining({ principal: { userId: "usr_owner" } }))
+    })
     expect(environments[0]).toMatchObject({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" })
+  })
+
+  test("allocates a root for a grant's resolved owner through the runtime-principal path, as that owner", async () => {
+    runtime()
+    const { driver } = fakeDriver()
+    const seen: SandboxDriverEnsureInput[] = []
+    const sandboxManager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore(),
+      driver: {
+        ...driver,
+        ensureHost: async (input) => {
+          seen.push(input)
+          return driver.ensureHost(input)
+        },
+      },
+    })
+    const composition = services(sandboxManager)
+    const capability = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" }))
+
+    const { preview, started } = await start(bridge(composition, selectedCapabilities(), capability, grantOwner), "tsk_one")
+    expect(preview.blockers).toEqual([])
+    expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+
+    const root = await rootOf("tsk_one")
+    expect(started.session.sessionRef.workspaceId).toBe(root?.id)
+    // No signed principal exists for a grant, and none is fabricated: the
+    // authority is asked as the owner's canonical actor, under the owner's
+    // organization and the task's project.
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+    expect(composition.authority.createRuntimeCloudWorkspace).toHaveBeenCalledWith(OWNER_PRINCIPAL, {
+      workspaceId: root?.id,
+      orgId: OWNER.orgId,
+      projectId: PROJECT,
+      displayName: "Fix tsk_one (primary, attempt 1)",
+      repoUrl: REPO,
+      repoName: "importer",
+      gitBranch: "main",
+      homeRegion: "us-east",
+    })
+    expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(OWNER_PRINCIPAL, expect.objectContaining({
+      workspaceId: root?.id,
+    }))
+    // The new root's own grant names the same owner, so the chain of grants
+    // never changes hands.
+    expect(capability).toHaveBeenCalledWith({ userId: OWNER.userId, orgId: OWNER.orgId, projectId: PROJECT, workspaceId: root?.id })
+    expect(seen.length).toBeGreaterThan(0)
+    for (const ensure of seen) {
+      expect(ensure.workspaceId).toBe(root?.id)
+      expect(ensure.env).toMatchObject({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" })
+      expect(ensure.net?.mode).toBe("restricted")
+      expect(ensure.net?.hosts).toEqual(expect.arrayContaining(["relay.claxedo.test", "cp.claxedo.test", "github.com", "registry.acme.test"]))
+    }
+  })
+
+  test("discards a root the owner path admitted through the same path when its sandbox fails", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver({
+      ensureHost: async () => {
+        throw new Error("the driver is out of quota")
+      },
+    })
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+
+    const previewed = await bridge(composition, selectedCapabilities(), undefined, grantOwner).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: expect.stringContaining("could not be provisioned") },
+    ])
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.created.size).toBe(0)
+    expect(composition.authority.deleteRuntimeWorkspace).toHaveBeenCalledWith(OWNER_PRINCIPAL, {
+      workspaceId: await originCloudWorkspaceId(startOriginId("org", "tsk_one", slot, 1)),
+    })
+    expect(composition.authority.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("refuses an actor that is neither signed nor a grant's resolved owner before any sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+
+    const previewed = await bridge(composition, selectedCapabilities(), undefined, {}).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(false)
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: expect.stringContaining("This caller may not create a cloud workspace here") },
+    ])
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+    expect(composition.authority.createRuntimeCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("refuses a grant's owner on an authority that cannot create a workspace for a runtime principal", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const { createRuntimeCloudWorkspace: _absent, ...authority } = composition.authority
+    const value = { ...(composition.value as unknown as Record<string, unknown>), authority } as unknown as ControlPlaneServices
+
+    const previewed = await bridge({ ...composition, value }, selectedCapabilities(), undefined, grantOwner).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: expect.stringContaining("cannot create a cloud root for a session's grant") },
+    ])
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
   })
 
   test("refuses a cloud root on a deployment that cannot project a capability set, before any sandbox exists", async () => {

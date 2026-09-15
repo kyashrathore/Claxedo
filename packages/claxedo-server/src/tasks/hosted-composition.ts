@@ -8,8 +8,9 @@ import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/server-cor
 import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
-import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityOwner, TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
+import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { signedOrError } from "../workspace/route-support"
 import { verifyTasksCapability } from "./capability"
 import { createD1TasksStore } from "./d1-store"
@@ -26,9 +27,10 @@ export type HostedTasksCompositionInput = {
    * Built here rather than passed in, because the bridge has to reserve each
    * session — and create a cloud root's own workspace — as the person who
    * started it, and only this composition holds the registry that maps a Tasks
-   * actor back to that person.
+   * actor back to that person: the signed request it was minted from, or the
+   * workspace owner its grant resolved to.
    */
-  bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth) => TasksSessionBridgePort
+  bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth, owner: TasksGrantOwner) => TasksSessionBridgePort
   /**
    * Whether this deployment can project a cloud root's selected capability
    * set. It is the build's Agent Plugins wiring, not a runtime flag: an
@@ -43,10 +45,15 @@ export type HostedTasksCompositionInput = {
    * serves Tasks to signed callers only.
    */
   signingEnv?: Record<string, string | undefined>
+  /** The register a minted capability is checked against, so a revoked one is refused before its expiry. */
+  passes?: SandboxPassRegister
 }
 
 /** The signed request a Tasks actor was minted from, for authority calls that act as the caller. */
 export type TasksSignedAuth = (actor: TasksActor) => SignedControlPlaneAuth | undefined
+
+/** The workspace owner a Tasks actor's grant resolved to, for an actor minted from a grant rather than a signature. */
+export type TasksGrantOwner = (actor: TasksActor) => TasksCapabilityOwner | undefined
 
 /**
  * The runtime principal Tasks dispatches as. Start reserves and creates a
@@ -82,10 +89,31 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
   // Both halves or neither: a grant whose owner this deployment cannot look
   // up would have to be believed on its own claims, so it is not accepted at
   // all.
+  // A root's grant names its calling session in a request; whether that
+  // session lives in the root is the session authority's answer for the
+  // owner, the same one that opens a linked session.
+  const sessions = authority.authorizeRuntimeSession?.bind(authority)
   const capability: TasksCapabilityPort | undefined = signingEnv && owners
     ? {
-        verify: async (token) => await verifyTasksCapability(token, signingEnv).catch(() => undefined),
+        verify: async (token) =>
+          await verifyTasksCapability(token, signingEnv, input.passes ? { revoked: input.passes.revoked } : {})
+            .catch(() => undefined),
         workspaceOwner: owners,
+        ...(sessions
+          ? {
+              ownerMayReadSession: async (owner, session) =>
+                session.workspaceId === null
+                  ? false
+                  : await sessions({
+                      principalKind: "user",
+                      actorId: owner.actorId,
+                      actorKind: "human",
+                      sessionId: session.sessionId,
+                      workspaceId: session.workspaceId,
+                      action: "read",
+                    }).then(() => true, () => false),
+            }
+          : {}),
       }
     : undefined
   const identity = signedTasksIdentity({
@@ -100,13 +128,21 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
   const placements: TasksHostCapabilities["placements"] = input.services.sandbox.sandboxManager
     ? ["local", "cloud"]
     : ["local"]
+  const store = createD1TasksStore({ database: input.database })
   return {
     routeContributions: [
       tasksRouteContribution({
-        store: createD1TasksStore({ database: input.database }),
+        store,
         authorization: identity.authorization,
         authenticate: identity.authenticate,
-        bridge: identity.bridge(input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor))),
+        bridge: identity.bridge(
+          input.bridge(
+            identity.runtimePrincipal,
+            (actor) => identity.principals.authOf(actor),
+            (actor) => identity.principals.capabilityOf(actor)?.owner,
+          ),
+          store,
+        ),
         capabilities: createTasksCapabilities({
           placements,
           // A root's own machine is half of the promise; the other half is the

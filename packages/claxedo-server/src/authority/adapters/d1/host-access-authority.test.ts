@@ -33,10 +33,10 @@ const MIGRATIONS = [
   "0014_host_workspace_assignments.sql",
   "0015_drop_local_host_links.sql",
   "0016_host_session_authority.sql",
-  "0026_workspace_org_member_visible.sql",
-  "0027_host_connect.sql",
-  "0028_workspace_host_assignment_revision.sql",
-  "0029_normalize_user_hosted_directories.sql",
+  "0028_workspace_org_member_visible.sql",
+  "0029_host_connect.sql",
+  "0030_workspace_host_assignment_revision.sql",
+  "0031_normalize_user_hosted_directories.sql",
 ].map(migrationPath)
 
 function migrationPath(name: string) {
@@ -1697,7 +1697,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     for (const [workspaceId, directory] of Object.entries(legacy)) {
       await input.database.prepare("update workspaces set remote_directory = ? where workspace_id = ?").bind(directory, workspaceId).run()
     }
-    await input.applyMigration("0029_normalize_user_hosted_directories.sql")
+    await input.applyMigration("0031_normalize_user_hosted_directories.sql")
     const stored = await input.database.prepare(
       "select workspace_id, remote_directory from workspaces where workspace_id in (select workspace_id from host_workspace_assignments) order by workspace_id",
     ).all<{ workspace_id: string; remote_directory: string }>()

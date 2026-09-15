@@ -329,6 +329,12 @@ export function HostedAgentPluginRoutes(input: {
   mcpClientMetadata?: HostedMcpClientMetadata
   /** The signed user's own runtime world for a machine they own; absent in compositions without one. */
   selfRuntime?: AgentPluginSelfRuntimeReader
+  /**
+   * Runs after a first-party tool group's consent is committed, for the
+   * grants already issued under the old answer; the commit stands whatever
+   * this does, and its failure is reported as the reconciliation's.
+   */
+  builtInConsentChanged?: (auth: SignedControlPlaneAuth, groupId: string) => Promise<void>
 }) {
   const app = new Hono()
   const authenticate = async (request: Request) => {
@@ -379,9 +385,11 @@ export function HostedAgentPluginRoutes(input: {
     })
   }
 
-  const apply = async (revision: number) => {
+  const apply = async (revision: number, consent?: { auth: SignedControlPlaneAuth; groupId: string }) => {
     try {
-      return await input.reconcile.reconcile(revision)
+      const applied = await input.reconcile.reconcile(revision)
+      if (consent) await input.builtInConsentChanged?.(consent.auth, consent.groupId)
+      return applied
     } catch (cause) {
       return { state: "failed" as const, message: cause instanceof Error ? cause.message : "Agent Plugins reconciliation failed" }
     }
@@ -539,13 +547,13 @@ export function HostedAgentPluginRoutes(input: {
     }
     if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
       const groupId = builtinToolGroupId(body.pluginInstanceId)
-      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+      if (groupId === undefined || !input.builtIn.groups.some((group) => group.id === groupId)) {
         return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
       }
       // The built-in comes from no source: there is nothing to fetch, hash or
       // retain, so a choice about one of its groups is only ever the row.
       const committed = await input.activations.mutateUser(auth, body)
-      const applied = await apply(committed)
+      const applied = await apply(committed, { auth, groupId })
       return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
     }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
@@ -581,11 +589,11 @@ export function HostedAgentPluginRoutes(input: {
     }
     if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
       const groupId = builtinToolGroupId(body.pluginInstanceId)
-      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+      if (groupId === undefined || !input.builtIn.groups.some((group) => group.id === groupId)) {
         return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
       }
       const committed = await input.activations.mutateOrganizationDefault(auth, body)
-      const applied = await apply(committed)
+      const applied = await apply(committed, { auth, groupId })
       return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
     }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)

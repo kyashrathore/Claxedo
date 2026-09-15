@@ -26,6 +26,7 @@ export function presetDraft(overrides: Partial<PresetDraft> = {}): PresetDraft {
     instructions: overrides.instructions ?? "Work carefully.",
     execution: overrides.execution ?? { placement: "local", capabilities: { mode: "inherit-local" } },
     configurations: overrides.configurations ?? { primary: primaryConfiguration() },
+    agentStartable: overrides.agentStartable ?? false,
   }
 }
 
@@ -43,6 +44,7 @@ export function presetRow(input: Partial<Preset> & Pick<Preset, "id">): Preset {
     instructions: input.instructions ?? "",
     execution: input.execution ?? { placement: "local", capabilities: { mode: "inherit-local" } },
     configurations: input.configurations ?? { primary: primaryConfiguration() },
+    agentStartable: input.agentStartable ?? false,
     archivedAt: input.archivedAt ?? null,
     createdAt: input.createdAt ?? 1_000,
     updatedAt: input.updatedAt ?? 1_000,
@@ -99,6 +101,9 @@ export function linkRow(input: Partial<TaskSessionLink> & Pick<TaskSessionLink, 
     presetNameAtStart: input.presetNameAtStart ?? "Local preset",
     configurationDigest: input.configurationDigest ?? "c".repeat(64),
     handoffText: input.handoffText ?? null,
+    startedFrom: input.startedFrom ?? null,
+    startedBy: input.startedBy ?? "person",
+    placement: input.placement ?? "local",
     createdAt: input.createdAt ?? 2_000,
   }
 }

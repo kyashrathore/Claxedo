@@ -1,10 +1,13 @@
-import { type Component, type JSX, Show, createMemo } from "solid-js"
+import { type Component, type JSX, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
+import { Switch } from "@opencode-ai/ui/switch"
 import { useAccountPort } from "@/platform/account/account-provider"
+import type { AgentSettingsApi } from "@/features/settings/data/agent-settings-api"
 
 type AccountSettingsSectionProps = {
   t: (key: string) => string
+  agentSettings: AgentSettingsApi
 }
 
 const SettingsRow: Component<{
@@ -20,6 +23,56 @@ const SettingsRow: Component<{
       </div>
       <div class="flex-shrink-0">{props.children}</div>
     </div>
+  )
+}
+
+/**
+ * "Agents may act on my other machines". The switch shows what the control
+ * plane holds, never what was last clicked: a write is read back from its
+ * answer, and a refused write leaves the switch where the server left it.
+ */
+const AgentSettingsRow: Component<{ t: (key: string) => string; api: AgentSettingsApi }> = (props) => {
+  const [stored, { mutate }] = createResource(() => props.api.read())
+  const [writing, setWriting] = createSignal(false)
+  const [failure, setFailure] = createSignal<string>()
+
+  const unavailable = () => {
+    const error: unknown = stored.error
+    if (!error) return undefined
+    return error instanceof Error && error.message ? error.message : props.t("settings.general.account.agents.unavailable")
+  }
+  const checked = () => (unavailable() ? false : stored()?.crossMachineWrites ?? false)
+  const disabled = () => stored.loading || unavailable() !== undefined || writing()
+
+  const flip = async (crossMachineWrites: boolean) => {
+    if (disabled()) return
+    setWriting(true)
+    setFailure()
+    try {
+      mutate(await props.api.write({ crossMachineWrites }))
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : props.t("settings.general.account.agents.unavailable"))
+    } finally {
+      setWriting(false)
+    }
+  }
+
+  return (
+    <>
+      <SettingsRow
+        title={props.t("settings.general.account.agents.title")}
+        description={props.t("settings.general.account.agents.description")}
+      >
+        <div data-action="settings-account-agents-cross-machine">
+          <Switch hideLabel checked={checked()} disabled={disabled()} onChange={(value: boolean) => void flip(value)}>
+            {props.t("settings.general.account.agents.title")}
+          </Switch>
+        </div>
+      </SettingsRow>
+      <Show when={unavailable() ?? failure()}>
+        {(message) => <p role="alert" class="pb-3 text-12-regular text-icon-critical-base">{message()}</p>}
+      </Show>
+    </>
   )
 }
 
@@ -59,6 +112,9 @@ export const AccountSettingsSection: Component<AccountSettingsSectionProps> = (p
               <span class="text-12-regular text-text-weak">{info().name && info().email ? info().name : ""}</span>
             </SettingsRow>
           )}
+        </Show>
+        <Show when={account.state().status === "signed"}>
+          <AgentSettingsRow t={props.t} api={props.agentSettings} />
         </Show>
         <SettingsRow
           title={props.t("settings.general.account.logout.title")}

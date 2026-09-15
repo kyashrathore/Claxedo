@@ -224,7 +224,8 @@ export function createConnectInstances(input) {
       const home = await homeFor(options.id, options.cloneOf)
       const instance = current ?? { id: options.id, home, child: undefined, log: "", exit: undefined }
       instances.set(options.id, instance)
-      const args = ["connect", options.service === "fake-systemd" ? "--install-service" : "--foreground"]
+      // The developer's own desktop daemon may be live on this box; the fixture's host is a second machine beside it by design.
+      const args = ["connect", options.service === "fake-systemd" ? "--install-service" : "--foreground", "--alongside-desktop"]
       const tokenFile = path.join(home, "invitation.token")
       if (options.token) {
         await fs.writeFile(tokenFile, `${options.token}\n`, { mode: 0o600 })

@@ -65,6 +65,7 @@ describe("tasks service", () => {
     previewDigest: overrides.previewDigest ?? "digest-1",
     handoffText: overrides.handoffText ?? null,
     continueFromPrevious: overrides.continueFromPrevious ?? false,
+    ...(overrides.startedFrom ? { startedFrom: overrides.startedFrom } : {}),
   })
 
   describe("creation and the child set", () => {
@@ -463,6 +464,26 @@ describe("tasks service", () => {
       }])
     })
 
+    test("the session a start is asked from reaches the bridge, and what the bridge says started it is what the link records", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      const from = { sessionId: "ses_caller", workspaceId: "workspace-1" }
+      await tasks.startPreview(ACTOR, task.id, {
+        taskRevision: task.revision,
+        presetId: preset.id,
+        presetRevision: preset.revision,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+        startedFrom: from,
+      })
+      expect(bridge.previews[0]?.startedFrom).toEqual(from)
+      await tasks.start(ACTOR, task.id, start(task, { startedFrom: from }))
+      expect(bridge.starts[0]?.startedFrom).toEqual(from)
+      const link = await store.links.getCurrent(ACTOR.scopeId, task.id, "primary")
+      expect(link?.startedBy).toBe("person")
+      expect(link?.startedFrom).toBeNull()
+    })
+
     test("re-requesting the live attempt returns the same session without starting another", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       const first = await tasks.start(ACTOR, task.id, start(task))
@@ -682,6 +703,9 @@ describe("tasks service", () => {
             presetNameAtStart: preset.name,
             configurationDigest: await startConfigurationDigest({ preset, slot: "primary" }),
             handoffText: null,
+            startedFrom: null,
+            startedBy: "person",
+            placement: "local",
             createdAt: 10,
           })
           return bridge.start(command)
@@ -825,6 +849,9 @@ describe("tasks service", () => {
             presetNameAtStart: preset.name,
             configurationDigest: "another-configuration",
             handoffText: null,
+            startedFrom: null,
+            startedBy: "person",
+            placement: "local",
             createdAt: 10,
           })
           return started
@@ -886,6 +913,9 @@ describe("tasks service", () => {
             presetNameAtStart: preset.name,
             configurationDigest: digest,
             handoffText: null,
+            startedFrom: null,
+            startedBy: "person",
+            placement: "local",
             createdAt: 10,
             ...overrides,
           })

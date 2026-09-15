@@ -62,11 +62,15 @@ import {
 export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 
 const PRESET_COLUMNS =
-  "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, archived_at, created_at, updated_at"
+  "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, agent_startable, archived_at, created_at, updated_at"
 const TASK_COLUMNS =
   "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, created_from_session_id, created_from_workspace_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
-  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, created_at"
+  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, started_from_session_id, started_from_workspace_id, started_by, placement, created_at"
+/** `LINK_COLUMNS` qualified for a read that joins the task table. */
+const JOINED_LINK_COLUMNS = LINK_COLUMNS.split(", ")
+  .map((column) => `l.${column}`)
+  .join(", ")
 const RECEIPT_COLUMNS = "scope_id, client_request_id, command_name, request_hash, result, created_at"
 
 function presetValues(preset: Preset): unknown[] {
@@ -80,6 +84,7 @@ function presetValues(preset: Preset): unknown[] {
     row.instructions,
     row.execution,
     row.configurations,
+    row.agent_startable,
     row.archived_at,
     row.created_at,
     row.updated_at,
@@ -163,6 +168,10 @@ function linkValues(link: TaskSessionLink): unknown[] {
     row.preset_name_at_start,
     row.configuration_digest,
     row.handoff_text,
+    row.started_from_session_id,
+    row.started_from_workspace_id,
+    row.started_by,
+    row.placement,
     row.created_at,
   ]
 }
@@ -565,6 +574,32 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
               ` order by slot asc, attempt desc`,
           )
           .bind(scopeId, taskId)
+          .all<StoredLinkColumns>()
+        return rows.results.map(linkOfColumns)
+      },
+
+      async bySession(scopeId, sessionId) {
+        const pending = [...(unit?.overlay.links.values() ?? [])].find(
+          (link) => link.scopeId === scopeId && link.sessionRef.sessionId === sessionId,
+        )
+        if (pending) return pending
+        const row = await database
+          .prepare(`select ${LINK_COLUMNS} from task_session_links where scope_id = ? and session_id = ?`)
+          .bind(scopeId, sessionId)
+          .first<StoredLinkColumns>()
+        return row ? linkOfColumns(row) : undefined
+      },
+
+      async listAgentStartedCloud(scopeId, projectId) {
+        refuseListAfterWrite(unit, "agent-started links")
+        const rows = await database
+          .prepare(
+            `select ${JOINED_LINK_COLUMNS} from task_session_links l` +
+              ` join tasks t on t.scope_id = l.scope_id and t.task_id = l.task_id` +
+              ` where l.scope_id = ? and t.project_id = ? and l.started_by = 'agent' and l.placement = 'cloud'` +
+              ` order by l.created_at desc`,
+          )
+          .bind(scopeId, projectId)
           .all<StoredLinkColumns>()
         return rows.results.map(linkOfColumns)
       },

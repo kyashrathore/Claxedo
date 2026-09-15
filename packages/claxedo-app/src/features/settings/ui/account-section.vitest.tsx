@@ -4,6 +4,7 @@ import { createSignal } from "solid-js"
 import type { AccountPort, AccountState } from "@/platform/account/account-port"
 import { AccountPortProvider } from "@/platform/account/account-provider"
 import { AccountSettingsSection } from "./account-section"
+import type { AgentSettingsApi } from "@/features/settings/data/agent-settings-api"
 
 /**
  * The account surface, against a stubbed port.
@@ -22,12 +23,32 @@ function stubPort(state: AccountState, signOut = vi.fn(async () => {})): Account
   return { state: () => state, signIn: vi.fn(async () => {}), signOut, run: vi.fn(async () => undefined as never) }
 }
 
-function mount(port: AccountPort) {
+/** The control plane's agent setting, remembered so a write is read back by the next read. */
+function agentSettings(initial = false): AgentSettingsApi & { writes: boolean[] } {
+  let stored = initial
+  const writes: boolean[] = []
+  return {
+    writes,
+    read: async () => ({ crossMachineWrites: stored }),
+    write: async (settings) => {
+      writes.push(settings.crossMachineWrites)
+      stored = settings.crossMachineWrites
+      return settings
+    },
+  }
+}
+
+function mount(port: AccountPort, api: AgentSettingsApi = agentSettings()) {
   return render(() => (
     <AccountPortProvider port={port}>
-      <AccountSettingsSection t={(key) => key} />
+      <AccountSettingsSection t={(key) => key} agentSettings={api} />
     </AccountPortProvider>
   ))
+}
+
+const signed: AccountState = {
+  status: "signed",
+  identity: { userId: "user_1", email: "person@example.com", displayName: "A Person", method: "Google" },
 }
 
 afterEach(() => {
@@ -93,6 +114,70 @@ describe("AccountSettingsSection", () => {
     finishSignOut()
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/login", { replace: true }))
     expect(order).toEqual(["signOut", "signedOut", "navigate"])
+  })
+
+  test("shows agents acting on other machines as off until the control plane says otherwise", async () => {
+    mount(stubPort(signed))
+
+    const control = await screen.findByRole("switch", { name: "settings.general.account.agents.title" })
+    expect(screen.getByText("settings.general.account.agents.description")).toBeTruthy()
+    await waitFor(() => expect(control.getAttribute("aria-disabled")).toBeNull())
+    expect(control.getAttribute("aria-checked")).toBe("false")
+  })
+
+  test("turning it on writes the account's setting and shows what the control plane stored", async () => {
+    const api = agentSettings(false)
+    mount(stubPort(signed), api)
+
+    const control = await screen.findByRole("switch", { name: "settings.general.account.agents.title" })
+    await waitFor(() => expect(control.getAttribute("aria-disabled")).toBeNull())
+    fireEvent.click(control)
+
+    await waitFor(() => expect(api.writes).toEqual([true]))
+    await waitFor(() => expect(control.getAttribute("aria-checked")).toBe("true"))
+  })
+
+  test("a setting the control plane holds on is shown on", async () => {
+    mount(stubPort(signed), agentSettings(true))
+
+    const control = await screen.findByRole("switch", { name: "settings.general.account.agents.title" })
+    await waitFor(() => expect(control.getAttribute("aria-checked")).toBe("true"))
+  })
+
+  test("a setting that cannot be read is said to be unavailable, and the switch cannot be flipped", async () => {
+    const writes: boolean[] = []
+    mount(stubPort(signed), {
+      read: async () => {
+        throw new Error("Agent settings are unavailable")
+      },
+      write: async (settings) => {
+        writes.push(settings.crossMachineWrites)
+        return settings
+      },
+    })
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Agent settings are unavailable")
+    const control = screen.getByRole("switch", { name: "settings.general.account.agents.title" })
+    expect(control.getAttribute("aria-disabled")).toBe("true")
+    fireEvent.click(control)
+    await Promise.resolve()
+    expect(writes).toEqual([])
+  })
+
+  test("a refused write keeps the switch where the control plane left it and says why", async () => {
+    mount(stubPort(signed), {
+      read: async () => ({ crossMachineWrites: false }),
+      write: async () => {
+        throw new Error("Canonical application identity is required")
+      },
+    })
+
+    const control = await screen.findByRole("switch", { name: "settings.general.account.agents.title" })
+    await waitFor(() => expect(control.getAttribute("aria-disabled")).toBeNull())
+    fireEvent.click(control)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Canonical application identity is required")
+    expect(control.getAttribute("aria-checked")).toBe("false")
   })
 
   test("reads the account reactively, not once at mount", async () => {

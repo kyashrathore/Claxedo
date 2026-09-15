@@ -20,6 +20,7 @@ import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { configureRuntimeGitAuth } from "./git-auth"
+import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import {
   sandboxLeaseEnv,
@@ -139,14 +140,26 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const opencodeRuntime = harness?.kind === "native" && harness.harnessId === "opencode"
     ? createWorkspaceOpenCodeRuntime(targetDirectory)
     : undefined
+  // The owner the control plane launched this root for, presented on the
+  // runtime's own session calls. Its unverified `user_id` names the actor in
+  // the MCP audit trail; nothing here trusts it for more than that.
+  const ownerGrant = workspaceRuntimeOwnerGrant(env)
   // One issuer per runtime process: it mints the bearer every session this
   // runtime launches carries, and its `verify` is both the endpoint's admission
   // check and the runtime's proof that the caller is a harness it started.
-  const firstPartyMcp = createRuntimeCredentialIssuer({ runtimeId: randomUUID(), workspaceId: workspaceId(env) })
+  const firstPartyMcp = createRuntimeCredentialIssuer({
+    runtimeId: randomUUID(),
+    workspaceId: workspaceId(env),
+    ...(ownerGrant?.userId ? { userId: ownerGrant.userId } : {}),
+  })
   // What this root's project consented to, as the control plane wrote it at
   // launch. A sandbox cannot ask again, and a variable that never arrived is
   // not consent, so an absent one leaves every group off.
   const enabledToolGroups = workspaceRuntimeMcpToolGroups(env) ?? []
+  // Renewed for as long as the control plane will renew it; the host has no
+  // later moment to start this at, and the timer holds nothing open.
+  const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
+  tasks?.start()
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
@@ -173,7 +186,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
-        tasks: workspaceRuntimeTasksGrant(env),
+        tasks: () => tasks?.current(),
+        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current() } : {}),
       }),
     ],
   }

@@ -175,6 +175,7 @@ function presetOf(ctx: DecodeContext, value: unknown, path: string): Preset {
     instructions: ctx.read.string(row?.instructions, `${path}.instructions`) ?? "",
     execution: decodeExecution(ctx, row?.execution, `${path}.execution`),
     configurations: decodeConfigurations(ctx, row?.configurations, `${path}.configurations`),
+    agentStartable: ctx.read.boolean(row?.agentStartable, `${path}.agentStartable`) ?? false,
     archivedAt: nullableInteger(ctx, row?.archivedAt, `${path}.archivedAt`),
     createdAt: ctx.read.integer(row?.createdAt, `${path}.createdAt`) ?? 0,
     updatedAt: ctx.read.integer(row?.updatedAt, `${path}.updatedAt`) ?? 0,

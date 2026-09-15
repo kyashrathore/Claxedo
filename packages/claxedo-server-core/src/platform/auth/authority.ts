@@ -3,6 +3,7 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
 import type {
   AuthorizeRuntimePrivateSessionInput,
+  PrivateSessionRuntimePrincipal,
   RegisterRuntimePrivateSessionInput,
 } from "./private-session-authority"
 
@@ -393,6 +394,32 @@ export type WorkspaceAuthority = {
       homeRegion?: string
     },
   ) => Promise<unknown>
+  /**
+   * A cloud workspace created for a person who did not sign the request: the
+   * canonical actor a credential this control plane minted resolved to, as
+   * `reserveRuntimeSession` takes one.
+   *
+   * Optional because only a deployment that resolves such credentials to an
+   * owner can name one, and a caller holding none refuses the creation rather
+   * than substituting a signed principal it does not have. `orgId` and
+   * `projectId` are the resolved owner's, and the adapter holds the principal
+   * to that project as strictly as it holds a signed creator.
+   */
+  createRuntimeCloudWorkspace?: (
+    principal: PrivateSessionRuntimePrincipal,
+    args: {
+      workspaceId: string
+      orgId: string
+      projectId: string
+      displayName: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      homeRegion?: string
+    },
+  ) => Promise<unknown>
+  /** The undo of `createRuntimeCloudWorkspace`, as the same principal. */
+  deleteRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<unknown>
   grantWorkspaceShare: (
     auth: SignedControlPlaneAuth,
     args: {

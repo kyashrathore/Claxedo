@@ -191,6 +191,29 @@ function operations(state: State): TasksStoreOperations {
           .sort((left, right) => (left.slot === right.slot ? right.attempt - left.attempt : left.slot < right.slot ? -1 : 1))
           .map((link) => copy(link))
       },
+      async bySession(scopeId, sessionId) {
+        const link = [...state.links.values()].find(
+          (candidate) => candidate.scopeId === scopeId && candidate.sessionRef.sessionId === sessionId,
+        )
+        return link ? copy(link) : undefined
+      },
+      async listAgentStartedCloud(scopeId, projectId) {
+        const inProject = new Set(
+          tasksOf(scopeId)
+            .filter((task) => task.projectId === projectId)
+            .map((task) => task.id),
+        )
+        return [...state.links.values()]
+          .filter(
+            (link) =>
+              link.scopeId === scopeId
+              && inProject.has(link.taskId)
+              && link.startedBy === "agent"
+              && link.placement === "cloud",
+          )
+          .sort((left, right) => right.createdAt - left.createdAt)
+          .map((link) => copy(link))
+      },
       async insert(link) {
         const id = rowKey(link.scopeId, link.taskId, link.slot, link.attempt)
         const stored = state.links.get(id)

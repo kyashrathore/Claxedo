@@ -26,13 +26,6 @@ export const SELECTORS = {
 
 const DEFAULT_TIMEOUT = 15_000
 
-export async function readRailSessionOrder(page: Page): Promise<string[]> {
-  return page.locator(SELECTORS.allSessionRows).evaluateAll(rows => rows
-    .filter(row => row.getBoundingClientRect().height > 0)
-    .map(row => row.getAttribute("data-session-id")!)
-  )
-}
-
 const PLACEHOLDER_TITLE = /^(New Session|Untitled session)$/
 
 export async function expectTerminalRailStatus(opts: {

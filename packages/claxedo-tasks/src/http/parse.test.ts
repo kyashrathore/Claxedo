@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS } from "../contracts"
 import { parsedReasons } from "../test-support/refusals"
 import { presetDraft, primaryConfiguration } from "../test-support/rows"
-import { parseCommandRequest, parsePresetListQuery, parseStartRequest, parseTaskListQuery } from "./parse"
+import { parseCommandRequest, parsePresetListQuery, parseStartPreviewRequest, parseStartRequest, parseTaskListQuery } from "./parse"
 
 const startBody = {
   clientRequestId: "request-1",
@@ -75,6 +75,27 @@ describe("parseCommandRequest", () => {
       command: { type: "preset.create", input: presetDraft() },
     })
     expect(withNull.ok).toBe(true)
+  })
+
+  test("a preset draft says whether agents may start it, as a boolean and nothing else", () => {
+    const { agentStartable: _agentStartable, ...unsaid } = presetDraft()
+    expect(parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "preset.create", input: unsaid } }))).toEqual({
+      "command.input.agentStartable": "required",
+    })
+    expect(
+      parsedReasons(
+        parseCommandRequest({
+          clientRequestId: "r",
+          command: { type: "preset.edit", input: { presetId: "preset-1", revision: 1, ...presetDraft(), agentStartable: "yes" } },
+        }),
+      ),
+    ).toEqual({ "command.input.agentStartable": "type" })
+
+    const marked = parseCommandRequest({
+      clientRequestId: "r",
+      command: { type: "preset.create", input: presetDraft({ agentStartable: true }) },
+    })
+    expect(marked.ok && marked.value.command.type === "preset.create" && marked.value.command.input.agentStartable).toBe(true)
   })
 
   test("a number where a string belongs is a typed field, never a coerced one", () => {
@@ -212,5 +233,33 @@ describe("query parsing", () => {
     expect(parsedReasons(parseTaskListQuery(new URLSearchParams("projectId=p&status=blocked")))).toEqual({
       status: "unknown_value",
     })
+  })
+})
+
+describe("start provenance", () => {
+  const previewBody = {
+    taskRevision: 1,
+    presetId: "preset-1",
+    presetRevision: 1,
+    slot: "primary",
+    attempt: 1,
+    continueFromPrevious: false,
+  }
+
+  test("a start or a preview may name the session it is asked from, or say nothing", () => {
+    const from = { sessionId: "ses_caller", workspaceId: "ws_root" }
+    const preview = parseStartPreviewRequest({ ...previewBody, startedFrom: from })
+    expect(preview.ok && preview.value.startedFrom).toEqual(from)
+    const start = parseStartRequest({ ...startBody, startedFrom: { sessionId: "ses_caller", workspaceId: null } })
+    expect(start.ok && start.value.startedFrom).toEqual({ sessionId: "ses_caller", workspaceId: null })
+    const unsaid = parseStartRequest(startBody)
+    expect(unsaid.ok && unsaid.value.startedFrom).toBeUndefined()
+  })
+
+  test("a malformed provenance is refused by field rather than dropped", () => {
+    expect(parsedReasons(parseStartRequest({ ...startBody, startedFrom: { workspaceId: "ws_root" } }))).toEqual({
+      "startedFrom.sessionId": "required",
+    })
+    expect(parsedReasons(parseStartPreviewRequest({ ...previewBody, startedFrom: "ses_caller" })).startedFrom).toBe("type")
   })
 })

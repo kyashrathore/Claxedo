@@ -3,8 +3,16 @@ import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
+import { Hono } from "hono"
 import { buildSession } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../runtime-event-hub"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+  type SessionAccessPolicyInput,
+  type SessionReservationDecision,
+} from "../session-access-policy"
+import type { EmbeddedRelayHostIdentity } from "../workspace-host-service-auth"
 import { SessionRoutes } from "./session"
 
 const DIRECTORY = process.cwd()
@@ -17,7 +25,7 @@ const MODES: readonly AgentPermissionMode[] = [
 
 const NO_MODE_SURFACE: AgentPermissionModeState = { modes: [], unsupported: "codex exposes no permission modes", appliesFrom: "next-turn" }
 
-function fixture(input: { parentMode?: string } = {}) {
+function fixture(input: { parentMode?: string; policy?: SessionAccessPolicy; identity?: EmbeddedRelayHostIdentity } = {}) {
   const store = new MemoryRuntimeStore()
   const calls = {
     created: [] as string[],
@@ -105,8 +113,9 @@ function fixture(input: { parentMode?: string } = {}) {
   eventHub.subscribeRuntime((event) => {
     runtimeEvents.push(event)
   })
-  const { routes: app } = SessionRoutes(() => adapter, {
+  const { routes: sessionRoutes } = SessionRoutes(() => adapter, {
     eventHub,
+    ...(input.policy ? { sessionAccessPolicy: input.policy } : {}),
     afterCreateSession: ({ session }) => { calls.projected.push(session) },
     resolveExecutionBinding: ({ directory, sessionId }) => ({
       sessionId,
@@ -145,13 +154,22 @@ function fixture(input: { parentMode?: string } = {}) {
       pendingWakes: () => [],
     },
   })
+  const app = new Hono()
+  if (input.identity) {
+    const identity = input.identity
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", identity)
+      await next()
+    })
+  }
+  app.route("/", sessionRoutes)
   const seedParent = (id: string, session: Partial<AgentSession> = {}) => {
     store.bindSession({ sessionId: id, directory: DIRECTORY, agentSessionId: id, title: "Parent", ...(session.parentID ? { parentSessionId: session.parentID } : {}) })
     store.updateSessionConfig(id, config)
   }
-  const create = (body: Record<string, unknown>) => app.request(`http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`, {
+  const create = (body: Record<string, unknown>, headers: Record<string, string> = {}) => app.request(`http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: "Bearer owner-grant", ...headers },
     body: JSON.stringify(body),
   })
   return { app, store, calls, runtimeEvents, seedParent, create, messages, adapter }
@@ -462,6 +480,153 @@ describe("POST /session with parentID", () => {
 })
 
 export { buildSession }
+
+const OWNER: EmbeddedRelayHostIdentity = {
+  principal_kind: "user",
+  actor_id: "actor_owner",
+  actor_kind: "human",
+  actor_public_id: "actor_owner",
+  actor_name: "workspace owner",
+  org_id: "org_1",
+  workspace_id: "ws_1",
+  role: "owner",
+}
+
+/** The remote flavour's shape: every authority call is answered by the control plane, reservation included. */
+function managedPolicy(input: {
+  reserve?: (input: SessionAccessPolicyInput & { sessionId: string; parentSessionId: string }) => Promise<SessionReservationDecision>
+} = {}) {
+  const calls = {
+    reserved: [] as Array<SessionAccessPolicyInput & { sessionId: string; parentSessionId: string }>,
+    registered: [] as Array<{ sessionId: string; registrationOperationId: string; actorId?: string }>,
+  }
+  const policy = managedWorkspaceSessionAccessPolicy({
+    requireActor: true,
+    authority: {
+      authorizeSessionRead: async () => true,
+      authorizeSessionWrite: async () => true,
+      authorizeSessionStream: async () => ({ allowed: false, status: 503, code: "unused", message: "unused" }),
+      registerSession: async (input) => {
+        calls.registered.push({ sessionId: input.sessionId, registrationOperationId: input.registrationOperationId!, actorId: input.actor.actorId })
+        return true
+      },
+      acquireTurn: async () => ({ allowed: false, status: 503, code: "unused", message: "unused" }),
+      renewTurn: async () => ({ allowed: false, status: 503, code: "unused", message: "unused" }),
+      releaseTurn: async () => ({ released: false }),
+    },
+  })
+  policy.reserveSession = async (request) => {
+    calls.reserved.push(request)
+    return input.reserve ? await input.reserve(request) : { allowed: true, operationId: `session_registration_${request.sessionId}` }
+  }
+  return { policy, calls }
+}
+
+describe("a child created in-process under managed registration", () => {
+  test("reserves itself as the stamped owner, registers under the operation the authority minted, and answers the reserved id", async () => {
+    const { policy, calls } = managedPolicy()
+    const item = fixture({ policy, identity: OWNER })
+    item.seedParent("parent")
+
+    const response = await item.create({ parentID: "parent", title: "Reviewer", role: "reviewer" })
+    expect(response.status).toBe(201)
+    const child = await response.json() as { id: string; parentID: string; subagentKey: string }
+    expect(child.id).toMatch(/^ses_[0-9a-f-]{36}$/)
+    expect(child.parentID).toBe("parent")
+    expect(calls.reserved).toEqual([expect.objectContaining({
+      operation: "session_create",
+      sessionId: child.id,
+      parentSessionId: "parent",
+      sessionTitle: "Reviewer",
+      credential: "Bearer owner-grant",
+      actor: { actorId: "actor_owner", actorKind: "human" },
+      authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
+    })])
+    expect(calls.registered).toEqual([{ sessionId: child.id, registrationOperationId: `session_registration_${child.id}`, actorId: "actor_owner" }])
+    expect(item.calls.created).toEqual([child.id])
+    expect(item.store.getSession(child.id)?.parentID).toBe("parent")
+  })
+
+  test("a retried clientRequestId reserves the derived id, so the retry finds the same child", async () => {
+    const { policy, calls } = managedPolicy()
+    const item = fixture({ policy, identity: OWNER })
+    item.seedParent("parent")
+
+    const first = await (await item.create({ parentID: "parent", clientRequestId: "req-1" })).json() as { id: string }
+    expect(first.id).toMatch(/^ses_[0-9a-f]{32}$/)
+    expect(calls.reserved.map((call) => call.sessionId)).toEqual([first.id])
+    const retry = await item.create({ parentID: "parent", clientRequestId: "req-1" })
+    expect(retry.status).toBe(200)
+    expect(((await retry.json()) as { id: string }).id).toBe(first.id)
+    expect(calls.reserved).toHaveLength(1)
+    expect(item.calls.created).toEqual([first.id])
+  })
+
+  test("a child create that brings its own reservation is registered under it and reserves nothing", async () => {
+    const { policy, calls } = managedPolicy()
+    const item = fixture({ policy, identity: OWNER })
+    item.seedParent("parent")
+
+    const response = await item.create(
+      { parentID: "parent", id: "ses_reserved_by_caller" },
+      { "x-claxedo-session-registration-operation": "op_caller_1" },
+    )
+    expect(response.status).toBe(201)
+    expect(calls.reserved).toEqual([])
+    expect(calls.registered).toEqual([{ sessionId: "ses_reserved_by_caller", registrationOperationId: "op_caller_1", actorId: "actor_owner" }])
+  })
+
+  test("without a verified actor the create is refused before anything is reserved", async () => {
+    const { policy, calls } = managedPolicy()
+    const item = fixture({ policy })
+    item.seedParent("parent")
+
+    const response = await item.create({ parentID: "parent" })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: "session_actor_required" } })
+    expect(calls.reserved).toEqual([])
+    expect(item.calls.created).toEqual([])
+  })
+
+  test("an ordinary create still needs the caller's own reservation, owner or not", async () => {
+    const { policy, calls } = managedPolicy()
+    const item = fixture({ policy, identity: OWNER })
+
+    const response = await item.create({ title: "Root" })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_reservation_required" } })
+    expect(calls.reserved).toEqual([])
+    expect(item.calls.created).toEqual([])
+  })
+
+  test("a refused reservation is answered as the authority's own refusal and creates nothing", async () => {
+    const { policy, calls } = managedPolicy({
+      reserve: async () => ({ allowed: false, status: 403, code: "session_private", message: "The owner cannot open the parent" }),
+    })
+    const item = fixture({ policy, identity: OWNER })
+    item.seedParent("parent")
+
+    const response = await item.create({ parentID: "parent" })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: { code: "session_private", message: "The owner cannot open the parent" } })
+    expect(calls.reserved).toHaveLength(1)
+    expect(calls.registered).toEqual([])
+    expect(item.calls.created).toEqual([])
+  })
+
+  test("a policy without a reservation member keeps requiring the caller's own", async () => {
+    const { policy, calls } = managedPolicy()
+    delete policy.reserveSession
+    const item = fixture({ policy, identity: OWNER })
+    item.seedParent("parent")
+
+    const response = await item.create({ parentID: "parent" })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_reservation_required" } })
+    expect(calls.registered).toEqual([])
+    expect(item.calls.created).toEqual([])
+  })
+})
 
 
 describe("permission mode changes retain session ceilings", () => {

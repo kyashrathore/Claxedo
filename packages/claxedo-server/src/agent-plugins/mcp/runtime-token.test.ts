@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { runtimeAccessTokenAudience } from "@claxedo/workspace-relay"
 import { MCP_GATEWAY_TOKEN_AUDIENCE, mintMcpGatewayToken, verifyMcpGatewayToken } from "./runtime-token"
+import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 
 async function fixture() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
@@ -28,6 +29,20 @@ const scope = {
 } as const
 
 describe("MCP gateway runtime token", () => {
+  test("is written to the register it is minted with and refused once its workspace's passes are revoked", async () => {
+    const { env } = await fixture()
+    const register = memorySandboxPassRegister()
+    const minted = await mintMcpGatewayToken(scope, env, { register })
+    expect(await register.outstanding({ orgId: scope.orgId, audience: MCP_GATEWAY_TOKEN_AUDIENCE })).toMatchObject([
+      { jti: minted.jti, scope: { userId: scope.userId, orgId: scope.orgId, projectId: scope.projectId, workspaceId: scope.workspaceId } },
+    ])
+    const expected = { integrationId: scope.integrationId }
+    await expect(verifyMcpGatewayToken(minted.token, expected, env, { revoked: register.revoked })).resolves.toEqual(scope)
+
+    await register.revoke({ workspaceId: scope.workspaceId, reason: "workspace_deleted" })
+    await expect(verifyMcpGatewayToken(minted.token, expected, env, { revoked: register.revoked })).rejects.toThrow("was revoked")
+  })
+
   test("binds a short-lived token to every runtime and plugin identity", async () => {
     const { env } = await fixture()
     const now = Date.now()

@@ -335,6 +335,45 @@ function tasksOperations(use: Reader): TasksStoreOperations {
         return rows.map(linkOfColumns)
       },
 
+      async bySession(scopeId, sessionId) {
+        const row = use((db) =>
+          db
+            .select()
+            .from(ClaxedoTaskSessionLinkTable)
+            .where(
+              and(eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId), eq(ClaxedoTaskSessionLinkTable.session_id, sessionId)),
+            )
+            .get(),
+        )
+        return row ? linkOfColumns(row) : undefined
+      },
+
+      async listAgentStartedCloud(scopeId, projectId) {
+        const rows = use((db) =>
+          db
+            .select({ link: ClaxedoTaskSessionLinkTable })
+            .from(ClaxedoTaskSessionLinkTable)
+            .innerJoin(
+              ClaxedoTaskTable,
+              and(
+                eq(ClaxedoTaskTable.scope_id, ClaxedoTaskSessionLinkTable.scope_id),
+                eq(ClaxedoTaskTable.task_id, ClaxedoTaskSessionLinkTable.task_id),
+              ),
+            )
+            .where(
+              and(
+                eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId),
+                eq(ClaxedoTaskTable.project_id, projectId),
+                eq(ClaxedoTaskSessionLinkTable.started_by, "agent"),
+                eq(ClaxedoTaskSessionLinkTable.placement, "cloud"),
+              ),
+            )
+            .orderBy(desc(ClaxedoTaskSessionLinkTable.created_at))
+            .all(),
+        )
+        return rows.map((row) => linkOfColumns(row.link))
+      },
+
       async insert(link) {
         const inserted = use((db) =>
           db

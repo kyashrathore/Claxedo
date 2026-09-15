@@ -108,6 +108,7 @@ const PRESET = {
     name: "Review the diff",
     instructions: "Read the change before proposing one.",
     execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+    agentStartable: false,
     configurations: {
       primary: {
         harness: { id: "claude", access: "native" },
@@ -273,6 +274,31 @@ describe("signed self-hosted Tasks composition", () => {
     })
     expect(preview.status).toBe(403)
     expect(await preview.json()).toMatchObject({ error: { message: "This session may act only in project project-a" } })
+  })
+
+  test("a session's handle stops answering the moment this machine turns Tasks off, and answers again when it is back on", async () => {
+    const owners: Record<string, TasksCapabilityOwner> = {
+      ws_root: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
+    }
+    let tasksOn = true
+    const grants = createTasksSessionGrants({ workspaceOwner: async (workspaceId) => owners[workspaceId], enabled: () => tasksOn })
+    const bare = new Hono()
+    mountControlPlaneRouteContributions({
+      contributions: createSelfHostedTasksComposition({ services: services(), grants }).routeContributions,
+      mount: (contribution) => bare.route(contribution.path, contribution.routes),
+    })
+    const token = await grants.issue({ workspaceId: "ws_root", sessionId: "ses_1" })
+    if (!token) throw new Error("the fixture issued no grant")
+    const list = () => bare.request(`${ORIGIN}${TASKS}/tasks?projectId=project-a`, { headers: { authorization: `Bearer ${token}` } })
+    expect((await list()).status).toBe(200)
+
+    tasksOn = false
+    const refused = await list()
+    expect(refused.status).toBe(401)
+    expect(await grants.issue({ workspaceId: "ws_root", sessionId: "ses_2" })).toBeUndefined()
+
+    tasksOn = true
+    expect((await list()).status).toBe(200)
   })
 
   test("a task written by one request is still there for the next composition", async () => {

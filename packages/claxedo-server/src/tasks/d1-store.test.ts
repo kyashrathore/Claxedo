@@ -30,9 +30,9 @@ import {
 } from "../test-support/control-plane-migrations"
 import { createD1TasksStore } from "./d1-store"
 
-// 0025 owns every table under test and references no auth table, so it is the
-// only migration this store needs.
-const MIGRATIONS = ["0025_claxedo_tasks.sql"]
+// 0025 and 0026 own every table under test and reference no auth table, so
+// they are the only migrations this store needs.
+const MIGRATIONS = ["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"]
 
 const active: ControlPlaneDatabase[] = []
 

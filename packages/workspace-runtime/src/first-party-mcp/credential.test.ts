@@ -59,7 +59,10 @@ describe("runtime credential issuer", () => {
       iat: Math.floor(time.now() / 1000), exp: Math.floor((time.now() + HOUR) / 1000), jti: "x",
     })).toString("base64url")
     expect(issuer.verify(`${header}.${forgedPayload}.${signature}`)).toBeUndefined()
-    expect(issuer.verify(`${header}.${payload}.${signature.slice(0, -1)}A`)).toBeUndefined()
+    // The replacement must differ from the byte it replaces, or one run in
+    // sixty-four hands the verifier the untouched signature.
+    const flipped = signature.endsWith("A") ? "B" : "A"
+    expect(issuer.verify(`${header}.${payload}.${signature.slice(0, -1)}${flipped}`)).toBeUndefined()
     expect(issuer.verify(`${header}.${payload}`)).toBeUndefined()
     expect(issuer.verify("")).toBeUndefined()
     expect(issuer.verify(`${header}.${payload}.${signature}+`)).toBeUndefined()

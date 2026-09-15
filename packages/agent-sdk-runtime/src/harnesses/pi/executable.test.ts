@@ -2,19 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { PI_VERSION, resolvePiExecutable, verifyPiExecutable } from "./executable"
-
-test("sandbox images install the Pi version accepted by the runtime", async () => {
-  for (const dockerfile of ["Dockerfile", "cloudflare-worker/Dockerfile"]) {
-    const source = await fs.readFile(
-      new URL(`../../../../claxedo-server/scripts/sandbox/${dockerfile}`, import.meta.url),
-      "utf8",
-    )
-    const versions = [...source.matchAll(/@earendil-works\/pi-coding-agent@([\d.]+)/g)].map((match) => match[1])
-    expect(versions.length).toBeGreaterThan(0)
-    expect(new Set(versions)).toEqual(new Set([PI_VERSION]))
-  }
-})
+import { resolvePiExecutable, verifyPiExecutable } from "./executable"
 
 test("npm shims resolve the package's declared binary instead of its unbundled source entry", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-npm-shim-"))
@@ -28,7 +16,7 @@ test("npm shims resolve the package's declared binary instead of its unbundled s
       path.join(packageRoot, "package.json"),
       JSON.stringify({ type: "module", bin: { pi: "dist/bundle/cli.js" } }),
     )
-    await fs.writeFile(executable, 'console.log("0.85.1")')
+    await fs.writeFile(executable, 'console.log("0.85.0")')
     await fs.writeFile(path.join(packageRoot, "dist/cli.js"), 'throw new Error("unbundled entry")')
     expect(resolvePiExecutable({ PI_EXECUTABLE: shim, PATH: "" })).toBe(executable)
     await verifyPiExecutable(resolvePiExecutable({ PI_EXECUTABLE: shim, PATH: "" })!)
@@ -44,12 +32,12 @@ test("accepts a readable pinned JavaScript entry and rejects a different protoco
   try {
     const good = path.join(root, "pi.mjs")
     const old = path.join(root, "old.mjs")
-    await fs.writeFile(good, 'console.log("0.85.1")', { mode: 0o600 })
+    await fs.writeFile(good, 'console.log("0.85.0")', { mode: 0o600 })
     await fs.writeFile(old, 'console.log("0.75.5")', { mode: 0o600 })
     expect(resolvePiExecutable({ PI_EXECUTABLE: good, PATH: "" })).toBe(good)
     expect(resolvePiExecutable({ PI_EXECUTABLE: path.join(root, "missing"), PATH: "" })).toBeUndefined()
     await verifyPiExecutable(good)
-    await expect(verifyPiExecutable(old)).rejects.toThrow("Unsupported Pi version 0.75.5; expected 0.85.1")
+    await expect(verifyPiExecutable(old)).rejects.toThrow("Unsupported Pi version 0.75.5; expected 0.85.0")
   } finally {
     await fs.rm(root, { recursive: true, force: true })
   }

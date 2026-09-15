@@ -26,7 +26,7 @@ const MIGRATIONS = [
     new URL("../../../../migrations/control-plane/0017_adapter_custom.sql", import.meta.url),
   ),
   fileURLToPath(
-    new URL("../../../../migrations/control-plane/0026_workspace_org_member_visible.sql", import.meta.url),
+    new URL("../../../../migrations/control-plane/0028_workspace_org_member_visible.sql", import.meta.url),
   ),
 ]
 const active: Miniflare[] = []
@@ -327,6 +327,76 @@ describe("D1 hosted workspace authority", () => {
         .bind(created.project_id)
         .run(),
     ).rejects.toThrow(/project scope is immutable/)
+  })
+
+  test("creates and deletes a cloud root for a resolved owner's actor, under the same admission a signed creator gets", async () => {
+    const { authority, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(authority, identity("alice"))
+    const bob = await signed(authority, identity("bob"))
+    const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
+    await authority.addOrganizationMember(alice, { orgId: team.org_id, userId: bob.principal!.userId, role: "member" })
+    const project = await authority.createWorkspace(alice, {
+      workspaceId: "ws_acme_main",
+      orgId: team.org_id,
+      displayName: "main",
+      repoUrl: "https://github.com/Acme/Widgets.git",
+      backing: "cloud-vm",
+      access: "cloud",
+    })
+    const principalOf = (auth: SignedControlPlaneAuth) =>
+      ({ principalKind: "user", actorId: auth.principal!.actorId, actorKind: "human" }) as const
+    const root = {
+      orgId: team.org_id,
+      projectId: project.project_id,
+      displayName: "Fix the importer (primary, attempt 1)",
+      repoUrl: "https://github.com/Acme/Widgets.git",
+      gitBranch: "main",
+    }
+
+    await authority.createRuntimeCloudWorkspace(principalOf(alice), { ...root, workspaceId: "ws_root_1" })
+    expect(await authority.openWorkspace(alice, { workspaceId: "ws_root_1" })).toMatchObject({
+      role: "owner",
+      workspace: { org_id: "org_acme", project_id: project.project_id, backing: "cloud-vm", access: "cloud", git_branch: "main" },
+    })
+    expect(
+      await database.prepare("select owner_user_id from workspaces where workspace_id = 'ws_root_1'").first(),
+    ).toEqual({ owner_user_id: alice.principal!.userId })
+
+    // A member who could not create a cloud workspace from the app cannot have
+    // one created for them here either; nor can an actor this plane does not
+    // know, a service principal, or a suspended owner.
+    const refusals: Array<[string, Parameters<typeof authority.createRuntimeCloudWorkspace>[0]]> = [
+      ["a member", principalOf(bob)],
+      ["a stranger", { principalKind: "user", actorId: "act_unknown", actorKind: "human" }],
+      ["the plane's own service actor", { principalKind: "service", actorId: "control-plane", actorKind: "agent" }],
+    ]
+    for (const [, principal] of refusals) {
+      await expect(
+        authority.createRuntimeCloudWorkspace(principal, { ...root, workspaceId: "ws_root_refused" }),
+      ).rejects.toMatchObject({ status: 403 })
+    }
+    await expect(
+      authority.createRuntimeCloudWorkspace(principalOf(alice), { ...root, orgId: "org_elsewhere", workspaceId: "ws_root_refused" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      authority.createRuntimeCloudWorkspace(principalOf(alice), { ...root, projectId: "prj_unknown", workspaceId: "ws_root_refused" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await database.prepare("update actors set state = 'suspended' where actor_id = ?").bind(alice.principal!.actorId).run()
+    await expect(
+      authority.createRuntimeCloudWorkspace(principalOf(alice), { ...root, workspaceId: "ws_root_refused" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await database.prepare("update actors set state = 'active' where actor_id = ?").bind(alice.principal!.actorId).run()
+    expect(
+      await database.prepare("select workspace_id from workspaces where workspace_id = 'ws_root_refused'").first(),
+    ).toBeNull()
+
+    await expect(authority.deleteRuntimeWorkspace(principalOf(bob), { workspaceId: "ws_root_1" })).rejects.toMatchObject({
+      status: 403,
+    })
+    await expect(authority.deleteRuntimeWorkspace(principalOf(alice), { workspaceId: "ws_root_1" })).resolves.toEqual({
+      deleted: true,
+    })
+    await expect(authority.openWorkspace(alice, { workspaceId: "ws_root_1" })).rejects.toMatchObject({ status: 403 })
   })
 })
 

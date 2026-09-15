@@ -48,6 +48,7 @@ const PRESET = {
   name: "Default",
   instructions: "work carefully",
   execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+  agentStartable: false,
   configurations: { primary: CONFIGURATION },
   archivedAt: null,
   createdAt: 1,
@@ -318,6 +319,19 @@ describe("task_get", () => {
     expect(await call(client, "task_get", { task: "tsk_gone" })).toEqual({ text: "Task tsk_gone was not found", isError: true })
   })
 
+  test("answers with the runtime's own sentence when this machine's grant has lapsed or been withdrawn", async () => {
+    const lapsed = "This machine's Tasks grant has expired and could not be renewed; it is re-issued the next time the machine is provisioned."
+    const service = tasksService({ answers: {
+      "GET /tasks/tsk_1": { status: 503, body: { error: { code: "tasks_grant_lapsed", message: lapsed } } },
+      "GET /tasks": { status: 503, body: { error: { code: "tasks_grant_withdrawn", message: "Tasks was turned off for this project." } } },
+    } })
+    const { url } = await listen({ service })
+    const client = await connect(url)
+
+    expect(await call(client, "task_get", { task: "tsk_1" })).toEqual({ text: lapsed, isError: true })
+    expect(await call(client, "task_list", {})).toEqual({ text: "Tasks was turned off for this project.", isError: true })
+  })
+
   test("answers a Tasks service it cannot reach with a sentence", async () => {
     const service = tasksService({ throws: "fetch failed" })
     const { url } = await listen({ service })
@@ -423,7 +437,15 @@ describe("task_start", () => {
       {
         method: "POST",
         path: "/api/claxedo/tasks/tasks/tsk_1/start-preview",
-        body: { taskRevision: 3, presetId: "pst_1", presetRevision: 2, slot: "primary", attempt: 1, continueFromPrevious: false },
+        body: {
+          taskRevision: 3,
+          presetId: "pst_1",
+          presetRevision: 2,
+          slot: "primary",
+          attempt: 1,
+          continueFromPrevious: false,
+          startedFrom: { sessionId: "ses_caller", workspaceId: "ws_local" },
+        },
       },
       {
         method: "POST",
@@ -438,6 +460,7 @@ describe("task_start", () => {
           previewDigest: "dgst_1",
           handoffText: null,
           continueFromPrevious: false,
+          startedFrom: { sessionId: "ses_caller", workspaceId: "ws_local" },
         },
       },
     ])

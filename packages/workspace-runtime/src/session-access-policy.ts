@@ -105,6 +105,9 @@ export type SessionTurnLeaseDecision =
 export type SessionTurnReleaseDecision =
   | { released: boolean }
   | Exclude<SessionAccessDecision, { allowed: true }>
+export type SessionReservationDecision =
+  | { allowed: true; operationId: string }
+  | Exclude<SessionAccessDecision, { allowed: true }>
 
 export type SessionAccessPolicy = {
   /** Composition marker: non-loopback managed hosts require private-session authority. */
@@ -120,6 +123,15 @@ export type SessionAccessPolicy = {
   registerSession?(
     input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision
+  /**
+   * Reserves a child session as the verified actor before the runtime creates
+   * it, answering the registration operation the create then registers under.
+   * Only the remote flavour has one: a child created in process by the
+   * workspace's own runtime has no caller that reserved first.
+   */
+  reserveSession?(
+    input: SessionAccessPolicyInput & { sessionId: string; parentSessionId: string },
+  ): Promise<SessionReservationDecision> | SessionReservationDecision
   markRegistrationAmbiguous?(
     input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision
