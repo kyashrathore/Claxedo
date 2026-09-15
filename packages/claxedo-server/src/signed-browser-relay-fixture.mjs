@@ -112,8 +112,8 @@ if (scriptedModelUrl) {
 // (`GET /command`, `GET /agent`) fails with `workspace_harness_not_configured`.
 // This is the write `POST /api/claxedo/agent-config/harness` performs, made
 // before the user-hosted tunnel below creates the embedded runtime that reads
-// it. The cloud runtime receives no config snapshot from this fixture, so
-// `startCloudRuntime` selects the same harness directly.
+// it. The control plane pushes no config snapshot to the cloud runtime this
+// fixture hosts, so `startCloudRuntime` selects the same harness directly.
 await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "native", harnessId: "pi" } })
 
 // A user-hosted tunnel and the control-plane Local Host Link are two views of
@@ -196,6 +196,28 @@ async function startCloudRuntime(input) {
       resolveParentSessionId: (event) => runtime.host.parentSessionIdFor(event.sessionId),
     },
   })
+  // The scripted endpoint is bound the way the control plane's config push
+  // binds an account: as the `openai` provider projection. Pi takes a
+  // projection as a `models.json` overlay onto its own openai provider, so
+  // every openai model the picker offers reaches the scripted server. The
+  // harness owns `models.json` in `PI_CODING_AGENT_DIR` and replaces it on
+  // every config apply, so a base URL hand-written there never reaches a turn.
+  if (scriptedModelUrl) {
+    await runtime.host.apply({
+      version: 4,
+      mcp: {},
+      connections: [],
+      defaultHarness: { kind: "native", harnessId: "pi" },
+      auth: {
+        openai: {
+          baseUrl: new URL(scriptedModelUrl).origin,
+          apiPath: "/v1",
+          placeholder: "test-key",
+          authMode: "bearer",
+        },
+      },
+    })
+  }
   // Every request the relay forwards to this cloud runtime passes through here.
   // Two jobs, both for `real-cloud-relay.spec.ts`:
   //   1. COUNT — the spec asserts a real turn incremented this. The runtime is a
