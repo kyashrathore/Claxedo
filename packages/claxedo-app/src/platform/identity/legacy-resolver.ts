@@ -31,11 +31,17 @@ export function workspaceIdFromRef(input: string | undefined): WorkspaceId | und
   return ref ? asWorkspaceId(ref) : undefined
 }
 
-function workspaceDirectoryAliasKey(input: string | undefined) {
+/**
+ * One key for every spelling of a directory that names the same workspace.
+ *
+ * A relay-backed workspace is addressed both by its bare id (session
+ * inventory, draft promotion, the `/w/:id` route's `dir()`) and by the
+ * `workspace:<id>` address session rows and the pane SDK carry. A cache entry
+ * keyed by the raw string is written under one spelling and missed under the
+ * other, so anything that keys a session resource by directory keys it by this.
+ */
+export function workspaceDirectoryAliasKey(input: string | undefined) {
   if (!input) return ""
-  // A relay-backed workspace is addressed both by its bare id (session
-  // inventory, draft promotion) and by the `workspace:<id>` route address
-  // (`resolveWorkspaceRouteDirectory`). Both name the same workspace.
   const workspaceId = workspaceIdFromRef(input)
   if (workspaceId) return `workspace:${workspaceId}`
   // macOS resolves /tmp, /var, /etc to /private/* symlinks, so the directory a

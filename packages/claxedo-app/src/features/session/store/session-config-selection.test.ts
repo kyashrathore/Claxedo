@@ -50,6 +50,22 @@ describe("session config selection", () => {
     )
   })
 
+  test("keys a relay-backed workspace's config once, whichever spelling of its directory the reader holds", () => {
+    const ref = {
+      sessionId: "ses_1",
+      host: "workspace",
+      workspaceId: "ws_1",
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+    } satisfies SessionRef
+    const byRoute = { sessionID: "ses_1", directory: "ws_1", serverUrl: "https://one.example", sessionRef: ref }
+    const byAddress = { ...byRoute, directory: "workspace:ws_1" }
+    expect(sessionConfigRawQueryKey(byRoute)).toEqual(sessionConfigRawQueryKey(byAddress))
+    expect(sessionConfigRawQueryKey({ ...byRoute, directory: "/private/tmp/repo" })).toEqual(
+      sessionConfigRawQueryKey({ ...byRoute, directory: "/tmp/repo" }),
+    )
+    expect(sessionConfigRawQueryKey(byRoute)).not.toEqual(sessionConfigRawQueryKey({ ...byRoute, directory: "ws_2" }))
+  })
+
   test("does not merge user-hosted and cloud refs with the same visible placement", () => {
     const userHosted = {
       sessionId: "shared",
