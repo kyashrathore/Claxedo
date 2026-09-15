@@ -126,6 +126,8 @@ is the authoritative source for this column.
 | `team.members.add` | `features/settings/data/org-team-api.ts` | `POST /api/control/teams/:teamId/members` | unary | unsafe | |
 | `team.members.remove` | `features/settings/data/org-team-api.ts` | `DELETE /api/control/teams/:teamId/members` | unary | unsafe | |
 | `team.projects.grant` | `features/settings/data/org-team-api.ts` | `POST /api/control/teams/:teamId/projects` | unary | unsafe | Grants a project role to a team. |
+| `account.agentSettings.read` | `features/settings/data/agent-settings-api.ts` | `GET /api/account/agent-settings` | unary | safe | Reads the caller's agent-cross-machine-writes setting. |
+| `account.agentSettings.write` | `features/settings/data/agent-settings-api.ts` | `PUT /api/account/agent-settings` | unary | unsafe | Updates the caller's agent-cross-machine-writes setting; each update sets the exact state in the body. |
 
 ### Workspace authority
 

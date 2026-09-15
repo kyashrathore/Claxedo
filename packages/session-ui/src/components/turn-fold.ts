@@ -1,14 +1,14 @@
 import type { AgentAssistantMessage } from "@claxedo/agent-runtime-contract"
-import { isStandaloneTool, isSubagentToolPart, type PartGroup, type PartRef } from "./part-groups"
+import { isStandaloneTool, type PartGroup, type PartRef } from "./part-groups"
 
 /**
  * Resolves a group member to the part it renders. A standalone group is foldable
- * only when it holds a tool that is not a subagent spawn, so the caller's part
- * index is the only way to tell machinery from prose and from delegated work.
+ * only when it holds a tool, so the caller's part index is the only way to tell
+ * machinery from prose.
  */
 export type FoldablePartLookup = (ref: PartRef) => FoldablePart | undefined
 
-type FoldablePart = { type: string; tool?: string; state?: { input?: unknown } }
+type FoldablePart = { type: string; tool?: string }
 
 // A single tool is already one compact, useful row: folding it replaces the only
 // actionable content with an extra click. Grouped runs count as one row because
@@ -26,10 +26,10 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
 
 /**
  * Machinery — everything a turn did that is not the message it is addressing to
- * the user. A subagent spawn is not machinery: its card reports work the user
- * delegated and is usually the row they most want from the turn, so it stays
- * visible whether it landed in an agent group or alone. Neither is an answered
- * question: it holds the words the reader typed, the one part of the turn they
+ * the user, subagent spawns included: a running turn's auto-fold keeps its live
+ * group on screen, so delegated work is visible while it is in flight and folds
+ * with the rest once the turn moves past it. An answered question is not
+ * machinery: it holds the words the reader typed, the one part of the turn they
  * authored, so it stays up beside the prose.
  *
  * Text and reasoning never fold. No harness marks which text part is the answer —
@@ -38,11 +38,9 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
  * from position hides answers that arrived before the turn's last tool call.
  */
 export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup): boolean {
-  if (group.type === "agents") return false
   if (group.type !== "part") return true
   const resolved = part(group.ref)
-  if (resolved?.type === "tool") return !isSubagentToolPart(resolved) && !isStandaloneTool(resolved)
-  return false
+  return resolved?.type === "tool" && !isStandaloneTool(resolved)
 }
 
 export function countFoldableGroups(groups: readonly PartGroup[], part: FoldablePartLookup) {

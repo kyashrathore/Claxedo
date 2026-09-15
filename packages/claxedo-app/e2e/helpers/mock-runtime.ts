@@ -9,9 +9,8 @@
 // `route.fulfill` cannot drip a body over time, so the app's own SSE-reconnect loop is
 // the delivery mechanism).
 import type { Page, Route } from "@playwright/test"
-import { normalizeHarnessIdentity, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
 import type { SessionHarness } from "../../../agent-sdk-runtime/src"
-import type { SessionMeta } from "../../../claxedo-server-core/src/session/meta/types"
 import {
   runtimeEventEnvelope,
   type RuntimeEventEnvelope,

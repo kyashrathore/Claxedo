@@ -15,8 +15,7 @@
   flex-shrink: 0;
 }
 
-.usage-section-heading,
-.usage-quota-window > div {
+.usage-section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -572,32 +571,65 @@
   cursor: default;
   opacity: 0.5;
 }
+/* The bar is the row: the progress element paints the used share as a solid
+   fill and the rest as a hatched track, and the words sit in the same grid
+   cell on top of it. */
 .usage-quota-window {
+  --usage-quota-fill: color-mix(in srgb, var(--usage-brand-color, var(--usage-neutral)) 30%, var(--surface-inset-base));
+  --usage-quota-hatch: color-mix(in oklab, var(--border-base) 55%, transparent);
   display: grid;
-  gap: 6px;
   margin-top: 10px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
 }
-.usage-quota-window span,
-.usage-quota-window b {
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-regular);
-}
-.usage-quota-window-name {
-  text-transform: capitalize;
+.usage-quota-window > * {
+  grid-area: 1 / 1;
 }
 .usage-quota-window progress {
   width: 100%;
-  height: 4px;
+  height: 100%;
   border: 0;
-  overflow: hidden;
-  background: var(--surface-inset-base);
+  appearance: none;
+  border-radius: inherit;
+  background: var(--surface-inset-base)
+    repeating-linear-gradient(-45deg, var(--usage-quota-hatch) 0 1px, transparent 1px 6px);
 }
 .usage-quota-window progress::-webkit-progress-bar {
-  background: var(--surface-inset-base);
+  background: var(--surface-inset-base)
+    repeating-linear-gradient(-45deg, var(--usage-quota-hatch) 0 1px, transparent 1px 6px);
 }
 .usage-quota-window progress::-webkit-progress-value {
-  background: var(--text-strong);
+  border-radius: var(--radius-pill);
+  background: var(--usage-quota-fill);
+}
+.usage-quota-window progress::-moz-progress-bar {
+  border-radius: var(--radius-pill);
+  background: var(--usage-quota-fill);
+}
+.usage-quota-window-face {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  pointer-events: none;
+}
+.usage-quota-window-face span,
+.usage-quota-window-face b {
+  color: var(--text-base);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-regular);
+  white-space: nowrap;
+}
+.usage-quota-window-name {
+  color: var(--text-strong);
+  text-transform: capitalize;
+}
+.usage-quota-window-face b {
+  color: var(--text-strong);
+}
+.usage-quota-window-reset {
+  margin-left: auto;
 }
 
 .usage-dashboard-footer {

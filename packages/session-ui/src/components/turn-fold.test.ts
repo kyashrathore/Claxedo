@@ -40,7 +40,7 @@ function assistant(fields: Partial<AgentAssistantMessage>): AgentAssistantMessag
 const settledTurn = { settled: true, foldableCount: 4 }
 
 describe("isFoldableGroup", () => {
-  test("counts machinery groups and standalone tools, not prose", () => {
+  test("counts every tool group, subagent spawns included, not prose", () => {
     const { groups, part } = turn([
       text("p0", "prose"),
       tool("p1", "read"),
@@ -49,16 +49,18 @@ describe("isFoldableGroup", () => {
       tool("p4", "task"),
       tool("p5", "task"),
     ])
-    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([false, true, true, false])
-    expect(countFoldableGroups(groups, part)).toBe(2)
+    expect(groups.map((group) => group.type)).toEqual(["part", "context", "part", "agents"])
+    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([false, true, true, true])
+    expect(countFoldableGroups(groups, part)).toBe(3)
   })
 
-  test("a subagent spawn stays visible whether it grouped or stands alone", () => {
+  test("a subagent spawn folds whether it grouped or stands alone", () => {
     const grouped = turn([tool("p1", "bash"), tool("p2", "agent"), tool("p3", "agent")])
-    expect(grouped.groups.map((group) => isFoldableGroup(group, grouped.part))).toEqual([true, false])
+    expect(grouped.groups.map((group) => isFoldableGroup(group, grouped.part))).toEqual([true, true])
 
     const alone = turn([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "agent")])
-    expect(alone.groups.map((group) => isFoldableGroup(group, alone.part))).toEqual([true, false])
+    expect(alone.groups.map((group) => group.type)).toEqual(["work", "agents"])
+    expect(alone.groups.map((group) => isFoldableGroup(group, alone.part))).toEqual([true, true])
   })
 
   test("an answered question stays visible and does not count toward the fold", () => {
@@ -70,11 +72,11 @@ describe("isFoldableGroup", () => {
     expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
   })
 
-  test("a turn whose only machinery is subagents does not fold at all", () => {
+  test("a bash row and a subagent group are enough for a settled turn to fold", () => {
     const { groups, part } = turn([text("p0", "prose"), tool("p1", "bash"), tool("p2", "agent"), tool("p3", "agent")])
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
-    expect(decision.canFold).toBe(false)
-    expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
+    expect(decision.canFold).toBe(true)
+    expect([...foldedGroupKeys(decision, groups, part)]).toEqual(["part:a1:p1", "agents:p2"])
   })
 
   test("a standalone group whose part is gone is not foldable", () => {
@@ -146,7 +148,7 @@ describe("foldedGroupKeys", () => {
     expect(groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual(["part"])
   })
 
-  test("a settled fold keeps the prose and the subagent card", () => {
+  test("a settled fold hides the subagent card with the rest and keeps only the prose", () => {
     const withAgents = turn([
       text("p0", "prose"),
       tool("p1", "read"),
@@ -157,6 +159,25 @@ describe("foldedGroupKeys", () => {
     ])
     const decision = turnFoldDecision({
       settled: true,
+      foldableCount: countFoldableGroups(withAgents.groups, withAgents.part),
+    })
+    const keys = foldedGroupKeys(decision, withAgents.groups, withAgents.part)
+    expect(withAgents.groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual(["part"])
+  })
+
+  test("a running fold keeps in-flight subagents on screen as the live group", () => {
+    const withAgents = turn([
+      text("p0", "prose"),
+      tool("p1", "read"),
+      tool("p2", "bash"),
+      tool("p3", "bash"),
+      tool("p4", "agent"),
+      tool("p5", "agent"),
+    ])
+    const decision = turnFoldDecision({
+      settled: false,
+      busy: true,
+      foldWhileRunning: true,
       foldableCount: countFoldableGroups(withAgents.groups, withAgents.part),
     })
     const keys = foldedGroupKeys(decision, withAgents.groups, withAgents.part)

@@ -86,7 +86,7 @@ afterEach(() => {
 })
 
 describe("UsageDashboard", () => {
-  test("defaults to Total local usage, 7 days, and Tokens; compact switchers select one detail surface", async () => {
+  test("defaults to Usage limits, 7 days, and Tokens; compact switchers select one detail surface", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.add(client)
     render(() => (
@@ -95,13 +95,11 @@ describe("UsageDashboard", () => {
       </QueryClientProvider>
     ))
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true"),
+      expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true"),
     )
-    expect(mocks.fetchUnifiedUsage.mock.calls.map(([request]) => request.view)).toEqual(["total"])
+    expect(mocks.fetchUnifiedUsage.mock.calls.map(([request]) => request.view)).toEqual(["quota"])
     expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
-    fireEvent.click(screen.getByRole("button", { name: "Usage limits" }))
-    expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Total local usage" })).toBeVisible()
     fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
@@ -152,8 +150,6 @@ describe("UsageDashboard", () => {
           </LanguageProvider>
         </QueryClientProvider>
       ))
-      fireEvent.click(screen.getByRole("button", { name: "Usage limits" }))
-
       await waitFor(() =>
         expect(container.querySelector('[data-component="usage-quota-throttled"]')?.textContent)
           .toBe("Refreshed 1m ago · next refresh in 46s"),
@@ -172,6 +168,7 @@ describe("UsageDashboard", () => {
         <UsageDashboard />
       </QueryClientProvider>
     ))
+    fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
     await screen.findByRole("heading", { name: "By provider" })
     const time = vi.spyOn(Date, "now").mockReturnValue(100_000)
     try {
@@ -196,6 +193,7 @@ describe("UsageDashboard", () => {
         <UsageDashboard />
       </QueryClientProvider>
     ))
+    fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
     await screen.findByRole("heading", { name: "By provider" })
     expect(mocks.fetchUnifiedUsage.mock.calls.at(-1)?.[0]).toMatchObject({ metric: "tokens", after: undefined })
 
@@ -227,6 +225,7 @@ describe("UsageDashboard", () => {
           <UsageDashboard />
         </QueryClientProvider>
       ))
+      fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
       await screen.findByRole("heading", { name: "By provider" })
       fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
       expect(await screen.findByText("Reading usage ledger…")).toBeVisible()
@@ -248,8 +247,8 @@ describe("UsageDashboard", () => {
       </QueryClientProvider>
     ))
     expect(await screen.findByText("Usage unavailable · scanner offline")).toBeVisible()
-    expect(screen.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("button", { name: "Total local usage" })).not.toHaveTextContent("—")
+    expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Usage limits" })).not.toHaveTextContent("—")
     expect(screen.queryByLabelText("Token category totals")).not.toBeInTheDocument()
   })
 })

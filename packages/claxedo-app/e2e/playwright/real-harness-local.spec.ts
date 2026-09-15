@@ -359,7 +359,8 @@ async function expectUsageDashboardWorks(page: Page) {
 
   const dialog = page.getByRole("dialog", { name: "Usage" })
   await expect(dialog, "the real Usage dialog did not open").toBeVisible({ timeout: 30_000 })
-  await expect(dialog.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("heading", { name: "Quota windows" })).toBeVisible()
   await expect(dialog.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true")
   await expect(dialog.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
 

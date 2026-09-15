@@ -192,6 +192,8 @@ export const HOSTED_OPERATIONS = {
   // here in any case; Electron main refuses this operation to the renderer
   // (`RENDERER_WITHHELD_OPERATIONS`).
   "account.cliExchange": { safe: false, decode: object },
+  "account.agentSettings.read": { safe: true, decode: object },
+  "account.agentSettings.write": { safe: false, decode: object },
   "agentPlugins.catalog": { safe: true, decode: statusResult },
   "agentPlugins.catalog.refresh": { safe: true, decode: statusResult },
   "agentPlugins.catalog.project": { safe: true, decode: statusResult },

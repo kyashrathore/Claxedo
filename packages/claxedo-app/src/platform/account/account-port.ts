@@ -78,6 +78,8 @@ export type HostedOperationName =
   | "account.mode"
   | "account.compatibility"
   | "account.cliExchange"
+  | "account.agentSettings.read"
+  | "account.agentSettings.write"
   | "agentPlugins.catalog"
   | "agentPlugins.catalog.refresh"
   | "agentPlugins.catalog.project"

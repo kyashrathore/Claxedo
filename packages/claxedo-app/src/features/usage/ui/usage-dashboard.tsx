@@ -41,7 +41,7 @@ function inclusiveLocalRange(days: number, now: number) {
 }
 
 export function UsageDashboard() {
-  const [selected, setSelected] = createSignal<UsageView>("total")
+  const [selected, setSelected] = createSignal<UsageView>("quota")
   const [days, setDays] = createSignal(7)
   const [metric, setMetric] = createSignal<"tokens" | "cost">("tokens")
   const [attribution, setAttribution] = createSignal<"provider" | "model">("provider")

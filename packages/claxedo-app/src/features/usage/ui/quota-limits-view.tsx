@@ -18,6 +18,7 @@ import {
 } from "@/ui/controls/account-status"
 import { formatCompactAge } from "@/lib/relative-time"
 import { readPercent } from "@/lib/percent"
+import { usageBrand } from "./usage-brand"
 
 /**
  * A word the card shows. `key` is a dictionary entry; `text` is a string only
@@ -221,7 +222,7 @@ export function QuotaLimitsView(props: {
         fallback={<div class="usage-chart-empty">{props.error ?? language.t("usage.quota.empty")}</div>}
       >
         <For each={groups()}>{(group) => (
-          <section class="usage-quota-harness" aria-label={say(group.name)}>
+          <section class={`usage-quota-harness usage-brand-row-${usageBrand(group.key)}`} aria-label={say(group.name)}>
             <h4>
               <Show when={group.icon}>
                 {(icon) => <ProviderIcon id={icon()} class="size-4 shrink-0 icon-strong-base" />}
@@ -283,15 +284,6 @@ export function QuotaLimitsView(props: {
                     const reset = createMemo(() => untilReset(window.resetsAt))
                     return (
                       <div class="usage-quota-window">
-                        <div>
-                          <span class="usage-quota-window-name">{say(window.name)}</span>
-                          <span>
-                            <b>{language.t("usage.quota.windowLeft", { percent: readPercent(100 - window.percent) })}</b>
-                            <Show when={reset()}>
-                              {(value) => <>{" · "}{language.t("usage.quota.windowResets", { reset: value() })}</>}
-                            </Show>
-                          </span>
-                        </div>
                         <progress
                           max="100"
                           value={window.percent}
@@ -301,6 +293,17 @@ export function QuotaLimitsView(props: {
                             percent: readPercent(window.percent),
                           })}
                         />
+                        <div class="usage-quota-window-face">
+                          <span class="usage-quota-window-name">{say(window.name)}</span>
+                          <b>{language.t("usage.quota.windowLeft", { percent: readPercent(100 - window.percent) })}</b>
+                          <Show when={reset()}>
+                            {(value) => (
+                              <span class="usage-quota-window-reset">
+                                {language.t("usage.quota.windowResets", { reset: value() })}
+                              </span>
+                            )}
+                          </Show>
+                        </div>
                       </div>
                     )
                   }}</For>

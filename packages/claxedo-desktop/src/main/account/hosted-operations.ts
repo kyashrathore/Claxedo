@@ -64,6 +64,8 @@ export const HOSTED_OPERATIONS = {
   // renderer cannot reach it — see `RENDERER_WITHHELD_OPERATIONS` — and no
   // main-side caller exists.
   "account.cliExchange": { method: "POST", path: "/api/auth/cli/exchange", body: ["code"] },
+  "account.agentSettings.read": { method: "GET", path: "/api/account/agent-settings" },
+  "account.agentSettings.write": { method: "PUT", path: "/api/account/agent-settings", body: ["cross_machine_writes"] },
   "agentPlugins.catalog": { method: "GET", path: "/api/claxedo/plugins", response: "http" },
   "agentPlugins.catalog.refresh": { method: "GET", path: "/api/claxedo/plugins/refresh", response: "http" },
   "agentPlugins.catalog.project": { method: "GET", path: "/api/claxedo/plugins/projects/:projectId", response: "http" },
