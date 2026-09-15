@@ -116,6 +116,10 @@ test.describe("Codex stylesheet contract @core", () => {
       overlayNodes.push(content)
 
       const card = add({ "data-slot": "switcher-metadata-card" })
+      const floatingSession = add({ "data-session-presentation": "floating" })
+      const transcriptTab = document.createElement("div")
+      transcriptTab.className = "session-floating-tab"
+      floatingSession.append(transcriptTab)
       const composer = add({ "data-surface": "composer", "data-dock-border-underlay": "v2" })
       const sidebar = add({ "data-surface": "sidebar" })
       const root = getComputedStyle(document.documentElement)
@@ -127,6 +131,11 @@ test.describe("Codex stylesheet contract @core", () => {
         expectedShadow: resolveShadow(root.getPropertyValue("--elevation-prominent")),
         card: getComputedStyle(card).boxShadow,
         expectedCard: resolveShadow(root.getPropertyValue("--surface-card-shadow")),
+        transcriptTab: {
+          radius: getComputedStyle(transcriptTab).borderTopLeftRadius,
+          border: getComputedStyle(transcriptTab).borderTopWidth,
+          shadow: getComputedStyle(transcriptTab).boxShadow,
+        },
         composer: getComputedStyle(composer).boxShadow,
         expectedComposer: resolveShadow(root.getPropertyValue("--surface-composer-shadow")),
         sidebar: getComputedStyle(sidebar).boxShadow,
@@ -162,6 +171,9 @@ test.describe("Codex stylesheet contract @core", () => {
       expect(overlay.shadow).toBe(result.codex.expectedShadow)
     }
     expect(result.codex.card).toBe(result.codex.expectedCard)
+    expect(result.codex.transcriptTab.radius).toBe("10px")
+    expect(result.codex.transcriptTab.border).toBe("0px")
+    expect(result.codex.transcriptTab.shadow).toBe(result.codex.expectedCard)
     expect(result.codex.composer).toBe(result.codex.expectedComposer)
     expect(result.codex.sidebar).toBe(result.codex.expectedSidebar)
     expect(result.aura.geometryInput).toBe("")

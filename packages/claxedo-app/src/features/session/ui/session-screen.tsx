@@ -1258,216 +1258,218 @@ export default function SessionPage(props: {
           class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3"
           classList={{ "session-floating-overlay": floating() }}
         >
-          <Show when={floating()}>
-            <div class="session-floating-peek">
-              <PreviousMessagesRow
-                count={visibleUserMessages().length}
-                expanded={transcriptPeeked()}
-                testId="session-transcript-peek"
-                onReveal={() => setPeekToggles((count) => count + 1)}
-              />
-            </div>
-          </Show>
-          <div
-            class="flex-1 min-h-0 overflow-hidden"
-            classList={{
-              "session-floating-timeline": floating(),
-              "session-floating-timeline-collapsed": transcriptCollapsed(),
-            }}
-            data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
-          >
-            <Switch>
-              <Match when={gate.open}>
-                <NewSessionDesignView
-                  worktree={newSessionWorktree()}
-                  workspaceKind="cloud"
-                  onWorktreeChange={changeNewSessionWorktree}
-                  onWorkspaceKindChange={setNewSessionWorkspaceKind}
-                  pickProjectFolder={pickProjectFolderWith(dialog)}
-                  signedControlPlane={signedControlPlane()}
-                  sandboxEnabled={config?.sandboxEnabled}
-                  main={
-                    <div class="flex min-h-[280px] items-center justify-start px-2">
-                      <CloudStartupView
-                        status={gate.status}
-                        err={gate.err}
-                        logs={gate.logs}
-                        variant={gate.variant}
-                        forbidden={gateForbidden()}
-                        onGoToWorkspaces={() => navigate("/")}
-                      />
-                    </div>
-                  }
-                >
-                  <div />
-                </NewSessionDesignView>
-              </Match>
-              <Match when={sessionID() && sessionID() !== "new"}>
-                <Show keyed when={sessionID() && sessionID() !== "new" ? sessionID() : undefined}>
-                  {(id) => (
-                    <SessionConversationOwner
-                      directory={dir()}
-                      sessionId={id}
-                      messages={() => undefined}
-                      parts={() => undefined}
-                    />
-                  )}
-                </Show>
-                <Show
-                  when={!sessionMissing()}
-                  fallback={
-                    <div class="flex h-full items-center justify-center px-4 text-text-weak">
-                      <div data-testid="session-unavailable" data-session-id={sessionID() ?? ""}>
-                        Session unavailable
+          <div class="flex-1 min-h-0 flex flex-col" classList={{ "session-floating-tab": floating() }}>
+            <Show when={floating()}>
+              <div class="session-floating-peek">
+                <PreviousMessagesRow
+                  count={visibleUserMessages().length}
+                  expanded={transcriptPeeked()}
+                  testId="session-transcript-peek"
+                  onReveal={() => setPeekToggles((count) => count + 1)}
+                />
+              </div>
+            </Show>
+            <div
+              class="flex-1 min-h-0 overflow-hidden"
+              classList={{
+                "session-floating-timeline": floating(),
+                "session-floating-timeline-collapsed": transcriptCollapsed(),
+              }}
+              data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
+            >
+              <Switch>
+                <Match when={gate.open}>
+                  <NewSessionDesignView
+                    worktree={newSessionWorktree()}
+                    workspaceKind="cloud"
+                    onWorktreeChange={changeNewSessionWorktree}
+                    onWorkspaceKindChange={setNewSessionWorkspaceKind}
+                    pickProjectFolder={pickProjectFolderWith(dialog)}
+                    signedControlPlane={signedControlPlane()}
+                    sandboxEnabled={config?.sandboxEnabled}
+                    main={
+                      <div class="flex min-h-[280px] items-center justify-start px-2">
+                        <CloudStartupView
+                          status={gate.status}
+                          err={gate.err}
+                          logs={gate.logs}
+                          variant={gate.variant}
+                          forbidden={gateForbidden()}
+                          onGoToWorkspaces={() => navigate("/")}
+                        />
                       </div>
-                    </div>
-                  }
-                >
-                  <Show
-                    keyed
-                    when={timelineMountSessionKey({
-                      messagesReady: messagesReady(),
-                      sessionKey: sessionKey(),
-                    })}
-                    fallback={
-                      <div
-                        class="size-full bg-background-base"
-                        data-session-timeline-loading
-                        data-testid="session-messages-loading"
-                      />
                     }
                   >
-                    {(_id) => (
-                      <MessageTimeline
-                        onSessionDeleted={(sessionId) => claxedoState.layout.closeDeletedSession({
-                          sessionId,
-                          directory: dir(),
-                        })}
-                        active={paneActive}
-                        actions={actions()}
-                        title={resolvedTitle}
-                        directorySessions={directorySessions}
-                        workspaceId={routeIdForDirectory(dir())}
-                        sessionRef={activeSessionRef()}
-                        queued={queuedMessages}
-                        parentID={info()?.parentID}
-                        onNavigateParent={navigateParent}
-                        scroll={ui.scroll}
-                        onResumeScroll={resumeScroll}
-                        setScrollRef={setScrollRef}
-                        onScheduleScrollState={scheduleScrollState}
-                        onAutoScrollHandleScroll={autoScroll.handleScroll}
-                        onMarkScrollGesture={scrollGesture.mark}
-                        hasScrollGesture={scrollGesture.active}
-                        onUserScroll={markUserScroll}
-                        onHistoryScroll={historyWindow.onScrollerScroll}
-                        onAutoScrollInteraction={autoScroll.handleInteraction}
-                        shouldAnchorBottom={() =>
-                          !paneLocation().hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
-                        }
-                        hasScrollTarget={() => !!paneLocation().hash || !!store.messageId || !!ui.pendingMessage}
-                        restoreFollowing={autoScroll.restoreFollowing}
-                        centered={centered()}
-                        setContentRef={(el) => {
-                          content = el
-                          autoScroll.contentRef(el)
-
-                          const root = scroller
-                          if (root) scheduleScrollState(root)
-                        }}
-                        historyShift={false}
-                        userMessages={historyWindow.renderedUserMessages()}
-                        hiddenTurnCount={historyWindow.hiddenTurnCount}
-                        hideTitle={floating}
-                        onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
-                        navMessages={visibleUserMessages()}
-                        currentMessage={activeMessage()}
-                        onMessageSelect={(message) => {
-                          autoScroll.pause()
-                          scrollToMessage(message)
-                        }}
-                        status={sessionController.status}
-                        anchor={anchor}
-                        setScrollToEnd={(fn) => {
-                          scrollToEnd = fn
-                        }}
-                        setScrollToMessage={(fn) => {
-                          scrollToTimelineMessage = fn ?? (() => false)
-                        }}
-                        setHistoryAnchor={(handlers) => {
-                          captureHistoryAnchor = handlers.capture
-                          restoreHistoryAnchor = handlers.restore
-                        }}
-                        onFirstTurnRecovery={(kind, userMessageID) =>
-                          firstTurnOnboarding.recover(kind, draft(userMessageID))}
-                        firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
+                    <div />
+                  </NewSessionDesignView>
+                </Match>
+                <Match when={sessionID() && sessionID() !== "new"}>
+                  <Show keyed when={sessionID() && sessionID() !== "new" ? sessionID() : undefined}>
+                    {(id) => (
+                      <SessionConversationOwner
+                        directory={dir()}
+                        sessionId={id}
+                        messages={() => undefined}
+                        parts={() => undefined}
                       />
                     )}
                   </Show>
-                </Show>
-              </Match>
-              <Match when={newSessionComposerReady()}>
-                <NewSessionDesignView
-                  worktree={newSessionWorktree()}
-                  workspaceKind={store.newSessionWorkspaceKind}
-                  branch={newSessionBranch()} branches={newSessionBranchSource.choices()} branchState={newSessionBranchSource.state().status} onBranchChange={newSessionBranchSource.select}
-                  onWorktreeChange={changeNewSessionWorktree}
-                  onWorkspaceKindChange={setNewSessionWorkspaceKind}
-                  pickProjectFolder={pickProjectFolderWith(dialog)}
-                  signedControlPlane={signedControlPlane()}
-                  sandboxEnabled={config?.sandboxEnabled}
-                  onProjectChange={(target, project) => {
-                    if (target === dir()) return
-                    const workspaceId = workspaceRouteId([project], target)
-                    if (!workspaceId) return
-                    layout.projects.open(target)
-                    groupNavigate(workspaceSessionRoute(workspaceId), target)
-                  }}
-                >
-                  <PromptInput
-                    mode={composerModes.draft()}
-                    harnessSubmitController={promptHarnessControllers.submit}
-                    harnessSelectionController={promptHarnessControllers.selection}
-                    ref={(el) => {
-                      inputRef = el
-                    }}
-                    variant="new-session"
-                    canPrompt={() => supports("permissions")}
-                    newSessionWorktree={newSessionWorktree()}
-                    newSessionBaseRef={newSessionBaseRef()}
-                    newSessionSourceBranch={newSessionSourceBranch()}
-                    newSessionWorkspaceKind={store.newSessionWorkspaceKind}
-                    onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
-                    onCloudStartup={(state) => {
-                      if (!state) {
-                        resetGate()
-                        return
+                  <Show
+                    when={!sessionMissing()}
+                    fallback={
+                      <div class="flex h-full items-center justify-center px-4 text-text-weak">
+                        <div data-testid="session-unavailable" data-session-id={sessionID() ?? ""}>
+                          Session unavailable
+                        </div>
+                      </div>
+                    }
+                  >
+                    <Show
+                      keyed
+                      when={timelineMountSessionKey({
+                        messagesReady: messagesReady(),
+                        sessionKey: sessionKey(),
+                      })}
+                      fallback={
+                        <div
+                          class="size-full bg-background-base"
+                          data-session-timeline-loading
+                          data-testid="session-messages-loading"
+                        />
                       }
-                      setGate({
-                        open: true,
-                        sync: state.sync ?? false,
-                        id: state.id,
-                        status: state.status,
-                        err: state.err,
-                        logs: state.logs ?? [],
-                        variant: "cloud",
-                      })
+                    >
+                      {(_id) => (
+                        <MessageTimeline
+                          onSessionDeleted={(sessionId) => claxedoState.layout.closeDeletedSession({
+                            sessionId,
+                            directory: dir(),
+                          })}
+                          active={paneActive}
+                          actions={actions()}
+                          title={resolvedTitle}
+                          directorySessions={directorySessions}
+                          workspaceId={routeIdForDirectory(dir())}
+                          sessionRef={activeSessionRef()}
+                          queued={queuedMessages}
+                          parentID={info()?.parentID}
+                          onNavigateParent={navigateParent}
+                          scroll={ui.scroll}
+                          onResumeScroll={resumeScroll}
+                          setScrollRef={setScrollRef}
+                          onScheduleScrollState={scheduleScrollState}
+                          onAutoScrollHandleScroll={autoScroll.handleScroll}
+                          onMarkScrollGesture={scrollGesture.mark}
+                          hasScrollGesture={scrollGesture.active}
+                          onUserScroll={markUserScroll}
+                          onHistoryScroll={historyWindow.onScrollerScroll}
+                          onAutoScrollInteraction={autoScroll.handleInteraction}
+                          shouldAnchorBottom={() =>
+                            !paneLocation().hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                          }
+                          hasScrollTarget={() => !!paneLocation().hash || !!store.messageId || !!ui.pendingMessage}
+                          restoreFollowing={autoScroll.restoreFollowing}
+                          centered={centered()}
+                          setContentRef={(el) => {
+                            content = el
+                            autoScroll.contentRef(el)
+
+                            const root = scroller
+                            if (root) scheduleScrollState(root)
+                          }}
+                          historyShift={false}
+                          userMessages={historyWindow.renderedUserMessages()}
+                          hiddenTurnCount={historyWindow.hiddenTurnCount}
+                          hideTitle={floating}
+                          onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
+                          navMessages={visibleUserMessages()}
+                          currentMessage={activeMessage()}
+                          onMessageSelect={(message) => {
+                            autoScroll.pause()
+                            scrollToMessage(message)
+                          }}
+                          status={sessionController.status}
+                          anchor={anchor}
+                          setScrollToEnd={(fn) => {
+                            scrollToEnd = fn
+                          }}
+                          setScrollToMessage={(fn) => {
+                            scrollToTimelineMessage = fn ?? (() => false)
+                          }}
+                          setHistoryAnchor={(handlers) => {
+                            captureHistoryAnchor = handlers.capture
+                            restoreHistoryAnchor = handlers.restore
+                          }}
+                          onFirstTurnRecovery={(kind, userMessageID) =>
+                            firstTurnOnboarding.recover(kind, draft(userMessageID))}
+                          firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
+                        />
+                      )}
+                    </Show>
+                  </Show>
+                </Match>
+                <Match when={newSessionComposerReady()}>
+                  <NewSessionDesignView
+                    worktree={newSessionWorktree()}
+                    workspaceKind={store.newSessionWorkspaceKind}
+                    branch={newSessionBranch()} branches={newSessionBranchSource.choices()} branchState={newSessionBranchSource.state().status} onBranchChange={newSessionBranchSource.select}
+                    onWorktreeChange={changeNewSessionWorktree}
+                    onWorkspaceKindChange={setNewSessionWorkspaceKind}
+                    pickProjectFolder={pickProjectFolderWith(dialog)}
+                    signedControlPlane={signedControlPlane()}
+                    sandboxEnabled={config?.sandboxEnabled}
+                    onProjectChange={(target, project) => {
+                      if (target === dir()) return
+                      const workspaceId = workspaceRouteId([project], target)
+                      if (!workspaceId) return
+                      layout.projects.open(target)
+                      groupNavigate(workspaceSessionRoute(workspaceId), target)
                     }}
-                    system={contentIntentDefaults()?.system}
-                    agent={contentIntentDefaults()?.agent}
-                    status={sessionController.status}
-                    activeTurn={sessionController.activeTurn}
-                    statusReady={sessionController.statusReady}
-                    diffFiles={diffFiles} sessionDirectory={dir()}
-                    sessionRef={activeSessionRef}
-                    signedControlPlane={signedControlPlane}
-                    workspaceId={signedWorkspaceId}
-                    workspaceKind={resolvedWorkspaceKind}
-                    onSubmit={onPromptSubmit}
-                  />
-                </NewSessionDesignView>
-              </Match>
-            </Switch>
+                  >
+                    <PromptInput
+                      mode={composerModes.draft()}
+                      harnessSubmitController={promptHarnessControllers.submit}
+                      harnessSelectionController={promptHarnessControllers.selection}
+                      ref={(el) => {
+                        inputRef = el
+                      }}
+                      variant="new-session"
+                      canPrompt={() => supports("permissions")}
+                      newSessionWorktree={newSessionWorktree()}
+                      newSessionBaseRef={newSessionBaseRef()}
+                      newSessionSourceBranch={newSessionSourceBranch()}
+                      newSessionWorkspaceKind={store.newSessionWorkspaceKind}
+                      onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
+                      onCloudStartup={(state) => {
+                        if (!state) {
+                          resetGate()
+                          return
+                        }
+                        setGate({
+                          open: true,
+                          sync: state.sync ?? false,
+                          id: state.id,
+                          status: state.status,
+                          err: state.err,
+                          logs: state.logs ?? [],
+                          variant: "cloud",
+                        })
+                      }}
+                      system={contentIntentDefaults()?.system}
+                      agent={contentIntentDefaults()?.agent}
+                      status={sessionController.status}
+                      activeTurn={sessionController.activeTurn}
+                      statusReady={sessionController.statusReady}
+                      diffFiles={diffFiles} sessionDirectory={dir()}
+                      sessionRef={activeSessionRef}
+                      signedControlPlane={signedControlPlane}
+                      workspaceId={signedWorkspaceId}
+                      workspaceKind={resolvedWorkspaceKind}
+                      onSubmit={onPromptSubmit}
+                    />
+                  </NewSessionDesignView>
+                </Match>
+              </Switch>
+            </div>
           </div>
 
           <Show when={!gate.open && !newSession()}>

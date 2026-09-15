@@ -42,22 +42,28 @@
   }
 }
 
-/* The peek strip and the transcript share one tab surface behind the composer
-   card, inset from the card's edges and rounded only at the top. Whichever of
-   them is the last thing above the card tucks under it by the same amount. */
-[data-session-presentation="floating"] .session-floating-peek,
-[data-session-presentation="floating"] .session-floating-timeline {
+/* The peek strip and the transcript sit on one tab surface behind the composer
+   card, inset from the card's edges, rounded only at the top, and tucked under
+   the card by the same amount whether the transcript is open or collapsed.
+   The chrome is the shared floating-card set (context card, switcher card):
+   the theme's card ring and washes are what make the edge readable, since in
+   Codex the card border resolves to 0 and the surface is the page's white. */
+[data-session-presentation="floating"] .session-floating-tab {
+  flex: 1 1 auto;
+  min-height: 0;
   margin-inline: 1.75rem;
+  margin-bottom: -0.75rem;
+  padding-bottom: 0.75rem;
   background: var(--overlay-surface);
   border: var(--surface-card-border, 1px solid var(--border-weak-base));
+  border-bottom: none;
+  border-radius: var(--surface-card-radius, var(--radius-lg)) var(--surface-card-radius, var(--radius-lg)) 0 0;
+  box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
 }
 
 [data-session-presentation="floating"] .session-floating-peek {
   flex: none;
-  padding: 0.125rem 0.75rem 0.875rem;
-  margin-bottom: -0.75rem;
-  border-bottom: none;
-  border-radius: var(--surface-card-radius, var(--radius-lg)) var(--surface-card-radius, var(--radius-lg)) 0 0;
+  padding: 0.125rem 0.75rem;
 }
 
 [data-session-presentation="floating"] .session-floating-peek [data-component="previous-messages"] > div {
@@ -76,19 +82,12 @@
   flex: 1 1 auto;
   min-height: 0;
   max-height: var(--session-floating-turn-height, min(40vh, 28rem));
-  border-top: none;
-  border-bottom: none;
-  padding-bottom: 0.75rem;
-  margin-bottom: -0.75rem;
 }
 
 /* Collapsed transcript: the slot keeps its timeline mounted at zero height so
    a peek re-expands the same instance; the strip above it is all that shows. */
 [data-session-presentation="floating"] .session-floating-timeline-collapsed {
   max-height: 0;
-  padding: 0;
-  margin-bottom: 0;
-  border: none;
   visibility: hidden;
 }
 
