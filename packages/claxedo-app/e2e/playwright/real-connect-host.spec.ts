@@ -573,15 +573,29 @@ test.describe("real claxedo connect host @core @tier-real", () => {
   // Observed: the prompt above is admitted and stored, and the turn Pi runs
   // for it fails with `OpenAI API error (401): Incorrect API key provided:
   // test-key` — Pi reaches api.openai.com, not the scripted endpoint. The
-  // host runtime's Pi profile is `<storage_root>/<workspace>/pi/agent`
-  // (`agent-sdk-runtime/src/harnesses/pi/agent-dir.ts`), whose `models.json`
-  // is written from the runtime's auth projections, and nothing delivers a
-  // config snapshot to a `claxedo connect` runtime: `packages/cli/src/connect/host.ts`
-  // `prepare()` composes `createHostWorkspaceRuntime` with no `configToken`
-  // and no harness config, so `/api/wr/config` is unreachable and the
-  // projections stay empty. Provider credentials for connect hosts are out of
-  // this slice (`2026-09-14-002-feat-connect-components-and-flows.md`, host
-  // runtime section), so this is recorded rather than asserted.
+  // Pi harness owns `models.json` in its profile and rewrites it from the
+  // runtime's applied `auth` projections on every config apply (since
+  // a22028ff52), so the scripted overlay only reaches a turn as a projection
+  // — the `runtime.host.apply({ auth: { openai: … } })` the fixture's cloud
+  // runtime now performs in place of the control plane's config push.
+  //
+  // No product path delivers that snapshot to a `claxedo connect` runtime:
+  //   - `packages/claxedo-host-serving/src/runtime.ts:64-72`
+  //     `createHostWorkspaceRuntime` composes `createWorkspaceRuntimeApp`
+  //     with no `managementAuth`, `managementTarget` or `configToken`, so
+  //     `POST /api/wr/config` answers 401 `runtime_config_auth_required`
+  //     (`workspace-runtime/src/routes/config.ts` `authorize`) — unlike a
+  //     sandbox, whose `workspace-relay-env.ts:141` reads
+  //     `WORKSPACE_RUNTIME_MANAGEMENT_*` from its environment;
+  //   - `packages/cli/src/connect/host.ts:282-290` `prepare()` passes no
+  //     `harness` either, so the runtime starts with no runner;
+  //   - the control plane's only push, `workspace/supervisor/config-sync.ts`
+  //     `pushRuntimeConfig`, targets a sandbox lease's `state.url`; a
+  //     connect host dials out and has no address the control plane could
+  //     push to, and nothing pushes through the host tunnel.
+  // This is the provider-credential gap plan 002 defers (host runtime
+  // section: "Provider credentials are brokered separately and are out of
+  // scope here"), so it is recorded rather than asserted.
   test.fixme("5b. a turn started on the connect host reaches the model endpoint", async () => {
     const wsApi = require(state.wsApi, "the api workspace")
     const sessionA = require(state.sessionA, "session A")
