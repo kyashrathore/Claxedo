@@ -13,6 +13,7 @@ import {
   type StartResponse,
   type Task,
   type TaskArchiveInput,
+  type TaskAttachmentRecord,
   type TaskCommandResult,
   type TaskCreateInput,
   type TaskDetailResponse,
@@ -51,6 +52,8 @@ export type TasksService = {
   list(actor: TasksActor, query: TaskListQuery): Promise<Page<TaskSummary>>
   children(actor: TasksActor, taskId: string, query: ChildListQuery): Promise<Page<TaskSummary>>
   detail(actor: TasksActor, taskId: string): Promise<TaskDetailResponse>
+  /** One attachment with its bytes, under the same read access as the task that holds it. */
+  attachment(actor: TasksActor, taskId: string, attachmentId: string): Promise<TaskAttachmentRecord>
   /** The task, or a refusal, for a caller that must prove write access before acting on it. */
   requireWritable(actor: TasksActor, taskId: string): Promise<Task>
   create(actor: TasksActor, input: TaskCreateInput): Promise<TaskCommandResult>
@@ -243,6 +246,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       slot: link.slot,
       attempt: link.attempt,
       handoffText: link.handoffText,
+      attachments: await deps.store.attachments.listWithBytes(actor.scopeId, task.id),
       session: link.sessionRef,
     })
     if (!handed.ok) throw new TasksError(handed.error)
@@ -298,7 +302,15 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     async detail(actor, taskId) {
       const task = await load(actor, taskId, "read")
       const links = await deps.store.links.listByTask(actor.scopeId, task.id)
-      return { task, links: await linkViews(actor, links) }
+      const attachments = await deps.store.attachments.list(actor.scopeId, task.id)
+      return { task, links: await linkViews(actor, links), attachments }
+    },
+
+    async attachment(actor, taskId, attachmentId) {
+      const task = await load(actor, taskId, "read")
+      const attachment = await deps.store.attachments.get(actor.scopeId, task.id, attachmentId)
+      if (!attachment) refuse("not_found", `Attachment ${attachmentId} was not found on task ${taskId}`)
+      return attachment
     },
 
     async requireWritable(actor, taskId) {
@@ -308,7 +320,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     async create(actor, input) {
       const checked = validateTaskDraft(input)
       if (!checked.ok) refuseInvalid("The task is not valid", checked.fields)
-      const draft = checked.value
+      const { draft, attachments } = checked.value
       await authorize(actor, draft.projectId, "write")
       const parent = draft.parentTaskId === null ? null : await requireOpenParent(actor, draft.parentTaskId, draft.projectId)
       if (parent && draft.workspaceId !== null && draft.workspaceId !== parent.workspaceId) {
@@ -333,6 +345,19 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         updatedAt: now,
       }
       await deps.store.tasks.insert(task)
+      for (const [position, attachment] of attachments.entries()) {
+        await deps.store.attachments.insert({
+          id: deps.ids.attachmentId(),
+          scopeId: actor.scopeId,
+          taskId: task.id,
+          position,
+          filename: attachment.filename,
+          mime: attachment.mime,
+          size: attachment.bytes.byteLength,
+          bytes: attachment.bytes,
+          createdAt: now,
+        })
+      }
       return { task, parent: await touchParent(parent) }
     },
 

@@ -36,6 +36,7 @@ import {
 } from "./workbench/rail/rail-keyboard-shortcuts"
 import { useRailEmptyDraftController } from "./workbench/rail/rail-empty-draft-controller"
 import { useRailShellChromeState } from "./workbench/rail/rail-shell-chrome-state"
+import { MainContentReady } from "./shell-revealed"
 import { isNarrowViewport } from "./workbench/workbench/index"
 import { useRailWorkbenchController } from "./workbench/rail/rail-workbench-controller"
 import { terminalBlockedByRole } from "../features/terminal/core/terminal-role-gate"
@@ -502,7 +503,11 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           <main
             data-testid="startup-isolation-sidebar"
             class="flex flex-1 bg-background-stronger"
-          />
+          >
+            {/* The staged run's main region intentionally shows nothing — its
+                empty pane is still the content the boot splash waits on. */}
+            <MainContentReady />
+          </main>
         ) : (
         <PanePresentationProvider value={panePresentation}>
         <RailWorkbenchShell

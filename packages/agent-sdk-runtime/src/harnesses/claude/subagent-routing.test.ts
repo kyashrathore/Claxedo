@@ -470,4 +470,64 @@ describe("Claude native subagent routing", () => {
     expect(child).toMatchObject({ lastTurn: expect.objectContaining({ status: "cancelled", reason: "interrupted" }) })
     await adapter.dispose()
   })
+
+  test("settles a forked-execution result as completed, not interrupted", async () => {
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: claudeDriverFor([
+        {
+          type: "assistant",
+          uuid: "parent-skill-call",
+          session_id: "claude-parent-thread",
+          parent_tool_use_id: null,
+          message: {
+            content: [{
+              type: "tool_use",
+              id: "tool-skill-1",
+              name: "Skill",
+              input: { skill: "code-review" },
+            }],
+          },
+        },
+        {
+          type: "user",
+          uuid: "skill-fork-result",
+          session_id: "claude-parent-thread",
+          parent_tool_use_id: null,
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "tool-skill-1", content: "Skill completed (forked execution)." }],
+          },
+          tool_use_result: { status: "forked", agentId: "agent-fork-1", content: [{ type: "text", text: "done" }] },
+        },
+      ]),
+    })
+    const parent = await adapter.createSession(path.resolve("/repo"))
+
+    for await (const _ of executeTestTurn(adapter, parent.id, {
+      parts: [{ type: "text", text: "Review" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "claude", modelID: "test" },
+    }, path.resolve("/repo"))) { /* drain */ }
+
+    const lifecycle = runtimeEvents
+      .filter((event) => event.sessionId === parent.id && event.payload.type === "subagent-updated")
+      .map((event) => event.payload)
+    expect(lifecycle).toContainEqual(expect.objectContaining({
+      toolCallId: "tool-skill-1",
+      providerId: "agent-fork-1",
+      status: "completed",
+    }))
+    expect(lifecycle).not.toContainEqual(expect.objectContaining({
+      toolCallId: "tool-skill-1",
+      status: "interrupted",
+    }))
+    await adapter.dispose()
+  })
 })

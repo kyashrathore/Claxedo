@@ -102,6 +102,7 @@ describe("prompt Stop results", () => {
             return { data: { ok: false as const, status: failure, message: "Stop request failed" } }
           },
           status: async () => { reads++; return { data: {} } },
+        get: async () => ({ data: {} }),
         },
         permission: { list: async () => { reads++; return { data: [] } } },
         question: { list: async () => { reads++; return { data: [] } } },
@@ -125,6 +126,7 @@ describe("prompt Stop results", () => {
         session: {
           abort: async () => { calls.push("abort"); return { data: { ok: true as const, status: "already_idle" as const } } },
           status: async () => { calls.push("status"); return { data: {} } },
+        get: async () => ({ data: {} }),
         },
         permission: { list: async () => { calls.push("permissions"); return { data: [] } } },
         question: { list: async () => { calls.push("questions"); return { data: [] } } },
@@ -146,6 +148,7 @@ describe("which turn Stop names", () => {
           return { data: { ok: true as const, status: "cancelled" as const } }
         },
         status: async () => ({ data: {} }),
+      get: async () => ({ data: {} }),
       },
       permission: { list: async () => ({ data: [] }) },
       question: { list: async () => ({ data: [] }) },
@@ -192,6 +195,7 @@ describe("prompt Stop feedback", () => {
             answerAbort = () => resolve({ data: { ok: true as const, status: "already_idle" as const } })
           }),
           status: async () => ({ data: { [sessionID]: { type: "idle" as const } } }),
+        get: async () => ({ data: {} }),
         },
         permission: { list: async () => ({ data: [] }) },
         question: { list: async () => ({ data: [] }) },
@@ -213,6 +217,7 @@ describe("prompt Stop feedback", () => {
         session: {
           abort: async () => ({ data: { ok: true as const, status: "already_idle" as const } }),
           status: async () => ({ data: { [sessionID]: { type: "idle" as const } } }),
+        get: async () => ({ data: {} }),
         },
         permission: { list: () => Promise.reject(new Error("permission list unavailable")) },
         question: { list: async () => ({ data: [] }) },
@@ -230,6 +235,7 @@ describe("prompt Stop feedback", () => {
         session: {
           abort: () => Promise.reject(new Error("Stop request failed")),
           status: async () => ({ data: {} }),
+        get: async () => ({ data: {} }),
         },
         permission: { list: async () => ({ data: [] }) },
         question: { list: async () => ({ data: [] }) },
@@ -248,6 +254,7 @@ describe("prompt Stop feedback", () => {
         session: {
           abort: async () => { calls.push("runtime-abort"); return { data: { ok: true as const, status: "already_idle" as const } } },
           status: async () => ({ data: {} }),
+        get: async () => ({ data: {} }),
         },
         permission: { list: async () => ({ data: [] }) },
         question: { list: async () => ({ data: [] }) },

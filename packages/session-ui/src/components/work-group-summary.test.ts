@@ -40,9 +40,13 @@ describe("workGroupTitle", () => {
     expect(title([tool("skill")])).toBe("Skill")
   })
 
-  test("says how many calls a mixed run hides, having no shared name to count", () => {
-    expect(title([tool("skill"), tool("listagents")])).toBe("Used 2 tools")
-    expect(title([tool("mcp__a__x"), tool("mcp__a__x")])).toBe("Used 2 tools")
+  test("names the distinct members of a mixed run", () => {
+    expect(title([tool("skill"), tool("listagents")])).toBe("Used skill, list agents")
+    expect(title([tool("sessions_list"), tool("processes")])).toBe("Used sessions list, processes")
+  })
+
+  test("counts a run of one unnamed tool by that tool even when its name is opaque", () => {
+    expect(title([tool("mcp__a__x"), tool("mcp__a__x")])).toBe("Ran 2 xs")
   })
 
   test("a run with no member at all still has a header", () => {
@@ -53,8 +57,8 @@ describe("workGroupTitle", () => {
 
 describe("workGroupIcon", () => {
   test("prefers the category of the strongest member", () => {
-    expect(workGroupIcon([tool("bash"), tool("edit")])).toBe("code-lines")
-    expect(workGroupIcon([tool("bash"), tool("webfetch")])).toBe("window-cursor")
+    expect(workGroupIcon([tool("bash"), tool("edit")])).toBe("pencil-line")
+    expect(workGroupIcon([tool("bash"), tool("webfetch")])).toBe("magnifying-glass")
     expect(workGroupIcon([tool("bash"), tool("skill")])).toBe("terminal")
   })
 
@@ -74,5 +78,24 @@ describe("workGroupActiveLabel", () => {
   test("names a running unnamed tool the way the settled summary names it", () => {
     expect(workGroupActiveLabel([running("skill", { name: "pdf" })], i18n)).toBe("Running skill")
     expect(workGroupActiveLabel([running("mcp__plugin_posthog_posthog__exec")], i18n)).toBe("Running Exec")
+  })
+})
+
+
+describe("group remains active between calls", () => {
+  test("keeps a 10ms command running until the next group or turn completion", () => {
+    const first = tool("bash", { command: "pwd" })
+    if (first.state.status === "completed") first.state.time = { start: 100, end: 110 }
+    expect(workGroupActiveLabel([first], i18n, true)).toBe("Running pwd")
+    expect(workGroupActiveLabel([first, running("bash", { command: "bun test" })], i18n, true)).toBe("Running bun test")
+    expect(workGroupActiveLabel([first, tool("bash", { command: "bun test" })], i18n, true)).toBe("Running bun test")
+    expect(workGroupActiveLabel([first], i18n, false)).toBeUndefined()
+  })
+
+  test("uses the last member while the group is still open, even after a failed command", () => {
+    const failed = { ...tool("bash"), state: { status: "error", input: { command: "false" }, error: "exit 1", time: { start: 1, end: 11 } } } as AgentToolPart
+    expect(workGroupActiveLabel([failed], i18n, true)).toBe("Running false")
+    expect(workGroupActiveLabel([tool("bash"), tool("edit")], i18n, true)).toBe("Editing files")
+    expect(workGroupActiveLabel([], i18n, true)).toBeUndefined()
   })
 })

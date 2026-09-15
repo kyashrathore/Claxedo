@@ -71,7 +71,7 @@ export type SubmitDirectoryResult = {
   directory: SubmitDirectory
 }
 
-export type SubmitAgent = { name: string }
+export type SubmitAgent = { name: string; id?: string }
 
 export type SubmittedConfig = {
   model: { providerID: string; modelID: string }

@@ -1678,6 +1678,12 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM queued_prompt WHERE session_id = ? AND seq = ?").run(sessionId, seq)
   }
 
+  replaceQueuedPromptParts(sessionId: string, seq: number, parts: QueuedPromptRecord["parts"]): boolean {
+    return this.db
+      .prepare("UPDATE queued_prompt SET parts_json = ? WHERE session_id = ? AND seq = ?")
+      .run(JSON.stringify(parts), sessionId, seq).changes === 1
+  }
+
   listQueuedPrompts(): QueuedPromptRecord[] {
     return this.db
       .prepare<QueuedPromptRow>(`

@@ -37,6 +37,20 @@ describe("resolveSubmittedConfig", () => {
     expect((await resolveSubmittedConfig({ ...base, defaultAgent: { name: "general" } }))?.agent).toBe("general")
     expect((await resolveSubmittedConfig(base))?.agent).toBe("build")
   })
+  test("submits the catalog agent id rather than its display name", async () => {
+    const modelKey = { providerID: "pi", modelID: "sonnet" }
+    const resolved = await resolveSubmittedConfig({
+      harnessModelKey: modelKey,
+      currentAgent: { name: "Build", id: "build" },
+    })
+    expect(resolved?.agent).toBe("build")
+    const fallback = await resolveSubmittedConfig({
+      harnessModelKey: modelKey,
+      currentAgent: { name: "default" },
+      defaultAgent: { name: "Build", id: "build" },
+    })
+    expect(fallback?.agent).toBe("build")
+  })
 })
 
 describe("resolveSubmitDirectory", () => {

@@ -7,7 +7,7 @@ import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState } from "../state/types"
 import { createWorkspacePanelSlice } from "../state/workspace-panel"
 import { useWorkspacePanelVisualState } from "./workspace-panel-visual-state"
-import { panelReviewWorkingSetKey } from "./workspace-panel-working-set"
+import { panelReviewWorkingSetKey } from "../review/review-workspace-working-set"
 
 const target = { workspaceDir: "/repo", targetPaneId: "pane-1" }
 

@@ -1,5 +1,5 @@
 import type { PromptDelivery } from "@claxedo/agent-sdk-runtime"
-import type { SessionPromptBody } from "../session/service"
+import type { QueuedPromptAction, SessionPromptBody } from "../session/service"
 import type { QueuedPromptRecord } from "../store"
 
 /** Who asked for the prompt, carried so a recovered turn runs as them. */
@@ -9,16 +9,25 @@ export type QueuedPromptRequester = Pick<QueuedPromptRecord, "actor" | "author">
 export type QueuedPromptStore = {
   queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt">): QueuedPromptRecord
   deleteQueuedPrompt(sessionId: string, seq: number): void
+  replaceQueuedPromptParts(sessionId: string, seq: number, parts: QueuedPromptRecord["parts"]): boolean
   listQueuedPrompts(): QueuedPromptRecord[]
   sessionDirectory(sessionId: string): string | undefined
 }
 
+export type QueuedPromptHandle = {
+  release: () => void
+  clearAction: () => void
+  action: () => Promise<QueuedPromptAction>
+}
+
 export type QueuedPromptHost = {
+  list(sessionId: string): Array<QueuedPromptRecord & { held: boolean }>
+  control(sessionId: string, seq: number, action: QueuedPromptAction): boolean
   /**
    * Persist a prompt the runtime is holding behind a running turn. The returned
    * handle is released by the caller once the prompt becomes a turn.
    */
-  queue(input: { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester): { release: () => void }
+  queue(input: { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester): QueuedPromptHandle
   /**
    * Re-issues every prompt still queued, once, after a restart. Safe to call
    * from each signal that the runtime can start a turn: a pass that already
@@ -39,22 +48,49 @@ export function createQueuedPromptHost(input: {
     directory: string
     body: SessionPromptBody
     onDelivery: (delivery: PromptDelivery) => void
+    queuedAction?: () => Promise<QueuedPromptAction>
+    onQueuedWaitEnd?: () => void
   } & QueuedPromptRequester) => Promise<unknown>
 }): QueuedPromptHost {
+  const controls = new Map<string, (action: QueuedPromptAction) => void>()
+  // Holds live with the process, not the row: a restart re-issues every row
+  // unheld, and the edit that held it is gone with the client's page anyway.
+  const held = new Set<string>()
+  const key = (sessionId: string, seq: number) => `${sessionId}:${seq}`
+  const handle = (row: QueuedPromptRecord): QueuedPromptHandle => ({
+    release: () => { controls.delete(key(row.sessionId, row.seq)); held.delete(key(row.sessionId, row.seq)); release(row) },
+    clearAction: () => controls.delete(key(row.sessionId, row.seq)),
+    action: () => new Promise((resolve) => controls.set(key(row.sessionId, row.seq), resolve)),
+  })
   let recovered: Promise<void> | undefined
   const release = (row: Pick<QueuedPromptRecord, "sessionId" | "seq">) =>
     input.store()?.deleteQueuedPrompt(row.sessionId, row.seq)
   return {
+    list: (sessionId) => (input.store()?.listQueuedPrompts() ?? [])
+      .filter((row) => row.sessionId === sessionId)
+      .map((row) => ({ ...row, held: held.has(key(row.sessionId, row.seq)) })),
+    control(sessionId, seq, action) {
+      const control = controls.get(key(sessionId, seq))
+      if (!control) return false
+      // The durable row changes before the waiting turn does, so a restart
+      // between the two re-issues the edited prompt, never the old one.
+      if (typeof action === "object" && !input.store()?.replaceQueuedPromptParts(sessionId, seq, action.replace)) return false
+      if (action === "hold") held.add(key(sessionId, seq))
+      else held.delete(key(sessionId, seq))
+      controls.delete(key(sessionId, seq))
+      control(action)
+      return true
+    },
     queue({ sessionId, body, actor, author }) {
       const store = input.store()
-      if (!store) return { release: () => {} }
+      if (!store) return { release: () => {}, clearAction: () => {}, action: () => new Promise(() => {}) }
       const record = store.queuePrompt({
         sessionId,
         ...queuedPromptColumns(body),
         ...(actor ? { actor } : {}),
         ...(author ? { author } : {}),
       })
-      return { release: () => release(record) }
+      return handle(record)
     },
     recover() {
       recovered ??= (async () => {
@@ -68,6 +104,7 @@ export function createQueuedPromptHost(input: {
             release(row)
             continue
           }
+          const pending = handle(row)
           let decided = false
           await input.startTurn({
             sessionId: row.sessionId,
@@ -77,9 +114,15 @@ export function createQueuedPromptHost(input: {
             ...(row.author ? { author: row.author } : {}),
             // A prompt that is queued again is still waiting, so its row stays
             // durable until the turn it becomes actually starts.
+            onQueuedWaitEnd: pending.clearAction,
+            queuedAction: async () => {
+              const action = await pending.action()
+              if (action === "cancel") pending.release()
+              return action
+            },
             onDelivery: (delivery) => {
               decided = true
-              if (delivery !== "queue") release(row)
+              if (delivery !== "queue") pending.release()
             },
           })
           // The runtime never took this prompt, so nothing is waiting for it

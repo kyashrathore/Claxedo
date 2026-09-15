@@ -109,12 +109,13 @@ export type WorkspaceRuntimeStore =
     runtimeSecret?: (name: string) => string
     listPendingSubagentWakes?: () => Array<{ parentSessionId: string; subagentKey: string; childSessionId: string; directory: string }>
     /**
-     * Durable prompts waiting for a running turn. All three are optional
+     * Durable prompts waiting for a running turn. All four are optional
      * together: a store that cannot persist them leaves the queue in the
-     * request that holds it, which is what it was before.
+     * request that holds it.
      */
     queuePrompt?: (input: Omit<QueuedPromptRecord, "seq" | "queuedAt">) => QueuedPromptRecord
     deleteQueuedPrompt?: (sessionId: string, seq: number) => void
+    replaceQueuedPromptParts?: (sessionId: string, seq: number, parts: QueuedPromptRecord["parts"]) => boolean
     listQueuedPrompts?: () => QueuedPromptRecord[]
     bindSession(input: {
       sessionId: string
@@ -1088,11 +1089,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const target = store()
     const queuePrompt = target.queuePrompt
     const deleteQueuedPrompt = target.deleteQueuedPrompt
+    const replaceQueuedPromptParts = target.replaceQueuedPromptParts
     const listQueuedPrompts = target.listQueuedPrompts
-    if (!queuePrompt || !deleteQueuedPrompt || !listQueuedPrompts) return undefined
+    if (!queuePrompt || !deleteQueuedPrompt || !replaceQueuedPromptParts || !listQueuedPrompts) return undefined
     return {
       queuePrompt: (input) => queuePrompt.call(store(), input),
       deleteQueuedPrompt: (sessionId, seq) => deleteQueuedPrompt.call(store(), sessionId, seq),
+      replaceQueuedPromptParts: (sessionId, seq, parts) => replaceQueuedPromptParts.call(store(), sessionId, seq, parts),
       listQueuedPrompts: () => listQueuedPrompts.call(store()),
       sessionDirectory: (sessionId) => store().getSession(sessionId)?.directory,
     }

@@ -3,6 +3,8 @@ import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
 import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
+import { upsertDirectorySession } from "../../data/sync/directory-session-cache"
+import type { ClaxedoSession } from "../../data/session-types"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
 
 type SessionRequestState = SessionRequestsQueryData
@@ -12,6 +14,7 @@ type AbortClient = {
   session: {
     abort(input: { sessionID: string; directory: string; turnId?: string }): Promise<Pick<Awaited<ReturnType<WorkspaceRuntimeClient["session"]["abort"]>>, "data">>
     status(): Promise<{ data?: Record<string, SessionStatus> }>
+    get(input: { sessionID: string }): Promise<{ data?: ClaxedoSession }>
   }
   permission: {
     list(): Promise<{ data?: SessionRequestState["permissions"] }>
@@ -111,6 +114,11 @@ export function createPromptAbort(input: {
     // The turn is already cancelled; these reads only reconcile what it left
     // behind, so one of them failing is not a Stop that failed.
     await Promise.all([
+      client.session.get({ sessionID }).then((x) => {
+        // The runtime records the cancellation on the session row's `lastTurn`;
+        // without this read the interrupted divider only appeared after reload.
+        if (x.data) upsertDirectorySession(directory, x.data)
+      }),
       client.session.status().then((x) => {
         setPromptSessionStatus({ sessionID, status: x.data?.[sessionID] ?? { type: "idle" }, source: "server" })
       }),

@@ -63,6 +63,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Connected applications read and revoke OAuth consents at the authorization server's own `/api/auth/oauth2/*` endpoints, which authenticate a BROWSER session (cookie, or the bearer plugin's session token). The desktop's AccountPort credential is an OAuth access token for the control-plane resource, which those endpoints do not accept, so this is not a Hosted Server AccountPort surface.",
   "features/workspaces/data/share-workspace.ts":
     "Desktop sharing goes through the machine remote-access port (Host Connector owns the machine key — the `workspace.assignHost` row in the matrix). The remaining authFetch is the self-hosted server's own local host-assignment route, which performs that flow server-side.",
+  "features/settings/data/agent-settings-api.ts":
+    "Agent settings read and write `/api/account/agent-settings` on the local or self-hosted server; the hosted plane has no such route, so this is not a Hosted Server AccountPort surface.",
 }
 
 function sourceFiles(root: string) {

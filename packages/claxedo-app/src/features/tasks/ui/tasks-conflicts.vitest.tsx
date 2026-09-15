@@ -96,7 +96,7 @@ describe("a refused edit rebases onto the record the host returned", () => {
     configureTasksAppPorts(
       ports(async (url, init) => {
         const path = url.slice(`${SERVER}${TASKS_ROUTE_PATH}`.length)
-        if (path === `/tasks/${task.id}`) return json({ task: current(), links: [] })
+        if (path === `/tasks/${task.id}`) return json({ task: current(), links: [], attachments: [] })
         if (path.startsWith(`/tasks/${task.id}/children`)) return json({ items: [], nextCursor: null })
         if (path.startsWith("/presets")) return json({ items: [], nextCursor: null })
         if (path === "/commands") {

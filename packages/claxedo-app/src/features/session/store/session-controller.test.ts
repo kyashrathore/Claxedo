@@ -30,7 +30,7 @@ import {
   shouldDeferSessionTransportHydrate,
   shouldSkipSessionTransportHydrate,
 } from "./session-history-activation"
-import { createLatestTurnCompletion, FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS, joinFirstFoldSessionPrefetch, LATEST_TURN_COMPLETION_EARLIEST_MS, LATEST_TURN_COMPLETION_IDLE_TIMEOUT_MS, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, schedulePostPaintLatestTurnCompletion, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import { createLatestTurnCompletion, FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS, joinFirstFoldSessionPrefetch, LATEST_TURN_COMPLETION_EARLIEST_MS, LATEST_TURN_COMPLETION_IDLE_TIMEOUT_MS, latestTurnWindowNeedsTailSync, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, schedulePostPaintLatestTurnCompletion, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
 import { SESSION_PREFETCH_TTL } from "@/platform/sync/session-prefetch"
 import { readAcceptedPromptStatus } from "./accepted-prompt-refresh"
 import { shouldFetchSessionAlongsideHistory } from "./session-transport"
@@ -375,6 +375,17 @@ describe("session controller helpers", () => {
       view: "latest-surface",
       hasSession: false,
     })).toBe(false)
+  })
+
+  test("latest-turn window needs the tail read only when its tail is a bare user message", () => {
+    // A prompt steered into a running turn joins it, so the reply is filed
+    // under the earlier user boundary and `latest-turn` returns the steering
+    // prompt alone — the bare-user tail that must escalate.
+    expect(latestTurnWindowNeedsTailSync([{ role: "user" }, { role: "assistant" }, { role: "user" }])).toBe(true)
+    expect(latestTurnWindowNeedsTailSync([{ role: "user" }])).toBe(true)
+    expect(latestTurnWindowNeedsTailSync([{ role: "user" }, { role: "assistant" }])).toBe(false)
+    expect(latestTurnWindowNeedsTailSync([])).toBe(false)
+    expect(latestTurnWindowNeedsTailSync(undefined)).toBe(false)
   })
 
   test("joined cold-session prefetch seeds its canonical page without a duplicate transport fetch", async () => {
@@ -858,6 +869,7 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toEqual({
       permissions: [permission("p1", "ses_1")],
       questions: [question("q1", "ses_1")],
+      reconciledAt: expect.any(Number),
     })
   })
 
@@ -1020,10 +1032,12 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toEqual({
       permissions: [permission("p1", "ses_1")],
       questions: [question("q1", "ses_1")],
+      reconciledAt: expect.any(Number),
     })
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_2", "requests"))).toEqual({
       permissions: [permission("p2", "ses_2")],
       questions: [question("q2", "ses_2")],
+      reconciledAt: expect.any(Number),
     })
   })
 

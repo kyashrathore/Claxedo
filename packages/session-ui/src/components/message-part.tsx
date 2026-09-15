@@ -37,7 +37,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
-import { groupParts, isHiddenTool, isPendingQuestion, sameGroups, type PartGroup, type PartRef } from "./part-groups"
+import { groupParts, isHiddenTool, isPendingQuestion, isSubagentToolPart, sameGroups, type PartGroup, type PartRef } from "./part-groups"
 import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
 import { TurnFoldRow } from "./turn-fold-row"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
@@ -68,6 +68,7 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { formatDuration } from "./format-duration"
+import { localPreviewUrl } from "./local-preview"
 import { stripShellWrapper } from "./shell-wrapper"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
@@ -224,6 +225,8 @@ export interface MessagePartProps {
   defaultOpen?: boolean
   toolOpen?: boolean
   onToolOpenChange?: (open: boolean) => void
+  toolRevealed?: boolean
+  onToolRevealedChange?: (revealed: boolean) => void
   deferToolContent?: boolean
   virtualizeDiff?: boolean
   onContentRendered?: () => void
@@ -484,7 +487,7 @@ export function getToolInfo(
     }
     case "webfetch":
       return {
-        icon: "window-cursor",
+        icon: "magnifying-glass",
         title: i18n.t("ui.tool.webfetch"),
         subtitle: input.url,
       }
@@ -513,19 +516,19 @@ export function getToolInfo(
       }
     case "edit":
       return {
-        icon: "code-lines",
+        icon: "pencil-line",
         title: i18n.t("ui.messagePart.title.edit"),
         subtitle: input.filePath ? getFilename(input.filePath) : undefined,
       }
     case "write":
       return {
-        icon: "code-lines",
+        icon: "file",
         title: i18n.t("ui.messagePart.title.write"),
         subtitle: input.filePath ? getFilename(input.filePath) : undefined,
       }
     case "apply_patch":
       return {
-        icon: "code-lines",
+        icon: "pencil-line",
         title: i18n.t("ui.tool.patch"),
         subtitle: input.files?.length
           ? `${input.files.length} ${i18n.t(input.files.length > 1 ? "ui.common.file.other" : "ui.common.file.one")}`
@@ -544,7 +547,7 @@ export function getToolInfo(
     case "skill":
       return {
         icon: "brain",
-        title: input.name || i18n.t("ui.tool.skill"),
+        title: input.name || input.skill || i18n.t("ui.tool.skill"),
       }
     default:
       return {
@@ -787,9 +790,10 @@ export function AssistantParts(
   const partOf = (ref: PartRef) => part().get(ref.messageID)?.get(ref.partID)
   const [foldChoice, setFoldChoice] = createSignal<boolean | undefined>(undefined)
   const settled = createMemo(() => props.messages.some(assistantMessageSettled))
+  const foldableCount = createMemo(() => countFoldableGroups(grouped(), partOf))
   const fold = createMemo(() =>
     turnFoldDecision({
-      foldableCount: countFoldableGroups(grouped(), partOf),
+      foldableCount: foldableCount(),
       settled: settled(),
       interrupted: props.turnInterrupted,
       errored: props.turnErrored,
@@ -811,6 +815,7 @@ export function AssistantParts(
         <TurnFoldRow
           durationMs={props.turnDurationMs}
           folded={fold().folded}
+          groupCount={foldableCount()}
           running={fold().canFoldRunning}
           onToggle={() => setFoldChoice(!fold().folded)}
         />
@@ -960,7 +965,7 @@ export function ContextToolGroup(props: {
   const open = () => props.open ?? localOpen()
   const pending = createMemo(
     () =>
-      !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
+      props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
   )
   const summary = createMemo(() => contextToolSummary(props.parts))
   const handleOpenChange = (value: boolean) => {
@@ -1034,8 +1039,8 @@ export function ContextToolGroup(props: {
  * WorkGroup — generalizes ContextToolGroup for a run of anything the agent did.
  * Collapsed by default; header = category icon + segmented summary + gated chevron.
  * Expanded body is a 224px scroll region with edge fades when it overflows; member rows
- * are passed in as children (the app renders them so per-part open state persists) and are
- * dimmed + icon-less via CSS (nesting depth is conveyed by dimming, not by extra icons).
+ * are passed in as children (the app renders them so per-part open state persists) and retain
+ * their tool-specific icons so the expanded list identifies each operation.
  */
 export function WorkGroup(props: {
   parts: AgentToolPart[]
@@ -1055,9 +1060,9 @@ export function WorkGroup(props: {
   )
   const summary = createMemo(() => workGroupSummary(props.parts))
   const icon = createMemo(() => workGroupIcon(props.parts))
-  // Live label while a member runs, settled aggregate once the run finishes.
+  // Stay active between members until execution moves past this group.
   const title = createMemo(
-    () => workGroupActiveLabel(props.parts, i18n) ?? workGroupTitle(summary(), pending(), i18n),
+    () => workGroupActiveLabel(props.parts, i18n, props.busy) ?? workGroupTitle(summary(), pending(), i18n),
   )
   const handleOpenChange = (value: boolean) => {
     if (props.open === undefined) setLocalOpen(value)
@@ -1406,6 +1411,8 @@ export function Part(props: MessagePartProps) {
         defaultOpen={props.defaultOpen}
         toolOpen={props.toolOpen}
         onToolOpenChange={props.onToolOpenChange}
+        toolRevealed={props.toolRevealed}
+        onToolRevealedChange={props.onToolRevealedChange}
         deferToolContent={props.deferToolContent}
         virtualizeDiff={props.virtualizeDiff}
         onContentRendered={props.onContentRendered}
@@ -1431,6 +1438,8 @@ export interface ToolProps {
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  revealed?: boolean
+  onRevealedChange?: (revealed: boolean) => void
   deferContent?: boolean
   virtualizeDiff?: boolean
   onContentRendered?: () => void
@@ -1527,6 +1536,12 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
   )
 
+  // The child registry owns whether delegation happened. A wrapper can fail or
+  // be interrupted after admitting a child; keep that child's transcript chip.
+  const boundSubagents = createMemo(() => isSubagentToolPart(part())
+    ? data.resolveSubagents?.(part().sessionID, part().callID) ?? []
+    : [])
+
   /** The failure text of an errored tool call. */
   const toolError = createMemo(() => {
     const state = part().state
@@ -1603,6 +1618,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
+          <Match when={boundSubagents().length > 0}>
+            <SubagentChipRow subagents={boundSubagents()} spawnInput={input()} />
+          </Match>
           <Match when={toolError()}>
             {(error) => {
               if (part().tool === "question" && isQuestionDeclined(partMetadata())) {
@@ -1653,6 +1671,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               deferContent={props.deferToolContent}
               virtualizeDiff={props.virtualizeDiff}
               onContentRendered={props.onContentRendered}
+              revealed={props.onToolRevealedChange ? props.toolRevealed : undefined}
+              onRevealedChange={props.onToolRevealedChange}
             />
             <ToolAttachments attachments={toolAttachments()} />
           </Match>
@@ -1745,6 +1765,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     () =>
       props.message.role === "assistant" &&
       typeof props.message.time.completed !== "number" &&
+      typeof part().time?.end !== "number" &&
       props.turnInterrupted !== true,
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
@@ -2002,7 +2023,7 @@ ToolRegistry.register({
     return (
       <BasicTool {...props} icon={info().icon} trigger={{ title: info().title, subtitle: info().subtitle }}>
         <Show when={props.output}>
-          <ScrollableOutput component="tool-output">
+          <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <Markdown text={props.output!} />
           </ScrollableOutput>
         </Show>
@@ -2022,7 +2043,7 @@ ToolRegistry.register({
         trigger={{ title: info().title, subtitle: info().subtitle, args: info().args }}
       >
         <Show when={props.output}>
-          <ScrollableOutput component="tool-output">
+          <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <Markdown text={props.output!} />
           </ScrollableOutput>
         </Show>
@@ -2042,7 +2063,7 @@ ToolRegistry.register({
         trigger={{ title: info().title, subtitle: info().subtitle, args: info().args }}
       >
         <Show when={props.output}>
-          <ScrollableOutput component="tool-output">
+          <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <Markdown text={props.output!} />
           </ScrollableOutput>
         </Show>
@@ -2065,7 +2086,7 @@ ToolRegistry.register({
       <BasicTool
         {...props}
         hideDetails
-        icon="window-cursor"
+        icon="magnifying-glass"
         trigger={
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">
@@ -2159,10 +2180,7 @@ ToolRegistry.register({
     // command output advertises a listening localhost URL. Pure client-side regex.
     const localUrl = createMemo(() => {
       if (pending()) return undefined
-      const out = stripAnsi(props.output || props.metadata.output || "")
-      const match = out.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/\S*)?/i)
-      if (!match) return undefined
-      return match[0].replace(/0\.0\.0\.0/, "127.0.0.1").replace(/[.,)]+$/, "")
+      return localPreviewUrl(stripAnsi(props.output || props.metadata.output || ""))
     })
     const localLabel = () => localUrl()?.replace(/^https?:\/\//, "").replace(/\/$/, "")
 
@@ -2211,7 +2229,7 @@ ToolRegistry.register({
               />
             </TooltipV2>
           </div>
-          <ScrollableOutput slot="bash-scroll" class="ui-bash-scroll">
+          <ScrollableOutput slot="bash-scroll" class="ui-bash-scroll" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <pre data-slot="bash-pre">
               <code>{text()}</code>
             </pre>
@@ -2290,7 +2308,7 @@ ToolRegistry.register({
       <div data-component="edit-tool">
         <BasicTool
           {...props}
-          icon="code-lines"
+          icon="pencil-line"
           defer
           trigger={
             <div data-component="edit-trigger">
@@ -2366,7 +2384,7 @@ ToolRegistry.register({
       <div data-component="write-tool">
         <BasicTool
           {...props}
-          icon="code-lines"
+          icon="file"
           defer={props.deferContent !== false}
           trigger={
             <div data-component="write-trigger" class="ui-write-trigger">
@@ -2449,7 +2467,7 @@ ToolRegistry.register({
           <div data-component="apply-patch-tool">
             <BasicTool
               {...props}
-              icon="code-lines"
+              icon="pencil-line"
               defer={props.deferContent !== false}
               trigger={{
                 title: i18n.t("ui.tool.patch"),
@@ -2552,7 +2570,7 @@ ToolRegistry.register({
         <div data-component="apply-patch-tool">
           <BasicTool
             {...props}
-            icon="code-lines"
+            icon="pencil-line"
             defer={props.deferContent !== false}
             trigger={
               <div data-component="edit-trigger">
@@ -2697,7 +2715,10 @@ ToolRegistry.register({
   name: "skill",
   render(props) {
     const i18n = useI18n()
-    const title = createMemo(() => props.input.name || i18n.t("ui.tool.skill"))
+    // Claude's dynamic-tool lane persists the skill id on `input.skill`; the
+    // OpenCode lane uses `input.name`.
+    const name = createMemo(() => props.input.name || props.input.skill)
+    const title = createMemo(() => name() || i18n.t("ui.tool.skill"))
     const running = createMemo(() => props.status === "pending" || props.status === "running")
 
     const titleContent = () => <TextShimmer text={title()} active={running()} />
@@ -2712,7 +2733,19 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
+    // A completed skill whose frame carried no output still names its call — the
+    // row must open to that rather than swallow the click onto nothing.
+    const body = createMemo(() => props.output || (name() ? `Skill: ${name()}` : undefined))
+
+    return (
+      <BasicTool {...props} icon="brain" trigger={trigger()}>
+        <Show when={body()}>
+          <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
+            <Markdown text={body()!} />
+          </ScrollableOutput>
+        </Show>
+      </BasicTool>
+    )
   },
 })
 

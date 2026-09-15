@@ -12,10 +12,10 @@ import {
   dispatchSessionTodoEvent,
 } from "../../store/session-status-dispatcher"
 import { shellDataKeys } from "@/platform/sync/keys"
-import { setSessionDiffQueryData } from "./queries"
+import { setSessionDiffQueryData, sessionRequestResolved } from "./queries"
 import { reconcileUpdatedSessionListQueryData } from "../query/session-list"
 import { sessionEventInfoId, sessionEventSummary } from "./session-event-info"
-import { isRecord, readField, readString } from "@/lib/record"
+import { asRecord, isRecord, readField, readFiniteNumber, readString } from "@/lib/record"
 
 type DirectoryEvent = {
   type: string
@@ -104,6 +104,28 @@ export function applyDirectoryEventToShellQueries(input: {
   directory: string
 }) {
   switch (input.event.type) {
+    case "message.updated": {
+      // The submitting client bumps its own rail optimistically; every other
+      // pane learns recency only from the directory event stream, and turn
+      // completion publishes no `session.updated`. The message row's own
+      // timestamps are the canonical recency for that pane — monotonic so a
+      // retained replay cannot drag a session backwards in the list.
+      const info = asRecord(asRecord(input.event.properties)?.info)
+      const sessionID = readString(info, "sessionID")
+      const time = asRecord(info?.time)
+      const created = readFiniteNumber(time, "created")
+      const completed = readFiniteNumber(time, "completed")
+      const at = completed ?? created
+      if (!sessionID || !at) break
+      reconcileUpdatedSessionListQueryData({
+        sessionId: sessionID,
+        directory: input.directory,
+        updatedAt: at,
+        ...(info?.role === "user" && created !== undefined ? { lastHumanTurnAt: created } : {}),
+        monotonic: true,
+      })
+      break
+    }
     case "session.updated": {
       const info = sessionEventSummary(input.event.properties)
       if (!info) break
@@ -142,6 +164,9 @@ export function applyDirectoryEventToShellQueries(input: {
     case "permission.asked": {
       const permission = input.event.properties
       if (!isPermissionRequest(permission)) break
+      // Retained runtime replay redelivers asks for requests already resolved:
+      // the ledger knows that answer even though the replay carries no reply.
+      if (sessionRequestResolved({ queryClient, sessionId: permission.sessionID, id: permission.id })) break
       updateSessionRequests(permission.sessionID, (cache) => ({
         ...cache,
         permissions: upsertById(cache.permissions, permission),
@@ -160,6 +185,7 @@ export function applyDirectoryEventToShellQueries(input: {
     case "question.asked": {
       const question = input.event.properties
       if (!isQuestionRequest(question)) break
+      if (sessionRequestResolved({ queryClient, sessionId: question.sessionID, id: question.id })) break
       updateSessionRequests(question.sessionID, (cache) => ({
         ...cache,
         questions: upsertById(cache.questions, question),

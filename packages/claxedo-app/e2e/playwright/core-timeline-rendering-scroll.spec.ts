@@ -27,8 +27,12 @@
  */
 
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { installMockRuntime, type MockRuntimeOptions } from "../helpers/mock-runtime"
+import { readFile, writeFile } from "node:fs/promises"
+import { installMockRuntime, type MockRuntimeOptions, type MockMessageRow } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
+import { readTextRangeGeometry, readScrollPosition, sampleElementDuringAction, sampleTranscriptGeometry, timelineScroller, scrollTimelineToTop } from "../helpers/geometry-oracle"
+
+import { expectRailRowVisible } from "../helpers/rail-oracle"
 
 const DIR = "/tmp/e2e-core-timeline-rendering-scroll"
 const SESSION_ID = "ses_core_timeline_rendering_scroll"
@@ -46,9 +50,13 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-async function seedOneProject(page: Page, dir: string) {
-  await page.addInitScript((d: string) => {
+async function seedOneProject(page: Page, dir: string, scheme?: "light" | "dark") {
+  await page.addInitScript(({ d, scheme }: { d: string; scheme?: "light" | "dark" }) => {
     localStorage.clear()
+    if (scheme) {
+      localStorage.setItem("opencode-theme-id", "codex")
+      localStorage.setItem("opencode-color-scheme", scheme)
+    }
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
@@ -63,7 +71,7 @@ async function seedOneProject(page: Page, dir: string) {
         closedProjects: {},
       }),
     )
-  }, dir)
+  }, { d: dir, scheme })
 }
 
 async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
@@ -77,11 +85,11 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
 }
 
 function composer(page: Page) {
-  return page.getByRole("textbox", { name: /Ask anything/i }).last()
+  return page.getByRole("textbox", { name: /Ask anything/i }).filter({ visible: true }).last()
 }
 
 function submitControl(page: Page) {
-  return page.locator(SELECTORS.submitControl).last()
+  return page.locator(`${SELECTORS.submitControl}:visible`).last()
 }
 
 function sessionUrlPattern(sessionId: string) {
@@ -474,25 +482,6 @@ async function installMutableSession(
   }
 }
 
-function timelineScroller(page: Page) {
-  return page.locator('[data-scrollable]:has([data-slot="session-turn-message-content"])').first()
-}
-
-async function scrollTimelineToTop(page: Page) {
-  const scroller = timelineScroller(page)
-  await scroller.hover()
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await page.mouse.wheel(0, -500)
-    // Let each wheel fully apply (two rAFs) before deciding whether to wheel
-    // again: an unsettled burst can land scrollTop at the top before the
-    // app's gesture tracking has processed a single user scroll-up, leaving
-    // the reveal logic with nothing left to trigger it.
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    const scrollTop = await scroller.evaluate((el) => el.scrollTop)
-    if (scrollTop < 100) break
-  }
-}
-
 /**
  * Found by the semantic icon id, never a sprite href: each theme draws this icon from its
  * own sprite, so an href selector matches nothing outside the theme it was written for and
@@ -565,7 +554,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(collapsibleContent(page, "tools_web")).toHaveCount(0)
   })
 
-  test("a pending question tool call renders no row; an answered one opens automatically", async ({ page }) => {
+  test("a pending question tool call renders no row; an answered one renders its answer card", async ({ page }) => {
     const userID = "msg_user_question"
     const assistantID = "msg_assistant_question"
     await installSeededSession(page, [
@@ -598,7 +587,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     // A pending question renders no row at all, not a collapsed one.
     await expect(page.locator('[data-timeline-part-id="q_pending"]')).toHaveCount(0)
 
-    const answeredContent = collapsibleContent(page, "q_answered")
+    const answeredContent = page.locator('[data-timeline-part-id="q_answered"] [data-component="question-card"]')
     await expect(answeredContent).toHaveCount(1)
     await expect(answeredContent.locator('[data-slot="question-answer-item"]')).toHaveCount(1)
   })
@@ -888,6 +877,274 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect.poll(() => jumpToBottomOpacity(page)).toBe("0")
   })
 
+  for (const scheme of ["light", "dark"] as const) {
+    test(`expanded output is readable with visible scrollbars in ${scheme} theme`, async ({ page }, testInfo) => {
+      const rows = seededTurnRows(1)
+      rows[1].parts.unshift(toolPart({
+        id: "readable_output", messageID: "msg_assistant_01", tool: "bash",
+        input: { command: "print numbered lines" },
+        output: Array.from({ length: 100 }, (_, i) => `readable line ${i + 1}`).join("\n"),
+      }))
+      rows[1].parts.splice(1, 0, toolPart({
+        id: "readable_web", messageID: "msg_assistant_01", tool: "webfetch",
+        input: { url: "https://example.com" }, output: Array.from({ length: 100 }, (_, i) => `web line ${i + 1}`).join("\n\n"),
+      }))
+      await installMockRuntime(page, {
+        dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+        existingSession: { messages: rows as unknown as MockMessageRow[] },
+      })
+      await seedOneProject(page, DIR, scheme)
+      await gotoSession(page)
+      await expandWorkGroupIfPresent(page, "readable_output,readable_web")
+      await expect(page.locator("html")).toHaveAttribute("data-color-scheme", scheme)
+      const group = page.locator('[data-component="work-group-list"]')
+      const tool = page.locator('[data-timeline-part-id="readable_output"]')
+      const trigger = tool.locator('[data-slot="collapsible-trigger"]')
+      await expect(trigger).toBeVisible()
+      if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
+      const output = tool.locator('[data-slot="bash-scroll"]')
+      await expect(output).toContainText("readable line 100")
+      await page.mouse.move(0, 0)
+      const style = await output.evaluate(element => {
+        const code = element.querySelector("code")!
+        return {
+          text: getComputedStyle(code).color,
+          scrollbar: getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor,
+          scrollbarDisplay: getComputedStyle(element, "::-webkit-scrollbar").display,
+          scrollbarWidth: getComputedStyle(element).scrollbarWidth,
+          overflow: element.scrollHeight > element.clientHeight,
+
+        }
+      })
+      await writeFile(testInfo.outputPath("output-styles.json"), JSON.stringify(style, null, 2))
+      await page.screenshot({ path: testInfo.outputPath("expanded-output.png") })
+      const color = style.text.match(/[\d.]+/g)!.slice(0, 3).map(Number)
+      const luminance = color.map(c => c / 255).map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      const light = 0.2126 * luminance[0] + 0.7152 * luminance[1] + 0.0722 * luminance[2]
+      expect(scheme === "light" ? 1.05 / (light + 0.05) : (light + 0.05) / 0.05).toBeGreaterThan(4.5)
+      expect(await group.evaluate(element => getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor)).not.toBe("rgba(0, 0, 0, 0)")
+      await expect(tool.locator('[data-slot="basic-tool-tool-leading-icon"]')).toBeVisible()
+      expect(style.scrollbarDisplay).not.toBe("none")
+      expect(style.scrollbarWidth).not.toBe("none")
+      expect(style.overflow).toBe(true)
+      expect(style.scrollbar).not.toBe("rgba(0, 0, 0, 0)")
+      await output.evaluate(element => { element.scrollTop = 120 })
+      await expect.poll(() => output.evaluate(element => element.scrollTop)).toBe(120)
+    })
+  }
+
+  test("Show all preserves the visible line in already scrolled shell output", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const rows = seededTurnRows(1)
+    rows[1].parts.unshift(toolPart({
+      id: "reading_output", messageID: "msg_assistant_01", tool: "bash",
+      input: { command: "print 300 numbered lines" },
+      output: Array.from({ length: 300 }, (_, index) => `reading line ${index + 1}`).join("\n"),
+    }))
+    await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+      existingSession: { messages: rows as unknown as MockMessageRow[] },
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await sendAndProve(page, "output reading probe", "ack 1: output reading probe")
+    const scroller = timelineScroller(page)
+    await scroller.evaluate(element => { element.scrollTop = 0 })
+    const tool = page.locator('[data-timeline-part-id="reading_output"]')
+    const trigger = tool.locator('[data-slot="collapsible-trigger"]')
+    await expect(trigger).toBeVisible()
+    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
+    const toggle = tool.locator('[data-slot="scrollable-output-toggle"]')
+    await expect(toggle).toHaveText("Show all")
+    const output = tool.locator('[data-slot="bash-scroll"]')
+    await output.evaluate(element => { element.scrollTop = 280 })
+    await expect.poll(async () => (await readScrollPosition(output)).top).toBe(280)
+    const line = tool.locator('[data-slot="bash-pre"] code')
+    const before = await readTextRangeGeometry(line, "reading line 16")
+    const box = await output.boundingBox()
+    expect(box).not.toBeNull()
+    expect(before.y).toBeGreaterThan(box!.y)
+    expect(before.y + before.height).toBeLessThan(box!.y + box!.height)
+    await page.screenshot({ path: testInfo.outputPath("reading-before.png") })
+    await toggle.click()
+    await expect(toggle).toHaveText("Show less")
+    const firstAfter = await readTextRangeGeometry(line, "reading line 16")
+    await page.screenshot({ path: testInfo.outputPath("reading-after.png") })
+    const afterScreenshot = await readTextRangeGeometry(line, "reading line 16")
+    await writeFile(testInfo.outputPath("reading-position.json"), JSON.stringify({ before, firstAfter, afterScreenshot }, null, 2))
+    expect(Math.max(Math.abs(firstAfter.y - before.y), Math.abs(afterScreenshot.y - before.y))).toBeLessThanOrEqual(2)
+  })
+
+  test("expanded shell output survives scrolling out of the virtualized transcript", async ({ page }, testInfo) => {
+    test.setTimeout(90_000)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const rows = seededTurnRows(30)
+    rows[1].parts.unshift(toolPart({
+      id: "retained_output", messageID: "msg_assistant_01", tool: "bash",
+      input: { command: "print 300 numbered lines" },
+      output: Array.from({ length: 300 }, (_, index) => `retention line ${index + 1}`).join("\n"),
+    }))
+    await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+      existingSession: { messages: rows as unknown as MockMessageRow[] },
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await sendAndProve(page, "output retention probe", "ack 1: output retention probe")
+    const root = page.locator('[data-testid="session-page-root"]')
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (await root.getAttribute("data-session-rendered-user-count") === "31") break
+      await scrollTimelineToTop(page)
+      await page.getByRole("button", { name: /^\d+ previous messages$/ }).click()
+    }
+    await expect(root).toHaveAttribute("data-session-rendered-user-count", "31")
+    const scroller = timelineScroller(page)
+    await scroller.evaluate(element => { element.scrollTop = 0 })
+    const tool = page.locator('[data-timeline-part-id="retained_output"]')
+    await expect(tool).toBeVisible()
+    const trigger = tool.locator('[data-slot="collapsible-trigger"]')
+    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
+    const toggle = tool.locator('[data-slot="scrollable-output-toggle"]')
+    await expect(toggle).toHaveText("Show all")
+    await toggle.click()
+    await expect(toggle).toHaveText("Show less")
+    await page.screenshot({ path: testInfo.outputPath("output-expanded.png") })
+    await scroller.evaluate(element => { element.scrollTop = element.scrollHeight })
+    await expect(tool).toHaveCount(0)
+    await expect(page.locator('[data-timeline-row="UserMessage"]').filter({ hasText: "output retention probe" })).toBeInViewport()
+    await page.screenshot({ path: testInfo.outputPath("output-unmounted.png") })
+    await scroller.evaluate(element => { element.scrollTop = 0 })
+    await expect(tool).toBeVisible()
+    await expect(trigger).toHaveAttribute("aria-expanded", "true")
+    await page.screenshot({ path: testInfo.outputPath("output-returned.png") })
+    await expect(toggle).toHaveText("Show less")
+    await expect(tool.locator('[data-slot="bash-scroll"]')).toHaveAttribute("data-revealed", "true")
+  })
+
+  test("Home and End reach the endpoints of a fully loaded heavy transcript", async ({ page }, testInfo) => {
+    test.setTimeout(90_000)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+      existingSession: { messages: seededTurnRows(60) as unknown as MockMessageRow[] },
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await sendAndProve(page, "keyboard endpoint probe", "ack 1: keyboard endpoint probe")
+    const root = page.locator('[data-testid="session-page-root"]')
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (await root.getAttribute("data-session-rendered-user-count") === "61") break
+      await scrollTimelineToTop(page)
+      await page.getByRole("button", { name: /^\d+ previous messages$/ }).click()
+    }
+    await expect(root).toHaveAttribute("data-session-rendered-user-count", "61")
+    const scroller = timelineScroller(page)
+    await scroller.hover()
+    await page.mouse.wheel(0, (await readScrollPosition(scroller)).max / 2)
+    const before = await readScrollPosition(scroller)
+    expect(before.max).toBeGreaterThan(5000)
+    expect(before.top).toBeGreaterThan(1000)
+    await scroller.focus()
+    await expect(scroller).toBeFocused()
+    await page.keyboard.press("Home")
+    await expect.soft.poll(async () => (await readScrollPosition(scroller)).top, { timeout: 10_000 }).toBeLessThanOrEqual(2)
+    const home = await readScrollPosition(scroller)
+    await page.screenshot({ path: testInfo.outputPath("home-endpoint.png") })
+    await expect.soft(page.locator('[data-message-id="msg_user_01"][data-timeline-row="UserMessage"]')).toBeInViewport()
+    await page.keyboard.press("End")
+    await expect.soft.poll(async () => {
+      const position = await readScrollPosition(scroller)
+      return position.max - position.top
+    }, { timeout: 10_000 }).toBeLessThanOrEqual(2)
+    const end = await readScrollPosition(scroller)
+    await page.screenshot({ path: testInfo.outputPath("end-endpoint.png") })
+    await expect.soft(page.locator('[data-timeline-row="UserMessage"]').filter({ hasText: "keyboard endpoint probe" })).toBeInViewport()
+    await writeFile(testInfo.outputPath("keyboard-endpoints.json"), JSON.stringify({ before, home, end }, null, 2))
+  })
+
+  for (const mode of ["idle", "streaming", "finishes-hidden"] as const) test(`returning to a ${mode} heavy session restores the reading position`, async ({ page }, testInfo) => {
+    test.setTimeout(90_000)
+    const otherId = "ses_idle_return_other"
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+      holdTurn: mode !== "idle",
+      existingSession: { messages: seededTurnRows(60) as unknown as MockMessageRow[] },
+      otherSessions: [{ id: otherId, title: "Other idle session", prompt: "Other idle prompt", reply: "Other idle reply" }],
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await ensureComposerModelSelected(page)
+    await composer(page).fill("idle return probe")
+    await submitControl(page).click()
+    if (mode === "idle") {
+      await expectAssistantReplyVisible(page, "ack 1: idle return probe", { spec: "core-timeline-rendering-scroll", scenario: `idle-first-${testInfo.repeatEachIndex}` })
+    } else {
+      await expect(submitControl(page)).toHaveAttribute("data-icon", "stop")
+    }
+    let runningAssistant: AnyInfo = {}
+    if (mode !== "idle") await expect.poll(async () => {
+      const body = await page.evaluate(async id => (await fetch(`/session/${id}/message`)).json(), SESSION_ID)
+      runningAssistant = body.messages?.find((row: MockMessageRow) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
+      return runningAssistant.id
+    }).toBeTruthy()
+    const root = page.locator('[data-testid="session-page-root"]')
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (await root.getAttribute("data-session-rendered-user-count") === "61") break
+      await scrollTimelineToTop(page)
+      await page.getByRole("button", { name: /^\d+ previous messages$/ }).click()
+    }
+    await expect(root).toHaveAttribute("data-session-rendered-user-count", "61")
+    const scroller = timelineScroller(page)
+    await scroller.hover()
+    await page.mouse.wheel(0, (await readScrollPosition(scroller)).max / 2)
+    await expect.poll(async () => (await readScrollPosition(scroller)).top).toBeGreaterThan(1000)
+    const before = await readScrollPosition(scroller)
+    expect(before.max).toBeGreaterThan(5000)
+    expect(before.top).toBeLessThan(before.max * 0.8)
+    await page.screenshot({ path: testInfo.outputPath("idle-middle.png") })
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await expect(page.locator(SELECTORS.assistantContent).filter({ hasText: "Other idle reply" })).toBeVisible()
+    if (mode !== "idle") {
+      const assistant = runningAssistant
+      mock.emit({ type: "message.part.updated", properties: { part: {
+        id: `${assistant.id}_text`, messageID: assistant.id, sessionID: SESSION_ID,
+        type: "text", text: "Output that arrived while you read another session.\n\n".repeat(50),
+      } } } as never, DIR)
+      if (mode === "finishes-hidden") {
+        mock.emit({ type: "message.updated", properties: { info: { ...assistant, time: { ...(assistant.time as Record<string, unknown>), completed: Date.now() } } } } as never, DIR)
+        mock.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } }, DIR)
+      }
+    }
+    const returningFrames = page.evaluate(async sessionId => {
+      const samples: number[] = []
+      for (let frame = 0; frame < 120; frame++) {
+        await new Promise(requestAnimationFrame)
+        if (!location.pathname.endsWith(`/session/${sessionId}`) && !location.pathname.endsWith(`/s/${sessionId}`)) continue
+        const pageRoot = document.querySelector(`[data-testid="session-page-root"][data-session-id="${sessionId}"]`)
+        const element = pageRoot?.querySelector('[data-slot="session-timeline-scroll"] [data-scrollable]')
+        if (element instanceof HTMLElement && element.checkVisibility() && element.clientHeight > 0) samples.push(element.scrollTop)
+      }
+      return samples
+    }, SESSION_ID)
+    await (await expectRailRowVisible({ page, sessionId: SESSION_ID })).click()
+    await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
+    if (mode === "streaming") {
+      await expect(submitControl(page)).toHaveAttribute("data-icon", "stop")
+    }
+    else await expect(submitControl(page)).not.toHaveAttribute("data-icon", "stop")
+    await expect.poll(async () => Math.abs((await readScrollPosition(timelineScroller(page))).top - before.top), { timeout: 10_000 }).toBeLessThanOrEqual(2)
+    const returned = await readScrollPosition(timelineScroller(page))
+    const frames = await returningFrames
+    await writeFile(testInfo.outputPath("return-frames.json"), JSON.stringify(frames))
+    expect(frames.length).toBeGreaterThan(10)
+    expect(Math.max(...frames.map(top => Math.abs(top - before.top))), "every visible return frame preserves the reading position").toBeLessThanOrEqual(2)
+    await writeFile(testInfo.outputPath("idle-return-position.json"), JSON.stringify({ before, returned }, null, 2))
+    await page.screenshot({ path: testInfo.outputPath("idle-return.png") })
+    expect(mock.requests.unhandled).toEqual([])
+    await scrollTimelineToTop(page)
+    await expect(page.locator(SELECTORS.assistantContent).filter({ hasText: "Reply 1. A short acknowledgement for turn 1." })).toBeVisible()
+  })
+
   test("a user scroll held in the middle survives virtual-row measurement", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 500 })
     await installSeededSession(page, seededTurnRows(8))
@@ -1052,6 +1309,331 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     })
     expect(previewMounts).toBe(0)
     await expect(page.locator("[data-session-message-preview]")).toHaveCount(0)
+  })
+
+  test("the first wheel keeps the visible answer in place when cold history expands @first-interaction", async ({ page }, testInfo) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({ width: 1280, height: 600 })
+    const base = seededTurnRows(1)
+    const assistant = base[1]
+    const rows = [base[0], ...Array.from({ length: 12 }, (_, index) => {
+      const id = `msg_assistant_cold_${String(index).padStart(2, "0")}`
+      return {
+        info: { ...assistant.info, id },
+        parts: [{ id: `${id}_text`, sessionID: SESSION_ID, messageID: id, type: "text", text:
+          index === 11
+            ? Array.from({ length: 9 }, (_, line) => `Final answer paragraph ${line}. This is the response the reader is looking at.`).join("\n\n")
+            : `Earlier analysis ${index}. ` + "Working through the details. ".repeat(8),
+        }, ...(index === 11 ? [] : [{ id: `${id}_tool`, sessionID: SESSION_ID, messageID: id,
+          type: "tool", tool: "bash", callID: `${id}_call`, state: { status: "completed", input: { command: "pwd" }, output: DIR, title: "pwd", metadata: {}, time: { start: 1, end: 2 } },
+        }])],
+      }
+    })]
+    await installSeededSession(page, rows)
+    await gotoSession(page)
+    const answerSelector = '[data-timeline-part-id="msg_assistant_cold_11_text"] [data-markdown-block]:last-child p'
+    const answer = page.locator(answerSelector)
+    await expect(answer).toBeAttached()
+    const before = await answer.boundingBox()
+    expect(before).not.toBeNull()
+    await timelineScroller(page).hover()
+    await page.mouse.wheel(0, -1)
+    const samples = await sampleTranscriptGeometry(page, {
+      rowSelector: answerSelector,
+      composerSelector: '[data-component="prompt-input"]',
+      submitSelector: SELECTORS.submitControl,
+      frames: 45,
+    })
+    await writeFile(testInfo.outputPath("cold-history-wheel-geometry.json"), JSON.stringify({ before, samples }, null, 2))
+    expect(samples.every(sample => sample.row !== null), "the measured paragraph remains mounted").toBe(true)
+    expect(Math.max(...samples.map(sample => Math.abs(sample.row!.y - before!.y)))).toBeLessThan(5)
+    await expectAssistantReplyVisible(page, "Final answer paragraph 8.", { spec: "core-timeline-rendering-scroll", scenario: "cold-history-first-wheel" })
+  })
+
+  test("a short follow-up preserves the existing transcript row with a stationary composer", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const { mock } = await openSessionWithFirstSend(page, { harnessModels: HARNESS_MODELS })
+    await composer(page).fill("short follow-up")
+    const [samples] = await Promise.all([
+      sampleTranscriptGeometry(page, {
+        rowSelector: SELECTORS.userMessageContent,
+        composerSelector: '[data-component="prompt-input"]',
+        submitSelector: SELECTORS.submitControl,
+        frames: 180,
+      }),
+      submitControl(page).click(),
+    ])
+    await testInfo.attach("transcript-and-composer-geometry", {
+      body: JSON.stringify(samples), contentType: "application/json",
+    })
+    await writeFile(testInfo.outputPath("geometry-and-transport.json"), JSON.stringify({
+      samples, eventWebSocketConnections: mock.requests.eventWebSocketConnections,
+      unhandled: mock.requests.unhandled, failed: mock.requests.failed,
+      badResponses: mock.requests.badResponses,
+    }, null, 2))
+    expect(mock.requests.unhandled, "no API request escapes the mock").toEqual([])
+    expect(mock.requests.eventWebSocketConnections, "the app consumes the shared central event transport").toBeGreaterThan(0)
+    await page.screenshot({ path: testInfo.outputPath("geometry-after-send.png") })
+    expect(mock.requests.promptCount).toBe(2)
+    expect(samples.some(sample => sample.submitIcon === "stop"), "sample window includes the running turn").toBe(true)
+    expect(samples.at(-1)?.submitIcon, "sample window reaches the ready composer").toMatch(/^(send|arrow-undo-down)$/)
+    expect(samples.every(sample => sample.row !== null && sample.composer !== null)).toBe(true)
+    const first = samples[0]
+    expect(first.row).not.toBeNull()
+    expect(first.composer).not.toBeNull()
+    expect(Math.max(...samples.map(sample => Math.abs(sample.composer!.y - first.composer!.y)))).toBeLessThanOrEqual(1)
+    expect(Math.max(...samples.map(sample => Math.abs(sample.composer!.height - first.composer!.height)))).toBeLessThanOrEqual(1)
+    expect(Math.max(...samples.map(sample => Math.abs(sample.row!.y - first.row!.y))), "existing row moves without composer movement or scroll input").toBeLessThanOrEqual(1)
+    await expectAssistantReplyVisible(page, "ack 2: short follow-up")
+  })
+
+  test("a Codex first reply token preserves the existing prompt with a stationary composer", async ({ page }, testInfo) => {
+    const fixture = JSON.parse(await readFile(new URL("../fixtures/codex-first-token-geometry.json", import.meta.url), "utf8")) as {
+      previousMessages: MockMessageRow[]
+      turn: MockMessageRow[]
+    }
+    await page.setViewportSize({ width: 1512, height: 861 })
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID,
+      harness: "codex-app-server", holdTurn: true,
+      existingSession: { messages: fixture.previousMessages },
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await expectAssistantReplyVisible(page, "QA_COMPLETE_DONE_987", {
+      spec: "core-timeline-rendering-scroll",
+      scenario: `first-token-previous-${testInfo.repeatEachIndex}`,
+    })
+    await ensureComposerModelSelected(page)
+    const prompt = fixture.turn[0].parts[0].text
+    await composer(page).fill(prompt)
+    await submitControl(page).click()
+    await expect(submitControl(page)).toHaveAttribute("data-icon", "stop")
+    let assistant: AnyInfo = {}
+    await expect.poll(async () => {
+      const body = await page.evaluate(async id => (await fetch(`/session/${id}/message`)).json(), SESSION_ID)
+      assistant = body.messages?.find((row: MockMessageRow) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
+      return assistant.id
+    }).toBeTruthy()
+    const assistantID = String(assistant.id)
+    const tool = { ...fixture.turn[1].parts[0], messageID: assistantID }
+    mock.emit({ type: "message.part.updated", properties: { part: tool } } as never, DIR)
+    await expect(page.locator(`[data-timeline-part-id="${tool.id}"]`)).toBeVisible()
+    const geometryInput = {
+      rowSelector: `[data-message-id="${String(assistant.parentID)}"] ${SELECTORS.userMessageContent}`,
+      composerSelector: '[data-component="prompt-input"]',
+      submitSelector: SELECTORS.submitControl,
+      frames: 90,
+    }
+    const before = await sampleTranscriptGeometry(page, { ...geometryInput, frames: 30 })
+    const initial = before.at(-1)!
+    expect(initial.row).not.toBeNull()
+    expect(initial.composer).not.toBeNull()
+    expect(Math.max(...before.slice(-10).map(sample => Math.abs(sample.row!.y - initial.row!.y))), "the completed tool settles before the first-token measurement").toBeLessThanOrEqual(1)
+    const scrollBefore = await readScrollPosition(timelineScroller(page))
+    await page.screenshot({ path: testInfo.outputPath("first-token-before.png") })
+    const text = { ...fixture.turn[1].parts[1], messageID: assistantID, text: "QA_SH" }
+    const [samples] = await Promise.all([
+      sampleTranscriptGeometry(page, geometryInput),
+      (async () => {
+        mock.emit({ type: "message.part.updated", properties: { part: text } } as never, DIR)
+        await expect(page.locator(`[data-timeline-part-id="${text.id}"]`)).toBeVisible()
+        await page.screenshot({ path: testInfo.outputPath("first-token-arrived.png") })
+      })(),
+    ])
+    const scrollAfter = await readScrollPosition(timelineScroller(page))
+    await writeFile(testInfo.outputPath("first-token-geometry.json"), JSON.stringify({ before, samples, scrollBefore, scrollAfter }, null, 2))
+    // The sampler's first entry is synchronous and can observe virtualizer layout before the next animation frame.
+    const animationFrames = samples.slice(1)
+    expect(samples.every(sample => sample.row !== null && sample.composer !== null)).toBe(true)
+    expect(Math.max(...samples.map(sample => Math.abs(sample.composer!.y - initial.composer!.y)))).toBeLessThanOrEqual(1)
+    expect(Math.max(...samples.map(sample => Math.abs(sample.composer!.height - initial.composer!.height)))).toBeLessThanOrEqual(1)
+    expect.soft(Math.max(...animationFrames.map(sample => Math.abs(sample.row!.y - initial.row!.y))), "the existing prompt stays in place when the first reply token arrives").toBeLessThanOrEqual(1)
+    mock.emit({ type: "message.part.updated", properties: { part: { ...text, text: fixture.turn[1].parts[1].text } } } as never, DIR)
+    mock.emit({ type: "message.updated", properties: { info: {
+      ...assistant, time: { ...(assistant.time as Record<string, unknown>), completed: Date.now() },
+    } } } as never, DIR)
+    mock.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } } as never, DIR)
+    await expectAssistantReplyVisible(page, "QA_SHIMMER_DONE_989", {
+      spec: "core-timeline-rendering-scroll",
+      scenario: `first-token-completed-${testInfo.repeatEachIndex}`,
+    })
+    expect(mock.requests.promptCount).toBe(1)
+    expect(mock.requests.unhandled).toEqual([])
+  })
+
+  test("streaming interleaved commands never duplicates paragraphs", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1200 })
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+      existingSession: { messages: seededTurnRows(1) as unknown as MockMessageRow[] }, holdTurn: true,
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await ensureComposerModelSelected(page)
+    await composer(page).fill("Review interleaved rendering")
+    await submitControl(page).click()
+    await expect.poll(() => mock.requests.promptBodies[0]?.assistantID).toBeTruthy()
+    const messageID = mock.requests.promptBodies[0]!.assistantID
+    const emit = (part: AnyPart) => mock.emit({ type: "message.part.updated", properties: { part: { sessionID: SESSION_ID, messageID, ...part } } } as never, DIR)
+    for (let i = 0; i < 5; i++) {
+      emit({ id: `unique-text-${i}`, type: "text", text: `Unique paragraph ${i}`, time: { start: 1, end: 2 } })
+      for (let j = 0; j < 4; j++) {
+        const part = { id: `tool-${i}-${j}`, type: "tool", tool: "bash", callID: `call-${i}-${j}`,
+          state: { status: "running", input: { command: `echo ${i}-${j}` }, time: { start: 1 } } }
+        emit(part)
+        await expect(page.locator(`[data-timeline-part-id="unique-text-${i}"]`)).toHaveCount(1)
+        emit({ ...part, state: { ...part.state, status: "completed", output: "ok", title: "echo", time: { start: 1, end: 2 } } })
+      }
+      for (let k = 0; k <= i; k++) {
+        await expect(page.locator(`[data-timeline-part-id="unique-text-${k}"]`)).toHaveCount(1)
+      }
+    }
+  })
+
+  test("streamed tables and ordered lists render available rows before completion", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 1200 })
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
+      existingSession: { messages: seededTurnRows(1) as unknown as MockMessageRow[] }, holdTurn: true,
+    })
+    await seedOneProject(page, DIR)
+    await gotoSession(page)
+    await ensureComposerModelSelected(page)
+    await composer(page).fill("Stream a table then a list")
+    await submitControl(page).click()
+    let assistant: AnyInfo = {}
+    await expect.poll(async () => {
+      const body = await page.evaluate(async id => (await fetch(`/session/${id}/message`)).json(), SESSION_ID)
+      assistant = body.messages?.find((row: MockMessageRow) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
+      return assistant.id
+    }).toBeTruthy()
+    const blocks = [
+      { id: "live-table", selector: "tbody tr", prefix: "| Step | Result |\n| --- | --- |\n| 1 | First |\n", suffix: "| 2 | Second |\n" },
+      { id: "live-list", selector: "li", prefix: "1. First item\n", suffix: "2. Second item\n" },
+    ]
+    for (const block of blocks) {
+      const part = { id: block.id, sessionID: SESSION_ID, messageID: assistant.id, type: "text", text: block.prefix, time: { start: Date.now() } }
+      mock.emit({ type: "message.part.updated", properties: { part } } as never, DIR)
+      const body = page.locator(`[data-timeline-part-id="${block.id}"]`)
+      // Check before the producer is allowed to send the rest or complete.
+      await expect(body.locator(block.selector)).toHaveCount(1)
+      await expect(body).toBeVisible()
+      mock.emit({ type: "message.part.delta", properties: { sessionID: SESSION_ID, messageID: String(assistant.id), partID: block.id, field: "text", delta: block.suffix } }, DIR)
+      await expect(body.locator(block.selector)).toHaveCount(2)
+      mock.emit({ type: "message.part.updated", properties: { part: { ...part, text: block.prefix + block.suffix, time: { ...part.time, end: Date.now() } } } } as never, DIR)
+      await expect(body.locator(block.selector)).toHaveCount(2)
+    }
+    await page.screenshot({ path: testInfo.outputPath("blocks-before-message-completion.png") })
+    mock.emit({ type: "message.part.updated", properties: { part: { id: "later-text", messageID: assistant.id, sessionID: SESSION_ID, type: "text", text: "Later text is still streaming" } } } as never, DIR)
+    await expect(page.locator('[data-timeline-part-id="later-text"]')).toBeVisible()
+    for (const block of blocks) await expect(page.locator(`[data-timeline-part-id="${block.id}"]`).locator(block.selector)).toHaveCount(2)
+    mock.emit({ type: "message.updated", properties: { info: { ...assistant, time: { ...(assistant.time as Record<string, unknown>), completed: Date.now() } } } } as never, DIR)
+    mock.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } }, DIR)
+    for (const block of blocks) await expect(page.locator(`[data-timeline-part-id="${block.id}"]`).locator(block.selector)).toHaveCount(2)
+    expect(mock.requests.unhandled).toEqual([])
+  })
+
+  test("loading a user Markdown image preserves its reserved space and the existing transcript position", async ({ page }, testInfo) => {
+    let release!: () => void
+    let requested = 0
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const { mock } = await openSessionWithFirstSend(page, {
+      harnessModels: HARNESS_MODELS,
+      replyText: (turn, text) => turn === 1 ? `ack 1: ${text}` : "Image received",
+      httpImages: [{
+        pathname: "/qa-transcript-image.png",
+        body: await readFile(new URL("../../public/web-app-manifest-512x512.png", import.meta.url)),
+        beforeResponse: async () => { requested += 1; await pending },
+      }, {
+        pathname: "/qa-corrupt-image.png",
+        body: Buffer.from("invalid PNG image bytes"),
+      }, {
+        pathname: "/qa-missing-image.png",
+        status: 404,
+        body: Buffer.from("Image not found"),
+      }],
+    })
+    try {
+      const imageUrl = new URL("/qa-transcript-image.png", page.url()).href
+      const corruptUrl = new URL("/qa-corrupt-image.png", page.url()).href
+      const missingUrl = new URL("/qa-missing-image.png", page.url()).href
+      const missingResponse = page.waitForResponse(response => response.url() === missingUrl && response.status() === 404)
+      await sendAndProve(page, `![QA image](${imageUrl}) ![QA corrupt image](${corruptUrl}) ![QA missing image](${missingUrl})`, "Image received")
+      await missingResponse
+      await expect.poll(() => requested).toBeGreaterThan(0)
+      const image = page.locator(`${SELECTORS.userMessageContent} img`).last()
+      const placeholder = page.locator(`${SELECTORS.userMessageContent} [data-state="loading"][aria-label="QA image"]`)
+      await expect(placeholder).toBeVisible()
+      await expect(placeholder).toHaveText("")
+      const corrupt = page.locator(`${SELECTORS.userMessageContent} [data-component="markdown-image-fallback"]`).filter({ hasText: /^QA corrupt image$/ })
+      await expect(corrupt).toBeVisible()
+      const missing = page.locator(`${SELECTORS.userMessageContent} [data-component="markdown-image-fallback"]`).filter({ hasText: /^QA missing image$/ })
+      await expect(missing).toBeVisible()
+      const missingBefore = await missing.boundingBox()
+      const decoded = await page.evaluate(async src => {
+        const probe = new Image()
+        probe.src = src
+        return probe.decode().then(() => true, () => false)
+      }, corruptUrl)
+      expect(decoded, "the corrupt fixture fails the browser's image decoder").toBe(false)
+      const corruptBefore = await corrupt.boundingBox()
+      const messageId = await placeholder.evaluate(element => element.closest("[data-message-id]")?.getAttribute("data-message-id"))
+      expect(messageId).toBeTruthy()
+      const measure = (frames = 1) => sampleTranscriptGeometry(page, {
+        rowSelector: `[data-message-id="${messageId}"] ${SELECTORS.userMessageContent}`,
+        composerSelector: '[data-component="prompt-input"]',
+        submitSelector: SELECTORS.submitControl,
+        frames,
+      })
+      const before = (await measure())[0]
+      const imageBefore = await placeholder.boundingBox()
+      await page.screenshot({ path: testInfo.outputPath("image-before-load.png") })
+      release()
+      await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(512)
+      const afterSamples = await measure(30)
+      const after = afterSamples[afterSamples.length - 1]
+      const imageAfter = await image.boundingBox()
+      const corruptAfter = await corrupt.boundingBox()
+      const missingAfter = await missing.boundingBox()
+      await writeFile(testInfo.outputPath("image-geometry.json"), JSON.stringify({ before, after, afterSamples, imageBefore, imageAfter, corruptBefore, corruptAfter, missingBefore, missingAfter, decoded }, null, 2))
+      await page.screenshot({ path: testInfo.outputPath("image-after-load.png") })
+      expect(before.composer).not.toBeNull()
+      expect(after.composer).not.toBeNull()
+      expect(before.row).not.toBeNull()
+      expect(after.row).not.toBeNull()
+      expect(imageBefore).not.toBeNull()
+      expect(imageAfter).not.toBeNull()
+      expect(corruptBefore).not.toBeNull()
+      expect(corruptAfter).not.toBeNull()
+      expect(missingBefore).not.toBeNull()
+      expect(missingAfter).not.toBeNull()
+      for (const [state, box] of [["loading", imageBefore!], ["loaded", imageAfter!], ["corrupt", corruptBefore!], ["corrupt after adjacent load", corruptAfter!], ["HTTP 404", missingBefore!], ["HTTP 404 after adjacent load", missingAfter!]] as const) {
+        expect.soft(Math.abs(box.width - 80), `${state} image tile is 80px wide`).toBeLessThanOrEqual(1)
+        expect.soft(Math.abs(box.height - 80), `${state} image tile is 80px high`).toBeLessThanOrEqual(1)
+      }
+      expect(Math.abs(after.composer!.y - before.composer!.y)).toBeLessThanOrEqual(1)
+      expect(Math.abs(after.composer!.height - before.composer!.height)).toBeLessThanOrEqual(1)
+      expect.soft(Math.abs(imageAfter!.height - imageBefore!.height), "image load changes the space reserved in the user row").toBeLessThanOrEqual(1)
+      expect(afterSamples.every(sample => sample.row && sample.composer), "the measured row and composer remain mounted").toBe(true)
+      expect.soft(Math.max(...afterSamples.map(sample => Math.abs(sample.row!.y - before.row!.y))), "image load moves the existing transcript row").toBeLessThanOrEqual(1)
+      expect(mock.requests.unhandled).toEqual([])
+      await image.scrollIntoViewIfNeeded()
+      const beforePreview = (await measure())[0]
+      await image.click()
+      const preview = page.locator('[data-slot="image-preview-image"]')
+      await expect(preview).toBeVisible()
+      await expect(preview).toHaveAttribute("src", imageUrl)
+      await page.locator('[data-slot="image-preview-close"]').click()
+      await expect(preview).toHaveCount(0)
+      const afterPreview = (await measure())[0]
+      expect(beforePreview.row).not.toBeNull()
+      expect(afterPreview.row).not.toBeNull()
+      expect(Math.abs(afterPreview.row!.y - beforePreview.row!.y), "closing the preview preserves the reading position").toBeLessThanOrEqual(1)
+    } finally {
+      release()
+    }
   })
 
   test("the timeline stays pinned to the bottom while a reply streams in", async ({ page }) => {

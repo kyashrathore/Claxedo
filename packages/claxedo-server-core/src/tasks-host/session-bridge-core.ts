@@ -16,6 +16,7 @@ import {
 } from "@claxedo/server-core/workspace/http/session-create-request"
 import {
   TasksError,
+  attachmentDataUrl,
   hashRequest,
   startDigest,
   startFirstMessage,
@@ -684,12 +685,22 @@ async function sendFirstMessage(
     }
   }
   if (sent === "present") return { ok: true, sent: false }
+  // Images travel as the file parts the composer sends them as, after the
+  // text, so the agent reads the task before it looks at what it illustrates.
   const prompt = await target.request(`/session/${encodeURIComponent(command.session.sessionId)}/prompt_async`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       messageID: messageId,
-      parts: [{ type: "text", text: startFirstMessage({ task: command.task, handoffText: command.handoffText }) }],
+      parts: [
+        { type: "text", text: startFirstMessage({ task: command.task, handoffText: command.handoffText }) },
+        ...command.attachments.map((attachment) => ({
+          type: "file",
+          mime: attachment.mime,
+          filename: attachment.filename,
+          url: attachmentDataUrl(attachment),
+        })),
+      ],
     }),
   })
   if (!prompt.ok) return { ok: false, error: await runtimeRefusal("send the first message", prompt) }

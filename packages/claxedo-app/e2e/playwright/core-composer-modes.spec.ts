@@ -199,8 +199,8 @@ async function overrideMentionAgents(page: Page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify([
-        { id: "reviewer", name: "reviewer" },
-        { id: "tester", name: "tester" },
+        { id: "reviewer", name: "reviewer", mode: "subagent" },
+        { id: "tester", name: "tester", mode: "subagent" },
       ]),
     })
   })

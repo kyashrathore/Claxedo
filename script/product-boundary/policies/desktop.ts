@@ -438,8 +438,22 @@ export const desktopRendererUnsigned: Policy = {
   // edge they add; this renderer already carried the Tiptap edges through its
   // hosted half.
   //
-  // Measured 1113 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1113, packages: 58 },
+  // +2 modules (2026-09-15): the same queued-message owners —
+  // `features/session/queue/queued-messages-controller.ts`,
+  // `features/session/ui/timeline-queued-messages.tsx` and
+  // `composer/ui/submit-queued-edit.ts`, less the composer overlay they
+  // replace — see the app-local ledger. Re-measured, no headroom.
+  //
+  // +1 module (2026-09-15): the same session idle-return scroll owner
+  // `features/session/ui/idle-return-scroll.ts` — see the app-local ledger.
+  // Re-measured, no headroom.
+  //
+  // +2 modules (2026-09-14): the same two task-image owners,
+  // `features/tasks/ui/dialogs/image-drafts.ts` and
+  // `features/tasks/ui/detail/task-attachments.tsx` — see the app-local ledger.
+  // Re-measured, no headroom.
+  // Measured 1118 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1118, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

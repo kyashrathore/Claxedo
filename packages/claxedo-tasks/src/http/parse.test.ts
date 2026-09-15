@@ -186,6 +186,30 @@ describe("parseCommandRequest", () => {
     expect(parsedReasons(halfWritten)).toEqual({ "command.input.createdFrom.sessionId": "required" })
   })
 
+  test("a create's images are read as three strings each, or the key is left absent", () => {
+    const create = (input: Record<string, unknown>) =>
+      parseCommandRequest({
+        clientRequestId: "r",
+        command: {
+          type: "task.create",
+          input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null, ...input },
+        },
+      })
+    const withImages = create({ attachments: [{ filename: "a.png", mime: "image/png", data: "iVBORw==" }] })
+    expect(withImages.ok && withImages.value.command.type === "task.create" && withImages.value.command.input.attachments).toEqual([
+      { filename: "a.png", mime: "image/png", data: "iVBORw==" },
+    ])
+    const without = create({})
+    expect(without.ok && without.value.command.type === "task.create" && "attachments" in without.value.command.input).toBe(false)
+    expect(parsedReasons(create({ attachments: { filename: "a.png" } }))).toEqual({ "command.input.attachments": "type" })
+    expect(parsedReasons(create({ attachments: [{ filename: "a.png", mime: "image/png", data: 42 }] }))).toEqual({
+      "command.input.attachments[0].data": "type",
+    })
+    expect(parsedReasons(create({ attachments: [{ mime: "image/png", data: "iVBORw==" }] }))).toEqual({
+      "command.input.attachments[0].filename": "required",
+    })
+  })
+
   test("a status outside the closed set is refused", () => {
     const result = parseCommandRequest({
       clientRequestId: "r",

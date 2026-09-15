@@ -190,6 +190,17 @@ export function schedulePostPaintLatestTurnCompletion(input: {
   }
 }
 
+/**
+ * `latest-turn` is anchored on the last user boundary. A prompt steered into
+ * a running turn joins that turn instead, so its reply is filed under the
+ * earlier user message and never enters the window — a bare user tail is the
+ * one registry shape that cannot prove the latest turn and needs the tail
+ * page.
+ */
+export function latestTurnWindowNeedsTailSync(messages: readonly { role?: string }[] | undefined) {
+  return messages?.at(-1)?.role === "user"
+}
+
 /** Complete a first-paint projection once, after the post-paint policy allows it. */
 export function createLatestTurnCompletion(input: {
   activationAt: number

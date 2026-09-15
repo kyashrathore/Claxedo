@@ -13,7 +13,7 @@ import { createReviewDiffClient, fetchReviewVcsDiffSummary } from "@/features/re
 import type { useClaxedoState } from "../state/index"
 import { WorkspacePanelHeader } from "./workbench-shell-header"
 import { WorkspacePanelBody } from "./workspace-panel-body"
-import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "./workspace-panel-working-set"
+import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "../review/review-workspace-working-set"
 import { warmWorkspacePanelReview } from "./workspace-panel-review-load"
 
 type RailWorkspacePanelState = ReturnType<typeof useClaxedoState>

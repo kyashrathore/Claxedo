@@ -84,6 +84,12 @@ function snapshotRollback(): TasksStorePort {
       insert: (task) => record((into) => into.tasks.insert(task), live.tasks.insert(task)),
       update: (task, revision) => record((into) => into.tasks.update(task, revision), live.tasks.update(task, revision)),
     },
+    attachments: {
+      list: (scopeId, taskId) => live.attachments.list(scopeId, taskId),
+      get: (scopeId, taskId, attachmentId) => live.attachments.get(scopeId, taskId, attachmentId),
+      listWithBytes: (scopeId, taskId) => live.attachments.listWithBytes(scopeId, taskId),
+      insert: (attachment) => record((into) => into.attachments.insert(attachment), live.attachments.insert(attachment)),
+    },
     links: {
       getCurrent: (scopeId, taskId, slot) => live.links.getCurrent(scopeId, taskId, slot),
       listByTask: (scopeId, taskId) => live.links.listByTask(scopeId, taskId),
@@ -271,6 +277,25 @@ const LISTS_EVERY_LINK_AS_AGENT_STARTED = everywhere((operations) => ({
   },
 }))
 
+/** Every attachment answered under the task and scope asked for, whichever it belongs to. */
+const READS_ATTACHMENTS_ACROSS_TASKS = everywhere((operations) => ({
+  ...operations,
+  attachments: {
+    ...operations.attachments,
+    get: async (scopeId, taskId, attachmentId) => {
+      const own = await operations.attachments.get(scopeId, taskId, attachmentId)
+      if (own) return own
+      for (const scope of [CONFORMANCE_SCOPES.first, CONFORMANCE_SCOPES.second]) {
+        for (const other of ["task-shots", "task-other"]) {
+          const found = await operations.attachments.get(scope, other, attachmentId)
+          if (found) return { ...found, scopeId, taskId }
+        }
+      }
+      return undefined
+    },
+  },
+}))
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -414,6 +439,10 @@ const MUTANTS: readonly Mutant[] = [
   {
     breaks: "lists every link of the project as agent-started in the cloud",
     apply: LISTS_EVERY_LINK_AS_AGENT_STARTED,
+  },
+  {
+    breaks: "answers an attachment read from any task or scope that holds the id",
+    apply: READS_ATTACHMENTS_ACROSS_TASKS,
   },
 ]
 

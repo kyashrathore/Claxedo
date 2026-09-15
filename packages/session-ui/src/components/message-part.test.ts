@@ -1,7 +1,30 @@
 import { describe, expect, test } from "bun:test"
 import { readPartText } from "./message-part-text"
+import { localPreviewUrl } from "./local-preview"
 import { dispatchSubagentOpen, subagentChips, subagentSubtitle } from "./subagent-chip"
 import type { SubagentView } from "../context"
+
+describe("localPreviewUrl", () => {
+  test("promotes a dev-server announcement", () => {
+    expect(localPreviewUrl("Local: http://127.0.0.1:8766/")).toBe("http://127.0.0.1:8766/")
+    expect(localPreviewUrl("ready on http://localhost:3000")).toBe("http://localhost:3000")
+    expect(localPreviewUrl("http://0.0.0.0:5173/")).toBe("http://127.0.0.1:5173/")
+  })
+
+  test("ignores a control-plane path", () => {
+    expect(localPreviewUrl("2593 ? http://127.0.0.1:2593/api/claxedo/mcp?session=qa --flag")).toBeUndefined()
+  })
+
+  test("ignores a URL serialized inside a quoted string", () => {
+    expect(localPreviewUrl(JSON.stringify({ url: "http://127.0.0.1:2593/api/claxedo/mcp?session=qa", headers: { Authorization: "Bearer REDACTED" } }))).toBeUndefined()
+    expect(localPreviewUrl("URL='http://localhost:3000'")).toBeUndefined()
+  })
+
+  test("ignores non-loopback and missing URLs", () => {
+    expect(localPreviewUrl("listening on https://example.com")).toBeUndefined()
+    expect(localPreviewUrl("no url here")).toBeUndefined()
+  })
+})
 
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {

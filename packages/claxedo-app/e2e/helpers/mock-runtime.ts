@@ -9,8 +9,9 @@
 // `route.fulfill` cannot drip a body over time, so the app's own SSE-reconnect loop is
 // the delivery mechanism).
 import type { Page, Route } from "@playwright/test"
-import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
+import { normalizeHarnessIdentity, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { SessionHarness } from "../../../agent-sdk-runtime/src"
+import type { SessionMeta } from "../../../claxedo-server-core/src/session/meta/types"
 import {
   runtimeEventEnvelope,
   type RuntimeEventEnvelope,
@@ -57,7 +58,7 @@ import {
   type PermissionResponseValue,
   type QuestionReplyBody,
 } from "./contracts/session-interactions"
-import { emptySessionNavigationListResponse } from "./contracts/session-list"
+import { sessionNavigationListResponse } from "./contracts/session-list"
 import { emptySessionInventoryResponse } from "./contracts/session-inventory"
 import fuzzysort from "fuzzysort"
 import { workspaceResolveResponse } from "./contracts/workspace-resolve"
@@ -261,6 +262,7 @@ export type SessionUpdateBody = {
 }
 
 export type MockRuntimeRequests = {
+  eventWebSocketConnections: number
   console: string[]
   failed: string[]
   badResponses: string[]
@@ -380,6 +382,8 @@ export type MockRuntimeChildSession = {
 }
 
 export type MockRuntimeOptions = {
+  beforePermissionModesResponse?: () => Promise<void>
+  httpImages?: Array<{ pathname: string; body: Buffer; status?: number; beforeResponse?: () => Promise<void> }>
   dir?: string
   sessionId?: string
   projectId?: string
@@ -407,15 +411,17 @@ export type MockRuntimeOptions = {
   /** The harness this session is created/locked with. Defaults to "opencode". */
   harness?: Harness
   /**
-   * Starts with one completed turn in an already-created session. Use this for
+   * Starts with completed history in an already-created session. Use this for
    * rail-entry/revisit scenarios: creating the session in the same renderer
    * also seeds its transient harness store, masking cold session hydration.
    */
-  existingSession?: { prompt: string; reply?: string }
+  existingSession?: { prompt: string; reply?: string } | { messages: MockMessageRow[] }
   /** Durable host rows returned by `GET /session/:parent/subagents`. */
   subagents?: Record<string, MockRuntimeSubagentRow[]>
   /** Read-only child Sessions available to subagent open/navigation scenarios. */
   childSessions?: MockRuntimeChildSession[]
+  /** Other completed root sessions available for navigation. */
+  otherSessions?: Omit<MockRuntimeChildSession, "parentId">[]
   /** Parent-scope authorization used by the canonical runtime-event SSE route. */
   runtimeEventAuthorizeParent?: (parentSessionId: string) => boolean
   /** Per-harness model catalog for the composer's model popover. */
@@ -455,6 +461,8 @@ export type MockRuntimeOptions = {
   staleBusy?: boolean
   /** Keep the authoritative message and live status busy until the test aborts the turn. */
   holdTurn?: boolean
+  /** Lifecycle events arrive separately from message snapshots, without message deltas. */
+  messageRefreshOnly?: { responseDelayMs: number }
   /** Extra delay (ms) inserted before `session.idle`, after the message completes. */
   delayedIdleMs?: number
   /** Emits `session.error` (and marks the assistant message `error`) instead of completing normally. */
@@ -485,6 +493,7 @@ export type MockRuntimeOptions = {
   workspaceFiles?: { path: string; content: string }[]
   /** Initial config persistence fails during `POST /session`, and later config PATCHes also return 500. */
   configPatchFailure?: boolean
+  sessionArchive?: { delayMs?: number; failingSessionIds?: string[] }
   /** Stage timings, in ms, all optional — sane defaults keep specs fast. */
   timingsMs?: { busy?: number; pending?: number; delta?: number; completed?: number; idle?: number }
   /**
@@ -513,6 +522,8 @@ export type MockRuntimeOptions = {
 
 export type MockRuntimeHandles = {
   requests: MockRuntimeRequests
+  /** Updates the server snapshot after another client's answer, without delivering a resolution to this client. */
+  clearPendingQuestion: (requestID: string) => void
   /** Manually inject an event onto the global SSE stream (permission/question/todo/etc). */
   emit: (payload: MockEvent, directory?: string) => void
   /**
@@ -639,10 +650,13 @@ class EventBus {
   private log: LoggedEvent[] = []
   private seq = 0
   private waiters: Array<() => void> = []
+  private subscribers = new Set<(events: LoggedEvent[]) => void>()
 
   private append(event: PendingEvent) {
     this.seq += 1
-    this.log.push({ seq: this.seq, ...event })
+    const logged = { seq: this.seq, ...event }
+    this.log.push(logged)
+    for (const subscriber of this.subscribers) subscriber([logged])
     const waiters = this.waiters
     this.waiters = []
     for (const resolve of waiters) resolve()
@@ -660,6 +674,12 @@ class EventBus {
   /** The sequence a connection opening NOW resumes from: everything already logged is behind it. */
   lastId() {
     return this.seq
+  }
+
+  subscribe(cursor: number, receive: (events: LoggedEvent[]) => void) {
+    receive(this.log.filter(event => event.seq > cursor))
+    this.subscribers.add(receive)
+    return () => { this.subscribers.delete(receive) }
   }
 
   /**
@@ -894,6 +914,9 @@ function textOf(parts: unknown): string {
 }
 
 export async function installMockRuntime(page: Page, options: MockRuntimeOptions = {}): Promise<MockRuntimeHandles> {
+  const readOnlySessions: Array<Omit<MockRuntimeChildSession, "parentId"> & { parentId?: string }> = [
+    ...options.childSessions ?? [], ...options.otherSessions ?? [],
+  ]
   const DIR = options.dir ?? "/tmp/e2e-mock-runtime"
   const SESSION_ID = options.sessionId ?? "ses_mock_runtime"
   const PROJECT_ID = options.projectId ?? "proj_mock_runtime"
@@ -977,6 +1000,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
 
   const requests: MockRuntimeRequests = {
+    eventWebSocketConnections: 0,
     console: [],
     failed: [],
     badResponses: [],
@@ -1038,17 +1062,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // route can never emit.
   const compatFanout = new FanoutBus()
   const runtimeFanout = new FanoutBus()
-  const busClaxedoEvents = new EventBus() // /api/claxedo/events (central flat-event bus)
+  const busClaxedoEvents = compatFanout.channel() // Local central events include the workspace runtime bus.
   const busGlobal = compatFanout.channel() // /global/event + /event
   const busWrEvents = compatFanout.channel() // /api/wr/events (primary origin)
   const busRelayEvents = compatFanout.channel() // cloud relay compat/event mounts
   const busWrRuntime = runtimeFanout.channel() // /api/wr/runtime-events (primary origin)
   const busRelayRuntime = runtimeFanout.channel() // cloud relay runtime-events mount
   let messages: MockMessageRow[] = []
+  let lastTurn: AgentTurnOutcome | undefined
   // The user message id of the turn the mock is driving, which is what a scoped
   // Stop names and what a steered prompt joins.
   let runningTurn: string | undefined
   let sessionCreated = false
+  const archivedSessions = new Map<string, number>()
   let sessionDirectory = DIR
   let harnessPollCount = 0
   let harnessGetPollCount = 0
@@ -1200,7 +1226,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const flatWrReplay: Array<{ payload: ClaxedoEvent; until: number }> = []
   const emitFlat = (payload: ClaxedoEvent) => {
     flatWrReplay.push({ payload, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
-    busClaxedoEvents.emitFlat(payload)
     compatFanout.emitFlat(payload)
   }
   const emitRuntime = (payload: RuntimeEventEnvelopeInput) => {
@@ -1309,19 +1334,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       directory: sessionDirectory,
       title,
       version: "2",
-      time: { created: Date.now(), updated: Date.now() },
+      time: { created: Date.now(), updated: Date.now(), archived: archivedSessions.get(SESSION_ID) },
       summary: { additions: 0, deletions: 0, files: 0 },
       config: sessionConfig(),
+      ...(lastTurn ? { lastTurn } : {}),
     }
   }
 
-  function childSessionRow(child: MockRuntimeChildSession) {
+  function readOnlySessionRow(child: (typeof readOnlySessions)[number]) {
     return {
       ...sessionRow(child.title),
+      lastTurn: undefined,
       id: child.id,
       slug: child.id,
       parentID: child.parentId,
       title: child.title,
+      time: { created: Date.now(), updated: Date.now(), archived: archivedSessions.get(child.id) },
     }
   }
 
@@ -1375,7 +1403,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
-  function childMessages(child: MockRuntimeChildSession): MockMessageRow[] {
+  function readOnlyMessages(child: (typeof readOnlySessions)[number]): MockMessageRow[] {
     const model = harnessModel()
     const userID = `${child.id}_user`
     const assistantID = `${child.id}_assistant`
@@ -1411,7 +1439,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     ]
   }
 
-  if (options.existingSession) {
+  if (options.existingSession && "messages" in options.existingSession) {
+    messages = structuredClone(options.existingSession.messages)
+    sessionCreated = true
+  }
+  if (options.existingSession && "prompt" in options.existingSession) {
     const model = harnessModel()
     const userID = "msg_existing_user"
     const assistantID = "msg_existing_assistant"
@@ -1461,7 +1493,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // later, so the composer lost its Stop button while the session was, by the
     // scenario's own terms, still running.
     setSessionStatus(SESSION_ID, { type: "busy" })
-    emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
+    if (options.messageRefreshOnly) {
+      emitFlat({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Busy" })
+    } else {
+      emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
+    }
 
     await wait(timings.pending)
     const assistantRow = assistantMessagePending({
@@ -1472,11 +1508,23 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       modelID: input.modelID,
     })
     messages = [...messages, assistantRow]
-    emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: assistantRow.info } })
+    if (!options.messageRefreshOnly) {
+      emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: assistantRow.info } })
+    }
 
     if (options.holdTurn) return
 
     const fullText = replyTextFn(input.turn, input.text)
+    if (options.messageRefreshOnly) {
+      await wait(timings.delta + timings.completed)
+      messages = messages.map((row) => row.info.id === input.assistantID
+        ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() } }, parts: [textPart(SESSION_ID, input.assistantID, fullText)] }
+        : row)
+      runningTurn = undefined
+      setSessionStatus(SESSION_ID)
+      emitFlat({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
+      return
+    }
     if (options.errorMidTurn) {
       await wait(timings.delta)
       const errorMessage =
@@ -1511,6 +1559,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const midpoint = Math.max(1, Math.floor(fullText.length / 2))
     const chunks = [fullText.slice(0, midpoint), fullText.slice(midpoint)]
     const partID = `${input.assistantID}_text`
+    // Open the part before its deltas. Consumers cannot apply a delta to an
+    // unknown part, and the REST snapshot must own the same growing content.
+    emit({ type: "message.part.updated", properties: { sessionID: SESSION_ID, part: textPart(SESSION_ID, input.assistantID, ""), time: Date.now() } })
     let accumulated = ""
     for (const chunk of chunks) {
       await wait(timings.delta / chunks.length)
@@ -1877,6 +1928,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // fingerprinted asset (/assets/sprite-<hash>.svg).
   await page.route("**/*sprite*.svg*", (r) => r.continue())
 
+  await page.route("**/*.png", async route => {
+    const image = options.httpImages?.find(image => image.pathname === new URL(route.request().url()).pathname)
+    if (!image) return route.fallback()
+    await image.beforeResponse?.()
+    await route.fulfill({ status: image.status ?? 200, contentType: "image/png", body: image.body })
+  })
+
   await page.route("**/api/claxedo/bootstrap**", (r) =>
     api(r)
       ? json(r, {
@@ -1905,6 +1963,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   })
 
   const sseIdleTimeoutMs = 4000
+  await page.routeWebSocket("**/api/claxedo/events**", socket => {
+    requests.eventWebSocketConnections += 1
+    const cursor = Number(new URL(socket.url()).searchParams.get("lastEventId") ?? 0)
+    const unsubscribe = busClaxedoEvents.subscribe(cursor, batch => {
+      socket.send(sseBody(batch, () => centralStreamHeartbeat(cursor)))
+    })
+    const cleanup = () => {
+      unsubscribe()
+      page.off("close", cleanup)
+    }
+    socket.onClose(cleanup)
+    page.once("close", cleanup)
+  })
   const eventStreamHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
@@ -2007,10 +2078,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(route, { error: "Forbidden" }, 403)
     }
     const batch = await busWrRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+    const scoped = batch.filter(entry => !parentSessionId ||
+      ("sessionId" in entry.payload && entry.payload.sessionId === parentSessionId))
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: sseBody(batch, runtimeStreamHeartbeat),
+      body: sseBody(scoped, runtimeStreamHeartbeat),
     }).catch(() => {})
   }
   await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
@@ -2027,24 +2100,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, { configs: [], processes: [] })
   })
 
-  // GET /api/control/session-list (`controlSessionNavigationListUrl`,
-  // src/platform/runtime/agent/workspace-control-routes.ts) backs the rail sidebar's session list
-  // (`rail-sidebar.tsx`'s `globalSessionList` query) — a claxedo-server-native
-  // endpoint entirely distinct from the OpenCode `/session` API this file mocks
-  // above. Without a default here the sidebar shows "Could not load sessions."
-  // for every spec that never registers its own override. Default to an empty,
-  // well-shaped list (safe: specs that need rows register a page.route AFTER
-  // calling installMockRuntime, which wins per Playwright's last-registered-first
-  // matching).
-  // Registered on BOTH spellings: `sessionNavigationListUrl`
-  // (src/platform/runtime/agent/workspace-control-routes.ts) rewrites the path
-  // to `/api/claxedo/session-list` whenever the server transport is loopback —
-  // which every e2e page (127.0.0.1 base) is — while non-loopback transports
-  // keep `/api/control/session-list`. Specs that override this default must
-  // cover both spellings the same way.
+  // The rail reads the control-plane navigation projection, while transcript
+  // restoration reads the workspace's session rows. Both describe the same store.
   const sessionListDefault = (route: Route) => {
     if (!api(route)) return route.continue()
-    return json(route, emptySessionNavigationListResponse(route.request().url()))
+    const rows = [
+      ...(sessionCreated ? [sessionRow(textOf(messages[0]?.parts) || "")] : []),
+      ...readOnlySessions.map(readOnlySessionRow),
+    ].map(row => ({ ...row, createdAt: row.time.created, updatedAt: row.time.updated, archived: row.time.archived }))
+    return json(route, sessionNavigationListResponse(route.request().url(), rows))
   }
   await contractRoute(page, "**/api/control/session-list**", sessionListDefault)
   await contractRoute(page, "**/api/claxedo/session-list**", sessionListDefault)
@@ -2092,6 +2156,21 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/claxedo/session") return r.fallback()
     return json(r, emptySessionInventoryResponse())
+  })
+  // SessionMetaRoutes reads the same session identity when a restored rail row
+  // needs metadata. Its unsigned response includes the local directory.
+  await contractRoute(page, "**/api/claxedo/session/*/meta", (route) => {
+    if (!api(route)) return route.continue()
+    if (route.request().method() !== "GET") return route.fallback()
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-2) ?? "")
+    const other = readOnlySessions.find(row => row.id === id)
+    if (id !== SESSION_ID && !other) return json(route, { sessionID: id, tags: [], attachments: [] })
+    const row = other ? readOnlySessionRow(other) : sessionRow(textOf(messages[0]?.parts) || "")
+    return json(route, {
+      sessionID: row.id, title: row.title, host: "workspace", workspaceID: options.workspaceId,
+      projectID: PROJECT_ID, directory: row.directory, createdAt: row.time.created,
+      updatedAt: row.time.updated, archived: row.time.archived, tags: [], attachments: [],
+    } satisfies SessionMeta)
   })
 
   await page.route("**/path**", (r) => {
@@ -2274,12 +2353,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
   // Drafts name their native harness or connection in the query. Session
   // bindings are separate: changing a draft does not rewrite an existing session.
-  await page.route("**/permission/modes**", (route) => {
+  await page.route("**/permission/modes**", async (route) => {
     if (!api(route)) return route.continue()
+    await options.beforePermissionModesResponse?.()
     return json(route, modeState(harnessFixtureFromUrl(route.request().url(), harness)))
   })
   await page.route("**/session/*/permission-mode**", async (route) => {
     if (!api(route)) return route.continue()
+    if (route.request().method() === "GET") await options.beforePermissionModesResponse?.()
     if (route.request().method() === "PUT") {
       const body = JSON.parse(route.request().postData() || "{}") as { modeId?: string }
       if (body.modeId) requests.permissionModeWrites.push({ modeId: body.modeId })
@@ -2515,13 +2596,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const fileBrowserHandler = (r: Route) => {
     if (!api(r)) return r.continue()
     const url = new URL(r.request().url())
-    // The relay/loopback lane addresses the SAME runtime routes under a
-    // `/workspaces/:workspaceId` prefix (see the DUAL-ORIGIN note in the cloud
-    // block below), so strip it and dispatch on the runtime path. This lets the
-    // cloud lane reuse this handler instead of its old `${base}/file** -> []`
-    // stub, which answered an ARRAY for `/file/content` — where the client expects
-    // `{type, content}`.
-    switch (url.pathname.replace(/^\/workspaces\/[^/]+/, "")) {
+    // File routes use either the local runtime prefix or a workspace relay
+    // prefix, but both consume the same directory and content fixtures.
+    switch (url.pathname.replace(/^\/api\/wr(?=\/)/, "").replace(/^\/workspaces\/[^/]+/, "")) {
       case "/find/file":
         return json(r, findFiles(url))
       case "/find/symbol":
@@ -2714,10 +2791,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       assertSessionCreateResponse(created, url)
       return json(route, created, SESSION_CREATE_STATUS)
     }
-    return json(route, [
+    const rows = [
       ...(sessionCreated ? [sessionRow(textOf(messages[0]?.parts) || "")] : []),
-      ...(options.childSessions ?? []).map(childSessionRow),
-    ])
+      ...readOnlySessions.map(readOnlySessionRow),
+    ]
+    const url = new URL(route.request().url())
+    const includeArchived = url.searchParams.get("archived") === "true" || url.searchParams.get("archived") === "1"
+    return json(route, url.pathname === "/experimental/session" && !includeArchived
+      ? rows.filter(row => row.time.archived === undefined)
+      : rows)
   }
   await page.route("**/session", handleSessionList)
   await page.route("**/session?**", handleSessionList)
@@ -2774,6 +2856,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, sessionConfig())
   })
 
+  await page.route("**/session/*/queue**", (r) => (api(r) ? json(r, []) : r.continue()))
   await page.route("**/session/*/todo**", (r) => (api(r) ? json(r, sessionTodos) : r.continue()))
 
   await page.route("**/session/*/capabilities**", (r) =>
@@ -2888,11 +2971,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (namedTurn && runningTurn && namedTurn !== runningTurn) {
       return json(route, { ok: true, status: "already_idle" })
     }
-    runningTurn = undefined
-    if (options.holdTurn) {
+    if (options.messageRefreshOnly && options.holdTurn && runningTurn) {
+      const assistantMessageId = assistantIdForUserMessage(runningTurn)
+      const completedAt = Date.now()
+      lastTurn = { status: "cancelled", completedAt, reason: "abort", assistantMessageId }
+      messages = messages.map(row => row.info.id === assistantMessageId
+        ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: completedAt } } }
+        : row)
+      setSessionStatus(SESSION_ID)
+      emitFlat({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
+    } else if (options.holdTurn) {
       setSessionStatus(SESSION_ID)
       emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
     }
+    runningTurn = undefined
     return json(route, { ok: true, status: "cancelled" })
   })
 
@@ -2914,14 +3006,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, options.subagents?.[parentSessionId] ?? [])
   })
 
-  await page.route("**/session/*/message**", (r) => {
+  await page.route("**/session/*/message**", async (r) => {
     if (!api(r)) return r.continue()
     const sessionId = decodeURIComponent(new URL(r.request().url()).pathname.split("/").at(-2) ?? "")
-    const child = options.childSessions?.find((row) => row.id === sessionId)
-    return json(r, { messages: child ? childMessages(child) : messages, maxEventOrdinal: 0 })
+    const child = readOnlySessions.find((row) => row.id === sessionId)
+    const snapshot = child ? readOnlyMessages(child) : messages
+    if (options.messageRefreshOnly && requests.promptCount > 0 && !child) {
+      await wait(options.messageRefreshOnly.responseDelayMs)
+    }
+    return json(r, { messages: snapshot, maxEventOrdinal: 0 })
   })
 
-  await page.route("**/session/*", (r) => {
+  await page.route("**/session/*", async (r) => {
     if (!api(r)) return r.continue()
     const pathname = new URL(r.request().url()).pathname
     if (!pathname.match(/^\/session\/[^/]+$/)) return r.fallback()
@@ -2941,7 +3037,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // CONTRACT: `PATCH /session/:id` answers with the normalized session row, same as
     // the GET (`c.json(normalizeSession(session, directory))`, workspace-runtime
     // `routes/session-core.ts`) — so the shared `sessionRow()` fixture below is the
-    // right response for both verbs and only the RECORDING differs.
+    // right response for both verbs; successful archive writes persist in that row.
     if (r.request().method() === "PATCH") {
       let raw: unknown
       try {
@@ -2962,10 +3058,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         body,
         permission: Array.isArray(rules) && rules.length > 0 && rules.every(isRule) ? rules : undefined,
       })
+      const time = body.time
+      if (time && typeof time === "object" && "archived" in time && typeof time.archived === "number") {
+        const id = decodeURIComponent(pathname.split("/").at(-1) ?? "")
+        if (options.sessionArchive?.delayMs) await wait(options.sessionArchive.delayMs)
+        if (options.sessionArchive?.failingSessionIds?.includes(id)) return json(r, { error: "archive failed" }, 500)
+        archivedSessions.set(id, time.archived)
+      }
     }
     const sessionId = decodeURIComponent(pathname.split("/").at(-1) ?? "")
-    const child = options.childSessions?.find((row) => row.id === sessionId)
-    return json(r, child ? childSessionRow(child) : sessionRow(textOf(messages[0]?.parts) || ""))
+    const child = readOnlySessions.find((row) => row.id === sessionId)
+    return json(r, child ? readOnlySessionRow(child) : sessionRow(textOf(messages[0]?.parts) || ""))
   })
 
   // The signed control plane's session-reservation boundary. A signed client
@@ -3346,6 +3449,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     emit,
     emitFlat,
     emitRuntime,
+    clearPendingQuestion: requestID => {
+      pendingQuestions = pendingQuestions.filter(question => question.id !== requestID)
+    },
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
 

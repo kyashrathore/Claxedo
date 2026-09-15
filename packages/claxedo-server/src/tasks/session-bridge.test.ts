@@ -227,6 +227,7 @@ function handoffCommand(session: SessionReference): SessionHandoffCommand {
     slot,
     attempt: 1,
     handoffText: "Pick up from the failing import test.",
+    attachments: [],
     session,
   }
 }
@@ -264,6 +265,14 @@ async function bridgeFixture(input: { offeredModelId?: string }): Promise<TasksS
     // is the same "would not say" the core refuses a handoff on.
     unreadableSession: () => ({ sessionId: "ses_never_created_here", workspaceId: mock.workspace.id }),
     turns: () => host.calls.filter((call) => call.path.endsWith("/prompt_async")).map((call) => call.path),
+    promptParts: () =>
+      host.calls
+        .filter((call) => call.path.endsWith("/prompt_async"))
+        .map((call) => {
+          const body: unknown = JSON.parse(call.init?.body ?? "{}")
+          const parts = body && typeof body === "object" && "parts" in body ? body.parts : undefined
+          return Array.isArray(parts) ? parts : []
+        }),
     archive: async (sessionId) => {
       composition.metas.set(sessionId, { ...composition.metas.get(sessionId), archived: Date.now() })
     },

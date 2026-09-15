@@ -1,5 +1,8 @@
-import { OpenCodeTheme, useMarked } from "@opencode-ai/ui/context/marked"
+import { OpenCodeTheme, useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { ImagePreview } from "@opencode-ai/ui/image-preview"
+import { useData } from "../context"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import {
@@ -19,7 +22,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
-import { marked as markedSync } from "marked"
+import { Marked } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
@@ -80,10 +83,12 @@ function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
 }
 
+const syncParser = new Marked(...transcriptMarkdownExtensions)
+
 /** First-frame HTML for live tokens and cold remounts. Escaped source is not markdown. */
 function syncRichHtml(src: string) {
   try {
-    const parsed = markedSync.parse(src, { async: false })
+    const parsed = syncParser.parse(src, { async: false })
     if (typeof parsed !== "string") return fallback(src)
     return sanitizeMarkdown(parsed)
   } catch {
@@ -639,29 +644,103 @@ function probeImage(src: string, onSettle: (ok: boolean) => void) {
   probe.src = src
 }
 
-function imageFallbackChip(img: HTMLImageElement): HTMLElement {
+function imageFallbackChip(img: HTMLImageElement, loading = false): HTMLElement {
   const chip = document.createElement("span")
   chip.dataset.component = "markdown-image-fallback"
-  chip.textContent = img.getAttribute("alt") || img.getAttribute("src") || "image"
+  chip.dataset.state = loading ? "loading" : "error"
+  if (loading) {
+    chip.setAttribute("role", "img")
+    chip.setAttribute("aria-busy", "true")
+    chip.setAttribute("aria-label", img.getAttribute("alt") || "image")
+  } else {
+    chip.textContent = img.getAttribute("alt") || img.getAttribute("src") || "image"
+  }
   return chip
 }
 
-export function stabilizeImages(root: HTMLDivElement) {
+/**
+ * Transcript markdown can name a workspace file (`file://` URL, absolute path,
+ * or relative path) instead of an http(s) URL — a `file:` or absolute src can
+ * never be fetched by this origin, so it must be resolved through the
+ * workspace's raw-file route before probing. Returns `undefined` when the src
+ * cannot be fetched at all (a file outside the workspace root, or a host with
+ * no file route).
+ */
+function imageSource(src: string, data?: { directory: string; fileUrl?: (path: string) => string | undefined }): string | undefined {
+  if (/^(https?:)?\/\//i.test(src) || src.startsWith("data:") || src.startsWith("blob:")) return src
+  const fileUrl = data?.fileUrl
+  const directory = data?.directory
+  if (!fileUrl || !directory) return undefined
+  let path = src
+  if (src.startsWith("file://")) {
+    try {
+      path = decodeURIComponent(src.slice("file://".length))
+    } catch {
+      return undefined
+    }
+  }
+  if (path.startsWith("/")) {
+    const prefix = directory.endsWith("/") ? directory : `${directory}/`
+    if (path !== directory && !path.startsWith(prefix)) return undefined
+    path = path === directory ? "" : path.slice(prefix.length)
+  }
+  if (!path) return undefined
+  return fileUrl(path)
+}
+
+function imageTile(img: HTMLImageElement, src: string): HTMLElement {
+  const tile = document.createElement("button")
+  tile.type = "button"
+  tile.dataset.component = "markdown-image-tile"
+  img.removeAttribute("width")
+  img.removeAttribute("height")
+  if (img.getAttribute("src") !== src) img.src = src
+  return tile
+}
+
+export function stabilizeImages(
+  root: HTMLDivElement,
+  data?: { directory: string; fileUrl?: (path: string) => string | undefined },
+) {
   for (const img of Array.from(root.querySelectorAll("img"))) {
     if (!(img instanceof HTMLImageElement)) continue
-    const src = img.getAttribute("src") ?? ""
-    if (!src || src.startsWith("data:")) continue
-    if (imageOutcomes.get(src) === "ok") continue
-    const chip = imageFallbackChip(img)
+    const raw = img.getAttribute("src") ?? ""
+    if (!raw) continue
+    const src = imageSource(raw, data)
+    if (!src) {
+      img.replaceWith(imageFallbackChip(img))
+      continue
+    }
+    if (src.startsWith("data:") || imageOutcomes.get(src) === "ok") {
+      // The img has to stay where it is until the tile takes its place —
+      // appending it into the detached tile first would make replaceWith a
+      // no-op and drop the image from the render.
+      const tile = imageTile(img, src)
+      img.replaceWith(tile)
+      tile.appendChild(img)
+      continue
+    }
+    const chip = imageFallbackChip(img, imageOutcomes.get(src) !== "error")
     img.replaceWith(chip)
     if (imageOutcomes.get(src) === "error") continue
     probeImage(src, (ok) => {
-      if (ok && chip.isConnected) chip.replaceWith(img)
+      if (!chip.isConnected) return
+      if (!ok) {
+        chip.replaceWith(imageFallbackChip(img))
+        return
+      }
+      const tile = imageTile(img, src)
+      chip.replaceWith(tile)
+      tile.appendChild(img)
     })
   }
 }
 
-function decorate(root: HTMLDivElement, labels: CopyLabels) {
+function decorate(
+  root: HTMLDivElement,
+  labels: CopyLabels,
+  data?: { directory: string; fileUrl?: (path: string) => string | undefined },
+) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
@@ -669,15 +748,29 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   markInlineCode(root)
   markCodeLinks(root)
   decorateTables(root, labels)
-  stabilizeImages(root)
+  stabilizeImages(root, data)
   renderMermaidBlocks(root)
 }
 
 // Capture, so no descendant can stop a click before the link is offered to the
 // host; a host that claims links from further up still gets there first.
-function setupLinkOpen(root: HTMLDivElement) {
-  root.addEventListener("click", handleTranscriptLinkClick, { capture: true })
-  return () => root.removeEventListener("click", handleTranscriptLinkClick, { capture: true })
+function setupLinkOpen(root: HTMLDivElement, openImage?: (src: string, alt?: string) => void) {
+  const handleClick = (event: MouseEvent) => {
+    const target = event.target instanceof Element ? event.target : undefined
+    const tile = target?.closest('[data-component="markdown-image-tile"]')
+    const img = tile?.querySelector("img")
+    if (openImage && img && event.button === 0) {
+      // Read the live DOM: morphdom preserves nodes but does not replace their
+      // event listeners when a streaming block changes its image or source.
+      event.preventDefault()
+      event.stopPropagation()
+      openImage(img.src, img.getAttribute("alt") ?? undefined)
+      return
+    }
+    handleTranscriptLinkClick(event)
+  }
+  root.addEventListener("click", handleClick, { capture: true })
+  return () => root.removeEventListener("click", handleClick, { capture: true })
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
@@ -792,6 +885,25 @@ export function Markdown(
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
   const i18n = useI18n()
+  // A host without a dialog layer cannot offer the full-view preview; image
+  // tiles then render identically but clicks do nothing.
+  const dialog = (() => {
+    try {
+      return useDialog()
+    } catch {
+      return undefined
+    }
+  })()
+  const openImage = dialog ? (src: string, alt?: string) => void dialog.show(() => <ImagePreview src={src} alt={alt} />) : undefined
+  // Hosts without the session data provider cannot resolve workspace-relative
+  // image sources; their images stay fallback chips rather than broken fetches.
+  const data = (() => {
+    try {
+      return useData()
+    } catch {
+      return undefined
+    }
+  })()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
@@ -941,7 +1053,7 @@ export function Markdown(
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels))
+    content.forEach((block, index) => updateBlock(container, index, block, labels, data))
     while (container.children.length > content.length) {
       const child = container.lastElementChild
       if (!child) break
@@ -956,7 +1068,7 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       }))
-    if (!linkCleanup) linkCleanup = setupLinkOpen(container)
+    if (!linkCleanup) linkCleanup = setupLinkOpen(container, openImage)
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
   })
 
@@ -1006,7 +1118,13 @@ function disposeCode(key: string) {
   disposeStreamingCode(key)
 }
 
-function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
+function updateBlock(
+  container: HTMLDivElement,
+  index: number,
+  block: RenderedBlock,
+  labels: CopyLabels,
+  data?: { directory: string; fileUrl?: (path: string) => string | undefined },
+) {
   const started = rendererClock()
   const current = container.children[index]
   if (block.mode === "code") {
@@ -1034,7 +1152,7 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
   next.style.display = "contents"
   replaceSanitizedMarkup(next, block.html)
   const decorateStarted = rendererClock()
-  decorate(next, labels)
+  decorate(next, labels, data)
   traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
 
   if (!(current instanceof HTMLDivElement)) {

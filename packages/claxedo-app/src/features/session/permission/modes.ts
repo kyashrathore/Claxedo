@@ -143,6 +143,8 @@ export type HarnessPermissionModes = {
   modes: readonly PermissionModeOption[]
   /** Set when `modes` is empty: why this harness offers nothing to pick. */
   unavailable?: string
+  /** The report is still in flight; `unavailable` is provisional, not an answer. */
+  loading?: boolean
 }
 
 /**
@@ -171,7 +173,7 @@ export function harnessPermissionModes(input: {
   }
 
   // Not yet fetched. Genuinely transient, and distinct from every case below.
-  if (!report) return { modes: [], unavailable: `Loading ${label}'s permission modes…` }
+  if (!report) return { modes: [], unavailable: `Loading ${label}'s permission modes…`, loading: true }
 
   if (report.unsupported) return { modes: [], unavailable: report.unsupported }
 

@@ -91,7 +91,7 @@ type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventSource = {
   on: <T extends ClaxedoEventType>(
     type: T,
-    handler: (event: Extract<ClaxedoEvent, { type: T }>) => void,
+    handler: (event: Extract<ClaxedoEvent, { type: T }>, origin: "central" | "workspace") => void,
   ) => (() => void) | undefined
 }
 
@@ -239,6 +239,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
         info: readField(event.properties, "info"),
         type: sessionEventType,
         directory,
+        workspaceId: asString(readField(event, "workspaceId")),
       })
       // Central runtime events share the OpenCode compatibility stream for
       // transcript/title projection, but their `directory` is the runtime's
@@ -336,7 +337,11 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     void invalidateSessionShareQueries().catch(() => undefined)
   })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
-    .map((type) => input.claxedoEvents?.on(type, (event) => {
+    .map((type) => input.claxedoEvents?.on(type, (event, origin) => {
+      // Central directory events already enter through GlobalSDK's coalescer.
+      // Only workspace streams need this direct path; applying both appends
+      // each central text delta twice before the final snapshot corrects it.
+      if (origin === "central") return
       applyClaxedoDirectoryEventToSync(input, event)
     }))
     .filter((cleanup): cleanup is () => void => !!cleanup)

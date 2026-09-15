@@ -5,6 +5,8 @@ import type {
   Preset,
   PresetListQuery,
   Task,
+  TaskAttachment,
+  TaskAttachmentRecord,
   TaskListQuery,
   TaskSessionLink,
   TaskStatus,
@@ -122,6 +124,20 @@ export type LinkStoreOperations = {
   insert(link: TaskSessionLink): Promise<LinkInsertOutcome>
 }
 
+/**
+ * Written at create and never again: an attachment has no revision because
+ * nothing edits one, and it goes with its task rather than being archived
+ * on its own. Both list reads answer in `position` order.
+ */
+export type AttachmentStoreOperations = {
+  list(scopeId: string, taskId: string): Promise<readonly TaskAttachment[]>
+  get(scopeId: string, taskId: string, attachmentId: string): Promise<TaskAttachmentRecord | undefined>
+  /** Every attachment with its bytes, for the handoff that sends them all. */
+  listWithBytes(scopeId: string, taskId: string): Promise<readonly TaskAttachmentRecord[]>
+  /** A duplicate id is a minting fault, not a caller error: adapters throw. */
+  insert(attachment: TaskAttachmentRecord): Promise<void>
+}
+
 export type ReceiptStoreOperations = {
   get(scopeId: string, clientRequestId: string): Promise<TasksCommandReceipt | undefined>
   /**
@@ -135,6 +151,7 @@ export type ReceiptStoreOperations = {
 export type TasksStoreOperations = {
   presets: PresetStoreOperations
   tasks: TaskStoreOperations
+  attachments: AttachmentStoreOperations
   links: LinkStoreOperations
   receipts: ReceiptStoreOperations
 }

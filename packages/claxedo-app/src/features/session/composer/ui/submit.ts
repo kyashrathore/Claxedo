@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createSignal } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { requestErrorMessage } from "../../lib/request-error-message"
 import { useNavigate } from "@solidjs/router"
@@ -24,7 +24,9 @@ import { useDirectorySessionCacheActions } from "../../data/sync/directory-sessi
 import { harnessProfile } from "@/features/session/harness/profile"
 import { cloudSubmitMissingModel, resolvePromptSubmitConfig } from "./submit-model-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
-import { resolveSubmitMode, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
+import { preparePromptRequest, resolveSubmitMode, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
+import { replaceQueuedPrompt } from "./submit-queued-edit"
+import { QUEUED_MESSAGES_QUERY_KEY } from "@/features/session/queue/queued-messages-controller"
 import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-admission"
 import { createSubmitAbort } from "./submit-abort"
@@ -51,13 +53,11 @@ import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create
 export type { FollowupDraft } from "./submit-input"
 
 export function createPromptSubmit(input: PromptSubmitInput) {
-  const [queuedStretch, setQueuedStretch] = createSignal<number | undefined>()
   const [startedTurn, setStartedTurn] = createSignal<string | undefined>()
   // One uninterrupted stretch of work. The runtime holds a queued prompt only
   // until the running turn ends, so a prompt queued during one stretch has
   // become a turn of its own by the next — and calling a running turn "queued"
   // is a lie the composer would otherwise keep telling.
-  const workStretch = createMemo<number>((previous) => (input.working() ? previous : previous + 1), 0)
   const navigate = useNavigate()
   const sdk = useSDK()
   const globalBootstrapActions = useGlobalBootstrapActions()
@@ -183,8 +183,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (admission === "ignore") return undefined
     // A draft sent while a turn runs goes to that turn; the runtime answers
     // whether the harness took it or it waits for the next one.
-    const delivery = admission === "steer" ? ("steer" as const) : undefined
-    setQueuedStretch(undefined)
+    const delivery = admission === "steer" ? ("queue" as const) : undefined
 
     const goalIntent = prepareGoalComposerIntent({
       text, armed: input.goalArmed?.() ?? false, mode: userMode, prompt: currentPrompt,
@@ -584,6 +583,29 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     const { clear: clearInput, restore: restoreInput } = draft
 
+    const queuedEdit = prompt.queuedEdit.current()
+    if (queuedEdit && goalIntent.kind !== "submit") {
+      const replaced = await replaceQueuedPrompt({
+        edit: queuedEdit,
+        parts: preparePromptRequest({
+          prompt: currentPrompt,
+          contextItems: prompt.context.items().slice(),
+          images,
+          text,
+          sessionID: session.id,
+          sessionDirectory,
+          messageID: queuedEdit.messageId,
+        }).requestParts,
+        replace: (replaceInput) => runtimePromptClient.replaceQueuedMessage({ directory: sessionDirectory, sessionID: session.id, ...replaceInput }),
+        clearEdit: () => prompt.queuedEdit.set(undefined),
+        clearInput,
+        showFailed: showSendFailed,
+      })
+      if (replaced) return undefined
+      // The runtime admitted or dropped the message meanwhile: the draft is a
+      // new message now, and the ordinary send below carries it.
+    }
+
     if (goalIntent.kind === "submit") {
       await dispatchGoalSubmit({
         objective: goalIntent.objective,
@@ -642,7 +664,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       format: input.format?.(),
       ...(delivery ? { delivery } : {}),
       onDelivery: (delivered, turnId) => {
-        setQueuedStretch(delivered === "queue" ? workStretch() : undefined)
+        if (delivered === "queue") void queryClient.invalidateQueries({ queryKey: [QUEUED_MESSAGES_QUERY_KEY] })
         // A steered prompt joined the turn already recorded; a queued one
         // becomes a turn that may start after the user has moved on.
         if (delivered === "start") setStartedTurn(turnId)
@@ -690,10 +712,5 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     return undefined
   }
 
-  return {
-    abort,
-    handleSubmit,
-    /** A prompt the runtime is holding for the turn after the running one. */
-    queued: () => queuedStretch() !== undefined && queuedStretch() === workStretch(),
-  }
+  return { abort, handleSubmit }
 }

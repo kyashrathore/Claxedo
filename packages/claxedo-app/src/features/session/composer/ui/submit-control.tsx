@@ -7,7 +7,6 @@ import type { SubmitBlock } from "@/features/session/composer/submit-block-reaso
 
 export function PromptSubmitControl(props: {
   stage: Accessor<SessionStatusStageValue>
-  queued: Accessor<boolean>
   busy: Accessor<boolean>
   onCancel: VoidFunction
   onRetry: Accessor<(() => void) | undefined>
@@ -25,7 +24,6 @@ export function PromptSubmitControl(props: {
   sendLabel: string
   stopLabel: string
   readOnlyLabel: string
-  queuedLabel: string
 }) {
   // Actionable block reasons keep the button clickable but dimmed: a missing
   // model opens the model picker; other reasons flash the explanation, since
@@ -90,16 +88,6 @@ export function PromptSubmitControl(props: {
 
   return (
     <>
-      <Show when={props.queued()}>
-        <div
-          data-testid="composer-queued"
-          class="flex items-center gap-1.5 rounded-md border border-border-base bg-surface-raised-base px-2 py-1 text-12-medium text-text-weak"
-          role="status"
-          aria-live="polite"
-        >
-          <span>{props.queuedLabel}</span>
-        </div>
-      </Show>
       <SessionStatusStage
         stage={props.stage()}
         busy={props.busy()}

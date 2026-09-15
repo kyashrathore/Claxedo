@@ -28,6 +28,10 @@ export type PresetPlacement = (typeof PRESET_PLACEMENTS)[number]
 export const TASKS_ERROR_CODES = ["invalid_input", "not_found", "forbidden", "stale_revision", "conflict", "unsupported"] as const
 export type TasksErrorCode = (typeof TASKS_ERROR_CODES)[number]
 
+/** The image types every harness's prompt inputs carry, so an attachment never needs a workspace path to reach an agent. */
+export const TASK_ATTACHMENT_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const
+export type TaskAttachmentMime = (typeof TASK_ATTACHMENT_MIMES)[number]
+
 export const TASKS_BOUNDS = {
   presetNameMax: 100,
   instructionsMaxBytes: 64 * 1024,
@@ -36,13 +40,20 @@ export const TASKS_BOUNDS = {
   pluginReferencesMax: 128,
   skillReferencesMax: 256,
   handoffTextMaxBytes: 16 * 1024,
+  taskAttachmentsMax: 6,
+  /**
+   * Decoded bytes per image. D1 refuses a row past 2,000,000 bytes, and the
+   * row holds the image whole beside its key and name.
+   */
+  taskAttachmentMaxBytes: 1_572_864,
+  taskAttachmentFilenameMax: 255,
   listLimitDefault: 50,
   listLimitMax: 100,
   /**
-   * A 64 KiB text field can escape to several times its size, and a preset
-   * command carries up to 384 capability references beside it.
+   * A create carries its images inline as base64 (4/3 of the bytes) on top of
+   * the 512 KiB the text fields and a preset's 384 capability references need.
    */
-  commandRequestMaxBytes: 512 * 1024,
+  commandRequestMaxBytes: 512 * 1024 + 6 * 2 * 1024 * 1024,
   startRequestMaxBytes: 64 * 1024,
 } as const
 
@@ -163,6 +174,25 @@ export type TaskLinkSummary = { count: number }
  * child fell outside the current filter.
  */
 export type TaskChildSummary = { total: number; done: number }
+
+/** An image a person attached at create. Bytes are read by their own route; a task read carries only this. */
+export type TaskAttachment = {
+  id: string
+  filename: string
+  mime: TaskAttachmentMime
+  /** Decoded byte count, so a reader can size a fetch it has not made. */
+  size: number
+  createdAt: number
+}
+
+/** The stored row: the view plus the bytes, the keys that own it, and its place among the task's images. */
+export type TaskAttachmentRecord = TaskAttachment & {
+  scopeId: string
+  taskId: string
+  /** Zero-based, the order the person attached them in; one create shares one `createdAt`. */
+  position: number
+  bytes: Uint8Array
+}
 
 /** A list row. The description is omitted so a page cannot carry 50 × 64 KiB. */
 export type TaskSummary = Omit<Task, "description"> & {
@@ -287,6 +317,13 @@ export type PresetDraft = {
   agentStartable: boolean
 }
 
+/** An image as a create carries it: standard base64 of the bytes, never a data URL and never a path. */
+export type TaskAttachmentDraft = {
+  filename: string
+  mime: string
+  data: string
+}
+
 export type TaskDraft = {
   projectId: string
   title: string
@@ -297,6 +334,8 @@ export type TaskDraft = {
   status?: TaskCreateStatus
   /** Sent by a session creating a task from inside itself; the app sends nothing. */
   createdFrom?: SessionReference
+  /** Images stored with the task and handed to every session started on it. Absent means none. */
+  attachments?: readonly TaskAttachmentDraft[]
 }
 
 export type PresetCreateInput = PresetDraft
@@ -493,7 +532,11 @@ export type StartResponse = {
   created: boolean
 }
 
-export type TaskDetailResponse = { task: Task; links: readonly TaskSessionLinkView[] }
+export type TaskDetailResponse = {
+  task: Task
+  links: readonly TaskSessionLinkView[]
+  attachments: readonly TaskAttachment[]
+}
 export type TaskChildrenResponse = Page<TaskSummary>
 
 export function isConfigurationSlot(value: unknown): value is ConfigurationSlot {
@@ -506,6 +549,14 @@ export function isTaskStatus(value: unknown): value is TaskStatus {
 
 export function isTaskCreateStatus(value: unknown): value is TaskCreateStatus {
   return typeof value === "string" && TASK_CREATE_STATUSES.some((status) => status === value)
+}
+
+export function isTaskAttachmentMime(value: unknown): value is TaskAttachmentMime {
+  return typeof value === "string" && TASK_ATTACHMENT_MIMES.some((mime) => mime === value)
+}
+
+export function attachmentView(record: TaskAttachmentRecord): TaskAttachment {
+  return { id: record.id, filename: record.filename, mime: record.mime, size: record.size, createdAt: record.createdAt }
 }
 
 export function isTasksCommandName(value: unknown): value is TasksCommandName {

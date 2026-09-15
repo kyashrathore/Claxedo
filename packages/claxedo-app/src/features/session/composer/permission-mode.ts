@@ -34,6 +34,8 @@ export type PermissionModeGroups = {
     rows: readonly PermissionModeRow[]
     /** Why this harness contributes no rows. */
     unavailable?: string
+    /** The report is still in flight; zero rows is not a resolved answer. */
+    loading?: boolean
   }
 }
 
@@ -119,6 +121,7 @@ export function createComposerPermissionMode(input: {
         label: harnessGroupLabel(harness),
         rows: options.harness.modes.map(row),
         ...(options.harness.unavailable ? { unavailable: options.harness.unavailable } : {}),
+        ...(options.harness.loading ? { loading: true } : {}),
       },
     }
   })

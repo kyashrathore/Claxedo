@@ -567,7 +567,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         input: target.input,
         assistantMessageId: target.assistantMessageId,
         created: target.created,
-        onEvent: () => {},
+        onEvent: (payload) => this.options.eventHub?.publishGlobal({ directory, payload }),
         onRuntimeEvent: this.options.eventHub?.publishRuntime,
       }),
       onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
@@ -591,6 +591,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       children: this.subagentChildren,
       bindSession: (binding) => this.bindStoreSession(binding),
       projectChild: router.projectChild,
+      publish: (payload) => this.options.eventHub?.publishGlobal({ directory, payload }),
     })
     const observeSubagent: SdkRuntimeTurnInput["observeSubagent"] = async (observed) => {
       const fileTranscript = await openSubagentTranscript(this.options.transcriptRegistrar, id, observed.observation)

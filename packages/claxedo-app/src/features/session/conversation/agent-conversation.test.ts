@@ -278,6 +278,58 @@ describe("agent conversation chat adapter", () => {
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello!" }])
   })
 
+  test("a replayed message.updated cannot un-settle the stored completion stamp", () => {
+    // Retained-stream replay announces `message.updated` without
+    // `time.completed`. If the merge dropped the stamp, the settled-part guard
+    // below would open and the replayed delta could append a second reply.
+    const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+    const handle = chat(agentConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
+    }))
+
+    expect(applyAgentConversationEvent(handle, event("message.updated", {
+      info: { ...settled, time: { created: 2 } },
+    }))).toBe(true)
+
+    expect(applyAgentConversationEvent(handle, event("message.part.delta", {
+      messageID: "msg_assistant",
+      partID: "000000_msg_assistant-text",
+      delta: "hello",
+    }))).toBe(false)
+    expect(handle.messages()[0]?.parts).toHaveLength(1)
+  })
+
+  test("a terminal tool part rejects a replayed running state", () => {
+    // Reattach replay resends the tool's start frames under the same part id;
+    // a stored error state must not be overwritten back to running.
+    const interrupted = {
+      ...toolPart("000000_call_1", "msg_assistant"),
+      state: { status: "error", input: { command: "sleep 630" }, error: "interrupted", time: { start: 1, end: 2 } },
+    } as Part
+    const handle = chat(agentConversationSnapshot({
+      messages: [{ ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message],
+      parts: { msg_assistant: [interrupted] },
+    }))
+
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
+      part: { ...toolPart("000000_call_1", "msg_assistant", "running") },
+    }))).toBe(false)
+    expect(handle.messages()[0]?.parts[0]?.output).toBe("interrupted")
+  })
+
+  test("a running tool part still accepts its terminal update", () => {
+    const handle = chat(agentConversationSnapshot({
+      messages: [message("msg_assistant")],
+      parts: { msg_assistant: [toolPart("part_tool", "msg_assistant", "running")] },
+    }))
+
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
+      part: toolPart("part_tool", "msg_assistant", "completed"),
+    }))).toBe(true)
+    expect(handle.messages()[0]?.parts[0]?.output).toBe("ok")
+  })
+
   test("snapshot merge treats a settled assistant message's fetched parts as authoritative", () => {
     // Reverse ordering of the race above: a streamed part attached first, then
     // the completed REST row hydrates. The persisted part set wins; the

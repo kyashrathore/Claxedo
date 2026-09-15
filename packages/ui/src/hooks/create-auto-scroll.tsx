@@ -5,9 +5,13 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 
 export interface AutoScrollOptions {
   working: () => boolean
+  /** Hidden retained surfaces have no usable scroll geometry. */
+  enabled?: () => boolean
   onUserInteracted?: () => void
   overflowAnchor?: "none" | "auto" | "dynamic"
   bottomThreshold?: number
+  /** Content growth the reader can already see — don't re-pin the bottom for it. */
+  mayFollow?: () => boolean
 }
 
 export function createAutoScroll(options: AutoScrollOptions) {
@@ -77,6 +81,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const scrollToBottom = (force: boolean) => {
+    if (options.enabled?.() === false) return
     if (!force && !active()) return
 
     if (force && store.userScrolled) setStore("userScrolled", false)
@@ -123,6 +128,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const handleScroll = () => {
+    if (options.enabled?.() === false) return
     const el = store.scrollRef
     if (!el) return
 
@@ -180,13 +186,14 @@ export function createAutoScroll(options: AutoScrollOptions) {
   createResizeObserver(
     () => [store.contentRef, store.scrollRef],
     () => {
+      if (options.enabled?.() === false) return
       const el = store.scrollRef
       if (el && !canScroll(el)) {
         if (store.userScrolled) setStore("userScrolled", false)
         return
       }
       if (!active()) return
-      if (store.userScrolled) return
+      if (store.userScrolled || options.mayFollow?.() === false) return
       // ResizeObserver fires after layout, before paint.
       // Keep the bottom locked in the same frame to avoid visible
       // "jump up then catch up" artifacts while streaming content.
@@ -234,6 +241,9 @@ export function createAutoScroll(options: AutoScrollOptions) {
     handleScroll,
     handleInteraction,
     pause: stop,
+    // Restore intent before a remounted scroller has measurable content.
+    // `pause` handles a gesture and deliberately requires scrollable geometry.
+    restoreFollowing: (following: boolean) => setStore("userScrolled", !following),
     resume: () => {
       if (store.userScrolled) setStore("userScrolled", false)
       scrollToBottom(true)

@@ -1,5 +1,5 @@
 ---
-import { contact, github } from "../config"
+import { contact, featured, github } from "../config"
 import { routes } from "../content/routes"
 ---
 
@@ -24,6 +24,16 @@ import { routes } from "../content/routes"
       <a href={contact}>Discord</a>
       <a href={routes.privacy}>Privacy</a>
       <a href={routes.terms}>Terms</a>
+    </div>
+  </div>
+  <div class="footer-featured">
+    <span>Featured on</span>
+    <div class="footer-featured-badges">
+      {featured.map((item) => (
+        <a href={item.href} title={`Featured on ${item.name}`} target="_blank" rel="noopener">
+          <img src={item.badge} alt={`Featured on ${item.name}`} width={item.width} height={item.height} loading="lazy" />
+        </a>
+      ))}
     </div>
   </div>
   <div class="footer-bottom">

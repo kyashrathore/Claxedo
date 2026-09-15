@@ -48,6 +48,7 @@ type Created = { id: string; instructions?: string }
 function fixtureProvider(input: { offeredModelId: string; effortLevels?: HarnessEffortLevels }) {
   const created: Created[] = []
   const turns: string[] = []
+  const prompts: (readonly unknown[])[] = []
   const provider: ConnectionProvider<Record<string, never>> = {
     providerKey: "tasks-fixture-provider",
     validateConfig: () => ({}),
@@ -80,13 +81,14 @@ function fixtureProvider(input: { offeredModelId: string; effortLevels?: Harness
       }),
       async *executeTurn(binding, prompt) {
         if (prompt.userMessageId) turns.push(prompt.userMessageId)
+        prompts.push(prompt.parts)
         yield { type: "text-delta" as const, delta: "ack" }
         yield { type: "finish" as const, sessionId: binding.sessionId }
       },
       dispose() {},
     }),
   }
-  return { provider, created, turns }
+  return { provider, created, turns, prompts }
 }
 
 function preset(): Preset {
@@ -180,6 +182,7 @@ function handoffCommand(input: {
     slot: "primary",
     attempt: input.attempt ?? 1,
     handoffText: null,
+    attachments: [],
     session: input.session,
   }
 }
@@ -264,6 +267,7 @@ async function bridgeFixture(input: { offeredModelId?: string }): Promise<TasksS
     // is the same "would not say" the core refuses a handoff on.
     unreadableSession: () => ({ sessionId: "ses_tasks_unknown", workspaceId: host.workspaceId }),
     turns: () => host.turns,
+    promptParts: () => host.prompts,
     archive: async (sessionId) => {
       await putSessionMeta(sessionId, { archived: Date.now() })
     },
@@ -806,7 +810,11 @@ describe("local tasks session bridge", () => {
     const service = createTasksService({
       store,
       clock: { now: () => (ticks += 1) },
-      ids: { presetId: () => `pst_${(minted += 1)}`, taskId: () => `tsk_${(minted += 1)}` },
+      ids: {
+        presetId: () => `pst_${(minted += 1)}`,
+        taskId: () => `tsk_${(minted += 1)}`,
+        attachmentId: () => `tat_${(minted += 1)}`,
+      },
       authorization: { authorizeProject: async () => true, authorizeSessionOpen: async () => true },
       bridge: racing,
     })

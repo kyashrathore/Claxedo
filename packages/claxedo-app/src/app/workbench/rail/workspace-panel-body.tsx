@@ -26,13 +26,13 @@ import { loadTerminalSessionPreview } from "../../../features/terminal/lib/termi
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
-import type { ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
+import { workingSetActiveFilePath, type ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
 import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
 import { ReviewWorkspace } from "./workspace-panel-review-load"
-import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "./workspace-panel-working-set"
+import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "../review/review-workspace-working-set"
 
 const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
 
@@ -77,22 +77,6 @@ function isConsumedPanelFocus(value: WorkspacePanelFocus, consumed: ConsumedPane
     consumed.kind === value.kind &&
     consumed.target === panelFocusTarget(value)
 }
-/**
- * The file path the working set's active tab points at, if the active tab is
- * a file tab. The files navigator restores its selection from this on reopen;
- * the retained working set is the selection's owner, not the (already
- * consumed) focus request.
- */
-export function workingSetActiveFilePath(
-  snapshot: ReviewWorkspaceWorkingSetSnapshot | undefined,
-  pathFromTab: (tabId: string) => string | undefined,
-) {
-  if (!snapshot) return undefined
-  const active = snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId)
-  if (!active || active.kind !== "file") return undefined
-  return pathFromTab(active.tabId) ?? active.tabId
-}
-
 export function WorkspacePanelBody(props: {
   mode: WorkspacePanelMode
   state: WorkspacePanelState

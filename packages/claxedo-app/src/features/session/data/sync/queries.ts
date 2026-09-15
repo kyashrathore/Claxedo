@@ -23,12 +23,19 @@ export {
   setSessionRequestsQueryData,
   setSessionStatusQueryData,
   setSessionTodoQueryData,
+  sessionRequestResolved,
   type ShellQueryDataWriter,
 } from "./writers"
 
 export type SessionRequestsQueryData = {
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
+  /**
+   * When the canonical directory read (`applyDirectorySessionMeta`) last
+   * reconciled this entry — event-driven writes preserve it, so a dock can
+   * tell data confirmed since attach from a retained replay or a stale hold.
+   */
+  reconciledAt?: number
 }
 
 export type DirectorySessionCacheValue = {

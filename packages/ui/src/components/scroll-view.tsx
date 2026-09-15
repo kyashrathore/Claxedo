@@ -370,11 +370,14 @@ export function ScrollView(props: ScrollViewProps) {
         break
       case "home":
         e.preventDefault()
-        viewportRef.scrollTo({ top: 0, behavior: "smooth" })
+        // Endpoint jumps must land atomically: a smooth animation through a
+        // virtualized list gets cancelled by the virtualizer's measurement
+        // corrections, leaving the scroll wherever the last correction put it.
+        viewportRef.scrollTo({ top: 0, behavior: "instant" })
         break
       case "end":
         e.preventDefault()
-        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior: "smooth" })
+        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior: "instant" })
         break
       case "up":
         e.preventDefault()

@@ -41,7 +41,7 @@ export function resolvePromptSubmitConfig(input: {
     const variant = selectedVariant ?? existing.variant
     return {
       model: existing.model,
-      agent: input.agent() || existing.agent || input.currentAgent()?.name || "build",
+      agent: input.agent() || existing.agent || input.currentAgent()?.id || input.currentAgent()?.name || "build",
       ...(variant ? { variant } : {}),
     }
   }

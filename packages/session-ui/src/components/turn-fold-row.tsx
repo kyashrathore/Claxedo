@@ -11,6 +11,8 @@ export function TurnFoldRow(props: {
   durationMs?: number
   folded: boolean
   onToggle: () => void
+  /** How many foldable groups the row hides, so the collapsed header identifies them. */
+  groupCount?: number
   tokens?: number
   cost?: number
   showTokens?: boolean
@@ -18,7 +20,10 @@ export function TurnFoldRow(props: {
 }) {
   const label = () => {
     const verb = props.running ? "Working" : "Worked"
-    return typeof props.durationMs === "number" ? `${verb} for ${formatDuration(props.durationMs)}` : verb
+    const base = typeof props.durationMs === "number" ? `${verb} for ${formatDuration(props.durationMs)}` : verb
+    const groups = props.groupCount
+    if (!groups) return base
+    return `${base} · ${groups} ${groups === 1 ? "group" : "groups"}`
   }
   const footer = () => {
     if (!props.showTokens || !props.tokens) return undefined

@@ -16,7 +16,7 @@ export type ComposerEngineMode = "normal" | "shell"
 export type ComposerEnginePopover = "at" | "slash" | null
 export type ComposerEngineDragging = "image" | "@mention" | null
 
-export type ComposerEngineAgentRow = { name: string; hidden?: boolean; mode?: string }
+export type ComposerEngineAgentRow = { name: string; id?: string; hidden?: boolean; mode?: string }
 
 export type ComposerEngineCommandOption = {
   id: string

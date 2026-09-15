@@ -1,6 +1,7 @@
 export * from "./contracts"
 export { TasksError, tasksErrorDetail, refuse, refuseInvalid } from "./errors"
 export { hashRequest } from "./hash"
+export { attachmentDataUrl, decodeAttachmentData, encodeAttachmentData } from "./attachments"
 export { clampLimit, decodePageCursor, encodePageCursor, paginate, type PageKey } from "./paging"
 export { type Parsed } from "./validation"
 export {
@@ -36,6 +37,7 @@ export {
   TasksStoreConflict,
   joinedTransaction,
   serializedTransactions,
+  type AttachmentStoreOperations,
   type ChildCountFilter,
   type LinkInsertOutcome,
   type LinkStoreOperations,
@@ -50,7 +52,13 @@ export {
 
 export { configurationEntries, draftHarnesses, validatePresetDraft, type HarnessLookup } from "./presets/model"
 export { createPresetsService, type PresetsService, type PresetsServiceDeps } from "./presets/service"
-export { validateReparent, validateTaskDraft, validateTaskEdit } from "./tasks/model"
+export {
+  validateReparent,
+  validateTaskDraft,
+  validateTaskEdit,
+  type DecodedAttachmentDraft,
+  type ValidatedTaskDraft,
+} from "./tasks/model"
 export { createTasksService, type TasksService, type TasksServiceDeps } from "./tasks/service"
 export { createTasksCommands, type TasksCommands, type TasksCommandsDeps } from "./commands"
 

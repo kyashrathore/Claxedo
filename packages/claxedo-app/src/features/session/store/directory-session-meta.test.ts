@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, setSystemTime, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { QuestionRequest, SessionStatus } from "../data/sync/queries"
@@ -243,7 +243,23 @@ describe("applyDirectorySessionMeta, requests already resolved", () => {
     expect(readRequests(RESOLVED)?.questions).toEqual([question("que_next", RESOLVED)])
   })
 
-  test("the server asking the same request again re-opens it", () => {
+  test("the server asking a fresh request again re-opens it", () => {
+    ask(question("que_answered", RESOLVED))
+    reply("question.replied", RESOLVED, "que_answered")
+
+    ask(question("que_next", RESOLVED))
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      permissions: [],
+      questions: [question("que_next", RESOLVED)],
+    })
+
+    expect(readRequests(RESOLVED)?.questions).toEqual([question("que_next", RESOLVED)])
+  })
+
+  // Request ids are minted per ask, so a same-id `asked` frame is only ever a
+  // replay of the one already answered — it must not re-open the dock.
+  test("a replayed ask for a resolved id stays closed", () => {
     ask(question("que_answered", RESOLVED))
     reply("question.replied", RESOLVED, "que_answered")
 
@@ -254,7 +270,7 @@ describe("applyDirectorySessionMeta, requests already resolved", () => {
       questions: [question("que_answered", RESOLVED)],
     })
 
-    expect(readRequests(RESOLVED)?.questions).toEqual([question("que_answered", RESOLVED)])
+    expect(readRequests(RESOLVED)?.questions).toEqual([])
   })
 
   // The guard has to retire, or a reused id could never be shown again.
@@ -270,5 +286,67 @@ describe("applyDirectorySessionMeta, requests already resolved", () => {
     })
 
     expect(readRequests(RESOLVED)?.questions).toEqual([question("que_answered", RESOLVED)])
+  })
+
+  // A mark the server never stops echoing came from a read whose snapshot
+  // predated the ask — the request was never resolved — so the echo bound
+  // drops it and the pending request surfaces again.
+  test("a marked id the server keeps echoing is unmarked past the echo window", () => {
+    const start = Date.now()
+    setSystemTime(start)
+    try {
+      ask(question("que_pending", RESOLVED))
+      applyDirectorySessionMeta({ sessionID: RESOLVED, permissions: [], questions: [] })
+
+      applyDirectorySessionMeta({
+        sessionID: RESOLVED,
+        permissions: [],
+        questions: [question("que_pending", RESOLVED)],
+      })
+      expect(readRequests(RESOLVED)?.questions).toEqual([])
+
+      setSystemTime(start + 16_000)
+      applyDirectorySessionMeta({
+        sessionID: RESOLVED,
+        permissions: [],
+        questions: [question("que_pending", RESOLVED)],
+      })
+      applyDirectorySessionMeta({
+        sessionID: RESOLVED,
+        permissions: [],
+        questions: [question("que_pending", RESOLVED)],
+      })
+      expect(readRequests(RESOLVED)?.questions).toEqual([question("que_pending", RESOLVED)])
+    } finally {
+      setSystemTime()
+    }
+  })
+
+  // The attach gate releases held requests only once a read newer than the
+  // attach confirms them — a same-lists read still has to advance the stamp.
+  test("a canonical read with unchanged lists still advances reconciledAt", () => {
+    const start = Date.now()
+    setSystemTime(start)
+    try {
+      applyDirectorySessionMeta({
+        sessionID: RESOLVED,
+        permissions: [],
+        questions: [question("que_open", RESOLVED)],
+      })
+      const first = readRequests(RESOLVED) as { reconciledAt?: number } | undefined
+      expect(first?.reconciledAt).toBe(start)
+
+      setSystemTime(start + 1_000)
+      applyDirectorySessionMeta({
+        sessionID: RESOLVED,
+        permissions: [],
+        questions: [question("que_open", RESOLVED)],
+      })
+      const second = readRequests(RESOLVED) as { reconciledAt?: number } | undefined
+      expect(second?.reconciledAt).toBe(start + 1_000)
+      expect(second?.questions).toBe(first?.questions)
+    } finally {
+      setSystemTime()
+    }
   })
 })

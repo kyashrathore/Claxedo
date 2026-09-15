@@ -56,6 +56,7 @@ import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/fe
 import { MessageTimeline, PromptInput, SessionComposerRegion } from "@/features/session/ui/session-screen-lazy"
 import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
+import { createScrollGestureWindow } from "@/features/session/ui/message-gesture"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
@@ -101,6 +102,7 @@ import { createSessionComposerModes } from "@/features/session/ui/composer/sessi
 import { createNewSessionDeepLinkPromptSeed } from "@/features/session/ui/composer/deep-link-prompt"
 import { assistantMessageIdForUserMessage } from "@/features/session/data/session-types"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
+import { createQueuedMessagesController } from "@/features/session/queue/queued-messages-controller"
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
@@ -433,7 +435,7 @@ export default function SessionPage(props: {
     }
   }
 
-  const composerState = createSessionComposerState()
+  const composerState = createSessionComposerState({ active: paneActive })
 
   const navigateSession = (id?: string) => {
     const directory = dir()
@@ -460,7 +462,6 @@ export default function SessionPage(props: {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     restoring: undefined as string | undefined,
-    scrollGesture: 0,
     scroll: {
       overflow: false,
       bottom: true,
@@ -787,20 +788,7 @@ export default function SessionPage(props: {
     { equals: same },
   )
 
-  const scrollGestureWindowMs = 250
-
-  const markScrollGesture = (target?: EventTarget | null) => {
-    const root = scroller
-    if (!root) return
-
-    const el = target instanceof Element ? target : undefined
-    const nested = el?.closest("[data-scrollable]")
-    if (nested && nested !== root) return
-
-    setUi("scrollGesture", Date.now())
-  }
-
-  const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
+  const scrollGesture = createScrollGestureWindow({ scroller: () => scroller })
 
   createEffect(
     on(
@@ -889,7 +877,7 @@ export default function SessionPage(props: {
     inputEl: () => inputRef,
     composerBlocked: () => composerState.blocked(),
     prompt,
-    markScrollGesture: () => markScrollGesture(),
+    markScrollGesture: () => scrollGesture.mark(),
   })
 
   const fileTreeTab = () => layout.fileTree.tab()
@@ -920,7 +908,9 @@ export default function SessionPage(props: {
 
   const autoScroll = createAutoScroll({
     working: () => true,
+    enabled: paneActive,
     overflowAnchor: "none",
+    mayFollow: () => !scrollGesture.active(),
   })
   createEffect(
     on(
@@ -1172,6 +1162,12 @@ export default function SessionPage(props: {
   })
   createResizeObserver(() => promptDock, ({ height }) => promptDockResize.resize(height))
 
+  const queuedMessages = createQueuedMessagesController({
+    active: paneActive, working: () => sessionController.activeTurn() || sessionController.status().type !== "idle", sessionID, directory: dir,
+    sessionRef: activeSessionRef, signedControlPlane, workspaceId: signedWorkspaceId, workspaceKind: resolvedWorkspaceKind,
+    focusComposer: focusInput,
+  })
+
   const { draft, supports, restore, rolled, actions } = createSessionMessageActions({
     sessionID: () => sessionID(),
     directory: dir,
@@ -1353,6 +1349,7 @@ export default function SessionPage(props: {
                         directorySessions={directorySessions}
                         workspaceId={routeIdForDirectory(dir())}
                         sessionRef={activeSessionRef()}
+                        queued={queuedMessages}
                         parentID={info()?.parentID}
                         onNavigateParent={navigateParent}
                         scroll={ui.scroll}
@@ -1360,14 +1357,16 @@ export default function SessionPage(props: {
                         setScrollRef={setScrollRef}
                         onScheduleScrollState={scheduleScrollState}
                         onAutoScrollHandleScroll={autoScroll.handleScroll}
-                        onMarkScrollGesture={markScrollGesture}
-                        hasScrollGesture={hasScrollGesture}
+                        onMarkScrollGesture={scrollGesture.mark}
+                        hasScrollGesture={scrollGesture.active}
                         onUserScroll={markUserScroll}
                         onHistoryScroll={historyWindow.onScrollerScroll}
                         onAutoScrollInteraction={autoScroll.handleInteraction}
                         shouldAnchorBottom={() =>
                           !paneLocation().hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
                         }
+                        hasScrollTarget={() => !!paneLocation().hash || !!store.messageId || !!ui.pendingMessage}
+                        restoreFollowing={autoScroll.restoreFollowing}
                         centered={centered()}
                         setContentRef={(el) => {
                           content = el
@@ -1483,6 +1482,7 @@ export default function SessionPage(props: {
               }
             >
               <SessionComposerRegion
+              active={paneActive}
               state={composerState}
               ready={!store.deferRender && messagesReady()}
               centered={centered()}

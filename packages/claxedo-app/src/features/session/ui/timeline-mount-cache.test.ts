@@ -101,7 +101,7 @@ function foldRow(value: TimelineRow.TimelineRow[]) {
 }
 
 function unmountWith(sessionKey: string, value: TimelineRow.TimelineRow[]) {
-  writeTimelineMountSnapshot(sessionKey, { measurements: [], toolOpen: {}, groupOpen: {}, rows: value })
+  writeTimelineMountSnapshot(sessionKey, { measurements: [], toolOpen: {}, groupOpen: {}, toolRevealed: {}, rows: value })
 }
 
 // The real producer caches the page, then the real seed hydrates the bounded
@@ -152,7 +152,7 @@ describe("timeline mount snapshot", () => {
   })
 
   test("a snapshot written without rows still loads", () => {
-    writeTimelineMountSnapshot("ses_legacy:0", { measurements: [], toolOpen: {}, groupOpen: {} })
+    writeTimelineMountSnapshot("ses_legacy:0", { measurements: [], toolOpen: {}, groupOpen: {}, toolRevealed: {} })
 
     const snapshot = readTimelineMountSnapshot("ses_legacy:0")
     expect(snapshot?.toolOpen).toEqual({})
@@ -243,6 +243,7 @@ describe("switching back to a session folds before the first paint", () => {
       measurements: [],
       toolOpen: {},
       groupOpen: {},
+      toolRevealed: {},
       rows: [TimelineRow.TurnFold({ userMessageID: "u1", foldCount: 7, folded: true })],
     })
 

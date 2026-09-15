@@ -91,6 +91,14 @@ export type ImagePartSourcePathMatchesUpstream = Assert<
 export type ContentPart = TextPart | FileAttachmentPart | AgentPart | ImageAttachmentPart
 export type Prompt = ContentPart[]
 
+/**
+ * The queued message whose text the draft is holding: a send replaces that
+ * message's parts instead of queueing another, and `cancel` gives the message
+ * back to the queue untouched. Not persisted — the runtime's queue, not this
+ * draft, decides whether the message still exists.
+ */
+export type QueuedMessageEdit = { seq: number; messageId?: string; cancel: () => void }
+
 export type FileContextItem = {
   type: "file"
   path: string
@@ -296,6 +304,7 @@ export function promptDraftControllerInput(capture: Accessor<PromptDraftCapture>
 function createPromptSession(serverUrl: string, dir: string, id: string | undefined) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
   const [goalArmed, setGoalArmed] = createSignal(false)
+  const [queuedEdit, setQueuedEdit] = createSignal<QueuedMessageEdit>()
 
   const [store, setStore, _, ready] = persisted(
     SERVER_SCOPED_PERSIST
@@ -340,6 +349,10 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
     goal: {
       armed: goalArmed,
       setArmed: setGoalArmed,
+    },
+    queuedEdit: {
+      current: queuedEdit,
+      set: setQueuedEdit,
     },
     context: {
       items: createMemo(() => store.context.items),
@@ -484,6 +497,10 @@ const promptContextInput = {
       goal: {
         armed: () => session().goal.armed(),
         setArmed: (armed: boolean) => session().goal.setArmed(armed),
+      },
+      queuedEdit: {
+        current: () => session().queuedEdit.current(),
+        set: (edit: QueuedMessageEdit | undefined) => session().queuedEdit.set(edit),
       },
       context: {
         items: () => session().context.items(),

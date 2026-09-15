@@ -46,6 +46,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
 import { TimelineErrorPresentation } from "@/features/session/onboarding/first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as PartType,
@@ -81,6 +82,7 @@ import { createActiveConversationSnapshot } from "../conversation/conversation-r
 import { isRuntimeAgentMessage } from "../conversation/agent-conversation-codec"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { isSessionTurnActive } from "../store/session-store"
+import { acceptedPromptRefreshRequest } from "../store/accepted-prompt-refresh"
 import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
 import { removeDirectorySessionTree, updateDirectorySession } from "../data/sync/directory-session-cache"
 import { mergeCanonicalSessionUpdate } from "../data/sync/session-list-events"
@@ -90,25 +92,22 @@ import {
   timelineInteractionPlan,
   timelineVirtualEntry,
 } from "./view-state"
-import {
-  applyTimelinePrependAnchor,
-  captureTimelinePrependAnchor,
-  type TimelinePrependAnchor,
-} from "./timeline-prepend-anchor"
-import { createDisplayedFrameLoop } from "./timeline-displayed-frames"
+import { createTimelinePrependAnchor } from "./timeline-prepend-anchor"
 import {
   createTimelineResizeAnchor,
-  estimateLongMarkdownHeight,
+  estimateTimelineRowSize,
   filterVirtualIndexes,
   scheduleConnectedMeasure,
   timelineRowFrameStyle,
 } from "./timeline-virtualization"
 import { readTimelineMountSnapshot, writeTimelineMountSnapshot } from "./timeline-mount-cache"
+import { createTimelineScrollMemory } from "./timeline-scroll-memory"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
+import { subagentHostCallIds } from "../subagents/subagent-parts"
 import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 import { TimelineUserMessage } from "./timeline-user-message"
 import {
@@ -166,7 +165,6 @@ function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
 }
 
 const timelineFallbackItemSize = 60
-const timelineInitialEstimatedItemSize = 180
 
 const taskDescription = (part: PartType, sessionID: string) => {
   if (part.type !== "tool" || !isSubagentToolPart(part)) return undefined
@@ -223,11 +221,22 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
   const cached = readTimelineMountSnapshot(ownerSessionKey)
+  const savedScroll = cached?.scroll
+  if (savedScroll && !props.hasScrollTarget()) props.restoreFollowing(savedScroll.following)
   const initialMeasurements = cached?.measurements
   const warmMeasurements = !!initialMeasurements?.length
   const boundColdFinalTurn = !warmMeasurements && props.status().type === "idle"
   const [initialTurnExpanded, setInitialTurnExpanded] = createSignal(!boundColdFinalTurn)
   const turnFold = createTurnFoldStore(ownerSessionKey)
+  const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
+  const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
+  const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
+  const revealToolOutput = (partID: string, revealed: boolean) => {
+    // A reveal click resizes the row at the reader's position; the gesture mark
+    // keeps the resize anchor from bottom-pinning the growth.
+    props.onMarkScrollGesture()
+    setToolRevealed(partID, revealed)
+  }
   const platform = usePlatform()
   installTimelineMermaid(platform.renderMermaid)
   installTimelineTables()
@@ -379,6 +388,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
+  // An admitted prompt reaches the transcript over events before the next
+  // queue poll drops its record; the record carries the id the turn's user
+  // message gets, so the bubble yields to the row the moment the row exists.
+  const queuedNotYetInTranscript = createMemo(() =>
+    (props.queued?.items() ?? []).filter((item) => !item.messageId || !messageByID().has(item.messageId)),
+  )
   // Both indexes are keyed by, and answer questions about, the parent/completion
   // fields only a runtime-produced assistant message has. An optimistic row has
   // no `parentID` to file it under and no `time.completed` to be pending on, so
@@ -404,6 +419,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
   const sessionStatus = createActivePaneProjection({ active: props.active, read: () => props.status() ?? idle, initial: idle })
+  // A `session.idle` lands before the final transcript read does: the turn's
+  // assistant row is still unsettled and its reply not yet painted. While the
+  // post-acceptance reconciliation owns that read, the turn is still working —
+  // dropping the Thinking row on the event alone blanked the tail of the turn
+  // until the snapshot arrived. The request clears only after the reconciled
+  // conversation is in the store, so no frame shows neither indicator.
+  const turnSettleRefreshPending = (userMessageID: string) =>
+    acceptedPromptRefreshRequest()?.messageID === userMessageID
   const working = createMemo(() => isSessionTurnActive({ status: sessionStatus() }))
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: props.directorySessions, initial: [] as ReturnType<MessageTimelineProps["directorySessions"]> })
   const directorySession = (sessionID: string | undefined) =>
@@ -414,10 +437,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
     initial: [] as NonNullable<typeof data.store.agent>,
   })
   const tint = createMemo(() => messageAgentColor(sessionMessages(), directoryAgents()))
+  const hostCallIds = createMemo(() => subagentHostCallIds(sessionConversation()?.parts ?? {}))
   const resolveAmbientSubagents = () => {
     const id = sessionID()
     if (!id) return []
-    return (data.resolveSubagents?.(id) ?? []).filter((subagent) => subagent.ambient)
+    return (data.resolveSubagents?.(id, undefined, hostCallIds()) ?? []).filter((subagent) => subagent.ambient)
   }
   const ambientSubagents = createActivePaneProjection({
     active: props.active,
@@ -428,20 +452,26 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const workingStatus = createTimelineWorkingStatus({ active: props.active, working })
 
   const activeMessageID = createMemo(() => {
+    const messages = sessionMessages()
+    let lastUserIndex = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") { lastUserIndex = i; break }
+    }
     const parentID = pending()?.parentID
     if (parentID) {
-      const messages = sessionMessages()
       const result = Binary.search(messages, parentID, (message) => message.id)
-      const message = result.found ? messages[result.index] : messages.find((item) => item.id === parentID)
-      if (message && message.role === "user") return message.id
+      const index = result.found ? result.index : messages.findIndex((item) => item.id === parentID)
+      const message = index >= 0 ? messages[index] : undefined
+      // A stale un-completed assistant anchors on its parent only while that
+      // parent is still the newest prompt — once a follow-up send lands, the
+      // new user message owns the turn even if the old envelope's completion
+      // frame is still in flight.
+      if (message && message.role === "user" && index >= lastUserIndex) return message.id
     }
 
     const status = sessionStatus()
-    if (status.type !== "idle") {
-      const messages = sessionMessages()
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === "user") return messages[i].id
-      }
+    if (status.type !== "idle" && lastUserIndex >= 0) {
+      return messages[lastUserIndex].id
     }
 
     return undefined
@@ -551,6 +581,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
             lastTurnOutcome(),
             visibleAssistantMessageIDs(),
             (userMessageID) => cached?.turnFoldableCounts?.[userMessageID],
+            (partID) => toolOpen[partID] === true || toolRevealed[partID] === true,
+            turnSettleRefreshPending(userMessage.id),
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -607,56 +639,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return TimelineRow.reuse(previous, rows)
   })
 
-  let prependAnchor: TimelinePrependAnchor | undefined
-  // Display-gated, not a bare requestAnimationFrame: a stashed surface keeps
-  // this timeline mounted with no layout for the anchor to settle against.
-  const prependAnchorFrames = createDisplayedFrameLoop({ displayed: props.active })
-  let prependLoading = false
-  const clearPrependAnchor = () => {
-    prependLoading = false
-    prependAnchor = undefined
-    prependAnchorFrames.stop()
-  }
-  const capturePrependAnchor = () => {
-    prependLoading = true
-    updatePrependAnchor()
-  }
-  const updatePrependAnchor = () => {
-    const root = listRoot()
-    if (!root) return
-    prependAnchor = captureTimelinePrependAnchor(root) ?? prependAnchor
-  }
-  const restorePrependAnchor = () => {
-    prependLoading = false
-    applyPrependAnchor()
-  }
-  const applyPrependAnchor = () => {
-    const anchor = prependAnchor
-    const root = listRoot()
-    if (!root || !anchor) return
-    let frames = 0
-    let stable = 0
-    const resolveRowStart = (key: string) => {
+  const prepend = createTimelinePrependAnchor({
+    root: listRoot, displayed: props.active,
+    resolveRowStart: (key) => {
       const index = timelineRows().findIndex((row) => TimelineRow.key(row) === key)
       return index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")?.[0]
-    }
-    prependAnchorFrames.start(() => {
-      if (applyTimelinePrependAnchor(root, anchor, resolveRowStart) === "adjusted") {
-        stable = 0
-      } else {
-        stable += 1
-      }
-      frames += 1
-      if (stable >= 30 || frames >= 180) {
-        prependAnchor = undefined
-        return false
-      }
-      return true
-    })
-  }
-  onCleanup(() => prependAnchorFrames.stop())
-  const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
-  const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
+    },
+  })
+  onCleanup(prepend.clear)
   const initialRowCount = timelineRows().length
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
@@ -670,11 +660,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
-      prependLoading,
+      prependLoading: prepend.loading(),
       hasScrollGesture: props.hasScrollGesture(),
     })
     if (plan.prepareOverscan) prepareScrollOverscan()
-    if (plan.clearPrependAnchor) clearPrependAnchor()
+    if (plan.clearPrependAnchor) prepend.clear()
     return plan
   }
   let virtualContent: HTMLDivElement | undefined
@@ -690,42 +680,28 @@ export function MessageTimeline(props: MessageTimelineProps) {
       width: typeof window === "undefined" ? 0 : window.innerWidth,
       height: typeof window === "undefined" ? 0 : window.innerHeight,
     },
-    initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
+    initialOffset: () => props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : (savedScroll?.offset ?? 0),
     initialMeasurementsCache: initialMeasurements,
-    estimateSize: (index) => {
-      const rows = timelineRows()
-      const row = rows[index]
-      if (row?._tag !== "AssistantPart") return timelineInitialEstimatedItemSize
-      // Initial bottom-anchored layout only needs precise estimates around the
-      // first visible fold. Scanning every older Markdown body blocks the
-      // viewport callback even though those rows remain virtual and will be
-      // measured when the user approaches them.
-      if (index < rows.length - 50) return timelineInitialEstimatedItemSize
-      const group = row.group
-      if (group.type !== "part") return timelineInitialEstimatedItemSize
-      const part = getMsgParts(group.ref.messageID).find((item) => item.id === group.ref.partID)
-      if (part?.type !== "text") return timelineInitialEstimatedItemSize
-      return estimateLongMarkdownHeight(part.text) ?? timelineInitialEstimatedItemSize
-    },
+    estimateSize: (index) => estimateTimelineRowSize({ index, rows: timelineRows(), parts: getMsgParts }),
     scrollToFn: (offset, options, instance) => {
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
       elementScroll(offset, options, instance)
     },
     get getItemKey() {
-      const rows = timelineRows()
-      return (index: number) => {
-        const row = rows[index]
-        if (!row) return `removed:${index}`
-        return TimelineRow.key(row)
-      }
+      const keys = timelineRows().map(TimelineRow.key)
+      resizeAnchor.noteRowKeys(keys)
+      return (index: number) => keys[index] ?? `removed:${index}`
     },
     get anchorTo() {
       return props.shouldAnchorBottom() ? "end" : "start"
     },
     get followOnAppend() {
-      return props.shouldAnchorBottom()
+      return props.active() && props.shouldAnchorBottom() && !resizeAnchor.held()
     },
-    scrollEndThreshold: 80,
+    // In-view insert holds and gesture windows mean the reader owns the viewport.
+    get scrollEndThreshold() {
+      return resizeAnchor.held() || props.hasScrollGesture() ? -1 : 80
+    },
     get overscan() { return renderOverscan() },
     paddingEnd: 64,
     // A getter, not a stable closure: the virtualizer memoizes the extractor's
@@ -759,12 +735,21 @@ export function MessageTimeline(props: MessageTimelineProps) {
     displayed: props.active,
     shouldAnchorBottom: props.shouldAnchorBottom,
     hasScrollGesture: props.hasScrollGesture,
+    onInViewInsert: () => props.onMarkScrollGesture(),
+  })
+  const scrollMemory = createTimelineScrollMemory({
+    initial: savedScroll, active: props.active, root: listRoot,
+    following: props.shouldAnchorBottom, hasTarget: props.hasScrollTarget,
+    restoreFollowing: props.restoreFollowing, restoring: () => prepend.running(),
+    scrollToOffset: (offset) => virtualizer.scrollToOffset(offset),
+    scrollToEnd: () => virtualizer.scrollToEnd(),
+    restoreAnchor: prepend.apply,
   })
   // The prepend-anchor loop parks itself while stashed (it reads
   // `props.active`). Returning needs the nudge: a parked loop has no frame on
   // which to notice that its surface came back.
   createEffect(() => {
-    if (props.active()) prependAnchorFrames.resume()
+    if (props.active()) prepend.resume()
   })
   const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const virtualItemByKey = createMemo(
@@ -821,7 +806,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       virtualizer.scrollToOffset(Math.max(0, offset[0] - inset), { behavior })
       return true
     })
-    props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
+    props.setHistoryAnchor?.({ capture: prepend.capture, restore: prepend.restore })
   })
 
   let firstFoldRevealKey: string | undefined
@@ -892,7 +877,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       return
     }
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
-    clearPrependAnchor()
+    prepend.clear()
     bottomAnchorFrame = requestAnimationFrame(() => {
       bottomAnchorFrame = undefined
       if (sessionKey() !== key) return
@@ -910,7 +895,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
 
   onCleanup(() => {
-    writeTimelineMountSnapshot(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen }, rows: renderedRows })
+    scrollMemory.capture()
+    writeTimelineMountSnapshot(ownerSessionKey, { scroll: scrollMemory.snapshot(), measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen }, toolRevealed: { ...toolRevealed }, rows: renderedRows })
     turnFold.persist()
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     cancelFirstFoldReveal?.()
@@ -1010,15 +996,18 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
-    if (prependLoading) updatePrependAnchor()
+    if (!props.active()) return
+    if (prepend.loading()) prepend.update()
     updateViewportMessage(event.currentTarget)
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
     // The virtualizer and resizeItem re-anchor own bottom-following.
-    if (!props.hasScrollGesture()) return
-    props.onUserScroll()
-    props.onAutoScrollHandleScroll()
-    props.onMarkScrollGesture(event.currentTarget)
+    if (props.hasScrollGesture()) {
+      props.onUserScroll()
+      props.onAutoScrollHandleScroll()
+      props.onMarkScrollGesture(event.currentTarget)
+    }
+    scrollMemory.capture()
   }
 
   onCleanup(() => {
@@ -1209,7 +1198,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
     assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
   const turnSettled = (userMessageID: string) => turnAssistantMessages(userMessageID).some(assistantMessageSettled)
   const workingTurn = (userMessageID: string) =>
-    sessionStatus().type !== "idle" && activeMessageID() === userMessageID && !turnSettled(userMessageID)
+    (sessionStatus().type !== "idle" || turnSettleRefreshPending(userMessageID)) &&
+    activeMessageID() === userMessageID &&
+    !turnSettled(userMessageID)
 
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)
@@ -1280,6 +1271,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 turnInterrupted={turnInterrupted(row().userMessageID)}
                 toolOpen={toolOpen[member.part.id] ?? false}
                 onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
+                toolRevealed={toolRevealed[member.part.id] ?? false}
+                onToolRevealedChange={(revealed) => revealToolOutput(member.part.id, revealed)}
                 deferToolContent={false}
                 virtualizeDiff
                 onContentRendered={onSizeChange}
@@ -1347,6 +1340,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                   defaultOpen={defaultOpen()}
                   toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
                   onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
+                  toolRevealed={toolRevealed[member.part.id] ?? false}
+                  onToolRevealedChange={(revealed) => revealToolOutput(member.part.id, revealed)}
                   deferToolContent={false}
                   virtualizeDiff
                   onContentRendered={onSizeChange}
@@ -1389,6 +1384,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
+                toolRevealed={toolRevealed[part().id] ?? false}
+                onToolRevealedChange={(revealed) => revealToolOutput(part().id, revealed)}
                 deferToolContent={false}
                 virtualizeDiff
                 onContentRendered={onSizeChange}
@@ -1577,6 +1574,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <TurnFoldRow
                 durationMs={turnFoldRow().durationMs}
                 folded={turnFoldRow().folded}
+                groupCount={turnFoldRow().foldCount}
                 tokens={turnFoldRow().tokens}
                 cost={turnFoldRow().cost}
                 running={turnFoldRow().running}
@@ -1838,8 +1836,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
                   <div
                     class="shrink-0 flex items-center justify-center overflow-hidden transition-[width,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
                     style={{
-                      width: working() ? "16px" : "0px",
-                      "margin-right": working() ? "8px" : "0px",
+                      width: workingStatus() !== "hidden" ? "16px" : "0px",
+                      "margin-right": workingStatus() !== "hidden" ? "8px" : "0px",
                     }}
                     aria-hidden="true"
                   >
@@ -1968,26 +1966,37 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <SubagentChipRow subagents={ambientSubagents()} />
           </section>
         </Show>
-        <div
-          data-timeline-virtual-content
-          ref={(element) => {
-            virtualContent = element
-            props.setContentRef(element)
-          }}
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            position: "relative",
-            width: "100%",
-          }}
-        >
-          <For each={virtualRowKeys()}>{(rowKey) => <VirtualTimelineRow rowKey={rowKey} />}</For>
-          <Show when={timelineRows().length > 0}>
-            <div
-              data-timeline-row="bottom-spacer"
-              aria-hidden="true"
-              class="pointer-events-none h-16 absolute top-0 left-0 w-full"
-              style={{ transform: `translateY(${virtualizer.getTotalSize() - 64}px)` }}
-            />
+        {/* The content ref wraps the queued bubbles too: the auto-scroll and
+            scroll-state observers watch this element, and a bubble mounting
+            below the virtual rows must count as the content growing. */}
+        <div data-timeline-content ref={props.setContentRef} class="w-full">
+          <div
+            data-timeline-virtual-content
+            ref={(element) => {
+              virtualContent = element
+            }}
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              position: "relative",
+              width: "100%",
+            }}
+          >
+            <For each={virtualRowKeys()}>{(rowKey) => <VirtualTimelineRow rowKey={rowKey} />}</For>
+            <Show when={timelineRows().length > 0}>
+              <div
+                data-timeline-row="bottom-spacer"
+                aria-hidden="true"
+                class="pointer-events-none h-16 absolute top-0 left-0 w-full"
+                style={{ transform: `translateY(${virtualizer.getTotalSize() - 64}px)` }}
+              />
+            </Show>
+          </div>
+          <Show when={props.queued}>
+            {(queued) => (
+              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 }}>
+                <TimelineQueuedMessages queued={queued()} items={queuedNotYetInTranscript} centered={props.centered} />
+              </div>
+            )}
           </Show>
         </div>
       </ScrollView>

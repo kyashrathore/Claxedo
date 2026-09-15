@@ -690,6 +690,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       agent: {
         current: () => state.localCurrentAgent,
         list: () => state.localAgentList,
+        catalog: () => state.localAgentList,
       },
       session: {
         promote: (_directory: string, sessionID: string) => {
@@ -726,6 +727,10 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       },
       set: (prompt: Prompt, cursor?: number, scope?: unknown) => {
         promptCalls.set.push({ prompt, cursor, scope })
+      },
+      queuedEdit: {
+        current: () => undefined,
+        set: () => undefined,
       },
       context: {
         add: (item: {

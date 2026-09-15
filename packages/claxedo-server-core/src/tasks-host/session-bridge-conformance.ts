@@ -13,6 +13,7 @@
  * Runner-neutral like the kit's store conformance: each case is a plain async
  * function that throws, so a package registers it with its own `test`.
  */
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   startConfigurationDigest,
   type ConfigurationSlot,
@@ -23,6 +24,7 @@ import {
   type StartCommand,
   type StartPreviewCommand,
   type Task,
+  type TaskAttachmentRecord,
   type TasksActor,
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
@@ -46,6 +48,8 @@ export type TasksSessionBridgeFixture = {
   unreadableSession(): SessionReference
   /** The user message ids the runtime has been asked to run. */
   turns(): readonly string[]
+  /** The parts of every prompt the runtime was handed, in the order they were sent. */
+  promptParts(): readonly (readonly unknown[])[]
   /** Marks a session archived wherever this host projects session state from. */
   archive(sessionId: string): Promise<void>
   dispose(): Promise<void>
@@ -66,6 +70,7 @@ export const TASKS_SESSION_BRIDGE_CONFORMANCE_SCOPE = {
     "another_configuration_cannot_adopt_this_attempt_s_session",
     "an_unreadable_message_history_refuses_the_handoff_rather_than_resending",
     "liveness_and_handoff_are_read_from_the_projection_and_the_runtime",
+    "the_task_s_images_follow_its_text_into_the_first_message_as_file_parts",
   ],
   // NOT pinned: which session id a host mints, and where a host records
   // archival. Both are the host's, and every case above addresses a session by
@@ -124,13 +129,18 @@ async function startCommand(
   }
 }
 
-function handoffCommand(fixture: TasksSessionBridgeFixture, session: SessionReference): SessionHandoffCommand {
+function handoffCommand(
+  fixture: TasksSessionBridgeFixture,
+  session: SessionReference,
+  attachments: readonly TaskAttachmentRecord[] = [],
+): SessionHandoffCommand {
   return {
     actor: fixture.actor,
     task: fixture.task,
     slot: SLOT,
     attempt: 1,
     handoffText: "Pick up from the failing import test.",
+    attachments,
     session,
   }
 }
@@ -308,6 +318,40 @@ export function tasksSessionBridgeConformance(
             await fixture.bridge.sessionState([attemptOrigin(fixture, absent)]),
             [{ session: absent, state: "deleted", handoff: "unknown" }],
             "a session the runtime never had did not read as deleted",
+          )
+        }),
+    },
+    {
+      name: "the task's images follow its text into the first message as file parts",
+      run: () =>
+        withFixture({}, async (fixture) => {
+          const live = await started(fixture)
+          const image: TaskAttachmentRecord = {
+            id: "tat_mock",
+            scopeId: fixture.actor.scopeId,
+            taskId: fixture.task.id,
+            position: 0,
+            filename: "mock.png",
+            mime: "image/png",
+            size: 4,
+            bytes: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+            createdAt: 1_500,
+          }
+          const handed = await fixture.bridge.handoff(handoffCommand(fixture, live, [image]))
+          assert(handed.ok && handed.sent, "the handoff was not sent")
+          const parts = fixture.promptParts().at(-1) ?? []
+          assertSameJson(parts.length, 2, "the first message did not carry the text and one image")
+          assert(
+            typeof parts[0] === "object" && parts[0] !== null && "type" in parts[0] && parts[0].type === "text",
+            "the text was not the first part",
+          )
+          // Projected to the fields the bridge sends: a runtime may add an id
+          // or a source of its own to a part it accepted.
+          const file = asRecord(parts[1]) ?? {}
+          assertSameJson(
+            { type: file.type, mime: file.mime, filename: file.filename, url: file.url },
+            { type: "file", mime: "image/png", filename: "mock.png", url: "data:image/png;base64,iVBORw==" },
+            "the image did not arrive as a file part carrying its bytes",
           )
         }),
     },

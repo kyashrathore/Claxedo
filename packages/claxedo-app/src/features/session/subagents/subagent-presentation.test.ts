@@ -65,4 +65,35 @@ describe("subagent presentation", () => {
       ["none", "unavailable"],
     ])
   })
+
+  test("an edge that names no rendered spawn part leaves the row ambient", () => {
+    const registry = createSubagentRegistry()
+    hydrateSubagentRows(registry, "parent", [
+      // A lane spawned inside a skill's forked execution: its edge names a call
+      // the parent transcript never carries as a part.
+      { subagentKey: "fork-lane", revision: 1, status: "running", childSessionId: "child-a",
+        toolCallEdges: [{ toolCallId: "call-in-fork", role: "spawn", revision: 1 }] },
+      // A lane whose spawn row exists in the transcript keeps its inline home.
+      { subagentKey: "task-lane", revision: 1, status: "running", childSessionId: "child-b",
+        toolCallEdges: [{ toolCallId: "call-on-parent", role: "spawn", revision: 1 }] },
+      { subagentKey: "edgeless", revision: 1, status: "running", childSessionId: "child-c" },
+    ])
+    const hostable = new Set(["call-on-parent"])
+
+    expect(
+      presentSubagents(registry, "parent", undefined, hostable).map((item) => [item.subagentKey, item.ambient]),
+    ).toEqual([
+      ["edgeless", true],
+      ["fork-lane", true],
+      ["task-lane", false],
+    ])
+    // Without the host set the legacy rule stands — edges alone suppress ambient.
+    expect(presentSubagents(registry, "parent").map((item) => [item.subagentKey, item.ambient])).toEqual([
+      ["edgeless", true],
+      ["fork-lane", false],
+      ["task-lane", false],
+    ])
+    // Per-call resolution is unaffected: an edge still answers its own lookup.
+    expect(presentSubagents(registry, "parent", "call-in-fork", hostable).map((item) => item.subagentKey)).toEqual(["fork-lane"])
+  })
 })

@@ -41,6 +41,7 @@ function agentRow(value: unknown): Agent | undefined {
   if (typeof value !== "object" || value === null) return undefined
   const name = "name" in value ? value.name : undefined
   if (typeof name !== "string") return undefined
+  const id = "id" in value ? value.id : undefined
   const description = "description" in value ? value.description : undefined
   const mode = "mode" in value ? value.mode : undefined
   const model = "model" in value ? agentModelRef(value.model) : undefined
@@ -48,6 +49,7 @@ function agentRow(value: unknown): Agent | undefined {
   const hidden = "hidden" in value ? value.hidden : undefined
   return {
     name,
+    ...(typeof id === "string" && id ? { id } : {}),
     ...(typeof description === "string" ? { description } : {}),
     ...(typeof mode === "string" ? { mode } : {}),
     ...(model === undefined ? {} : { model }),

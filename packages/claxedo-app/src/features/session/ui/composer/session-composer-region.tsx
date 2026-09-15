@@ -9,11 +9,9 @@ import { getSessionHandoff } from "../prompt-preview-handoff"
 import { useSessionKey } from "@/features/session/session-layout"
 import { SessionPermissionDock } from "./session-permission-dock"
 import { SessionQuestionDock } from "./session-question-dock"
-import { SessionFollowupDock } from "./session-followup-dock"
 import { SessionRevertDock } from "./session-revert-dock"
 import type { SessionComposerState } from "./session-composer-state"
 import { SessionTodoDock } from "./session-todo-dock"
-import type { FollowupDraft } from "@/features/session/composer/ui/submit"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "@/features/session/composer/mode"
@@ -57,6 +55,7 @@ const recordRestingComposerHeight = (height: number) => {
 }
 
 export function SessionComposerRegion(props: {
+  active?: () => boolean
   state: SessionComposerState
   ready: boolean
   centered: boolean
@@ -74,17 +73,7 @@ export function SessionComposerRegion(props: {
   onNewSessionWorktreeReset: () => void
   onSubmit: () => void
   onResponseSubmit: () => void
-  followup?: {
-    queue: () => boolean
-    items: { id: string; text: string }[]
-    sending?: string
-    edit?: { id: string; prompt: FollowupDraft["prompt"]; context: FollowupDraft["context"] }
-    onQueue: (draft: FollowupDraft) => void
-    onAbort: () => void
-    onSend: (id: string) => void
-    onEdit: (id: string) => void
-    onEditLoaded: () => void
-  }
+
   revert?: {
     items: { id: string; text: string }[]
     restoring?: string
@@ -212,7 +201,7 @@ export function SessionComposerRegion(props: {
 
   onCleanup(clear)
 
-  const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing())
+  const open = createMemo(() => store.ready && props.state.dock())
   // The dock renders at its final geometry the moment it is ready —
   // deliberately no spring here. The composer is the core interaction
   // surface: animating its reveal costs a motion-value loop plus per-frame
@@ -382,14 +371,6 @@ export function SessionComposerRegion(props: {
               }}
             >
               {props.beforeInput}
-              <Show when={props.followup?.items.length}>
-                <SessionFollowupDock
-                  items={props.followup!.items}
-                  sending={props.followup!.sending}
-                  onSend={props.followup!.onSend}
-                  onEdit={props.followup!.onEdit}
-                />
-              </Show>
               <Show
                 when={child()}
                 fallback={
@@ -403,11 +384,6 @@ export function SessionComposerRegion(props: {
                       newSessionWorktree={props.newSessionWorktree}
                       onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
                       onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                      edit={props.followup?.edit}
-                      onEditLoaded={props.followup?.onEditLoaded}
-                      shouldQueue={props.followup?.queue}
-                      onQueue={props.followup?.onQueue}
-                      onAbort={props.followup?.onAbort}
                       onSubmit={props.onSubmit}
                       sessionID={props.sessionID}
                       sessionDirectory={sessionDirectory()}

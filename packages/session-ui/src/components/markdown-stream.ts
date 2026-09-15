@@ -150,7 +150,11 @@ export function stream(text: string, live: boolean): Block[] {
     .map((token) => token.raw)
     .join("")
   const fence = codeBlock(last)
-  if (!fence) return withDefinitions([...result, { raw, src: heal(raw), mode: "live" }], defs)
+  if (!fence) {
+    // Render the available rows now. Waiting for another token or message
+    // completion inserts the entire list/table above content already visible.
+    return withDefinitions([...result, { raw, src: heal(raw), mode: "live" }], defs)
+  }
 
   if (!open(last.raw))
     return withDefinitions(

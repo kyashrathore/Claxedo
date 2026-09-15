@@ -9,7 +9,7 @@ import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive } from "./session-store"
 import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
-import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
+import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
 import {
   acceptedPromptRefreshRequest,
@@ -41,6 +41,7 @@ import { removeSessionListQueryData } from "../data/query/session-list"
 import {
   getSessionPrefetch,
   getSessionPrefetchPromise,
+  SESSION_OLDER_HISTORY_PAGE_MESSAGE_COUNT,
   sessionHistoryPageRequest,
   type SessionPrefetchPage,
 } from "@/platform/sync/session-prefetch"
@@ -55,7 +56,7 @@ import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYD
 import { assistantMessageIdForUserMessage } from "../data/session-types"
 import { createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, latestTurnWindowNeedsTailSync, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { createActivePaneProjection } from "./active-pane-projection"
@@ -520,7 +521,7 @@ export function createSessionController(input: {
 
   const syncSessionHistory = async (
     sessionID: string,
-    opts?: { force?: boolean; before?: string; view?: "latest-turn" | "latest-surface"; mode?: "replace" | "prepend" | "replace-window"; bypassQuiet?: boolean; silent?: boolean; activationEpoch?: number; signal?: AbortSignal },
+    opts?: { force?: boolean; before?: string; view?: "latest-turn" | "latest-surface"; tail?: boolean; mode?: "replace" | "prepend" | "replace-window"; bypassQuiet?: boolean; silent?: boolean; activationEpoch?: number; signal?: AbortSignal },
   ) => {
     if (opts?.signal?.aborted) return false
     if (suppressedByFastSessionSwitch(sessionID)) return false
@@ -550,7 +551,11 @@ export function createSessionController(input: {
       workspaceId,
     })) return true
     if (!opts?.silent) setHistoryMetaValue("loading", key, true)
-    const pageRequest: SessionMessagePageRequest = opts?.view ? { view: opts.view } : sessionHistoryPageRequest(opts?.before)
+    const pageRequest: SessionMessagePageRequest = opts?.view
+      ? { view: opts.view }
+      : opts?.tail
+        ? { limit: SESSION_OLDER_HISTORY_PAGE_MESSAGE_COUNT }
+        : sessionHistoryPageRequest(opts?.before)
     const shouldFetchSession = shouldFetchSessionAlongsideHistory({
       before: opts?.before, view: pageRequest.view, hasSession, force: opts?.force, title: cachedSession?.title,
     })
@@ -948,7 +953,12 @@ export function createSessionController(input: {
         const latestTurnCompletion = createLatestTurnCompletion({
           activationAt,
           active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
-          complete: () => syncSessionHistory(id, { force: true, view: "latest-turn", mode: "replace-window", bypassQuiet: true, silent: true, activationEpoch, signal: readEpoch.signal }),
+          complete: async () => {
+            const synced = await syncSessionHistory(id, { force: true, view: "latest-turn", mode: "replace-window", bypassQuiet: true, silent: true, activationEpoch, signal: readEpoch.signal })
+            if (!synced) return
+            if (!latestTurnWindowNeedsTailSync(registeredConversationSnapshot(directory, id)?.messages)) return
+            await syncSessionHistory(id, { force: true, tail: true, mode: "replace-window", bypassQuiet: true, silent: true, activationEpoch, signal: readEpoch.signal })
+          },
           onError: (error) => sessionHydrationDebug("latest-turn-error", {
             directory,
             sessionID: id,
@@ -1016,7 +1026,10 @@ export function createSessionController(input: {
         })
         const cancelMeta = scheduleDelayedTask(() => {
           if (input.directory() !== directory || input.sessionID() !== id || input.active?.() === false) return
-          void refreshMeta(id, { includeRequests: true })
+          // Forced, not cached-checked: a request resolved off-client while this
+          // pane was away stays in the push cache, and the dock's attach gate
+          // waits on this read to confirm what is still pending.
+          void refreshMeta(id, { includeRequests: true, force: true })
         }, Math.max(FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, hydrateDelay + 600))
         onCleanup(() => {
           readEpoch.abort()

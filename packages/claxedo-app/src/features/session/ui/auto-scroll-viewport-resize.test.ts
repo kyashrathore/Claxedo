@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal } from "solid-js"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 
 // A scroll container behaves in one way that matters here and that no plain
@@ -148,6 +148,44 @@ describe("createAutoScroll viewport resizes", () => {
     deliverResize(scroller.element, 415)
 
     expect(scroller.element.scrollTop).toBe(300)
+  })
+
+  test("hidden resize notifications preserve reading intent", () => {
+    const scroller = createFakeScroller({ scrollHeight: 1400, clientHeight: 400 })
+    const content = document.createElement("div")
+    const [enabled, setEnabled] = createSignal(true)
+    const autoScroll = createRoot((end) => {
+      dispose = end
+      const value = createAutoScroll({ working: () => true, enabled })
+      value.scrollRef(scroller.element)
+      value.contentRef(content)
+      return value
+    })
+    autoScroll.pause()
+    scroller.element.scrollTop = 300
+    setEnabled(false)
+    scroller.setContentHeight(0)
+    deliverResize(content, 0)
+    autoScroll.handleScroll()
+    expect(autoScroll.userScrolled()).toBe(true)
+    scroller.setContentHeight(1800)
+    setEnabled(true)
+    deliverResize(content, 1800)
+    expect(autoScroll.userScrolled()).toBe(true)
+    expect(scroller.element.scrollTop).toBe(0)
+  })
+
+  test("restores paused intent before a remounted scroller has geometry", () => {
+    const scroller = createFakeScroller({ scrollHeight: 0, clientHeight: 0 })
+    const content = document.createElement("div")
+    const autoScroll = mount(scroller, content)
+    autoScroll.restoreFollowing(false)
+    scroller.setContentHeight(1400)
+    scroller.setViewportHeight(400)
+    scroller.element.scrollTop = 640
+    deliverResize(content, 1400)
+    expect(autoScroll.userScrolled()).toBe(true)
+    expect(scroller.element.scrollTop).toBe(640)
   })
 
   test("still follows content growth", () => {

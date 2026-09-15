@@ -209,6 +209,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       getGoalCapabilities: (goalInput: Parameters<typeof runtimeClient.getGoalCapabilities>[0]) =>
         runtimeClient.getGoalCapabilities(goalInput),
       startGoal: (goalInput: Parameters<typeof runtimeClient.startGoal>[0]) => runtimeClient.startGoal(goalInput),
+      replaceQueuedMessage: (replaceInput: Parameters<typeof runtimeClient.replaceQueuedMessage>[0]) =>
+        runtimeClient.replaceQueuedMessage(replaceInput),
     }
   }
 

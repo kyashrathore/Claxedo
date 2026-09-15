@@ -59,6 +59,16 @@ export type {
   AgentRuntimePromptPayload,
 } from "@/platform/runtime/session"
 
+/** A prompt the runtime is holding behind a running turn, as `GET /session/:id/queue` reports it. */
+export type QueuedMessageRecord = {
+  seq: number
+  messageId?: string
+  queuedAt: number
+  parts: Array<{ type: string; text?: string; filename?: string }>
+  /** Kept back from the next idle while a client edits it. */
+  held: boolean
+}
+
 export type AgentRuntimeSessionCreateInput = {
   id?: string
   directory: AgentRuntimeDirectory
@@ -586,6 +596,20 @@ export function createAgentRuntimeClient(options: {
       })
       // Returns what the harness KEPT, which can differ from `input.modeId`.
       return { data: await readJson<AgentRuntimePermissionModeState>(res) }
+    },
+    async queuedMessages(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
+      const res = await fetchRuntimeSession({ ...input, suffix: "/queue" })
+      if (!res.ok) throw await runtimeRequestError(res)
+      return await readJson<QueuedMessageRecord[]>(res)
+    },
+    async controlQueuedMessage(input: { directory: AgentRuntimeDirectory; sessionID: string; seq: number; action: "cancel" | "steer" | "hold" | "release" }) {
+      const res = await fetchRuntimeSession({ ...input, suffix: `/queue/${input.seq}/${input.action}`, init: { method: "POST" } })
+      if (!res.ok) throw await runtimeRequestError(res)
+    },
+    /** Swaps a waiting message's parts; 409 once the runtime has admitted or dropped it. */
+    async replaceQueuedMessage(input: { directory: AgentRuntimeDirectory; sessionID: string; seq: number; parts: AgentRuntimePromptPayload["parts"] }) {
+      const res = await fetchRuntimeSession({ ...input, suffix: `/queue/${input.seq}/replace`, init: jsonInit("POST", { parts: input.parts }) })
+      if (!res.ok) throw await runtimeRequestError(res)
     },
     async sendMessage(input: AgentRuntimePromptPayload) {
       const res = await fetchRuntimeSession({

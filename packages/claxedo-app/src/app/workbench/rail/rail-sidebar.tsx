@@ -439,12 +439,14 @@ function git(input: Pick<SessionItem, "git"> | Pick<SessionInventoryRow, "git">)
   return uniq(all)
 }
 
-function replaceSessionUrl(session: Row) {
+function pushSessionUrl(session: Row) {
   if (typeof window === "undefined") return
   const workspaceId = workspaceSessionBacking(session, session.directory ?? session.project.worktree)?.workspaceId
   const route = workspaceId ? workspaceSessionRoute(workspaceId, session.id) : sessionRoute(session.id)
   if (window.location.pathname === route) return
-  writeBrowserRoute(route, { replace: true, notify: true })
+  // A rail click is user navigation: it must push so Back returns to the page
+  // it came from. Replacing would make the visited chat unreachable by history.
+  writeBrowserRoute(route, { replace: false, notify: true })
 }
 
 export function RailSidebar(props: RailSidebarProps) {
@@ -1107,10 +1109,12 @@ export function RailSidebar(props: RailSidebarProps) {
       // alone and leaves the row object itself referentially stable.
       // Must stay an accessor: spreading this object would evaluate it eagerly
       // and restore the old whole-row invalidation.
+      // Under a minute the label is a figure, not a word: the slot is 24 px
+      // wide, so "just now" wraps to two lines and "maintenant" overflows.
       get timeLabel() {
         if (!time) return undefined
         clock()
-        return formatCompactAge(time) ?? language.t("common.justNow")
+        return formatCompactAge(time) ?? "<1m"
       },
       ...(metadata ? { metadata } : {}),
       ...(links.link ? { link: links.link } : {}),
@@ -1159,7 +1163,7 @@ export function RailSidebar(props: RailSidebarProps) {
     const serial = ++sessionActivationSerial
     measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), { networkQuiet }))
     const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), sessionOpenOptions(session)))
-    measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
+    measure("sessionActivate.pushUrl", () => pushSessionUrl(session))
     focusComposerWhenReady({ origin: focusOrigin, sessionId: session.id })
     afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return

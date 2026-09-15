@@ -64,6 +64,8 @@ export type TaskDetailProps = {
    * fetch. Absent on a subtask, which cannot have children of its own.
    */
   subtasks?: JSX.Element
+  /** The task's images, rendered by the caller for the same reason. */
+  attachments?: JSX.Element
 }
 
 export function TaskDetail(props: TaskDetailProps) {
@@ -181,6 +183,8 @@ export function TaskDetail(props: TaskDetailProps) {
             onChange={(description) => patch({ description })}
           />
         </div>
+
+        <Show when={props.attachments}>{(section) => section()}</Show>
 
         <Show when={props.conflict}>
           {(message) => (

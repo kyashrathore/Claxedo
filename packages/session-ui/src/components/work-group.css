@@ -73,8 +73,6 @@
   gap: 4px;
   max-height: 224px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
 }
 
 /* Edge fades only when the body actually overflows (data-overflowing). */
@@ -86,18 +84,6 @@
     black calc(100% - 24px),
     transparent
   );
-}
-
-@media (hover: hover) {
-  .ui-work-group-list:hover {
-    scrollbar-color: var(--border-weak-base) transparent;
-  }
-}
-
-/* Nested member rows: dimmer, icon-less. */
-[data-component="work-group-list"] .ui-basic-tool-tool-leading-icon,
-[data-component="work-group-list"] [data-slot="context-tool-group-title"] .ui-collapsible-arrow {
-  display: none;
 }
 
 body:not([data-new-layout]) {

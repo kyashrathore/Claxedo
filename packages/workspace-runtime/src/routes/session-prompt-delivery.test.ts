@@ -97,13 +97,13 @@ function runtimeDouble(input: {
   } as unknown as AgentRuntime
 }
 
-function routes(runtime: AgentRuntime, queuedPrompts?: QueuedPromptHost) {
+function routes(runtime: AgentRuntime, queuedPrompts?: QueuedPromptHost, published: unknown[] = []) {
   return createSessionRoutes({
     resolveAdapter: () => adapter(),
     resolveRuntime: () => runtime,
     resolveDirectory: () => undefined,
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
-    publishGlobal: () => {},
+    publishGlobal: (event) => { published.push(event) },
     ...(queuedPrompts ? { queuedPrompts } : {}),
   })
 }
@@ -120,6 +120,7 @@ function durableQueue() {
       store: () => ({
         queuePrompt: (input) => store.queuePrompt(input),
         deleteQueuedPrompt: (sessionId: string, seq: number) => store.deleteQueuedPrompt(sessionId, seq),
+        replaceQueuedPromptParts: (sessionId: string, seq: number, parts) => store.replaceQueuedPromptParts(sessionId, seq, parts),
         listQueuedPrompts: () => store.listQueuedPrompts(),
         sessionDirectory: () => "/workspace",
       }),
@@ -280,4 +281,148 @@ describe("scoping Stop to a turn", () => {
     expect(aborts).toHaveLength(1)
     expect(aborts[0]).toBeUndefined()
   })
+})
+
+describe("queued message controls", () => {
+  test("lists multiple prompts, removes only the selected one, and never starts it later", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    const abandons: number[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const app = routes(runtimeDouble({ starts, abandons, deliveries: ["queue", "queue", "start"], idle: () => idle }), queue.host)
+    for (const messageID of ["first", "second"]) {
+      await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID, delivery: "queue", parts: [{ type: "text", text: messageID }] }))
+    }
+    const rows = await (await app.request("http://localhost/session/session_1/queue")).json() as Array<{ seq: number; messageId: string }>
+    expect(rows.map((row) => row.messageId)).toEqual(["first", "second"])
+    expect((await app.request(`http://localhost/session/session_1/queue/${rows[0].seq}/cancel`, { method: "POST" })).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(queue.host.list("session_1").map((row) => row.messageId)).toEqual(["second"])
+    release()
+    for (let i = 0; i < 50 && starts.length < 3; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    expect(starts.map((turn) => turn.messageId)).toEqual(["first", "second", "second"])
+    expect(queue.host.list("session_1")).toEqual([])
+    expect(abandons).toHaveLength(1)
+  })
+
+  test("steers a selected queued message immediately and does not replay it on idle", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const app = routes(runtimeDouble({ starts, deliveries: ["queue", "steer"], idle: () => idle }), queue.host)
+    await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID: "steer-me", delivery: "queue", parts: [{ type: "text", text: "do this now" }] }))
+    const seq = queue.host.list("session_1")[0].seq
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/steer`, { method: "POST" })).status).toBe(200)
+    for (let i = 0; i < 50 && starts.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    expect(starts.map((turn) => turn.delivery)).toEqual(["queue", "steer"])
+    expect(queue.host.list("session_1")).toEqual([])
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(starts).toHaveLength(2)
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/cancel`, { method: "POST" })).status).toBe(409)
+  })
+
+  test("replaces a waiting message's parts in the durable row and in the turn it becomes", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const app = routes(runtimeDouble({ starts, deliveries: ["queue", "start"], idle: () => idle }), queue.host)
+    await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID: "edit-me", delivery: "queue", parts: [{ type: "text", text: "first draft" }] }))
+    const seq = queue.host.list("session_1")[0].seq
+    const edited = [{ type: "text" as const, text: "second draft" }]
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/replace`, prompt({ parts: edited }))).status).toBe(200)
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/replace`, prompt({ parts: [] }))).status).toBe(400)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(queue.host.list("session_1").map((row) => row.parts)).toEqual([edited])
+    expect(starts).toHaveLength(1)
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/cancel`, { method: "POST" })).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(queue.host.list("session_1")).toEqual([])
+    release()
+  })
+
+  test("a held message waits past the idle it would have started on, until released", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const app = routes(runtimeDouble({ starts, deliveries: ["queue", "start"], idle: () => idle }), queue.host)
+    await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID: "hold-me", delivery: "queue", parts: [{ type: "text", text: "being edited" }] }))
+    const seq = queue.host.list("session_1")[0].seq
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/hold`, { method: "POST" })).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect((await (await app.request("http://localhost/session/session_1/queue")).json() as Array<{ held: boolean }>).map((row) => row.held)).toEqual([true])
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(starts).toHaveLength(1)
+    expect(queue.host.list("session_1").map((row) => row.messageId)).toEqual(["hold-me"])
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/release`, { method: "POST" })).status).toBe(200)
+    for (let i = 0; i < 50 && starts.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    expect(starts.map((turn) => turn.messageId)).toEqual(["hold-me", "hold-me"])
+    expect(queue.host.list("session_1")).toEqual([])
+  })
+
+  test("replacing a held message's parts also releases it", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const app = routes(runtimeDouble({ starts, deliveries: ["queue", "start"], idle: () => idle }), queue.host)
+    await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID: "hold-me", delivery: "queue", parts: [{ type: "text", text: "being edited" }] }))
+    const seq = queue.host.list("session_1")[0].seq
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/hold`, { method: "POST" })).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(starts).toHaveLength(1)
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/replace`, prompt({ parts: [{ type: "text" as const, text: "edited" }] }))).status).toBe(200)
+    for (let i = 0; i < 50 && starts.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    expect(starts[1]?.parts).toEqual([{ type: "text", text: "edited" }])
+    expect(queue.host.list("session_1")).toEqual([])
+  })
+
+  test("a replaced message starts with its edited parts once the session frees up", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const app = routes(runtimeDouble({ starts, deliveries: ["queue", "start"], idle: () => idle }), queue.host)
+    await app.request("http://localhost/session/session_1/prompt_async", prompt({ messageID: "edit-me", delivery: "queue", parts: [{ type: "text", text: "first draft" }] }))
+    const seq = queue.host.list("session_1")[0].seq
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/replace`, prompt({ parts: [{ type: "text", text: "second draft" }] }))).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release()
+    for (let i = 0; i < 50 && starts.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    expect(starts.map((turn) => turn.parts)).toEqual([[{ type: "text", text: "first draft" }], [{ type: "text", text: "second draft" }]])
+    expect(queue.host.list("session_1")).toEqual([])
+    expect((await app.request(`http://localhost/session/session_1/queue/${seq}/replace`, prompt({ parts: [{ type: "text", text: "too late" }] }))).status).toBe(409)
+  })
+})
+
+
+test("a queued turn does not replay events buffered from the preceding turn", async () => {
+  const starts: AgentRuntimeTurnStartInput[] = []
+  let release!: () => void
+  const idle = new Promise<void>((resolve) => { release = resolve })
+  const runtime = runtimeDouble({ starts, deliveries: ["queue", "start"], idle: () => idle })
+  let subscriptions = 0
+  runtime.events.subscribe = () => {
+    const label = ++subscriptions === 1 ? "old buffered output" : "new output"
+    return (async function* () {
+      yield { sessionId: "session_1", directory: undefined, payload: { type: "text-delta", delta: label } }
+      yield { sessionId: "session_1", directory: undefined, payload: sessionIdle("session_1") }
+    })() as ReturnType<AgentRuntime["events"]["subscribe"]>
+  }
+  const published: unknown[] = []
+  await routes(runtime, undefined, published).request("http://localhost/session/session_1/prompt_async", prompt({
+    messageID: "next", delivery: "queue", parts: [{ type: "text", text: "next" }],
+  }))
+  release()
+  for (let i = 0; i < 50 && published.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+  expect(subscriptions).toBe(2)
+  expect(JSON.stringify(published)).not.toContain("old buffered output")
+  expect(JSON.stringify(published)).toContain("new output")
 })

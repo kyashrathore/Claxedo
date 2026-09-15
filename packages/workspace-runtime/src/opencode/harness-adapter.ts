@@ -16,7 +16,7 @@ import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } fro
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
-import { asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
 import type { OpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
@@ -191,11 +191,21 @@ function projectTurnEvent(event: ProjectedEvent, sessionID: string): AgentRuntim
   if (event.type === "session.reasoning.delta" && typeof data.delta === "string") {
     return { type: "thinking-delta", delta: data.delta, harness: "opencode" }
   }
-  if (event.type === "session.tool.called" && typeof data.id === "string" && typeof data.name === "string") {
+  if (event.type === "session.tool.input.started" && typeof data.id === "string" && typeof data.name === "string") {
     return { type: "tool-start", toolCallId: data.id, toolName: data.name, harness: "opencode" }
   }
+  if (event.type === "session.tool.called" && typeof data.id === "string") {
+    return { type: "tool-input", toolCallId: data.id, input: data.input, harness: "opencode" }
+  }
   if (event.type === "session.tool.success" && typeof data.id === "string") {
-    return { type: "tool-status", toolCallId: data.id, status: "completed", harness: "opencode" }
+    const metadata = asRecord(data.metadata)
+    return {
+      type: "tool-output",
+      toolCallId: data.id,
+      output: data.content,
+      ...(metadata ? { metadata } : {}),
+      harness: "opencode",
+    }
   }
   if (event.type === "session.tool.failed" && typeof data.id === "string") {
     return { type: "tool-error", toolCallId: data.id, error: JSON.stringify(data.error), harness: "opencode" }
@@ -520,6 +530,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     const runtime = await this.engine()
     return (await runtime.catalog.agents(this.scope(directory))).map((row) => ({
       name: row.name,
+      ...(row.id === undefined ? {} : { id: row.id }),
       ...(row.description === undefined ? {} : { description: row.description }),
       ...(row.mode === undefined ? {} : { mode: row.mode }),
     }))

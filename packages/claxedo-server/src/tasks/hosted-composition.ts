@@ -7,13 +7,30 @@ import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/auth
 import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/server-core/tasks-host/contribution"
 import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
+import { TASKS_ROUTE_PATH, type TasksActor, type TasksHostCapabilities, type TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksCapabilityOwner, TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { signedOrError } from "../workspace/route-support"
 import { verifyTasksCapability } from "./capability"
 import { createD1TasksStore } from "./d1-store"
+
+import type { RouteGuardExemption } from "../platform/auth/request-guard"
+
+/**
+ * Task commands carry their image attachments inline as base64 — six images at
+ * the contract bound is ~13 MiB, past the hosted default 1 MiB cap. The routes
+ * already enforce their own per-endpoint ceilings (`readJson` prechecks
+ * content-length and counts received bytes before parsing), so the default is
+ * lifted here rather than duplicated.
+ */
+export const TASKS_REQUEST_GUARD_EXEMPTION = {
+  prefix: TASKS_ROUTE_PATH,
+  bodyCap: true,
+  reason:
+    "Task create/update commands carry attachments inline (up to TASKS_BOUNDS.commandRequestMaxBytes ≈ 12.5 MiB). The route enforces its own per-endpoint body bound via readJson before parsing.",
+  enforcedBy: "packages/claxedo-tasks/src/http/routes.ts (readJson + TASKS_BOUNDS.commandRequestMaxBytes/startRequestMaxBytes)",
+} as const satisfies RouteGuardExemption
 
 export type HostedTasksComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]

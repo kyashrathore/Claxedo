@@ -288,7 +288,6 @@ export const dict = {
   "prompt.attachment.remove": "Eki kaldır",
   "prompt.action.send": "Gönder",
   "prompt.action.stop": "Durdur",
-  "prompt.action.queued": "Kuyrukta",
   "prompt.action.readOnlyWorkspace": "Salt okunur çalışma alanı",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} bu eki kullanamıyor",

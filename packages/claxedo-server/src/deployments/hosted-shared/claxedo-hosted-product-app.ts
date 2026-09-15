@@ -11,6 +11,7 @@ import {
 } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
 import type { BillingStore } from "../../billing/store-contract"
+import { TASKS_REQUEST_GUARD_EXEMPTION } from "../../tasks/hosted-composition"
 import {
   createHostedCoreApp,
   type HostedCoreAppOptions,
@@ -59,7 +60,7 @@ export function createClaxedoHostedProductApp(
     ...core,
     cloudWorkspaceAdmission: requireCloudWorkspaceEntitlement,
     product: STATIC_PRODUCT_DESCRIPTORS["claxedo-hosted"],
-    requestGuardExemptions: [BILLING_WEBHOOK_GUARD_EXEMPTION],
+    requestGuardExemptions: [BILLING_WEBHOOK_GUARD_EXEMPTION, TASKS_REQUEST_GUARD_EXEMPTION],
     ...(productWorkspace ? { productWorkspace } : {}),
   })
   app.route(

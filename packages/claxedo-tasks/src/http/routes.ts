@@ -1,4 +1,3 @@
-import { utf8ByteLength } from "@claxedo/helpers/string"
 import { Hono } from "hono"
 import type { Context } from "hono"
 import {
@@ -67,18 +66,43 @@ type BodyRead = { ok: true; value: unknown } | { ok: false; response: Response }
 
 /**
  * Reads a JSON body under a byte ceiling. The declared length is refused
- * before the body is touched, the received bytes are counted before they are
- * parsed, and anything that is not JSON is a 400 — never a coerced value.
+ * before the body is touched, the stream is cancelled the moment received
+ * bytes pass the ceiling — a chunked body with no Content-Length never buffers
+ * whole — and anything that is not JSON is a 400, never a coerced value.
  */
 async function readJson(c: Context, maxBytes: number): Promise<BodyRead> {
+  const tooLarge = () => c.json({ error: tasksErrorDetail("invalid_input", `Request exceeds ${maxBytes} bytes`) }, 413)
   const declared = c.req.header("content-length")
   if (declared !== undefined && Number(declared) > maxBytes) {
-    return { ok: false, response: c.json({ error: tasksErrorDetail("invalid_input", `Request exceeds ${maxBytes} bytes`) }, 413) }
+    return { ok: false, response: tooLarge() }
   }
-  const text = await c.req.text()
-  if (utf8ByteLength(text) > maxBytes) {
-    return { ok: false, response: c.json({ error: tasksErrorDetail("invalid_input", `Request exceeds ${maxBytes} bytes`) }, 413) }
-  }
+  const stream = c.req.raw.body
+  const text = await (async () => {
+    if (!stream) return ""
+    const reader = stream.getReader()
+    const chunks: Uint8Array[] = []
+    let size = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > maxBytes) {
+        // Not awaited — a source whose cancel promise pends forever would hold
+        // the 413 open with it.
+        void reader.cancel().catch(() => undefined)
+        return undefined
+      }
+      chunks.push(value)
+    }
+    const merged = new Uint8Array(size)
+    let offset = 0
+    for (const chunk of chunks) {
+      merged.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return new TextDecoder().decode(merged)
+  })()
+  if (text === undefined) return { ok: false, response: tooLarge() }
   try {
     return { ok: true, value: JSON.parse(text) }
   } catch {
@@ -169,6 +193,22 @@ export function createTasksRoutes(options: TasksRoutesOptions): Hono {
     const authenticated = await actorOf(c)
     if ("response" in authenticated) return authenticated.response
     return c.json(await tasks.detail(authenticated.actor, c.req.param("taskId")))
+  })
+
+  app.get("/tasks/:taskId/attachments/:attachmentId", async (c) => {
+    const authenticated = await actorOf(c)
+    if ("response" in authenticated) return authenticated.response
+    const attachment = await tasks.attachment(authenticated.actor, c.req.param("taskId"), c.req.param("attachmentId"))
+    // Bytes are immutable under their id, so a browser may keep them; private,
+    // because the read was authorized for this actor and no shared cache was.
+    // A fresh view: Hono's body type wants bytes over a plain `ArrayBuffer`,
+    // and a store may hand back a view over a shared or pooled one.
+    return c.body(new Uint8Array(attachment.bytes), 200, {
+      "content-type": attachment.mime,
+      "content-length": String(attachment.size),
+      "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      "cache-control": "private, max-age=31536000, immutable",
+    })
   })
 
   app.post("/commands", async (c) => {

@@ -1,8 +1,10 @@
 import {
+  attachmentView,
   taskSummaryOf,
   type ConfigurationSlot,
   type Preset,
   type Task,
+  type TaskAttachmentRecord,
   type TaskSessionLink,
 } from "../contracts"
 import { paginate } from "../paging"
@@ -17,18 +19,20 @@ import { serializedTransactions, type TasksCommandReceipt, type TasksStoreOperat
 type State = {
   presets: Map<string, Preset>
   tasks: Map<string, Task>
+  attachments: Map<string, TaskAttachmentRecord>
   links: Map<string, TaskSessionLink>
   receipts: Map<string, TasksCommandReceipt>
 }
 
 function emptyState(): State {
-  return { presets: new Map(), tasks: new Map(), links: new Map(), receipts: new Map() }
+  return { presets: new Map(), tasks: new Map(), attachments: new Map(), links: new Map(), receipts: new Map() }
 }
 
 function captureState(state: State): State {
   return {
     presets: new Map(state.presets),
     tasks: new Map(state.tasks),
+    attachments: new Map(state.attachments),
     links: new Map(state.links),
     receipts: new Map(state.receipts),
   }
@@ -37,6 +41,7 @@ function captureState(state: State): State {
 function restore(target: State, from: State): void {
   target.presets = from.presets
   target.tasks = from.tasks
+  target.attachments = from.attachments
   target.links = from.links
   target.receipts = from.receipts
 }
@@ -59,6 +64,11 @@ function operations(state: State): TasksStoreOperations {
 
   const childrenOf = (scopeId: string, parentTaskId: string) =>
     tasksOf(scopeId).filter((task) => task.parentTaskId === parentTaskId)
+
+  const attachmentsOf = (scopeId: string, taskId: string) =>
+    [...state.attachments.values()]
+      .filter((attachment) => attachment.scopeId === scopeId && attachment.taskId === taskId)
+      .sort((left, right) => left.position - right.position)
 
   // One pass over the links for the whole page, keyed by scope as well as
   // task: two scopes may hold the same task id, and a count that ignored the
@@ -174,6 +184,24 @@ function operations(state: State): TasksStoreOperations {
         if (!stored || stored.revision !== expectedRevision) return false
         state.tasks.set(id, copy(task))
         return true
+      },
+    },
+
+    attachments: {
+      async list(scopeId, taskId) {
+        return attachmentsOf(scopeId, taskId).map((attachment) => attachmentView(attachment))
+      },
+      async get(scopeId, taskId, attachmentId) {
+        const attachment = state.attachments.get(rowKey(scopeId, taskId, attachmentId))
+        return attachment ? copy(attachment) : undefined
+      },
+      async listWithBytes(scopeId, taskId) {
+        return attachmentsOf(scopeId, taskId).map((attachment) => copy(attachment))
+      },
+      async insert(attachment) {
+        const id = rowKey(attachment.scopeId, attachment.taskId, attachment.id)
+        if (state.attachments.has(id)) throw new Error(`Attachment ${attachment.id} already exists`)
+        state.attachments.set(id, copy(attachment))
       },
     },
 

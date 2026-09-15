@@ -60,6 +60,17 @@ export type ClientPresentationProjectionOptions = {
    * producer for that turn, and turns this on.
    */
   announcesAssistantMessage?: boolean
+  /**
+   * What the announced row knows about its turn — the prompt's agent, model
+   * and variant. The row stands in for the one the store would emit at turn
+   * start, so its identity fields must match; sparse values would overwrite a
+   * populated row's chips with empty text on the merge.
+   */
+  announceAssistantIdentity?: {
+    agent?: string
+    model?: { modelID: string; providerID: string }
+    variant?: string
+  }
   clock?: () => number
   initialSnapshot?: ProjectionSnapshot<ClientPresentationProjectionState>
 }
@@ -228,14 +239,14 @@ function messageUpdated(info: EventMessageUpdated["properties"]["info"]): EventM
  * `AgentRuntimeEvent` names the reply and nothing else, and a consumer's
  * timeline hangs every row off the user message a reply answers.
  *
- * Only the identity fields are knowable here — an `AgentRuntimeEvent` names no
- * model or provider — so those stay empty and the session's own settled
- * transcript remains authoritative for them.
+ * Cost and tokens stay zero — the lane names no usage — and the session's own
+ * settled transcript remains authoritative for them.
  */
 function announcedAssistantMessage(
   ctx: CompatContext,
   now: number,
   parentID: string,
+  identity?: ClientPresentationProjectionOptions["announceAssistantIdentity"],
 ): EventMessageUpdated["properties"]["info"] {
   return {
     id: ctx.assistantMsgId,
@@ -243,13 +254,14 @@ function announcedAssistantMessage(
     role: "assistant",
     time: { created: now },
     parentID,
-    modelID: "",
-    providerID: "",
+    modelID: identity?.model?.modelID ?? "",
+    providerID: identity?.model?.providerID ?? "",
     mode: "auto",
-    agent: ctx.agentId,
+    agent: identity?.agent ?? ctx.agentId,
     path: { cwd: ctx.directory, root: ctx.directory },
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...(identity?.variant ? { variant: identity.variant } : {}),
   }
 }
 
@@ -282,6 +294,7 @@ function withAnnouncedAssistantMessage(
   events: CompatEnvelope[],
   now: () => number,
   announces: boolean,
+  identity?: ClientPresentationProjectionOptions["announceAssistantIdentity"],
 ) {
   if (!announces) return events
   if (ctx.announcedAssistantMsgId === ctx.assistantMsgId) return events
@@ -305,7 +318,7 @@ function withAnnouncedAssistantMessage(
       ...events,
     ]
   }
-  return [withDir(ctx.directory, messageUpdated(announcedAssistantMessage(ctx, now(), parentID))), ...events]
+  return [withDir(ctx.directory, messageUpdated(announcedAssistantMessage(ctx, now(), parentID, identity))), ...events]
 }
 
 function sessionConfig(properties: EventSessionConfig["properties"]): EventSessionConfig {
@@ -1658,7 +1671,7 @@ export function createClientPresentationProjection(options: ClientPresentationPr
         ctx,
         phase,
         eventType,
-        withAnnouncedAssistantMessage(ctx, project(ctx), now, options.announcesAssistantMessage === true),
+        withAnnouncedAssistantMessage(ctx, project(ctx), now, options.announcesAssistantMessage === true, options.announceAssistantIdentity),
       )
       syncState(ctx, next)
       state = next

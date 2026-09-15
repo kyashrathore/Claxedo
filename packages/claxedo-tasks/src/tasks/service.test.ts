@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import { encodeAttachmentData } from "../attachments"
 import { createTasksCommands } from "../commands"
 import type { Preset, StartRequest, Task, TaskDraft, TaskSessionLink } from "../contracts"
 import { createPresetsService } from "../presets/service"
@@ -32,7 +33,18 @@ function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
     parentTaskId: overrides.parentTaskId ?? null,
     ...(overrides.status === undefined ? {} : { status: overrides.status }),
     ...(overrides.createdFrom === undefined ? {} : { createdFrom: overrides.createdFrom }),
+    ...(overrides.attachments === undefined ? {} : { attachments: overrides.attachments }),
   }
+}
+
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const WEBP = Uint8Array.from([0x52, 0x49, 0x46, 0x46])
+
+function images() {
+  return [
+    { filename: "before.png", mime: "image/png", data: encodeAttachmentData(PNG) },
+    { filename: "after.webp", mime: "image/webp", data: encodeAttachmentData(WEBP) },
+  ]
 }
 
 describe("tasks service", () => {
@@ -126,6 +138,37 @@ describe("tasks service", () => {
       expect((await refusalOf(() => tasks.create(ACTOR, draft()))).code).toBe("forbidden")
     })
 
+    test("images attached at create are listed by detail in the order attached, and read back byte for byte", async () => {
+      const created = (await tasks.create(ACTOR, draft({ attachments: images() }))).task
+      const detail = await tasks.detail(ACTOR, created.id)
+      expect(detail.attachments).toEqual([
+        { id: "attachment-1", filename: "before.png", mime: "image/png", size: 8, createdAt: detail.task.createdAt },
+        { id: "attachment-2", filename: "after.webp", mime: "image/webp", size: 4, createdAt: detail.task.createdAt },
+      ])
+      expect(await tasks.attachment(ACTOR, created.id, "attachment-2")).toMatchObject({
+        filename: "after.webp",
+        mime: "image/webp",
+        bytes: WEBP,
+      })
+    })
+
+    test("an image is refused with the task, so a bad list leaves no task behind", async () => {
+      const refusal = await refusalOf(() =>
+        tasks.create(ACTOR, draft({ attachments: [{ filename: "shot.png", mime: "image/png", data: "not base64" }] })),
+      )
+      expect(fieldReasons(refusal)).toEqual({ "attachments[0].data": "type" })
+      const listed = await tasks.list(ACTOR, { projectId: PROJECT, status: null, parent: "any", includeArchived: false, cursor: null, limit: 50 })
+      expect(listed.items).toHaveLength(0)
+    })
+
+    test("an image is read under the task's own access, and an unknown one is not found", async () => {
+      const created = (await tasks.create(ACTOR, draft({ attachments: images() }))).task
+      expect((await refusalOf(() => tasks.attachment(ACTOR, created.id, "attachment-9"))).code).toBe("not_found")
+      expect((await refusalOf(() => tasks.attachment(OTHER_SCOPE, created.id, "attachment-1"))).code).toBe("not_found")
+      authorization.denyProject(PROJECT)
+      expect((await refusalOf(() => tasks.attachment(ACTOR, created.id, "attachment-1"))).code).toBe("forbidden")
+    })
+
     test("a child bumps the parent's revision and child-set revision", async () => {
       const root = (await tasks.create(ACTOR, draft())).task
       const created = await tasks.create(ACTOR, draft({ parentTaskId: root.id }))
@@ -187,7 +230,7 @@ describe("tasks service", () => {
       const commands = createTasksCommands({
         store: racing,
         clock: fakeClock(),
-        ids: { presetId: () => "preset-child", taskId: () => "task-child" },
+        ids: { presetId: () => "preset-child", taskId: () => "task-child", attachmentId: () => "attachment-child" },
         capabilities: fakeCapabilities(),
         authorization,
         bridge,
@@ -461,7 +504,17 @@ describe("tasks service", () => {
         slot: "primary",
         attempt: 1,
         session: started.link.sessionRef,
+        attachments: [],
       }])
+    })
+
+    test("the handoff carries the task's images with their bytes, in the order attached", async () => {
+      const task = (await tasks.create(ACTOR, draft({ attachments: images() }))).task
+      await tasks.start(ACTOR, task.id, start(task))
+      expect(bridge.delivered[0]?.attachments).toMatchObject([
+        { id: "attachment-1", filename: "before.png", mime: "image/png", bytes: PNG },
+        { id: "attachment-2", filename: "after.webp", mime: "image/webp", bytes: WEBP },
+      ])
     })
 
     test("the session a start is asked from reaches the bridge, and what the bridge says started it is what the link records", async () => {
@@ -567,7 +620,7 @@ describe("tasks service", () => {
       const other = await createPresetsService({
         store,
         clock: fakeClock(),
-        ids: { presetId: () => "preset-other", taskId: () => "task-other" },
+        ids: { presetId: () => "preset-other", taskId: () => "task-other", attachmentId: () => "attachment-other" },
         capabilities: fakeCapabilities(),
       }).create(
         ACTOR,

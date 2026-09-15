@@ -263,7 +263,6 @@ export const dict = {
   "prompt.attachment.remove": "첨부 파일 제거",
   "prompt.action.send": "전송",
   "prompt.action.stop": "중지",
-  "prompt.action.queued": "대기 중",
   "prompt.action.readOnlyWorkspace": "읽기 전용 워크스페이스",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}}에서 이 첨부 파일을 사용할 수 없습니다",
   "prompt.toast.attachmentHarnessUnsupported.description":

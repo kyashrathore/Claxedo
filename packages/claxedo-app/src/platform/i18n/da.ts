@@ -281,7 +281,6 @@ export const dict = {
   "prompt.attachment.remove": "Fjern vedhæftning",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
-  "prompt.action.queued": "I kø",
   "prompt.action.readOnlyWorkspace": "Skrivebeskyttet arbejdsområde",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kan ikke bruge denne vedhæftning",

@@ -113,7 +113,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         onMouseEnter={() => props.setAtActive(key)}
                       >
                         <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
-                        <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
+                        <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.display}</span>
                       </button>
                     )
                   }

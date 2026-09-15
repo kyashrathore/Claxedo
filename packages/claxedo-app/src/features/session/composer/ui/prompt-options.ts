@@ -15,6 +15,7 @@ import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slas
 
 export type PromptAgentRow = {
   name: string
+  id?: string
   hidden?: boolean
   mode?: string
 }
@@ -80,7 +81,7 @@ function delegableAgent(mode: string | undefined) {
 export function promptAgentOptions(agents: PromptAgentRow[]) {
   return agents
     .filter((agent) => !agent.hidden && delegableAgent(agent.mode))
-    .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.name }))
+    .map((agent): AtOption => ({ type: "agent", name: agent.id ?? agent.name, display: agent.name }))
 }
 
 export function promptSlashCommands(input: {

@@ -187,8 +187,8 @@ const localContextInput = {
       workspaceId: sdk.workspace(sdk.directory)?.workspaceId,
       enabled: !input.agents && hydrateDirectoryAgents(),
     }))
-    const list = createMemo(() => (input.agents?.() ?? settledQueryData(directoryAgentsQuery) ?? [])
-      .filter((item) => item.mode !== "subagent" && !item.hidden))
+    const catalog = createMemo(() => input.agents?.() ?? settledQueryData(directoryAgentsQuery) ?? [])
+    const list = createMemo(() => catalog().filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
@@ -275,7 +275,7 @@ const localContextInput = {
     const pickAgent = (name: string | undefined) => {
       const items = list()
       if (items.length === 0) return undefined
-      return items.find((item) => item.name === name) ?? items[0]
+      return items.find((item) => item.id === name || item.name === name) ?? items[0]
     }
 
     createEffect(() => {
@@ -362,6 +362,9 @@ const localContextInput = {
 
     const agent = {
       list,
+      // `list` drops pure subagents because they cannot be the session's own
+      // agent; the @-mention popover still needs them as delegation targets.
+      catalog,
       current: () => {
         return pickAgent(scope()?.agent ?? store.current)
       },
@@ -382,7 +385,9 @@ const localContextInput = {
           })
           const prev = scope()
           const next = {
-            agent: item.name,
+            // The scope value doubles as the prompt's `agent` field, which the
+            // engine resolves by agent id — the display `name` is not it.
+            agent: item.id ?? item.name,
             model: item.model ?? prev?.model,
             variant: item.variant ?? prev?.variant,
           } satisfies State

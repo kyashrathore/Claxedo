@@ -85,6 +85,7 @@ describe("fast session switch race proof", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_a", "requests"))).toEqual({
       permissions: [permission("perm_a", "ses_a")],
       questions: [question("question_a", "ses_a")],
+      reconciledAt: expect.any(Number),
     })
   })
 })

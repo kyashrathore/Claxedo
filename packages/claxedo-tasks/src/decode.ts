@@ -3,6 +3,7 @@ import {
   SESSION_LIVENESS,
   START_BLOCKER_CODES,
   isConfigurationSlot,
+  isTaskAttachmentMime,
   isTaskStatus,
   isTasksCommandName,
   type ConfigurationSlot,
@@ -19,6 +20,8 @@ import {
   type StartBlocker,
   type StartPreview,
   type Task,
+  type TaskAttachment,
+  type TaskDetailResponse,
   type TaskSessionLinkView,
   type TaskStatus,
   type TaskSummary,
@@ -238,6 +241,19 @@ function linkViewOf(ctx: DecodeContext, value: unknown, path: string): TaskSessi
   }
 }
 
+function attachmentOf(ctx: DecodeContext, value: unknown, path: string): TaskAttachment {
+  const row = ctx.read.record(value, path)
+  const mime = ctx.read.string(row?.mime, `${path}.mime`)
+  if (mime !== undefined && !isTaskAttachmentMime(mime)) ctx.fields.add(`${path}.mime`, "unknown_value")
+  return {
+    id: ctx.read.nonEmptyString(row?.id, `${path}.id`) ?? "",
+    filename: ctx.read.nonEmptyString(row?.filename, `${path}.filename`) ?? "",
+    mime: isTaskAttachmentMime(mime) ? mime : "image/png",
+    size: ctx.read.integer(row?.size, `${path}.size`) ?? 0,
+    createdAt: ctx.read.integer(row?.createdAt, `${path}.createdAt`) ?? 0,
+  }
+}
+
 function blockerOf(ctx: DecodeContext, value: unknown, path: string): StartBlocker {
   const row = ctx.read.record(value, path)
   const code = ctx.read.string(row?.code, `${path}.code`)
@@ -312,14 +328,16 @@ export function decodeTaskSummaryPage(value: unknown): Parsed<Page<TaskSummary>>
   return finishDecode(ctx, () => decodePage(ctx, value, "page", (entry, path) => taskSummaryOfValue(ctx, entry, path)))
 }
 
-export function decodeTaskDetail(value: unknown): Parsed<{ task: Task; links: readonly TaskSessionLinkView[] }> {
+export function decodeTaskDetail(value: unknown): Parsed<TaskDetailResponse> {
   const ctx = decodeContext()
   return finishDecode(ctx, () => {
     const row = ctx.read.record(value, "body")
     const links = ctx.read.array(row?.links, "body.links") ?? []
+    const attachments = ctx.read.array(row?.attachments, "body.attachments") ?? []
     return {
       task: taskOf(ctx, row?.task, "body.task"),
       links: links.map((entry, index) => linkViewOf(ctx, entry, `body.links[${index}]`)),
+      attachments: attachments.map((entry, index) => attachmentOf(ctx, entry, `body.attachments[${index}]`)),
     }
   })
 }
@@ -377,6 +395,9 @@ function boundsOf(ctx: DecodeContext, value: unknown): TasksBounds {
     pluginReferencesMax: bound("pluginReferencesMax"),
     skillReferencesMax: bound("skillReferencesMax"),
     handoffTextMaxBytes: bound("handoffTextMaxBytes"),
+    taskAttachmentsMax: bound("taskAttachmentsMax"),
+    taskAttachmentMaxBytes: bound("taskAttachmentMaxBytes"),
+    taskAttachmentFilenameMax: bound("taskAttachmentFilenameMax"),
     listLimitDefault: bound("listLimitDefault"),
     listLimitMax: bound("listLimitMax"),
     commandRequestMaxBytes: bound("commandRequestMaxBytes"),

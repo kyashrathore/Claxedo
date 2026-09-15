@@ -9,13 +9,13 @@
   display: none !important;
 }
 
-/* Hide all scrollbars by default */
-::-webkit-scrollbar {
+/* Transcript/output scroll regions own their scrollbar styling. */
+:not([data-scrollable])::-webkit-scrollbar {
   display: none !important;
 }
 
-/* Firefox scrollbar hiding */
-* {
+/* Other surfaces retain the app default. */
+:not([data-scrollable]) {
   scrollbar-width: none !important;
 }
 
@@ -663,7 +663,7 @@ html[data-theme="codex"] [data-component="session-composer"] {
  * white card, a full 1px border, and a 6px radius. Codex uses the same bubble
  * treatment in both layouts, so keep that legacy branch from changing it.
  */
-html[data-theme="codex"] body:not([data-new-layout]) [data-component="user-message"] .ui-user-message-text {
+html[data-theme="codex"] body:not([data-new-layout]) :is([data-component="user-message"], [data-component="queued-message"]) .ui-user-message-text {
   background: var(--surface-user-message);
   border: 0;
   border-radius: var(--surface-user-message-radius);

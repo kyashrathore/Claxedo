@@ -10,6 +10,7 @@ export function randomTasksIds(): TasksIdsPort {
   return {
     presetId: () => `tpr_${randomUUID()}`,
     taskId: () => `tsk_${randomUUID()}`,
+    attachmentId: () => `tat_${randomUUID()}`,
   }
 }
 

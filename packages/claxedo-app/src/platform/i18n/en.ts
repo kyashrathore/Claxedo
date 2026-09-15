@@ -283,7 +283,6 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
-  "prompt.action.queued": "Queued",
   "prompt.action.readOnlyWorkspace": "Read-only workspace",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} cannot take this attachment",
   "prompt.toast.attachmentHarnessUnsupported.description":

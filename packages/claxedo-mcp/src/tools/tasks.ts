@@ -61,14 +61,15 @@ export function registerTaskTools(registry: ToolRegistrar) {
   registry.tool(
     "task_get",
     {
-      description: "One task in full, with every session it has run: the slot, the attempt, the preset it started on, and whether that session is still live.",
+      description:
+        "One task in full, with every session it has run: the slot, the attempt, the preset it started on, and whether that session is still live. Images attached to the task are listed by name and type; they reach a session as prompt images when the task is started.",
       inputSchema: { ...TASK_ARG },
       access: declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read", operation: "read" }),
     },
     async (args, ctx) => tasksRefusals(async () => {
       await auditRead(ctx, "task_get", args)
       const detail = await tasksClient(ctx).getTask(args.task)
-      return toolJson({ task: detail.task, links: detail.links })
+      return toolJson({ task: detail.task, links: detail.links, attachments: detail.attachments })
     }),
   )
 

@@ -83,7 +83,9 @@ export function resolveSubmittedConfig(
 
 function resolveSubmitAgent(input: ResolveSubmittedConfigContext) {
   if (input.agentOverride) return input.agentOverride
-  if (input.currentAgent?.name && input.currentAgent.name !== "default") return input.currentAgent.name
-  if (input.defaultAgent?.name && input.defaultAgent.name !== "default") return input.defaultAgent.name
+  const id = input.currentAgent?.id ?? input.currentAgent?.name
+  if (id && id !== "default") return id
+  const fallback = input.defaultAgent?.id ?? input.defaultAgent?.name
+  if (fallback && fallback !== "default") return fallback
   return "build"
 }

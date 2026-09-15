@@ -27,12 +27,16 @@ import {
   type ListQuery,
   type Preset,
   type Task,
+  type TaskAttachmentRecord,
   type TaskSessionLink,
   type TasksCommandReceipt,
   type TasksStoreOperations,
   type TasksStorePort,
 } from "@claxedo/tasks"
 import {
+  attachmentColumns,
+  attachmentOfColumns,
+  attachmentOfRow,
   linkColumns,
   linkOfColumns,
   presetColumns,
@@ -41,6 +45,8 @@ import {
   receiptOfColumns,
   taskColumns,
   taskOfColumns,
+  type StoredAttachmentColumns,
+  type StoredAttachmentRow,
   type StoredLinkColumns,
   type StoredPresetColumns,
   type StoredReceiptColumns,
@@ -72,6 +78,9 @@ const JOINED_LINK_COLUMNS = LINK_COLUMNS.split(", ")
   .map((column) => `l.${column}`)
   .join(", ")
 const RECEIPT_COLUMNS = "scope_id, client_request_id, command_name, request_hash, result, created_at"
+/** Everything but the bytes, so a list read never loads an image it will not return. */
+const ATTACHMENT_COLUMNS = "scope_id, task_id, attachment_id, position, filename, mime, size, created_at"
+const ATTACHMENT_ROW_COLUMNS = `${ATTACHMENT_COLUMNS}, bytes`
 
 function presetValues(preset: Preset): unknown[] {
   const row = presetColumns(preset)
@@ -173,6 +182,30 @@ function linkValues(link: TaskSessionLink): unknown[] {
     row.started_by,
     row.placement,
     row.created_at,
+  ]
+}
+
+/**
+ * The bytes are bound as the `ArrayBuffer` D1 takes for a BLOB, sliced to the
+ * view: a `Uint8Array` over a larger buffer would otherwise bind the whole
+ * buffer.
+ */
+function attachmentValues(attachment: TaskAttachmentRecord): unknown[] {
+  const row = attachmentColumns(attachment)
+  const bytes = attachment.bytes.buffer.slice(
+    attachment.bytes.byteOffset,
+    attachment.bytes.byteOffset + attachment.bytes.byteLength,
+  )
+  return [
+    row.scope_id,
+    row.task_id,
+    row.attachment_id,
+    row.position,
+    row.filename,
+    row.mime,
+    row.size,
+    row.created_at,
+    bytes,
   ]
 }
 
@@ -548,6 +581,46 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           guard ? [guard.probe] : [],
         )
         return true
+      },
+    },
+
+    attachments: {
+      async list(scopeId, taskId) {
+        const rows = await database
+          .prepare(`select ${ATTACHMENT_COLUMNS} from task_attachments where scope_id = ? and task_id = ? order by position`)
+          .bind(scopeId, taskId)
+          .all<StoredAttachmentColumns>()
+        return rows.results.map((row) => attachmentOfColumns(row))
+      },
+
+      async get(scopeId, taskId, attachmentId) {
+        const row = await database
+          .prepare(
+            `select ${ATTACHMENT_ROW_COLUMNS} from task_attachments where scope_id = ? and task_id = ? and attachment_id = ?`,
+          )
+          .bind(scopeId, taskId, attachmentId)
+          .first<StoredAttachmentRow>()
+        return row ? attachmentOfRow(row) : undefined
+      },
+
+      async listWithBytes(scopeId, taskId) {
+        const rows = await database
+          .prepare(`select ${ATTACHMENT_ROW_COLUMNS} from task_attachments where scope_id = ? and task_id = ? order by position`)
+          .bind(scopeId, taskId)
+          .all<StoredAttachmentRow>()
+        return rows.results.map((row) => attachmentOfRow(row))
+      },
+
+      async insert(attachment) {
+        const values = attachmentValues(attachment)
+        // Nothing in a unit reads an attachment back after writing it, so the
+        // overlay records nothing; the statement still joins the batch so the
+        // image commits with the task or not at all.
+        await commit(
+          unit,
+          [database.prepare(insertStatement("task_attachments", ATTACHMENT_ROW_COLUMNS, values)).bind(...values)],
+          () => {},
+        )
       },
     },
 

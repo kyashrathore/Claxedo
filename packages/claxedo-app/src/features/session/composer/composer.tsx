@@ -316,7 +316,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     imageAttachments,
     queueScroll,
     comments,
-    agents: local.agent.list,
+    agents: local.agent.catalog,
     recentFiles: recent,
     searchFilesAndDirectories: files.searchFilesAndDirectories,
     commandOptions: () => command.slashOptions,
@@ -544,7 +544,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       blank,
       rootEl: () => rootEl,
     })
-  const { abort, handleSubmit: rawHandleSubmit, queued } = createPromptSubmit({
+  const { abort, handleSubmit: rawHandleSubmit } = createPromptSubmit({
     info,
     // Only HARNESS modes travel with the prompt. Claxedo's own options are not
     // ids any harness would recognise — they are delivered by their own paths
@@ -637,7 +637,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onCompositionStart={engine.handleCompositionStart}
       onCompositionEnd={engine.handleCompositionEnd}
       onEditorBlur={engine.handleBlur}
-      onEditorKeyDown={engine.handleKeyDown}
+      onEditorKeyDown={(event) => {
+        // Escape gives an edited queued message back before anything else
+        // Escape means here — the next handler down would stop the turn.
+        const edit = prompt.queuedEdit.current()
+        if (event.key === "Escape" && edit && engine.popover() === null && engine.mode() === "normal") {
+          event.preventDefault()
+          event.stopPropagation()
+          edit.cancel()
+          return
+        }
+        engine.handleKeyDown(event)
+      }}
       focusEditor={() => editorRef?.focus()}
       popover={engine.popover()}
       documentPicker={engine.documentPicker.open()}
@@ -707,7 +718,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         restoreFocus()
       }}
       statusStage={statusStage}
-      queued={queued}
       stoppable={stoppable}
       abort={() => abort()}
       onRetry={onRetry}

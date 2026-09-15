@@ -12,10 +12,14 @@
  * boundary in `app/entry/app.tsx` and the app-shell boundary in
  * `app/app-shell-bootstrap.tsx`.
  */
+import { onMount } from "solid-js"
+
 declare global {
   interface Window {
     /** Set by `markShellRevealed`; see this module's header for why it lives on the window. */
     __claxedoShellRevealed?: boolean
+    /** Set once the first real pane content mounts; see `MainContentReady`. */
+    __claxedoMainContentReady?: boolean
   }
 }
 
@@ -25,4 +29,25 @@ export function shellRevealedOnce() {
 
 export function markShellRevealed() {
   window.__claxedoShellRevealed = true
+}
+
+/**
+ * The boot splash is a Suspense fallback — it unmounts the moment the shell's
+ * lazy chunk resolves, while the draft composer's own lazy hops still leave a
+ * blank main region behind it. This flag lets the boot overlay outlive the
+ * boundary until a surface's real content has mounted, then retire for the
+ * life of the window (post-sign-in remounts never replay it).
+ */
+export function mainContentReady() {
+  return window.__claxedoMainContentReady === true
+}
+
+export function markMainContentReady() {
+  window.__claxedoMainContentReady = true
+}
+
+/** Mount inside a surface's real content — past its last lazy/Suspense gate. */
+export function MainContentReady() {
+  onMount(markMainContentReady)
+  return null
 }

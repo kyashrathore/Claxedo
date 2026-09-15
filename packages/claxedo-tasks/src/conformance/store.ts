@@ -13,9 +13,9 @@
  */
 import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { gate, settle } from "../test-support/concurrency"
-import { OWNER, SCOPES, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
+import { OWNER, SCOPES, attachmentRow, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 9 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 10 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -39,6 +39,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "a_preset_marked_startable_by_agents_reads_the_mark_back_on_get_and_list",
     "a_link_is_found_by_the_session_it_names_with_what_started_it_and_where_it_runs",
     "agent_started_cloud_links_are_listed_per_project_and_nothing_else_is",
+    "attachments_read_back_in_position_order_byte_for_byte_and_only_within_their_task_and_scope",
   ],
   // NOT pinned:
   //
@@ -694,6 +695,41 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         0,
         "a project with no tasks listed links",
       )
+    }),
+
+    conformanceCase("attachments read back in position order, byte for byte, and only within their task and scope", async () => {
+      const store = await start()
+      await store.tasks.insert(taskRow({ id: "task-shots" }))
+      await store.tasks.insert(taskRow({ id: "task-other" }))
+      await store.tasks.insert(taskRow({ id: "task-shots", scopeId: CONFORMANCE_SCOPES.second }))
+      // Every byte value once, so an adapter that stores text rather than bytes
+      // or re-encodes on the way out is caught on the first byte it bends.
+      const bytes = Uint8Array.from({ length: 256 }, (_, index) => index)
+      await store.attachments.insert(attachmentRow({ id: "att-second", taskId: "task-shots", position: 1, filename: "after.webp", mime: "image/webp" }))
+      await store.attachments.insert(attachmentRow({ id: "att-first", taskId: "task-shots", position: 0, filename: "before.png", bytes }))
+      await store.attachments.insert(attachmentRow({ id: "att-other", taskId: "task-other" }))
+      await store.attachments.insert(attachmentRow({ id: "att-first", taskId: "task-shots", scopeId: CONFORMANCE_SCOPES.second, filename: "elsewhere.png" }))
+
+      const listed = await store.attachments.list(CONFORMANCE_SCOPES.first, "task-shots")
+      assertEqual(listed.map((row) => row.id).join(" "), "att-first att-second", "the task's attachments are not exactly its own, in position order")
+      assertEqual(listed[0]?.filename, "before.png", "a listed attachment lost its name")
+      assertEqual(listed[1]?.mime, "image/webp", "a listed attachment lost its type")
+      assertEqual(listed[0]?.size, 256, "a listed attachment lost its size")
+      assertEqual(listed[0]?.createdAt, 1_500, "a listed attachment lost its creation time")
+      assert(listed.every((row) => !("bytes" in row)), "a list read carried bytes")
+
+      const read = await store.attachments.get(CONFORMANCE_SCOPES.first, "task-shots", "att-first")
+      assert(read !== undefined, "an inserted attachment was not found")
+      assertEqual(read.bytes.byteLength, 256, "the bytes came back a different length")
+      assert(read.bytes.every((byte, index) => byte === index), "the bytes came back changed")
+      assertEqual(read.position, 0, "the read lost its position")
+
+      const withBytes = await store.attachments.listWithBytes(CONFORMANCE_SCOPES.first, "task-shots")
+      assertEqual(withBytes.map((row) => `${row.id}:${row.bytes.byteLength}`).join(" "), "att-first:256 att-second:4", "the bytes list is not the task's own, in order, with its bytes")
+
+      assertEqual(await store.attachments.get(CONFORMANCE_SCOPES.first, "task-other", "att-first"), undefined, "an attachment was found under another task")
+      assertEqual((await store.attachments.get(CONFORMANCE_SCOPES.second, "task-shots", "att-first"))?.filename, "elsewhere.png", "the other scope's row did not answer under its own scope")
+      assertEqual((await store.attachments.list(CONFORMANCE_SCOPES.first, "task-nowhere")).length, 0, "a task with no attachments listed some")
     }),
   ]
 }

@@ -52,6 +52,18 @@ export function withPreservedAuthor(current: Message | undefined, next: Message)
   return { ...next, claxedo: { ...next.claxedo, author: currentAuthor } }
 }
 
+// `time.completed` is stamped once at turn end; a turn still answering stays
+// pending, and a retry mints a new message id — so a stored settled stamp is
+// never legitimately cleared by a later envelope. The one producer that omits
+// it is retained-stream replay, whose stale envelope would otherwise un-settle
+// the message and open the settled-part guard to duplicated late parts.
+function withPreservedCompletion(current: Message | undefined, next: Message): Message {
+  if (current?.role !== "assistant" || next.role !== "assistant") return next
+  const completed = current.time?.completed
+  if (typeof completed !== "number" || typeof next.time?.completed === "number") return next
+  return { ...next, time: { ...next.time, completed } } as Message
+}
+
 export function preserveMessageFields(current: Message | undefined, next: Message): Message {
-  return withPreservedAuthor(current, withPreservedError(current, next))
+  return withPreservedAuthor(current, withPreservedCompletion(current, withPreservedError(current, next)))
 }

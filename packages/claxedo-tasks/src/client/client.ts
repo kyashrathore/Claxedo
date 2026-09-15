@@ -71,6 +71,8 @@ export type TasksClient = {
   getPreset(presetId: string): Promise<Preset>
   listTasks(queryString: Partial<TaskListQuery> & Pick<TaskListQuery, "projectId">): Promise<Page<TaskSummary>>
   getTask(taskId: string): Promise<TaskDetailResponse>
+  /** The bytes of one attachment the detail listed, under the same request the JSON reads travel by. */
+  readAttachment(taskId: string, attachmentId: string): Promise<Blob>
   listChildren(taskId: string, queryString?: Partial<ChildListQuery>): Promise<TaskChildrenResponse>
   command(request: TasksCommandRequest): Promise<TasksCommandResponse>
   startPreview(taskId: string, request: StartPreviewRequest): Promise<StartPreviewResponse>
@@ -194,6 +196,23 @@ export function createTasksClient(options: TasksClientOptions): TasksClient {
 
     async getTask(taskId) {
       return call(`/tasks/${encodeURIComponent(taskId)}`, decodeTaskDetail)
+    },
+
+    async readAttachment(taskId, attachmentId) {
+      const response = await options.request(
+        `${baseUrl}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        { headers: headersOf(options.headers) },
+      )
+      if (!response.ok) {
+        let payload: unknown
+        try {
+          payload = await response.json()
+        } catch {
+          throw new TasksClientPayloadError(response.status, `Request failed with status ${response.status}`)
+        }
+        throw refusalError(response.status, payload)
+      }
+      return response.blob()
     },
 
     async listChildren(taskId, input = {}) {

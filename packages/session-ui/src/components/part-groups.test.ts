@@ -128,7 +128,7 @@ describe("work is named by exclusion", () => {
 })
 
 describe("a spawn whose own tool call failed", () => {
-  test("is the failed call, not delegated work", () => {
+  test("stays individually renderable so child resolution can choose a chip or the error", () => {
     expect(shape([errored("p1", "task")])).toEqual(["part"])
     expect(shape([tool_("p1", "task"), errored("p2", "task")])).toEqual(["agents", "part"])
   })

@@ -406,7 +406,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         input: target.input,
         assistantMessageId: target.assistantMessageId,
         created: target.created,
-        onEvent: () => {},
+        onEvent: (payload) => this.options.eventHub?.publishGlobal({ directory, payload }),
         onRuntimeEvent: this.options.eventHub?.publishRuntime,
       }),
       onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({

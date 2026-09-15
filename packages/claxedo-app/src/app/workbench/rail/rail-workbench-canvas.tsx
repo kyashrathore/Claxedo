@@ -9,6 +9,7 @@ import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { FirstProjectCanvas } from "./first-project-canvas"
 import { OnboardingEmptyState } from "./onboarding-empty-state"
+import { MainContentReady } from "../../shell-revealed"
 
 const ONBOARDING_V1 = import.meta.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 
@@ -86,15 +87,21 @@ export function RailWorkbenchCanvas(props: {
           <Show
             when={props.emptyDraftDirectory()}
             fallback={
-              ONBOARDING_V1
-                ? (
-                  <OnboardingEmptyState
-                    onDiagnostics={props.onDiagnostics}
-                    onNewProject={props.onNewProject}
-                    fallback={firstProject()}
-                  />
-                )
-                : firstProject()
+              <>
+                {/* The empty states carry no composer; their mount is the
+                    readiness the boot splash waits on. The draft session's
+                    release is the composer poll in `BootSplashOverlay`. */}
+                <MainContentReady />
+                {ONBOARDING_V1
+                  ? (
+                    <OnboardingEmptyState
+                      onDiagnostics={props.onDiagnostics}
+                      onNewProject={props.onNewProject}
+                      fallback={firstProject()}
+                    />
+                  )
+                  : firstProject()}
+              </>
             }
           >
             {(workspaceDir) => (

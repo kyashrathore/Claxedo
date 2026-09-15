@@ -16,7 +16,7 @@ import {
   reconcileAuthorizedSessionPersistence,
 } from "./event-ingress"
 import type { RoutableEvent } from "./event-router"
-import type { ClaxedoEvent } from "../claxedo-events"
+import { createClaxedoEventEmitter, type ClaxedoEvent } from "../claxedo-events"
 import type { SessionTitleProjectionApi } from "@/features/session/store/session-title-projection"
 import {
   clearConversationChatRegistryForTest,
@@ -26,6 +26,7 @@ import {
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
 import { eventDirectoryForLiveSession } from "@/app/providers/global-sdk/live-session"
+import { compatEventEnvelope } from "@/app/providers/global-sdk/runtime-event-projection"
 import {
   flushQueryPersistence,
   installQueryPersister,
@@ -130,21 +131,10 @@ function eventSource() {
 }
 
 function claxedoEventSource() {
-  const handlers = new Map<string, Set<(event: ClaxedoEvent) => void>>()
+  const emitter = createClaxedoEventEmitter()
   return {
-    source: {
-      on: (type, handler) => {
-        const set = handlers.get(type) ?? new Set()
-        set.add(handler as (event: ClaxedoEvent) => void)
-        handlers.set(type, set)
-        return () => {
-          set.delete(handler as (event: ClaxedoEvent) => void)
-        }
-      },
-    },
-    emit: (event: ClaxedoEvent) => {
-      handlers.get(event.type)?.forEach((handler) => handler(event))
-    },
+    source: emitter,
+    emit: (event: ClaxedoEvent) => emitter.emit(event, "workspace"),
   }
 }
 
@@ -1262,8 +1252,8 @@ describe("global sync event ingress", () => {
 describe("live session events reach the pane that registered the session", () => {
   // One workspace, two clients. The host is running a turn; this client merely
   // navigated to the session, so nothing it did created the reply — the turn's
-  // frames arrive on the workspace's runtime-events lane and are projected into
-  // OpenCode-shaped directory events by `projectRuntimeEventEnvelope`.
+  // canonical presentation frames arrive on the workspace event bus. The raw
+  // runtime lane does not create transcript rows or part identities.
   //
   // Producer and consumer have to name ONE scope for that to land:
   // `eventDirectoryForLiveSession` decides the address the projected events are
@@ -1281,11 +1271,11 @@ describe("live session events reach the pane that registered the session", () =>
     clearConversationChatRegistryForTest()
   })
 
-  function attachedPaneIngress(globalEvents: ReturnType<typeof eventSource>) {
+  function attachedPaneIngress(globalEvents: ReturnType<typeof eventSource>, claxedoEvents?: ReturnType<typeof createClaxedoEventEmitter>) {
     return createGlobalSyncEventIngress({
       ...revocationDefaults,
       globalEvents: globalEvents.source,
-      claxedoEvents: undefined,
+      claxedoEvents,
       projects: () => [],
       projectFor: () => undefined,
       children: {
@@ -1312,6 +1302,40 @@ describe("live session events reach the pane that registered the session", () =>
       .flatMap((part) => (part.type === "text" ? [part.text] : []))
       .join("")
   }
+
+  test("central deltas enter once through SDK routing and workspace deltas enter once directly", () => {
+    hydrateRegisteredConversationSnapshot({
+      directory: paneDirectory, sessionID: SESSION_ID,
+      messages: [{
+        id: ASSISTANT_ID, sessionID: SESSION_ID, role: "assistant", parentID: "u1",
+        time: { created: 1 }, modelID: "", providerID: "", mode: "auto", agent: "",
+        path: { cwd: HOST_DIR, root: HOST_DIR }, cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      }],
+      parts: { [ASSISTANT_ID]: [{ id: "p1", sessionID: SESSION_ID, messageID: ASSISTANT_ID, type: "text", text: "" }] },
+    })
+    const globalEvents = eventSource()
+    const central = createClaxedoEventEmitter()
+    // The real GlobalSDK central subscription unwraps and enqueues this frame.
+    const detach = central.listenCentral((frame) => {
+      const event = compatEventEnvelope(frame)
+      if (event) globalEvents.emit({ name: event.directory!, details: event.payload })
+    })
+    const dispose = attachedPaneIngress(globalEvents, central)
+    const event: ClaxedoEvent = {
+      type: "message.part.delta", directory: paneDirectory,
+      properties: { sessionID: SESSION_ID, messageID: ASSISTANT_ID, partID: "p1", field: "text", delta: "row\n" },
+    }
+    central.emit(event, "central")
+    expect(assistantText(paneDirectory)).toBe("row\n")
+    // Identical legitimate deltas are distinct deliveries, never text-deduped.
+    central.emit(event, "central")
+    expect(assistantText(paneDirectory)).toBe("row\nrow\n")
+    central.emit(event, "workspace")
+    expect(assistantText(paneDirectory)).toBe("row\nrow\nrow\n")
+    detach()
+    dispose()
+  })
 
   test("a delta published for the live session reaches the conversation the pane registered", () => {
     hydrateRegisteredConversationSnapshot({

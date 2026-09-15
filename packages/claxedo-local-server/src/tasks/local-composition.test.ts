@@ -136,6 +136,52 @@ describe("desktop-local Tasks composition", () => {
     expect(await listed.json()).toMatchObject({ items: [{ title: "Ship the store" }] })
   })
 
+  // Through the loopback app, the SQLite migration and the store: the image
+  // the create carried is what the attachment route serves back, byte for byte.
+  test("an image sent with a create is listed on the task and served back under its own route", async () => {
+    const target = app()
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+    const created = await command(target, "request-task-image", {
+      type: "task.create",
+      input: {
+        projectId: "project-a",
+        title: "Match the mock",
+        description: "The header should look like this.",
+        workspaceId: null,
+        parentTaskId: null,
+        attachments: [{ filename: "mock.png", mime: "image/png", data: Buffer.from(bytes).toString("base64") }],
+      },
+    })
+    expect(created.status).toBe(200)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const detail = await target.request(`${LOOPBACK}${TASKS}/tasks/${taskId}`)
+    expect(detail.status).toBe(200)
+    const attachments = ((await detail.json()) as { attachments: Array<{ id: string; filename: string; mime: string; size: number }> }).attachments
+    expect(attachments).toMatchObject([{ filename: "mock.png", mime: "image/png", size: 8 }])
+    expect(attachments[0]?.id).toMatch(/^tat_/)
+
+    const served = await target.request(`${LOOPBACK}${TASKS}/tasks/${taskId}/attachments/${attachments[0]?.id}`)
+    expect(served.status).toBe(200)
+    expect(served.headers.get("content-type")).toBe("image/png")
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(bytes)
+
+    const refused = await command(target, "request-task-bad-image", {
+      type: "task.create",
+      input: {
+        projectId: "project-a",
+        title: "Match the mock",
+        description: "",
+        workspaceId: null,
+        parentTaskId: null,
+        attachments: [{ filename: "mock.svg", mime: "image/svg+xml", data: "PHN2Zz4=" }],
+      },
+    })
+    expect(refused.status).toBe(400)
+    expect(refused.body).toMatchObject({ error: { fields: [{ path: "attachments[0].mime", reason: "unknown_value" }] } })
+  })
+
   test("a task written by one request is still there for the next one", async () => {
     const first = app()
     await command(first, "request-durable", {

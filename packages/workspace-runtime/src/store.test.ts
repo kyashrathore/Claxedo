@@ -184,6 +184,10 @@ void describe("RuntimeStore", () => {
       queuedAt: rows[1].queuedAt,
     })
 
+    assert.equal(restarted.replaceQueuedPromptParts("ses_queue", 2, [{ type: "text", text: "and open a draft PR" }]), true)
+    assert.equal(restarted.replaceQueuedPromptParts("ses_queue", 3, [{ type: "text", text: "nothing to edit" }]), false)
+    assert.deepEqual(new RuntimeStore(root).listQueuedPrompts()[1]?.parts, [{ type: "text", text: "and open a draft PR" }])
+
     restarted.deleteQueuedPrompt("ses_queue", 1)
     assert.deepEqual(restarted.listQueuedPrompts().map((row) => row.seq), [2])
     assert.deepEqual(new RuntimeStore(root).listQueuedPrompts().map((row) => row.seq), [2])

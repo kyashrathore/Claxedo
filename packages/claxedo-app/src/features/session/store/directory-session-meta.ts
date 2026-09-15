@@ -69,7 +69,15 @@ export function applyDirectorySessionMeta(input: {
       type: "session.requests",
       source: "server",
       sessionID: input.sessionID,
-      requests: { permissions: sessionPermissions, questions: sessionQuestions },
+      // A partial read — one leg failed or was skipped — is not a reconciliation:
+      // it neither stamps a fresh window nor erases an earlier one.
+      requests: (previous) => ({
+        permissions: sessionPermissions,
+        questions: sessionQuestions,
+        reconciledAt: input.permissions !== undefined && input.questions !== undefined
+          ? Date.now()
+          : previous?.reconciledAt,
+      }),
     },
   })
 }

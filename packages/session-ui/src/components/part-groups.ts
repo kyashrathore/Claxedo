@@ -128,12 +128,17 @@ export function isSubagentToolPart(part: { type: string; tool?: string; state?: 
 }
 
 /**
- * A spawn whose own tool call failed delegated nothing — no child session was ever
- * bound, so the chip row it would join has nothing to draw. It is a failed tool call,
- * and the error text is the only thing that reports what happened.
+ * A failed spawn stays individually renderable so it can show the tool error when
+ * no child was admitted. Its call outcome does not tell us whether a child exists:
+ * an interrupted wrapper can leave a real child running or completed.
  */
 function spawnFailed(part: AgentContentPart) {
   return part.type === "tool" && part.state.status === "error"
+}
+
+/** The parts a subagent chip can hang on — a spawn row in the transcript that resolves it. */
+export function isSubagentHostPart(part: AgentContentPart): boolean {
+  return isSubagentToolPart(part)
 }
 
 function partRef(item: GroupablePart): PartRef {
@@ -211,7 +216,7 @@ export function groupParts(input: GroupablePart[]) {
   parts.forEach((item, index) => {
     const isContext = isContextGroupTool(item.part)
     const isWork = isWorkGroupTool(item.part)
-    const isTask = isSubagentToolPart(item.part) && !spawnFailed(item.part)
+    const isTask = isSubagentHostPart(item.part) && !spawnFailed(item.part)
 
     if (isContext) {
       flushWork(index - 1)

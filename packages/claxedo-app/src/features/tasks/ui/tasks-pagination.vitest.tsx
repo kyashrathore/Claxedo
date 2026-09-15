@@ -60,7 +60,7 @@ function configureHost() {
           ? json({ items: [summary("tsk_c2", { parentTaskId: "tsk_1" })], nextCursor: null })
           : json({ items: [summary("tsk_c1", { parentTaskId: "tsk_1" })], nextCursor: "children-page-2" })
       }
-      if (path === "/tasks/tsk_1") return json({ task: parent, links: [] })
+      if (path === "/tasks/tsk_1") return json({ task: parent, links: [], attachments: [] })
       throw new Error(`unexpected request ${path}`)
     },
     useProjects: () => () => [{ id: "prj_1", label: "Importer" }],
@@ -186,7 +186,7 @@ function failingSecondPageHost() {
         return repaired ? json({ items: [summary("tsk_c2", { parentTaskId: "tsk_1" })], nextCursor: null }) : nextPageRefusal()
       }
       if (path.startsWith("/tasks?")) return json({ items: [summary("tsk_1", { status: "doing" })], nextCursor: null })
-      if (path === "/tasks/tsk_1") return json({ task: parent, links: [] })
+      if (path === "/tasks/tsk_1") return json({ task: parent, links: [], attachments: [] })
       if (path === "/capabilities") {
         return json({
           protocolVersion: 1,

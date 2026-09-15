@@ -121,10 +121,11 @@ export async function startRealLocalServer(label: string, options: { port?: numb
   const makeWorkspace = async (name: string) => {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-tier-real-${name}-`)))
     workspaceDirs.push(directory)
-    await execFileAsync("git", ["init"], { cwd: directory })
+    const gitEnv = { ...process.env, GIT_INDEX_FILE: undefined, GIT_AUTHOR_DATE: undefined }
+    await execFileAsync("git", ["init"], { cwd: directory, env: gitEnv })
     await fs.writeFile(path.join(directory, "README.md"), `${name}\n`)
-    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "add", "-A"], { cwd: directory })
-    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"], { cwd: directory })
+    await execFileAsync("git", ["add", "--", "README.md"], { cwd: directory, env: gitEnv })
+    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init", "--", "README.md"], { cwd: directory, env: gitEnv })
     const response = await fetch(`${url}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
     if (!response.ok) throw new Error(`workspace registration failed (${response.status}): ${await response.text()}`)
     const body = await response.json() as { workspaceId: string }

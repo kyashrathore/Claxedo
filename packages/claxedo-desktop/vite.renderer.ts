@@ -1,4 +1,4 @@
-import { loadEnv, type UserConfig } from "vite"
+import { loadEnv, type UserConfig, type Plugin } from "vite"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
@@ -15,6 +15,28 @@ const agentEventRuntimeDir = normalize(fileURLToPath(new URL("../agent-event-run
 const rendererRoot = normalize(path.join(desktopDir, "src/renderer"))
 // Post-divorce (plan 006): the renderer resolves @/ against claxedo-app, not packages/app.
 const upstreamRoot = normalize(fileURLToPath(new URL("../claxedo-app/src/", import.meta.url)))
+/** Serve the one renderer document after assets/proxies, before Vite transforms HTML. */
+function rendererDocumentRoutes(): Plugin {
+  return {
+    name: "desktop-renderer-document-routes",
+    apply: "serve",
+    configureServer(server) {
+      // Vite installs returned hooks after its static-file middleware and before
+      // indexHtmlMiddleware. appType=mpa preserves the original request here;
+      // the default SPA middleware would already have rewritten it to index.html.
+      return () => server.middlewares.use((request, _response, next) => {
+        const pathname = request.url?.split("?", 1)[0] ?? ""
+        const acceptsHtml = request.headers.accept?.includes("text/html") || request.headers.accept?.includes("*/*")
+        if (
+          (request.method === "GET" || request.method === "HEAD") && acceptsHtml &&
+          !path.posix.extname(pathname) && !/^\/(?:@|api(?:\/|$)|assets(?:\/|$)|src(?:\/|$))/.test(pathname)
+        ) request.url = `/${MAIN_RENDERER_DOCUMENT}`
+        next()
+      })
+    },
+  }
+}
+
 export function createElectronRenderer(mode: string): UserConfig {
   const env = loadEnv(mode, claxedoAppDir, "VITE_")
   const terminal = env.VITE_TERMINAL_BACKEND || process.env.VITE_TERMINAL_BACKEND || "xterm"
@@ -38,6 +60,7 @@ export function createElectronRenderer(mode: string): UserConfig {
   const appOrigin = env.VITE_CLAXEDO_APP_ORIGIN?.trim() ?? ""
 
   return {
+    appType: "mpa",
     define: {
       // Replaced before Rollup links the graph. A self-build (unset/false)
       // removes the dynamic import entirely; a release emits it as a hashed
@@ -48,7 +71,7 @@ export function createElectronRenderer(mode: string): UserConfig {
       // "undefined", which is truthy and would be handed to a phone verbatim.
       "import.meta.env.VITE_CLAXEDO_APP_ORIGIN": JSON.stringify(appOrigin),
     },
-    plugins: [solidPlugin(), tailwindcss(), desktopRendererBoundaryManifestPlugin(desktopDir)],
+    plugins: [rendererDocumentRoutes(), solidPlugin(), tailwindcss(), desktopRendererBoundaryManifestPlugin(desktopDir)],
     publicDir: normalize(path.join(claxedoAppDir, "public")),
     root: rendererRoot,
     worker: {

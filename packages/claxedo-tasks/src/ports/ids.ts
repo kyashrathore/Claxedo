@@ -2,4 +2,5 @@
 export type TasksIdsPort = {
   presetId(): string
   taskId(): string
+  attachmentId(): string
 }

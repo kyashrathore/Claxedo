@@ -10,6 +10,7 @@ import {
   agentMessageToChatMessage,
   agentPartId,
   agentPartToChatParts,
+  partMetadata,
   type ConversationUIMessage,
   chatMessageToAgentMessage,
   chatPartToAgentPart,
@@ -418,6 +419,11 @@ function removeMessage(chat: ConversationChatHandle, messageID: string | undefin
   return true
 }
 
+function terminalAgentPart(part: unknown) {
+  const state = asRecord(asRecord(part)?.state)
+  return state?.status === "completed" || state?.status === "error"
+}
+
 function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   if (!part?.messageID) return false
   const mapped = agentPartToChatParts(part)
@@ -431,6 +437,11 @@ function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   // history refetch landed the completed message) must not append a second
   // copy of content the persisted part already carries under a different id.
   if (settledAssistantMessage(message) && !hasChatPart(message, part.id)) return false
+  // Retained-stream replay resends a finished tool's start frames under the
+  // part id the same projection minted — the collision slips the settled guard
+  // above, so the stored terminal state itself rejects the downgrade.
+  const storedPart = message.parts.find((item) => agentPartId(item) === part.id)
+  if (terminalAgentPart(storedPart ? partMetadata(storedPart).agentPart : undefined) && !terminalAgentPart(part)) return false
   chat.setMessages(replaceAt(current, index, markUnpersistedLive({
     ...message,
     parts: upsertChatParts(message.parts, part.id, mapped),

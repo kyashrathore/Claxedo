@@ -104,6 +104,7 @@ vi.mock("@/features/session/providers/session-selection", () => ({
   useLocal: () => ({
     agent: {
       list: () => [{ name: "build" }],
+      catalog: () => [{ name: "build" }],
       current: () => ({ name: "build" }),
       set: vi.fn(),
     },

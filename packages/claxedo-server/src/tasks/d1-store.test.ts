@@ -32,7 +32,7 @@ import { createD1TasksStore } from "./d1-store"
 
 // 0025 and 0026 own every table under test and reference no auth table, so
 // they are the only migrations this store needs.
-const MIGRATIONS = ["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"]
+const MIGRATIONS = ["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql"]
 
 const active: ControlPlaneDatabase[] = []
 
@@ -92,6 +92,7 @@ function commandsOver(database: D1Database) {
     ids: {
       presetId: () => `preset-${(minted += 1)}`,
       taskId: () => `task-${(minted += 1)}`,
+      attachmentId: () => `attachment-${(minted += 1)}`,
     },
     capabilities,
     authorization,

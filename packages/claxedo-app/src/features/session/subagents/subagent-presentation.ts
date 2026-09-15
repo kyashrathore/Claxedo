@@ -67,10 +67,11 @@ export function presentSubagents(
   registry: SubagentRegistry,
   parentSessionId: string,
   toolCallId?: string,
+  hostableCallIds?: ReadonlySet<string>,
 ) {
   return registry.list(parentSessionId)
     .filter((entry) => toolCallId === undefined || entry.toolCallEdges.has(toolCallId))
-    .map((entry) => presentSubagent(entry, toolCallId))
+    .map((entry) => presentSubagent(entry, toolCallId, hostableCallIds))
     .sort((a, b) => a.subagentKey.localeCompare(b.subagentKey))
 }
 
@@ -104,7 +105,11 @@ function eventFromRow(row: HostSubagentRow): SubagentUpdatedEvent {
   }
 }
 
-function presentSubagent(entry: SubagentRegistryEntry, toolCallId?: string): SubagentPresentation {
+function presentSubagent(
+  entry: SubagentRegistryEntry,
+  toolCallId?: string,
+  hostableCallIds?: ReadonlySet<string>,
+): SubagentPresentation {
   const transcriptKind = transcript(entry.transcript?.kind)
   return {
     parentSessionId: entry.parentSessionId,
@@ -124,7 +129,14 @@ function presentSubagent(entry: SubagentRegistryEntry, toolCallId?: string): Sub
         : transcriptKind === "live" || transcriptKind === "file" || transcriptKind === "messages"
           ? "not-yet-bound"
           : "unavailable",
-    ambient: entry.toolCallEdges.size === 0,
+    // An edge only hosts a chip when its target is a spawn part the transcript
+    // actually renders. Forked-execution lanes edge to calls that never persist
+    // as parts (or to a non-spawn part like the skill row), so those edges leave
+    // the row homeless — ambient is the only surface that can show it.
+    ambient:
+      entry.toolCallEdges.size === 0 ||
+      (hostableCallIds !== undefined &&
+        ![...entry.toolCallEdges.keys()].some((id) => hostableCallIds.has(id))),
   }
 }
 

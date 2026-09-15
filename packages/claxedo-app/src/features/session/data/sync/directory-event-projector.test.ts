@@ -72,6 +72,36 @@ describe("directory event shell query projector", () => {
     })
   })
 
+  test("a replayed ask for a resolved request does not re-open it", () => {
+    const permission = {
+      id: "perm_replay",
+      sessionID: "ses_query",
+      permission: "edit",
+      patterns: [],
+      metadata: {},
+      always: [],
+    } as PermissionRequest
+    const question = {
+      id: "question_replay",
+      sessionID: "ses_query",
+      questions: [],
+    } as QuestionRequest
+
+    apply({ type: "permission.asked", properties: permission })
+    apply({ type: "question.asked", properties: question })
+    apply({ type: "permission.replied", properties: { sessionID: "ses_query", requestID: permission.id } })
+    apply({ type: "question.replied", properties: { sessionID: "ses_query", requestID: question.id, answers: [["a"]] } })
+
+    // Retained runtime replay redelivers the asks after the replies landed.
+    apply({ type: "permission.asked", properties: permission })
+    apply({ type: "question.asked", properties: question })
+
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "requests"))).toEqual({
+      permissions: [],
+      questions: [],
+    })
+  })
+
   test("removes shell session queries when a session is deleted", () => {
     queryClient.setQueryData(shellDataKeys.sessionId("ses_query", "todo"), [{ id: "todo_1" }])
 
@@ -100,6 +130,74 @@ describe("directory event shell query projector", () => {
     apply({ type: "session.updated", properties: { info: root("ses_query", Date.now()) } })
 
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "todo"))).toBeUndefined()
+  })
+
+  test("an assistant message.updated reorders the row under updated_desc but not human_turn_desc", () => {
+    const updatedKey = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" })
+    queryClient.setQueryData(updatedKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [
+        { sessionId: "ses_b", directory: "/tmp/ws", createdAt: 20, updatedAt: 200, lastHumanTurnAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
+        { sessionId: "ses_a", directory: "/tmp/ws", createdAt: 10, updatedAt: 100, lastHumanTurnAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
+      ],
+    })
+
+    apply({
+      type: "message.updated",
+      properties: {
+        info: { id: "msg_1", role: "assistant", sessionID: "ses_a", time: { created: 250, completed: 300 } },
+      },
+    })
+
+    const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; updatedAt?: number; lastHumanTurnAt?: number }> }>(updatedKey)
+    expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_a", "ses_b"])
+    expect(next?.items?.find((row) => row.sessionId === "ses_a")?.lastHumanTurnAt).toBe(100)
+  })
+
+  test("a replayed older message.updated cannot regress the row's recency", () => {
+    const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" })
+    queryClient.setQueryData(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [
+        { sessionId: "ses_a", directory: "/tmp/ws", createdAt: 10, updatedAt: 300, lastHumanTurnAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
+        { sessionId: "ses_b", directory: "/tmp/ws", createdAt: 20, updatedAt: 200, lastHumanTurnAt: 150, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
+      ],
+    })
+
+    apply({
+      type: "message.updated",
+      properties: {
+        info: { id: "msg_old", role: "user", sessionID: "ses_a", time: { created: 50, completed: 60 } },
+      },
+    })
+
+    const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; updatedAt?: number; lastHumanTurnAt?: number }> }>(key)
+    expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_a", "ses_b"])
+    const row = next?.items?.find((item) => item.sessionId === "ses_a")
+    expect(row?.updatedAt).toBe(300)
+    expect(row?.lastHumanTurnAt).toBe(200)
+  })
+
+  test("a user message.updated bumps lastHumanTurnAt for the reader's own turn in another pane", () => {
+    const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "human_turn_desc", limit: 50, groupBy: "none" })
+    queryClient.setQueryData(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "human_turn_desc", limit: 50 },
+      items: [
+        { sessionId: "ses_b", directory: "/tmp/ws", createdAt: 20, updatedAt: 200, lastHumanTurnAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
+        { sessionId: "ses_a", directory: "/tmp/ws", createdAt: 10, updatedAt: 100, lastHumanTurnAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
+      ],
+    })
+
+    apply({
+      type: "message.updated",
+      properties: {
+        info: { id: "msg_2", role: "user", sessionID: "ses_a", time: { created: 400, completed: 400 } },
+      },
+    })
+
+    const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; lastHumanTurnAt?: number }> }>(key)
+    expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_a", "ses_b"])
+    expect(next?.items?.find((row) => row.sessionId === "ses_a")?.lastHumanTurnAt).toBe(400)
   })
 
   // Nothing the agent side of the stream reports may move a row: the list orders

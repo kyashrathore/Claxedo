@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { emptyClaxedoState } from "./persistence"
-import { reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
+import { panelReviewWorkingSetKey, reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
 import { createWorkspacePanelSlice, MAX_SESSION_PANEL_SNAPSHOTS, syncFocusedSessionPanel } from "./workspace-panel"
 import type { ClaxedoState } from "./types"
 
@@ -120,6 +120,56 @@ describe("workspace panel slice", () => {
     expect(
       workspacePanel.restoreSession("ses_new_0", { workspaceDir: "/x", targetPaneId: "p" }),
     ).toBe(false)
+  })
+
+  test("reissues the leaving session's file selection on return", () => {
+    const { state, workspacePanel } = makeSlice()
+    const key = panelReviewWorkingSetKey({ directory: "/repo" })
+    const fileWorkingSet = (activeTabId: string) => ({
+      tabs: [
+        { id: "review", kind: "review" as const },
+        { id: "file://first.txt", kind: "file" as const, tabId: "file://first.txt" },
+        { id: "file://second.txt", kind: "file" as const, tabId: "file://second.txt" },
+      ],
+      activeTabId,
+      review: { scroll: { top: 0 } },
+    })
+
+    workspacePanel.open("review", { workspaceDir: "/repo", targetPaneId: "pane-a" })
+    workspacePanel.reviewWorkingSet.set(key, fileWorkingSet("file://first.txt"))
+    workspacePanel.rememberSession("ses_a")
+
+    workspacePanel.reviewWorkingSet.set(key, fileWorkingSet("file://second.txt"))
+    workspacePanel.rememberSession("ses_b")
+
+    expect(workspacePanel.restoreSession("ses_a", { workspaceDir: "/repo", targetPaneId: "pane-a" }))
+      .toBe(true)
+    expect(state.workspacePanel.focus).toMatchObject({ kind: "file", path: "first.txt", intent: "tab" })
+
+    // The mounted workspace consumes the restored focus and republishes the
+    // working set; only then does ses_a leave again.
+    workspacePanel.reviewWorkingSet.set(key, fileWorkingSet("file://first.txt"))
+    workspacePanel.rememberSession("ses_a")
+    expect(workspacePanel.restoreSession("ses_b", { workspaceDir: "/repo", targetPaneId: "pane-a" }))
+      .toBe(true)
+    expect(state.workspacePanel.focus).toMatchObject({ kind: "file", path: "second.txt", intent: "tab" })
+  })
+
+  test("a session whose remembered file is already active does not emit a focus", () => {
+    const { state, workspacePanel } = makeSlice()
+    const key = panelReviewWorkingSetKey({ directory: "/repo" })
+
+    workspacePanel.open("review", { workspaceDir: "/repo", targetPaneId: "pane-a" })
+    workspacePanel.reviewWorkingSet.set(key, {
+      tabs: [{ id: "file://first.txt", kind: "file", tabId: "file://first.txt" }],
+      activeTabId: "file://first.txt",
+      review: { scroll: { top: 0 } },
+    })
+    workspacePanel.rememberSession("ses_a")
+
+    expect(workspacePanel.restoreSession("ses_a", { workspaceDir: "/repo", targetPaneId: "pane-a" }))
+      .toBe(true)
+    expect(state.workspacePanel.focus).toBeUndefined()
   })
 })
 

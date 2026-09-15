@@ -8,11 +8,14 @@ import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { firstFoldSessionPrefetch } from "../store/first-fold-prefetch"
 import { Timeline } from "./message-timeline.data"
 import type { TimelineRow } from "./timeline-row-model"
+import type { TimelineScrollPosition } from "./timeline-scroll-memory"
 
 export type TimelineMountSnapshot = {
+  scroll?: TimelineScrollPosition
   measurements: VirtualItem[]
   toolOpen: Record<string, boolean | undefined>
   groupOpen: Record<string, boolean | undefined>
+  toolRevealed: Record<string, boolean | undefined>
   /**
    * Foldable groups per turn, keyed by user message. A visit that rendered the
    * turn contributes the count it rendered; a session opened for the first time
@@ -35,6 +38,7 @@ export function readTimelineMountSnapshot(sessionKey: string): TimelineMountSnap
     measurements: [],
     toolOpen: {},
     groupOpen: {},
+    toolRevealed: {},
     ...snapshot,
     // A rendered count is the turn as the reader last saw it, so it wins over
     // the seed's floor for the turns it covers.

@@ -7,7 +7,7 @@
  * row outside the caller's scope is unreachable rather than filtered out
  * afterwards.
  */
-import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
@@ -21,6 +21,9 @@ import { childCountLookup, linkCountLookup, taskSummaryPage, tasksPage, tasksPag
 import { taskNumberTakenRefusal, tasksStoreConflict } from "./store-conflicts"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import {
+  attachmentColumns,
+  attachmentOfColumns,
+  attachmentOfRow,
   linkColumns,
   linkOfColumns,
   presetColumns,
@@ -32,6 +35,7 @@ import {
   type StoredTaskColumns,
 } from "./stored-rows"
 import {
+  ClaxedoTaskAttachmentTable,
   ClaxedoTaskCommandReceiptTable,
   ClaxedoTaskPresetTable,
   ClaxedoTaskSessionLinkTable,
@@ -310,6 +314,48 @@ function tasksOperations(use: Reader): TasksStoreOperations {
       },
     },
 
+    attachments: {
+      async list(scopeId, taskId) {
+        const rows = use((db) =>
+          db
+            .select(ATTACHMENT_COLUMNS)
+            .from(ClaxedoTaskAttachmentTable)
+            .where(attachmentScope(scopeId, taskId))
+            .orderBy(asc(ClaxedoTaskAttachmentTable.position))
+            .all(),
+        )
+        return rows.map((row) => attachmentOfColumns(row))
+      },
+
+      async get(scopeId, taskId, attachmentId) {
+        const row = use((db) =>
+          db
+            .select()
+            .from(ClaxedoTaskAttachmentTable)
+            .where(and(attachmentScope(scopeId, taskId), eq(ClaxedoTaskAttachmentTable.attachment_id, attachmentId)))
+            .get(),
+        )
+        return row ? attachmentOfRow(row) : undefined
+      },
+
+      async listWithBytes(scopeId, taskId) {
+        const rows = use((db) =>
+          db
+            .select()
+            .from(ClaxedoTaskAttachmentTable)
+            .where(attachmentScope(scopeId, taskId))
+            .orderBy(asc(ClaxedoTaskAttachmentTable.position))
+            .all(),
+        )
+        return rows.map((row) => attachmentOfRow(row))
+      },
+
+      async insert(attachment) {
+        const row = attachmentColumns(attachment)
+        use((db) => db.insert(ClaxedoTaskAttachmentTable).values({ ...row, bytes: Buffer.from(attachment.bytes) }).run())
+      },
+    },
+
     links: {
       async getCurrent(scopeId, taskId, slot) {
         const row = use((db) =>
@@ -445,6 +491,22 @@ function numberHolder(use: Reader, task: Task): string | undefined {
       .get(),
   )
   return row?.taskId
+}
+
+/** Everything but the bytes, so a list read never loads an image it will not return. */
+const ATTACHMENT_COLUMNS = {
+  scope_id: ClaxedoTaskAttachmentTable.scope_id,
+  task_id: ClaxedoTaskAttachmentTable.task_id,
+  attachment_id: ClaxedoTaskAttachmentTable.attachment_id,
+  position: ClaxedoTaskAttachmentTable.position,
+  filename: ClaxedoTaskAttachmentTable.filename,
+  mime: ClaxedoTaskAttachmentTable.mime,
+  size: ClaxedoTaskAttachmentTable.size,
+  created_at: ClaxedoTaskAttachmentTable.created_at,
+}
+
+function attachmentScope(scopeId: string, taskId: string) {
+  return and(eq(ClaxedoTaskAttachmentTable.scope_id, scopeId), eq(ClaxedoTaskAttachmentTable.task_id, taskId))
 }
 
 function slotScope(scopeId: string, taskId: string, slot: ConfigurationSlot) {

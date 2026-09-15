@@ -36,6 +36,7 @@ function commandsOver(store: TasksStorePort): TasksCommands {
     ids: {
       presetId: () => `preset-${(minted += 1)}`,
       taskId: () => `task-${(minted += 1)}`,
+      attachmentId: () => `attachment-${(minted += 1)}`,
     },
     capabilities: {
       describe: () => Promise.reject(new Error(UNREACHED)),

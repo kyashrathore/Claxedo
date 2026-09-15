@@ -5,6 +5,7 @@ import type { UserActions } from "@/ui/session-kit"
 import type { SessionErrorClass } from "@/features/session/onboarding/first-turn-recovery"
 import type { ClaxedoSession } from "@/features/session/data/session-types"
 import type { SessionRef } from "@/platform/identity/session-ref"
+import type { QueuedMessagesController } from "@/features/session/queue/queued-messages-controller"
 
 export type MessageTimelineProps = {
   onSessionDeleted?: (sessionId: string) => void
@@ -21,6 +22,8 @@ export type MessageTimelineProps = {
   onHistoryScroll: () => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
+  hasScrollTarget: () => boolean
+  restoreFollowing: (following: boolean) => void
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
   historyShift: boolean
@@ -46,4 +49,6 @@ export type MessageTimelineProps = {
   onNavigateParent: () => void
   directorySessions: Accessor<ClaxedoSession[]>
   workspaceId?: string
+  /** Prompts the runtime holds for the next turn, drawn after the last row. */
+  queued?: QueuedMessagesController
 }

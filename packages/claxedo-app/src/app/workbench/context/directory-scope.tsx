@@ -115,9 +115,9 @@ function DirectoryDataProvider(props: ParentProps<{
     )
   }
 
-  const resolveSubagents = (parentSessionId: string, toolCallId?: string) => {
+  const resolveSubagents = (parentSessionId: string, toolCallId?: string, hostableCallIds?: ReadonlySet<string>) => {
     subagentRevision()
-    return presentSubagents(subagents, parentSessionId, toolCallId)
+    return presentSubagents(subagents, parentSessionId, toolCallId, hostableCallIds)
   }
   // agentListQuery hits the workspace RUNTIME for relay-backed scopes, so it must be structurally
   // disabled while that workspace is offline — otherwise it is the fire-and-fail

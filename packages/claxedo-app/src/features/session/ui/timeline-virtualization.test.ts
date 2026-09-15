@@ -179,3 +179,105 @@ describe("timeline resize anchor — display gating", () => {
   })
 
 })
+
+describe("timeline resize anchor — in-view insert hold", () => {
+  const paddingEnd = 64
+  const cleanups: Array<() => void> = []
+  afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
+
+  function keyedHarness(options: { keys: string[]; scrollTop: number; displayed?: () => boolean }) {
+    const keys = [...options.keys]
+    const recorded = { scrollToEnd: 0, inserts: 0 }
+    const virtualizer = new Virtualizer<HTMLDivElement, HTMLDivElement>({
+      get count() { return keys.length },
+      getItemKey: (index) => keys[index]!,
+      estimateSize: () => 180,
+      initialRect: { width: 800, height: 800 },
+      paddingEnd,
+      getScrollElement: () => null,
+      scrollToFn: () => {},
+      observeElementRect: () => {},
+      observeElementOffset: () => {},
+    })
+    // Materialize the measurement cache against the pre-insert keys so the
+    // displaced row can be found by its stable key.
+    virtualizer.getTotalSize()
+    virtualizer.scrollToEnd = () => { recorded.scrollToEnd += 1 }
+    const root = document.createElement("div")
+    Object.defineProperty(root, "clientHeight", { value: 800 })
+    Object.defineProperty(root, "scrollTop", { value: options.scrollTop, writable: true })
+    const anchor = createTimelineResizeAnchor()
+    cleanups.push(() => anchor.dispose())
+    anchor.install({
+      virtualizer,
+      root: () => root,
+      displayed: options.displayed ?? (() => true),
+      shouldAnchorBottom: () => true,
+      hasScrollGesture: () => false,
+      onInViewInsert: () => { recorded.inserts += 1 },
+    })
+    anchor.noteRowKeys([...keys])
+    return {
+      anchor,
+      virtualizer,
+      recorded,
+      insertKeys: (next: string[]) => {
+        // Order mirrors production: the timeline reports the new keys while the
+        // measurement cache still holds the displaced rows under the old keys.
+        anchor.noteRowKeys(next)
+        keys.length = 0
+        keys.push(...next)
+      },
+    }
+  }
+
+  test("a near-tail insert displacing a visible row holds the bottom anchor", async () => {
+    const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
+    const h = keyedHarness({ keys: before, scrollTop: 2000 })
+    // The reply's first part lands above the last row ("row-14", start 2520),
+    // inside the viewport whose fold is 2000 + 800.
+    h.insertKeys([...before.slice(0, 14), "reply", "row-14"])
+    expect(h.recorded.inserts).toBe(1)
+    h.virtualizer.resizeItem(10, 240)
+    await Promise.resolve()
+    expect(h.recorded.scrollToEnd).toBe(0)
+  })
+
+  test("a history prepend does not hold the bottom anchor", async () => {
+    const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
+    const h = keyedHarness({ keys: before, scrollTop: 2000 })
+    h.insertKeys(["older", ...before])
+    expect(h.recorded.inserts).toBe(0)
+    h.virtualizer.resizeItem(10, 240)
+    await Promise.resolve()
+    expect(h.recorded.scrollToEnd).toBe(1)
+  })
+
+  test("a pure tail append displaces nothing and never holds", async () => {
+    const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
+    const h = keyedHarness({ keys: before, scrollTop: 2000 })
+    h.insertKeys([...before, "appended"])
+    expect(h.recorded.inserts).toBe(0)
+  })
+
+  test("a near-tail insert above the fold does not hold", async () => {
+    const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
+    const h = keyedHarness({ keys: before, scrollTop: 0 })
+    // With the viewport at the top, the displaced tail row sits below the fold.
+    h.insertKeys([...before.slice(0, 14), "reply", "row-14"])
+    expect(h.recorded.inserts).toBe(0)
+  })
+
+  test("the deferred tail re-pin stands down on a stashed surface", async () => {
+    const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
+    let displayed = true
+    const h = keyedHarness({ keys: before, scrollTop: 2000, displayed: () => displayed })
+    h.insertKeys([...before.slice(0, 14), "reply", "row-14"])
+    expect(h.recorded.inserts).toBe(1)
+    // A session switch mid-hold must not scroll the stashed timeline.
+    displayed = false
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(h.recorded.scrollToEnd).toBe(0)
+    h.anchor.dispose()
+  })
+})

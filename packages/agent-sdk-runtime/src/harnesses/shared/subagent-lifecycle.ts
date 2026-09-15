@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { SubagentMode, SubagentStatus, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import type { PromptInput } from "../../index"
+import type { CompatEvent } from "../../compat-events"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { ChildProjectionTarget } from "./child-event-routing"
 import type { AgentRuntimeSessionBinding, AgentRuntimeStoreCore } from "./runtime-store"
@@ -30,6 +31,7 @@ export function createSubagentChildren(host: {
   store: Pick<AgentRuntimeStoreCore, "startTurn" | "finishTurn" | "getSessionConfig" | "updateSessionConfig">
   children: Map<string, SubagentChild>
   bindSession: (input: AgentRuntimeSessionBinding) => void
+  publish: (event: CompatEvent) => void
   projectChild: (target: ChildProjectionTarget, event: { type: "session-status"; status: "busy" } | { type: "finish"; sessionId: string }, source: RuntimeAppendSource) => void
 }) {
   const open = new Map<string, { status?: SubagentStatus; mode?: SubagentMode }>()
@@ -59,7 +61,7 @@ export function createSubagentChildren(host: {
     })
     const parentConfig = host.store.getSessionConfig(host.parentSessionId)
     if (parentConfig) host.store.updateSessionConfig(childSessionId, parentConfig)
-    host.store.startTurn({
+    const started = host.store.startTurn({
       ...host.fenced,
       sessionId: childSessionId,
       agentSessionId,
@@ -70,6 +72,7 @@ export function createSubagentChildren(host: {
       parts: observation.description ? [{ type: "text", text: observation.description }] : [],
       ...(target.input.variant ? { variant: target.input.variant } : {}),
     })
+    for (const event of started.events) host.publish(event)
     host.projectChild(target, { type: "session-status", status: "busy" }, source)
     return { sessionId: childSessionId, agentSessionId, target }
   }
@@ -123,12 +126,13 @@ export function createSubagentChildren(host: {
       if (outcome.status !== "failed") {
         host.projectChild(child.target, { type: "finish", sessionId: child.sessionId }, source)
       }
-      host.store.finishTurn({
+      const finished = host.store.finishTurn({
         ...host.fenced,
         sessionId: child.sessionId,
         assistantMessageId: child.target.assistantMessageId,
         outcome,
       })
+      for (const event of finished.events) host.publish(event)
     },
 
     /**

@@ -285,7 +285,6 @@ export const dict = {
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "傳送",
   "prompt.action.stop": "停止",
-  "prompt.action.queued": "已排隊",
   "prompt.action.readOnlyWorkspace": "唯讀工作區",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 無法使用此附件",

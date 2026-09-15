@@ -103,6 +103,11 @@ export namespace Timeline {
     lastTurn?: SessionTurnOutcome,
     visibleAssistantMessageIDs?: ReadonlySet<string>,
     priorFoldableCount: (userMessageID: string) => number | undefined = () => undefined,
+    isPartExpanded: (partID: string) => boolean = () => false,
+    // `session.idle` lands before the final transcript read does; while the
+    // post-acceptance reconciliation still owns that read the turn is working
+    // even though the session status already says idle.
+    settlePending = false,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -192,7 +197,10 @@ export namespace Timeline {
     }
 
     const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
-    const partOfRef = (ref: PartRef) => partByID.get(ref.partID)
+    const partOfRef = (ref: PartRef) => {
+      const found = partByID.get(ref.partID)
+      return found ? { ...found, userOpen: isPartExpanded(ref.partID) } : found
+    }
     const liveFoldableCount = groupSegments(assistantPartRefs).reduce(
       (count, segment) => count + countFoldableGroups(segment, partOfRef),
       0,
@@ -288,7 +296,7 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-    if (isActive && status === "busy" && !settled && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    if (isActive && (status === "busy" || settlePending) && !settled && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))

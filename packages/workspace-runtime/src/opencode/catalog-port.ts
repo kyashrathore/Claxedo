@@ -16,6 +16,7 @@ import { arr, rec, str } from "../json-value"
 
 export type AgentEntry = Readonly<{
   name: string
+  id?: string
   description?: string
   mode?: string
   model?: Readonly<{ providerID: string; id: string }>
@@ -66,6 +67,7 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
         const model = modelRef(row.model)
         return {
           name: String(row.name),
+          ...(typeof row.id === "string" ? { id: row.id } : {}),
           ...(typeof row.description === "string" ? { description: row.description } : {}),
           ...(typeof row.mode === "string" ? { mode: row.mode } : {}),
           ...(model === undefined ? {} : { model }),

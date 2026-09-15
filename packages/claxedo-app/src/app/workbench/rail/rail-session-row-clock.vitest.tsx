@@ -126,10 +126,22 @@ const WEEK_OLD_SESSION_ROW = {
   updatedAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
 }
 
+// A third row thirty seconds old, below the formatter's smallest bucket. Its
+// label must still be a figure that fits the 24 px time slot; the sentence
+// "just now" wrapped there and broke the row.
+const FRESH_SESSION_ROW = {
+  ...LAZY_SESSION_ROW,
+  sessionRef: "ses_fresh",
+  sessionId: "ses_fresh",
+  title: "Fresh session",
+  createdAt: Date.now() - 30_000,
+  updatedAt: Date.now() - 30_000,
+}
+
 const LAZY_SESSION_PAGE = {
   view: { scope: "project", groupBy: "none", sort: "updated_desc", limit: 25 },
-  items: [LAZY_SESSION_ROW, WEEK_OLD_SESSION_ROW],
-  totalKnown: 2,
+  items: [LAZY_SESSION_ROW, WEEK_OLD_SESSION_ROW, FRESH_SESSION_ROW],
+  totalKnown: 3,
 }
 
 // The section's SOURCE is stubbed, not the servers under it: this file is about
@@ -242,7 +254,7 @@ describe("rail session row clock invalidation", () => {
   test("timeLabel reads the app's one age formatter, week bucket included", async () => {
     await renderSidebarWithSession()
 
-    expect(capturedRows().map((row) => row.timeLabel)).toEqual(["2d", "1w"])
+    expect(capturedRows().map((row) => row.timeLabel)).toEqual(["2d", "1w", "<1m"])
   })
 
   test("active is a lazy accessor, not a precomputed value", async () => {

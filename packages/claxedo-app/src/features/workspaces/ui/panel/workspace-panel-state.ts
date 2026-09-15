@@ -56,6 +56,13 @@ export type WorkspacePanelState = {
   navigator?: WorkspacePanelNavigator
   navigatorHidden?: boolean
   focus?: WorkspacePanelFocus
+  /**
+   * Monotonic high-water mark for `focus.version`. Clearing `focus` resets
+   * `focus?.version` to nothing, so without it a re-issued request for an
+   * already-consumed target mints the identical (version, kind, target) triple
+   * the body's consumed-record dedup was built to drop.
+   */
+  focusVersion?: number
   activitySubject?: WorkspacePanelActivitySubject
 }
 
@@ -89,16 +96,20 @@ function nextNavigator(state: WorkspacePanelState, input: WorkspacePanelTarget) 
   return state.navigator
 }
 
-function nextFocus(state: WorkspacePanelState, input: WorkspacePanelTarget) {
+function nextFocus(state: WorkspacePanelState, input: WorkspacePanelTarget): {
+  focus: WorkspacePanelFocus | undefined
+  focusVersion: number | undefined
+} {
+  const focusVersion = state.focusVersion ?? state.focus?.version
   if ("focus" in input) {
-    if (!input.focus) return undefined
-    return {
-      ...input.focus,
-      version: (state.focus?.version ?? 0) + 1,
-    }
+    if (!input.focus) return { focus: undefined, focusVersion }
+    const version = (focusVersion ?? 0) + 1
+    return { focus: { ...input.focus, version }, focusVersion: version }
   }
-  if (input.workspaceDir && input.workspaceDir !== state.workspaceDir) return undefined
-  return state.focus
+  if (input.workspaceDir && input.workspaceDir !== state.workspaceDir) {
+    return { focus: undefined, focusVersion }
+  }
+  return { focus: state.focus, focusVersion }
 }
 
 function nextActivitySubject(state: WorkspacePanelState, input: WorkspacePanelTarget) {
@@ -116,6 +127,7 @@ export function openWorkspacePanel(
   state: WorkspacePanelState,
   input: WorkspacePanelTarget,
 ): WorkspacePanelState {
+  const focus = nextFocus(state, input)
   return {
     ...state,
     open: true,
@@ -123,19 +135,22 @@ export function openWorkspacePanel(
     workspaceDir: input.workspaceDir,
     targetPaneId: input.targetPaneId,
     navigator: nextNavigator(state, input),
-    focus: nextFocus(state, input),
+    focus: focus.focus,
+    focusVersion: focus.focusVersion,
     activitySubject: nextActivitySubject(state, input),
   }
 }
 
 export function retargetWorkspacePanel(state: WorkspacePanelState, input: WorkspacePanelTarget): WorkspacePanelState {
+  const focus = nextFocus(state, input)
   return {
     ...state,
     mode: input.mode ?? state.mode,
     workspaceDir: input.workspaceDir,
     targetPaneId: input.targetPaneId,
     navigator: nextNavigator(state, input),
-    focus: nextFocus(state, input),
+    focus: focus.focus,
+    focusVersion: focus.focusVersion,
     activitySubject: nextActivitySubject(state, input),
   }
 }

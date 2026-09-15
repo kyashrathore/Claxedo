@@ -77,7 +77,15 @@ export function suggestionAtOption(
   suggestion: PromptInputV2Suggestion,
   documents: readonly ComposerDocumentOption[],
 ): AtOption | undefined {
-  if (suggestion.kind === "agent") return { type: "agent", name: suggestion.label, display: suggestion.label }
+  // The mention's name is the executable agent id; the label is only display
+  // text. Rebuilding the row off the label submits the label back as the agent.
+  if (suggestion.kind === "agent") {
+    return {
+      type: "agent",
+      name: suggestion.mention?.type === "agent" ? suggestion.mention.name : suggestion.label,
+      display: suggestion.label,
+    }
+  }
   if (suggestion.kind === "file") {
     if (!suggestion.path) return undefined
     return { type: "file", path: suggestion.path, display: suggestion.label, recent: suggestion.recent }

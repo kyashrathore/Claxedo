@@ -1,9 +1,10 @@
 /**
- * Renderer-only replay of canonical presentation fixtures.
+ * Renderer replay through presentation and canonical runtime event transports.
  *
- * These tests inject already-projected message parts, so they cover timeline
- * renderers, lifecycle updates, and dock presentation — not adapter translation,
- * auth, or connectivity. A fixture name records where a trace came from, not what
+ * Stored snapshots and retained streams are independent: a completed snapshot can
+ * be followed by its earlier busy and tool-start events on a reattached stream.
+ * Fixtures cover rendering and client projection, not provider binaries or auth.
+ * A fixture name records where a trace came from, not what
  * that provider advertises today. Protocol coverage lives in the adapter tests in
  * packages/opencode-server-adapter.
  */
@@ -15,9 +16,13 @@ import {
   installMockRuntime,
   type MockRuntimeChildSession,
   type MockRuntimeHandles,
+  type MockMessageRow,
   type MockRuntimeSubagentRow,
 } from "../helpers/mock-runtime"
-import { ensureComposerModelSelected, expectAssistantReplyVisible, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectAssistantTextOccurrences, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
+import { sampleElementDuringAction, scrollTimelineToTop } from "../helpers/geometry-oracle"
+import { expectRailRowVisible } from "../helpers/rail-oracle"
+import { writeFile } from "node:fs/promises"
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "harness-traces")
 
@@ -166,7 +171,7 @@ async function primeHarness(
 
   // A draft has no implicit agent; there is no fallback, so pick one explicitly.
   const agentName = harness === "claude-sdk"
-    ? "Claude"
+    ? "Claude Code"
     : harness === "codex-app-server"
       ? "Codex"
       : harness === "cursor-sdk"
@@ -284,7 +289,7 @@ function subagentScenario(input: SubagentHarnessCase) {
   const subagentKey = `subagent-${suffix}`
   const toolCallId = `spawn-${suffix}`
   const childSessionId = input.openable ? `ses-child-${suffix}` : undefined
-  const description = `Delegate ${input.name}`
+  const description = `Delegate ${input.name}: review the current session virtualization implementation, including retained sessions, streaming events, transcript row identities, and canonical subagent lifecycle updates. Keep the review read-only and return concrete findings with file and line evidence.`
   return {
     subagentKey,
     toolCallId,
@@ -326,7 +331,7 @@ function subagentScenario(input: SubagentHarnessCase) {
 function subagentChip(page: Page, subagentKey: string) {
   const within = (tag: string) =>
     `[data-component="subagent-chip-row"] ${tag}[data-component="subagent-chip"][data-subagent-key="${subagentKey}"]`
-  return { chip: page.locator(within("")), openControl: page.locator(within("button")) }
+  return { chip: page.locator(within("")), openControl: page.locator(within(":is(button, a[href])")) }
 }
 
 /** The workspace-panel tab a chip opens, addressed by the child session it holds. */
@@ -346,7 +351,7 @@ function subagentTaskEnvelope(input: {
   assistantId: string
   toolCallId: string
   description: string
-}): Envelope {
+}) {
   return {
     directory: "",
     payload: {
@@ -485,6 +490,233 @@ async function revealTurn(page: Page) {
 }
 
 test.describe("core harness rendering matrix @core", () => {
+  test("a manually closed latest Codex turn stays closed through retained runtime replay", async ({ page }, testInfo) => {
+    const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-completed-runtime-replay.json"), "utf-8")) as {
+      messages: MockMessageRow[]; events: Array<Parameters<MockRuntimeHandles["emitRuntime"]>[0]>
+    }
+    const sessionId = fixture.messages[0].info.sessionID
+    const userId = fixture.messages[0].info.id
+    const otherId = "ses_fold_other"
+    const dir = "/tmp/e2e-completed-fold-replay"
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages: fixture.messages },
+      otherSessions: [{ id: otherId, title: "Other fold session", prompt: "Other prompt", reply: "Other completed reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await expectAssistantReplyVisible(page, "QA_FIRST_DONE_1164", { spec: "core-harness-rendering-matrix", scenario: `fold-before-${testInfo.repeatEachIndex}` })
+    await scrollTimelineToTop(page)
+    const foldSelector = `[data-message-id="${userId}"][data-timeline-row="TurnFold"] button`
+    const fold = page.locator(foldSelector)
+    await expect(fold).toBeVisible()
+    if (await fold.getAttribute("aria-expanded") !== "true") await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "true")
+    await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    const otherStream = page.waitForResponse(response => new URL(response.url()).searchParams.get("parentSessionId") === otherId && new URL(response.url()).pathname.endsWith("/runtime-events") && response.status() === 200)
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await otherStream
+    await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-harness-rendering-matrix", scenario: `fold-other-${testInfo.repeatEachIndex}` })
+    for (const event of fixture.events) mock.emitRuntime({ ...event, directory: dir })
+    const row = await expectRailRowVisible({ page, sessionId })
+    const samples = await sampleElementDuringAction(page, '[data-component="tool-part-wrapper"]', async () => {
+      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/runtime-events") && new URL(response.url()).searchParams.get("parentSessionId") === sessionId && (await response.text()).includes(fixture.events[0].assistantMessageId!))
+      await row.click()
+      await replay
+      await expectAssistantReplyVisible(page, "QA_FIRST_DONE_1164", { spec: "core-harness-rendering-matrix", scenario: `fold-return-${testInfo.repeatEachIndex}` })
+    })
+    await writeFile(testInfo.outputPath("fold-return-frames.json"), JSON.stringify(samples, null, 2))
+    expect(mock.requests.unhandled).toEqual([])
+    expect(samples.length).toBeGreaterThan(2)
+    expect(samples.filter(sample => sample.elements.some(element => element.painted)), "closed completed work exposes tool rows during runtime replay").toEqual([])
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+  })
+
+  test("restored Codex failure commentary renders each reply passage once", async ({ page }, testInfo) => {
+    const messages = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interleaved-failures.json"), "utf-8")) as MockMessageRow[]
+    const sessionId = messages[0].info.sessionID
+    const dir = "/tmp/e2e-codex-interleaved-failures"
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID,
+      harness: "codex-app-server", existingSession: { messages },
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await ensureComposerModelSelected(page)
+    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Snapshot restoration probe")
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expectAssistantReplyVisible(page, "ack 1: Snapshot restoration probe")
+    for (const phase of ["restored", "reloaded"]) {
+      if (phase === "reloaded") await page.reload()
+      const fold = page.locator(`[data-message-id="${messages[0].info.id}"][data-timeline-row="TurnFold"] button`)
+      await expect(fold).toBeVisible()
+      if (await fold.getAttribute("aria-expanded") !== "true") await fold.click()
+      await scrollTimelineToTop(page)
+      for (const [index, text] of [
+        "Running the first command exactly and recording its exit code.",
+        "The first command exited with code 1. Running the separate grep command now.",
+        "false: exit code 1",
+        "grep QA_IMPOSSIBLE_MARKER_985312 package.json: exit code 1",
+      ].entries()) {
+        await expectAssistantReplyVisible(page, text, {
+          spec: "core-harness-rendering-matrix",
+          scenario: `restored-failure-${phase}-${index}-${testInfo.repeatEachIndex}`,
+        })
+        await expectAssistantTextOccurrences(page, text, 1)
+      }
+      await page.screenshot({ path: testInfo.outputPath(`${phase}-commentary.png`) })
+    }
+    expect(mock.requests.promptCount).toBe(1)
+  })
+
+  test("enabling live folding preserves a manually opened Codex shell output", async ({ page }, testInfo) => {
+    const dir = "/tmp/e2e-live-fold-manual-output"
+    const sessionId = "ses_live_fold_manual_output"
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID,
+      harness: "codex-app-server", holdTurn: true,
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session`)
+    await selectComposerAgent(page, "Codex")
+    await ensureComposerModelSelected(page)
+    const setLiveFolding = async (checked: boolean) => {
+      await page.getByTestId("rail-account-trigger").click()
+      await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+      const dialog = page.locator('[data-slot="dialog-container"]').last()
+      const setting = dialog.locator('[data-action="settings-feed-timeline-fold-while-running"]')
+      const input = setting.locator("input")
+      await expect(input).toBeAttached()
+      if (await input.isChecked() !== checked) await setting.locator('[data-slot="switch-control"]').click()
+      await expect(input).toBeChecked({ checked })
+      await page.keyboard.press("Escape")
+      await expect(dialog).toBeHidden()
+    }
+    await setLiveFolding(false)
+    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Keep my shell output open")
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(sessionId))
+    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
+    let assistantInfo: Record<string, unknown> = {}
+    await expect.poll(async () => {
+      const body = await page.evaluate(async id => (await fetch(`/session/${id}/message`)).json(), sessionId)
+      assistantInfo = body.messages?.find((row: { info: { id: string } }) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
+      return assistantInfo.id
+    }).toBeTruthy()
+    const assistantId = String(assistantInfo.id)
+    for (const item of [
+      { id: "live_fold_read_before", tool: "read", input: { filePath: "before.ts" }, output: "before" },
+      { id: "live_fold_shell", tool: "bash", input: { command: "pwd" }, output: "/tmp/manual-output" },
+      { id: "live_fold_read_after", tool: "read", input: { filePath: "after.ts" }, output: "after" },
+    ]) mock.emit({ type: "message.part.updated", properties: { part: {
+      id: item.id, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id, tool: item.tool,
+      state: { status: "completed", input: item.input, output: item.output, title: item.tool, metadata: {}, time: { start: Date.now() - 100, end: Date.now() } },
+    } } } as never, dir)
+    const shell = page.locator('[data-timeline-part-id="live_fold_shell"]')
+    const trigger = shell.locator('[data-slot="collapsible-trigger"]')
+    await expect(trigger).toBeVisible()
+    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
+    const output = shell.locator('[data-slot="bash-pre"]')
+    await expect(output).toBeVisible()
+    await expect(output).toContainText("/tmp/manual-output")
+    await page.screenshot({ path: testInfo.outputPath("manual-output-before.png") })
+    await setLiveFolding(true)
+    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
+    await expect.soft(output, "the manually opened output remains visible when live folding is enabled").toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("manual-output-after.png") })
+    mock.emit({ type: "message.part.updated", properties: { part: {
+      id: `${assistantId}_text`, sessionID: sessionId, messageID: assistantId, type: "text", text: "Manual folding probe complete",
+    } } } as never, dir)
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: {
+      ...assistantInfo, time: { ...(assistantInfo.time as Record<string, unknown>), completed: Date.now() },
+    } } } as never, dir)
+    mock.emit({ type: "session.idle", properties: { sessionID: sessionId } } as never, dir)
+    await expectAssistantReplyVisible(page, "Manual folding probe complete")
+    expect(mock.requests.promptCount).toBe(1)
+  })
+
+  test("a consecutive MCP group names the tools hidden inside it", async ({ page }, testInfo) => {
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    for (const [index, name] of ["sessions_list", "processes"].entries()) {
+      mock.emit({ type: "message.part.updated", properties: { part: {
+        id: `mcp_count_${index}`, sessionID: sessionId, messageID: assistantId, type: "tool", callID: `mcp_count_${index}`, tool: name,
+        state: { status: "completed", input: {}, output: "[]", title: name, metadata: { intent: "mcp", kind: "mcp_tool_call", server: "claxedo" }, time: { start: Date.now() - 1000, end: Date.now() } },
+      } } } as never, dir)
+    }
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    const group = page.locator('[data-timeline-part-ids="mcp_count_0,mcp_count_1"]')
+    await expect(group).toBeVisible()
+    const header = group.locator('[data-component="work-group-trigger"]')
+    await expect(header).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("mcp-group-header.png") })
+    await expect.soft(header).toContainText(/sessions[_ ]list/i)
+    await expect.soft(header).toContainText(/processes/i)
+    await header.click()
+    await expect(group.locator(SELECTORS.toolPart("mcp_count_0"))).toBeVisible()
+    await expect(group.locator(SELECTORS.toolPart("mcp_count_1"))).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("mcp-group-expanded.png") })
+  })
+
+  test("a manually folded Codex turn retains its three-group count after completion", async ({ page }, testInfo) => {
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "busy" } } } as never, dir)
+    const entries = [
+      { id: "count1_read", tool: "read", input: { filePath: "a.ts" } },
+      { id: "count2_read", tool: "read", input: { filePath: "b.ts" } },
+      { id: "count3_bash", tool: "bash", input: { command: "echo hi" } },
+      { id: "count4_read", tool: "read", input: { filePath: "c.ts" } },
+    ]
+    for (const item of entries) mock.emit({ type: "message.part.updated", properties: { part: {
+      id: item.id, tool: item.tool, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id,
+      state: { status: "completed", input: item.input, output: "hi", title: item.tool, metadata: {}, time: { start: Date.now() - 1000, end: Date.now() } },
+    } } } as never, dir)
+    await revealTurn(page)
+    const fold = page.locator('[data-component="turn-fold"] button').first()
+    await expect(fold).toContainText("Working")
+    if (await fold.getAttribute("aria-expanded") === "false") await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "true")
+    await expect(page.locator('[data-timeline-part-ids="count1_read,count2_read"]')).toHaveCount(1)
+    await expect(page.locator('[data-timeline-part-id="count3_bash"]')).toHaveCount(1)
+    await expect(page.locator('[data-timeline-part-ids="count4_read"]')).toHaveCount(1)
+    await page.screenshot({ path: testInfo.outputPath("running-three-groups.png") })
+    await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "idle" } } } as never, dir)
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    await expect(fold).toContainText("Worked")
+    await page.screenshot({ path: testInfo.outputPath("completed-three-group-fold.png") })
+    await expect(fold, "the collapsed header identifies all three tool groups").toContainText(/\b3 groups?\b/)
+  })
+
+  test("process inspection output does not turn an MCP endpoint into a Local preview", async ({ page }, testInfo) => {
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    const cases = [
+      { id: "tool_process_inspection", command: "ps -axo pid=,ppid=,comm=,args=", output: JSON.stringify({ url: "http://127.0.0.1:2593/api/claxedo/mcp?session=qa", headers: { Authorization: "Bearer REDACTED" } }), preview: undefined },
+      { id: "tool_development_server", command: "bun run dev", output: "Local: http://127.0.0.1:8766/", preview: "http://127.0.0.1:8766/" },
+    ]
+    for (const item of cases) {
+      mock.emit({ type: "message.part.updated", properties: { part: {
+        id: item.id, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id, tool: "bash",
+        state: { status: "completed", input: { command: item.command }, output: item.output, title: "bash", metadata: { exitCode: 0 }, time: { start: Date.now() - 1000, end: Date.now() } },
+      } } } as never, dir)
+    }
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    await revealTurn(page)
+    await page.screenshot({ path: testInfo.outputPath("local-preview-targets.png") })
+    for (const item of cases) {
+      const part = page.locator(SELECTORS.toolPart(item.id))
+      await expect(part).toBeVisible()
+      const preview = part.locator('[data-component="local-preview-row"]')
+      if (item.preview) await expect(preview).toHaveAttribute("href", item.preview)
+      else await expect.soft(preview, "an MCP control endpoint is not a development server").toHaveCount(0)
+    }
+  })
+
   test("renderer-only canonical fixture — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
@@ -592,6 +824,55 @@ test.describe("core harness rendering matrix @core", () => {
     await expect.poll(async () => content.locator('[data-component="tool-part-wrapper"]').count(), { timeout: 20_000 }).toBe(before)
   })
 
+  test("a live command group shimmers between calls and settles when the reply passes it", async ({ page }) => {
+    const dir = "/tmp/e2e-command-group-live"
+    const sessionId = "ses_command_group_live"
+    const userId = "msg_command_group_live"
+    const assistantId = `${userId}_r`
+    const created = Date.now() - 1_000
+    const messages = [
+      { info: { id: userId, sessionID: sessionId, role: "user", time: { created }, agent: "build", model: { providerID: "openai", modelID: "gpt-5" } },
+        parts: [{ id: "prompt", sessionID: sessionId, messageID: userId, type: "text", text: "Run commands" }] },
+      { info: { id: assistantId, sessionID: sessionId, role: "assistant", parentID: userId, time: { created: created + 1 },
+          modelID: "gpt-5", providerID: "openai", mode: "auto", agent: "build", path: { cwd: dir, root: dir }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } },
+        parts: [{ id: "a_text", sessionID: sessionId, messageID: assistantId, type: "text", text: "QA_COMMAND_GROUP_START" }] },
+    ] as unknown as MockMessageRow[]
+    const mock = await installMockRuntime(page, { dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "opencode", existingSession: { messages } })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await expect(page.getByText("QA_COMMAND_GROUP_START", { exact: true })).toBeVisible()
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "busy" } } } as never, dir)
+    const emitCommand = (id: string, status: "running" | "completed") => mock.emit({
+      type: "message.part.updated",
+      properties: { sessionID: sessionId, time: Date.now(), part: {
+        id, sessionID: sessionId, messageID: assistantId, type: "tool", callID: id, tool: "bash",
+        state: status === "running"
+          ? { status, input: { command: "pwd" }, time: { start: 100 } }
+          : { status, input: { command: "pwd" }, output: "/repo", title: "pwd", metadata: {}, time: { start: 100, end: 110 } },
+      } },
+    } as never, dir)
+    emitCommand("z_command_0", "completed")
+    emitCommand("z_command_1", "running")
+    const trigger = page.locator('[data-component="work-group-trigger"]').last()
+    const shimmer = trigger.locator('[data-component="text-shimmer"]')
+    await expect(shimmer).toHaveAttribute("aria-label", "Running pwd")
+    await expect(shimmer).toHaveAttribute("data-active", "true")
+    emitCommand("z_command_1", "completed")
+    await trigger.click()
+    const member = page.locator('[data-component="work-group-list"] [data-component="tool-part-wrapper"]').last()
+    await expect(member.locator('[data-slot="basic-tool-tool-title"] [data-component="text-shimmer"]')).toHaveAttribute("aria-label", "Ran")
+    await expect(member.locator('.ui-basic-tool-tool-leading-icon')).toBeVisible()
+    await expect(shimmer).toHaveAttribute("aria-label", "Running pwd")
+    await expect(shimmer).toHaveAttribute("data-active", "true")
+    mock.emit({ type: "message.part.updated", properties: { sessionID: sessionId, time: Date.now(), part: {
+      id: "zz_after_group", sessionID: sessionId, messageID: assistantId, type: "text", text: "QA_PASSED_COMMAND_GROUP", time: { start: 200 },
+    } } } as never, dir)
+    await expect(page.getByText("QA_PASSED_COMMAND_GROUP", { exact: true })).toBeVisible()
+    await expect(shimmer).toHaveAttribute("aria-label", "Ran 2 commands")
+    await expect(shimmer).toHaveAttribute("data-active", "false")
+  })
+
   test("renderer-only canonical fixture — tool lifecycle pending -> running -> completed -> error", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
@@ -618,6 +899,269 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(errorTrigger).toBeVisible({ timeout: 30_000 })
     await errorTrigger.click()
     await expect(content.getByText("exit code 1")).toBeVisible({ timeout: 30_000 })
+  })
+
+  test("Codex interrupted command remains terminal after message-page reload", async ({ page }, testInfo) => {
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    const captured = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interrupted-command.json"), "utf8"))
+    const part = { ...captured, sessionID: sessionId, messageID: assistantId }
+    const row = page.locator(SELECTORS.toolPart(part.id))
+    mock.emit({
+      type: "message.part.updated",
+      properties: { part: {
+        ...part,
+        state: { status: "running", input: part.state.input, metadata: part.state.metadata, time: { start: part.state.time.start } },
+      } },
+    } as never, dir)
+    await expect(row).toBeVisible()
+    await expect(row).toContainText("Running")
+    await page.screenshot({ path: testInfo.outputPath("command-running.png") })
+    mock.emit({ type: "message.part.updated", properties: { part } } as never, dir)
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    await expect(row).toContainText(/Failed|Interrupted/)
+    await page.reload()
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    await expect(row).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("interrupted-command-reloaded.png") })
+    await expect(row).toContainText(/Failed|Interrupted/)
+    await expect(row).not.toContainText("Running")
+  })
+
+  test("an interrupted Codex command stays interrupted when rail-return replay resends its start", async ({ page }, testInfo) => {
+    const dir = "/tmp/e2e-interrupted-replay"
+    const sessionId = "ses_interrupted_replay"
+    const otherId = "ses_interrupted_replay_other"
+    const userId = "msg_interrupted_replay"
+    const assistantId = `${userId}_r`
+    const callId = "exec-interrupted-replay"
+    const captured = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interrupted-command.json"), "utf8"))
+    // The stored part id is the client projection's `seqId` mint (`000000_<callID>`);
+    // a replayed start for the same callID regenerates that id, which is how a
+    // stale frame reaches the already-settled part.
+    const part = {
+      ...captured,
+      id: `000000_${callId}`,
+      callID: callId,
+      sessionID: sessionId,
+      messageID: assistantId,
+    }
+    const messages = [
+      {
+        info: {
+          id: userId, sessionID: sessionId, role: "user",
+          time: { created: captured.state.time.start - 2000 },
+          agent: "build", model: { providerID: "codex", modelID: "gpt-5.6-sol" },
+        },
+        parts: [{ id: `prt_${userId}`, sessionID: sessionId, messageID: userId, type: "text", text: "Run the bounded command" }],
+      },
+      {
+        info: {
+          id: assistantId, sessionID: sessionId, role: "assistant", parentID: userId,
+          time: { created: captured.state.time.start - 1000, completed: captured.state.time.end },
+          modelID: "gpt-5.6-sol", providerID: "codex", mode: "auto", agent: "build",
+          path: { cwd: dir, root: dir }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [part],
+      },
+    ] as unknown as MockMessageRow[]
+    const scenario = subagentScenario(subagentHarnessCases.find(item => item.name === "Codex native")!)
+    const task = subagentTaskEnvelope({ sessionId, assistantId, toolCallId: scenario.toolCallId, description: scenario.description })
+    messages[1]!.parts.push(task.payload.properties.part as never)
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages },
+      subagents: { [sessionId]: scenario.fixture.rows },
+      otherSessions: [{ id: otherId, title: "Other session", prompt: "Other prompt", reply: "Other reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    const row = page.locator(SELECTORS.toolPart(part.id))
+    await expect(row).toBeVisible()
+    await expect(row).toContainText(/Failed|Interrupted/)
+    await page.screenshot({ path: testInfo.outputPath("interrupted-before-replay.png") })
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await expectAssistantReplyVisible(page, "Other reply", { spec: "core-harness-rendering-matrix", scenario: `interrupt-away-${testInfo.repeatEachIndex}` })
+    await (await expectRailRowVisible({ page, sessionId })).click()
+    // Reload first: the canonical refetch must finish before the replay lands,
+    // or the arriving messages overwrite the stale frame back to terminal and
+    // mask the defect — the original report showed Running AFTER the reload.
+    const refetched = page.waitForResponse(response =>
+      response.request().method() === "GET"
+      && /\/session\/[^/]+\/message/.test(new URL(response.url()).pathname)
+      && response.status() === 200)
+    await page.reload()
+    await refetched
+    await expect(row).toBeVisible()
+    await expect(row).toContainText(/Failed|Interrupted/)
+    // The runtime stream replays the turn's start frames on reattach: the
+    // terminal frame is what the stored part already carries, and a fresh
+    // projection has no memory of it.
+    for (const payload of [
+      {
+        harness: "codex", threadId: sessionId, type: "tool-start",
+        toolCallId: callId, toolName: "command", kind: "command_execution",
+        display: { kind: "command_execution", intent: "shell", command: captured.state.input.command, description: captured.state.input.command },
+      },
+      { harness: "codex", threadId: sessionId, type: "tool-input", toolCallId: callId, input: captured.state.input },
+    ]) {
+      mock.emitRuntime({ directory: dir, sessionId, agentSessionId: sessionId, assistantMessageId: assistantId, payload: payload as never })
+    }
+    // Child status uses the same raw lane and acknowledges the preceding frames.
+    completeSubagent(mock, dir, sessionId, scenario.subagentKey)
+    await expect(page.locator(`[data-component="subagent-chip"][data-subagent-key="${scenario.subagentKey}"]`)).toHaveAttribute("data-status", "completed")
+    await page.screenshot({ path: testInfo.outputPath("interrupted-after-replay.png") })
+    const sawRunning = await expect
+      .poll(async () => (await row.textContent())?.includes("Running"), { timeout: 5_000 })
+      .toBe(true)
+      .then(() => true)
+      .catch(() => false)
+    expect(sawRunning, "the stored interrupted command returned to Running after its start frames replayed").toBe(false)
+  })
+
+  test("a live reply keeps canonical text and tool identity when raw frames replay", async ({ page }) => {
+    const dir = "/tmp/e2e-dup-replay"
+    const sessionId = "ses_dup_replay"
+    const otherId = "ses_dup_replay_other"
+    const userId = "msg_dup_replay"
+    const assistantId = `${userId}_r`
+    const text = "QA_LIVE_REPLAY the two-item exit list renders once"
+    // The stored part carries the server's own part id (`prt_…`), not the
+    // client projection's `000000_<msg>-text` mint — a replayed delta cannot
+    // find it, so the projected part is appended as a SECOND copy.
+    const messages = [
+      {
+        info: {
+          id: userId, sessionID: sessionId, role: "user",
+          time: { created: Date.now() - 10_000 },
+          agent: "build", model: { providerID: "codex", modelID: "gpt-5.6-sol" },
+        },
+        parts: [{ id: `prt_${userId}`, sessionID: sessionId, messageID: userId, type: "text", text: "Show the exit list" }],
+      },
+      {
+        info: {
+          id: assistantId, sessionID: sessionId, role: "assistant", parentID: userId,
+          time: { created: Date.now() - 9_000 },
+          modelID: "gpt-5.6-sol", providerID: "codex", mode: "auto", agent: "build",
+          path: { cwd: dir, root: dir }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "prt_dup_stored", sessionID: sessionId, messageID: assistantId, type: "text", text }],
+      },
+    ] as unknown as MockMessageRow[]
+    const scenario = subagentScenario(subagentHarnessCases.find(item => item.name === "Codex native")!)
+    const task = subagentTaskEnvelope({ sessionId, assistantId, toolCallId: scenario.toolCallId, description: scenario.description })
+    messages[1]!.parts.push(task.payload.properties.part as never)
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages },
+      subagents: { [sessionId]: scenario.fixture.rows },
+      otherSessions: [{ id: otherId, title: "Other session", prompt: "Other prompt", reply: "Other reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    const textRows = page.locator('[data-component="text-part"]').filter({ hasText: text })
+    await expect(textRows).toHaveCount(1)
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await expectAssistantReplyVisible(page, "Other reply")
+    await (await expectRailRowVisible({ page, sessionId })).click()
+    await expect(page).toHaveURL(sessionUrlPattern(sessionId))
+    await expect(textRows).toHaveCount(1)
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "busy" } } } as never, dir)
+    for (const delta of ["QA_LIVE_REPLAY the two-item ", "exit list renders once"]) {
+      mock.emitRuntime({ directory: dir, sessionId, agentSessionId: sessionId, assistantMessageId: assistantId, payload: { harness: "codex", threadId: sessionId, type: "text-delta", delta } as never })
+    }
+    const chip = page.locator(`[data-component="subagent-chip"][data-subagent-key="${scenario.subagentKey}"]`)
+    await expect(chip).toHaveCount(1)
+    mock.emitRuntime({ directory: dir, sessionId, assistantMessageId: assistantId, payload: { type: "tool-start", toolCallId: scenario.toolCallId, toolName: "task" } })
+    // The child completion is on the same raw stream after the replay, making
+    // its visible status an acknowledgement that the earlier frames arrived.
+    completeSubagent(mock, dir, sessionId, scenario.subagentKey)
+    await expect(chip).toHaveCount(1)
+    await expect(chip).toHaveAttribute("data-status", "completed")
+    await expect(textRows).toHaveCount(1)
+    await expect(page.locator('[data-timeline-part-id="prt_dup_stored"]')).toHaveCount(1)
+    await expect(page.locator(`[data-timeline-part-id="000000_${assistantId}-text"]`)).toHaveCount(0)
+    mock.emit({ type: "message.part.delta", properties: { sessionID: sessionId, messageID: assistantId, partID: "prt_dup_stored", field: "text", delta: " Canonical continuation." } } as never, dir)
+    await expect(textRows).toContainText(`${text} Canonical continuation.`)
+    await expect(textRows).toHaveCount(1)
+  })
+
+  test("a settled reply does not re-render its streamed text when the turn's deltas replay", async ({ page }, testInfo) => {
+    const dir = "/tmp/e2e-dup-replay"
+    const sessionId = "ses_dup_replay"
+    const otherId = "ses_dup_replay_other"
+    const userId = "msg_dup_replay"
+    const assistantId = `${userId}_r`
+    const text = "QA_DUP_REPLAY the two-item exit list renders once"
+    // The stored part carries the server's own part id (`prt_…`), not the
+    // client projection's `000000_<msg>-text` mint — a replayed delta cannot
+    // find it, so the projected part is appended as a SECOND copy.
+    const messages = [
+      {
+        info: {
+          id: userId, sessionID: sessionId, role: "user",
+          time: { created: Date.now() - 10_000 },
+          agent: "build", model: { providerID: "codex", modelID: "gpt-5.6-sol" },
+        },
+        parts: [{ id: `prt_${userId}`, sessionID: sessionId, messageID: userId, type: "text", text: "Show the exit list" }],
+      },
+      {
+        info: {
+          id: assistantId, sessionID: sessionId, role: "assistant", parentID: userId,
+          time: { created: Date.now() - 9_000, completed: Date.now() - 8_000 },
+          modelID: "gpt-5.6-sol", providerID: "codex", mode: "auto", agent: "build",
+          path: { cwd: dir, root: dir }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "prt_dup_stored", sessionID: sessionId, messageID: assistantId, type: "text", text }],
+      },
+    ] as unknown as MockMessageRow[]
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages },
+      otherSessions: [{ id: otherId, title: "Other session", prompt: "Other prompt", reply: "Other reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await expectAssistantReplyVisible(page, text, { spec: "core-harness-rendering-matrix", scenario: `dup-before-${testInfo.repeatEachIndex}` })
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await expectAssistantReplyVisible(page, "Other reply", { spec: "core-harness-rendering-matrix", scenario: `dup-away-${testInfo.repeatEachIndex}` })
+    await (await expectRailRowVisible({ page, sessionId })).click()
+    // The runtime stream replays the finished turn's deltas on reattach while
+    // the canonical messages fetch is still in flight: the projection cache was
+    // evicted at finish, so each frame is fresh state — the first announces
+    // message.updated (dropping time.completed off the stored envelope) and
+    // mints a fresh text part (`000000_<msg>-text`) that the REST merge then
+    // keeps alongside the stored part (`prt_…`). Emitting before reload lands
+    // the frames in the bus log; the delayed fetch keeps the store empty while
+    // the reattaching consumer drains them.
+    await page.route("**/session/*/message**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.fallback()
+    })
+    for (const delta of ["QA_DUP_REPLAY the two-item ", "exit list renders once"]) {
+      mock.emitRuntime({ directory: dir, sessionId, agentSessionId: sessionId, assistantMessageId: assistantId, payload: { harness: "codex", threadId: sessionId, type: "text-delta", delta } as never })
+    }
+    const refetched = page.waitForResponse(response =>
+      response.request().method() === "GET"
+      && /\/session\/[^/]+\/message/.test(new URL(response.url()).pathname)
+      && response.status() === 200)
+    await page.reload()
+    await refetched
+    await expectAssistantReplyVisible(page, text, { spec: "core-harness-rendering-matrix", scenario: `dup-restored-${testInfo.repeatEachIndex}` })
+    // The merge order may flip with the fetch landing mid-replay — sample the
+    // count across a window rather than once at the end.
+    let maxCopies = 0
+    await expect
+      .poll(async () => {
+        const n = await page.getByText("QA_DUP_REPLAY", { exact: false }).count()
+        maxCopies = Math.max(maxCopies, n)
+        return n
+      }, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(1)
+    await page.screenshot({ path: testInfo.outputPath("dup-after-replay.png") })
+    expect(maxCopies, "the settled reply's streamed text rendered more than once after its deltas replayed").toBe(1)
   })
 
   test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row", async ({ page }) => {
@@ -900,9 +1444,19 @@ test.describe("core harness rendering matrix @core", () => {
       await expect(chip).toHaveAttribute("data-subagent-role", "spawn")
       await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("working")
 
+      const before = await chip.boundingBox()
+      expect(before).not.toBeNull()
+      expect(before!.width).toBeLessThanOrEqual(448)
+      expect(before!.height).toBe(28)
+
       completeSubagent(primed.mock, primed.dir, primed.sessionId, scenario.subagentKey)
       await expect(chip).toHaveAttribute("data-status", "completed", { timeout: 20_000 })
       await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("done")
+      const after = await chip.boundingBox()
+      expect(after).not.toBeNull()
+      expect(after!.width).toBeLessThanOrEqual(448)
+      expect(after!.height).toBe(before!.height)
+      expect(await chip.evaluate(el => getComputedStyle(el).borderRadius)).toBe("9999px")
 
       if (!input.openable) {
         await expect(chip).toHaveAttribute("aria-label", /, transcript unavailable$/)
@@ -939,7 +1493,53 @@ test.describe("core harness rendering matrix @core", () => {
     })
   }
 
-  test("subagents — below the md boundary the child transcript still docks in the panel, read-only", async ({ page }) => {
+  test("subagents — an interrupted spawn wrapper preserves its admitted child chip through completion", async ({ page }) => {
+    const input = subagentHarnessCases.find((item) => item.name === "Codex native")!
+    const scenario = subagentScenario(input)
+    const primed = await primeHarness(page, input.harness, scenario.fixture)
+    const envelope = subagentTaskEnvelope({
+      sessionId: primed.sessionId,
+      assistantId: primed.assistantId,
+      toolCallId: scenario.toolCallId,
+      description: scenario.description,
+    })
+    await replay(primed.mock, primed.dir, [envelope], primed.assistantInfo)
+    const { chip, openControl } = subagentChip(page, scenario.subagentKey)
+    await expect(chip).toHaveAttribute("data-status", "running")
+    await expect(chip).toHaveCount(1)
+    const before = await chip.boundingBox()
+    expect(before?.height).toBe(28)
+
+    const part = envelope.payload.properties.part
+    primed.mock.emit({
+      type: "message.part.updated",
+      properties: {
+        sessionID: primed.sessionId,
+        time: 3,
+        part: {
+          ...part,
+          state: {
+            status: "error",
+            input: part.state.input,
+            error: "Tool execution interrupted",
+            metadata: {},
+            time: { start: 1, end: 3 },
+          },
+        },
+      },
+    } as never, primed.dir)
+    completeSubagent(primed.mock, primed.dir, primed.sessionId, scenario.subagentKey)
+    await expect(chip).toHaveAttribute("data-status", "completed")
+    await expect(chip).toHaveCount(1)
+    await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("done")
+    expect((await chip.boundingBox())?.height).toBe(before?.height)
+    expect(await chip.evaluate(el => getComputedStyle(el).borderRadius)).toBe("9999px")
+    await openControl.click()
+    await expect(subagentTab(page, scenario.childSessionId!)).toBeVisible()
+    await expect(workspacePanelBody(page).getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible()
+  })
+
+  test("subagents — below the md boundary the child opens read-only and returns to its parent", async ({ page }) => {
     test.slow()
     await page.setViewportSize({ width: 700, height: 900 })
     const input = subagentHarnessCases.find((item) => item.name === "Canonical live transcript fixture")!
@@ -962,24 +1562,15 @@ test.describe("core harness rendering matrix @core", () => {
     await openControl.focus()
     await page.keyboard.press("Enter")
 
-    const shell = page.locator('[data-testid="workspace-panel-shell"]')
-    await expect(shell).toHaveAttribute("data-open", "true", { timeout: 30_000 })
-    await expect(subagentTab(page, scenario.childSessionId!)).toBeVisible({ timeout: 30_000 })
-
-    const panel = workspacePanelBody(page)
-    await expect(panel.locator(`[data-session-timeline-session-id="${scenario.childSessionId}"]`)).toBeVisible({
-      timeout: 30_000,
-    })
-    await expect(panel.getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible()
-    // Read-only: the docked child builds no composer at all, so this width owns no
-    // prompt surface of its own and the parent pane keeps the page's only one.
-    await expect(panel.locator(SELECTORS.submitControl)).toHaveCount(0)
-    await expect(panel.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
-
-    // The panel is a column beside the pane, not a route: the chip that opened it
-    // is still mounted and still holds the keyboard.
+    // The committed narrow-screen policy gives the child the pane rather than
+    // covering the parent with the desktop panel. Exercise its return path too.
+    await expect(page.getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible()
+    await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+    await expect(page.locator(`${SELECTORS.submitControl}:visible`)).toHaveCount(0)
+    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+    await page.getByRole("button", { name: "Back to main session.", exact: true }).click()
     await expect(chip).toBeVisible()
-    await expect(openControl).toBeFocused()
+    await expectAssistantReplyVisible(page, `ack 1: matrix probe ${input.harness}`)
   })
 
   test("subagents — bare Pi capability emits no subagent chip row", async ({ page }) => {

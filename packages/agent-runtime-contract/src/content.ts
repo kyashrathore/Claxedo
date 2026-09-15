@@ -322,7 +322,10 @@ export type AgentQuestion = {
 }
 
 export type AgentCommand = { name: string; content?: string; description?: string; harnessPayload?: unknown }
-export type AgentAgent = { name: string; description?: string; mode?: string; harnessPayload?: unknown }
+// `id` is the executable identity the prompt's `agent` field resolves; `name`
+// is the display label. Catalogs that split the two (OpenCode's `Agent.Info`
+// does) must carry `id` — a submission keyed by the label is rejected.
+export type AgentAgent = { name: string; id?: string; description?: string; mode?: string; harnessPayload?: unknown }
 export type AgentConfigOption = {
   id: string
   name?: string

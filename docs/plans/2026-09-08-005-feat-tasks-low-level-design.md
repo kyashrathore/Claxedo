@@ -58,6 +58,14 @@ type Task = {
   updatedAt: number
 }
 
+type TaskAttachment = {
+  id: string
+  filename: string
+  mime: "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+  size: number // decoded bytes, at most 1,572,864
+  createdAt: number
+}
+
 type TaskSessionLink = {
   taskId: string
   slot: ConfigurationSlot
@@ -70,6 +78,8 @@ type TaskSessionLink = {
   createdAt: number
 }
 ```
+
+Images are first-class attachment rows, not markdown in the description: a task's `description` stays under its 64 KiB text cap and a D1 row cannot hold a screenshot beside it. `task.create` carries them inline as `attachments: { filename, mime, data: base64 }[]` (up to six, each at most 1,572,864 decoded bytes so the hosted row stays under D1's 2,000,000-byte limit; the command request cap is raised to 512 KiB + 12 MiB for that). Only the four image types every harness's prompt inputs carry are admitted, so an attachment never needs a workspace path to reach an agent. `GET /tasks/:id` lists them without bytes; `GET /tasks/:id/attachments/:attachmentId` serves the bytes under the task's own read authority. At Start, the handoff sends them after the text as the same `file` parts the composer sends (`data:` URL), so every harness receives them as prompt images. Attachments are written at create only: `task.edit` does not add or remove them, and they go with the task rather than being archived on their own.
 
 The task's former `sessionRef` column is replaced in this unimplemented design by links unique on `(scopeId, taskId, slot, attempt)`. The highest attempt is the slot's current link. Whether that link is live is read from the canonical session owner at request time; Tasks stores no liveness flag. References include the actual backing host/workspace through the canonical host contract. Task links contain no start phase, lease, execution outcome, model trace or transcript. Preset snapshots and capability pins needed by sessions live with the session/workspace owner; the optional package holds only provenance and navigation references.
 
@@ -116,7 +126,8 @@ Base path remains `/api/claxedo/tasks`; the following paths are relative to it:
 |---|---|
 | `GET /capabilities` | Host-supported placements, instruction/group/selection support and protocol version |
 | `GET /presets`, `GET /presets/:id` | Authorized personal preset catalog/detail |
-| `GET /tasks`, `GET /tasks/:id`, `GET /tasks/:id/children` | Authorized task summaries/detail/children; detail includes authorized links |
+| `GET /tasks`, `GET /tasks/:id`, `GET /tasks/:id/children` | Authorized task summaries/detail/children; detail includes authorized links and the task's attachments without bytes |
+| `GET /tasks/:id/attachments/:attachmentId` | The bytes of one attachment under the task's read authority, with its type and name; immutable, privately cacheable |
 | `POST /commands` | Closed preset/task mutations |
 | `POST /tasks/:id/start-preview` | Host validates preset revision/slot/target and returns resolved settings/availability, whether the slot's current session is live, and whether its transcript is readable for Continue; no provisioning or model calls |
 | `POST /tasks/:id/sessions` | Host creates or returns the canonical session for a slot attempt, saves its link and performs initial handoff; a new attempt is accepted only while the slot's current session is not live |

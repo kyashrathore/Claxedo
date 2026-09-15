@@ -13,6 +13,7 @@ import type { CodexGoalController } from "../codex/goal"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeStreamEvent } from "../../index"
+import { eventSessionId, type CompatEnvelope } from "../../compat-events"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 
 function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
@@ -400,6 +401,8 @@ describe("SdkRuntimeAdapter", () => {
   test("admits revisioned subagent observations and reuses one opaque child target across interaction edges", async () => {
     const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
+    const compat: CompatEnvelope[] = []
+    eventHub.subscribeGlobal((event) => compat.push(event))
     const runtime: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtime.push(event))
     const adapter = new SdkRuntimeAdapter({
@@ -469,6 +472,14 @@ describe("SdkRuntimeAdapter", () => {
       .find((item) => item.parentID === session.id)!
     expect(child.id).not.toBe("provider-child")
     expect(child.agent_session_id).toBe("provider-child")
+    expect(compat.length).toBeGreaterThan(0)
+    expect(compat.every((event) => eventSessionId(event.payload) === child.id)).toBe(true)
+    const rowIndex = compat.findIndex((event) => event.payload.type === "message.updated" && event.payload.properties.info.role === "assistant")
+    const deltaIndex = compat.findIndex((event) => event.payload.type === "message.part.delta")
+    expect(rowIndex).toBeGreaterThanOrEqual(0)
+    expect(deltaIndex).toBeGreaterThan(rowIndex)
+    expect(compat.some((event) => event.payload.type === "message.completed")).toBe(true)
+
     expect(JSON.stringify(store.getMessages(session.id))).not.toContain("child-only")
     expect(JSON.stringify(store.getMessages(child.id))).toContain("child-only")
     await adapter.dispose()
@@ -477,6 +488,8 @@ describe("SdkRuntimeAdapter", () => {
   test("routes child compat output to the child store without yielding it in the parent stream", async () => {
     const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()
+    const compat: CompatEnvelope[] = []
+    eventHub.subscribeGlobal((event) => compat.push(event))
     const runtime: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtime.push(event))
     const adapter = new SdkRuntimeAdapter({
@@ -528,6 +541,11 @@ describe("SdkRuntimeAdapter", () => {
     }, path.resolve("/repo"))) yielded.push(event)
 
     expect(JSON.stringify(yielded)).not.toContain("child-only text")
+    expect(compat.every((event) => eventSessionId(event.payload) === "child-session")).toBe(true)
+    const livePart = compat.find((event) => event.payload.type === "message.part.updated")
+    expect(livePart?.payload.properties).toMatchObject({ part: { messageID: "child-assistant", sessionID: "child-session" } })
+    expect(compat.filter((event) => event.payload.type === "message.part.delta")).toHaveLength(1)
+
     expect(JSON.stringify(store.getMessages(session.id))).not.toContain("child-only text")
     expect(JSON.stringify(store.getMessages("child-session"))).toContain("child-only text")
     expect(runtime).toContainEqual(expect.objectContaining({

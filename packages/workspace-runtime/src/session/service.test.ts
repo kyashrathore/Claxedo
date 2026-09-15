@@ -221,6 +221,52 @@ describe("session service", () => {
     expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
   })
 
+  it("announces the reply row before the first part event on the runtime lane", async () => {
+    const events: CompatEnvelope[] = []
+    await runRuntimePromptTurn({
+      runtime: {
+        turns: {
+          start: async () => ({
+            sessionId: "s1",
+            userMessageId: "msg-user",
+            assistantMessageId: "msg-user_r",
+            directory: "/work",
+            prompt: { parts: [], userMessageId: "msg-user", agent: "build", model: { providerID: "test", modelID: "test" } },
+            delivery: "start",
+          }),
+        },
+        events: {
+          subscribe: () => ({
+            async *[Symbol.asyncIterator]() {
+              yield { payload: { type: "text-delta", delta: "hi" } }
+              yield { payload: { type: "finish", reason: "stop" } }
+            },
+          }),
+          list: async () => [],
+        },
+      } as never,
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [{ type: "text", text: "hello" }] },
+      publishGlobal: (event) => events.push(event),
+      publishStatus: () => {},
+    })
+
+    expect(events.map((event) => event.payload.type)).toEqual([
+      "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+      "message.completed",
+      "session.idle",
+    ])
+    const announce = events[0]?.payload
+    expect(announce?.type === "message.updated" && announce.properties.info.id === "msg-user_r" && announce.properties.info.parentID === "msg-user").toBe(true)
+    if (announce?.type !== "message.updated") throw new Error("missing announce")
+    // The announce stands in for the row turn admission publishes — the same
+    // identity fields, so a merge cannot downgrade a populated row's chips.
+    expect(announce.properties.info).toMatchObject({ agent: "build", modelID: "test", providerID: "test" })
+  })
+
   it("carries the requested permission mode through the durable runtime turn", async () => {
     const starts: unknown[] = []
     await runRuntimePromptTurn({

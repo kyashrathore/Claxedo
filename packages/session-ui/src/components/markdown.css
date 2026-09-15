@@ -423,31 +423,56 @@
     border-bottom: 0.5px solid var(--v2-border-border-base);
   }
 
-  /* Images */
-  img {
-    max-width: 100%;
-    height: auto;
-    border-radius: var(--radius-sm);
-    margin: 1.5rem 0;
-    display: block;
-  }
-
-  /* Stable stand-in for an image that has not (or cannot be) loaded — a
-     fixed single-line box instead of the browser's alt-text/broken-glyph
-     flicker while streaming re-renders the block. */
+  /* Images render as fixed compact tiles: loading, loaded, and failed states
+     occupy the same box, so a late decode or stream re-render cannot shift the
+     transcript. A loaded tile opens the full image. */
+  [data-component="markdown-image-tile"],
   [data-component="markdown-image-fallback"] {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: bottom;
+    width: 80px;
+    height: 80px;
+    margin: 0.25rem 0.25rem 0.25rem 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    overflow: hidden;
+  }
+  [data-component="markdown-image-tile"] {
+    cursor: zoom-in;
+  }
+  [data-component="markdown-image-tile"] > img {
     display: block;
-    margin: 1.5rem 0;
-    padding: 8px 12px;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0.5px solid var(--v2-border-border-base);
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-01);
+    object-fit: cover;
+  }
+  [data-component="markdown-image-fallback"] {
+    padding: 4px;
     border: 0.5px solid var(--v2-border-border-base);
     border-radius: var(--radius-sm);
     background: var(--v2-background-bg-layer-01);
     color: var(--v2-text-text-weak);
-    font-size: var(--font-size-small, 0.85em);
-    line-height: var(--line-height-relaxed);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-12);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  [data-component="markdown-image-fallback"][data-state="loading"]::after {
+    content: "";
+    width: 24px;
+    height: 18px;
+    border: 1px solid var(--v2-border-border-base);
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-02);
   }
 }
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { Hono } from "hono"
+import { encodeAttachmentData } from "../attachments"
 import { TASKS_BOUNDS, TASKS_PROTOCOL_VERSION, type Preset, type Task } from "../contracts"
 import { createTasksCommands } from "../commands"
 import { createMemoryTasksStore } from "../stores/memory"
@@ -132,6 +133,62 @@ describe("tasks routes", () => {
     expect(await json(await app.request(`/tasks/${task.id}/children`))).toMatchObject({ items: [], nextCursor: null })
   })
 
+  test("an image attached at create is listed by detail and served by its own route with its type and name", async () => {
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    const created = await post("/commands", {
+      clientRequestId: "with-image",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: PROJECT,
+          title: "Match the mock",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          attachments: [{ filename: "mock ü.png", mime: "image/png", data: encodeAttachmentData(bytes) }],
+        },
+      },
+    })
+    expect(created.status).toBe(200)
+    const result = (await json(created)).result as { task: Task }
+    const detail = await json(await app.request(`/tasks/${result.task.id}`))
+    expect(detail).toMatchObject({ attachments: [{ id: "attachment-1", filename: "mock ü.png", mime: "image/png", size: 4 }] })
+
+    const served = await app.request(`/tasks/${result.task.id}/attachments/attachment-1`)
+    expect(served.status).toBe(200)
+    expect(served.headers.get("content-type")).toBe("image/png")
+    expect(served.headers.get("content-length")).toBe("4")
+    expect(served.headers.get("content-disposition")).toBe("inline; filename*=UTF-8''mock%20%C3%BC.png")
+    expect(served.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(bytes)
+
+    expect((await app.request(`/tasks/${result.task.id}/attachments/attachment-2`)).status).toBe(404)
+    authorization.denyProject(PROJECT)
+    expect((await app.request(`/tasks/${result.task.id}/attachments/attachment-1`)).status).toBe(403)
+  })
+
+  test("a create whose image is refused names the image and leaves no task", async () => {
+    const refused = await post("/commands", {
+      clientRequestId: "bad-image",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: PROJECT,
+          title: "Match the mock",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          attachments: [{ filename: "mock.svg", mime: "image/svg+xml", data: "PHN2Zz4=" }],
+        },
+      },
+    })
+    expect(refused.status).toBe(400)
+    expect(await json(refused)).toMatchObject({
+      error: { code: "invalid_input", fields: [{ path: "attachments[0].mime", reason: "unknown_value" }] },
+    })
+    expect(await json(await app.request(`/tasks?projectId=${PROJECT}`))).toMatchObject({ items: [] })
+  })
+
   test("a project the actor cannot read is 403 and a task that is not there is 404", async () => {
     const { task } = await seed()
     authorization.denyProject(PROJECT)
@@ -200,6 +257,27 @@ describe("tasks routes", () => {
       headers: { "Content-Type": "application/json", "Content-Length": String(TASKS_BOUNDS.startRequestMaxBytes + 1) },
     })
     expect(response.status).toBe(413)
+  })
+
+  // No Content-Length means no precheck — the stream itself must stop at the
+  // cap, and a chunked producer that never ends must not be drained whole.
+  test("a chunked body with no declared length is refused mid-stream at the cap", async () => {
+    let pulls = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1
+        controller.enqueue(new Uint8Array(TASKS_BOUNDS.startRequestMaxBytes))
+      },
+    })
+    const response = await app.request("/tasks/task-1/start-preview", {
+      method: "POST",
+      // @ts-expect-error — duplex is required for a streaming body
+      duplex: "half",
+      body: stream,
+      headers: { "Content-Type": "application/json" },
+    })
+    expect(response.status).toBe(413)
+    expect(pulls).toBeLessThan(10)
   })
 
   test("preview and start run through the bridge and report the link", async () => {

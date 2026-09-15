@@ -9,6 +9,16 @@ export const contact = "https://discord.gg/GC6QagQ8QE"
 export const github = "https://github.com/kyashrathore/Claxedo"
 export const version = "0.0.65"
 
+export const featured = [
+  {
+    name: "MakeItLast",
+    href: "https://www.makeitla.st/",
+    badge: "https://www.makeitla.st/badge/makeitlast-badge-dark.svg?v=3",
+    width: 252,
+    height: 76,
+  },
+]
+
 const dlBase = `${github}/releases/download/claxedo-v${version}`
 
 // Filenames come from electron-builder's

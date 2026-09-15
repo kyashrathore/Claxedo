@@ -239,3 +239,23 @@ describe("Markdown completed-body first paint", () => {
     await until(() => parse.mock.calls.length > parseCalls)
   })
 })
+
+test("immediate and enhanced Markdown share the same raw-HTML policy", async () => {
+  const source = "Before <kbd>Enter</kbd>\n\n<details><summary>Details</summary>\n**literal content**\n</details>"
+  const view = render(() => (
+    <MarkedProvider>
+      <Markdown text={source} cacheKey="raw-html-policy" />
+    </MarkedProvider>
+  ))
+  const root = view.container.querySelector<HTMLElement>('[data-component="markdown"]')!
+  const first = root.textContent
+  expect(root.querySelector("kbd, details, summary")).toBeNull()
+  expect(first).toContain("<kbd>Enter</kbd>")
+  const mutations: string[] = []
+  const observer = new MutationObserver(() => { mutations.push(root.textContent ?? "") })
+  observer.observe(root, { childList: true, subtree: true, characterData: true })
+  await wait(150)
+  observer.disconnect()
+  expect(root.textContent).toBe(first)
+  expect(mutations.every(text => text === first)).toBe(true)
+})

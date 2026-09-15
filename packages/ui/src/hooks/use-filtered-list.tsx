@@ -95,9 +95,14 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Enter" && !event.isComposing) {
       event.preventDefault()
-      const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
-      const selected = flat()[selectedIndex]
-      if (selected) props.onSelect?.(selected, selectedIndex)
+      const items = flat()
+      const selectedIndex = items.findIndex((x) => props.key(x) === list.active())
+      // `initialActive` is captured while `flat()` is still empty and `reset`
+      // runs in an effect after the async filter resolves, so Enter can land
+      // with items painted but no active key yet — same fallback they use.
+      const fallback = props.noInitialSelection ? undefined : items[0]
+      const selected = items[selectedIndex] ?? fallback
+      if (selected) props.onSelect?.(selected, selectedIndex === -1 ? 0 : selectedIndex)
     } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
       if (event.key === "n" || event.key === "p") {
         event.preventDefault()

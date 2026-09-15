@@ -7,6 +7,7 @@ import { useClaxedoState } from "../state/index"
 import { contentSurface } from "../../integrations/first-party-content-surfaces"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
+import { MainContentReady } from "../../shell-revealed"
 import { useServer } from "@claxedo/app"
 
 export type ContentRendererProps = {
@@ -69,7 +70,15 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
             }
           >
             {(resolved) =>
-              resolved.renderer({
+              <>
+                {/* Session surfaces hold the boot splash until their composer
+                    actually paints — the poll in `BootSplashOverlay` owns that
+                    release; every other surface's content IS the readiness. The
+                    draft's registry type is `draft-session`, not `session`. */}
+                <Show when={m().type !== "session" && m().type !== "draft-session"}>
+                  <MainContentReady />
+                </Show>
+                {resolved.renderer({
                 // Getters, not eager reads: reading `m()` (or `principal()`)
                 // synchronously here subscribes THIS render scope, so every
                 // metadata patch — including a plain title update landing from
@@ -90,7 +99,8 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
                 get canUseDocuments() {
                   return documentsAccess({ principal: principal(), serverUrl: server.url })
                 },
-              })
+              })}
+              </>
             }
           </Show>
         )

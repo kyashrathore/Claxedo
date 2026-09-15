@@ -9,6 +9,7 @@ import {
   type SessionReference,
   type StartPreviewRequest,
   type StartRequest,
+  type TaskAttachmentDraft,
   type TaskListQuery,
   type TasksCommand,
   type TasksCommandRequest,
@@ -34,6 +35,19 @@ function presetDraft(ctx: DecodeContext, row: Record<string, unknown> | undefine
   }
 }
 
+/** Shape only; whether the mime is an image and the data decodes under the cap is the model's rule. */
+function attachmentDrafts(ctx: DecodeContext, value: unknown, path: string): readonly TaskAttachmentDraft[] {
+  const entries = ctx.read.array(value, path) ?? []
+  return entries.map((entry, index) => {
+    const row = ctx.read.record(entry, `${path}[${index}]`)
+    return {
+      filename: ctx.read.string(row?.filename, `${path}[${index}].filename`) ?? "",
+      mime: ctx.read.string(row?.mime, `${path}[${index}].mime`) ?? "",
+      data: ctx.read.string(row?.data, `${path}[${index}].data`) ?? "",
+    }
+  })
+}
+
 function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unknown): TasksCommand {
   const row = ctx.read.record(value, "command.input")
   const path = "command.input."
@@ -56,6 +70,7 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
       const created = row?.status
       if (created !== undefined && !isTaskCreateStatus(created)) ctx.fields.add(`${path}status`, "unknown_value")
       const from = row?.createdFrom
+      const attachments = row?.attachments
       return {
         type: name,
         input: {
@@ -66,6 +81,7 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
           parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}parentTaskId`) ?? null,
           ...(isTaskCreateStatus(created) ? { status: created } : {}),
           ...(from === undefined ? {} : { createdFrom: decodeSessionReference(ctx, from, `${path}createdFrom`) }),
+          ...(attachments === undefined ? {} : { attachments: attachmentDrafts(ctx, attachments, `${path}attachments`) }),
         },
       }
     }

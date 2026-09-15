@@ -99,16 +99,15 @@ export function PromptToolbarControls(props: {
       />
       <PromptPermissionControl
         enabled={() => {
-          if (!props.approveEnabled() || !props.active() || props.harnessPending()) return false
+          if (!props.approveEnabled() || !props.active()) return false
           const groups = props.permissionGroups()
-          if (!groups) return false
-          const current = props.permissionCurrent()
-          if (!current?.id) return false
-          // Hide the trigger until the offered rows include the resolved mode.
-          // A stale selection must not flash while runtime modes are loading.
+          // Harness or report still resolving: show the trigger in its
+          // unresolved "Permissions" state rather than leaving the slot empty —
+          // the control must exist before the reports arrive.
+          if (!groups) return true
           const offered = groups.harness.rows
-          if (offered.length === 0) return false
-          return offered.some((row) => row.option.id === current.id)
+          if (offered.length > 0) return true
+          return groups.harness.loading === true
         }}
         disabled={addDisabled}
         style={props.attachStyle}

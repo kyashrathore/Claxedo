@@ -17,8 +17,11 @@ import {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import {
   createReviewWorkspaceWorkingSetStore,
+  panelReviewWorkingSetKey,
+  workingSetActiveFilePath,
   type ReviewWorkspaceWorkingSetStore,
 } from "../review/review-workspace-working-set"
+import { createPathHelpers } from "@/platform/files/path"
 import { closeSubagentWorkspaceTabsForSession } from "@/features/review/ui/review-workspace-tabs"
 import type { ClaxedoState } from "./types"
 
@@ -50,6 +53,7 @@ function panelPatch(current: WorkspacePanelState, next: WorkspacePanelState) {
     navigator: next.navigator !== current.navigator,
     navigatorHidden: next.navigatorHidden !== current.navigatorHidden,
     focus: !sameFocus(next.focus, current.focus),
+    focusVersion: next.focusVersion !== current.focusVersion,
     activitySubject: !sameActivitySubject(next.activitySubject, current.activitySubject),
   }
 }
@@ -98,6 +102,7 @@ function samePanelState(current: WorkspacePanelState, next: WorkspacePanelState)
     !patch.navigator &&
     !patch.navigatorHidden &&
     !patch.focus &&
+    !patch.focusVersion &&
     !patch.activitySubject
 }
 
@@ -190,12 +195,23 @@ export function createWorkspacePanelSlice(input: {
 
   // Per-provider-instance (a second ClaxedoStateProvider mount no longer shares
   // and cross-contaminates snapshots) and bounded (see MAX_SESSION_PANEL_SNAPSHOTS).
-  const sessionPanelSnapshots = new Map<string, WorkspacePanelState>()
+  // The working set that owns the active file tab is keyed by workspace, not
+  // session, so the per-session snapshot must carry the file the session last
+  // selected or a returning session would inherit whatever the previous
+  // session left active.
+  const sessionPanelSnapshots = new Map<string, { panel: WorkspacePanelState; filePath?: string }>()
   // Same provider-instance ownership as `sessionPanelSnapshots`, and bounded by
   // MAX_REVIEW_WORKSPACE_WORKING_SETS.
   const reviewWorkingSet = createReviewWorkspaceWorkingSetStore()
   const [deletedSession, setDeletedSession] = createSignal<string>()
-  const touchSnapshot = (sessionId: string, snapshot: WorkspacePanelState) => {
+  const activeFilePath = (workspaceDir: string | undefined) => {
+    if (!workspaceDir) return undefined
+    const snapshot = reviewWorkingSet.get(panelReviewWorkingSetKey({ directory: workspaceDir }))
+    const path = createPathHelpers(() => workspaceDir)
+    return workingSetActiveFilePath(snapshot, (tabId) => path.pathFromTab(tabId))
+  }
+
+  const touchSnapshot = (sessionId: string, snapshot: { panel: WorkspacePanelState; filePath?: string }) => {
     // Re-insert so this key becomes the most-recent in insertion order (LRU).
     sessionPanelSnapshots.delete(sessionId)
     sessionPanelSnapshots.set(sessionId, snapshot)
@@ -230,6 +246,7 @@ export function createWorkspacePanelSlice(input: {
         if (patch.navigator) setState("workspacePanel", "navigator", next.navigator)
         if (patch.navigatorHidden) setState("workspacePanel", "navigatorHidden", next.navigatorHidden)
         if (patch.focus) setState("workspacePanel", "focus", next.focus)
+        if (patch.focusVersion) setState("workspacePanel", "focusVersion", next.focusVersion)
         if (patch.activitySubject) setState("workspacePanel", "activitySubject", next.activitySubject)
       })
     },
@@ -264,16 +281,23 @@ export function createWorkspacePanelSlice(input: {
     rememberSession(sessionId) {
       if (!usableSessionId(sessionId)) return
       const current = state.workspacePanel
+      // A file focus still pending delivery is fresher than the working set's
+      // last publish — the workspace has not consumed it yet.
+      const pendingFile = current.focus?.kind === "file" && current.focus.intent === "tab"
+        ? current.focus.path
+        : undefined
       // Closed sessions store a minimal snapshot so restore cannot reopen a
       // stale navigator/mode without a workspace bind (that left Files with
       // zero rows during panel-open session-navigation seeds).
-      touchSnapshot(sessionId, current.open ? snapshotPanel(current) : { open: false })
+      touchSnapshot(sessionId, current.open
+        ? { panel: snapshotPanel(current), filePath: pendingFile ?? activeFilePath(current.workspaceDir) }
+        : { panel: { open: false } })
     },
     restoreSession(sessionId, target) {
       if (!usableSessionId(sessionId)) return false
       const snapshot = sessionPanelSnapshots.get(sessionId)
       const resolved = resolvedTarget(target ?? {})
-      if (!snapshot || !snapshot.open) {
+      if (!snapshot || !snapshot.panel.open) {
         // First visit or last closed on this session: do not inherit the
         // previous session's open Files/Changes/Processes surface.
         if (state.workspacePanel.open) replacePanel(closeWorkspacePanel(state.workspacePanel))
@@ -281,12 +305,31 @@ export function createWorkspacePanelSlice(input: {
       }
       // Mark as recently used so an active session isn't evicted first.
       touchSnapshot(sessionId, snapshot)
+      const workspaceDir = resolved.workspaceDir ?? snapshot.panel.workspaceDir
+      // Re-issue the session's file selection through the focus channel so the
+      // workspace-owned working set reactivates it. The version mints from the
+      // live counter — the snapshot's is stale while other sessions' panels
+      // were open — so it can never collide with a consumed record.
+      const currentFile = activeFilePath(workspaceDir)
+      const focus = snapshot.filePath && snapshot.filePath !== currentFile
+        ? {
+            kind: "file" as const,
+            path: snapshot.filePath,
+            intent: "tab" as const,
+            version: (state.workspacePanel.focusVersion ?? state.workspacePanel.focus?.version ?? 0) + 1,
+          }
+        : snapshot.panel.focus
       replacePanel({
-        ...snapshot,
-        ...(snapshot.focus ? { focus: { ...snapshot.focus } } : {}),
-        ...(snapshot.activitySubject ? { activitySubject: { ...snapshot.activitySubject } } : {}),
-        workspaceDir: resolved.workspaceDir ?? snapshot.workspaceDir,
-        targetPaneId: resolved.targetPaneId ?? snapshot.targetPaneId,
+        ...snapshot.panel,
+        ...(focus ? { focus: { ...focus } } : {}),
+        focusVersion: Math.max(
+          focus?.version ?? 0,
+          state.workspacePanel.focusVersion ?? 0,
+          snapshot.panel.focusVersion ?? 0,
+        ),
+        ...(snapshot.panel.activitySubject ? { activitySubject: { ...snapshot.panel.activitySubject } } : {}),
+        workspaceDir,
+        targetPaneId: resolved.targetPaneId ?? snapshot.panel.targetPaneId,
       })
       return true
     },

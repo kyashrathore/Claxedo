@@ -127,7 +127,7 @@ export async function dispatchNormalPromptSubmit(input: {
       sessionRef: input.sessionRef,
       provisionalTitle: input.provisionalTitle,
       sessionID: input.session.id,
-      addOptimisticMessage: timeline.addSubmittedPrompt,
+      addOptimisticMessage: () => { if (!input.delivery) timeline.addSubmittedPrompt() },
       applyCreatedSessionHandoff: input.applyCreatedSessionHandoff,
       publishCloudHandoff: input.publishCloudHandoff,
     }

@@ -28,6 +28,7 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
     workspaceId: null,
     parentTaskId: null,
     status: props.status ?? ("todo" as TaskCreateStatus),
+    attachments: [],
   })
   const [busy, setBusy] = createSignal(false)
   const [refusal, setRefusal] = createSignal<TasksRefusal | undefined>()

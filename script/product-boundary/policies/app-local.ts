@@ -409,8 +409,26 @@ export const appLocal: Policy = {
   // General settings page beside the account section that already was. No new
   // package edge; the module is the setting's only reader and writer.
   //
-  // Measured 1070 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1070, packages: 58 },
+  // +2 modules (2026-09-15): queued messages drawn in the timeline.
+  // `features/session/queue/queued-messages-controller.ts` owns the runtime
+  // queue query and its send-now / remove / edit controls;
+  // `features/session/ui/timeline-queued-messages.tsx` draws the records after
+  // the last row; `composer/ui/submit-queued-edit.ts` turns a send into a
+  // replace while the draft holds a queued message. The composer overlay
+  // `session-queued-messages.tsx` they replace is gone. No new package edge.
+  //
+  // +1 module (2026-09-15): `features/session/ui/idle-return-scroll.ts` — the
+  // session feature's idle-return scroll policy, reached through
+  // `session-screen.tsx`. Re-measured, no headroom.
+  //
+  // +2 modules (2026-09-14): task images. `features/tasks/ui/dialogs/image-drafts.ts`
+  // reads a pasted, dropped or picked file into the base64 a create carries and
+  // shrinks an oversized one on a canvas; `features/tasks/ui/detail/task-attachments.tsx`
+  // fetches a stored image through the Tasks client and shows it. Both are the
+  // Tasks feature's own, reached from its create form and detail page over the
+  // `@claxedo/tasks` edge this product already carried. No new package edge.
+  // Measured 1075 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1075, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

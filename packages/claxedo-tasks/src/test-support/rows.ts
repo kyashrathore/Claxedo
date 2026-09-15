@@ -4,6 +4,7 @@ import type {
   Preset,
   PresetDraft,
   Task,
+  TaskAttachmentRecord,
   TaskSessionLink,
 } from "../contracts"
 import type { TasksCommandReceipt } from "../ports/store"
@@ -84,6 +85,23 @@ export function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
     archivedAt: input.archivedAt ?? null,
     createdAt: input.createdAt ?? 1_000,
     updatedAt: input.updatedAt ?? 1_000,
+  }
+}
+
+export function attachmentRow(
+  input: Partial<TaskAttachmentRecord> & Pick<TaskAttachmentRecord, "id" | "taskId">,
+): TaskAttachmentRecord {
+  const bytes = input.bytes ?? Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+  return {
+    id: input.id,
+    scopeId: input.scopeId ?? SCOPES.first,
+    taskId: input.taskId,
+    position: input.position ?? 0,
+    filename: input.filename ?? `${input.id}.png`,
+    mime: input.mime ?? "image/png",
+    size: input.size ?? bytes.byteLength,
+    bytes,
+    createdAt: input.createdAt ?? 1_500,
   }
 }
 

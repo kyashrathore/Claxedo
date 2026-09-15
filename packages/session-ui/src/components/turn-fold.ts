@@ -8,7 +8,7 @@ import { isStandaloneTool, type PartGroup, type PartRef } from "./part-groups"
  */
 export type FoldablePartLookup = (ref: PartRef) => FoldablePart | undefined
 
-type FoldablePart = { type: string; tool?: string }
+type FoldablePart = { type: string; tool?: string; userOpen?: boolean }
 
 // A single tool is already one compact, useful row: folding it replaces the only
 // actionable content with an extra click. Grouped runs count as one row because
@@ -107,6 +107,10 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
  * A reader who folds the turn themselves means all of it, expanded rows included: a
  * row left open under a control that reads collapsed contradicts the control.
  */
+function groupMembers(group: PartGroup): PartRef[] {
+  return group.type === "part" ? [group.ref] : group.refs
+}
+
 export function foldedGroupKeys(
   decision: TurnFoldDecision,
   groups: readonly PartGroup[],
@@ -115,5 +119,15 @@ export function foldedGroupKeys(
   if (!decision.folded) return NO_KEYS
   const foldable = groups.filter((group) => isFoldableGroup(group, part))
   const live = decision.canFoldRunning && !decision.explicit ? foldable.at(-1)?.key : undefined
-  return new Set(foldable.filter((group) => group.key !== live).map((group) => group.key))
+  return new Set(
+    foldable
+      .filter(
+        // An automatic fold must not take a row the reader opened themselves;
+        // an explicit fold already means all of it.
+        (group) =>
+          group.key !== live &&
+          (decision.explicit || !groupMembers(group).some((ref) => part(ref)?.userOpen)),
+      )
+      .map((group) => group.key),
+  )
 }

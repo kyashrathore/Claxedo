@@ -28,7 +28,7 @@ import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
-import type { RuntimeSessionBusEvent, SessionPromptBody } from "../session/service"
+import type { QueuedPromptAction, RuntimeSessionBusEvent, SessionPromptBody } from "../session/service"
 import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -269,6 +269,8 @@ export function SessionRoutes(
     body: SessionPromptBody
     author?: AgentMessageAuthor
     actor?: { actorId: string; actorKind: "human" | "agent" }
+    queuedAction?: () => Promise<QueuedPromptAction>
+    onQueuedWaitEnd?: () => void
     onDelivery?: (delivery: PromptDelivery) => void
     onSettled?: () => void
   }): Promise<"started" | "busy"> {
@@ -290,6 +292,8 @@ export function SessionRoutes(
             ...(input.author ? { author: input.author } : {}),
             ...(input.actor ? { actor: input.actor } : {}),
             ...(input.onDelivery ? { onDelivery: input.onDelivery } : {}),
+            queuedAction: input.queuedAction,
+            onQueuedWaitEnd: input.onQueuedWaitEnd,
             onAdmissionSettled: (error) => resolve(isAgentRuntimeTurnConflictError(error) ? "busy" : "started"),
           })
         : (async () => {

@@ -32,6 +32,7 @@ function port(runtimeStore: RuntimeStore, directory: string | undefined): Queued
   return {
     queuePrompt: (input) => runtimeStore.queuePrompt(input),
     deleteQueuedPrompt: (sessionId, seq) => runtimeStore.deleteQueuedPrompt(sessionId, seq),
+    replaceQueuedPromptParts: (sessionId, seq, parts) => runtimeStore.replaceQueuedPromptParts(sessionId, seq, parts),
     listQueuedPrompts: () => runtimeStore.listQueuedPrompts(),
     sessionDirectory: () => directory,
   }

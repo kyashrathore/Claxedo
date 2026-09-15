@@ -43,8 +43,8 @@ export function workGroupSummary(parts: AgentToolPart[]): WorkGroupCounts {
 
 export function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
   const tools = parts.map((part) => canonicalToolName(part.tool))
-  if (tools.some((tool) => EDIT_TOOL_NAMES.has(tool))) return "code-lines"
-  if (tools.some((tool) => WEB_TOOL_NAMES.has(tool))) return "window-cursor"
+  if (tools.some((tool) => EDIT_TOOL_NAMES.has(tool))) return "pencil-line"
+  if (tools.some((tool) => WEB_TOOL_NAMES.has(tool))) return "magnifying-glass"
   if (tools.some((tool) => tool === "bash")) return "terminal"
   const [icon, ...rest] = new Set(parts.map((part) => genericToolIcon(part.tool, part.state.input)))
   return icon && rest.length === 0 ? icon : "wrench"
@@ -67,12 +67,17 @@ function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: UiI18n): s
     const label = toolLabel(first, i18n)
     return pending ? `running ${label}` : label
   }
-  const [name, ...rest] = new Set(parts.map((part) => canonicalToolName(part.tool)))
-  // An MCP or snake_case name does not survive an appended "s".
-  if (!name || rest.length > 0 || !/^[a-z][a-z0-9]*$/.test(name)) {
-    return pending ? "running tools" : `used ${parts.length} tools`
+  const labels = [...new Set(parts.map((part) => toolLabel(part, i18n).toLowerCase()))]
+  const [name] = labels
+  if (labels.length === 1 && name) {
+    // A run of one tool counts by that tool: a pluralizable name keeps the
+    // "ran 2 skills" shape, an opaque one keeps its label verbatim.
+    if (/^[a-z][a-z0-9]*$/.test(name)) {
+      return pending ? `running ${name}s` : `ran ${parts.length} ${name}s`
+    }
+    return pending ? `running ${parts.length} ${name}` : `used ${parts.length} ${name}`
   }
-  return pending ? `running ${name}s` : `ran ${parts.length} ${name}s`
+  return pending ? `running ${labels.join(", ")}` : `used ${labels.join(", ")}`
 }
 
 // Segmented summary: present-continuous while running, past tense when settled;
@@ -102,8 +107,11 @@ export function workGroupTitle(counts: WorkGroupCounts, pending: boolean, i18n: 
  * that member's live summary instead of the settled aggregate — so a long run of tool
  * calls stays ONE row that keeps updating, rather than appending a row per call.
  */
-export function workGroupActiveLabel(parts: AgentToolPart[], i18n: UiI18n): string | undefined {
+export function workGroupActiveLabel(parts: AgentToolPart[], i18n: UiI18n, busy = false): string | undefined {
   const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
+    ?? (busy ? parts.at(-1) : undefined)
+  // `busy` belongs to the trailing group of the active turn. A completed member
+  // does not close that group; the next transcript group or turn completion does.
   if (!active) return undefined
   const input = (active.state.input ?? {})
   const text = (key: string) => (typeof input[key] === "string" ? (input[key]) : undefined)

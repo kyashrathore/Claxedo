@@ -1,9 +1,8 @@
-/** Decodes presentation envelopes and projects the canonical runtime lane. */
+/** Admits canonical presentation events and runtime-only diagnostics. */
 import { isAgentPresentationEventType, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { ClaxedoWorkspaceEvent } from "@/platform/api/claxedo-api-types"
 import {
   createClientPresentationProjection,
-  type ClientPresentationProjection,
 } from "@claxedo/agent-event-runtime/client-presentation"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -13,8 +12,6 @@ import { type RuntimeEventEnvelope } from "./runtime-envelope"
 import { asRecord, readString } from "@/lib/record"
 import { eventDirectoryForLiveSession } from "./live-session"
 import { invalidateSessionGoalData } from "./goal-events"
-
-export type RuntimeProjectionCache = Map<string, ClientPresentationProjection>
 
 export type GlobalSdkEvent = AgentPresentationEvent | ClaxedoWorkspaceEvent
 type Event = GlobalSdkEvent
@@ -84,41 +81,22 @@ export function compatEventEnvelope(input: unknown): { directory?: string; paylo
   }
 }
 
-export function projectRuntimeEventEnvelope(
-  input: RuntimeEventEnvelope,
-  projections: RuntimeProjectionCache = new Map(),
-): Array<{ directory: EventDirectory; payload: Event }> {
-  const assistantMessageId = input.assistantMessageId
-  const key = `${input.sessionId}:${assistantMessageId ?? ""}`
-  const projection = projections.get(key) ?? createClientPresentationProjection({
+/**
+ * Transcript rows and parts arrive on the server's presentation bus. Replaying
+ * raw deltas here would create a second accumulator with different part IDs
+ * whenever this client attaches after the beginning of a turn.
+ *
+ * Routing diagnostics can originate outside a turn projector, so the runtime
+ * lane still admits those through the shared diagnostic formatter. It never
+ * creates a message or retains transcript projection state.
+ */
+export function projectRuntimeDiagnosticEnvelope(input: RuntimeEventEnvelope): Array<{ directory: EventDirectory; payload: Event }> {
+  if (input.payload.type !== "diagnostic") return []
+  return createClientPresentationProjection({
     sessionId: input.sessionId,
-    // A frame that names no reply belongs to the session, not to a turn
-    // (a goal update, a diagnostic, a status). It has no reply row to hang
-    // anything from, so the session's own id stands in for the message id and
-    // nothing is announced — naming a reply the runtime never minted would
-    // invent a turn.
-    assistantMessageId: assistantMessageId ?? input.sessionId,
+    assistantMessageId: input.assistantMessageId ?? input.sessionId,
     directory: input.directory,
-    // Nothing else produces OpenCode-shaped events for this turn here. The
-    // runtime-events lane carries the turn's parts and names the message they
-    // belong to, but never a row for that message, and the transcript store
-    // files a part against an existing row. A turn this client did not start —
-    // anyone attached to a session another client is driving — has no row until
-    // this projection announces one.
-    announcesAssistantMessage: assistantMessageId !== undefined,
-  })
-  const events = projection.ingest(input.payload)
-  if (input.payload.type === "finish" || input.payload.type === "error") {
-    projections.delete(key)
-  } else if (input.payload.type === "session-agent" || events.some((event) => event.payload.type.startsWith("message."))) {
-    // Message parts/steps and the announced agent need state across frames.
-    // Late metadata can project independently without retaining a completed turn.
-    projections.set(key, projection)
-  }
-  return events.map((event) => ({
-    directory: input.directory,
-    payload: event.payload as Event,
-  }))
+  }).ingest(input.payload).map((event) => ({ directory: input.directory, payload: event.payload as Event }))
 }
 
 export function runtimeReplayGap(input: RuntimeEventEnvelope) {
@@ -129,13 +107,11 @@ export function runtimeReplayGap(input: RuntimeEventEnvelope) {
 
 export function resetRuntimeReplayGapState(input: {
   envelope: RuntimeEventEnvelope
-  projections?: RuntimeProjectionCache
   baseUrl?: string
   liveSession?: LiveSession
   subagents?: SubagentRegistry
   goalScope?: Parameters<typeof invalidateSessionGoalData>[0]
 }) {
-  input.projections?.clear()
   input.subagents?.replayGap()
   const directory = eventDirectoryForLiveSession({
     directory: input.envelope.directory,

@@ -411,24 +411,6 @@
     height: auto;
     overflow-y: auto;
 
-    /* Always painted, not hover-revealed: this block carries no other overflow cue,
-       so a hidden bar reads as a truncated result rather than a scrollable one. */
-    scrollbar-width: thin;
-    scrollbar-color: var(--v2-border-border-strong) transparent;
-
-    &::-webkit-scrollbar {
-      width: 8px;
-    }
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    &::-webkit-scrollbar-thumb {
-      background: var(--v2-border-border-strong);
-      border-radius: var(--radius-sm);
-      border: 2px solid transparent;
-      background-clip: padding-box;
-    }
-
     .ui-markdown {
       overflow: visible;
     }
@@ -504,34 +486,6 @@
     width: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-
-    /* Discoverable scrollability (T20): thin transparent-track scrollbar that surfaces
-       on hover instead of the fully hidden bar. */
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-    transition: scrollbar-color 0.15s ease;
-
-    &::-webkit-scrollbar {
-      width: 8px;
-    }
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    &::-webkit-scrollbar-thumb {
-      background: transparent;
-      border-radius: var(--radius-sm);
-      border: 2px solid transparent;
-      background-clip: padding-box;
-    }
-  }
-
-  &:hover .ui-bash-scroll {
-    scrollbar-color: var(--border-weak-base) transparent;
-
-    &::-webkit-scrollbar-thumb {
-      background: var(--border-weak-base);
-      background-clip: padding-box;
-    }
   }
 
   [data-slot="bash-pre"] {
@@ -791,14 +745,6 @@
   [data-component="tool-part-wrapper"] {
     min-width: 0;
     padding: 0;
-  }
-
-  /* Members render through their own tool renderer; the leading icon goes so nesting
-     reads as one indented list, not a second stack of rows. The chevron keeps its slot —
-     collapsible.css holds it at opacity 0 until the row is hovered or open, and these
-     rows do toggle, so removing it left the only sign of that gone. */
-  .ui-basic-tool-tool-leading-icon {
-    display: none;
   }
 
   [data-component="tool-part-wrapper"]:focus-within .ui-collapsible-arrow {
@@ -1776,6 +1722,29 @@ body:not([data-new-layout]) {
 
   .ui-tool-loaded-file {
     color: var(--text-weak);
+  }
+}
+
+/* Every capped tool result exposes its scroll range without requiring hover. */
+.ui-scrollable-output,
+.ui-work-group-list {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--text-weaker);
+    border-radius: var(--radius-sm);
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 }
 

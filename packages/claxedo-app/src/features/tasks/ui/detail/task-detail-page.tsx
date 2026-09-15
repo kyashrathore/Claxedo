@@ -7,6 +7,7 @@ import {
   type TaskStatus,
 } from "@claxedo/tasks"
 import { groupLinksBySlot, slotAttempt } from "../../view-model"
+import { TaskAttachmentGallery } from "./task-attachments"
 import { TaskDetail } from "./task-detail"
 import { TaskSubtasks } from "./task-subtasks"
 import { uuid } from "@/lib/uuid"
@@ -188,6 +189,12 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
                   }),
                 current().id,
               )
+            }
+            attachments={
+              <TaskAttachmentGallery
+                attachments={detail.data?.attachments ?? []}
+                read={(attachmentId) => client().readAttachment(current().id, attachmentId)}
+              />
             }
             // Absent on a subtask: subtasks are one level deep, so there is no
             // section to show rather than a section that explains itself away.

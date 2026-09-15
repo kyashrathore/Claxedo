@@ -161,11 +161,12 @@ export type ClaxedoDirectoryEvent = { [Type in ClaxedoDirectoryEventType]: {
 type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventOf<T extends ClaxedoEventType> = Extract<ClaxedoEvent, { type: T }>
 
-type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>) => void
+export type ClaxedoEventOrigin = "central" | "workspace"
+type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>, origin: ClaxedoEventOrigin) => void
 
 // ─── Event Emitter ────────────────────────────────────────────────────────
 
-function createEventEmitter() {
+export function createClaxedoEventEmitter() {
   const handlers = new Map<ClaxedoEventType, Set<Handler<ClaxedoEventType>>>()
   const listeners = new Set<(event: ClaxedoEvent) => void>()
 
@@ -192,7 +193,7 @@ function createEventEmitter() {
       if (!set) return
       for (const handler of set) {
         try {
-          handler(event as ClaxedoEventOf<ClaxedoEventType>)
+          handler(event as ClaxedoEventOf<ClaxedoEventType>, source)
         } catch {
         }
       }
@@ -341,7 +342,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   serverUrl: () => string
   accountState: () => AccountState
 }>) {
-  const emitter = createEventEmitter()
+  const emitter = createClaxedoEventEmitter()
   const connectivity = createStreamConnectivity()
 
   const connections = new Map<string, () => void>()

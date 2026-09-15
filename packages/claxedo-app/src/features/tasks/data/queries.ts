@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createEffect, createMemo, type Accessor } from "solid-js"
-import type { Page, Preset, Task, TaskSummary, TasksCapabilities, TaskSessionLinkView } from "@claxedo/tasks"
+import type { Page, Preset, TaskDetailResponse, TaskSummary, TasksCapabilities } from "@claxedo/tasks"
 import type { ListFailure } from "../ui/shared/list-failure"
 import type { MorePages } from "../ui/shared/load-more"
 import { useTasksAppPorts, type TasksScope } from "../app-ports"
@@ -151,7 +151,7 @@ export function useTaskList(
   })
 }
 
-export type TaskDetail = { task: Task; links: readonly TaskSessionLinkView[] }
+export type TaskDetail = TaskDetailResponse
 
 export function useTaskDetail(scope: Accessor<TasksScope>, taskId: Accessor<string | undefined>) {
   const client = useTasksClient()

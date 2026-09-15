@@ -57,9 +57,12 @@ describe("markdown stream", () => {
     ])
   })
 
-  test("keeps a growing table together until a later block freezes it", () => {
-    expect(stream("| a | b |\n|---|---|\n| 1 | 2 |", true)).toEqual([
-      { raw: "| a | b |\n|---|---|\n| 1 | 2 |", src: "| a | b |\n|---|---|\n| 1 | 2 |", mode: "live" },
+  test("renders a growing table before a later block proves its boundary", () => {
+    const text = "| a | b |\n|---|---|\n| 1 | 2 |"
+    expect(stream(text, true)).toEqual([{ raw: text, src: text, mode: "live" }])
+    expect(stream("| a | b |\n|---|---|\n| 1 | 2 |\n\nDone", true)).toEqual([
+      { raw: "| a | b |\n|---|---|\n| 1 | 2 |\n\n", src: "| a | b |\n|---|---|\n| 1 | 2 |\n\n", mode: "full" },
+      { raw: "Done", src: "Done", mode: "live" },
     ])
   })
 

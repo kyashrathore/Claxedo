@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
+import { encodeAttachmentData } from "../attachments"
 import { TASKS_PROTOCOL_VERSION, TASKS_ROUTE_PATH, type Preset, type Task } from "../contracts"
 import { createTasksRoutes } from "../http/routes"
 import { createMemoryTasksStore } from "../stores/memory"
@@ -95,12 +96,43 @@ describe("tasks client over the real routes", () => {
     const detail = await client.getTask(task.id)
     expect(detail.task.id).toBe(task.id)
     expect(detail.links).toEqual([])
+    expect(detail.attachments).toEqual([])
 
     const list = await client.listTasks({ projectId: PROJECT, parent: "root" })
     expect(list.items.map((row) => row.title)).toEqual(["Ship the thing"])
 
     const children = await client.listChildren(task.id)
     expect(children.items.map((row) => row.title)).toEqual(["Child"])
+  })
+
+  test("an image sent with a create is listed by detail and read back as a blob of its type", async () => {
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    const created = await client.command({
+      clientRequestId: "request-with-image",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: PROJECT,
+          title: "Match the mock",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          attachments: [{ filename: "mock.png", mime: "image/png", data: encodeAttachmentData(bytes) }],
+        },
+      },
+    })
+    if (created.result.type !== "task.create") throw new Error("unexpected result")
+
+    const detail = await client.getTask(created.result.task.id)
+    expect(detail.attachments).toMatchObject([{ id: "attachment-1", filename: "mock.png", mime: "image/png", size: 4 }])
+
+    const blob = await client.readAttachment(created.result.task.id, "attachment-1")
+    expect(blob.type).toBe("image/png")
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes)
+
+    const missing = await client.readAttachment(created.result.task.id, "attachment-2").catch((error: unknown) => error)
+    expect(missing).toBeInstanceOf(TasksApiError)
+    expect((missing as TasksApiError).code).toBe("not_found")
   })
 
   test("pages with the cursor the server returned", async () => {

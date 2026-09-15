@@ -466,7 +466,15 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       ...(harnessExecutionId ? { harnessExecutionId } : {}),
       toolCallId: sole.toolCallId,
       toolCallRole: "spawn" as const,
-      status: result?.status === "completed" ? "completed" as const : "running" as const,
+      // `forked` delivers the call's result through a forked execution — the
+      // delegation is done; no `task_notification` ever follows for it, so
+      // leaving it `running` strands the row until the turn-end sweep marks it
+      // interrupted. `async_launched` is the only result that keeps working.
+      status: result?.status === "completed" || result?.status === "forked"
+        ? "completed" as const
+        : result?.status === "failed" || result?.status === "error"
+          ? "failed" as const
+          : "running" as const,
       ...(result?.status === "async_launched" ? { mode: "background" as const } : {}),
       providerId: agentId,
       providerKind: "claude-agent",

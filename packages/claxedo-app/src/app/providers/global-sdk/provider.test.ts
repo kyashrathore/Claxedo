@@ -15,7 +15,7 @@ import {
   runtimeEventLiveSession,
   nextLiveSession,
   partUpdateSupersedesDeltas,
-  projectRuntimeEventEnvelope,
+  projectRuntimeDiagnosticEnvelope,
   resetRuntimeReplayGapState,
   runtimeEnvelope,
   runtimeReplayGap,
@@ -202,78 +202,6 @@ describe("global sdk event fetch", () => {
     expect(sessionError.error?.data?.message).toContain(`requires v${AGENT_RUNTIME_EVENT_CONTRACT_VERSION}`)
   })
 
-  test("projects normalized runtime event envelopes into OpenCode-shaped events", () => {
-    const events = projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "msg_turn_1_r",
-      payload: { type: "text-delta", delta: "hello" },
-    })
-
-    expect(events).toEqual([
-      // The row the parts hang from comes FIRST. The transcript store files a
-      // part against an existing message, so a viewer that has never seen this
-      // reply — anyone attached to a session another client is driving — has
-      // nothing to attach to without it.
-      {
-        directory: "/repo/main",
-        payload: {
-          id: "message.updated:msg_turn_1_r",
-          type: "message.updated",
-          properties: {
-            sessionID: "runtime-session-1",
-            info: {
-              id: "msg_turn_1_r",
-              sessionID: "runtime-session-1",
-              role: "assistant",
-              time: { created: expect.any(Number) },
-              parentID: "msg_turn_1",
-              modelID: "",
-              providerID: "",
-              mode: "auto",
-              agent: "",
-              path: { cwd: "/repo/main", root: "/repo/main" },
-              cost: 0,
-              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-            },
-          },
-        },
-      },
-      {
-        directory: "/repo/main",
-        payload: {
-          id: "message.part.updated:msg_turn_1_r:000000_msg_turn_1_r-text",
-          type: "message.part.updated",
-          properties: {
-            sessionID: "runtime-session-1",
-            time: expect.any(Number),
-            part: {
-              id: "000000_msg_turn_1_r-text",
-              sessionID: "runtime-session-1",
-              messageID: "msg_turn_1_r",
-              type: "text",
-              text: "",
-            },
-          },
-        },
-      },
-      {
-        directory: "/repo/main",
-        payload: {
-          id: "message.part.delta:msg_turn_1_r:000000_msg_turn_1_r-text",
-          type: "message.part.delta",
-          properties: {
-            sessionID: "runtime-session-1",
-            messageID: "msg_turn_1_r",
-            partID: "000000_msg_turn_1_r-text",
-            field: "text",
-            delta: "hello",
-          },
-        },
-      },
-    ])
-  })
 
   test("admits subagent envelopes beside projection while compat projection remains empty", () => {
     const registry = createSubagentRegistry()
@@ -294,7 +222,7 @@ describe("global sdk event fetch", () => {
     expect(registry.get("runtime-session-1", "child-1")).toMatchObject({
       childSessionId: "child-session-1",
     })
-    expect(projectRuntimeEventEnvelope(envelope)).toEqual([])
+    expect(projectRuntimeDiagnosticEnvelope(envelope)).toEqual([])
   })
 
   test("session delete removes subagents and parent abort interrupts only foreground children", () => {
@@ -327,64 +255,7 @@ describe("global sdk event fetch", () => {
     expect(registry.list("parent-1")).toEqual([])
   })
 
-  test("reuses runtime projections by root session while routing events to the current directory", () => {
-    const projections = new Map()
-    projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/first",
-      sessionId: "ses_sdk_1",
-      assistantMessageId: "assistant-1",
-      payload: { type: "text-delta", delta: "hello" },
-    }, projections)
 
-    const events = projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/alias",
-      sessionId: "ses_sdk_1",
-      assistantMessageId: "assistant-1",
-      payload: { type: "text-delta", delta: " again" },
-    }, projections)
-
-    expect(projections.size).toBe(1)
-    expect(events.map((event) => event.directory)).toEqual(["/repo/alias"])
-    expect(events[0]?.payload.type).toBe("message.part.delta")
-  })
-
-  test("keeps runtime projection state across step-start when the envelope key is stable", () => {
-    const projections = new Map()
-    projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "msg_turn_1_r",
-      payload: { type: "step-start", newMessageId: "assistant-2" },
-    }, projections)
-
-    const events = projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "msg_turn_1_r",
-      payload: { type: "text-delta", delta: "after step" },
-    }, projections)
-
-    expect(projections.size).toBe(1)
-    // A step moves the turn onto a message the engine named, and that message
-    // answers the same prompt — the row the lane announces for it is parented
-    // on the turn's user message, not on the step it followed.
-    expect(events[0]?.payload).toMatchObject({
-      type: "message.updated",
-      properties: { info: { id: "assistant-2", parentID: "msg_turn_1" } },
-    })
-    expect(events[1]?.payload).toMatchObject({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          messageID: "assistant-2",
-        },
-      },
-    })
-  })
 
   test("parses compat SSE envelopes without treating heartbeat frames as events", () => {
     expect(compatEventEnvelope({ type: "heartbeat" })).toBeUndefined()
@@ -428,19 +299,6 @@ describe("global sdk event fetch", () => {
     expect(compatEventEnvelope({ type: "pty.created", info: { id: "terminal-one" } })).toBeUndefined()
   })
 
-  test("projects every canonical session id without a harness or prefix exception", () => {
-    for (const sessionId of ["ses_1", "runtime-session-1"]) {
-      const events = projectRuntimeEventEnvelope({
-        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-        directory: "/repo/main",
-        sessionId,
-        assistantMessageId: "reply",
-        payload: { type: "text-delta", delta: "hello" },
-      })
-      expect(events.find((event) => event.payload.type === "message.part.delta")?.payload.properties)
-        .toMatchObject({ sessionID: sessionId, delta: "hello" })
-    }
-  })
 
   test("detects runtime replay gap notices", () => {
     expect(runtimeReplayGap({
@@ -471,8 +329,7 @@ describe("global sdk event fetch", () => {
     })).toBe(false)
   })
 
-  test("runtime replay gaps reset projections and invalidate session read models", async () => {
-    const projections = new Map([["runtime-session-1:assistant-1", {} as never]])
+  test("runtime replay gaps clear subagent state and invalidate session read models", async () => {
     const subagents = createSubagentRegistry()
     subagents.apply("runtime-session-1", {
       type: "subagent-updated",
@@ -506,13 +363,11 @@ describe("global sdk event fetch", () => {
           message: "Replay cursor is stale",
         },
       },
-      projections,
       baseUrl: "http://claxedo.test",
       subagents,
       goalScope,
     })
 
-    expect(projections.size).toBe(0)
     expect(subagents.list()).toEqual([])
     expect(queryClient.getQueryState(rowKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(messagesKey)?.isInvalidated).toBe(true)

@@ -60,6 +60,7 @@ import {
   type AdmittedSessionPromptTurn,
   type RuntimeSessionBusEvent,
   parseSessionPromptBody,
+  type QueuedPromptAction,
   type SessionPromptBody,
   type SessionPromptTurnResult,
   type SessionTurnRefusalCode,
@@ -455,7 +456,7 @@ type Opts = {
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   /** Where a prompt admitted behind a running turn is persisted while it waits. */
-  queuedPrompts?: Pick<QueuedPromptHost, "queue">
+  queuedPrompts?: QueuedPromptHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
@@ -2133,6 +2134,21 @@ export function createSessionRoutes(opts: Opts) {
       }, directory)
       return c.json({ ok: true })
     })
+    .get("/session/:id/queue", async (c) => {
+      const id = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
+      if (guarded) return guarded
+      return c.json((opts.queuedPrompts?.list(id) ?? []).map(({ seq, parts, messageId, queuedAt, held }) => ({ seq, parts, messageId, queuedAt, held })))
+    })
+    .post("/session/:id/queue/:seq/:action", async (c) => {
+      const id = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
+      if (guarded) return guarded
+      const action = queuedPromptAction(c.req.param("action"), await c.req.json().catch(() => undefined))
+      if (!action) return c.json({ error: "Unknown queue action" }, 400)
+      return opts.queuedPrompts?.control(id, Number(c.req.param("seq")), action)
+        ? c.json({ ok: true }) : c.json({ error: "Queued message already admitted or removed" }, 409)
+    })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, id, "prompt")
@@ -2187,7 +2203,7 @@ export function createSessionRoutes(opts: Opts) {
         // A queued prompt waits inside this request, so it would die with the
         // process. The durable row outlives it and is dropped again the moment
         // the prompt becomes a turn.
-        let queued: { release: () => void } | undefined
+        let queued: ReturnType<QueuedPromptHost["queue"]> | undefined
         const observeDelivery = (delivery: PromptDelivery) => {
           deliveredAs = delivery
           if (delivery === "queue") {
@@ -2226,6 +2242,12 @@ export function createSessionRoutes(opts: Opts) {
             streamErrorMessage: streamTurnErrorMessage,
             onAdmissionSettled: settleAdmission,
             onDelivery: observeDelivery,
+            onQueuedWaitEnd: () => queued?.clearAction(),
+            queuedAction: async () => {
+              const action = await (queued?.action() ?? new Promise<QueuedPromptAction>(() => {}))
+              if (action === "cancel") { queued?.release(); queued = undefined }
+              return action
+            },
             actor: access.actor,
             author: access.author,
           })
@@ -2461,4 +2483,11 @@ export function createSessionRoutes(opts: Opts) {
   }
 
   return app
+}
+
+function queuedPromptAction(action: string, body: unknown): QueuedPromptAction | undefined {
+  if (action === "cancel" || action === "steer" || action === "hold" || action === "release") return action
+  if (action !== "replace") return undefined
+  const parts = parseSessionPromptBody(body).parts
+  return parts?.length ? { replace: parts } : undefined
 }

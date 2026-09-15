@@ -153,7 +153,7 @@ const HiddenRouteOutlet = () => <div class="hidden" />
 function BootSplash() {
   return (
     <div class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-      <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
+      <ClaxedoSplash class="w-16 h-20 opacity-50" />
     </div>
   )
 }

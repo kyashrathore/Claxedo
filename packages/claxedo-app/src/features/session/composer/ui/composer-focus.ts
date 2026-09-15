@@ -12,15 +12,24 @@
 // (an outgoing one kept `visibility:hidden` for animation, plus the live one),
 // so we skip hidden/aria-hidden nodes and only focus a live, editable one.
 
+function liveComposerEditors(doc: Document, options?: { sessionId?: string }): HTMLElement[] {
+  return Array.from(doc.querySelectorAll<HTMLElement>('[data-component="prompt-input"]')).filter((node) => {
+    if (node.getAttribute("contenteditable") !== "true") return false
+    if (node.getAttribute("aria-hidden") === "true") return false
+    if (options?.sessionId && node.closest<HTMLElement>("[data-session-id]")?.dataset.sessionId !== options.sessionId) return false
+    const style = doc.defaultView?.getComputedStyle(node)
+    return !style || style.visibility !== "hidden"
+  })
+}
+
+/** The first visible, editable composer editor node, if one is live. */
+export function visibleComposerEditor(doc: Document = document, options?: { sessionId?: string }): HTMLElement | undefined {
+  return liveComposerEditors(doc, options)[0]
+}
+
 /** Focus the first visible, editable composer editor. Returns whether one was focused. */
 export function focusComposerSurface(doc: Document = document, options?: { sessionId?: string }): boolean {
-  const nodes = Array.from(doc.querySelectorAll<HTMLElement>('[data-component="prompt-input"]'))
-  for (const node of nodes) {
-    if (node.getAttribute("contenteditable") !== "true") continue
-    if (node.getAttribute("aria-hidden") === "true") continue
-    if (options?.sessionId && node.closest<HTMLElement>("[data-session-id]")?.dataset.sessionId !== options.sessionId) continue
-    const style = doc.defaultView?.getComputedStyle(node)
-    if (style && style.visibility === "hidden") continue
+  for (const node of liveComposerEditors(doc, options)) {
     node.focus()
     if (doc.activeElement === node) return true
   }

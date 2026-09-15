@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { blob, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 
 /**
  * Every table is keyed by `scope_id` first. On this host that value is the
@@ -54,6 +54,29 @@ export const ClaxedoTaskTable = sqliteTable(
     index("claxedo_task_project_page_idx").on(table.scope_id, table.project_id, table.created_at, table.task_id),
     index("claxedo_task_child_page_idx").on(table.scope_id, table.parent_task_id, table.created_at, table.task_id),
     uniqueIndex("claxedo_task_number_idx").on(table.scope_id, table.project_id, table.number),
+  ],
+)
+
+/**
+ * One image per row, bytes inline: an attachment is bounded to what one row
+ * holds on every host, so there is no second store to keep in step with it.
+ */
+export const ClaxedoTaskAttachmentTable = sqliteTable(
+  "claxedo_task_attachment",
+  {
+    scope_id: text().notNull(),
+    task_id: text().notNull(),
+    attachment_id: text().notNull(),
+    position: integer().notNull(),
+    filename: text().notNull(),
+    mime: text().notNull(),
+    size: integer().notNull(),
+    bytes: blob({ mode: "buffer" }).notNull(),
+    created_at: integer().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scope_id, table.task_id, table.attachment_id] }),
+    index("claxedo_task_attachment_task_idx").on(table.scope_id, table.task_id, table.position),
   ],
 )
 

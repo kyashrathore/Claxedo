@@ -15,11 +15,14 @@ import {
   PRESET_PLACEMENTS,
   isConfigurationSlot,
   isSessionStarter,
+  isTaskAttachmentMime,
   isTasksCommandName,
   type Preset,
   type PresetPlacement,
   type SessionReference,
   type Task,
+  type TaskAttachment,
+  type TaskAttachmentRecord,
   type TaskSessionLink,
   type TasksCommandReceipt,
 } from "@claxedo/tasks"
@@ -81,6 +84,24 @@ export type StoredLinkColumns = {
   placement: string
   created_at: number
 }
+
+/** The row without its bytes, which a list read never selects. */
+export type StoredAttachmentColumns = {
+  scope_id: string
+  task_id: string
+  attachment_id: string
+  position: number
+  filename: string
+  mime: string
+  size: number
+  created_at: number
+}
+
+/**
+ * `bytes` as each driver hands a BLOB back: a `Buffer` from better-sqlite3 and
+ * bun:sqlite, an `ArrayBuffer` from D1.
+ */
+export type StoredAttachmentRow = StoredAttachmentColumns & { bytes: Uint8Array | ArrayBuffer }
 
 export type StoredReceiptColumns = {
   scope_id: string
@@ -240,6 +261,49 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
     startedBy: row.started_by,
     placement: row.placement,
     createdAt: row.created_at,
+  }
+}
+
+export function attachmentColumns(attachment: TaskAttachmentRecord): StoredAttachmentRow {
+  return {
+    scope_id: attachment.scopeId,
+    task_id: attachment.taskId,
+    attachment_id: attachment.id,
+    position: attachment.position,
+    filename: attachment.filename,
+    mime: attachment.mime,
+    size: attachment.size,
+    bytes: attachment.bytes,
+    created_at: attachment.createdAt,
+  }
+}
+
+export function attachmentOfColumns(row: StoredAttachmentColumns): TaskAttachment {
+  if (!isTaskAttachmentMime(row.mime)) {
+    throw new TasksStoredRowError(`Stored task attachment ${row.attachment_id} names an unknown type ${row.mime}`)
+  }
+  return {
+    id: row.attachment_id,
+    filename: row.filename,
+    mime: row.mime,
+    size: row.size,
+    createdAt: row.created_at,
+  }
+}
+
+export function attachmentOfRow(row: StoredAttachmentRow): TaskAttachmentRecord {
+  const bytes = row.bytes instanceof Uint8Array ? row.bytes : new Uint8Array(row.bytes)
+  if (bytes.byteLength !== row.size) {
+    throw new TasksStoredRowError(
+      `Stored task attachment ${row.attachment_id} holds ${bytes.byteLength} bytes but records ${row.size}`,
+    )
+  }
+  return {
+    ...attachmentOfColumns(row),
+    scopeId: row.scope_id,
+    taskId: row.task_id,
+    position: row.position,
+    bytes,
   }
 }
 

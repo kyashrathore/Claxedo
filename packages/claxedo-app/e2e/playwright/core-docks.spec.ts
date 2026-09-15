@@ -6,7 +6,10 @@
  * permission resolution, so dock and reply are asserted as independent facts.
  */
 import { expect, test, type Page } from "@playwright/test"
+import { writeFile } from "node:fs/promises"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
+import { sampleElementDuringAction } from "../helpers/geometry-oracle"
+import { expectRailRowVisible } from "../helpers/rail-oracle"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-docks"
@@ -150,6 +153,55 @@ function composerTextbox(page: Page) {
 }
 
 test.describe("core docks — permission @core", () => {
+  test("an approved Codex permission stays absent after switching sessions and replaying runtime events", async ({ page }, testInfo) => {
+    const otherSessionId = "ses_permission_other"
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, harness: "codex-app-server",
+      otherSessions: [{ id: otherSessionId, title: "Other permission session", prompt: "Other prompt", reply: "Other completed reply" }],
+    })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+    await sendMessage(page, "permission replay probe")
+    await expectAssistantReplyVisible(page, "ack 1: permission replay probe", { spec: "core-docks", scenario: `permission-first-${testInfo.repeatEachIndex}` })
+    const requestId = "permission_runtime_replay"
+    mock.emit({
+      type: "permission.asked",
+      properties: { id: requestId, sessionID: SESSION_ID, permission: "command", patterns: ["/tmp/qa-permission"], metadata: { command: "printf QA > /tmp/qa-permission" }, always: [] },
+    })
+    mock.emitRuntime({
+      directory: DIR, sessionId: SESSION_ID,
+      payload: { type: "permission-request", requestId, tool: "command", paths: ["/tmp/qa-permission"], details: { command: "printf QA > /tmp/qa-permission" } },
+    })
+    await expect(permissionDock(page)).toBeVisible({ timeout: 20_000 })
+    await page.getByRole("button", { name: "Allow once", exact: true }).click()
+    await expect.poll(() => mock.requests.permissionResponses).toEqual(["once"])
+    mock.emit({ type: "permission.replied", properties: { sessionID: SESSION_ID, requestID: requestId } })
+    await expect(permissionDock(page)).toHaveCount(0)
+    const otherRow = await expectRailRowVisible({ page, sessionId: otherSessionId })
+    const otherStream = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname.endsWith("/api/wr/runtime-events") && url.searchParams.get("parentSessionId") === otherSessionId && response.status() === 200
+    })
+    await otherRow.click()
+    await expect(page).toHaveURL(sessionUrlPattern(otherSessionId))
+    await otherStream
+    await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-docks", scenario: `permission-other-${testInfo.repeatEachIndex}` })
+    const row = await expectRailRowVisible({ page, sessionId: SESSION_ID })
+    const samples = await sampleElementDuringAction(page, '[data-component="dock-prompt"][data-kind="permission"]', async () => {
+      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/runtime-events") && response.status() === 200 && (await response.text()).includes(requestId))
+      await row.click()
+      await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
+      await replay
+      await expectAssistantReplyVisible(page, "ack 1: permission replay probe", { spec: "core-docks", scenario: `permission-return-${testInfo.repeatEachIndex}` })
+    })
+    await writeFile(testInfo.outputPath("permission-return-frames.json"), JSON.stringify(samples, null, 2))
+    await page.screenshot({ path: testInfo.outputPath("permission-return.png") })
+    expect(mock.requests.permissionResponses).toEqual(["once"])
+    expect(mock.requests.unhandled).toEqual([])
+    expect(samples.length).toBeGreaterThan(2)
+    expect(samples.filter(sample => sample.visible > 0), "approved permission repaints during rail return").toEqual([])
+  })
+
   test("permission dock blocks the composer; Allow once resolves it and the in-flight turn still completes visibly", async ({
     page,
   }) => {
@@ -279,9 +331,144 @@ test.describe("core docks — permission @core", () => {
     await expect(composerTextbox(page)).toHaveCount(0)
     expect(counters.permissionRespond.count).toBe(2)
   })
+
+  test("a child session's permission request reaches a decision dock on the parent", async ({ page }, testInfo) => {
+    const childId = "ses_child_permission"
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID,
+      harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+      existingSession: { prompt: "parent prompt", reply: "parent reply" },
+      childSessions: [{ id: childId, parentId: SESSION_ID, title: "Child task", prompt: "child prompt", reply: "child reply" }],
+    })
+    await seedOneProject(page, DIR)
+    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
+    await expectAssistantReplyVisible(page, "parent reply")
+
+    // The child's shell call needs approval. The runtime routes the ask with
+    // the child's sessionID; the only place that can show a decision is the
+    // parent's composer — the child's own tab is read-only.
+    mock.emit({
+      type: "permission.asked",
+      properties: {
+        id: "perm_child_1",
+        sessionID: childId,
+        permission: "bash",
+        patterns: ["/tmp/child-target"],
+        metadata: { command: "printf QA > /tmp/child-target" },
+        always: [],
+      },
+    })
+    await expect(permissionDock(page), "the child session's permission ask produced no decision dock on its parent").toBeVisible({ timeout: 20_000 })
+    await page.screenshot({ path: testInfo.outputPath("child-permission-dock.png") })
+
+    // Answering through the parent's dock must reach the child's request id on
+    // the child's session route, then clear it.
+    await page.getByRole("button", { name: "Deny", exact: true }).click()
+    await expect.poll(() => mock.requests.permissionResponses, { timeout: 10_000 }).toEqual(["reject"])
+    mock.emit({ type: "permission.replied", properties: { sessionID: childId, requestID: "perm_child_1" } })
+    await expect(permissionDock(page)).toHaveCount(0, { timeout: 20_000 })
+  })
 })
 
 test.describe("core docks — question wizard @core", () => {
+  test("Codex questions answered while away stay absent on rail return", async ({ page }, testInfo) => {
+    const otherSessionId = "ses_question_other"
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, harness: "codex-app-server",
+      otherSessions: [{ id: otherSessionId, title: "Other QA session", prompt: "Other prompt", reply: "Other completed reply" }],
+    })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+    await sendMessage(page, "runtime question replay probe")
+    await expectAssistantReplyVisible(page, "ack 1: runtime question replay probe", { spec: "core-docks", scenario: `runtime-question-first-${testInfo.repeatEachIndex}` })
+    const requestId = "q_runtime_replay"
+    mock.emit({
+      type: "question.asked",
+      properties: {
+        id: requestId, sessionID: SESSION_ID,
+        questions: [{ question: "Which QA color?", header: "QA color", options: [{ label: "TEAL", description: "Select TEAL" }] }],
+      },
+    })
+    mock.emitRuntime({
+      directory: DIR, sessionId: SESSION_ID,
+      payload: {
+        type: "question", harness: "codex", requestId,
+        questions: [{ text: "Which QA color?", header: "QA color", options: ["TEAL"] }],
+      },
+    })
+    await expect(questionDock(page)).toBeVisible({ timeout: 20_000 })
+    const otherRow = await expectRailRowVisible({ page, sessionId: otherSessionId })
+    const otherStream = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname.endsWith("/api/wr/runtime-events") && url.searchParams.get("parentSessionId") === otherSessionId
+    })
+    await otherRow.click()
+    await expect(page).toHaveURL(sessionUrlPattern(otherSessionId))
+    await otherStream
+    await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-docks", scenario: `runtime-question-other-${testInfo.repeatEachIndex}` })
+    // A client that misses the resolution must reconcile the empty server list
+    // before displaying a cached request or replaying the retained question.
+    mock.clearPendingQuestion(requestId)
+    const row = await expectRailRowVisible({ page, sessionId: SESSION_ID })
+    const samples = await sampleElementDuringAction(page, '[data-component="dock-prompt"][data-kind="question"]', async () => {
+      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/runtime-events") && response.status() === 200 && (await response.text()).includes(requestId))
+      await row.click()
+      await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
+      await replay
+      await expectAssistantReplyVisible(page, "ack 1: runtime question replay probe", { spec: "core-docks", scenario: `runtime-question-return-${testInfo.repeatEachIndex}` })
+    })
+    await writeFile(testInfo.outputPath("runtime-question-return-frames.json"), JSON.stringify(samples, null, 2))
+    await page.screenshot({ path: testInfo.outputPath("runtime-question-return.png") })
+    expect(samples.length).toBeGreaterThan(2)
+    expect(mock.requests.questionReplies).toHaveLength(0)
+    expect(mock.requests.unhandled).toEqual([])
+    expect(samples.filter(sample => sample.visible > 0), "resolved runtime question repaints during rail return").toEqual([])
+  })
+
+  test("an answered question stays absent on every frame when returning through the rail", async ({ page }, testInfo) => {
+    const { mock, counters } = await establishSession(page)
+    mock.emit({
+      type: "question.asked",
+      properties: {
+        id: "q_answered_navigation",
+        sessionID: SESSION_ID,
+        questions: [{
+          question: "Which approach should I take?",
+          header: "Approach",
+          options: [{ label: "Careful", description: "Take more time" }],
+          multiple: false,
+        }],
+      },
+    })
+    await expect(questionDock(page)).toBeVisible({ timeout: 20_000 })
+    await questionOption(page, "Careful").click()
+    await page.getByRole("button", { name: "Submit", exact: true }).click()
+    await expect.poll(() => counters.questionReply.count).toBe(1)
+    expect(counters.questionReply.bodies).toEqual([{ answers: [["Careful"]] }])
+    await expect(questionDock(page)).toHaveCount(0)
+    await page.getByRole("button", { name: "New Session", exact: true }).last().click()
+    await expect(page).toHaveURL(/\/session$/)
+    const row = await expectRailRowVisible({ page, sessionId: SESSION_ID })
+    const samples = await sampleElementDuringAction(page, '[data-component="dock-prompt"][data-kind="question"]', async () => {
+      const nextEventBatch = page.waitForResponse(response =>
+        /\/(events|runtime-events)$/.test(new URL(response.url()).pathname)
+        && response.status() === 200
+        && response.headers()["content-type"]?.includes("text/event-stream"),
+      )
+      await row.click()
+      await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
+      await expectAssistantReplyVisible(page, "ack 1: core docks establishing turn")
+
+      await nextEventBatch
+    })
+    await writeFile(testInfo.outputPath("answered-question-frames.json"), JSON.stringify(samples, null, 2))
+    await page.screenshot({ path: testInfo.outputPath("answered-question-return.png") })
+    expect(samples.length).toBeGreaterThan(2)
+    expect(samples.filter(sample => sample.visible > 0), "answered question flashes during the rail return").toEqual([])
+    expect(counters.questionReply.count).toBe(1)
+    expect(mock.requests.unhandled).toEqual([])
+  })
+
   test("single question: picking an option and Submit posts one answer array", async ({ page }) => {
     const { mock, counters } = await establishSession(page)
 
@@ -626,9 +813,9 @@ test.describe("core docks — question wizard @core", () => {
 })
 
 test.describe("core docks — todo tray @core", () => {
-  test("todo dock opens while live+incomplete, collapsed preview shows the active todo, and it auto-closes once done", async ({
+  test("todo dock preserves all five completed steps after the turn ends and reloads", async ({
     page,
-  }) => {
+  }, testInfo) => {
     const { mock } = await establishSession(page)
 
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
@@ -640,6 +827,8 @@ test.describe("core docks — todo tray @core", () => {
           { content: "Set up scaffold", status: "completed", priority: "low" },
           { content: "Wire the API", status: "in_progress", priority: "medium" },
           { content: "Write tests", status: "pending", priority: "low" },
+          { content: "Review results", status: "pending", priority: "low" },
+          { content: "Finish task", status: "pending", priority: "low" },
         ],
       },
     })
@@ -648,11 +837,11 @@ test.describe("core docks — todo tray @core", () => {
     await expect(dock).toBeVisible({ timeout: 20_000 })
 
     const progressLabel = page.locator('[data-action="session-todo-toggle"] span[aria-label]').first()
-    await expect(progressLabel).toHaveAttribute("aria-label", "1 of 3 todos completed")
+    await expect(progressLabel).toHaveAttribute("aria-label", "1 of 5 todos completed")
 
     const list = page.locator('[data-slot="session-todo-list"]')
     await expect(list).toHaveAttribute("aria-hidden", "false")
-    await expect(list.locator('[data-component="checkbox"]')).toHaveCount(3)
+    await expect(list.locator('[data-component="checkbox"]')).toHaveCount(5)
     await expect(list.locator('[data-component="checkbox"][data-state="in_progress"]')).toContainText("Wire the API")
 
     await page.locator('[data-action="session-todo-toggle-button"]').click()
@@ -667,11 +856,37 @@ test.describe("core docks — todo tray @core", () => {
         todos: [
           { content: "Set up scaffold", status: "completed", priority: "low" },
           { content: "Wire the API", status: "completed", priority: "medium" },
-          { content: "Write tests", status: "cancelled", priority: "low" },
+          { content: "Write tests", status: "completed", priority: "low" },
+          { content: "Review results", status: "completed", priority: "low" },
+          { content: "Finish task", status: "completed", priority: "low" },
         ],
       },
     })
 
-    await expect(dock).toHaveCount(0, { timeout: 10_000 })
+    mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
+    // The completed batch is delivered when the dock reads 5 of 5 — the events
+    // stream is a persistent fetch whose response body never completes, so the
+    // wire itself cannot be sniffed from a finished response.
+    await expect(progressLabel, "the completed batch was delivered before reload").toHaveAttribute(
+      "aria-label",
+      "5 of 5 todos completed",
+      { timeout: 20_000 },
+    )
+    await page.reload()
+    await expectAssistantReplyVisible(page, "ack 1: core docks establishing turn")
+    await page.screenshot({ path: testInfo.outputPath("completed-todos-after-reload.png") })
+    await expect(dock, "completed task retains its final todo surface").toBeVisible({ timeout: 10_000 })
+    await expect(progressLabel).toHaveAttribute("aria-label", "5 of 5 todos completed")
+    if (await list.getAttribute("aria-hidden") === "true") {
+      await page.locator('[data-action="session-todo-toggle-button"]').click()
+    }
+    await expect(list).toHaveAttribute("aria-hidden", "false")
+    await expect(list.locator('[data-component="checkbox"]')).toHaveCount(5)
+    await expect(list.locator('[data-component="checkbox"][data-state="completed"]')).toHaveCount(5)
+    // TextStrikethrough renders its label twice (base + aria-hidden overlay);
+    // read the non-hidden span so textContent isn't doubled.
+    await expect(list.locator('[data-component="text-strikethrough"] > span:not([aria-hidden])')).toHaveText([
+      "Set up scaffold", "Wire the API", "Write tests", "Review results", "Finish task",
+    ])
   })
 })

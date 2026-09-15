@@ -73,6 +73,8 @@ export function timelineAnchorFileHref(anchor: Element): string | undefined {
 export function timelineAnchorClickTarget(event: MouseEvent): string | undefined {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
   const target = event.target instanceof Element ? event.target : null
+  // Markdown tiles own full-image preview, including when wrapped in a link.
+  if (target?.closest('[data-component="markdown-image-tile"]')) return undefined
   const anchor = target?.closest("a[href]")
   return anchor ? timelineAnchorFileHref(anchor) : undefined
 }
@@ -83,6 +85,8 @@ const IMAGE_URL_PATH = /(?:\.|\/)(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i
 export function timelineExternalSourceClickTarget(event: MouseEvent): string | undefined {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
   const target = event.target instanceof Element ? event.target : null
+  // Markdown tiles own full-image preview, including when wrapped in a link.
+  if (target?.closest('[data-component="markdown-image-tile"]')) return undefined
   const anchor = target?.closest("a[href]")
   if (!anchor) return undefined
   const href = anchor.getAttribute("href")

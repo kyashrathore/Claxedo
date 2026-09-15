@@ -1067,6 +1067,93 @@
   flex-wrap: wrap;
 }
 
+.tsk-images {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 80ch;
+}
+
+.tsk-image {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 96px;
+  margin: 0;
+}
+
+.tsk-image-thumb {
+  width: 96px;
+  height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-5);
+  background: var(--input-base);
+}
+
+.tsk-image-name {
+  overflow: hidden;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tsk-image-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-base);
+  color: var(--text-base);
+  font-size: var(--font-size-small);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tsk-image:hover .tsk-image-remove,
+.tsk-image:focus-within .tsk-image-remove {
+  opacity: 1;
+}
+
+/* The detail page shows the images at reading size; a thumbnail that needs a
+   click to be legible is one the person will not read. */
+.tsk-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 80ch;
+}
+
+.tsk-gallery-image {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0;
+}
+
+.tsk-gallery-image img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-5);
+}
+
+.tsk-gallery-image figcaption {
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+}
+
 .tsk-field {
   display: flex;
   flex-direction: column;

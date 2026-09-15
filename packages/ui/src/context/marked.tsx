@@ -579,21 +579,25 @@ function createNativeParseScheduler(maxConcurrent: number) {
   }
 }
 
+/** Shared syntax policy for immediate paint and asynchronous enhancement. */
+export const transcriptMarkdownExtensions: MarkedExtension[] = [
+  markedCodeSpanBoundary,
+  markedTranscriptAutolink,
+  {
+    renderer: {
+      html: renderMarkdownHtml,
+      link({ href, title, tokens }) {
+        const text = this.parser.parseInline(tokens)
+        const titleAttr = title ? ` title="${title}"` : ""
+        return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
+      },
+    },
+  },
+]
+
 function loadJsParser() {
   jsParser ??= import("marked").then(({ Marked }) => {
-    const parser = new Marked(
-      markedCodeSpanBoundary,
-      markedTranscriptAutolink,
-      {
-        renderer: {
-          html: renderMarkdownHtml,
-          link({ href, title, text }) {
-            const titleAttr = title ? ` title="${title}"` : ""
-            return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
-          },
-        },
-      },
-    )
+    const parser = new Marked(...transcriptMarkdownExtensions)
     return {
       async parse(markdown: string) {
         const html = await parser.parse(markdown)

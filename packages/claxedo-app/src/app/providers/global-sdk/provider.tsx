@@ -53,16 +53,15 @@ export { runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import {
   compatEventEnvelope,
   partUpdateSupersedesDeltas,
-  projectRuntimeEventEnvelope,
+  projectRuntimeDiagnosticEnvelope,
   resetRuntimeReplayGapState,
   runtimeReplayGap,
   type GlobalSdkEvent,
-  type RuntimeProjectionCache,
 } from "./runtime-event-projection"
 export {
   compatEventEnvelope,
   partUpdateSupersedesDeltas,
-  projectRuntimeEventEnvelope,
+  projectRuntimeDiagnosticEnvelope,
   resetRuntimeReplayGapState,
   runtimeReplayGap,
   type GlobalSdkEvent,
@@ -196,7 +195,6 @@ const globalSDKContextInput = {
 
     let runtimeAttempt: AbortController | undefined
     let runtimeRun: Promise<void> | undefined
-    const projections: RuntimeProjectionCache = new Map()
     let started = false
     // Both halves are load-bearing for every stream loop below: `stop()`
     // clears `started` without aborting `abort` (a later `start()` reuses the
@@ -231,7 +229,6 @@ const globalSDKContextInput = {
       liveSessionRestartTimer = undefined
       lastRuntimeEventId = undefined
       runtimeAttempt?.abort()
-      projections.clear()
     }
     const scheduleLiveSessionRestart = () => {
       if (liveSessionRestartTimer) clearTimeout(liveSessionRestartTimer)
@@ -362,7 +359,6 @@ const globalSDKContextInput = {
                 }
                 void resetRuntimeReplayGapState({
                   envelope,
-                  projections,
                   baseUrl: currentServer.http.url,
                   liveSession: session,
                   subagents,
@@ -386,7 +382,7 @@ const globalSDKContextInput = {
                 })
               }
               applySubagentRuntimeEventEnvelope(envelope, subagents)
-              for (const event of projectRuntimeEventEnvelope(envelope, projections)) {
+              for (const event of projectRuntimeDiagnosticEnvelope(envelope)) {
                 enqueue(event.directory, event.payload)
               }
               if (Date.now() - yielded < STREAM_YIELD_MS) continue

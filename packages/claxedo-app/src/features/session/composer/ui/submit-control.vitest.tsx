@@ -24,14 +24,12 @@ function renderControl(input: {
   onChooseModel?: () => void
   busy?: boolean
   blank?: boolean
-  queued?: boolean
 }) {
   const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
   const view = render(() => (
     <DockShellForm onSubmit={submit}>
       <PromptSubmitControl
         stage={() => undefined}
-        queued={() => input.queued ?? false}
         busy={() => input.busy ?? false}
         onCancel={() => {}}
         onRetry={() => undefined}
@@ -49,7 +47,6 @@ function renderControl(input: {
         sendLabel="Send"
         stopLabel="Stop"
         readOnlyLabel="Read-only"
-        queuedLabel="Queued"
       />
     </DockShellForm>
   ))
@@ -66,11 +63,6 @@ describe("PromptSubmitControl", () => {
 
     expect(view.getByRole("button", { name: "Send" })).toBeTruthy()
     expect(view.queryByRole("button", { name: "Stop" })).toBeNull()
-  })
-
-  test("says a prompt is queued when the runtime is holding it", () => {
-    expect(renderControl({ busy: true, blank: true, queued: true }).getByTestId("composer-queued").textContent)
-      .toContain("Queued")
   })
 
   test("submits the real control through the shared dock form", () => {

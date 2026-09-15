@@ -30,9 +30,11 @@ export function fakeClock(start = 1_000): TasksClockPort & { set(value: number):
 export function fakeIds(): TasksIdsPort {
   let presets = 0
   let tasks = 0
+  let attachments = 0
   return {
     presetId: () => `preset-${(presets += 1)}`,
     taskId: () => `task-${(tasks += 1)}`,
+    attachmentId: () => `attachment-${(attachments += 1)}`,
   }
 }
 

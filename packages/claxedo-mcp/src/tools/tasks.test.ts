@@ -84,6 +84,8 @@ const LINK = {
   handoff: "sent",
 }
 
+const ATTACHMENT = { id: "tat_1", filename: "mock.png", mime: "image/png", size: 4, createdAt: 10 }
+
 function deadLink(attempt: number) {
   return { ...LINK, attempt, liveness: "deleted", sessionRef: { sessionId: `ses_${attempt}`, workspaceId: "ws_local" } }
 }
@@ -120,7 +122,9 @@ function tasksService(input: Partial<ServiceState> = {}) {
     const answer = state.answers[`${method} ${route}`]
     if (answer) return Response.json(answer.body, { status: answer.status })
     if (method === "GET" && route === "/tasks") return Response.json({ items: [SUMMARY], nextCursor: null })
-    if (method === "GET" && route === "/tasks/tsk_1") return Response.json({ task: TASK, links: state.links })
+    if (method === "GET" && route === "/tasks/tsk_1") {
+      return Response.json({ task: TASK, links: state.links, attachments: [ATTACHMENT] })
+    }
     if (method === "GET" && route === "/presets") {
       const index = Number(url.searchParams.get("cursor")?.slice("page_".length) ?? 0)
       const next = index + 1 < state.presetPages.length ? `page_${index + 1}` : null
@@ -300,7 +304,7 @@ describe("task_list", () => {
 })
 
 describe("task_get", () => {
-  test("returns the task and every session it has run, with liveness", async () => {
+  test("returns the task, every session it has run with liveness, and the images it carries by name", async () => {
     const service = tasksService({ links: [LINK] })
     const { url } = await listen({ service })
     const client = await connect(url)
@@ -308,6 +312,7 @@ describe("task_get", () => {
     const answer = await json(client, "task_get", { task: "tsk_1" })
     expect(answer.task).toMatchObject({ id: "tsk_1", revision: 3, description: "the whole body" })
     expect(answer.links).toEqual([{ ...LINK }])
+    expect(answer.attachments).toEqual([ATTACHMENT])
     expect(service.calls).toEqual([{ method: "GET", path: "/api/claxedo/tasks/tasks/tsk_1" }])
   })
 

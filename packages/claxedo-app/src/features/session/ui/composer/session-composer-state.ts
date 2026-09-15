@@ -1,4 +1,4 @@
-import { createEffect, createMemo, on, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import type {
@@ -18,21 +18,33 @@ import {
   sessionTodoCacheQueryOptions,
 } from "@/features/session/data/sync/queries"
 import { sessionQuestionRequest, sessionVisiblePermissionRequest } from "./session-request-tree"
+import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
+import type { SessionRequestsQueryData } from "@/features/session/data/sync/queries"
 import { permissionDecidedProperties } from "@/features/session/permission/modes"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
+// Long enough for the attach-time canonical meta read (scheduled ~1.5–2s after
+// activation) plus transport latency to stamp `reconciledAt`; short enough that
+// a session kind which never reconciles still surfaces a pending request.
+const REQUEST_ATTACH_HOLD_MS = 6_000
+
+// A completed list is the session's final task state — it stays mounted so the
+// reader can reopen it after the turn ends, across reloads, and between rail
+// visits. Only an unfinished list gates on `live`: pending rows on an idle
+// session are leftovers from an interrupted turn, not state to surface.
 export const todoState = (input: {
   count: number
   done: boolean
   live: boolean
-}): "hide" | "open" | "close" => {
+}): "hide" | "open" => {
   if (input.count === 0) return "hide"
+  if (input.done) return "open"
   if (!input.live) return "hide"
-  if (!input.done) return "open"
-  return "close"
+  return "open"
 }
 
-export function createSessionComposerState(options?: { closeMs?: number | (() => number) }) {
+export function createSessionComposerState(options?: { active?: () => boolean }) {
   const sessionParams = useSessionParams()
   const sdk = useSDK()
   const language = useLanguage()
@@ -70,14 +82,47 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const requestQueries = useQueries(() => ({
     queries: sessionTreeIds().map((id) => sessionRequestsCacheQueryOptions({ sessionId: id })),
   }))
+  // A request pending when this session attached is suspect: it may already be
+  // resolved off-client, and retained replay redelivers its ask under the same
+  // id. Hold those ids until the canonical directory read reconciles the entry
+  // for this attach; requests asked while attached carry fresh ids and paint
+  // immediately. The hold is bounded because some session kinds never produce
+  // a canonical read — releasing degrades to the pre-gate behavior rather than
+  // hiding a genuinely pending request forever.
+  const [attachReleased, setAttachReleased] = createSignal(0)
+  const paneVisible = options?.active ?? (() => true)
+  const requestAttach = createMemo(() => {
+    const visible = paneVisible()
+    activeSessionId()
+    const held = new Set<string>()
+    if (visible) {
+      // Untracked: the tree grows as a turn spawns children, and tracking it
+      // would restart the hold on every session-list update — re-hiding
+      // requests asked while attached for another six seconds.
+      for (const treeId of untrack(sessionTreeIds)) {
+        const data = queryClient.getQueryData<SessionRequestsQueryData>(shellDataKeys.sessionId(treeId, "requests"))
+        for (const item of [...(data?.permissions ?? []), ...(data?.questions ?? [])]) held.add(item.id)
+      }
+    }
+    const at = Date.now()
+    const release = setTimeout(() => setAttachReleased(at), REQUEST_ATTACH_HOLD_MS)
+    onCleanup(() => clearTimeout(release))
+    return { at, held }
+  })
   const requestRecords = createMemo(() => {
     const permissions: Record<string, PermissionRequest[] | undefined> = {}
     const questions: Record<string, QuestionRequest[] | undefined> = {}
+    const attach = requestAttach()
+    const released = attachReleased() === attach.at
     sessionTreeIds().forEach((id, index) => {
       const data = requestQueries[index]?.data
       if (!data) return
-      permissions[id] = data.permissions
-      questions[id] = data.questions
+      const hold = <T extends { id: string }>(items: T[] | undefined) =>
+        released || (data.reconciledAt !== undefined && data.reconciledAt >= attach.at)
+          ? items
+          : items?.filter((item) => !attach.held.has(item.id))
+      permissions[id] = hold(data.permissions)
+      questions[id] = hold(data.questions)
     })
     return { permissions, questions }
   })
@@ -112,9 +157,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
 
   const [store, setStore] = createStore({
     responding: undefined as string | undefined,
-    dock: todos().length > 0 && live(),
-    closing: false,
-    opening: false,
+    dock: todos().length > 0 && (live() || done()),
   })
 
   const permissionResponding = createMemo(() => {
@@ -148,76 +191,14 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
       })
   }
 
-  let timer: number | undefined
-  let raf: number | undefined
-
-  const closeMs = () => {
-    const value = options?.closeMs
-    if (typeof value === "function") return Math.max(0, value())
-    if (typeof value === "number") return Math.max(0, value)
-    return 400
-  }
-
-  const scheduleClose = () => {
-    if (timer) window.clearTimeout(timer)
-    timer = window.setTimeout(() => {
-      setStore({ dock: false, closing: false })
-      timer = undefined
-    }, closeMs())
-  }
-
   createEffect(
     on(
       () => [todos().length, done(), live()] as const,
       ([count, complete, active]) => {
-        if (raf) cancelAnimationFrame(raf)
-        raf = undefined
-
-        const next = todoState({
-          count,
-          done: complete,
-          live: active,
-        })
-
-        if (next === "hide") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          setStore({ dock: false, closing: false, opening: false })
-          return
-        }
-
-        if (next === "open") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          const hidden = !store.dock || store.closing
-          setStore({ dock: true, closing: false })
-          if (hidden) {
-            setStore("opening", true)
-            raf = requestAnimationFrame(() => {
-              setStore("opening", false)
-              raf = undefined
-            })
-            return
-          }
-          setStore("opening", false)
-          return
-        }
-
-        setStore({ dock: true, opening: false, closing: true })
-        if (!timer) scheduleClose()
+        setStore("dock", todoState({ count, done: complete, live: active }) === "open")
       },
     ),
   )
-
-  onCleanup(() => {
-    if (!timer) return
-    window.clearTimeout(timer)
-  })
-
-  onCleanup(() => {
-    if (!raf) return
-    cancelAnimationFrame(raf)
-  })
 
   return {
     blocked,
@@ -227,8 +208,6 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     decide,
     todos,
     dock: () => store.dock,
-    closing: () => store.closing,
-    opening: () => store.opening,
   }
 }
 

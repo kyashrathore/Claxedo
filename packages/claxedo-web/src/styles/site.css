@@ -110,6 +110,12 @@ h1, h2, h3 { color: var(--ink); }
 .footer-col h3 { margin-bottom: .3rem; color: var(--ink); font: 500 .78rem var(--font-sans); letter-spacing: 0; }
 .footer-col a { font-size: .86rem; text-decoration: none; }
 .footer-col a:hover { color: var(--ink); }
+.footer-featured { display: flex; flex-wrap: wrap; align-items: center; gap: .9rem 1.5rem; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+.footer-featured > span { color: var(--ink-weakest); font: 400 .72rem/1.5 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.footer-featured-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.footer-featured-badges a { display: inline-flex; opacity: .8; transition: opacity .15s ease; }
+.footer-featured-badges a:hover { opacity: 1; }
+.footer-featured-badges img { width: auto; height: 2.4rem; }
 .footer-bottom { display: flex; justify-content: space-between; gap: 1rem; margin: 3rem auto 0; padding-top: 1.2rem; border-top: 1px solid var(--line); font: 400 .72rem/1.5 var(--font-mono); }
 
 .card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }

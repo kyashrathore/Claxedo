@@ -9,7 +9,7 @@ import { isWorkspaceReady } from "../../../features/workspaces/data/workspace-co
 import type { ReviewWorkspaceTab } from "@/features/review/ui/review-workspace-tabs"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
-import { workspacePanelChosenSurface } from "./workspace-panel-working-set"
+import { workspacePanelChosenSurface } from "../review/review-workspace-working-set"
 
 export function workspacePanelMatchesFocusedPane(input: {
   open: boolean

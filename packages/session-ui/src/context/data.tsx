@@ -84,7 +84,11 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
     onTaskHref?: TaskHrefFn
-    resolveSubagents?: (parentSessionId: string, toolCallId?: string) => SubagentView[]
+    resolveSubagents?: (
+      parentSessionId: string,
+      toolCallId?: string,
+      hostableCallIds?: ReadonlySet<string>,
+    ) => SubagentView[]
     /**
      * A workspace-relative path to a URL the browser can fetch. Tool attachments that
      * stayed on disk carry only a path, so without this they have nothing to render.

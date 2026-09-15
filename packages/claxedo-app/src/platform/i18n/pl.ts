@@ -264,7 +264,6 @@ export const dict = {
   "prompt.attachment.remove": "Usuń załącznik",
   "prompt.action.send": "Wyślij",
   "prompt.action.stop": "Zatrzymaj",
-  "prompt.action.queued": "W kolejce",
   "prompt.action.readOnlyWorkspace": "Obszar roboczy tylko do odczytu",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} nie obsługuje tego załącznika",
   "prompt.toast.attachmentHarnessUnsupported.description":

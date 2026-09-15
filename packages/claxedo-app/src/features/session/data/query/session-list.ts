@@ -477,6 +477,12 @@ type SessionListUpdate = {
    * row under a reader who did not speak to the session.
    */
   lastHumanTurnAt?: number
+  /**
+   * Event-derived recency only moves forward: a replayed `message.updated`
+   * carries an old timestamp and must not regress the row. Server-owned
+   * `session.updated` stays unguarded — its value is the truth to converge on.
+   */
+  monotonic?: boolean
 }
 
 export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
@@ -583,12 +589,13 @@ function reconcileUpdatedSessionListRows(
 ) {
   return rows.map((row) => {
     if (!matchesSessionListRow(row, input)) return row
-    return {
-      ...row,
-      title: input.title ?? row.title,
-      updatedAt: input.updatedAt ?? row.updatedAt,
-      ...(input.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: input.lastHumanTurnAt } : {}),
-    }
+    const updatedAt = input.updatedAt !== undefined && input.monotonic && (row.updatedAt ?? 0) > input.updatedAt
+      ? row.updatedAt
+      : input.updatedAt ?? row.updatedAt
+    const lastHumanTurnAt = input.lastHumanTurnAt !== undefined && input.monotonic && (row.lastHumanTurnAt ?? 0) > input.lastHumanTurnAt
+      ? row.lastHumanTurnAt
+      : input.lastHumanTurnAt ?? row.lastHumanTurnAt
+    return { ...row, title: input.title ?? row.title, updatedAt, lastHumanTurnAt }
   })
 }
 

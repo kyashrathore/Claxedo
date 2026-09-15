@@ -76,6 +76,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
         return json({
           task,
           links: [liveLink(handoff)],
+          attachments: [],
         })
       }
       if (path.endsWith("/start-preview")) {

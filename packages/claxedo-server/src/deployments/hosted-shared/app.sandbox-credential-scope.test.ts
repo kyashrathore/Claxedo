@@ -64,7 +64,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql"])
   active.push(instance)
   return instance.database
 }
@@ -350,6 +350,7 @@ const EXPECTED_ADMISSION: Record<string, readonly string[]> = {
     "GET /api/claxedo/tasks/presets/:presetId -> 404",
     "GET /api/claxedo/tasks/tasks -> 200",
     "GET /api/claxedo/tasks/tasks/:taskId -> 404",
+    "GET /api/claxedo/tasks/tasks/:taskId/attachments/:attachmentId -> 404",
     "GET /api/claxedo/tasks/tasks/:taskId/children -> 404",
     "POST /api/claxedo/tasks/tasks/:taskId/sessions -> 400",
     "POST /api/claxedo/tasks/tasks/:taskId/start-preview -> 400",

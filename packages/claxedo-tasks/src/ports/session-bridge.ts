@@ -7,6 +7,7 @@ import type {
   SessionStarter,
   StartPreview,
   Task,
+  TaskAttachmentRecord,
   TaskSessionLink,
   TasksActor,
   TasksResult,
@@ -89,6 +90,8 @@ export type SessionHandoffCommand = {
   slot: ConfigurationSlot
   attempt: number
   handoffText: string | null
+  /** The task's images, bytes included, sent as prompt parts beside the text. */
+  attachments: readonly TaskAttachmentRecord[]
   /** The session the committed link names, which is the only one this task is handed to. */
   session: SessionReference
 }

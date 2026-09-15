@@ -1,3 +1,5 @@
+import { createDisplayedFrameLoop } from "./timeline-displayed-frames"
+
 export type TimelinePrependAnchor = {
   key: string
   offset: number
@@ -50,4 +52,42 @@ function timelinePrependAnchorSelector(key: string) {
 
 function escapeTimelineKey(key: string) {
   return globalThis.CSS?.escape?.(key) ?? key.replace(/["\\]/g, "\\$&")
+}
+
+/** Keeps the same row in view while history or a retained surface is restored. */
+export function createTimelinePrependAnchor(input: {
+  root: () => HTMLElement | undefined
+  displayed: () => boolean
+  resolveRowStart: (key: string) => number | undefined
+}) {
+  const frames = createDisplayedFrameLoop({ displayed: input.displayed })
+  let anchor: TimelinePrependAnchor | undefined
+  let loading = false
+  const update = () => {
+    const root = input.root()
+    if (root) anchor = captureTimelinePrependAnchor(root) ?? anchor
+  }
+  const apply = (next = anchor) => {
+    anchor = next
+    const root = input.root()
+    if (!root || !next) return
+    let count = 0, stable = 0
+    frames.start(() => {
+      stable = applyTimelinePrependAnchor(root, next, input.resolveRowStart) === "adjusted" ? 0 : stable + 1
+      if (++count >= 180 || stable >= 30) {
+        anchor = undefined
+        return false
+      }
+      return true
+    })
+  }
+  return {
+    loading: () => loading,
+    running: () => frames.running,
+    update, apply,
+    resume: frames.resume,
+    capture: () => { loading = true; update() },
+    restore: () => { loading = false; apply() },
+    clear: () => { loading = false; anchor = undefined; frames.stop() },
+  }
 }

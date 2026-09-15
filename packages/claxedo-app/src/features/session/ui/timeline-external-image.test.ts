@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { timelineExternalSourceClickTarget } from "./timeline-file-paths"
+import { timelineAnchorClickTarget, timelineExternalSourceClickTarget } from "./timeline-file-paths"
 
 function click(target: Element, overrides: Partial<MouseEvent> = {}) {
   return {
@@ -55,4 +55,21 @@ describe("timeline external image links", () => {
 
     expect(timelineExternalSourceClickTarget(click(anchor, { metaKey: true }))).toBeUndefined()
   })
+})
+
+
+test("Markdown image tiles retain full-view ownership inside remote and local links", () => {
+  const anchor = document.createElement("a")
+  const tile = document.createElement("button")
+  tile.dataset.component = "markdown-image-tile"
+  const image = document.createElement("img")
+  tile.append(image)
+  anchor.append(tile)
+  for (const href of ["https://example.com/result.png", "file:///workspace/result.png", "result.png"]) {
+    anchor.setAttribute("href", href)
+    for (const target of [image, tile]) {
+      expect(timelineExternalSourceClickTarget(click(target))).toBeUndefined()
+      expect(timelineAnchorClickTarget(click(target))).toBeUndefined()
+    }
+  }
 })

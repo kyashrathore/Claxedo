@@ -266,7 +266,7 @@ export function BasicTool(props: BasicToolProps) {
       data-hide-details={props.hideDetails ? "true" : undefined}
     >
       <div data-slot="basic-tool-tool-trigger-content">
-        <Show when={props.icon && !props.hideDetails}>
+        <Show when={props.icon}>
           <span data-slot="basic-tool-tool-leading-icon" class="ui-basic-tool-tool-leading-icon">
             <Icon name={props.icon} size="small" />
           </span>
@@ -492,7 +492,7 @@ const INTENT_ICONS: Record<string, IconProps["name"]> = {
   read: "glasses",
   shell: "terminal",
   search: "magnifying-glass",
-  fetch: "window-cursor",
+  fetch: "magnifying-glass",
   delete: "trash",
   mcp: "mcp",
 }
@@ -511,7 +511,7 @@ export function genericToolIcon(tool: string, input?: Record<string, unknown>): 
     case "webfetch":
     // `web_fetch` has no alias: no harness that sends it also sends `webfetch`.
     case "web_fetch":
-      return "window-cursor"
+      return "magnifying-glass"
     case "websearch":
       return "magnifying-glass"
     default:
@@ -634,6 +634,8 @@ export function GenericTool(props: {
   input?: Record<string, unknown>
   output?: string
   startedAt?: number
+  revealed?: boolean
+  onRevealedChange?: (revealed: boolean) => void
 }) {
   const i18n = useI18n()
   const title = createMemo(() => humanizeTool(props.tool, props.input, i18n))
@@ -657,7 +659,7 @@ export function GenericTool(props: {
         {/* Only pass children when there is output, so BasicTool's chevron stays hidden
             (and the row stays non-interactive) for tools that produced nothing. */}
         {output() ? (
-          <ScrollableOutput component="tool-output">
+          <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <pre>{output()}</pre>
           </ScrollableOutput>
         ) : undefined}

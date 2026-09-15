@@ -57,7 +57,7 @@ function mount(input: { links?: unknown[]; presets?: Preset[]; transcriptReadabl
       requested.push({ path, body })
       if (path.startsWith("/tasks?")) return json({ items: [summary], nextCursor: null })
       if (path.startsWith("/presets")) return json({ items: input.presets ?? [preset], nextCursor: null })
-      if (path === "/tasks/tsk_1") return json({ task, links: input.links ?? [] })
+      if (path === "/tasks/tsk_1") return json({ task, links: input.links ?? [], attachments: [] })
       if (path.startsWith("/tasks/tsk_1/children")) return json({ items: [], nextCursor: null })
       // The service resolves a preview against the slot and attempt it was
       // asked for and mints a digest bound to them, then admits a start only
