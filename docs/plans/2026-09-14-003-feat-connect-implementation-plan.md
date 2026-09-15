@@ -771,6 +771,22 @@ Definition of done:
 
 ---
 
+## Open gap carried out of the first slice: provider configuration on a connect host
+
+A `claxedo connect` runtime receives no configuration snapshot from the
+control plane: `createHostWorkspaceRuntime` composes no management auth, so
+`POST /api/wr/config` answers 401 unconditionally, and the control plane's
+only push (`workspace/supervisor/config-sync.ts`) targets a sandbox lease's
+address — a host that dials out has none. Consequence: agent turns on a
+connect host run only with whatever the machine's own harness logins provide
+(a native `claude`/`codex` login on the box works; Pi's projected providers
+do not exist there), and the credential broker never reaches it. Files,
+terminals, sessions, sharing and every acceptance item except `5b` are
+unaffected. Owner when it is built: the CLI's `prepare()` composes management
+auth on the host runtime, and the control plane carries the snapshot on the
+heartbeat ack or pushes it over the host tunnel — the P6/provider-credential
+slice plan 002 defers.
+
 ## Cross-cutting acceptance (run at the end of P3, P6, P7)
 
 | Check | Where proven |
