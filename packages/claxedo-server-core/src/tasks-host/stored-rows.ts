@@ -51,6 +51,7 @@ export type StoredTaskColumns = {
   revision: number
   project_id: string
   number: number
+  child_number: number
   workspace_id: string | null
   parent_task_id: string | null
   created_from_session_id: string | null
@@ -155,6 +156,7 @@ export function taskColumns(task: Task): StoredTaskColumns {
     revision: task.revision,
     project_id: task.projectId,
     number: task.number,
+    child_number: task.childNumber ?? 0,
     workspace_id: task.workspaceId,
     parent_task_id: task.parentTaskId,
     created_from_session_id: task.createdFrom?.sessionId ?? null,
@@ -183,6 +185,7 @@ export function taskOfColumns(row: StoredTaskColumns): Task {
     scopeId: row.scope_id,
     projectId: row.project_id,
     number: row.number,
+    childNumber: row.child_number === 0 ? null : row.child_number,
     workspaceId: row.workspace_id,
     parentTaskId: row.parent_task_id,
     createdFrom,

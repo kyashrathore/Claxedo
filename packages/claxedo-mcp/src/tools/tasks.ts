@@ -17,7 +17,7 @@ import {
   type TasksClient,
 } from "@claxedo/tasks/client"
 import type { ConfigurationSlot, Preset, SessionReference, TaskSessionLinkView, TaskSummary } from "@claxedo/tasks"
-import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt } from "@claxedo/tasks"
+import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt, taskNumber } from "@claxedo/tasks"
 import { record, text } from "../json"
 import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
@@ -35,7 +35,8 @@ export function registerTaskTools(registry: ToolRegistrar) {
   registry.tool(
     "task_list",
     {
-      description: "List a project's tasks: id, number, title, status, parent, how many sessions each has run and how its subtasks stand.",
+      description:
+        "List a project's tasks: id, key (`12`, or `12.3` for a subtask), title, status, parent, how many sessions each has run and how its subtasks stand.",
       inputSchema: {
         ...PROJECT_ARG,
         status: z.enum(TASK_STATUSES).optional().describe("Only tasks in this status."),
@@ -119,7 +120,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       }
       const { task } = response.result
       return toolJson({
-        task: { id: task.id, number: task.number, title: task.title, status: task.status, parent: task.parentTaskId, project: task.projectId, createdFrom: task.createdFrom },
+        task: { id: task.id, key: taskNumber(task), title: task.title, status: task.status, parent: task.parentTaskId, project: task.projectId, createdFrom: task.createdFrom },
         replayed: response.replayed,
       })
     }),
@@ -183,7 +184,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       })
       addressed?.(started.link.sessionRef.sessionId)
       return toolJson({
-        task: { id: detail.task.id, number: detail.task.number, title: detail.task.title },
+        task: { id: detail.task.id, key: taskNumber(detail.task), title: detail.task.title },
         session: started.link.sessionRef,
         slot: started.link.slot,
         attempt: started.link.attempt,
@@ -254,7 +255,7 @@ function catalog(presets: readonly Preset[]): string {
 function taskListRow(task: TaskSummary) {
   return {
     id: task.id,
-    number: task.number,
+    key: taskNumber(task),
     title: task.title,
     status: task.status,
     parent: task.parentTaskId,

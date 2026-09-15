@@ -2,23 +2,30 @@ import { describe, expect, test } from "bun:test"
 import type { ConfigurationSlot, TaskSessionLinkView } from "@claxedo/tasks"
 import { groupLinksBySlot, openableSlot, slotAttempt, taskKey } from "./view-model"
 
+const root = (number: number) => ({ number, childNumber: null })
+
 describe("the key a person quotes", () => {
   test("a multi-word project is its initials", () => {
-    expect(taskKey("Demo project", 7)).toBe("DP-7")
-    expect(taskKey("the claxedo control plane", 12)).toBe("TCCP-12")
+    expect(taskKey("Demo project", root(7))).toBe("DP-7")
+    expect(taskKey("the claxedo control plane", root(12))).toBe("TCCP-12")
   })
 
   test("a one-word project is its first three letters", () => {
-    expect(taskKey("Claxedo", 1)).toBe("CLA-1")
-    expect(taskKey("Go", 4)).toBe("GO-4")
+    expect(taskKey("Claxedo", root(1))).toBe("CLA-1")
+    expect(taskKey("Go", root(4))).toBe("GO-4")
   })
 
   test("a name longer than four words keeps the first four initials", () => {
-    expect(taskKey("one two three four five six", 3)).toBe("OTTF-3")
+    expect(taskKey("one two three four five six", root(3))).toBe("OTTF-3")
   })
 
   test("a name with no words leaves the number to stand alone", () => {
-    expect(taskKey("   ", 9)).toBe("#9")
+    expect(taskKey("   ", root(9))).toBe("#9")
+  })
+
+  test("a subtask is filed under its parent's number", () => {
+    expect(taskKey("Claxedo", { number: 20, childNumber: 1 })).toBe("CLA-20.1")
+    expect(taskKey("   ", { number: 20, childNumber: 3 })).toBe("#20.3")
   })
 })
 

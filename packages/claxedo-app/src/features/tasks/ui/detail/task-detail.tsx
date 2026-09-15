@@ -2,6 +2,7 @@ import { For, Show, onCleanup, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
 import {
   TASKS_BOUNDS,
@@ -59,6 +60,9 @@ export type TaskDetailProps = {
   onOpenProject: () => void
   /** Opens the task this one is a subtask of. */
   onOpenParent?: () => void
+  /** The properties rail folded away, so the prose has the whole width. */
+  railCollapsed?: boolean
+  onToggleRail: () => void
   /**
    * The subtasks section, rendered by the caller so the detail owns no data
    * fetch. Absent on a subtask, which cannot have children of its own.
@@ -74,7 +78,7 @@ export function TaskDetail(props: TaskDetailProps) {
   // The preset the task is actually running under, named by the link the
   // service wrote at start rather than by whatever the catalog holds now.
   const presetName = () => openableSlot(props.view.groups)?.current.presetNameAtStart
-  const key = () => taskKey(props.projectLabel, task().number)
+  const key = () => taskKey(props.projectLabel, task())
 
   // On `window` rather than this subtree: the menus and selects on this page
   // portal to the body, so a keydown raised while one is open never reaches the
@@ -89,7 +93,12 @@ export function TaskDetail(props: TaskDetailProps) {
   onCleanup(() => window.removeEventListener("keydown", save))
 
   return (
-    <article class="tsk tsk-detail" data-testid="task-detail" aria-label={task().title}>
+    <article
+      class="tsk tsk-detail"
+      data-testid="task-detail"
+      data-rail={props.railCollapsed ? "collapsed" : undefined}
+      aria-label={task().title}
+    >
       <div class="tsk-detail-main">
         <nav class="tsk-crumbs" aria-label="Breadcrumb">
           <button type="button" class="tsk-crumb-link" data-testid="task-detail-back" onClick={() => props.onBack()}>
@@ -108,15 +117,23 @@ export function TaskDetail(props: TaskDetailProps) {
             {(parent) => (
               <>
                 <span class="tsk-crumb-sep" aria-hidden="true">›</span>
-                <Show when={props.onOpenParent} fallback={<span>{parent().title}</span>}>
+                <Show
+                  when={props.onOpenParent}
+                  fallback={
+                    <span class="tsk-key" title={parent().title}>
+                      {taskKey(props.projectLabel, parent())}
+                    </span>
+                  }
+                >
                   {(open) => (
                     <button
                       type="button"
-                      class="tsk-crumb-link"
+                      class="tsk-crumb-link tsk-key"
                       data-testid="task-detail-parent-crumb"
+                      title={parent().title}
                       onClick={() => open()()}
                     >
-                      {parent().title}
+                      {taskKey(props.projectLabel, parent())}
                     </button>
                   )}
                 </Show>
@@ -147,6 +164,20 @@ export function TaskDetail(props: TaskDetailProps) {
               </Button>
             </span>
           </Show>
+          <Show when={!props.dirty}>
+            <span class="tsk-spacer" />
+          </Show>
+          <IconButton
+            icon={props.railCollapsed ? "layout-right" : "layout-right-partial"}
+            size="small"
+            variant="ghost"
+            class="tsk-rail-toggle"
+            data-testid="task-detail-rail-toggle"
+            aria-label={props.railCollapsed ? "Show properties" : "Hide properties"}
+            aria-expanded={!props.railCollapsed}
+            aria-controls="task-detail-rail"
+            onClick={() => props.onToggleRail()}
+          />
         </nav>
 
         <Show when={props.view.parent}>
@@ -158,7 +189,8 @@ export function TaskDetail(props: TaskDetailProps) {
               disabled={!props.onOpenParent}
               onClick={() => props.onOpenParent?.()}
             >
-              Subtask of <span class="tsk-truncate">{parent().title}</span>
+              Subtask of <span class="tsk-key">{taskKey(props.projectLabel, parent())}</span>
+              <span class="tsk-truncate">{parent().title}</span>
             </button>
           )}
         </Show>
@@ -198,7 +230,7 @@ export function TaskDetail(props: TaskDetailProps) {
         <Show when={props.subtasks}>{(section) => section()}</Show>
       </div>
 
-      <aside class="tsk-rail">
+      <aside id="task-detail-rail" class="tsk-rail" data-testid="task-detail-rail" inert={props.railCollapsed === true}>
         <section class="tsk-rail-section" aria-label="Properties">
           <h3 class="tsk-section-title tsk-rail-title">Properties</h3>
           {/* Each row is its value: the status control is the status, and a

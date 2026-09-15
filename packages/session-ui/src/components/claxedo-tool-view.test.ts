@@ -77,9 +77,9 @@ describe("claxedoToolTitle", () => {
 })
 
 describe("claxedoToolView", () => {
-  test("task_create links the created task with its number and status, and says when it was replayed", () => {
+  test("task_create links the created task with its key and status, and says when it was replayed", () => {
     const output = JSON.stringify({
-      task: { id: "tsk_4f4f", number: 5, title: "MCP smoke", status: "backlog", parent: null, project: "prj", createdFrom: { sessionId: "ses_titled", workspaceId: "w" } },
+      task: { id: "tsk_4f4f", key: "5", title: "MCP smoke", status: "backlog", parent: null, project: "prj", createdFrom: { sessionId: "ses_titled", workspaceId: "w" } },
       replayed: true,
     })
     expect(view("task_create", { title: "MCP smoke", status: "backlog" }, output)).toEqual({
@@ -124,9 +124,9 @@ describe("claxedoToolView", () => {
     })
   })
 
-  test("task_start reads the task's number and title from its answer, and falls back to the input id before one arrives", () => {
+  test("task_start reads the task's key and title from its answer, and falls back to the input id before one arrives", () => {
     const output = JSON.stringify({
-      task: { id: "tsk_206f", number: 1, title: "MCP smoke: created from a session" },
+      task: { id: "tsk_206f", key: "1", title: "MCP smoke: created from a session" },
       session: { sessionId: "ses_new" },
       slot: "primary",
       attempt: 1,
@@ -146,15 +146,15 @@ describe("claxedoToolView", () => {
     expect(view("task_start", { task: "7" }, output)).toMatchObject({ link: { label: "#7" }, note: "already running" })
   })
 
-  test("task_get carries the number, title, status, and the subtask and session counts", () => {
+  test("task_get carries the key, title, status, and the subtask and session counts", () => {
     const output = JSON.stringify({
-      task: { id: "tsk_1", number: 3, title: "Ship it", status: "doing", parentTaskId: "tsk_0", children: { total: 2, done: 1 } },
+      task: { id: "tsk_1", key: "3.1", title: "Ship it", status: "doing", parentTaskId: "tsk_0", children: { total: 2, done: 1 } },
       links: [{ slot: "primary" }],
     })
     expect(view("task_get", { task: "tsk_1" }, output)).toEqual({
       name: "task_get",
       title: "Read task",
-      link: { kind: "task", id: "tsk_1", label: "#3 Ship it" },
+      link: { kind: "task", id: "tsk_1", label: "#3.1 Ship it" },
       status: "doing",
       facts: [
         { label: "Subtask of", value: "tsk_0", link: { kind: "task", id: "tsk_0", label: "tsk_0" } },
@@ -166,7 +166,7 @@ describe("claxedoToolView", () => {
   })
 
   test("task_list shows a capped set of linked rows and counts the rest", () => {
-    const tasks = Array.from({ length: TASK_LIST_ROW_CAP + 3 }, (_, index) => ({ id: `tsk_${index}`, number: index + 1, title: `Task ${index + 1}`, status: "todo" }))
+    const tasks = Array.from({ length: TASK_LIST_ROW_CAP + 3 }, (_, index) => ({ id: `tsk_${index}`, key: String(index + 1), title: `Task ${index + 1}`, status: "todo" }))
     const result = view("task_list", { status: "todo" }, JSON.stringify({ project: "prj", tasks, nextCursor: "c2" }))
     expect(result.subject).toBe(`${TASK_LIST_ROW_CAP + 3} tasks`)
     expect(result.status).toBe("todo")
@@ -176,7 +176,7 @@ describe("claxedoToolView", () => {
   })
 
   test("task_list with a further page but no hidden rows says more is available", () => {
-    const result = view("task_list", {}, JSON.stringify({ tasks: [{ id: "tsk_0", number: 1, title: "One", status: "done" }], nextCursor: "c2" }))
+    const result = view("task_list", {}, JSON.stringify({ tasks: [{ id: "tsk_0", key: "1", title: "One", status: "done" }], nextCursor: "c2" }))
     expect(result.subject).toBe("1 task")
     expect(result.more).toBe("more available")
   })

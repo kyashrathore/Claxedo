@@ -259,6 +259,7 @@ function task(id: string): Task {
     scopeId: "org",
     projectId: PROJECT,
     number: 1,
+    childNumber: null,
     workspaceId: null,
     parentTaskId: null,
     createdFrom: null,

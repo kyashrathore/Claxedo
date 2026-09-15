@@ -37,6 +37,8 @@ export const ClaxedoTaskTable = sqliteTable(
     revision: integer().notNull(),
     project_id: text().notNull(),
     number: integer().notNull(),
+    /** 0 on a root rather than null, because a unique index treats every null as distinct. */
+    child_number: integer().notNull().default(0),
     workspace_id: text(),
     parent_task_id: text(),
     created_from_session_id: text(),
@@ -53,7 +55,7 @@ export const ClaxedoTaskTable = sqliteTable(
     primaryKey({ columns: [table.scope_id, table.task_id] }),
     index("claxedo_task_project_page_idx").on(table.scope_id, table.project_id, table.created_at, table.task_id),
     index("claxedo_task_child_page_idx").on(table.scope_id, table.parent_task_id, table.created_at, table.task_id),
-    uniqueIndex("claxedo_task_number_idx").on(table.scope_id, table.project_id, table.number),
+    uniqueIndex("claxedo_task_number_idx").on(table.scope_id, table.project_id, table.number, table.child_number),
   ],
 )
 

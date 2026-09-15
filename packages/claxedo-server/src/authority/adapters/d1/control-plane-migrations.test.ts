@@ -40,6 +40,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0030_workspace_host_assignment_revision.sql",
   "0031_normalize_user_hosted_directories.sql",
   "0032_task_attachments.sql",
+  "0033_task_child_number.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(

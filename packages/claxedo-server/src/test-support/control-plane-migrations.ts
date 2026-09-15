@@ -46,11 +46,13 @@ export async function miniflareControlPlaneDatabase(
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of migrations) {
-    const path = fileURLToPath(new URL(`../../migrations/control-plane/${name}`, import.meta.url))
-    for (const statement of migrationStatements(await readFile(path, "utf8"), name)) {
-      await database.prepare(statement).run()
-    }
-  }
+  for (const name of migrations) await applyControlPlaneMigration(database, name)
   return { database, dispose: () => instance.dispose() }
+}
+
+export async function applyControlPlaneMigration(database: D1Database, name: string): Promise<void> {
+  const path = fileURLToPath(new URL(`../../migrations/control-plane/${name}`, import.meta.url))
+  for (const statement of migrationStatements(await readFile(path, "utf8"), name)) {
+    await database.prepare(statement).run()
+  }
 }

@@ -193,6 +193,7 @@ function taskOf(ctx: DecodeContext, value: unknown, path: string): Task {
     scopeId: ctx.read.nonEmptyString(row?.scopeId, `${path}.scopeId`) ?? "",
     projectId: ctx.read.nonEmptyString(row?.projectId, `${path}.projectId`) ?? "",
     number: ctx.read.integer(row?.number, `${path}.number`) ?? 0,
+    childNumber: nullableInteger(ctx, row?.childNumber, `${path}.childNumber`),
     workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}.workspaceId`) ?? null,
     parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}.parentTaskId`) ?? null,
     createdFrom: nullableSessionReference(ctx, row?.createdFrom, `${path}.createdFrom`),

@@ -137,11 +137,18 @@ export type Task = {
   scopeId: string
   projectId: string
   /**
-   * The task's place in its project's own sequence, minted by the store at
-   * create. Archived tasks keep theirs, so one number names one task for as
+   * The project-sequence number the task is filed under: its own for a root,
+   * its parent's for a subtask. A root's number is minted by the store at
+   * create and kept when it is archived, so one number names one root for as
    * long as the project exists and a person can quote it.
    */
   number: number
+  /**
+   * A subtask's place among its parent's children, minted when it is attached;
+   * null on a root. With `number` it is the key a person quotes (`20.1`), and
+   * both are minted again when the task is reparented or moved.
+   */
+  childNumber: number | null
   workspaceId: string | null
   parentTaskId: string | null
   /** The session whose agent created the task; null when a person created it in the app. */
@@ -153,6 +160,11 @@ export type Task = {
   archivedAt: number | null
   createdAt: number
   updatedAt: number
+}
+
+/** The key a person quotes, without its project's letters: `20` for a root, `20.1` for its first subtask. */
+export function taskNumber(task: Pick<Task, "number" | "childNumber">): string {
+  return task.childNumber === null ? String(task.number) : `${task.number}.${task.childNumber}`
 }
 
 /**

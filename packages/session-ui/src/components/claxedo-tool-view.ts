@@ -169,7 +169,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       const parent = nonEmptyString(task?.parent) ?? nonEmptyString(args.parent)
       const from = asRecord(task?.createdFrom)
       const link = task
-        ? taskLink(nonEmptyString(task.id), asFiniteNumber(task.number), nonEmptyString(task.title))
+        ? taskLink(nonEmptyString(task.id), nonEmptyString(task.key), nonEmptyString(task.title))
         : undefined
       return {
         ...base,
@@ -192,7 +192,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       const destination = nonEmptyString(result?.destination)
       return {
         ...base,
-        link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), asFiniteNumber(task?.number), nonEmptyString(task?.title)),
+        link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), nonEmptyString(task?.key), nonEmptyString(task?.title)),
         ...(preset ? { subject: preset } : {}),
         ...(result?.created === false
           ? { note: i18n.t("ui.claxedoTool.note.alreadyRunning") }
@@ -216,7 +216,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       const children = asRecord(task?.children)
       return {
         ...base,
-        link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), asFiniteNumber(task?.number), nonEmptyString(task?.title)),
+        link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), nonEmptyString(task?.key), nonEmptyString(task?.title)),
         ...(nonEmptyString(task?.status) ? { status: nonEmptyString(task?.status) } : {}),
         facts: [
           ...(parent ? [cardFact(i18n.t("ui.claxedoTool.fact.parent"), taskLink(parent))] : []),
@@ -232,7 +232,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         const task = asRecord(row)
         const id = nonEmptyString(task?.id)
         if (!task || !id) return []
-        return [{ link: taskLink(id, asFiniteNumber(task.number), nonEmptyString(task.title)), ...(nonEmptyString(task.status) ? { status: nonEmptyString(task.status) } : {}) }]
+        return [{ link: taskLink(id, nonEmptyString(task.key), nonEmptyString(task.title)), ...(nonEmptyString(task.status) ? { status: nonEmptyString(task.status) } : {}) }]
       })
       const filter = nonEmptyString(args.status)
       const hidden = Math.max(0, tasks.length - TASK_LIST_ROW_CAP)
@@ -347,11 +347,11 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
   }
 }
 
-function taskLink(id: string | undefined, number?: number, title?: string): ClaxedoLink {
-  const label = number !== undefined && title
-    ? `#${number} ${title}`
-    : number !== undefined
-      ? `#${number}`
+function taskLink(id: string | undefined, key?: string, title?: string): ClaxedoLink {
+  const label = key && title
+    ? `#${key} ${title}`
+    : key
+      ? `#${key}`
       : title ?? (id && /^\d+$/.test(id) ? `#${id}` : clampLabel(id ?? "", 13))
   return { kind: "task", id: id ?? "", label }
 }

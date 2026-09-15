@@ -115,6 +115,7 @@ function task(input: { workspaceId: string | null; projectId?: string }): Task {
     scopeId: "local",
     projectId: input.projectId ?? "prj_1",
     number: 1,
+    childNumber: null,
     workspaceId: input.workspaceId,
     parentTaskId: null,
     createdFrom: null,

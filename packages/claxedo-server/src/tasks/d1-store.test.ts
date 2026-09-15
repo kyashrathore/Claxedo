@@ -25,6 +25,7 @@ import {
 } from "@claxedo/tasks"
 
 import {
+  applyControlPlaneMigration,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../test-support/control-plane-migrations"
@@ -32,7 +33,12 @@ import { createD1TasksStore } from "./d1-store"
 
 // 0025 and 0026 own every table under test and reference no auth table, so
 // they are the only migrations this store needs.
-const MIGRATIONS = ["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql"]
+const MIGRATIONS = [
+  "0025_claxedo_tasks.sql",
+  "0026_agent_cross_machine_writes.sql",
+  "0032_task_attachments.sql",
+  "0033_task_child_number.sql",
+]
 
 const active: ControlPlaneDatabase[] = []
 
@@ -40,8 +46,8 @@ afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
-async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(MIGRATIONS)
+async function database(migrations: readonly string[] = MIGRATIONS): Promise<D1Database> {
+  const instance = await miniflareControlPlaneDatabase(migrations)
   active.push(instance)
   return instance.database
 }
@@ -252,6 +258,62 @@ describe("D1 Tasks store units", () => {
     expect((await store.links.getCurrent(SCOPES.first, "task-linked", "primary"))?.sessionRef.sessionId).toBe(
       "session-theirs",
     )
+  })
+
+  test("a reparent that lands on a child number another child took is a number-taken conflict, in and out of a unit", async () => {
+    const target = await database()
+    const store = createD1TasksStore({ database: target })
+    const parent = taskRow({ id: "task-parent" })
+    await store.tasks.insert(parent)
+    await store.tasks.insert(taskRow({ id: "task-first", number: parent.number, childNumber: 1, parentTaskId: parent.id }))
+    const loose = taskRow({ id: "task-loose" })
+    await store.tasks.insert(loose)
+    const filed = { ...loose, revision: 2, number: parent.number, childNumber: 1, parentTaskId: parent.id }
+    const conflict = {
+      name: "TasksStoreConflict",
+      kind: "number-taken",
+      message: expect.stringContaining(`task number ${parent.number}.1`),
+    }
+
+    await expect(store.tasks.update(filed, loose.revision)).rejects.toMatchObject(conflict)
+    await expect(store.transaction((tx) => tx.tasks.update(filed, loose.revision))).rejects.toMatchObject(conflict)
+    expect(await store.tasks.get(SCOPES.first, "task-loose")).toMatchObject({ revision: 1, parentTaskId: null })
+  })
+})
+
+describe("D1 Tasks child-number migration", () => {
+  test("subtasks take their parent's number and a child number in creation order; roots keep theirs", async () => {
+    const target = await database(MIGRATIONS.filter((name) => name !== "0033_task_child_number.sql"))
+    const insert = (id: string, number: number, parent: string | null, createdAt: number) =>
+      target
+        .prepare(
+          `insert into tasks (scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at)` +
+            ` values (?, ?, 1, 'project-a', ?, null, ?, ?, '', 'todo', 0, null, ?, ?)`,
+        )
+        .bind(SCOPES.first, id, number, parent, id, createdAt, createdAt)
+        .run()
+    await insert("root-20", 20, null, 1)
+    await insert("root-21", 21, null, 2)
+    await insert("child-late", 23, "root-20", 4)
+    await insert("child-early", 22, "root-20", 3)
+    await insert("child-other", 24, "root-21", 5)
+    await insert("root-1", 1, null, 6)
+
+    await applyControlPlaneMigration(target, "0033_task_child_number.sql")
+
+    const store = createD1TasksStore({ database: target })
+    const filed = async (id: string) => {
+      const task = await store.tasks.get(SCOPES.first, id)
+      return `${task?.number}${task?.childNumber === null ? "" : `.${task?.childNumber}`}`
+    }
+    expect(await filed("root-20")).toBe("20")
+    expect(await filed("root-21")).toBe("21")
+    expect(await filed("root-1")).toBe("1")
+    expect(await filed("child-early")).toBe("20.1")
+    expect(await filed("child-late")).toBe("20.2")
+    expect(await filed("child-other")).toBe("21.1")
+    expect(await store.tasks.nextChildNumber(SCOPES.first, "root-20")).toBe(3)
+    expect(await store.tasks.nextNumber(SCOPES.first, "project-a")).toBe(22)
   })
 })
 

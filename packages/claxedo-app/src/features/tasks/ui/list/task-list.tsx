@@ -136,7 +136,7 @@ function TaskRow(props: {
         onClick={() => props.onSelect(props.task.id)}
       >
         <TaskStatusIcon status={props.task.status} label={TASK_STATUS_LABELS[props.task.status]} />
-        <span class="tsk-key">{taskKey(props.projectName, props.task.number)}</span>
+        <span class="tsk-key">{taskKey(props.projectName, props.task)}</span>
         <span class="tsk-open-name">{props.task.title}</span>
         <Show when={props.parentTitle}>{(title) => <span class="tsk-parent">{title()}</span>}</Show>
         <Show when={props.task.archivedAt !== null}>

@@ -11,6 +11,7 @@ import { and, asc, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "dri
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
+  taskNumber,
   type ConfigurationSlot,
   type ListQuery,
   type Task,
@@ -274,43 +275,45 @@ function tasksOperations(use: Reader): TasksStoreOperations {
         return (row?.highest ?? 0) + 1
       },
 
+      async nextChildNumber(scopeId, parentTaskId) {
+        const row = use((db) =>
+          db
+            .select({ highest: sql<number | null>`max(${ClaxedoTaskTable.child_number})` })
+            .from(ClaxedoTaskTable)
+            .where(and(eq(ClaxedoTaskTable.scope_id, scopeId), eq(ClaxedoTaskTable.parent_task_id, parentTaskId)))
+            .get(),
+        )
+        return (row?.highest ?? 0) + 1
+      },
+
       async insert(task) {
         try {
           use((db) => db.insert(ClaxedoTaskTable).values(taskColumns(task)).run())
         } catch (cause) {
-          throw (
-            (await tasksStoreConflict(
-              [
-                {
-                  kind: "number-taken",
-                  broken: async () =>
-                    numberHolder(use, task)
-                      ? taskNumberTakenRefusal(task.projectId, task.number)
-                      : undefined,
-                },
-              ],
-              cause,
-            )) ?? cause
-          )
+          throw (await numberConflict(use, task, cause)) ?? cause
         }
       },
 
       async update(task, expectedRevision) {
-        const written = use((db) =>
-          db
-            .update(ClaxedoTaskTable)
-            .set(taskColumns(task))
-            .where(
-              and(
-                eq(ClaxedoTaskTable.scope_id, task.scopeId),
-                eq(ClaxedoTaskTable.task_id, task.id),
-                eq(ClaxedoTaskTable.revision, expectedRevision),
-              ),
-            )
-            .returning({ taskId: ClaxedoTaskTable.task_id })
-            .all(),
-        )
-        return written.length > 0
+        try {
+          const written = use((db) =>
+            db
+              .update(ClaxedoTaskTable)
+              .set(taskColumns(task))
+              .where(
+                and(
+                  eq(ClaxedoTaskTable.scope_id, task.scopeId),
+                  eq(ClaxedoTaskTable.task_id, task.id),
+                  eq(ClaxedoTaskTable.revision, expectedRevision),
+                ),
+              )
+              .returning({ taskId: ClaxedoTaskTable.task_id })
+              .all(),
+          )
+          return written.length > 0
+        } catch (cause) {
+          throw (await numberConflict(use, task, cause)) ?? cause
+        }
       },
     },
 
@@ -476,6 +479,7 @@ function tasksOperations(use: Reader): TasksStoreOperations {
 
 /** The task, other than this one, that holds this project's number — the whole of what the unique index refuses. */
 function numberHolder(use: Reader, task: Task): string | undefined {
+  const columns = taskColumns(task)
   const row = use((db) =>
     db
       .select({ taskId: ClaxedoTaskTable.task_id })
@@ -484,13 +488,27 @@ function numberHolder(use: Reader, task: Task): string | undefined {
         and(
           eq(ClaxedoTaskTable.scope_id, task.scopeId),
           eq(ClaxedoTaskTable.project_id, task.projectId),
-          eq(ClaxedoTaskTable.number, task.number),
+          eq(ClaxedoTaskTable.number, columns.number),
+          eq(ClaxedoTaskTable.child_number, columns.child_number),
           ne(ClaxedoTaskTable.task_id, task.id),
         ),
       )
       .get(),
   )
   return row?.taskId
+}
+
+/** A write is filed at a number by create and again by reparent, so both can collide on the unique index. */
+function numberConflict(use: Reader, task: Task, cause: unknown) {
+  return tasksStoreConflict(
+    [
+      {
+        kind: "number-taken",
+        broken: async () => (numberHolder(use, task) ? taskNumberTakenRefusal(task.projectId, taskNumber(task)) : undefined),
+      },
+    ],
+    cause,
+  )
 }
 
 /** Everything but the bytes, so a list read never loads an image it will not return. */

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { encodeAttachmentData } from "../attachments"
 import { createTasksCommands } from "../commands"
-import type { Preset, StartRequest, Task, TaskDraft, TaskSessionLink } from "../contracts"
+import { taskNumber, type Preset, type StartRequest, type Task, type TaskDraft, type TaskSessionLink } from "../contracts"
 import { createPresetsService } from "../presets/service"
 import { startConfigurationDigest } from "../start"
 import { createMemoryTasksStore } from "../stores/memory"
@@ -97,14 +97,34 @@ describe("tasks service", () => {
       expect(shelved.task.status).toBe("backlog")
     })
 
-    test("numbers each task after the last one in its own project", async () => {
+    test("numbers each root after the last one in its own project, and each subtask under its parent", async () => {
       const first = (await tasks.create(ACTOR, draft())).task
       const second = (await tasks.create(ACTOR, draft())).task
       const child = (await tasks.create(ACTOR, draft({ parentTaskId: first.id }))).task
+      const sibling = (await tasks.create(ACTOR, draft({ parentTaskId: first.id }))).task
       const elsewhere = (await tasks.create(ACTOR, draft({ projectId: "project-beta" }))).task
 
-      expect([first.number, second.number, child.number]).toEqual([1, 2, 3])
-      expect(elsewhere.number).toBe(1)
+      expect([first, second, elsewhere].map(taskNumber)).toEqual(["1", "2", "1"])
+      expect([child, sibling].map(taskNumber)).toEqual(["1.1", "1.2"])
+      expect((await tasks.create(ACTOR, draft())).task.number).toBe(3)
+    })
+
+    test("a subtask is filed again under whatever it is moved to", async () => {
+      const first = (await tasks.create(ACTOR, draft())).task
+      const second = (await tasks.create(ACTOR, draft())).task
+      const child = (await tasks.create(ACTOR, draft({ parentTaskId: first.id }))).task
+
+      const attached = await tasks.reparent(ACTOR, { taskId: child.id, revision: child.revision, parentTaskId: second.id, projectId: PROJECT })
+      expect(taskNumber(attached.task)).toBe("2.1")
+
+      const detached = await tasks.reparent(ACTOR, { taskId: child.id, revision: attached.task.revision, parentTaskId: null, projectId: PROJECT })
+      expect(taskNumber(detached.task)).toBe("3")
+
+      const moved = await tasks.reparent(ACTOR, { taskId: child.id, revision: detached.task.revision, parentTaskId: null, projectId: "project-beta" })
+      expect(taskNumber(moved.task)).toBe("1")
+
+      const still = await tasks.reparent(ACTOR, { taskId: child.id, revision: moved.task.revision, parentTaskId: null, projectId: "project-beta" })
+      expect(taskNumber(still.task)).toBe("1")
     })
 
     test("a number an archived task holds is not handed to the next one", async () => {

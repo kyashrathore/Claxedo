@@ -61,10 +61,16 @@ function link(
 
 const preset: Preset = presetRow({ id: "pre_1", name: "Reviewer" })
 
-function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> = {}, startLabel?: string) {
+function mount(
+  links: readonly TaskSessionLinkView[],
+  overrides: Partial<Task> = {},
+  startLabel?: string,
+  rail: { collapsed: boolean } = { collapsed: false },
+) {
   const onStart = vi.fn()
   const onOpenSession = vi.fn()
   const onSendTask = vi.fn()
+  const onToggleRail = vi.fn()
   const startOffer = (slot: ConfigurationSlot): TaskStartOffer => ({
     presets: [preset],
     defaultPresetId: preset.id,
@@ -89,10 +95,12 @@ function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> =
       onSendTask={onSendTask}
       onArchive={() => {}}
       onRestore={() => {}}
+      railCollapsed={rail.collapsed}
+      onToggleRail={onToggleRail}
       subtasks={<div data-testid="subtasks-slot" />}
     />
   ))
-  return { onStart, onOpenSession, onSendTask }
+  return { onStart, onOpenSession, onSendTask, onToggleRail }
 }
 
 /**
@@ -105,7 +113,7 @@ function mountSubtask(input: { onOpenParent?: () => void } = {}) {
     <TaskDetail
       view={{
         task: task({ id: "tsk_child", title: "Write the importer test", parentTaskId: "tsk_1" }),
-        parent: { id: "tsk_1", title: "Ship the importer" },
+        parent: { id: "tsk_1", number: 7, childNumber: null, title: "Ship the importer" },
         groups: [],
         configuredSlots: ["primary"],
       }}
@@ -185,17 +193,20 @@ describe("a subtask's own page", () => {
     const onOpenParent = vi.fn()
     mountSubtask({ onOpenParent })
 
-    expect(screen.getByTestId("task-detail-parent-tag").textContent).toBe("Subtask of Ship the importer")
+    expect(screen.getByTestId("task-detail-parent-tag").textContent).toBe("Subtask of IMP-7Ship the importer")
     fireEvent.click(screen.getByTestId("task-detail-parent-crumb"))
 
     expect(onOpenParent).toHaveBeenCalledTimes(1)
   })
 
-  test("carries the parent in the breadcrumb chain", () => {
+  test("names the parent in the breadcrumb chain by its key, keeping the title for hover", () => {
     mountSubtask({ onOpenParent: () => {} })
 
+    const crumb = screen.getByTestId("task-detail-parent-crumb")
+    expect(crumb.textContent).toBe("IMP-7")
+    expect(crumb.getAttribute("title")).toBe("Ship the importer")
     const crumbs = screen.getByLabelText("Breadcrumb").textContent ?? ""
-    expect(crumbs).toContain("Ship the importer")
+    expect(crumbs).not.toContain("Ship the importer")
     expect(crumbs).toContain("Write the importer test")
   })
 
@@ -272,5 +283,34 @@ describe("task detail linked sessions", () => {
     expect(screen.getByTestId("task-slot-send-primary")).toBeDisabled()
     fireEvent.click(screen.getByTestId("task-slot-send-primary"))
     expect(onSendTask).not.toHaveBeenCalled()
+  })
+})
+
+describe("the properties rail", () => {
+  test("is open by default, and its toggle in the breadcrumb row asks the owner to fold it", () => {
+    const { onToggleRail } = mount([])
+
+    const toggle = screen.getByTestId("task-detail-rail-toggle")
+    expect(toggle.getAttribute("aria-label")).toBe("Hide properties")
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(toggle.getAttribute("aria-controls")).toBe(screen.getByTestId("task-detail-rail").id)
+    expect(screen.getByTestId("task-detail").getAttribute("data-rail")).toBeNull()
+    expect(screen.getByTestId("task-detail-rail").inert).toBe(false)
+
+    fireEvent.click(toggle)
+
+    expect(onToggleRail).toHaveBeenCalledTimes(1)
+  })
+
+  // jsdom has no `inert`, so the property Solid drives is what is read here;
+  // a browser reflects it to the attribute.
+  test("folded, the rail is inert to focus and readers and the toggle offers to show it again", () => {
+    mount([], {}, undefined, { collapsed: true })
+
+    expect(screen.getByTestId("task-detail").getAttribute("data-rail")).toBe("collapsed")
+    expect(screen.getByTestId("task-detail-rail").inert).toBe(true)
+    const toggle = screen.getByTestId("task-detail-rail-toggle")
+    expect(toggle.getAttribute("aria-label")).toBe("Show properties")
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
   })
 })

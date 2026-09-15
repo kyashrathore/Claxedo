@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TASK_STATUSES, isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
+import { isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { LoadMore, type MorePages } from "../shared/load-more"
 import { TaskStatusIcon } from "../shared/status-control"
 import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "../shared/task-row-controls"
@@ -9,6 +9,8 @@ import type { SubtaskProgress } from "../list/task-list"
 
 export type TaskBoardProps = {
   tasks: readonly TaskSummary[]
+  /** The columns, in order: the statuses the open collection holds. */
+  statuses: readonly TaskStatus[]
   /** The name every card's key is derived from; the board spans one project. */
   projectName: string
   dateField: TaskDateField
@@ -47,7 +49,7 @@ export function TaskBoard(props: TaskBoardProps) {
   return (
     <>
       <div class="tsk tsk-board" data-testid="tasks-board">
-        <For each={TASK_STATUSES}>
+        <For each={props.statuses}>
           {(status, columnIndex) => (
             <section
               class="tsk-column"
@@ -117,7 +119,7 @@ export function TaskBoard(props: TaskBoardProps) {
                         setOver(undefined)
                       }}
                     >
-                      <span class="tsk-key tsk-card-key">{taskKey(props.projectName, task.number)}</span>
+                      <span class="tsk-key tsk-card-key">{taskKey(props.projectName, task)}</span>
                       <button
                         type="button"
                         class="tsk-card-title"

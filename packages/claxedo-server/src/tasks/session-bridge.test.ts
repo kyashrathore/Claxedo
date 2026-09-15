@@ -174,6 +174,7 @@ function task(): Task {
     scopeId: "org",
     projectId: "prj_1",
     number: 1,
+    childNumber: null,
     workspaceId: "ws_cloud",
     parentTaskId: null,
     createdFrom: null,

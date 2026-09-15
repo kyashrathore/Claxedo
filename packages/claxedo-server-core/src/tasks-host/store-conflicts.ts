@@ -18,7 +18,7 @@ export type TasksConflictProbe = Readonly<{
   broken: () => Promise<string | undefined>
 }>
 
-export function taskNumberTakenRefusal(projectId: string, number: number): string {
+export function taskNumberTakenRefusal(projectId: string, number: string): string {
   return `task number ${number} in project ${projectId} was taken by another task`
 }
 

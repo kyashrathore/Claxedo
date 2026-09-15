@@ -17,6 +17,7 @@ const TASK = {
   scopeId: "scope_1",
   projectId: "prj_1",
   number: 7,
+  childNumber: null,
   workspaceId: null,
   parentTaskId: null,
   createdFrom: null,
@@ -244,7 +245,7 @@ describe("task_list", () => {
       tasks: [
         {
           id: "tsk_1",
-          number: 7,
+          key: "7",
           title: "Ship the store",
           status: "todo",
           parent: null,
@@ -386,7 +387,7 @@ describe("task_create", () => {
     ])
     expect(answer.task).toEqual({
       id: "tsk_1",
-      number: 7,
+      key: "7",
       title: "Ship the store",
       status: "todo",
       parent: null,
@@ -470,7 +471,7 @@ describe("task_start", () => {
       },
     ])
     expect(answer).toEqual({
-      task: { id: "tsk_1", number: 7, title: TASK.title },
+      task: { id: "tsk_1", key: "7", title: TASK.title },
       session: { sessionId: "ses_started", workspaceId: "ws_local" },
       slot: "primary",
       attempt: 1,

@@ -3,7 +3,7 @@
  * Tasks adapter runs. A divergence here is a divergence in what a revision
  * predicate, a claimed session origin or a scope means on one of the products.
  */
-import { mkdirSync, realpathSync } from "fs"
+import { cpSync, mkdirSync, readdirSync, realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -15,7 +15,7 @@ import type { Task } from "@claxedo/tasks"
 const roots: string[] = []
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 
-const { ClaxedoDB } = await import("../platform/db/index")
+const { ClaxedoDB, CLAXEDO_MIGRATION_JOURNAL, configureClaxedoMigrations } = await import("../platform/db/index")
 const { sqliteTasksStore } = await import("./sqlite-store")
 const { TasksStoredRowError } = await import("./stored-rows")
 const { tasksStoreConformance, tasksCommandReplayConformance } = await import("@claxedo/tasks/conformance")
@@ -128,6 +128,82 @@ describe("SQLite Tasks store units", () => {
       number: localTask("task-holding").number,
     })
     await expect(raced).rejects.toMatchObject({ name: "TasksStoreConflict", kind: "number-taken" })
+  })
+
+  test("a reparent that lands on a child number another child took is the same conflict", async () => {
+    freshDatabase()
+    const parent = localTask("task-parent")
+    await sqliteTasksStore.tasks.insert(parent)
+    await sqliteTasksStore.tasks.insert({ ...localTask("task-first"), number: parent.number, childNumber: 1, parentTaskId: parent.id })
+    const loose = localTask("task-loose")
+    await sqliteTasksStore.tasks.insert(loose)
+
+    const raced = sqliteTasksStore.tasks.update(
+      { ...loose, revision: 2, number: parent.number, childNumber: 1, parentTaskId: parent.id },
+      loose.revision,
+    )
+    await expect(raced).rejects.toMatchObject({
+      name: "TasksStoreConflict",
+      kind: "number-taken",
+      message: expect.stringContaining(`task number ${parent.number}.1`),
+    })
+  })
+})
+
+describe("SQLite Tasks child-number migration", () => {
+  /**
+   * The journal up to the migration under test, in a directory of its own, so
+   * rows can be written in the shape the earlier schema stored them in.
+   */
+  const MIGRATION = "20260915000100_task_child_number"
+
+  function journalBefore(): string {
+    const dir = path.join(realpathSync(os.tmpdir()), `tasks-journal-${randomUUID().slice(0, 8)}`)
+    roots.push(dir)
+    mkdirSync(dir, { recursive: true })
+    for (const entry of readdirSync(CLAXEDO_MIGRATION_JOURNAL)) {
+      if (entry >= MIGRATION) continue
+      cpSync(path.join(CLAXEDO_MIGRATION_JOURNAL, entry), path.join(dir, entry), { recursive: true })
+    }
+    return dir
+  }
+
+  afterAll(() => configureClaxedoMigrations(CLAXEDO_MIGRATION_JOURNAL))
+
+  test("subtasks take their parent's number and a child number in creation order; roots keep theirs", async () => {
+    const journal = journalBefore()
+    configureClaxedoMigrations(journal)
+    freshDatabase()
+    const insert = (id: string, number: number, parent: string | null, createdAt: number) =>
+      ClaxedoDB.use((db) =>
+        db.run(
+          `INSERT INTO claxedo_task (scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at)
+           VALUES ('local', '${id}', 1, 'project-a', ${number}, NULL, ${parent === null ? "NULL" : `'${parent}'`}, '${id}', '', 'todo', 0, NULL, ${createdAt}, ${createdAt})`,
+        ),
+      )
+    insert("root-20", 20, null, 1)
+    insert("root-21", 21, null, 2)
+    insert("child-late", 23, "root-20", 4)
+    insert("child-early", 22, "root-20", 3)
+    insert("child-other", 24, "root-21", 5)
+    insert("root-1", 1, null, 6)
+
+    cpSync(path.join(CLAXEDO_MIGRATION_JOURNAL, MIGRATION), path.join(journal, MIGRATION), { recursive: true })
+    ClaxedoDB.close()
+    ClaxedoDB.Drizzle()
+
+    const filed = async (id: string) => {
+      const task = await sqliteTasksStore.tasks.get("local", id)
+      return `${task?.number}${task?.childNumber === null ? "" : `.${task?.childNumber}`}`
+    }
+    expect(await filed("root-20")).toBe("20")
+    expect(await filed("root-21")).toBe("21")
+    expect(await filed("root-1")).toBe("1")
+    expect(await filed("child-early")).toBe("20.1")
+    expect(await filed("child-late")).toBe("20.2")
+    expect(await filed("child-other")).toBe("21.1")
+    expect(await sqliteTasksStore.tasks.nextChildNumber("local", "root-20")).toBe(3)
+    expect(await sqliteTasksStore.tasks.nextNumber("local", "project-a")).toBe(22)
   })
 })
 

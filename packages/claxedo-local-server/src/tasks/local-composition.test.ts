@@ -133,7 +133,27 @@ describe("desktop-local Tasks composition", () => {
 
     const listed = await target.request(`${LOOPBACK}${TASKS}/tasks?projectId=project-a`)
     expect(listed.status).toBe(200)
-    expect(await listed.json()).toMatchObject({ items: [{ title: "Ship the store" }] })
+    expect(await listed.json()).toMatchObject({ items: [{ title: "Ship the store", number: 1, childNumber: null }] })
+  })
+
+  test("a subtask is filed under its parent's number and read back that way", async () => {
+    const target = app()
+    const parent = await command(target, "request-parent", {
+      type: "task.create",
+      input: { projectId: "project-a", title: "Parent", description: "", workspaceId: null, parentTaskId: null },
+    })
+    const parentId = (parent.body as { result: { task: { id: string } } }).result.task.id
+
+    const child = await command(target, "request-child", {
+      type: "task.create",
+      input: { projectId: "project-a", title: "Child", description: "", workspaceId: null, parentTaskId: parentId },
+    })
+    expect(child.status).toBe(200)
+    expect(child.body).toMatchObject({ result: { task: { title: "Child", number: 1, childNumber: 1, parentTaskId: parentId } } })
+
+    const children = await target.request(`${LOOPBACK}${TASKS}/tasks/${parentId}/children`)
+    expect(children.status).toBe(200)
+    expect(await children.json()).toMatchObject({ items: [{ title: "Child", number: 1, childNumber: 1 }] })
   })
 
   // Through the loopback app, the SQLite migration and the store: the image

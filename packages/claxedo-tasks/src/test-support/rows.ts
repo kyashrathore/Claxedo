@@ -53,10 +53,10 @@ export function presetRow(input: Partial<Preset> & Pick<Preset, "id">): Preset {
 }
 
 /**
- * A number of its own for every row a test writes, because a durable adapter
- * keys `(scope, project, number)` uniquely. Keyed by task id, so a test that
- * inserts a row and then updates it under the same id carries one number
- * through both.
+ * A root number of its own for every row a test writes, because a durable
+ * adapter keys `(scope, project, number, childNumber)` uniquely. Keyed by task
+ * id, so a test that inserts a row and then updates it under the same id
+ * carries one number through both.
  */
 const taskNumbers = new Map<string, number>()
 
@@ -75,6 +75,7 @@ export function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
     scopeId: input.scopeId ?? SCOPES.first,
     projectId: input.projectId ?? "project-alpha",
     number: input.number ?? taskNumberFor(input.id),
+    childNumber: input.childNumber ?? null,
     workspaceId: input.workspaceId ?? null,
     parentTaskId: input.parentTaskId ?? null,
     createdFrom: input.createdFrom ?? null,

@@ -1,4 +1,4 @@
-import { CONFIGURATION_SLOTS, admissibleAttempt } from "@claxedo/tasks"
+import { CONFIGURATION_SLOTS, TASK_STATUSES, admissibleAttempt, taskNumber } from "@claxedo/tasks"
 import type {
   ConfigurationSlot,
   ModelConfiguration,
@@ -70,6 +70,17 @@ export const TASK_COLLECTION_LABELS: Readonly<Record<TaskCollection, string>> = 
 }
 
 /**
+ * The statuses a collection holds, which are also the board's columns under
+ * it. Active is the work in play, so it holds neither the parked nor the
+ * finished; a Backlog or Done column on it would count zero forever.
+ */
+export const TASK_COLLECTION_STATUSES: Readonly<Record<TaskCollection, readonly TaskStatus[]>> = {
+  active: ["todo", "doing", "needs_you"],
+  backlog: ["backlog"],
+  all: TASK_STATUSES,
+}
+
+/**
  * One installed plugin or skill as the editor shows it. `available: false` is
  * rendered and refused rather than filtered out, so a preset that names a
  * revoked capability explains itself instead of quietly shrinking.
@@ -115,7 +126,7 @@ export type TaskLinkGroup = {
 export type TaskDetailView = {
   task: Task
   /** The task this one is a subtask of, once its own read has answered. */
-  parent?: { id: string; title: string }
+  parent?: Pick<Task, "id" | "number" | "childNumber" | "title">
   groups: readonly TaskLinkGroup[]
   /** The slots this page draws a Start control for: Primary, plus any slot the task has already run. */
   configuredSlots: readonly ConfigurationSlot[]
@@ -169,9 +180,9 @@ export function projectKey(projectName: string): string {
  * no letters leaves the number to stand alone rather than growing a key made
  * of nothing.
  */
-export function taskKey(projectName: string, taskNumber: number): string {
+export function taskKey(projectName: string, task: Pick<Task, "number" | "childNumber">): string {
   const key = projectKey(projectName)
-  return key.length === 0 ? `#${taskNumber}` : `${key}-${taskNumber}`
+  return key.length === 0 ? `#${taskNumber(task)}` : `${key}-${taskNumber(task)}`
 }
 
 /** The slots a preset carries a configuration for, in catalog order. */

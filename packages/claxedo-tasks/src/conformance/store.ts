@@ -35,6 +35,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "a_list_row_counts_every_live_child_not_the_ones_a_page_returned",
     "task_numbers_are_minted_per_project_and_carried_on_reads",
     "an_archived_task_keeps_its_number_and_the_next_one_does_not_reuse_it",
+    "child_numbers_are_minted_per_parent_archived_children_counted_and_carried_on_reads",
     "a_task_created_from_a_session_reads_that_session_back_on_get_list_and_children",
     "a_preset_marked_startable_by_agents_reads_the_mark_back_on_get_and_list",
     "a_link_is_found_by_the_session_it_names_with_what_started_it_and_where_it_runs",
@@ -533,6 +534,33 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         2,
         "the archived task lost the number it was created with",
       )
+    }),
+
+    conformanceCase("child numbers are minted per parent, archived children counted, and carried on reads", async () => {
+      const store = await start()
+      await store.tasks.insert(taskRow({ id: "parent-a", number: 1 }))
+      await store.tasks.insert(taskRow({ id: "parent-b", number: 2 }))
+      assertEqual(await store.tasks.nextChildNumber(CONFORMANCE_SCOPES.first, "parent-a"), 1, "a childless parent did not start at one")
+
+      await store.tasks.insert(taskRow({ id: "child-open", number: 1, childNumber: 1, parentTaskId: "parent-a" }))
+      await store.tasks.insert(taskRow({ id: "child-gone", number: 1, childNumber: 2, parentTaskId: "parent-a", archivedAt: 9 }))
+      assertEqual(
+        await store.tasks.nextChildNumber(CONFORMANCE_SCOPES.first, "parent-a"),
+        3,
+        "the archived child's number was handed out again",
+      )
+      assertEqual(
+        await store.tasks.nextChildNumber(CONFORMANCE_SCOPES.first, "parent-b"),
+        1,
+        "another parent's children moved this parent's sequence",
+      )
+
+      assertEqual((await store.tasks.get(CONFORMANCE_SCOPES.first, "child-gone"))?.childNumber, 2, "a read dropped the child number")
+      assertEqual((await store.tasks.get(CONFORMANCE_SCOPES.first, "parent-a"))?.childNumber, null, "a root read back with a child number")
+      const page = await store.tasks.list(CONFORMANCE_SCOPES.first, TASK_LIST)
+      assertEqual(page.items.find((row) => row.id === "child-open")?.childNumber, 1, "a list row dropped the child number")
+      const children = await store.tasks.listChildren(CONFORMANCE_SCOPES.first, "parent-a", LIST)
+      assertEqual(children.items.find((row) => row.id === "child-open")?.childNumber, 1, "a children row dropped the child number")
     }),
 
     conformanceCase("a task created from a session reads that session back on get, list and children", async () => {

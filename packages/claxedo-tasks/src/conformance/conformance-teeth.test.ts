@@ -81,6 +81,7 @@ function snapshotRollback(): TasksStorePort {
       listChildren: (scopeId, parentTaskId, query) => live.tasks.listChildren(scopeId, parentTaskId, query),
       countChildren: (scopeId, parentTaskId, filter) => live.tasks.countChildren(scopeId, parentTaskId, filter),
       nextNumber: (scopeId, projectId) => live.tasks.nextNumber(scopeId, projectId),
+      nextChildNumber: (scopeId, parentTaskId) => live.tasks.nextChildNumber(scopeId, parentTaskId),
       insert: (task) => record((into) => into.tasks.insert(task), live.tasks.insert(task)),
       update: (task, revision) => record((into) => into.tasks.update(task, revision), live.tasks.update(task, revision)),
     },
@@ -193,6 +194,22 @@ const REUSES_AN_ARCHIVED_NUMBER = everywhere((operations) => ({
         limit: 100,
       })
       return showing.items.reduce((highest, row) => Math.max(highest, row.number), 0) + 1
+    },
+  },
+}))
+
+/** The highest child number among the children still showing, which hands an archived child's back out. */
+const REUSES_AN_ARCHIVED_CHILD_NUMBER = everywhere((operations) => ({
+  ...operations,
+  tasks: {
+    ...operations.tasks,
+    nextChildNumber: async (scopeId, parentTaskId) => {
+      const showing = await operations.tasks.listChildren(scopeId, parentTaskId, {
+        includeArchived: false,
+        cursor: null,
+        limit: 100,
+      })
+      return showing.items.reduce((highest, row) => Math.max(highest, row.childNumber ?? 0), 0) + 1
     },
   },
 }))
@@ -423,6 +440,10 @@ const MUTANTS: readonly Mutant[] = [
   {
     breaks: "hands an archived task's number to the next one",
     apply: REUSES_AN_ARCHIVED_NUMBER,
+  },
+  {
+    breaks: "hands an archived child's number to the next one",
+    apply: REUSES_AN_ARCHIVED_CHILD_NUMBER,
   },
   {
     breaks: "reads every task back as created by nobody",

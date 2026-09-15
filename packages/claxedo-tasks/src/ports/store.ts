@@ -86,12 +86,18 @@ export type TaskStoreOperations = {
   listChildren(scopeId: string, parentTaskId: string, query: ChildListQuery): Promise<Page<TaskSummary>>
   countChildren(scopeId: string, parentTaskId: string, filter: ChildCountFilter): Promise<number>
   /**
-   * The number the next task created in this project takes: one past the
+   * The number the next root created in this project takes: one past the
    * highest any task there has held, archived rows counted, so a number is
    * never handed out twice. Called inside the unit that goes on to insert, so
    * two creates racing one project cannot both read the same highest.
    */
   nextNumber(scopeId: string, projectId: string): Promise<number>
+  /**
+   * The child number the next subtask attached to this parent takes: one past
+   * the highest among its current children, archived ones counted. A detached
+   * child is no longer counted, so the key it held can be handed out again.
+   */
+  nextChildNumber(scopeId: string, parentTaskId: string): Promise<number>
   insert(task: Task): Promise<void>
   update(task: Task, expectedRevision: number): Promise<boolean>
 }

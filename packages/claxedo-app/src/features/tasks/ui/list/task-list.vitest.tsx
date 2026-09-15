@@ -46,6 +46,12 @@ describe("a list row's properties", () => {
     expect(precedes(key, within(row).getByText("Ship the importer"))).toBe(true)
   })
 
+  test("a subtask's key is its parent's number and its own place under it", () => {
+    const row = mount("updated", [summary({ parentTaskId: "tsk_0", childNumber: 3 })])
+
+    expect(within(row).getByText("DP-12.3")).toBeTruthy()
+  })
+
   // The mark is the only thing on the row that says the status, so a reader
   // who cannot see it has nothing else to read.
   test("the status mark carries its own name", () => {

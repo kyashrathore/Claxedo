@@ -173,6 +173,9 @@ function operations(state: State): TasksStoreOperations {
             .reduce((highest, task) => Math.max(highest, task.number), 0) + 1
         )
       },
+      async nextChildNumber(scopeId, parentTaskId) {
+        return childrenOf(scopeId, parentTaskId).reduce((highest, task) => Math.max(highest, task.childNumber ?? 0), 0) + 1
+      },
       async insert(task) {
         const id = rowKey(task.scopeId, task.id)
         if (state.tasks.has(id)) throw new Error(`Task ${task.id} already exists`)

@@ -138,6 +138,12 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     return parent
   }
 
+  /** Where the task is filed: under its parent's number, or at the project's next number when it has no parent. */
+  const filing = async (scopeId: string, projectId: string, parent: Task | null): Promise<Pick<Task, "number" | "childNumber">> =>
+    parent
+      ? { number: parent.number, childNumber: await deps.store.tasks.nextChildNumber(scopeId, parent.id) }
+      : { number: await deps.store.tasks.nextNumber(scopeId, projectId), childNumber: null }
+
   const hasChildren = async (scopeId: string, taskId: string): Promise<boolean> =>
     (await deps.store.tasks.countChildren(scopeId, taskId, { includeArchived: true, excludeStatus: null })) > 0
 
@@ -332,7 +338,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         revision: 1,
         scopeId: actor.scopeId,
         projectId: draft.projectId,
-        number: await deps.store.tasks.nextNumber(actor.scopeId, draft.projectId),
+        ...(await filing(actor.scopeId, draft.projectId, parent)),
         workspaceId: parent ? parent.workspaceId : draft.workspaceId,
         parentTaskId: draft.parentTaskId,
         createdFrom: draft.createdFrom ?? null,
@@ -432,12 +438,14 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       const formerParent = current.parentTaskId !== null && current.parentTaskId !== input.parentTaskId
         ? await parentSnapshot(current.parentTaskId, actor.scopeId)
         : null
+      const moved = input.projectId !== current.projectId || input.parentTaskId !== current.parentTaskId
       const task = await write(
         {
           ...current,
           revision: current.revision + 1,
           projectId: input.projectId,
           parentTaskId: input.parentTaskId,
+          ...(moved ? await filing(actor.scopeId, input.projectId, nextParent) : {}),
           workspaceId: nextParent ? nextParent.workspaceId : current.workspaceId,
           updatedAt: deps.clock.now(),
         },

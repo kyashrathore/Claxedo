@@ -122,7 +122,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
           <TaskDetail
             view={{
               task: current(),
-              ...(parent.data?.task ? { parent: { id: parent.data.task.id, title: parent.data.task.title } } : {}),
+              ...(parent.data?.task ? { parent: parent.data.task } : {}),
               groups: groups(),
               // Every slot the host has ever linked, plus Primary, which is
               // always offerable. Slots a preset does not configure are refused
@@ -167,6 +167,8 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
             onSendTask={(link) => void sendTask(current(), link)}
             onBack={props.onBack}
             onOpenProject={() => props.onOpenProject(current().projectId)}
+            railCollapsed={props.store.state.railCollapsed}
+            onToggleRail={() => props.store.toggleRail()}
             onOpenParent={
               current().parentTaskId ? () => props.onOpenTask(current().parentTaskId!) : undefined
             }

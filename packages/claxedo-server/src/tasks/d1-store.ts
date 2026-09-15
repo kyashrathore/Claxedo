@@ -23,6 +23,7 @@
  */
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
+  taskNumber,
   type ConfigurationSlot,
   type ListQuery,
   type Preset,
@@ -70,7 +71,7 @@ export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 const PRESET_COLUMNS =
   "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, agent_startable, archived_at, created_at, updated_at"
 const TASK_COLUMNS =
-  "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, created_from_session_id, created_from_workspace_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
+  "scope_id, task_id, revision, project_id, number, child_number, workspace_id, parent_task_id, created_from_session_id, created_from_workspace_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
   "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, started_from_session_id, started_from_workspace_id, started_by, placement, created_at"
 /** `LINK_COLUMNS` qualified for a read that joins the task table. */
@@ -108,6 +109,7 @@ function taskValues(task: Task): unknown[] {
     row.revision,
     row.project_id,
     row.number,
+    row.child_number,
     row.workspace_id,
     row.parent_task_id,
     row.created_from_session_id,
@@ -381,11 +383,19 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
   /** The task, other than this one, that holds this project's number — the whole of what the unique index refuses. */
   const numberHolder = async (task: Task): Promise<string | undefined> => {
     const row = await database
-      .prepare(`select task_id from tasks where scope_id = ? and project_id = ? and number = ? and task_id <> ?`)
-      .bind(task.scopeId, task.projectId, task.number, task.id)
+      .prepare(
+        `select task_id from tasks where scope_id = ? and project_id = ? and number = ? and child_number = ? and task_id <> ?`,
+      )
+      .bind(task.scopeId, task.projectId, task.number, task.childNumber ?? 0, task.id)
       .first<{ task_id: string }>()
     return row?.task_id
   }
+
+  /** A write is filed at a number by create and again by reparent, so both can collide on the unique index. */
+  const numberProbe = (task: Task): TasksConflictProbe => ({
+    kind: "number-taken",
+    broken: async () => ((await numberHolder(task)) ? taskNumberTakenRefusal(task.projectId, taskNumber(task)) : undefined),
+  })
 
   const operations = (unit?: Unit): TasksStoreOperations => ({
     presets: {
@@ -539,6 +549,15 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
         return (row?.highest ?? 0) + 1
       },
 
+      async nextChildNumber(scopeId, parentTaskId) {
+        refuseListAfterWrite(unit, "child numbers")
+        const row = await database
+          .prepare(`select max(child_number) as highest from tasks where scope_id = ? and parent_task_id = ?`)
+          .bind(scopeId, parentTaskId)
+          .first<{ highest: number | null }>()
+        return (row?.highest ?? 0) + 1
+      },
+
       async insert(task) {
         const values = taskValues(task)
         // The number was read from committed rows, so a create that raced this
@@ -548,13 +567,7 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           unit,
           [database.prepare(insertStatement("tasks", TASK_COLUMNS, values)).bind(...values)],
           (overlay) => overlay.tasks.set(overlayKey(task.scopeId, task.id), task),
-          [
-            {
-              kind: "number-taken",
-              broken: async () =>
-                (await numberHolder(task)) ? taskNumberTakenRefusal(task.projectId, task.number) : undefined,
-            },
-          ],
+          [numberProbe(task)],
         )
       },
 
@@ -564,8 +577,12 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           .prepare(`update tasks set ${set.clause} where scope_id = ? and task_id = ? and revision = ?`)
           .bind(...set.values, task.scopeId, task.id, expectedRevision)
         if (!unit) {
-          const result = await statement.run()
-          return (result.meta.changes ?? 0) > 0
+          try {
+            const result = await statement.run()
+            return (result.meta.changes ?? 0) > 0
+          } catch (cause) {
+            throw (await tasksStoreConflict([numberProbe(task)], cause)) ?? cause
+          }
         }
         const key = overlayKey(task.scopeId, task.id)
         const pending = unit.overlay.tasks.get(key)
@@ -578,7 +595,7 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           unit,
           guard ? [guard.statement, statement] : [statement],
           (overlay) => overlay.tasks.set(key, task),
-          guard ? [guard.probe] : [],
+          [...(guard ? [guard.probe] : []), numberProbe(task)],
         )
         return true
       },
