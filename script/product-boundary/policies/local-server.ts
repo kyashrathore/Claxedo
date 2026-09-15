@@ -63,94 +63,64 @@ export const localServer: Policy = {
     requiredPackages: ["@claxedo/workspace-runtime", "hono"],
   },
 
-  // Measured 2026-08-09 with `runtimeOnly`. The eight added modules are the
-  // complete local usage pipeline (route, durable ports, scanner, pricing
-  // port, outbox, host identity, and composition). Shared implementation lives
-  // in server-core, so the desktop still reaches no hosted capability package.
-  // Tenant-aware sandbox fetch options are a local workspace owner with no
-  // hosted capability package: 56 + 1 = 57 modules.
-  // 2026-08-29: +1 `embedded-relay-host-auth.ts` — verified actor hop stamp for
-  // in-process embedded prompts (`claxedo.author` without managed authority).
-  // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + `-routes.ts` — the
-  // serving half of remote access (one relay connection for the assigned∩acked
-  // set, pushed from Electron main). Reviewed owner: workspace domain.
-  // 2026-09-02: +1 `workspace/user-hosted-surface.ts` — what a relayed request
-  // may reach on this machine for its workspace (deny/root/workspace verdict),
-  // imported only by `user-hosted-serving.ts`; no new package. Reviewed owner:
-  // workspace domain.
-  // Removing the retired local user-extension route subtracts one module.
-  // External OpenCode connections are registered by the local composition via
-  // @claxedo/opencode-server-adapter; this transport adds one package, not an
-  // embedded engine. AgentConfigRoutes also owns provider-routes.ts: the
-  // authenticated Pi catalog reads control-plane credentials, not a workspace
-  // engine. Shell project-routes.ts owns authorized project metadata reads and
-  // edits against the existing workspace store: exactly 57 modules, 22 packages.
-  // 2026-09-06: +1 `platform/json.ts` — one dependency-free leaf that reads
-  // untrusted JSON (request bodies, runtime event payloads, subprocess output).
-  // It replaced the private `record`/`text` pairs eight modules in this package
-  // had each written inline, so it adds a module without adding a package edge
-  // or any new reach. Reviewed owner: local-server platform. Re-measured, not
-  // summed: 54 modules, 21 packages.
-  // +1 package (2026-09-06): @claxedo/helpers, reached through the shared
-  // server-core surface (see server.ts for the owner). Re-measured, not
-  // summed: 54 modules, 22 packages.
-  // +1 package: @claxedo/mcp, the first-party MCP endpoint the desktop-local
-  // composition mounts at `/api/claxedo/mcp` for the sessions it launches
-  // (runtime credential only). It reaches only the MCP SDK, hono, zod, helpers
-  // and the runtime contract, all already in this closure. Re-measured, not
-  // summed: 54 modules, 23 packages.
-  // +1 module / 0 packages (2026-09-07): reviewed owner
-  // `agent-config/hosted-mcp-install.ts`, the one-click write of the hosted
-  // `claxedo` MCP entry into the Claude Code, Cursor and Codex configs on this
-  // machine. It belongs to this product because the desktop's own agent-config
-  // routes are what a user clicks, and it reads node builtins only — no
-  // package edge. Re-measured, not summed: 55 modules, 23 packages.
-  // smol-toml validates the hosted MCP installer's Codex configuration before any file is written.
-  // +1 module: shell/event-stream-response carries the authorized event
-  // producer over HTTP or WebSocket. Measured 56 / 24; no new package edge.
-  // +1 module: app/local-documents composes the shared repository/managed
-  // document backend for unsigned desktop editing. No hosted adapter edge.
-  // +1 module / +1 package: `credentials/broker.ts` and @claxedo/egress-broker,
-  // the loopback credential broker this composition mounts at `/bindings/*` and
-  // the authority behind it. The package is the broker's request policy,
-  // injection, mount gate and runtime-token verification; it reaches `jose`,
-  // `@hono/node-server` and @claxedo/agent-runtime-contract, all already in
-  // this closure. It belongs to this product because the desktop-local server
-  // is the process that holds the credential value and the harness never does.
-  // The table naming each provider's vendor host, allowed methods and paths
-  // and header shape is a fact about the vendor rather than about this
-  // machine, so it is owned by server-core, where the cloud delivery adapter
-  // reads the same rows; it adds no module or package edge here.
-  // +1 module: `credentials/machine-credentials.ts`, the credential port for a
-  // server running on the machine the harnesses live on. Asking a CLI what it
-  // is signed in as, and withdrawing the stored mark so a harness runs on that
-  // login, are operations with no referent on a host where no harness is
-  // installed, so they are composed here and left off the shared default.
-  // It reaches only the machine-login reader and the registry.
-  // +1 module: `credentials/operations/drop-copied-harness-logins.ts`, the
-  // one-time delete of the harness logins an older Claxedo copied off this
-  // machine. It belongs to this product because this is the process that ran
-  // that scan, and it reaches only the registry and the machine-login reader.
-  // +1 module: `usage/adapters/token-tracker-usage-limits.ts`, the plan probe
-  // for every agent installed on this machine, which only a server running on
-  // that machine can ask. It reaches tokentracker-cli and this package's JSON
-  // narrowing, both already here — the history adapter beside it already
-  // carries that dependency. No new package edge.
-  // +1 module: reviewed owner `agent-plugins/builtin-groups.ts`, reading the
-  // `agent-plugins/activation/sqlite-store.ts` this closure already holds. The
-  // first-party MCP endpoint this product mounts serves only the tool groups
-  // this machine consented to, and those rows are the Marketplace's own,
-  // written by the activation routes in this same package — a second
-  // resolution on the server side would be a second answer to the same
-  // question. No new package edge.
-  // +1 package: @claxedo/agent-runtime-contract, reviewed owner of the harness
-  // table (which provider ids each harness answers to, and which one a connect
-  // card signs in with) and of the credential-broker error vocabulary. The
-  // desktop server reads both — it serves the connect card and mounts the
-  // broker — and the package is data and pure functions with no dependencies
-  // of its own.
-  // Full closure measured at 62 modules / 26 packages.
-  ceilings: { modules: 62, packages: 26 },
+  // Measured with `runtimeOnly` — re-run, never summed: 60 modules, 27
+  // packages. What the desktop entry reaches beyond the composition and the
+  // workspace routes, and why each owner is this product's:
+  //  - the local usage pipeline (route, durable ports, scanner, pricing port,
+  //    outbox, host identity, composition) and the tenant-aware sandbox fetch
+  //    options: local workspace owners with no hosted capability package.
+  //  - `embedded-relay-host-auth.ts`: the verified actor hop stamp for
+  //    in-process embedded prompts (`claxedo.author` without managed authority).
+  //  - `workspace/user-hosted-serving-routes.ts`: the loopback control route
+  //    through which Electron main hands the serving credential and the
+  //    embedded runtimes' `sessionAuthority` to @claxedo/host-serving, the
+  //    reviewed owner of the serving half of remote access (one relay loop for
+  //    the assigned∩acked set, and the per-workspace surface a relayed request
+  //    may reach) for this daemon and a `claxedo connect` host alike. That
+  //    package reaches server-core's log and peer-address leaves and the
+  //    workspace-runtime relay subpath, all already here.
+  //  - `platform/json.ts`: the one dependency-free leaf every reader of
+  //    untrusted JSON (request bodies, runtime event payloads, subprocess
+  //    output) narrows through.
+  //  - `agent-config/hosted-mcp-install.ts` (owner: local-server platform): the
+  //    one-click write of the hosted `claxedo` MCP entry into the Claude Code,
+  //    Cursor and Codex configs on this machine; smol-toml validates the Codex
+  //    configuration before any file is written.
+  //  - `shell/event-stream-response.ts`: the authorized event producer over
+  //    HTTP or WebSocket.
+  //  - `app/local-documents.ts`: the shared repository/managed document
+  //    backend composed for unsigned desktop editing.
+  //  - `credentials/broker.ts` and @claxedo/egress-broker: the loopback
+  //    credential broker mounted at `/bindings/*` and the authority behind it
+  //    (request policy, injection, mount gate, runtime-token verification).
+  //    The desktop-local server is the process that holds the credential value
+  //    and the harness never does. The table naming each provider's vendor
+  //    host, methods, paths and header shape is a fact about the vendor, so
+  //    server-core owns it and the cloud delivery adapter reads the same rows.
+  //  - `credentials/machine-credentials.ts`: asking a CLI what it is signed in
+  //    as, and withdrawing the stored mark so a harness runs on that login —
+  //    operations with no referent on a host where no harness is installed.
+  //  - `credentials/operations/drop-copied-harness-logins.ts`: the one-time
+  //    delete of the harness logins an older Claxedo copied off this machine;
+  //    this is the process that ran that scan.
+  //  - `usage/adapters/token-tracker-usage-limits.ts`: the plan probe for
+  //    every agent installed on this machine, which only a server running on
+  //    that machine can ask; tokentracker-cli is already carried by the
+  //    history adapter beside it.
+  //  - `agent-plugins/builtin-groups.ts`: the tool groups this machine
+  //    consented to, read from the Marketplace's own activation rows in
+  //    `agent-plugins/activation/sqlite-store.ts`, so the first-party MCP
+  //    endpoint has one answer to that question.
+  // Packages beyond the framework and the runtime: @claxedo/helpers through
+  // the shared server-core surface; @claxedo/mcp, the first-party MCP endpoint
+  // mounted at `/api/claxedo/mcp` for the sessions this composition launches
+  // (runtime credential only; reaches the MCP SDK, hono, zod, helpers and the
+  // runtime contract); @claxedo/opencode-server-adapter, the transport for
+  // external OpenCode connections; @claxedo/agent-runtime-contract, the
+  // dependency-free owner of the harness table and the credential-broker
+  // error vocabulary; @claxedo/host-serving and @claxedo/egress-broker as
+  // above.
+  ceilings: { modules: 60, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

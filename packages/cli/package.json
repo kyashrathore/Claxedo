@@ -1,25 +1,51 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/cli",
-  "version": "1.17.13",
+  "name": "@claxedo/cli",
+  "version": "0.1.0",
+  "description": "The claxedo command: sign in, connect a machine to the control plane, manage which machines serve which folders, deploy",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/kyashrathore/Claxedo/tree/dev/packages/cli",
+  "bugs": "https://github.com/kyashrathore/Claxedo/issues",
+  "keywords": [
+    "claxedo",
+    "cli",
+    "agents",
+    "remote-access"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "bin": {
-    "lildax": "./bin/lildax.cjs"
+    "claxedo": "dist/index.mjs"
   },
   "files": [
-    "bin"
+    "dist",
+    "install.sh",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bun run scripts/build.ts",
     "dev": "bun run src/index.ts",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@claxedo/helpers": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*"
   },
   "devDependencies": {
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/host-connector": "workspace:*",
+    "@claxedo/host-serving": "workspace:*",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",

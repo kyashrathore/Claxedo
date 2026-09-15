@@ -198,6 +198,17 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     serves: "The owner's view of their enrolled machines: status, devices, revoke, second-device open.",
     paths: ["/api/claxedo/remote-access", "/api/claxedo/remote-access/"],
   },
+  {
+    id: "host-connect",
+    owner: "server",
+    serves: "Enrolled machines: invitations, the machine's own beats and acquire, scope, and the enrollment list.",
+    paths: [
+      "/api/claxedo/host/enrollments",
+      "/api/claxedo/host/enrollments/",
+      "/api/claxedo/host/invitations",
+      "/api/claxedo/host/invitations/",
+    ],
+  },
   // ── Host publication: owned by @claxedo/host-connector ───────────────────
   {
     id: "remote-access-machine",

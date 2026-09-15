@@ -20,8 +20,17 @@ function errorDetail(input: unknown, fallback: string) {
   }
 }
 
-export async function requestJson(input: { url: string; method?: string; token?: string; body?: unknown }) {
-  const res = await fetch(input.url, {
+export type RequestInput = {
+  url: string
+  method?: string
+  token?: string
+  body?: unknown
+  /** Tests hand in a fake control plane; the global `fetch` otherwise. */
+  fetch?: (url: URL, init: RequestInit) => Promise<Response>
+}
+
+export async function requestJson(input: RequestInput) {
+  const res = await (input.fetch ?? ((url, init) => fetch(url, init)))(new URL(input.url), {
     method: input.method ?? (input.body === undefined ? "GET" : "POST"),
     headers: {
       accept: "application/json",

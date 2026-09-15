@@ -102,6 +102,8 @@ import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, embeddedAuthPublicOrigin, getEmbeddedAuth } from "./embedded-auth"
 import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { createSqliteUserHostedTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/user-hosted-relay-target"
+import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import { selfHostedTasksClientInput, type TasksSessionGrants } from "../../tasks/session-grants"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
@@ -111,6 +113,7 @@ import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
+import { hostConnectEndpointOptions } from "../../workspace/route-support"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -156,6 +159,7 @@ import { LocalInstallationDocumentBroker } from "../../documents/backends/local/
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
+import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
@@ -443,6 +447,7 @@ function workspaceRouteOptions(
       ? { runtimeAccessTokenSigner: services.relay.runtimeAccessTokenSigner }
       : {}),
     ...(services.relay.hostTunnelTokenSigner ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner } : {}),
+    ...hostConnectEndpointOptions(process.env),
     ...(connectionRateLimiter ? { connectionRateLimiter } : {}),
   }
 }
@@ -972,6 +977,7 @@ export function createSelfHostedApp(
       ...(services.authority ? { authority: services.authority } : {}),
       targetLookup: localRelayTargetLookup({
         ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
+        ...(services.relay.userHostedResolver ? { userHostedResolver: services.relay.userHostedResolver } : {}),
         telemetry: services.telemetry,
       }),
       localTargetExists: localRelayTargetExists((services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {})),
@@ -1021,6 +1027,8 @@ export function createSelfHostedApp(
     machineTunnelActive: hasUserHostedMachineTunnel,
     capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
   }) : undefined
+  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceRouteOptions(services)))
+  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceRouteOptions(services)))
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
     deviceLoginConfigured: !!process.env.CLAXEDO_DEVICE_LOGIN_ISSUER?.trim(),
     relayConfigured: !!remoteAccessRelayUrl && !!remoteAccessSigner,
@@ -1445,6 +1453,7 @@ export function createDefaultLocalControlPlaneServices() {
   // migrations, repair checks, WAL checkpointing, and statement preparation.
   ClaxedoDB.raw()
   const authority = createSqliteWorkspaceAuthority()
+  const userHostedResolver = createSqliteUserHostedTargetResolver()
   const services = createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
@@ -1463,7 +1472,7 @@ export function createDefaultLocalControlPlaneServices() {
         : {}),
       // Self-host always uses SQLite.
       authority,
-      relay: localRelayFromEnv(sandboxManager, authority),
+      relay: localRelayFromEnv(sandboxManager, authority, userHostedResolver),
       sandbox: {
         sandboxManager,
       },
@@ -1477,6 +1486,7 @@ export function createDefaultLocalControlPlaneServices() {
       if (closed) return
       closed = true
       if ("close" in authority && typeof authority.close === "function") authority.close()
+      userHostedResolver.close()
       ClaxedoDB.close()
     },
   })
@@ -1485,6 +1495,7 @@ export function createDefaultLocalControlPlaneServices() {
 function localRelayFromEnv(
   sandboxManager = createWorkspaceSupervisorSandboxManager(),
   authority: WorkspaceAuthority = createSqliteWorkspaceAuthority(),
+  userHostedResolver: UserHostedTargetResolver = createSqliteUserHostedTargetResolver(),
 ): ControlPlaneRelay {
   const relayUrl = process.env.CLAXEDO_WORKSPACE_RELAY_URL?.trim()
   const resolverToken = process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()
@@ -1498,6 +1509,7 @@ function localRelayFromEnv(
     ...(relayUrl ? { relayUrl } : {}),
     ...(relayUrls ? { relayUrls } : {}),
     ...(resolverToken ? { resolverToken } : {}),
+    userHostedResolver,
     ...(runtimeSigner && hostSigner
       ? {
           runtimeAccessTokenSigner: runtimeSigner,
@@ -1510,7 +1522,7 @@ function localRelayFromEnv(
             relay: { relayUrl, relayUrls },
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
-            targetLookup: localRelayTargetLookup({ sandboxManager }),
+            targetLookup: localRelayTargetLookup({ sandboxManager, userHostedResolver }),
             recordRuntimeAccessToken: (input) => recordRelayRuntimeToken(authority, input),
           }),
         }

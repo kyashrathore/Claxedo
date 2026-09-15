@@ -69,6 +69,7 @@
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/host-serving": "workspace:*",
     "@claxedo/mcp": "workspace:*",
     "@claxedo/opencode-server-adapter": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",

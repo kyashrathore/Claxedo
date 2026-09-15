@@ -13,7 +13,8 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
-import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
+import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { HOST_SERVING_WORKSPACE_SQL, organizationRoleRankSql } from "./host-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
@@ -81,6 +82,21 @@ export type D1WorkspaceCreateArgs = {
   homeRegion?: string
   backing: "local-worktree" | "cloud-vm"
   access: "user-hosted" | "cloud"
+  /** Whether ordinary org members get the implicit viewer rank; the serving host's scope decides it. */
+  orgMemberVisible?: boolean
+}
+
+export type D1LocalWorkspaceRegistrationArgs = {
+  workspaceId: string
+  displayName: string
+  projectId?: string
+  repoUrl?: string
+  repoName?: string
+  gitBranch?: string
+  remoteDirectory?: string
+  homeRegion?: string
+  orgId?: string
+  orgMemberVisible?: boolean
 }
 
 type Principal = {
@@ -1111,6 +1127,31 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
    * from the app cannot have it created for them by a credential either.
    */
   private async createWorkspaceAs(who: Principal, input: D1WorkspaceCreateArgs) {
+    const creation = await this.workspaceCreation(who, input)
+    await this.guardedBatch(creation.statements, "Workspace identity conflicts with existing authority state")
+    const workspace = await this.workspaceAccess(who.userId, creation.workspaceId)
+    if (!workspace || workspace.org_id !== creation.orgId || workspace.role_rank < 3) {
+      throw denied("Workspace creation authority was denied")
+    }
+    return {
+      workspace_doc_id: creation.workspaceId,
+      workspace_id: creation.workspaceId,
+      project_id: workspace.project_id,
+      org_id: creation.orgId,
+    }
+  }
+
+  /**
+   * The statements that create a workspace, and its project when the
+   * repository has none, for a caller that composes them into its own batch:
+   * the host assignment lands a cold workspace and the assignment together,
+   * so a batch its guard refuses leaves no workspace behind. The organization
+   * admin check is repeated inside the insert and the batch assertion proves
+   * the row landed as described, so nothing here depends on the reads staying
+   * true until the batch runs. The directory is recorded normalized, which is
+   * the form the scope retirement compares by prefix.
+   */
+  private async workspaceCreation(who: Principal, input: D1WorkspaceCreateArgs) {
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const orgId = requireText(input.orgId, "orgId")
     const displayName = requireText(input.displayName, "displayName")
@@ -1120,9 +1161,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
     validateWorkspacePlacement(input.backing, input.access)
     const homeRegion = validateHomeRegion(input.homeRegion)
+    const remoteDirectory = input.remoteDirectory === undefined ? null : normalizeStoredDirectory(input.remoteDirectory)
     const repoKey = canonicalRepositoryKey({
       repoUrl: input.repoUrl,
-      remoteDirectory: input.remoteDirectory,
+      remoteDirectory,
       workspaceId,
     })
     const existingProject = await this.database
@@ -1144,8 +1186,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const now = this.now()
     const adminGuard = organizationAdminSql("?", "?")
 
-    await this.guardedBatch(
-      [
+    return {
+      who,
+      workspaceId,
+      orgId,
+      statements: [
         this.database
           .prepare(
             `
@@ -1170,9 +1215,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             `
         insert into workspaces (
           workspace_id, org_id, project_id, owner_user_id, backing, access, display_name,
-          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at
+          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at,
+          org_member_visible
         )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
+        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?
         from projects p
         where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
           and (? is null or p.project_id = ?)
@@ -1191,9 +1237,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             input.repoUrl ?? null,
             input.repoName ?? null,
             input.gitBranch ?? null,
-            input.remoteDirectory ?? null,
+            remoteDirectory,
             now,
             now,
+            input.orgMemberVisible === false ? 0 : 1,
             orgId,
             repoKey,
             input.projectId ?? null,
@@ -1228,21 +1275,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             input.repoUrl ?? null,
             input.repoName ?? null,
             input.gitBranch ?? null,
-            input.remoteDirectory ?? null,
+            remoteDirectory,
             repoKey,
             input.projectId ?? null,
             input.projectId ?? null,
           ),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Workspace identity conflicts with existing authority state",
-    )
-
-    const workspace = await this.workspaceAccess(who.userId, workspaceId)
-    if (!workspace || workspace.org_id !== orgId || workspace.role_rank < 3) {
-      throw denied("Workspace creation authority was denied")
     }
-    return { workspace_doc_id: workspaceId, workspace_id: workspaceId, project_id: workspace.project_id, org_id: orgId }
   }
 
   async createCloudWorkspace(
@@ -1263,6 +1303,16 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       backing: "cloud-vm",
       access: "cloud",
     })
+  }
+
+  async registerLocalForSharing(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
+    return await this.createWorkspace(auth, await this.localWorkspaceArgs(auth, args))
+  }
+
+  /** `registerLocalForSharing` as statements for the host assignment's batch. */
+  async localWorkspaceRegistration(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
+    const who = await this.requirePrincipal(auth)
+    return await this.workspaceCreation(who, await this.localWorkspaceArgs(auth, args))
   }
 
   /**
@@ -1293,25 +1343,16 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return await this.createWorkspaceAs(who, { ...args, orgId, projectId, backing: "cloud-vm", access: "cloud" })
   }
 
-  async registerLocalForSharing(
+  private async localWorkspaceArgs(
     auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      displayName: string
-      projectId?: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) {
-    return await this.createWorkspace(auth, {
+    args: D1LocalWorkspaceRegistrationArgs,
+  ): Promise<D1WorkspaceCreateArgs> {
+    return {
       ...args,
-      orgId: await this.creationOrgId(auth, args.projectId),
+      orgId: args.orgId ?? await this.creationOrgId(auth, args.projectId),
       backing: "local-worktree",
       access: "user-hosted",
-    })
+    }
   }
 
   async deleteWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
@@ -1670,9 +1711,12 @@ function workspaceAccessSql(predicate: string) {
           join teams t on t.team_id = tg.team_id and t.org_id = w.org_id and t.deleted_at is null
           where tg.project_id = w.project_id and tg.revoked_at is null
         ), 0),
-        case when o.owner_user_id = ? then 3
-          when om.role in ('owner', 'admin') then 3
-          when om.role = 'member' then 1 else 0 end
+        ${organizationRoleRankSql({
+          orgOwnerUserId: "o.owner_user_id",
+          userId: "?",
+          orgMemberRole: "om.role",
+          workspaceAlias: "w",
+        })}
       ) as role_rank
     from workspaces w
     join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null
@@ -1802,7 +1846,8 @@ function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
-function batchAssertionFailed(error: unknown): boolean {
+/** A guarded batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
+export function batchAssertionFailed(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if (error.message.includes("passed = 1")) return true
   return batchAssertionFailed(error.cause)

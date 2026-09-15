@@ -8,6 +8,15 @@ explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
+- [Remote machine connection: implementation plan](./2026-09-14-003-feat-connect-implementation-plan.md) — P1–P3 implemented on `feat/connect`, live acceptance green; P4–P7 not started. Companions: [investigation](./2026-09-14-001-feat-connect-enrollment-foundation-proposal.md), [components and flows](./2026-09-14-002-feat-connect-components-and-flows.md).
+  - First slice = invitation-file bootstrap with idempotent redeem,
+    route-local machine verifier keyed by enrollment id with key-version and
+    nonce guards, revision-aware assignment discovery, serving-generation
+    fencing including relay host-tunnel checks, durable host state, serving
+    with private sessions, Tier R fixture host with named fixture deliverables.
+    Deferred: pending approvals, host folder ops and machine worktrees, project
+    regrouping, idle metadata, desktop provenance work.
+
 - [Onboarding v1: make setup yield to a working product](./2026-09-14-002-feat-onboarding-v1-repair.md) — proposed; not started.
   - Setup shows only when it has something to ask: first turn becomes a
     server-served inventory fact, harness logins are discovered at mount,

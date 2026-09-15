@@ -13,10 +13,13 @@ import {
 } from "./cloudflare"
 import type { RelayHostPublicKey, RuntimeAccessTokenActiveResult, WorkspaceRelayTarget } from "./server"
 import {
+  createCachedHostGenerationClient,
   createCachedRevocationClient,
   createCachedTargetClient,
+  createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   parseWorkspaceRelayTarget,
+  type HostGenerationLookup,
   type RevocationLookup,
   type TargetLookup,
 } from "./server"
@@ -40,6 +43,13 @@ type WorkspaceRelayWorkerBindings = {
   CLAXEDO_RELAY_TRACE_FORCE_SECRET?: string
   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS?: string
   CLAXEDO_RELAY_TARGET_CACHE_TTL_MS?: string
+  /**
+   * Absolute URL of the control plane's host-generation lookup. Unset derives
+   * `<resolver base>/host-generation` from the same base `/target` and
+   * `/revocation` are derived from.
+   */
+  CLAXEDO_RELAY_HOST_GENERATION_URL?: string
+  CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS?: string
   CLAXEDO_APP_ORIGINS?: string
   CLAXEDO_RELAY_ALLOWED_ORIGINS?: string
 }
@@ -49,6 +59,7 @@ export type WorkspaceRelayWorkerEnv = Record<string, unknown> & WorkspaceRelayWo
 type ResolverClient = {
   target(workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined>
   revocation(args: { jti: string; workspaceId: string; hostId: string }): Promise<RuntimeAccessTokenActiveResult>
+  hostGeneration: HostGenerationLookup
 }
 
 type ResolverFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -170,9 +181,18 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)
   const target = createCachedTargetClient(targetUncached, (targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}))
   const revocation = createCachedRevocationClient(revocationUncached, (revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}))
+  const hostGenerationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS)
+  const hostGeneration = createCachedHostGenerationClient(
+    createHostGenerationResolverLookup(
+      trimToUndefined(env.CLAXEDO_RELAY_HOST_GENERATION_URL) ?? `${root}/host-generation`,
+      { headers, fetch: fetcher },
+    ),
+    (hostGenerationCacheTtlMs ? { ttlMs: hostGenerationCacheTtlMs } : {}),
+  )
   return {
     target: (workspaceId, hostId) => target({ workspaceId, hostId }),
     revocation,
+    hostGeneration,
   }
 }
 
@@ -198,6 +218,7 @@ export async function workspaceRelayDurableObjectOptions(
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
       }),
+    resolveHostGeneration: resolver.hostGeneration,
     audit: (event) => {
       if (event.result === "deny") {
         console.warn(`[workspace-relay] deny ${event.action} reason=${event.reason ?? ""} workspace=${event.workspaceId ?? ""} path=${event.path}`)

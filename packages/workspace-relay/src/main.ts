@@ -16,8 +16,10 @@ import { parseAllowedOrigins } from "./cors-origins"
 import { createWorkspaceRelayDirectory, type WorkspaceRelayDirectory } from "./directory"
 import { startSyntheticProbe, type SyntheticProbe } from "./synthetic"
 import {
+  createCachedHostGenerationClient,
   createCachedRevocationClient,
   createCachedTargetClient,
+  createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   parseWorkspaceRelayTarget,
   type RelayHostPublicKey,
@@ -36,6 +38,7 @@ export { createCachedRevocationClient, createCachedTargetClient } from "./server
 
 const BUN_TARGET_CACHE_TTL_MS_DEFAULT = 30_000
 const BUN_REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
+const BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT = 10_000
 const BUN_RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
 
 function positiveInteger(input: string | undefined) {
@@ -369,17 +372,29 @@ export function directHttpConcurrencyFromEnv(env: DirectHttpConcurrencyEnv): num
 export type ResolverClientCacheOptions = {
   targetCacheTtlMs?: number
   revocationCacheTtlMs?: number
+  /**
+   * Absolute URL of the control plane's host-generation lookup. Unset derives
+   * `<resolver base>/host-generation`, the route every resolver base serves
+   * next to `/target` and `/revocation`.
+   */
+  hostGenerationUrl?: string
+  hostGenerationCacheTtlMs?: number
 }
 
 export type ResolverClientCacheEnv = {
   CLAXEDO_RELAY_TARGET_CACHE_TTL_MS?: string | undefined
   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS?: string | undefined
+  CLAXEDO_RELAY_HOST_GENERATION_URL?: string | undefined
+  CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS?: string | undefined
 }
 
 export function resolverClientCacheOptionsFromEnv(env: ResolverClientCacheEnv): ResolverClientCacheOptions {
+  const hostGenerationUrl = trimToUndefined(env.CLAXEDO_RELAY_HOST_GENERATION_URL)
   return {
     targetCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS) ?? BUN_TARGET_CACHE_TTL_MS_DEFAULT,
     revocationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS) ?? BUN_REVOCATION_CACHE_TTL_MS_DEFAULT,
+    ...(hostGenerationUrl ? { hostGenerationUrl } : {}),
+    hostGenerationCacheTtlMs: positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS) ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT,
   }
 }
 
@@ -428,9 +443,14 @@ export function createResolverClient(
   const revocation = createCachedRevocationClient(revocationUncached, {
     ttlMs: options.revocationCacheTtlMs ?? BUN_REVOCATION_CACHE_TTL_MS_DEFAULT,
   })
+  const hostGeneration = createCachedHostGenerationClient(
+    createHostGenerationResolverLookup(options.hostGenerationUrl ?? `${root}/host-generation`, { headers }),
+    { ttlMs: options.hostGenerationCacheTtlMs ?? BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT },
+  )
   return {
     target: (workspaceId: string, hostId: string): Promise<WorkspaceRelayTarget | undefined> => target({ workspaceId, hostId }),
     revocation,
+    hostGeneration,
   }
 }
 
@@ -706,6 +726,8 @@ async function main() {
   const resolver = createResolverClient(resolverUrl, resolverToken, resolverClientCacheOptionsFromEnv({
     CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS,
     CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS,
+    CLAXEDO_RELAY_HOST_GENERATION_URL: process.env.CLAXEDO_RELAY_HOST_GENERATION_URL,
+    CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: process.env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS,
   }))
 
   // The directory holds a TTL sweep `setInterval`. We construct it here so
@@ -750,6 +772,7 @@ async function main() {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
       }),
+    resolveHostGeneration: resolver.hostGeneration,
     audit: (event: {
       action: string
       result: "allow" | "deny"

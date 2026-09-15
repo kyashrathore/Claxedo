@@ -1,5 +1,6 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { harnessSelectionKey } from "@/platform/identity/harness-selection"
+import { workspaceDirectoryAliasKey } from "@/platform/identity/legacy-resolver"
 import { normalizedAgentRuntimeServerUrl, type AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-urls"
 
 export type SessionResourceAuthorityScope = {
@@ -90,7 +91,7 @@ export function sessionResourceAuthorityKey(scope: SessionResourceAuthorityScope
     "session-resource-authority-v1",
     scope.sessionID,
     normalizedAgentRuntimeServerUrl(scope.serverUrl),
-    scope.directory,
+    workspaceDirectoryAliasKey(scope.directory),
     workspace[0],
     scope.signedControlPlane === true ? "signed" : "local",
     workspace[1],

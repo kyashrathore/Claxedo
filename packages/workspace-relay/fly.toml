@@ -7,10 +7,16 @@
 # Required secrets (`fly secrets set`) before first deploy — the relay
 # fail-closes in production without them (src/main.ts):
 #   CLAXEDO_RELAY_RESOLVER_TOKEN        (required when NODE_ENV=production)
-#   CLAXEDO_RELAY_RESOLVER_URL          (control-plane /internal/relay resolver base URL)
+#   CLAXEDO_RELAY_RESOLVER_URL          (control-plane /internal/relay resolver base URL; the relay
+#                                        derives /target, /revocation and /host-generation from it,
+#                                        so the host-tunnel serving-generation fence is always on)
 #   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM  (required in production; ephemeral keys refused)
 #   CLAXEDO_CONTROL_PLANE_JWKS_URL or CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
 #   CLAXEDO_RELAY_METRICS_TOKEN         (token-gates /metrics; fails closed without it)
+# Optional:
+#   CLAXEDO_RELAY_HOST_GENERATION_URL   (absolute host-generation lookup URL; only when it is not
+#                                        <CLAXEDO_RELAY_RESOLVER_URL>/host-generation)
+#   CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS (default 10000)
 #
 # SINGLE INSTANCE ONLY: production relay v1 stores host presence and tunnel
 # sockets in process memory (public-docs/relay-and-deployment.md). Do not

@@ -14,15 +14,20 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
 const DIST = path.join(ROOT, "dist")
 const ENTRY = path.join(ROOT, "src/connector.ts")
+const ENTRIES = ["connector", "host-identity", "host-state", "host-state-node", "machine-transport", "bootstrap"].map(
+  (name) => path.join(ROOT, `src/${name}.ts`),
+)
 
 fs.rmSync(DIST, { recursive: true, force: true })
 
 const result = await runBunBuild("Host Connector bundle failed", {
-  entrypoints: [ENTRY, path.join(ROOT, "src/host-identity.ts")],
+  entrypoints: ENTRIES,
   outdir: DIST,
   naming: "[name].mjs",
   format: "esm",
-  target: "browser",
+  // `host-state-node` imports node:fs on purpose; every other entry stays
+  // runtime-neutral and the closure test pins that.
+  target: "node",
   splitting: false,
   sourcemap: "external",
   plugins: [publishedExportsPlugin()],

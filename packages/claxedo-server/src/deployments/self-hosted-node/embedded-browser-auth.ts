@@ -3,7 +3,7 @@ import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/a
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import { BETTER_AUTH_NATIVE_SCOPES, betterAuthIssuer, betterAuthNativeRevocation } from "../../platform/auth/better-auth-d1-foundation"
 import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID } from "../../platform/auth/better-auth-native-clients"
-import { EMBEDDED_AUTH_ISSUER, embeddedAuthPublicOrigin, embeddedAuthSessionCookieName } from "./embedded-auth"
+import { EMBEDDED_AUTH_ISSUER, embeddedAuthPublicOrigin, embeddedAuthSessionCookieName, embeddedControlPlaneResource } from "./embedded-auth"
 
 /**
  * The browser half of the embedded issuer: what lets the signed web app run
@@ -46,7 +46,7 @@ export function embeddedBrowserAuthDescriptor(input: {
   const origin = embeddedAuthPublicOrigin(env)
   if (!origin.startsWith("https:")) return undefined
   const now = input.now ?? Date.now
-  const resource = `${origin}/control-plane`
+  const resource = embeddedControlPlaneResource(env)
   return {
     adapter: "better-auth",
     deploymentId: env.CLAXEDO_DEPLOYMENT_ID?.trim() || EMBEDDED_AUTH_ISSUER,

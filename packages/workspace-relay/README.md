@@ -124,6 +124,49 @@ SSE, PTY, and WebSocket streams may live until normal close, reconnect, relay
 drain, host disconnect, or process restart. If immediate stream revocation is a
 requirement, the control plane must also close the session/runtime channel.
 
+### Host Tunnel Serving-Generation Fence
+
+A Host Tunnel Token minted by a connect-enrolled host carries `enrollment_id`
+and `generation`. A relay built by `src/main.ts` or `src/worker.ts` — that is,
+any relay with a resolver — asks
+`GET <CLAXEDO_RELAY_RESOLVER_URL>/host-generation?enrollmentId=` on every
+admission and re-checks established tunnels every 30 s (both adapters). The
+verdicts, in order:
+
+| Control plane answer | Admission | Established tunnel |
+| --- | --- | --- |
+| Same generation, not revoked | admitted | kept |
+| Higher generation | `403 host_generation_superseded` | closed `1008` |
+| Lower generation | `403 host_generation_unknown` | closed `1008` |
+| Enrollment revoked or paused | `403 host_enrollment_revoked` | closed `1008` |
+| `404 relay_resolver_enrollment_not_found` | `403 host_enrollment_unknown` | closed `1008` |
+| Any other status, a bare 404 (route missing), malformed body, or the 5 s deadline | `503 host_generation_lookup_unavailable` (retry) | survives two consecutive failures, closed `1012` on the third |
+
+A token without a generation is admitted without asking the control plane. It
+never displaces a socket that carries a generation: for one host+workspace
+identity (Bun) or one room (Cloudflare), an incumbent with a generation yields
+only to an equal or higher generation, and an incumbent without one yields to
+any later socket. Every refusal is audited as `host_tunnel.denied` with the
+code as `reason` (Bun; the Cloudflare room has no audit hook).
+
+A `host.registration.update` frame is re-admitted the same way, with the
+socket's own claims as the first incumbent: an update whose token carries no
+generation, or a lower one than the socket holds, is refused (closed `1008
+Host tunnel registration update superseded`); one that passes is then checked
+against the control plane exactly as a connect is and closed with the table's
+established-tunnel code on refusal (`1012` for an unavailable lookup, without
+the outage grace). An accepted update replaces the socket's claims and
+identities, and a socket that became fenced starts the 30 s re-check (or arms
+the hibernation alarm).
+
+A relay composed directly from `createWorkspaceRelayBun` /
+`createWorkspaceRelayDurableObjectRoom` without `resolveHostGeneration` — the
+desktop and self-hosted composition — admits tokens without a generation
+newest-wins and refuses any token that carries one with
+`403 host_generation_unverifiable` (an update: closed `1008`). A generation is
+a fence the relay cannot verify without the resolver, and the refusal is not
+retryable because the resolver is a property of the composition.
+
 ### Forwarding Boundary
 
 The relay strips client-supplied `x-forwarded-for`, `x-forwarded-host`,
@@ -198,8 +241,11 @@ production fail-closed gate at `src/main.ts`.
 | --- | --- |
 | `CLAXEDO_RELAY_BIND_HOST`, `CLAXEDO_RELAY_BIND_PORT` | Listening socket. Loopback by default. |
 | `CLAXEDO_RELAY_PUBLIC_URL` | Externally-resolvable URL the relay advertises in tokens. |
-| `CLAXEDO_RELAY_RESOLVER_URL` | Where to fetch `RuntimeAccessTokenActiveResult`s (typically `claxedo-server/internal/relay/target`). |
+| `CLAXEDO_RELAY_RESOLVER_URL` | Control-plane resolver base (`https://<control-plane>/internal/relay`). The relay derives `/target`, `/revocation`, and `/host-generation` from it. Required by the Bun process; the Worker also accepts `CLAXEDO_CENTRAL_URL` and appends `/internal/relay`. |
 | `CLAXEDO_RELAY_RESOLVER_TOKEN` | Bearer token the relay sends to the resolver. **Required in production.** |
+| `CLAXEDO_RELAY_HOST_GENERATION_URL` | Optional absolute URL of the host-generation lookup. Unset (the normal case) derives `<CLAXEDO_RELAY_RESOLVER_URL>/host-generation`; set it only when the lookup lives at a different origin than the rest of the resolver. There is no way to turn the fence off on a resolver-backed relay. |
+| `CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS` | Cache TTL for host-generation answers. Defaults to 10000. A superseded tunnel closes within the re-check interval (30 s) plus this TTL. |
+| `CLAXEDO_RELAY_TARGET_CACHE_TTL_MS`, `CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS` | Cache TTLs for `/target` (default 30000 on Bun, 5000 on the Worker) and `/revocation` (default 10000) answers. |
 | `CLAXEDO_RELAY_JWKS_URL` | Optional remote JWKS the relay uses to verify runtime-access tokens. |
 | `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | Inline public key (alternative to JWKS). |
 | `CLAXEDO_RELAY_HOST_VERIFY_PEM` | Public PEM the relay uses to verify host-tunnel tokens. |

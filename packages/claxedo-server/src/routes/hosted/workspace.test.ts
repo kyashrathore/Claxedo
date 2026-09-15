@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
@@ -38,6 +39,10 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   },
 })
 
+function machineRow(hostId: string, enrolledVia: "account" | "invitation") {
+  return { enrollment_id: `enr_${hostId}`, host_id: hostId, enrolled_via: enrolledVia }
+}
+
 function fakeAuthority(overrides: Record<string, unknown> = {}) {
   return {
     usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
@@ -68,6 +73,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     ]),
     assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
     unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
+    hostEnrollmentByHost: vi.fn(async () => machineRow("host_1", "account")),
     auditAllow: vi.fn(async () => ({})),
     auditDeny: vi.fn(async () => ({})),
     ...overrides,
@@ -186,14 +192,48 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
     })
-    // Host Tunnel Token is minted immediately so the machine can open its
-    // relay tunnel without waiting for a beat.
+    // The desktop (account enrollment) opens its relay tunnel from this
+    // credential before its first beat; one enrollment row is read for it,
+    // not the fleet.
+    expect(authority!.hostEnrollmentByHost).toHaveBeenCalledWith(expect.anything(), { hostId: "host_1" })
     expect(json.assignment).toMatchObject({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })
     expect(json.hostTunnel).toMatchObject({
       hostTunnelToken: "htt-for-host_1",
       homeRegion: "eu-west",
       relayUrl: "https://relay.eu.test",
     })
+  })
+
+  test("mints no credential for a machine that is not account-enrolled: its heartbeat ack carries the fenced one", async () => {
+    for (const machine of [machineRow("host_1", "invitation"), undefined, "absent"] as const) {
+      const signer = vi.fn(httSigner)
+      const authority = fakeAuthority(
+        machine === "absent" ? { hostEnrollmentByHost: undefined } : { hostEnrollmentByHost: vi.fn(async () => machine) },
+      )
+      const { app } = buildApp({ authority, options: { hostTunnelTokenSigner: signer } })
+      const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as Record<string, unknown>
+      expect(json.assignment).toMatchObject({ assigned: true })
+      expect(json).not.toHaveProperty("hostTunnel")
+      expect(signer).not.toHaveBeenCalled()
+      expect(authority.assignWorkspaceHost).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  test("an unknown enrollment or workspace is the authority's 404, not a server fault", async () => {
+    for (const code of ["host_enrollment_not_found", "workspace_not_found"] as const) {
+      const authority = fakeAuthority({
+        assignWorkspaceHost: vi.fn(async () => {
+          throw new ClaxedoError({ code, message: `${code} refused`, status: 404 })
+        }),
+      })
+      const { app } = buildApp({ authority })
+      const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
+      expect(res.status, code).toBe(404)
+      expect(await res.json()).toEqual({ error: { code, message: `${code} refused` } })
+      expect(authority.auditAllow).not.toHaveBeenCalled()
+    }
   })
 
   test("rejects a body with no host id (schema fail-closed, stable 400)", async () => {

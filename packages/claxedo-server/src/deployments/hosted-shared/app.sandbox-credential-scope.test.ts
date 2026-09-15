@@ -395,6 +395,10 @@ const UNAVAILABLE_ROUTES: Record<string, number> = {
   // No Pi credential store is composed, and the route says so first.
   "DELETE /auth/:providerID": 503,
   "PUT /auth/:providerID": 503,
+  // The fixture's authority admits no machine caller and redeems no
+  // invitation; both routes take no account credential and say so first.
+  "POST /api/claxedo/host/enrollments/acquire": 501,
+  "POST /api/claxedo/host/enrollments/redeem": 501,
 }
 
 /** Path segments that carry a scope name, and the ones that carry an opaque row id. */

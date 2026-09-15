@@ -25,6 +25,9 @@ const MIGRATIONS = [
   fileURLToPath(
     new URL("../../../../migrations/control-plane/0017_adapter_custom.sql", import.meta.url),
   ),
+  fileURLToPath(
+    new URL("../../../../migrations/control-plane/0028_workspace_org_member_visible.sql", import.meta.url),
+  ),
 ]
 const active: Miniflare[] = []
 

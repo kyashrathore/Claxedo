@@ -292,6 +292,24 @@
         "vitest": "2.1.9",
       },
     },
+    "packages/claxedo-host-serving": {
+      "name": "@claxedo/host-serving",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/server-core": "workspace:*",
+        "@claxedo/workspace-runtime": "workspace:*",
+        "@hono/node-server": "1.19.11",
+        "hono": "4.10.7",
+      },
+      "devDependencies": {
+        "@claxedo/workspace-relay": "workspace:*",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "jose": "6.0.11",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
+      },
+    },
     "packages/claxedo-local-server": {
       "name": "@claxedo/local-server",
       "version": "0.1.0",
@@ -300,6 +318,7 @@
         "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/host-serving": "workspace:*",
         "@claxedo/mcp": "workspace:*",
         "@claxedo/opencode-server-adapter": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
@@ -330,6 +349,7 @@
       "dependencies": {
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/tasks": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@modelcontextprotocol/sdk": "1.29.0",
         "ajv": "8.20.0",
@@ -484,16 +504,18 @@
       },
     },
     "packages/cli": {
-      "name": "@opencode-ai/cli",
-      "version": "1.17.13",
+      "name": "@claxedo/cli",
+      "version": "0.1.0",
       "bin": {
-        "lildax": "./bin/lildax.cjs",
+        "claxedo": "./dist/index.mjs",
       },
       "dependencies": {
-        "@claxedo/helpers": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
       },
       "devDependencies": {
+        "@claxedo/helpers": "workspace:*",
+        "@claxedo/host-connector": "workspace:*",
+        "@claxedo/host-serving": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "catalog:",
@@ -1189,6 +1211,8 @@
 
     "@claxedo/channels": ["@claxedo/channels@workspace:packages/claxedo-channels"],
 
+    "@claxedo/cli": ["@claxedo/cli@workspace:packages/cli"],
+
     "@claxedo/connections": ["@claxedo/connections@workspace:packages/claxedo-connections"],
 
     "@claxedo/desktop": ["@claxedo/desktop@workspace:packages/claxedo-desktop"],
@@ -1200,6 +1224,8 @@
     "@claxedo/helpers": ["@claxedo/helpers@workspace:packages/claxedo-helpers"],
 
     "@claxedo/host-connector": ["@claxedo/host-connector@workspace:packages/claxedo-host-connector"],
+
+    "@claxedo/host-serving": ["@claxedo/host-serving@workspace:packages/claxedo-host-serving"],
 
     "@claxedo/local-server": ["@claxedo/local-server@workspace:packages/claxedo-local-server"],
 
@@ -1758,8 +1784,6 @@
     "@open-draft/until": ["@open-draft/until@2.1.0", "", {}, "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg=="],
 
     "@opencode-ai/ai": ["@opencode-ai/ai@0.0.0-beta-18684", "", { "dependencies": { "@opencode-ai/schema": "0.0.0-beta-18684", "@smithy/eventstream-codec": "4.2.14", "@smithy/util-utf8": "4.2.2", "aws4fetch": "1.0.20", "effect": "4.0.0-rc.112", "google-auth-library": "10.5.0" } }, "sha512-gZTPELkm9aSv0cxWt9gGSdN9fecO9/GlplzUT4knrBD70vxQGnOYx7LGDUPZokW8Fzn7gjD824Qh9AIVjyb07g=="],
-
-    "@opencode-ai/cli": ["@opencode-ai/cli@workspace:packages/cli"],
 
     "@opencode-ai/client": ["@opencode-ai/client@0.0.0-beta-18684", "", { "dependencies": { "@opencode-ai/protocol": "0.0.0-beta-18684", "@opencode-ai/schema": "0.0.0-beta-18684" }, "peerDependencies": { "effect": "4.0.0-rc.112", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-Qjq07sTId3gZcqqMsPg+gtqU3PXneOWje+BSzBXepimAfPNqL0aIpH+em2Y4KL3lxEuJK3vdfyx8UXI8gzGRlQ=="],
 
@@ -5336,6 +5360,8 @@
     "@claxedo/agent-sdk-runtime/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
     "@claxedo/app/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
+
+    "@claxedo/host-serving/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 
     "@claxedo/local-server/@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.29.0", "", { "dependencies": { "@hono/node-server": "^1.19.9", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.2.1", "express-rate-limit": "^8.2.1", "hono": "^4.11.4", "jose": "^6.1.3", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.1" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ=="],
 

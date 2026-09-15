@@ -87,6 +87,14 @@ export type HostTunnelTokenSignerInput = {
   subject: string
   hostId: string
   workspaceIds: string[]
+  /**
+   * Serving-generation fence for machine-enrolled hosts. Both or neither: a
+   * relay refuses a token whose generation is below the enrollment's current
+   * one, and admits a token without the pair exactly as before the fence
+   * existed, which is what the desktop and self-hosted mints still produce.
+   */
+  enrollmentId?: string
+  generation?: number
   /** Requested TTL; always clamped to `HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
 }
@@ -249,9 +257,17 @@ export function hostTunnelTokenSigner(env: NodeJS.ProcessEnv = process.env): Hos
     const privateKey = await loadPrivateKey(env, alg, "host_tunnel_token_signer_unavailable")
     const kid = await resolveMintKid(env, privateKey)
     const issuedAt = Math.floor(now / 1000)
+    if ((input.generation === undefined) !== (input.enrollmentId === undefined)) {
+      throw new Error("Host Tunnel Token fence requires enrollmentId and generation together")
+    }
+    if (input.generation !== undefined && !(Number.isInteger(input.generation) && input.generation >= 0)) {
+      throw new Error("Host Tunnel Token generation must be a non-negative integer")
+    }
     const token = await new SignJWT({
       host_id: input.hostId,
       workspace_ids: input.workspaceIds,
+      ...(input.enrollmentId !== undefined ? { enrollment_id: input.enrollmentId } : {}),
+      ...(input.generation !== undefined ? { generation: input.generation } : {}),
     })
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)

@@ -2,8 +2,8 @@
  * Hosted workspace routes.
  *
  * Sharing a LOCAL workspace runs on machine-wide enrollment: the OWNER
- * assigns the workspace to one of their enrolled hosts here
- * (`POST /:id/host-assignment`, `DELETE` to withdraw), the machine's consent
+ * assigns the workspace to one of their enrolled hosts
+ * (`workspace/host-assignment-handlers.ts`, mounted here), the machine's consent
  * and liveness ride the enrollment heartbeat (`routes/hosted/host-enrollment.ts`),
  * and routing requires assignment AND acked set AND a live lease. There is no
  * per-workspace challenge or signature — that grain is retired.
@@ -24,8 +24,9 @@ import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } fr
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
-import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
+import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
@@ -121,19 +122,6 @@ const refreshConnectionBody = z
   })
   .strict()
 
-const assignBody = z
-  .object({
-    hostId: z.string(),
-    displayName: z.string().optional(),
-    orgId: z.string().optional(),
-    projectId: z.string().optional(),
-    repoUrl: z.string().optional(),
-    repoName: z.string().optional(),
-    gitBranch: z.string().optional(),
-    remoteDirectory: z.string().optional(),
-  })
-  .strict()
-
 const createCloudBody = z
   .object({
     orgId: z.string().optional(),
@@ -160,43 +148,6 @@ const createCloudBody = z
   })
 
 
-function missingBearer() {
-  return controlPlaneAuthErrorBody(
-    new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
-  )
-}
-
-// the authority throws typed-message errors; `workspace_backing_conflict` means the
-// caller tried to register a cloud workspace as user-hosted local → 409.
-function isWorkspaceBackingConflict(err: unknown) {
-  return err instanceof Error && err.message.includes("workspace_backing_conflict")
-}
-
-function workspaceBackingConflictBody() {
-  return {
-    error: apiError(
-      "workspace_backing_conflict",
-      "Workspace is cloud-backed and cannot be registered as a user-hosted local workspace",
-    ),
-  }
-}
-
-function regionalHostTunnel(
-  options: HostedWorkspaceRouteOptions,
-  source: unknown,
-  hostTunnel: Awaited<ReturnType<typeof hostTunnelCredential>>,
-) {
-  if (!hostTunnel) return undefined
-  const row = asRecord(source)
-  const homeRegion = normalizeClaxedoRegion(txt(row?.home_region) ?? txt(row?.homeRegion), options.defaultHomeRegion)
-  const relayUrl = configuredRelayUrl(options, homeRegion)
-  return {
-    ...hostTunnel,
-    homeRegion,
-    ...(relayUrl ? { relayUrl } : {}),
-  }
-}
-
 export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: HostedWorkspaceRouteOptions = {}) {
   const connectionRateLimiter = options.connectionRateLimiter ?? createFixedWindowConnectionRateLimiter()
   const controlPlaneRateLimiter =
@@ -216,6 +167,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     })
   const sandboxLeaseCap = options.sandboxLeaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
   const countActiveOrgSandboxLeases = options.countActiveOrgSandboxLeases ?? unavailableActiveLeaseCounter
+  const hostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
 
   const authOptions = () => ({
     ...options,
@@ -226,7 +178,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
     const auth = authResult.auth
-    if (!auth) return c.json(missingBearer(), 401)
+    if (!auth) return c.json(missingBearerBody(), 401)
     try {
       // Both checks happen up front (before any the authority call) so a flood is
       // rejected cheaply. The control-plane limiter (the same 120/min class
@@ -324,7 +276,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const auth = authResult.auth
-        if (!auth) return c.json(missingBearer(), 401)
+        if (!auth) return c.json(missingBearerBody(), 401)
 
         // Before the body is read and long before the authority round-trip or
         // `sandboxManager.ensure`: a flood must be rejected while it is still
@@ -607,92 +559,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         return connectionResponse(c, body.body.previousJti)
       })
       .route("/", workspaceShareRoutes(services, options))
-      .post("/:id/host-assignment", async (c) => {
-        // Sharing under machine-wide enrollment: the OWNER assigns the
-        // workspace to one of their enrolled hosts. No challenge and no
-        // machine signature here — liveness is the enrollment lease and the
-        // machine's consent is its heartbeat-acked served set; routing needs
-        // all three. The Host Tunnel Token is minted immediately so the
-        // machine can open its relay tunnel without waiting for a beat.
-        const workspaceId = c.req.param("id")
-        const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        const auth = authResult.auth
-        if (!auth) return c.json(missingBearer(), 401)
-        const parsed = parsedBody(assignBody, await c.req.json().catch(() => ({})))
-        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
-        const body = parsed.body
-        try {
-          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `hostAssignment.assign:${workspaceId}`,
-            action: "host_workspace_assignment.assign.denied",
-            workspaceId,
-          })
-          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-          const authority = requireAuthority(services)
-          await authority.usersMe(auth)
-          const assignment = await authority.assignWorkspaceHost(auth, {
-            workspaceId,
-            hostId: body.hostId,
-            ...(body.displayName ? { displayName: body.displayName } : {}),
-            ...(body.orgId ? { orgId: body.orgId } : {}),
-            ...(body.projectId ? { projectId: body.projectId } : {}),
-            ...(body.repoUrl ? { repoUrl: body.repoUrl } : {}),
-            ...(body.repoName ? { repoName: body.repoName } : {}),
-            ...(body.gitBranch ? { gitBranch: body.gitBranch } : {}),
-            ...(body.remoteDirectory ? { remoteDirectory: body.remoteDirectory } : {}),
-          })
-          await authority.auditAllow(auth, {
-            action: "host_workspace_assignment.assigned",
-            workspaceId,
-            metadata: { hostId: body.hostId },
-          })
-          captureWorkspaceTelemetry({
-            services,
-            auth,
-            event: "host_workspace_assignment.assigned",
-            workspaceId,
-            properties: { hostId: body.hostId },
-          })
-          const hostTunnel = await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
-          return c.json({
-            assignment,
-            hostTunnel: regionalHostTunnel(options, undefined, hostTunnel),
-          })
-        } catch (err) {
-          if (isWorkspaceBackingConflict(err)) return c.json(workspaceBackingConflictBody(), 409)
-          if (err instanceof ControlPlaneAuthError)
-            return c.json(controlPlaneAuthErrorBody(err), err.status)
-          throw err
-        }
-      })
-      .delete("/:id/host-assignment", async (c) => {
-        const workspaceId = c.req.param("id")
-        const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        const auth = authResult.auth
-        if (!auth) return c.json(missingBearer(), 401)
-        try {
-          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `hostAssignment.unassign:${workspaceId}`,
-            action: "host_workspace_assignment.unassign.denied",
-            workspaceId,
-          })
-          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-          const authority = requireAuthority(services)
-          await authority.usersMe(auth)
-          const result = await authority.unassignWorkspaceHost(auth, { workspaceId })
-          await authority.auditAllow(auth, {
-            action: "host_workspace_assignment.unassigned",
-            workspaceId,
-            metadata: {},
-          })
-          return c.json(result)
-        } catch (err) {
-          if (err instanceof ControlPlaneAuthError)
-            return c.json(controlPlaneAuthErrorBody(err), err.status)
-          throw err
-        }
-      })
+      .post("/:id/host-assignment", hostAssignment.assign)
+      .delete("/:id/host-assignment", hostAssignment.unassign)
   )
 }

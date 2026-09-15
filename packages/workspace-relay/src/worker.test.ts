@@ -113,4 +113,50 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
       "/internal/relay/revocation",
     ])
   })
+
+  test("resolver client derives the host-generation lookup from the resolver base", async () => {
+    const requests: Request[] = []
+    let response = () => Response.json({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    const client = workspaceRelayWorkerResolverClient({
+      CLAXEDO_CENTRAL_URL: "https://central.test",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+      CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: "10000",
+    }, async (url, init) => {
+      const request = new Request(url, init)
+      requests.push(request)
+      return response()
+    })
+    await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 2 }))
+      .resolves.toEqual({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    // Cached: equal generation, inside the TTL.
+    await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 2 }))
+      .resolves.toEqual({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe("https://central.test/internal/relay/host-generation?enrollmentId=enr_1")
+    expect(requests[0]?.headers.get("authorization")).toBe("Bearer resolver-token")
+    expect(requests[0]?.signal).toBeInstanceOf(AbortSignal)
+
+    response = () => Response.json({ error: { code: "relay_resolver_enrollment_not_found", message: "Enrollment not found" } }, { status: 404 })
+    await expect(client.hostGeneration({ enrollmentId: "enr_2", generation: 1 })).resolves.toBeUndefined()
+    response = () => new Response("404 Not Found", { status: 404 })
+    await expect(client.hostGeneration({ enrollmentId: "enr_3", generation: 1 }))
+      .rejects.toThrow("relay host-generation resolver failed: 404 (no host-generation route at https://central.test/internal/relay/host-generation)")
+    response = () => new Response("", { status: 503 })
+    await expect(client.hostGeneration({ enrollmentId: "enr_4", generation: 1 }))
+      .rejects.toThrow("relay host-generation resolver failed: 503")
+  })
+
+  test("resolver client prefers an explicit host-generation URL over the derived one", async () => {
+    const requests: Request[] = []
+    const client = workspaceRelayWorkerResolverClient({
+      CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+      CLAXEDO_RELAY_HOST_GENERATION_URL: "https://other.test/host-generation",
+    }, async (url, init) => {
+      requests.push(new Request(url, init))
+      return Response.json({ enrollmentId: "enr_1", generation: 2, revoked: false })
+    })
+    await client.hostGeneration({ enrollmentId: "enr_1", generation: 2 })
+    expect(requests.map((request) => request.url)).toEqual(["https://other.test/host-generation?enrollmentId=enr_1"])
+  })
 })

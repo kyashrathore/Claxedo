@@ -20,6 +20,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
+import { organizationRoleRankSql } from "../../authority/adapters/d1/host-access-authority"
 import { isRecord } from "@claxedo/helpers/guards"
 
 /** The project scope a user default addresses; never a real project ID. */
@@ -165,9 +166,12 @@ const WORKSPACE_ACCESS_SQL = `
         join teams t on t.team_id = tg.team_id and t.org_id = w.org_id and t.deleted_at is null
         where tg.project_id = w.project_id and tg.revoked_at is null
       ), 0),
-      case when o.owner_user_id = ? then 3
-        when om.role in ('owner', 'admin') then 3
-        when om.role = 'member' then 1 else 0 end
+      ${organizationRoleRankSql({
+        orgOwnerUserId: "o.owner_user_id",
+        userId: "?",
+        orgMemberRole: "om.role",
+        workspaceAlias: "w",
+      })}
     ) as role_rank
   from workspaces w
   join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null

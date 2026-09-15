@@ -1,20 +1,12 @@
 import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
+import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
 import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
-/**
- * Neutral resolver contract for a workspace's current user-hosted host. The
- * concrete resolver is a storage adapter (Claxedo ships one under
- * `adapters/*`); this control-plane module only depends on the shape.
- */
-export type UserHostedTargetResult =
-  | { active: true; hostId: string; backing: "local-worktree" | "cloud-vm" }
-  | { active: false }
-
-export type UserHostedTargetResolver = (workspaceId: string) => Promise<UserHostedTargetResult>
+export type { UserHostedTargetResolver, UserHostedTargetResult } from "@claxedo/server-core/adapters/relay-port"
 
 /**
  * The single SandboxManager-backed relay target lookup, consumed by hosted

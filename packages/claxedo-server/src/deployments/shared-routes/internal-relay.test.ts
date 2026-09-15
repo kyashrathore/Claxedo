@@ -276,3 +276,58 @@ describe("InternalRelayResolverRoutes /internal/relay/target auth", () => {
     })
   })
 })
+
+describe("InternalRelayResolverRoutes /internal/relay/host-generation", () => {
+  const enrollment = (overrides: Partial<{ revoked_at: number | null; paused_at: number | null; serving_generation: number }> = {}) => ({
+    enrollment_id: "enr_1",
+    host_id: "host_1",
+    owner_user_id: "usr_1",
+    owner_actor_id: "act_1",
+    public_key_json: "{}",
+    key_version: 1,
+    serving_generation: 3,
+    revoked_at: null,
+    paused_at: null,
+    scope: undefined,
+    ownerEligible: true,
+    ...overrides,
+  })
+  const withLookup = (row: ReturnType<typeof enrollment> | undefined) => {
+    const app = new Hono()
+    app.route("/", InternalRelayResolverRoutes({
+      resolverToken: RESOLVER_TOKEN,
+      authority: {
+        machineAuth: { lookupEnrollment: async () => row, consumeNonce: async () => true },
+      } as never,
+    }))
+    return app
+  }
+
+  test("answers the enrollment's current serving generation in the relay's spelling", async () => {
+    const res = await withLookup(enrollment()).fetch(authedRequest("/internal/relay/host-generation?enrollmentId=enr_1"))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ enrollmentId: "enr_1", generation: 3, revoked: false })
+  })
+
+  test("reports a revoked or paused enrollment as revoked: its tunnel must close either way", async () => {
+    const revoked = await withLookup(enrollment({ revoked_at: 5 })).fetch(authedRequest("/internal/relay/host-generation?enrollmentId=enr_1"))
+    expect(await revoked.json()).toMatchObject({ revoked: true })
+    const paused = await withLookup(enrollment({ paused_at: 5 })).fetch(authedRequest("/internal/relay/host-generation?enrollmentId=enr_1"))
+    expect(await paused.json()).toMatchObject({ revoked: true })
+  })
+
+  test("404s an enrollment the authority does not know", async () => {
+    const res = await withLookup(undefined).fetch(authedRequest("/internal/relay/host-generation?enrollmentId=enr_x"))
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({ error: { code: "relay_resolver_enrollment_not_found" } })
+  })
+
+  test("requires enrollmentId and the resolver bearer, and 501s without a machine-auth authority", async () => {
+    expect((await withLookup(enrollment()).fetch(authedRequest("/internal/relay/host-generation"))).status).toBe(400)
+    expect(
+      (await withLookup(enrollment()).fetch(new Request("http://relay.test/internal/relay/host-generation?enrollmentId=enr_1"))).status,
+    ).toBe(401)
+    const bare = buildApp({ revocationLookup: async () => ({ active: true }) })
+    expect((await bare.fetch(authedRequest("/internal/relay/host-generation?enrollmentId=enr_1"))).status).toBe(501)
+  })
+})

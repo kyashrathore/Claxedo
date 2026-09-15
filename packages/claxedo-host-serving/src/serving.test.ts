@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { isLoopbackLocalRequest, loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
-import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "./user-hosted-serving"
+import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "./serving"
 
 type StartedTunnel = {
   workspaceIds: readonly string[]
@@ -44,8 +44,12 @@ function credential(workspaceIds: string[], overrides: { token?: string; expires
   }
 }
 
+const composition = { localBaseUrl: "http://127.0.0.1:2593", sessionAuthority: () => "local" as const }
+
 const serve = (workspaceIds: string[], overrides?: { token?: string; expiresAt?: number }) =>
-  setUserHostedServing(credential(workspaceIds, overrides), { localBaseUrl: "http://127.0.0.1:2593" })
+  setUserHostedServing(credential(workspaceIds, overrides), composition)
+
+const state = () => userHostedServingState(composition)
 
 const live = () => started.filter((entry) => !entry.closed)
 
@@ -97,7 +101,7 @@ describe("relay connection grain", () => {
 
   /**
    * The workspace surface, the daemon's OpenCode-compat root, and an outright
-   * deny are three different verdicts (`user-hosted-surface.ts`), and a
+   * deny are three different verdicts (`surface.ts`), and a
    * relayed request must land on the right one. `/provider?harness=opencode`
    * is the runtime's own catalog — THE 403 the hosted app hit when the old
    * guard (an allow-list built from the daemon's ROOT-surface ownership
@@ -145,7 +149,7 @@ describe("relay connection grain", () => {
    * against the running daemon: `/path`, `/api/wr/worktrees`,
    * `/api/wr/checkpoint/*`, `/api/wr/subagent-transcripts`, `/api/wr/file*`,
    * and `/api/wr/find/*` all answer on the workspace surface but were refused
-   * through the tunnel. `user-hosted-surface.ts` inverts the shape to a
+   * through the tunnel. `surface.ts` inverts the shape to a
    * DENY-list, so an unlisted runtime route reaches the runtime and gets an
    * honest 404 for what it does not implement, not a 403 from a stale list.
    */
@@ -188,26 +192,26 @@ describe("relay connection grain", () => {
 
   test("reports reachable only once every served workspace has an open socket", async () => {
     await serve([WS_A, WS_B])
-    expect(userHostedServingState()).toMatchObject({ serving: true, connected: false, connectedWorkspaceIds: [] })
+    expect(state()).toMatchObject({ serving: true, connected: false, connectedWorkspaceIds: [] })
 
     live()[0].onEvent({ type: "open" })
     expect(
-      userHostedServingState(),
+      state(),
       "one of two rooms reachable is not a reachable machine",
     ).toMatchObject({ connected: false, connectedWorkspaceIds: [WS_A] })
 
     live()[1].onEvent({ type: "open" })
-    expect(userHostedServingState()).toMatchObject({ connected: true, connectedWorkspaceIds: [WS_A, WS_B] })
+    expect(state()).toMatchObject({ connected: true, connectedWorkspaceIds: [WS_A, WS_B] })
 
     live()[1].onEvent({ type: "reconnecting" })
-    expect(userHostedServingState()).toMatchObject({ connected: false, connectedWorkspaceIds: [WS_A] })
+    expect(state()).toMatchObject({ connected: false, connectedWorkspaceIds: [WS_A] })
   })
 
   test("a null credential closes every connection", async () => {
     await serve([WS_A, WS_B])
-    await setUserHostedServing(null, { localBaseUrl: "http://127.0.0.1:2593" })
+    await setUserHostedServing(null, composition)
     expect(started.every((entry) => entry.closed)).toBe(true)
-    expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
+    expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 })
 

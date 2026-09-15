@@ -1,3 +1,8 @@
+/**
+ * One tunnel's presence, recorded once per workspace it serves. `workspaceIds`
+ * is the full set that tunnel registered, so a reader that found the entry
+ * through one workspace still sees the others.
+ */
 export type HostTunnelPresence = {
   hostId: string
   workspaceIds: string[]
@@ -6,13 +11,21 @@ export type HostTunnelPresence = {
   expiresAt: number
 }
 
+/**
+ * Presence is keyed by (host, workspace): one host may hold a separate tunnel
+ * per workspace on a Bun relay, and a later registration for a workspace takes
+ * that workspace over without touching the host's other entries. `recordPong`
+ * and `disconnectHost` take the optional workspace set for the same reason —
+ * without it they act on every entry of the host, which is what a
+ * single-workspace Cloudflare room wants.
+ */
 export type WorkspaceRelayDirectory = {
   registerHostTunnel(input: {
     hostId: string
     workspaceIds: string[]
   }): HostTunnelPresence
-  recordPong(hostId: string): HostTunnelPresence | undefined
-  disconnectHost(hostId: string): void
+  recordPong(hostId: string, workspaceIds?: string[]): HostTunnelPresence | undefined
+  disconnectHost(hostId: string, workspaceIds?: string[]): void
   activeHost(input: {
     hostId: string
     workspaceId: string
@@ -30,13 +43,15 @@ export type WorkspaceRelayDirectory = {
    */
   dispose(): void
   /**
-   * T31: count of currently-active (non-expired) host presence entries.
-   * Equivalent to running `sweep()` then returning the residual map size, but
-   * implemented as a single pass without mutating eviction state when the
-   * caller only wants a snapshot. Surfaced via the `/metrics` endpoint as
+   * Count of hosts with at least one non-expired presence entry, taken as a
+   * snapshot without evicting. Surfaced via `/metrics` as
    * `directory.activeHostCount`.
    */
   size(): number
+}
+
+function presenceKey(hostId: string, workspaceId: string) {
+  return `${hostId}\0${workspaceId}`
 }
 
 export function createWorkspaceRelayDirectory(options: {
@@ -53,33 +68,28 @@ export function createWorkspaceRelayDirectory(options: {
   const ttlMs = Math.max(1, options.ttlMs ?? 45_000)
   const now = options.now ?? Date.now
   const sweepIntervalMs = options.sweepIntervalMs ?? 30_000
-  const hosts = new Map<string, HostTunnelPresence>()
+  const entries = new Map<string, HostTunnelPresence>()
 
-  const alive = (presence: HostTunnelPresence | undefined): HostTunnelPresence | undefined => {
+  const alive = (key: string): HostTunnelPresence | undefined => {
+    const presence = entries.get(key)
     if (!presence) return undefined
     if (presence.expiresAt <= now()) {
-      hosts.delete(presence.hostId)
+      entries.delete(key)
       return undefined
     }
     return presence
   }
 
-  const touch = (presence: HostTunnelPresence) => {
-    const timestamp = now()
-    const next = {
-      ...presence,
-      lastPongAt: timestamp,
-      expiresAt: timestamp + ttlMs,
-    }
-    hosts.set(next.hostId, next)
-    return next
+  const keysOf = (hostId: string, workspaceIds: string[] | undefined) => {
+    if (workspaceIds) return [...new Set(workspaceIds)].map((workspaceId) => presenceKey(hostId, workspaceId))
+    return [...entries].filter(([, presence]) => presence.hostId === hostId).map(([key]) => key)
   }
 
   const sweep = () => {
     const at = now()
-    for (const [hostId, presence] of hosts) {
+    for (const [key, presence] of entries) {
       if (presence.expiresAt <= at) {
-        hosts.delete(hostId)
+        entries.delete(key)
       }
     }
   }
@@ -99,29 +109,35 @@ export function createWorkspaceRelayDirectory(options: {
         lastPongAt: timestamp,
         expiresAt: timestamp + ttlMs,
       }
-      hosts.set(next.hostId, next)
+      for (const workspaceId of next.workspaceIds) entries.set(presenceKey(next.hostId, workspaceId), next)
       return next
     },
-    recordPong(hostId) {
-      const presence = alive(hosts.get(hostId))
-      return presence ? touch(presence) : undefined
+    recordPong(hostId, workspaceIds) {
+      const timestamp = now()
+      let touched: HostTunnelPresence | undefined
+      for (const key of keysOf(hostId, workspaceIds)) {
+        const presence = alive(key)
+        if (!presence) continue
+        const next = { ...presence, lastPongAt: timestamp, expiresAt: timestamp + ttlMs }
+        entries.set(key, next)
+        touched ??= next
+      }
+      return touched
     },
-    disconnectHost(hostId) {
-      hosts.delete(hostId)
+    disconnectHost(hostId, workspaceIds) {
+      for (const key of keysOf(hostId, workspaceIds)) entries.delete(key)
     },
     activeHost(input) {
-      const presence = alive(hosts.get(input.hostId))
-      if (!presence?.workspaceIds.includes(input.workspaceId)) return undefined
-      return presence
+      return alive(presenceKey(input.hostId, input.workspaceId))
     },
     sweep,
     size() {
       const at = now()
-      let count = 0
-      for (const presence of hosts.values()) {
-        if (presence.expiresAt > at) count += 1
+      const hosts = new Set<string>()
+      for (const presence of entries.values()) {
+        if (presence.expiresAt > at) hosts.add(presence.hostId)
       }
-      return count
+      return hosts.size
     },
     dispose() {
       if (intervalHandle !== undefined) {

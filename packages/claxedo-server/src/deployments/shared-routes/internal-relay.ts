@@ -146,6 +146,33 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
     })
   })
 
+  /**
+   * The serving generation a host tunnel must carry to be admitted, read from
+   * the same enrollment row the machine verifier reads. A paused enrollment
+   * answers `revoked: true` as well: its beats are refused, so its tunnel
+   * must close. 404 for an enrollment this authority does not know.
+   */
+  app.get("/internal/relay/host-generation", async (c) => {
+    const enrollmentId = trimToUndefined(c.req.query("enrollmentId"))
+    if (!enrollmentId) {
+      return c.json(errorBody("relay_resolver_enrollment_required", "enrollmentId is required"), 400)
+    }
+    const lookup = options.authority?.machineAuth
+    if (!lookup) {
+      return c.json(
+        errorBody("relay_resolver_host_generation_unconfigured", "Host generation lookup is not configured for this deployment"),
+        501,
+      )
+    }
+    const row = await lookup.lookupEnrollment(enrollmentId)
+    if (!row) return c.json(errorBody("relay_resolver_enrollment_not_found", "Enrollment not found"), 404)
+    return c.json({
+      enrollmentId: row.enrollment_id,
+      generation: row.serving_generation,
+      revoked: row.revoked_at !== null || row.paused_at !== null,
+    })
+  })
+
   app.get("/internal/relay/revocation", async (c) => {
     const jti = trimToUndefined(c.req.query("jti"))
     const workspaceId = trimToUndefined(c.req.query("workspaceId"))

@@ -59,7 +59,7 @@
  *
  * HARNESS LABELS — an ACP harness shows under its connection id (`claude-acp`,
  *   `codex-acp`, `cursor-acp`); the native SDK harnesses show under the product label
- *   ("Claude", "Codex", "Cursor"), and Pi and OpenCode under "Pi"/"OpenCode". The
+ *   ("Claude Code", "Codex", "Cursor"), and Pi and OpenCode under "Pi"/"OpenCode". The
  *   matrix cases pin the variant by the submit payload's `providerID` as well as the
  *   picker label, so an ACP/native mix-up cannot pass on label text alone.
  */
@@ -188,7 +188,7 @@ test.describe("core harness ownership (local) @core", () => {
     await openDraftPrompt(page, DIR)
     await expectOnlyOpenCodeModelControl(page)
 
-    await switchDraftHarness(page, /^Claude$/, 0)
+    await switchDraftHarness(page, /^Claude Code$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
     await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
@@ -208,7 +208,7 @@ test.describe("core harness ownership (local) @core", () => {
     {
       harness: "claude-sdk" as Harness,
       label: "Claude SDK",
-      option: /^Claude$/,
+      option: /^Claude Code$/,
       optionIndex: 0,
       modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
       providerID: "claude",
@@ -395,7 +395,7 @@ test.describe("core harness ownership (local) @core", () => {
     // Exactly one "Claude" row here: the ACP group is built from
     // operator-configured ACP connections and this mock deployment configures none,
     // so the only Claude on offer is the native SDK.
-    await switchDraftHarness(page, /^Claude$/, 0)
+    await switchDraftHarness(page, /^Claude Code$/, 0)
     const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
     await expect(control).toHaveAttribute("data-harness", "claude", { timeout: 20_000 })
     await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
@@ -906,8 +906,8 @@ test.describe("core harness ownership (local) @core", () => {
       await installMockRuntime(page, { dir: DIR, sessionId: "ses_core_harness_persist", harness: "opencode" })
       await openDraftPrompt(page, DIR)
 
-      await switchDraftHarness(page, /^Claude$/, 0)
-      await expectHarnessAutoHydrated(page, /^Claude$/)
+      await switchDraftHarness(page, /^Claude Code$/, 0)
+      await expectHarnessAutoHydrated(page, /^Claude Code$/)
       await expect
         .poll(() =>
           page.evaluate(
@@ -919,7 +919,7 @@ test.describe("core harness ownership (local) @core", () => {
         .toContain('"lastHarness":{"kind":"native","harnessId":"claude"')
 
       await openDraftPrompt(page, DIR)
-      await expectHarnessAutoHydrated(page, /^Claude$/)
+      await expectHarnessAutoHydrated(page, /^Claude Code$/)
     },
   )
 

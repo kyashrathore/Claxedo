@@ -99,7 +99,8 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
   const sessions = new D1SessionAuthority(database, shared)
   const hosts = new D1HostAccessAuthority(database, {
     ...shared,
-    registerLocalForSharing: (auth, input) => workspace.registerLocalForSharing(auth, input),
+    localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
+    resolveOrgId: (auth) => workspace.resolveOrgId(auth),
   })
   const audit = new D1AuditAuthority(database, shared)
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
@@ -114,6 +115,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, PRIVATE_SESSION_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
+    machineAuth: hosts.machineAuth,
   }
 }
 

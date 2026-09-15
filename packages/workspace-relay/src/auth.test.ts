@@ -510,6 +510,76 @@ describe("workspace relay auth", () => {
       code: "relay_token_workspace_mismatch",
     } satisfies Partial<WorkspaceRelayAuthError>)
   })
+
+  test("Host Tunnel Tokens carry the serving-generation fence only when minted with one", async () => {
+    const key = await keys()
+    const fenced = await mintHostTunnelToken({
+      subject: "user_1",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      enrollmentId: "enr_1",
+      generation: 0,
+    }, key.privateKey, "EdDSA")
+    const claims = await verifyHostTunnelToken(fenced, key.publicKey, { hostId: "host_1", workspaceIds: ["ws_1"] })
+    expect(claims).toMatchObject({ enrollment_id: "enr_1", generation: 0 })
+
+    const unfenced = await mintHostTunnelToken({
+      subject: "user_1",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+    }, key.privateKey, "EdDSA")
+    const plain = await verifyHostTunnelToken(unfenced, key.publicKey, { hostId: "host_1", workspaceIds: ["ws_1"] })
+    expect("enrollment_id" in plain).toBe(false)
+    expect("generation" in plain).toBe(false)
+  })
+
+  test("refuses to mint a Host Tunnel Token whose fence is malformed", async () => {
+    const key = await keys()
+    const input = { subject: "user_1", hostId: "host_1", workspaceIds: ["ws_1"] }
+    for (const fence of [
+      { generation: 1 },
+      { enrollmentId: "enr_1", generation: -1 },
+      { enrollmentId: "enr_1", generation: 1.5 },
+      { enrollmentId: "enr_1", generation: Number.NaN },
+    ]) {
+      await expect(mintHostTunnelToken({ ...input, ...fence }, key.privateKey, "EdDSA")).rejects.toMatchObject({
+        code: "relay_token_claims_invalid",
+      } satisfies Partial<WorkspaceRelayAuthError>)
+    }
+  })
+
+  test("rejects signed Host Tunnel Tokens whose generation claim is malformed", async () => {
+    const key = await keys()
+    const now = Math.floor(Date.now() / 1000)
+    const signed = async (claims: Record<string, unknown>) => await new SignJWT({
+      host_id: "host_1",
+      workspace_ids: ["ws_1"],
+      ...claims,
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(runtimeAccessTokenIssuer)
+      .setAudience("workspace-relay-host-tunnel")
+      .setSubject("user_1")
+      .setIssuedAt(now)
+      .setExpirationTime(now + 60)
+      .setJti("jti_fence")
+      .sign(key.privateKey)
+
+    for (const claims of [
+      { enrollment_id: "enr_1", generation: "3" },
+      { enrollment_id: "enr_1", generation: -1 },
+      { enrollment_id: "enr_1", generation: 2.5 },
+      { generation: 3 },
+      { enrollment_id: "", generation: 3 },
+    ]) {
+      await expect(verifyHostTunnelToken(await signed(claims), key.publicKey, {
+        hostId: "host_1",
+        workspaceIds: ["ws_1"],
+      })).rejects.toMatchObject({
+        code: "relay_token_claims_invalid",
+      } satisfies Partial<WorkspaceRelayAuthError>)
+    }
+  })
 })
 /*
  * A fixed Ed25519 key and the `kid` this repository publishes for it.

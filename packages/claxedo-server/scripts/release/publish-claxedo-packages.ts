@@ -31,9 +31,9 @@ import path from "node:path"
 import { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
 import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
-import { publishedVersionDrift } from "./check-published-versions"
+import { publishedVersionDrift, type PublishedVersionPackage } from "./check-published-versions"
 
-export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes"
+export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes" | "cli"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -47,7 +47,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 12 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 13 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -69,6 +69,8 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime" },
   // Tier 3
   { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
+  // Tier 4
+  { name: "@claxedo/cli", dir: "packages/cli", track: "cli" },
 ]
 
 export type PackageSelector = "all" | PackageTrack
@@ -127,22 +129,33 @@ export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<st
 
 /**
  * The manifest npm sees: every `workspace:` specifier replaced by the exact
- * in-repo version of that package. A `workspace:` reference to a package that
- * is not public cannot be materialized and is an error, not a silent pass.
+ * in-repo version of that package. In a section consumers install, a
+ * `workspace:` reference to a package that is not public cannot be
+ * materialized and is an error, not a silent pass. In `devDependencies` —
+ * which npm never installs from a published package — a private sibling is
+ * dropped instead: it is a build-time input (the CLI bundles `host-connector`
+ * and `host-serving` into `dist/index.mjs`) that has no registry name to pin.
  */
 export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap<string, string>): PackageJson {
   const next: PackageJson = { ...pkg }
   for (const section of ALL_SECTIONS) {
     const deps = pkg[section]
     if (!deps) continue
-    next[section] = Object.fromEntries(
-      Object.entries(deps).map(([dep, spec]) => {
-        if (typeof spec !== "string" || !spec.startsWith("workspace:")) return [dep, spec]
-        const version = versions.get(dep)
-        if (!version) throw new Error(`${pkg.name ?? "package"}: ${section}.${dep}=${spec} references a package that is not published`)
-        return [dep, version]
-      }),
-    )
+    const materialized: [string, string][] = []
+    for (const [dep, spec] of Object.entries(deps)) {
+      if (typeof spec !== "string" || !spec.startsWith("workspace:")) {
+        materialized.push([dep, spec])
+        continue
+      }
+      const version = versions.get(dep)
+      if (version) {
+        materialized.push([dep, version])
+        continue
+      }
+      if (section === "devDependencies") continue
+      throw new Error(`${pkg.name ?? "package"}: ${section}.${dep}=${spec} references a package that is not published`)
+    }
+    next[section] = Object.fromEntries(materialized)
   }
   return next
 }
@@ -199,6 +212,7 @@ export function parsePackJson(stdout: string) {
   if (!packs) throw new Error(`unrecognised npm pack --json output: ${stdout.slice(0, 200)}`)
   return packs.map((pack) => ({
     filename: stringField(pack, "filename") ?? "",
+    integrity: stringField(pack, "integrity") ?? "",
     files: (isRecordArray(pack.files) ? pack.files : []).map((file) => ({ path: stringField(file, "path") ?? "" })),
   }))
 }
@@ -237,6 +251,39 @@ export function npmVersionPublished(name: string, version: string, run: CommandR
  * put the original bytes back whether or not `fn` throws. The repo never
  * carries materialized pins; only the tarball does.
  */
+/**
+ * True when npm's tarball for `name@version` has the integrity a pack of this
+ * directory produces with its pins materialized. `npm pack` is deterministic
+ * (fixed mtimes, sorted entries), so equal integrity means equal bytes; an
+ * unbuilt or otherwise differing directory compares unequal and stays a
+ * violation.
+ */
+function publishedTarballMatchesTree(
+  root: string,
+  item: PublishedVersionPackage,
+  version: string,
+  versions: ReadonlyMap<string, string>,
+  run: CommandRunner,
+) {
+  let published: string
+  try {
+    published = run("npm", ["view", `${item.name}@${version}`, "dist.integrity"], root)
+  } catch {
+    return false
+  }
+  if (!published) return false
+  const file = path.join(root, item.dir, "package.json")
+  const pkg = readPackageJson(file)
+  return withMaterializedManifest(file, materializeWorkspacePins(pkg, versions), () => {
+    try {
+      const packed = parsePackJson(run("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], path.join(root, item.dir)))[0]
+      return packed?.integrity === published
+    } catch {
+      return false
+    }
+  })
+}
+
 function withMaterializedManifest<T>(file: string, materialized: PackageJson, fn: () => T): T {
   const original = fs.readFileSync(file, "utf8")
   fs.writeFileSync(file, `${JSON.stringify(materialized, null, 2)}\n`)
@@ -284,7 +331,8 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
   // public set is releasable.
   const versions = repoVersions(root)
   const publicNames = new Set(versions.keys())
-  const drift = publishedVersionDrift(root, claxedoPackages, run)
+  const drift = publishedVersionDrift(root, claxedoPackages, run, (item, version) =>
+    publishedTarballMatchesTree(root, item, version, versions, run))
   if (drift.length > 0) {
     throw new Error(`published versions with unreleased changes (bump the version):\n${drift.map((line) => `  - ${line}`).join("\n")}`)
   }
@@ -427,7 +475,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "wakes", "cli"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track") ?? "others"

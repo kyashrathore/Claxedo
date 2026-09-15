@@ -5,9 +5,11 @@ import { isRecord } from "@claxedo/helpers/guards"
 import type { RuntimeAccessVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
+  isHostGeneration,
   mintRelayHostToken,
   validateRuntimeAccessTokenClaims,
   verifyRuntimeAccessToken,
+  type HostTunnelTokenClaims,
   type RelayClaimPair,
   type RelayJwtAlgorithm,
   type RelayKey,
@@ -74,6 +76,77 @@ export function parseRuntimeAccessTokenActiveResult(input: unknown): RuntimeAcce
   return { active: false, code: row.code, reason: row.reason }
 }
 
+/**
+ * `GET /internal/relay/host-generation?enrollmentId=` as the control plane
+ * answers it: the enrollment's current serving generation, or 404 for an
+ * enrollment it does not know (`undefined` here).
+ */
+export type HostGenerationResult = {
+  enrollmentId: string
+  generation: number
+  revoked: boolean
+}
+
+export function parseHostGenerationResult(input: unknown): HostGenerationResult | undefined {
+  if (!isRecord(input)) return undefined
+  const row = input
+  if (typeof row.enrollmentId !== "string" || !row.enrollmentId.trim()) return undefined
+  if (!isHostGeneration(row.generation) || typeof row.revoked !== "boolean") return undefined
+  return { enrollmentId: row.enrollmentId, generation: row.generation, revoked: row.revoked }
+}
+
+const HOST_GENERATION_LOOKUP_TIMEOUT_MS_DEFAULT = 5_000
+
+/** The control plane's 404 body for an enrollment it does not know; any other 404 is a missing route. */
+const HOST_GENERATION_ENROLLMENT_NOT_FOUND_CODE = "relay_resolver_enrollment_not_found"
+
+export type HostGenerationResolverLookupOptions = {
+  headers: Record<string, string>
+  fetch?: (url: URL, init: RequestInit) => Promise<Response>
+  /** Deadline per lookup; past it the lookup rejects, which the relay grades as unavailable. */
+  timeoutMs?: number
+}
+
+/**
+ * The HTTP lookup behind `resolveHostGeneration`, shared by the Bun process and
+ * the Worker. Only the control plane's own "enrollment not found" 404 resolves
+ * `undefined`; a bare 404 is a control plane without the route, and like every
+ * other non-ok status, a malformed body, or a hit deadline it throws so the
+ * relay refuses fenced tokens with a retryable 503 instead of grading them as
+ * unknown enrollments.
+ */
+export function createHostGenerationResolverLookup(url: string, options: HostGenerationResolverLookupOptions): HostGenerationLookup {
+  const fetcher = options.fetch ?? ((target, init) => fetch(target, init))
+  const timeoutMs = options.timeoutMs ?? HOST_GENERATION_LOOKUP_TIMEOUT_MS_DEFAULT
+  return async ({ enrollmentId }) => {
+    const target = new URL(url)
+    target.searchParams.set("enrollmentId", enrollmentId)
+    const res = await fetcher(target, { headers: options.headers, signal: AbortSignal.timeout(timeoutMs) })
+    if (res.status === 404) {
+      const body: unknown = await res.json().catch(() => undefined)
+      const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
+      if (error?.code === HOST_GENERATION_ENROLLMENT_NOT_FOUND_CODE) return undefined
+      throw new Error(`relay host-generation resolver failed: 404 (no host-generation route at ${url})`)
+    }
+    if (!res.ok) throw new Error(`relay host-generation resolver failed: ${res.status} ${await res.text()}`)
+    const result = parseHostGenerationResult(await res.json())
+    if (!result) throw new Error("relay host-generation resolver returned a malformed result")
+    return result
+  }
+}
+
+/**
+ * The fence between two host tunnels for one identity. An incumbent that
+ * carries a generation is displaced only by a candidate at the same or a
+ * higher generation — never by a lower one, and never by a token minted
+ * without a generation. An incumbent without a generation is displaced by
+ * any candidate, which is the pre-fence "newest wins" order.
+ */
+export function hostTunnelIncumbentOutranks(incumbentGeneration: number | undefined, candidateGeneration: number | undefined) {
+  if (incumbentGeneration === undefined) return false
+  return candidateGeneration === undefined || incumbentGeneration > candidateGeneration
+}
+
 function relayClaimPair(access: unknown, backing: unknown): RelayClaimPair | undefined {
   if (access === "cloud" && backing === "cloud-vm") return { access, backing }
   if (access === "user-hosted" && backing === "local-worktree") return { access, backing }
@@ -89,6 +162,23 @@ export type RevocationLookup = (args: RevocationLookupArgs) => Promise<RuntimeAc
 
 export type CachedRevocationOptions = {
   /** TTL in milliseconds for cached revocation responses. Defaults to 10_000. */
+  ttlMs?: number
+  /** Clock injection for tests. Defaults to `Date.now`. */
+  now?: () => number
+}
+
+/**
+ * `generation` is the value the caller holds (a token's, a socket's). The
+ * cached client uses it to decide whether a cached answer may stand in for a
+ * fresh one; an uncached lookup ignores it. Resolves `undefined` for an
+ * unknown enrollment and THROWS when the control plane cannot be reached —
+ * the throw is the "unavailable" signal every consumer grades separately.
+ */
+export type HostGenerationLookupArgs = { enrollmentId: string; generation: number }
+export type HostGenerationLookup = (args: HostGenerationLookupArgs) => Promise<HostGenerationResult | undefined>
+
+export type CachedHostGenerationOptions = {
+  /** TTL in milliseconds for cached host-generation answers. Defaults to 10_000. */
   ttlMs?: number
   /** Clock injection for tests. Defaults to `Date.now`. */
   now?: () => number
@@ -111,6 +201,7 @@ export type WorkspaceRelayAuditEvent = {
     | "relay.request.suppressed_summary"
     | "host_tunnel.connected"
     | "host_tunnel.disconnected"
+    | "host_tunnel.denied"
   result: "allow" | "deny"
   reason?: string
   actorId?: string
@@ -131,6 +222,13 @@ export type WorkspaceRelayAuditEvent = {
 
 export type WorkspaceRelayAuthOptions = {
   runtimeAccessKey: RelayKey
+  /**
+   * Serving-generation fence for host tunnels. Unset on desktop and
+   * self-hosted relays, where nothing asks the control plane: tokens without
+   * a generation are admitted newest-wins, tokens with one are refused
+   * `host_generation_unverifiable`.
+   */
+  resolveHostGeneration?: HostGenerationLookup
   /**
    * Cache signature/introspection-verified Runtime Access Token claims by the
    * full token string. Revocation/active checks, role enforcement, and target
@@ -371,6 +469,130 @@ export function createCachedRevocationClient(
     cache.set(args.jti, { promise, expiresAt: at + ttlMs })
     return await promise
   }
+}
+
+/**
+ * Caches host-generation answers by enrollment id with the fence's own rules:
+ * a cached answer stands only while it is at least the caller's generation
+ * (equal admits; higher is a refusal that needs no fresh read), and a caller
+ * holding a HIGHER generation than the cache — or than the answer an in-flight
+ * lookup settles on — forces a refresh so a fresh `acquire` is never refused
+ * on a stale answer. Unknown enrollments and failures are not cached;
+ * concurrent misses share one lookup.
+ */
+export function createCachedHostGenerationClient(
+  inner: HostGenerationLookup,
+  options: CachedHostGenerationOptions = {},
+): HostGenerationLookup {
+  const ttlMs = options.ttlMs ?? 10_000
+  const now = options.now ?? Date.now
+  const cache = new Map<string, {
+    expiresAt: number
+    promise?: Promise<HostGenerationResult | undefined>
+    result?: HostGenerationResult
+  }>()
+
+  return async (args) => {
+    for (;;) {
+      const at = now()
+      const entry = cache.get(args.enrollmentId)
+      if (entry && entry.expiresAt > at) {
+        if (entry.result && entry.result.generation >= args.generation) return entry.result
+        if (!entry.result && entry.promise) {
+          // A lookup another caller started may have been answered for a
+          // lower generation than this caller holds; that answer is as stale
+          // for it as a cached one would be, so re-read after it settles.
+          const shared = await entry.promise
+          if (!shared || shared.generation >= args.generation) return shared
+          continue
+        }
+      }
+
+      const promise = inner(args)
+        .then((result) => {
+          pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
+          if (result) cache.set(args.enrollmentId, { result, expiresAt: now() + ttlMs })
+          else cache.delete(args.enrollmentId)
+          return result
+        })
+        .catch((err) => {
+          cache.delete(args.enrollmentId)
+          throw err
+        })
+      cache.set(args.enrollmentId, { promise, expiresAt: at + ttlMs })
+      return await promise
+    }
+  }
+}
+
+export type HostTunnelGenerationDecision =
+  | { ok: true }
+  | {
+      ok: false
+      retryable: false
+      code:
+        | "host_generation_superseded"
+        | "host_generation_unknown"
+        | "host_generation_unverifiable"
+        | "host_enrollment_revoked"
+        | "host_enrollment_unknown"
+      reason: string
+    }
+  | {
+      ok: false
+      retryable: true
+      code: "host_generation_lookup_unavailable"
+      reason: string
+    }
+
+/**
+ * The one admission/re-check verdict both relay adapters apply to a host
+ * tunnel, on connect and on every registration update. A token without a
+ * generation is always `ok` — that is the pre-fence behaviour desktop and
+ * self-hosted relays keep. A token WITH a generation asserts a fence, so a
+ * relay composed without a resolver refuses it rather than admit what it
+ * cannot verify; that refusal is not retryable because the resolver is a
+ * property of the composition, not of the moment. `retryable` otherwise
+ * separates "the control plane said no" (the host must not simply reconnect)
+ * from "the control plane could not be asked" (it should).
+ */
+export async function checkHostTunnelGeneration(
+  lookup: HostGenerationLookup | undefined,
+  claims: Pick<HostTunnelTokenClaims, "enrollment_id" | "generation">,
+): Promise<HostTunnelGenerationDecision> {
+  if (claims.generation === undefined || !claims.enrollment_id) return { ok: true }
+  if (!lookup) {
+    return {
+      ok: false,
+      retryable: false,
+      code: "host_generation_unverifiable",
+      reason: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
+    }
+  }
+  let result: HostGenerationResult | undefined
+  try {
+    result = await lookup({ enrollmentId: claims.enrollment_id, generation: claims.generation })
+  } catch (err) {
+    return {
+      ok: false,
+      retryable: true,
+      code: "host_generation_lookup_unavailable",
+      reason: `Host generation lookup is unavailable: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (!result) {
+    return { ok: false, retryable: false, code: "host_enrollment_unknown", reason: "Host enrollment is unknown" }
+  }
+  if (result.revoked) {
+    return { ok: false, retryable: false, code: "host_enrollment_revoked", reason: "Host enrollment was revoked" }
+  }
+  if (result.generation > claims.generation) {
+    return { ok: false, retryable: false, code: "host_generation_superseded", reason: "Host tunnel generation was superseded" }
+  }
+  if (result.generation < claims.generation) {
+    return { ok: false, retryable: false, code: "host_generation_unknown", reason: "Host tunnel generation is ahead of the control plane" }
+  }
+  return { ok: true }
 }
 
 /**

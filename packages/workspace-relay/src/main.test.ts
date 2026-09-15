@@ -15,7 +15,17 @@ import {
   validateProductionEnv,
 } from "./main"
 import { createWorkspaceRelayDirectory } from "./directory"
-import { createCachedTargetClient, type RuntimeAccessTokenActiveResult, type WorkspaceRelayTarget } from "./server"
+import {
+  checkHostTunnelGeneration,
+  createCachedHostGenerationClient,
+  createCachedTargetClient,
+  createHostGenerationResolverLookup,
+  hostTunnelIncumbentOutranks,
+  parseHostGenerationResult,
+  type HostGenerationResult,
+  type RuntimeAccessTokenActiveResult,
+  type WorkspaceRelayTarget,
+} from "./server"
 
 type Args = { jti: string; workspaceId: string; hostId: string }
 
@@ -294,6 +304,7 @@ describe("resolverClientCacheOptionsFromEnv", () => {
     expect(resolverClientCacheOptionsFromEnv({})).toEqual({
       targetCacheTtlMs: 30_000,
       revocationCacheTtlMs: 10_000,
+      hostGenerationCacheTtlMs: 10_000,
     })
     expect(resolverClientCacheOptionsFromEnv({
       CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: "15000",
@@ -301,6 +312,368 @@ describe("resolverClientCacheOptionsFromEnv", () => {
     })).toEqual({
       targetCacheTtlMs: 15_000,
       revocationCacheTtlMs: 5_000,
+      hostGenerationCacheTtlMs: 10_000,
+    })
+  })
+
+  test("carries the host-generation URL only as an explicit override, and its cache TTL always", () => {
+    expect(resolverClientCacheOptionsFromEnv({
+      CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS: "2000",
+    })).toEqual({
+      targetCacheTtlMs: 30_000,
+      revocationCacheTtlMs: 10_000,
+      hostGenerationCacheTtlMs: 2_000,
+    })
+    expect(resolverClientCacheOptionsFromEnv({
+      CLAXEDO_RELAY_HOST_GENERATION_URL: " https://central.test/internal/relay/host-generation ",
+    })).toEqual({
+      targetCacheTtlMs: 30_000,
+      revocationCacheTtlMs: 10_000,
+      hostGenerationUrl: "https://central.test/internal/relay/host-generation",
+      hostGenerationCacheTtlMs: 10_000,
+    })
+  })
+})
+
+describe("createResolverClient host generation", () => {
+  function withFetch(handler: (url: URL, init?: RequestInit) => Response | Promise<Response>) {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input, init) => await handler(
+      new URL(input instanceof Request ? input.url : String(input)),
+      init,
+    )) as typeof fetch
+    return () => {
+      globalThis.fetch = originalFetch
+    }
+  }
+
+  test("derives the lookup from the resolver base and sends the enrollment id with the relay bearer", async () => {
+    const requests: Array<{ url: URL; authorization: string | null }> = []
+    const restore = withFetch((url, init) => {
+      requests.push({ url, authorization: new Headers(init?.headers).get("authorization") })
+      return Response.json({ enrollmentId: "enr_1", generation: 3, revoked: false })
+    })
+    try {
+      const client = createResolverClient("https://resolver.test/internal/relay/", "resolver_token")
+      await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 3 }))
+        .resolves.toEqual({ enrollmentId: "enr_1", generation: 3, revoked: false })
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.url.href).toBe("https://resolver.test/internal/relay/host-generation?enrollmentId=enr_1")
+      expect(requests[0]?.authorization).toBe("Bearer resolver_token")
+    } finally {
+      restore()
+    }
+  })
+
+  test("an explicit URL overrides the derived one", async () => {
+    const requests: URL[] = []
+    const restore = withFetch((url) => {
+      requests.push(url)
+      return Response.json({ enrollmentId: "enr_1", generation: 3, revoked: false })
+    })
+    try {
+      const client = createResolverClient("https://resolver.test/internal/relay", "resolver_token", {
+        hostGenerationUrl: "https://central.test/other/host-generation",
+      })
+      await client.hostGeneration({ enrollmentId: "enr_1", generation: 3 })
+      expect(requests.map((url) => url.href)).toEqual(["https://central.test/other/host-generation?enrollmentId=enr_1"])
+    } finally {
+      restore()
+    }
+  })
+
+  test("resolves undefined only on the control plane's enrollment-not-found 404; a bare 404 or any other failure throws", async () => {
+    let response = () => Response.json({ error: { code: "relay_resolver_enrollment_not_found", message: "Enrollment not found" } }, { status: 404 })
+    const restore = withFetch(() => response())
+    try {
+      const client = createResolverClient("https://resolver.test/internal/relay", "resolver_token")
+      await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 1 })).resolves.toBeUndefined()
+      response = () => new Response("404 Not Found", { status: 404 })
+      await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 1 }))
+        .rejects.toThrow("relay host-generation resolver failed: 404 (no host-generation route at https://resolver.test/internal/relay/host-generation)")
+      response = () => new Response("boom", { status: 503 })
+      await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 1 }))
+        .rejects.toThrow("relay host-generation resolver failed: 503 boom")
+    } finally {
+      restore()
+    }
+  })
+
+  test("throws on a malformed body instead of trusting it", async () => {
+    const restore = withFetch(() => Response.json({ enrollmentId: "enr_1", generation: "3" }))
+    try {
+      const client = createResolverClient("https://resolver.test/internal/relay", "resolver_token")
+      await expect(client.hostGeneration({ enrollmentId: "enr_1", generation: 3 }))
+        .rejects.toThrow("malformed result")
+    } finally {
+      restore()
+    }
+  })
+
+  test("bounds every lookup with a 5 s deadline by default and rejects when it passes", async () => {
+    const signals: Array<AbortSignal | null | undefined> = []
+    const lookup = createHostGenerationResolverLookup("https://resolver.test/internal/relay/host-generation", {
+      headers: {},
+      fetch: (_url, init) => {
+        signals.push(init.signal)
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+        })
+      },
+      timeoutMs: 20,
+    })
+    await expect(lookup({ enrollmentId: "enr_1", generation: 1 })).rejects.toThrow(/timed out|TimeoutError/i)
+    expect(signals[0]).toBeInstanceOf(AbortSignal)
+
+    const defaults: Array<AbortSignal | null | undefined> = []
+    const defaultLookup = createHostGenerationResolverLookup("https://resolver.test/internal/relay/host-generation", {
+      headers: {},
+      fetch: async (_url, init) => {
+        defaults.push(init.signal)
+        return Response.json({ enrollmentId: "enr_1", generation: 1, revoked: false })
+      },
+    })
+    await defaultLookup({ enrollmentId: "enr_1", generation: 1 })
+    expect(defaults[0]).toBeInstanceOf(AbortSignal)
+    expect(defaults[0]?.aborted).toBe(false)
+  })
+
+  test("a hit deadline is graded as an unavailable lookup", async () => {
+    const lookup = createHostGenerationResolverLookup("https://resolver.test/internal/relay/host-generation", {
+      headers: {},
+      fetch: (_url, init) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+      }),
+      timeoutMs: 20,
+    })
+    await expect(checkHostTunnelGeneration(lookup, { enrollment_id: "enr_1", generation: 1 })).resolves.toMatchObject({
+      ok: false,
+      retryable: true,
+      code: "host_generation_lookup_unavailable",
+    })
+  })
+})
+
+describe("hostTunnelIncumbentOutranks", () => {
+  test("a fenced incumbent yields only to an equal or higher generation; an unfenced one yields to anyone", () => {
+    expect(hostTunnelIncumbentOutranks(3, 2)).toBe(true)
+    expect(hostTunnelIncumbentOutranks(3, undefined)).toBe(true)
+    expect(hostTunnelIncumbentOutranks(3, 3)).toBe(false)
+    expect(hostTunnelIncumbentOutranks(3, 4)).toBe(false)
+    expect(hostTunnelIncumbentOutranks(undefined, undefined)).toBe(false)
+    expect(hostTunnelIncumbentOutranks(undefined, 0)).toBe(false)
+  })
+})
+
+describe("parseHostGenerationResult", () => {
+  test("accepts the route's shape and rejects everything else", () => {
+    expect(parseHostGenerationResult({ enrollmentId: "enr_1", generation: 0, revoked: false }))
+      .toEqual({ enrollmentId: "enr_1", generation: 0, revoked: false })
+    expect(parseHostGenerationResult({ enrollmentId: "enr_1", generation: 2, revoked: true }))
+      .toEqual({ enrollmentId: "enr_1", generation: 2, revoked: true })
+    for (const input of [
+      undefined,
+      null,
+      "enr_1",
+      { enrollmentId: "", generation: 1, revoked: false },
+      { enrollmentId: "enr_1", generation: -1, revoked: false },
+      { enrollmentId: "enr_1", generation: 1.5, revoked: false },
+      { enrollmentId: "enr_1", generation: "1", revoked: false },
+      { enrollmentId: "enr_1", generation: 1 },
+      { enrollmentId: "enr_1", generation: 1, revoked: "no" },
+    ]) {
+      expect(parseHostGenerationResult(input)).toBeUndefined()
+    }
+  })
+})
+
+describe("createCachedHostGenerationClient", () => {
+  type Args = { enrollmentId: string; generation: number }
+  function current(generation: number, revoked = false): HostGenerationResult {
+    return { enrollmentId: "enr_1", generation, revoked }
+  }
+
+  test("serves a cached answer that equals the caller's generation", async () => {
+    const calls: Args[] = []
+    const clock = makeFakeNow(1_000_000)
+    const cached = createCachedHostGenerationClient(async (args) => {
+      calls.push(args)
+      return current(3)
+    }, { ttlMs: 10_000, now: clock.now })
+
+    await expect(cached({ enrollmentId: "enr_1", generation: 3 })).resolves.toEqual(current(3))
+    clock.advance(5_000)
+    await expect(cached({ enrollmentId: "enr_1", generation: 3 })).resolves.toEqual(current(3))
+    expect(calls).toHaveLength(1)
+
+    clock.advance(5_001)
+    await cached({ enrollmentId: "enr_1", generation: 3 })
+    expect(calls).toHaveLength(2)
+  })
+
+  test("a caller with a higher generation than the cache forces a refresh", async () => {
+    let live = 3
+    const calls: Args[] = []
+    const clock = makeFakeNow(1_000_000)
+    const cached = createCachedHostGenerationClient(async (args) => {
+      calls.push(args)
+      return current(live)
+    }, { ttlMs: 10_000, now: clock.now })
+
+    await cached({ enrollmentId: "enr_1", generation: 3 })
+    live = 4
+    clock.advance(1_000)
+    // A freshly acquired generation must never be refused on the stale entry.
+    await expect(cached({ enrollmentId: "enr_1", generation: 4 })).resolves.toEqual(current(4))
+    expect(calls).toHaveLength(2)
+    // The refreshed answer is now the cached one.
+    await expect(cached({ enrollmentId: "enr_1", generation: 4 })).resolves.toEqual(current(4))
+    expect(calls).toHaveLength(2)
+  })
+
+  test("a caller with a lower generation than the cache is answered from the cache", async () => {
+    let calls = 0
+    const clock = makeFakeNow(1_000_000)
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      return current(4)
+    }, { ttlMs: 10_000, now: clock.now })
+
+    await cached({ enrollmentId: "enr_1", generation: 4 })
+    await expect(cached({ enrollmentId: "enr_1", generation: 2 })).resolves.toEqual(current(4))
+    expect(calls).toBe(1)
+  })
+
+  test("a revoked answer is cached as any other conclusive answer", async () => {
+    let calls = 0
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      return current(2, true)
+    }, { ttlMs: 10_000, now: makeFakeNow(1_000_000).now })
+
+    await expect(cached({ enrollmentId: "enr_1", generation: 2 })).resolves.toEqual(current(2, true))
+    await expect(cached({ enrollmentId: "enr_1", generation: 2 })).resolves.toEqual(current(2, true))
+    expect(calls).toBe(1)
+  })
+
+  test("unknown enrollments and failures are not cached", async () => {
+    let calls = 0
+    let mode: "unknown" | "throw" | "ok" = "unknown"
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      if (mode === "unknown") return undefined
+      if (mode === "throw") throw new Error("resolver down")
+      return current(1)
+    }, { ttlMs: 10_000, now: makeFakeNow(1_000_000).now })
+
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).resolves.toBeUndefined()
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).resolves.toBeUndefined()
+    expect(calls).toBe(2)
+    mode = "throw"
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).rejects.toThrow("resolver down")
+    mode = "ok"
+    await expect(cached({ enrollmentId: "enr_1", generation: 1 })).resolves.toEqual(current(1))
+    expect(calls).toBe(4)
+  })
+
+  test("a caller above an in-flight lookup's answer refreshes after it settles instead of inheriting it", async () => {
+    let live = 3
+    const calls: Args[] = []
+    let release: (() => void) | undefined
+    const cached = createCachedHostGenerationClient(async (args) => {
+      calls.push(args)
+      const answer = current(live)
+      if (calls.length === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+      }
+      return answer
+    }, { ttlMs: 60_000 })
+
+    const first = cached({ enrollmentId: "enr_1", generation: 3 })
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    // The control plane advances while the first lookup is still in flight;
+    // the caller holding the new generation must not be answered with 3.
+    live = 4
+    const second = cached({ enrollmentId: "enr_1", generation: 4 })
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(calls).toHaveLength(1)
+    release?.()
+    await expect(first).resolves.toEqual(current(3))
+    await expect(second).resolves.toEqual(current(4))
+    expect(calls.map((args) => args.generation)).toEqual([3, 4])
+    await expect(checkHostTunnelGeneration(cached, { enrollment_id: "enr_1", generation: 4 })).resolves.toEqual({ ok: true })
+    expect(calls).toHaveLength(2)
+  })
+
+  test("concurrent misses share one lookup", async () => {
+    let calls = 0
+    let release: (() => void) | undefined
+    const cached = createCachedHostGenerationClient(async () => {
+      calls += 1
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return current(1)
+    })
+
+    const first = cached({ enrollmentId: "enr_1", generation: 1 })
+    const second = cached({ enrollmentId: "enr_1", generation: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    release?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([current(1), current(1)])
+    expect(calls).toBe(1)
+  })
+})
+
+describe("checkHostTunnelGeneration", () => {
+  function current(generation: number, revoked = false): HostGenerationResult {
+    return { enrollmentId: "enr_1", generation, revoked }
+  }
+
+  test("admits a token without a generation claim and never asks the resolver for it", async () => {
+    let calls = 0
+    const lookup = async () => {
+      calls += 1
+      return current(9)
+    }
+    await expect(checkHostTunnelGeneration(lookup, {})).resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(lookup, { enrollment_id: "enr_1" })).resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(undefined, {})).resolves.toEqual({ ok: true })
+    expect(calls).toBe(0)
+  })
+
+  test("refuses a token that carries a generation when there is no resolver to verify it, non-retryably", async () => {
+    await expect(checkHostTunnelGeneration(undefined, { enrollment_id: "enr_1", generation: 1 })).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      code: "host_generation_unverifiable",
+      reason: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
+    })
+  })
+
+  test("grades every conclusive answer as non-retryable", async () => {
+    await expect(checkHostTunnelGeneration(async () => current(2), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toEqual({ ok: true })
+    await expect(checkHostTunnelGeneration(async () => current(3), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_generation_superseded" })
+    await expect(checkHostTunnelGeneration(async () => current(1), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_generation_unknown" })
+    await expect(checkHostTunnelGeneration(async () => current(2, true), { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_enrollment_revoked" })
+    await expect(checkHostTunnelGeneration(async () => undefined, { enrollment_id: "enr_1", generation: 2 }))
+      .resolves.toMatchObject({ ok: false, retryable: false, code: "host_enrollment_unknown" })
+  })
+
+  test("grades a thrown lookup as retryable", async () => {
+    await expect(checkHostTunnelGeneration(async () => {
+      throw new Error("resolver down")
+    }, { enrollment_id: "enr_1", generation: 2 })).resolves.toMatchObject({
+      ok: false,
+      retryable: true,
+      code: "host_generation_lookup_unavailable",
+      reason: "Host generation lookup is unavailable: resolver down",
     })
   })
 })

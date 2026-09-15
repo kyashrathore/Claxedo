@@ -846,7 +846,6 @@ export function createSessionController(input: {
     signal?: AbortSignal
   }) => {
     if (!sessionID || sessionID === "new") return false
-    if (input.signedControlPlane?.()) return input.sessionID() === sessionID
     const cached =
       queryClient.getQueryData(shellDataKeys.sessionId(sessionID, "status")) !== undefined &&
       queryClient.getQueryData(shellDataKeys.sessionId(sessionID, "requests")) !== undefined
@@ -873,7 +872,8 @@ export function createSessionController(input: {
       const sessionID = input.sessionID()
       if (!sessionID || sessionID === "new") return false
       const workspaceId = input.workspaceId?.()
-      return activeTurn() &&
+      return !input.signedControlPlane?.() &&
+        activeTurn() &&
         input.serverHealthy() === true &&
         (workspaceId === undefined || isWorkspaceReady(workspaceId)) &&
         shouldStartActiveSessionStatusPolling({ directory: input.directory(), sessionID })

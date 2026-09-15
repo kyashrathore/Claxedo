@@ -102,16 +102,18 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/testing` | Small test management-auth helpers. |
 
 Root runtime value exports:
+`FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`,
 `Pty`, `SESSION_CORE_ROUTE_ACCESS`,
 `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
 `WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
 `WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
 `createPersistentTranscriptHandleStore`, `createProcessObserver`,
+`createRuntimeCredentialIssuer`,
 `createTranscriptResolver`, `createWorkspaceHost`, `createWorkspaceOpenCodeRuntime`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
-`isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
+`firstPartyMcpServerFor`, `isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
 `loopbackWorkspaceRuntimeExposure`, `managedWorkspaceSessionAccessPolicy`,
 `normalizeRuntimeSnapshot`,
 `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
@@ -119,9 +121,27 @@ Root runtime value exports:
 `remoteWorkspaceSessionAccessPolicy`,
 `remoteWorkspaceSessionAccessPolicyFromEnv`, `sessionAccessRequiresWrite`,
 `flushRuntimeDocument`, `forgetRuntimeDocuments`,
+`runtimeCredentialWorkspaceId`,
 `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
 `waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`,
 `workspaceRuntimeRoute`, and `workspaceStorageRoot`.
+
+The first-party MCP group is how a runtime hands each session it launches an
+entry for the built-in Claxedo MCP server, authenticated by a bearer token the
+runtime itself mints per session:
+
+- `FIRST_PARTY_MCP_SERVER_NAME` is the server name a harness sees for the
+  built-in MCP entry, and `FIRST_PARTY_MCP_PATH` is the path the hosting
+  process mounts it at.
+- `createRuntimeCredentialIssuer` mints, verifies, and rotates the HS256
+  token a runtime signs per session; a token is re-minted once half its TTL
+  has passed so a long-lived harness always holds at least half the lifetime.
+- `firstPartyMcpServerFor` builds the MCP server entry for one session (name,
+  session-scoped URL, bearer header) and returns nothing when the project has
+  no tool groups enabled.
+- `runtimeCredentialWorkspaceId` reads the workspace id claim from a token
+  without verifying it, so a process hosting several runtimes can pick which
+  runtime's verifier to call.
 
 Relay host helpers are intentionally exposed from
 `@claxedo/workspace-runtime/relay`, not the package root:

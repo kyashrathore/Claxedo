@@ -120,7 +120,37 @@ function matrixOwners() {
     .toSorted()
 }
 
+/**
+ * Control-plane routes a machine or the relay calls with no account credential.
+ * They are not AccountPort operations, so the four-way guard does not see
+ * them; this list is what keeps the matrix complete for them instead. A route
+ * added to `routes/hosted/host-enrollment.ts` or the relay resolver lands here
+ * and in the matrix in the same commit.
+ */
+const NON_ACCOUNT_ROUTES = [
+  "POST /api/claxedo/host/enrollments/redeem",
+  "POST /api/claxedo/host/enrollments/acquire",
+  "POST /api/claxedo/host/enrollments/heartbeat",
+  "PATCH /api/claxedo/host/enrollments/:id/scope",
+  "GET /api/claxedo/host/enrollments",
+  "POST /api/claxedo/host/invitations",
+  "GET /api/claxedo/host/invitations",
+  "DELETE /api/claxedo/host/invitations/:id",
+  "GET /internal/relay/host-generation?enrollmentId=",
+]
+
 describe("hosted operation matrix", () => {
+  test("records every machine-signed, invitation and relay-fence route outside the account operations", () => {
+    for (const route of NON_ACCOUNT_ROUTES) {
+      expect(matrix, `matrix must record ${route}`).toContain(`| \`${route}\``)
+    }
+    // A machine route must never be promoted into an AccountPort row by accident.
+    const accountRows = matrix.split("\n").filter((line) => /^\| `[a-zA-Z][\w.]*\.[\w.]*` \|/.test(line))
+    for (const forbidden of ["/redeem", "/acquire", "/host-generation", "/invitations"]) {
+      expect(accountRows.filter((row) => row.includes(forbidden))).toEqual([])
+    }
+  })
+
   test("names an owner module for at least every hosted capability group", () => {
     for (const group of ["Documents", "Billing", "Connections", "Workspace authority", "Sessions"]) {
       expect(matrix, `matrix must cover ${group}`).toContain(`### ${group}`)

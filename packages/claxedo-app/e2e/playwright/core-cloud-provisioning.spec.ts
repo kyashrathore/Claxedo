@@ -821,7 +821,9 @@ test.describe("core cloud provisioning @core", () => {
 
 /**
  * A hosted plane (`platform === "web"`, non-loopback central transport) has no
- * filesystem, so the Project chip's create form offers a repository only. Creating a
+ * filesystem, so the create form offers a repository only. With no project yet the
+ * canvas IS that form (`FirstProjectCanvas`); every later project comes from the
+ * composer's Project chip, which renders the same `ProjectCreateForm`. Creating a
  * project never asks where it runs; execution is the Environment/Workspace chips'
  * question at first send.
  *
@@ -835,7 +837,7 @@ const HOSTED_PROJECT_ID = "prj_core_cloud_hosted"
 
 test.describe("core cloud project creation on a hosted control plane @core", () => {
   test(
-    "New Project on a hosted plane creates a repository project through the composer's Project chip",
+    "a hosted plane with no project opens on the create form and makes a repository project from it",
     async ({ page }) => {
       test.setTimeout(120_000)
       await stampTestAuth(page.context())
@@ -925,6 +927,16 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
         })
       })
 
+      // On a hosted plane the project inventory is the signed workspace inventory; a
+      // created project has to be re-listed from it before the canvas can move on.
+      let inventoryReads = 0
+      page.on("request", (request) => {
+        const url = new URL(request.url())
+        if (request.method() === "GET" && url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
+          inventoryReads += 1
+        }
+      })
+
       await page.addInitScript((serverUrl: string) => {
         localStorage.clear()
         ;(window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__ = serverUrl
@@ -933,7 +945,9 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await page.goto("/", { waitUntil: "domcontentloaded", timeout: 100_000 })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-      await page.getByRole("button", { name: "New Project", exact: true }).first().click()
+      // No project: the form is the screen, with nothing to click through first.
+      await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole("button", { name: "New Project", exact: true })).toHaveCount(0)
       const form = page.locator('[data-slot="project-create-form"]')
       await expect(form).toBeVisible({ timeout: 20_000 })
 
@@ -947,12 +961,16 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-create-project-panel.png" })
 
       // The name defaults to the repository's basename when left blank.
+      const inventoryReadsBeforeCreate = inventoryReads
       await form.getByRole("button", { name: "Create project" }).click()
       await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBe(1)
       expect(createBodies[0]).toEqual({ name: "app", source: { kind: "repository", repoUrl: HOSTED_REPO_URL } })
 
-      // Success closes the panel; the hosted plane serves no project listing to assert.
-      await expect(form).toHaveCount(0, { timeout: 20_000 })
+      // Success re-lists the inventory. This mock's inventory never carries the project
+      // (a repository project has no workspace row), so the form is still the screen;
+      // the canvas leaving the form once a project lists is `rail-workbench-canvas`'s own.
+      await expect.poll(() => inventoryReads, { timeout: 20_000 }).toBeGreaterThan(inventoryReadsBeforeCreate)
+      await expect(form).toBeVisible()
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-project-created.png" })
 
       expect(driversRequests).toBe(0)

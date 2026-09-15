@@ -19,6 +19,7 @@ const MIGRATIONS = [
   "0011_session_turn_producers.sql",
   "0013_org_team_session_sharing.sql",
   "0024_session_last_human_turn.sql",
+  "0028_workspace_org_member_visible.sql",
 ].map(
   (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
 )

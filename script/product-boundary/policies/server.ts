@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 121 modules / 40 packages, with no headroom.
+   * Measured 125 modules / 40 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -80,8 +80,19 @@ export const serverSelfHosted: Policy = {
    * 0.0.0.0, so it is a broker host, and the gate it mounts must be the one
    * the desktop composition mounts rather than a copy. The package reaches
    * only jose, @hono/node-server and the runtime contract, all already here.
+   *
+   * The host-connect control plane this box serves for a `claxedo connect`
+   * fleet, four modules and no package edge: `src/routes/hosted/host-enrollment.ts`
+   * (invitations, the machine's own beats and acquire, scope, the enrollment
+   * list) and `src/workspace/host-assignment-handlers.ts` (the owner assigning a
+   * directory on an enrolled machine), the same modules the hosted Worker
+   * mounts, over this box's SQLite authority; `src/deployments/hosted-shared/
+   * hosted-remote-access-service.ts`, whose revoke the self-hosted
+   * remote-access service composes so a machine is revoked the same way on
+   * both planes; and `src/platform/http/status.ts`, which the two route
+   * modules answer authority refusals through.
    */
-  ceilings: { modules: 121, packages: 40 },
+  ceilings: { modules: 125, packages: 40 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

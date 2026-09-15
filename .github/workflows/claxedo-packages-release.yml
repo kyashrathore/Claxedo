@@ -24,6 +24,7 @@ on:
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
+      - "packages/cli/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/wakes/**"
@@ -40,6 +41,7 @@ on:
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
+      - "packages/cli/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/wakes/**"
@@ -61,6 +63,7 @@ on:
           - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, agent-event-runtime, sandbox-manager, agent-sdk-runtime, workspace-relay, workspace-runtime
           - apps # channels, connections
           - wakes
+          - cli # cli
       npm_tag:
         description: "npm dist-tag"
         required: false

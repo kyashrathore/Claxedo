@@ -52,6 +52,8 @@ export type LocalWorkspaceShare = {
  * means routable.
  */
 export type LocalHostAssignments = {
+  /** This machine's persisted host identity: the one host id a caller may not address by body. */
+  hostId(): Promise<string>
   assignWorkspace(
     auth: SignedControlPlaneAuth,
     share: LocalWorkspaceShare,
@@ -77,6 +79,13 @@ export type WorkspaceRouteOptions = {
   }
   relayUrl?: string
   relayUrls?: ClaxedoRegionMap<string>
+  /**
+   * Where a host verifies the Relay Host Tokens the relay mints — the relay's
+   * own published key set. Absent, the heartbeat derives `<relay url>/.well-known/jwks.json`.
+   */
+  relayHostJwksUrl?: string
+  /** The session-authorize endpoint a machine-enrolled host's runtime consults for private sessions. */
+  sessionAuthorityUrl?: string
   defaultHomeRegion?: ClaxedoRegion
   sandboxEgressExtraHosts?: string[]
   runtimeAccessTokenSigner?: RuntimeAccessTokenSigner
@@ -255,12 +264,45 @@ export function configuredRelayUrl(options: WorkspaceRouteOptions, homeRegion?: 
   return regionValue(options.relayUrls, region)?.trim() ?? options.relayUrl?.trim()
 }
 
+/**
+ * The endpoints a machine-enrolled host is told on redeem and every beat,
+ * from the deployment's environment. The session authority defaults to this
+ * plane's own `/api/runtime-authority/session-authorize` under its public
+ * origin, the same address a hosted sandbox is given.
+ */
+export function hostConnectEndpointOptions(env: Record<string, string | undefined>) {
+  const jwksUrl = env.CLAXEDO_RELAY_HOST_JWKS_URL?.trim()
+  const origin = (env.CLAXEDO_SESSION_AUTHORITY_ORIGIN ?? env.BETTER_AUTH_URL ?? env.CLAXEDO_PUBLIC_URL)?.trim()
+  const sessionAuthorityUrl =
+    env.CLAXEDO_SESSION_AUTHORITY_URL?.trim() ||
+    (origin ? `${origin.replace(/\/+$/, "")}/api/runtime-authority/session-authorize` : undefined)
+  return {
+    ...(jwksUrl ? { relayHostJwksUrl: jwksUrl } : {}),
+    ...(sessionAuthorityUrl ? { sessionAuthorityUrl } : {}),
+  }
+}
+
+/** The relay endpoints a machine-enrolled host serves against, or nothing when no relay is configured. */
+export function configuredHostRelay(options: WorkspaceRouteOptions) {
+  const url = configuredRelayUrl(options)
+  if (!url) return undefined
+  const jwksUrl = options.relayHostJwksUrl?.trim() || `${url.replace(/\/+$/, "")}/.well-known/jwks.json`
+  return { url, jwks_url: jwksUrl }
+}
+
 export function configuredRuntimeAccessTokenSigner(options: WorkspaceRouteOptions) {
   if (options.runtimeAccessTokenSigner) return options.runtimeAccessTokenSigner
   throw new ControlPlaneAuthError(
     503,
     "runtime_access_token_signer_unavailable",
     "Runtime Access Token signer is not configured",
+  )
+}
+
+/** The 401 body a signed-only route answers when `signedOrError` admitted no bearer. */
+export function missingBearerBody() {
+  return controlPlaneAuthErrorBody(
+    new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
   )
 }
 

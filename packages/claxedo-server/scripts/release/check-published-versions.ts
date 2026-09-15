@@ -73,6 +73,15 @@ export function versionOnNpm(name: string, version: string, run: CommandRunner, 
 }
 
 /**
+ * Whether the bytes on npm for `name@version` are the bytes this tree would
+ * publish. The git heuristic below cannot tell a version published FROM this
+ * tree (later than the commit that set the number) from one published before
+ * the directory changed; only the tarball can, so the publisher supplies this
+ * comparison and a match clears the violation.
+ */
+export type PublishedBytesMatch = (item: PublishedVersionPackage, version: string) => boolean
+
+/**
  * One line per violation, empty when every changed package also moved its
  * version. Unpublished versions never violate: a package that has not been
  * released yet is free to keep changing under its number.
@@ -81,6 +90,7 @@ export function publishedVersionDrift(
   root: string,
   packages: readonly PublishedVersionPackage[],
   run: CommandRunner = defaultCommandRunner,
+  publishedBytesMatch?: PublishedBytesMatch,
 ) {
   const violations: string[] = []
   for (const item of packages) {
@@ -94,6 +104,7 @@ export function publishedVersionDrift(
     }
     if (!directoryChangedSince(root, item.dir, commit, run)) continue
     if (!versionOnNpm(item.name, version, run, root)) continue
+    if (publishedBytesMatch?.(item, version)) continue
     violations.push(`${item.name}@${version} is already on npm but ${item.dir} changed after ${commit.slice(0, 10)} set that version`)
   }
   return violations

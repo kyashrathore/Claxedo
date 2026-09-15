@@ -24,7 +24,8 @@
 
 import { Hono } from "hono"
 import { z } from "zod"
-import { setUserHostedServing, userHostedServingState } from "./user-hosted-serving"
+import { setUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
+import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
 
 const servingBody = z
   .object({
@@ -46,7 +47,7 @@ const servingBody = z
 
 export function UserHostedServingRoutes() {
   return new Hono()
-    .get("/", (c) => c.json(userHostedServingState()))
+    .get("/", (c) => c.json(userHostedServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })))
     .put("/", async (c) => {
       const parsed = servingBody.safeParse(await c.req.json().catch(() => undefined))
       if (!parsed.success) {
@@ -70,6 +71,9 @@ export function UserHostedServingRoutes() {
           // The daemon's own origin: this handler only ever runs on a loopback
           // call to the very server whose runtimes the tunnel must reach.
           localBaseUrl: new URL(c.req.url).origin,
+          // How this process composed the embedded runtimes the tunnel exposes;
+          // only this process can say, and the control plane refuses to infer it.
+          sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
         },
       )
       return c.json(state)

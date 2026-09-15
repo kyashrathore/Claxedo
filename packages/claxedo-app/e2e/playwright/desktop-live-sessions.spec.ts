@@ -107,7 +107,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     const picker = packaged.page.locator('[data-component="harness-model-picker"]')
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
     // Native harnesses have unique rows; configured ACP connections use their own group.
-    const nativeHarness = picker.getByRole("button", { name: harness === "Codex" ? /^Codex$/ : /^Claude$/ }).first()
+    const nativeHarness = picker.getByRole("button", { name: harness === "Codex" ? /^Codex$/ : /^Claude Code$/ }).first()
     await nativeHarness.click()
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
     await expect(nativeHarness, `${harness} harness did not become selected`).toHaveAttribute(

@@ -56,6 +56,9 @@ const CONTROL_PLANE_MIGRATION_PATHS = [
   "0014_host_workspace_assignments.sql",
   "0015_drop_local_host_links.sql",
   "0016_host_session_authority.sql",
+  "0028_workspace_org_member_visible.sql",
+  "0029_host_connect.sql",
+  "0030_workspace_host_assignment_revision.sql",
 ].map((name) => fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url)))
 
 function body(input: Record<string, string>) {
@@ -1102,7 +1105,8 @@ describe("Better Auth + D1 inside Workerd", () => {
         workspaceIds: [workspaceId],
       },
     })
-    expect(forged.status).toBe(500)
+    expect(forged.status).toBe(403)
+    expect(await forged.json()).toMatchObject({ error: { code: "host_attestation_denied" } })
     expect(await relayTarget(workspaceId)).toEqual({ active: false })
 
     const beat = await call("/api/claxedo/host/enrollments/heartbeat", {
