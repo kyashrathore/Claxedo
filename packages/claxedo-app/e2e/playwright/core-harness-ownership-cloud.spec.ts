@@ -126,10 +126,10 @@ async function expectHarnessSwitchable(page: Page, harness: Harness) {
 }
 
 test.describe("core harness ownership (cloud) @core", () => {
-  // The exact Claude/Codex/Cursor labels name native SDK modules (data-harness
-  // claude/codex/cursor); generic connections use their configured labels.
+  // The exact labels are `HARNESS_CATALOG`'s for the native SDK modules
+  // (data-harness claude/codex/cursor); generic connections use their configured labels.
   for (const harnessCase of [
-    { harness: "claude-sdk" as Harness, option: /^Claude$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude", modelID: "claude-sonnet-4-6" },
+    { harness: "claude-sdk" as Harness, option: /^Claude Code$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude", modelID: "claude-sonnet-4-6" },
     { harness: "codex-app-server" as Harness, option: /^Codex$/, optionIndex: 0, modelLabel: /GPT-5\.5|gpt-5\.5/i, providerID: "codex", modelID: "gpt-5.5" },
     { harness: "cursor-sdk" as Harness, option: /^Cursor$/, optionIndex: 0, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor", modelID: "cursor-auto" },
   ] as const) {
@@ -232,7 +232,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
 
-    await switchDraftHarness(page, /^Claude$/, 0)
+    await switchDraftHarness(page, /^Claude Code$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
     await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk"), { timeout: 10_000 }).toBe(true)
 
@@ -259,7 +259,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
 
-    for (const [option, index] of [[/^Claude$/, 0], [/^Codex$/, 0], [/^Cursor$/, 0]] as const) {
+    for (const [option, index] of [[/^Claude Code$/, 0], [/^Codex$/, 0], [/^Cursor$/, 0]] as const) {
       await switchDraftHarness(page, option, index)
     }
     await expect.poll(() => mock.requests.cloudHarnessOptionsCount, { timeout: 10_000 }).toBeGreaterThan(0)
@@ -296,7 +296,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     const localInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(localInput).toBeVisible({ timeout: 20_000 })
 
-    await switchDraftHarness(page, /^Claude$/, 0)
+    await switchDraftHarness(page, /^Claude Code$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
     // Snapshot while only the local directory has been visited, so every key present is

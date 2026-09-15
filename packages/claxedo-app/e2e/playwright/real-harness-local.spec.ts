@@ -150,7 +150,7 @@ function sessionUrlPattern() {
  * can still be showing while the asynchronous switch is pending.
  */
 function harnessPickerTarget(harnessKey: string) {
-  if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: 0 }
+  if (harnessKey.startsWith("claude")) return { label: /^Claude Code$/, index: 0 }
   if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: 0 }
   if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: 0 }
   return { label: new RegExp(`^${harnessKey}$`, "i"), index: 0 }
@@ -1168,7 +1168,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     await runRealHarnessJourney(page, dir, {
       id: "claude",
       dialect: "messages",
-      option: /^Claude$/,
+      option: /^Claude Code$/,
       harnessKey: "claude",
     })
   })
@@ -1628,7 +1628,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     await runRealSubagentJourney(page, dir, {
       id: "claude",
       dialect: "messages",
-      option: /^Claude$/,
+      option: /^Claude Code$/,
       harnessKey: "claude",
       tool: {
         name: "Agent",
@@ -2931,7 +2931,7 @@ setTimeout(() => process.exit(2), 90000).unref();
     await runWorkspaceSubagentJourney(page, "demo-claude", "claude", {
       id: "claude",
       dialect: "messages",
-      option: /^Claude$/,
+      option: /^Claude Code$/,
       harnessKey: "claude",
       tool: {
         name: "Agent",
