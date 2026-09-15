@@ -7,14 +7,20 @@ import { PluginStatusLine } from "./status"
 import type { PersonalEntry } from "./view"
 import { isBuiltIn, pluginLabel, type PluginStatus } from "./view"
 
-/** The trailing column: one fixed slot, aligned to the title line, never centred. */
-const TRAILING = "relative flex w-40 shrink-0 justify-end pt-0.5"
+/**
+ * Every card is this tall so a section reads as a grid of equal rows. The body
+ * holds exactly two lines — a name and one truncated line under it — and the
+ * text lengths that would otherwise stretch a card (a long description, a long
+ * status, a wrapping row of harness tags) are cut, not wrapped; the pane shows
+ * them whole.
+ */
+const CARD = "flex h-16 items-start gap-3 rounded-lg border bg-surface-base p-3"
 
-/** The built-in's slot holds a short mark, and the row it leaves behind is the status. */
-const TRAILING_MARK = "relative flex shrink-0 justify-end pt-0.5"
+/** Sized by its content so the body keeps every pixel the slot does not need. */
+const TRAILING = "relative flex max-w-[50%] shrink-0 justify-end pt-0.5"
 
 /**
- * One directory card: tile, name, one line of description, one trailing slot.
+ * One directory card: tile, name, one line under it, one trailing slot.
  *
  * A path is an implementation detail of where the artifact lives, so it is
  * carried as the card's `title` and shown for real in the detail pane; the card
@@ -23,9 +29,9 @@ const TRAILING_MARK = "relative flex shrink-0 justify-end pt-0.5"
  * The whole card opens the detail pane through an overlay button so the primary
  * action stays a real button beside it instead of nesting one inside another.
  *
- * The built-in has nothing to install, so its trailing slot marks what it is
- * and its status — a list of the tool groups on for this project, too long for
- * one truncated line — moves under the description where it can wrap.
+ * The built-in has nothing to install, so its trailing slot marks what it is,
+ * and the line under its name is its status — which tool groups are on for this
+ * project — rather than the description the pane repeats anyway.
  */
 export function DirectoryCard(props: {
   plugin: PluginCandidate
@@ -41,7 +47,7 @@ export function DirectoryCard(props: {
     <div
       data-agent-plugin-card={props.plugin.pluginInstanceId}
       title={props.plugin.relativePath ?? undefined}
-      class="relative flex items-start gap-3 rounded-lg border bg-surface-base p-3 transition-colors hover:bg-surface-raised-base"
+      class={`relative ${CARD} transition-colors hover:bg-surface-raised-base`}
       classList={{
         "border-border-strong-base": props.selected,
         "border-border-weak-base": !props.selected,
@@ -55,17 +61,21 @@ export function DirectoryCard(props: {
         class="absolute inset-0 rounded-lg"
         onClick={() => props.onOpen()}
       />
-      <PluginIconTile icon={props.plugin.icon} name={name()} />
+      <PluginIconTile icon={props.plugin.icon} name={name()} builtIn={builtIn()} />
       <div class="min-w-0 flex-1">
         <div class="truncate text-13-medium text-text-strong">{name()}</div>
-        <p class="mt-0.5 line-clamp-2 text-12-regular text-text-weak">
-          {props.plugin.manifest?.description ?? "No description"}
-        </p>
-        <Show when={builtIn() ? props.status : undefined}>
-          {(status) => <div class="mt-1.5"><PluginStatusLine status={status()} wrap /></div>}
+        <Show
+          when={builtIn() ? props.status : undefined}
+          fallback={
+            <p class="mt-0.5 truncate text-12-regular text-text-weak">
+              {props.plugin.manifest?.description ?? "No description"}
+            </p>
+          }
+        >
+          {(status) => <div class="mt-0.5 flex"><PluginStatusLine status={status()} /></div>}
         </Show>
       </div>
-      <div class={builtIn() ? TRAILING_MARK : TRAILING}>
+      <div class={TRAILING}>
         <Show
           when={builtIn()}
           fallback={
@@ -99,6 +109,8 @@ export function personalEntryKey(entry: PersonalEntry) {
   return `${entry.kind}:${entry.harnessId}:${marketplace}:${entry.name}`
 }
 
+const PERSONAL_TAG = "shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium"
+
 export function PersonalCard(props: { entry: PersonalEntry; selected?: boolean; onOpen: () => void }) {
   return (
     <button
@@ -108,26 +120,20 @@ export function PersonalCard(props: { entry: PersonalEntry; selected?: boolean; 
       aria-pressed={props.selected}
       title={props.entry.root}
       onClick={() => props.onOpen()}
-      class={`flex items-start gap-3 rounded-lg border bg-surface-base p-3 text-left ${props.selected ? "border-border-base" : "border-border-weak-base hover:border-border-base"}`}
+      class={`${CARD} text-left ${props.selected ? "border-border-base" : "border-border-weak-base hover:border-border-base"}`}
     >
       <PluginIconTile name={props.entry.name} />
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2 pt-0.5">
-        <span class="truncate text-13-medium text-text-strong">{props.entry.name}</span>
-        <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weak">
-          {props.entry.harnessId}
-        </span>
-        <Show when={props.entry.kind === "skill"}>
-          <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weaker">
-            skill
-          </span>
-        </Show>
-        <Show when={props.entry.kind === "plugin" ? props.entry.marketplace : undefined}>
-          {(marketplace) => (
-            <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weaker">
-              {marketplace()}
-            </span>
-          )}
-        </Show>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-13-medium text-text-strong">{props.entry.name}</div>
+        <div class="mt-1 flex gap-1.5 overflow-hidden">
+          <span class={`${PERSONAL_TAG} text-text-weak`}>{props.entry.harnessId}</span>
+          <Show when={props.entry.kind === "skill"}>
+            <span class={`${PERSONAL_TAG} text-text-weaker`}>skill</span>
+          </Show>
+          <Show when={props.entry.kind === "plugin" ? props.entry.marketplace : undefined}>
+            {(marketplace) => <span class={`${PERSONAL_TAG} text-text-weaker`}>{marketplace()}</span>}
+          </Show>
+        </div>
       </div>
     </button>
   )

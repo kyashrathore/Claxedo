@@ -660,7 +660,7 @@ function CatalogSkeleton() {
     <div data-component="agent-plugin-skeleton" aria-hidden="true" class="grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]">
       <For each={[0, 1, 2]}>
         {() => (
-          <div class="flex items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">
+          <div class="flex h-16 items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">
             <div class="size-10 shrink-0 rounded-lg bg-surface-raised-stronger" />
             <div class="flex min-w-0 flex-1 flex-col gap-2 pt-1">
               <div class="h-3 w-1/3 rounded-sm bg-surface-raised-stronger" />

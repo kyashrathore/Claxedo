@@ -171,7 +171,7 @@ const BUILT_IN_GROUPS: PluginToolGroup[] = [
     enabled: true,
     tools: ["subagent_capabilities", "create_subagent", "subagent_status", "subagent_list", "subagent_cancel"],
   },
-  { id: "tasks", enabled: false, tools: ["task_list", "task_get", "task_create", "task_start"] },
+  { id: "tasks", enabled: false, tools: ["task_list", "task_get", "task_create", "task_edit", "task_start"] },
   {
     id: "workspaces",
     enabled: true,
@@ -934,6 +934,28 @@ describe("Agent Plugin Directory built-in server", () => {
     expect(within(card).getByText(
       "On for this project: sessions, subagents, attention, processes, review, workspaces",
     )).toBeTruthy()
+    // The status takes the card's one line under the name; the description
+    // waits in the pane.
+    expect(within(card).queryByText(/Claxedo's own tools/)).toBeNull()
+  })
+
+  test("the built-in wears the Claxedo mark on its card and in its pane, not its monogram", async () => {
+    await renderDirectory({ catalog: withBuiltIn() })
+
+    const card = document.querySelector<HTMLElement>("[data-agent-plugin-card=\"claxedo\"]")!
+    const tile = card.querySelector<HTMLElement>("[data-component=\"agent-plugin-icon\"]")!
+    expect(tile.dataset.brand).toBe("claxedo")
+    expect(tile.querySelector("[data-component=\"claxedo-logo\"]")).not.toBeNull()
+    expect(tile.textContent).toBe("")
+
+    const pane = await openPane("claxedo")
+    const paneTile = pane.querySelector<HTMLElement>("[data-component=\"agent-plugin-icon\"]")!
+    expect(paneTile.querySelector("[data-component=\"claxedo-logo\"]")).not.toBeNull()
+    expect(within(pane).getByText(/Claxedo's own tools/)).toBeTruthy()
+
+    const other = document.querySelector<HTMLElement>('[data-agent-plugin-card=\'["claxedo","context7"]\']')!
+    expect(other.querySelector("[data-component=\"claxedo-logo\"]")).toBeNull()
+    expect(other.querySelector("[data-component=\"agent-plugin-icon\"]")!.textContent).toBe("C7")
   })
 
   test("a built-in that is off is never offered for install, only enabled", async () => {
@@ -981,7 +1003,7 @@ describe("Agent Plugin Directory built-in server", () => {
       .toEqual(["sessions", "subagents", "attention", "processes", "documents", "tasks", "review", "workspaces"])
 
     const tasks = groups.querySelector<HTMLElement>("[data-agent-plugin-tool-group=\"tasks\"]")!
-    expect(within(tasks).getByText("task_list, task_get, task_create, task_start")).toBeTruthy()
+    expect(within(tasks).getByText("task_list, task_get, task_create, task_edit, task_start")).toBeTruthy()
     expect(within(tasks).getByRole("switch", { name: "tasks" })).not.toBeChecked()
     expect(within(groups).getByRole("switch", { name: "sessions" })).toBeChecked()
 

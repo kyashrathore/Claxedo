@@ -136,7 +136,7 @@ export function PluginDetailPane(props: {
         fallback={
           <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <header class="flex items-start gap-3 border-b border-border-weak-base p-4">
-              <PluginIconTile icon={props.plugin.icon} name={name()} size="pane" />
+              <PluginIconTile icon={props.plugin.icon} name={name()} size="pane" builtIn={builtIn()} />
               <div class="min-w-0 flex-1">
                 <h2 class="truncate text-16-medium text-text-strong">{name()}</h2>
                 <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-11-regular text-text-weaker">

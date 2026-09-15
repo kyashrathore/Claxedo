@@ -1,4 +1,5 @@
 import { Show } from "solid-js"
+import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
 import type { PluginIcon } from "../api"
 
 /**
@@ -64,8 +65,12 @@ function hashedHue(name: string) {
  * A plugin's tile: the icon its manifest declares, else the product's brand
  * mark, else a hashed monogram. `icon.kind === "url"` always wins, because a
  * manifest that ships artwork has said what it wants to look like.
+ *
+ * The built-in is Claxedo itself, so it wears the app's own mark on a neutral
+ * tile instead of a monogram: the catalog cannot ship the logo as artwork, and
+ * a hashed hue would make Claxedo look like one more third-party product.
  */
-export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: "card" | "pane" }) {
+export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: "card" | "pane"; builtIn?: boolean }) {
   const size = () => (props.size === "pane" ? "size-12 text-14-medium" : "size-10 text-12-medium")
   const url = () => {
     const icon = props.icon
@@ -75,7 +80,7 @@ export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: 
     const key = brandKey(props.name)
     return key ? BRANDS[key] : undefined
   }
-  const hue = () => brand()?.hue ?? hashedHue(props.name)
+  const hue = () => (props.builtIn ? "var(--icon-strong-base)" : brand()?.hue ?? hashedHue(props.name))
   const mark = () => {
     const known = brand()
     if (known) return known.mark
@@ -86,15 +91,19 @@ export function PluginIconTile(props: { icon?: PluginIcon; name: string; size?: 
     <span
       aria-hidden="true"
       data-component="agent-plugin-icon"
-      data-brand={brandKey(props.name)}
+      data-brand={props.builtIn ? "claxedo" : brandKey(props.name)}
       style={{
         "--agent-plugin-hue": hue(),
-        "--agent-plugin-tile": `color-mix(in srgb, ${hue()} 16%, transparent)`,
+        "--agent-plugin-tile": `color-mix(in srgb, ${hue()} ${props.builtIn ? 8 : 16}%, transparent)`,
       }}
       class={`shrink-0 grid place-items-center overflow-hidden rounded-lg bg-[var(--agent-plugin-tile)] text-[var(--agent-plugin-hue)] ${size()}`}
     >
-      <Show when={url()} fallback={mark()}>
-        {(src) => <img src={src()} alt="" class="size-full object-cover" />}
+      <Show when={props.builtIn} fallback={
+        <Show when={url()} fallback={mark()}>
+          {(src) => <img src={src()} alt="" class="size-full object-cover" />}
+        </Show>
+      }>
+        <ClaxedoLogo class={props.size === "pane" ? "size-7" : "size-6"} />
       </Show>
     </span>
   )
