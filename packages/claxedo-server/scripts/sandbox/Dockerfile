@@ -22,7 +22,7 @@ RUN npm i -g --min-release-age=2 \
       @anthropic-ai/claude-code@2.1.150 \
       @openai/codex@0.133.0 \
       @google/gemini-cli@0.43.0 \
-      @earendil-works/pi-coding-agent@0.85.1 && \
+      @earendil-works/pi-coding-agent@0.85.0 && \
     curl https://cursor.com/install -fsS | bash && \
     curl -fsSL https://ampcode.com/install.sh | bash && \
     curl -fsSL https://app.factory.ai/cli | sh && \

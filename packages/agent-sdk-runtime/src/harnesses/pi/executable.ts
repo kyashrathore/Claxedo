@@ -3,7 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { isRecord } from "@claxedo/agent-runtime-contract"
 
-export const PI_VERSION = "0.85.1"
+export const PI_VERSION = "0.85.0"
 export const PI_EXECUTABLE_ENV = "PI_EXECUTABLE"
 export const PI_INSTALL_HINT = `Install npm package @earendil-works/pi-coding-agent@${PI_VERSION}, or set ${PI_EXECUTABLE_ENV}.`
 

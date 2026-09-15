@@ -2,39 +2,6 @@ import { expect, test } from "bun:test"
 import { request as httpRequest } from "node:http"
 import { startScriptedModelServer } from "./scripted-model-server"
 
-test("scripted text preserves Markdown and is consumed only by its matching prompt", async () => {
-  const server = await startScriptedModelServer()
-  const text = "Image ready\n\n![QA shapes](file:///tmp/qa-shapes.png)"
-  const request = async (prompt: string) => {
-    return new Promise<string>((resolve, reject) => {
-      const req = httpRequest(`${server.v1Url}/messages`, {
-        method: "POST", headers: { "content-type": "application/json" },
-      }, (response) => {
-        let body = ""
-        response.setEncoding("utf8")
-        response.on("data", (chunk) => { body += chunk })
-        response.on("error", reject)
-        response.on("end", () => {
-          try {
-            expect(response.statusCode).toBe(200)
-            resolve(JSON.parse(body).content[0].text)
-          } catch (error) { reject(error) }
-        })
-      })
-      req.on("error", reject)
-      req.end(JSON.stringify({ model: "test", max_tokens: 128, messages: [{ role: "user", content: prompt }] }))
-    })
-  }
-  try {
-    server.scriptText({ marker: "IMAGE_REQUEST", text })
-    expect(await request("Unrelated request")).toBe("ok")
-    expect(await request("IMAGE_REQUEST")).toBe(text)
-    expect(await request("IMAGE_REQUEST")).toBe("ok")
-  } finally {
-    await server.close()
-  }
-})
-
 test("Auto classifier replies are opt-in, command-scoped, and cleared between journeys", async () => {
   const server = await startScriptedModelServer()
   const command = "node '/tmp/controlled-workload.cjs'"

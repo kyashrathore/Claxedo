@@ -138,7 +138,6 @@ export async function launchPackagedApp(
     env?: Record<string, string>
     /** Overrides the default 60s first-window wait; the embedded server boots first. */
     timeoutMs?: number
-    recordVideo?: NonNullable<Parameters<typeof electron.launch>[0]>["recordVideo"]
     /**
      * Points the packaged app at an external server instead of its embedded one (the signed
      * lanes' `signed-browser-relay-fixture.mjs`).
@@ -232,7 +231,6 @@ export async function launchPackagedApp(
     ],
     env,
     timeout: input.timeoutMs ?? 60_000,
-    recordVideo: input.recordVideo,
   })
 
   // Before `waitForShellWindow()`: the last point a context-level init script lands
