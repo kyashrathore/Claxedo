@@ -49,6 +49,18 @@ describe("check-published-versions", () => {
     ])
   })
 
+  test("a published version whose tarball equals the tree's is not drift; a differing one still is", () => {
+    const { root, setCommit } = repoWithDrift()
+    const npmSaysPublished = (cmd: string, args: string[], cwd?: string) => {
+      if (cmd === "npm") return "1.2.3"
+      return run(cmd, args, cwd)
+    }
+    expect(publishedVersionDrift(root, thing, npmSaysPublished, () => true)).toEqual([])
+    expect(publishedVersionDrift(root, thing, npmSaysPublished, () => false)).toEqual([
+      `@claxedo/thing@1.2.3 is already on npm but packages/thing changed after ${setCommit.slice(0, 10)} set that version`,
+    ])
+  })
+
   test("an unpublished version may keep changing", () => {
     const { root } = repoWithDrift()
     expect(publishedVersionDrift(root, thing, (cmd, args, cwd) => {
