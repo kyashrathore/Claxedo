@@ -79,6 +79,27 @@ function createRequest(input: Record<string, unknown>) {
   })
 }
 
+function editRequest(input: Record<string, unknown> = {}) {
+  return new Request(`${TASKS}/commands`, {
+    method: "POST",
+    headers: { authorization: "Bearer grant", "content-type": "application/json" },
+    body: JSON.stringify({
+      clientRequestId: "agent-edit",
+      command: {
+        type: "task.edit",
+        input: {
+          taskId: "task-1",
+          revision: 1,
+          title: "Renamed",
+          description: "",
+          workspaceId: null,
+          ...input,
+        },
+      },
+    }),
+  })
+}
+
 async function actorOf(composed: ReturnType<typeof identity>): Promise<TasksActor> {
   const admitted = await composed.authenticate(createRequest({}))
   if (!("actor" in admitted)) throw new Error(`the grant was refused: ${admitted.error}`)
@@ -166,6 +187,22 @@ describe("a Tasks grant creating a task", () => {
       "403 This session may record only itself as a task's provenance",
     )
     expect(composed.ownerMayReadSession).not.toHaveBeenCalled()
+  })
+})
+
+describe("a Tasks grant editing a task", () => {
+  test("is admitted under the create operation and refused without it", async () => {
+    expect(await refusal(identity(), editRequest())).toBe("admitted")
+    expect(await refusal(identity({ scope: { ...SCOPE, operations: ["read"] } }), editRequest())).toBe(
+      "403 This session's Tasks grant does not allow create",
+    )
+  })
+
+  test("may keep the preferred workspace inside the project and is refused one outside it", async () => {
+    expect(await refusal(identity(), editRequest({ workspaceId: "ws_sibling" }))).toBe("admitted")
+    expect(await refusal(identity(), editRequest({ workspaceId: "ws_other" }))).toBe(
+      "403 This session may act only in project project-a",
+    )
   })
 })
 

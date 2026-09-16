@@ -1,7 +1,7 @@
 import { createStore, produce } from "solid-js/store"
 import type { Preset, Task, TaskStatus, TaskSummary } from "@claxedo/tasks"
 import type { PresetEditorDraft } from "../preset-editor-model"
-import type { TaskCollection, TaskDateField } from "../view-model"
+import { TASK_COLLECTION_STATUSES, type TaskCollection, type TaskDateField } from "../view-model"
 import type { TasksRefusal } from "../data/tasks-api"
 
 export type TasksViewMode = "list" | "board"
@@ -22,6 +22,8 @@ type TasksState = {
   grouped: boolean
   /** Which of the task's two timestamps a row and a card show. */
   dateField: TaskDateField
+  /** The task page's properties rail folded away; one setting for every task opened. */
+  railCollapsed: boolean
   /** Undefined until the user picks one; the surface falls back to the active project. */
   projectId: string | undefined
   selectedTaskId: string | undefined
@@ -49,6 +51,7 @@ export function createTasksStore() {
     showChildren: true,
     grouped: true,
     dateField: "updated",
+    railCollapsed: false,
     projectId: undefined,
     selectedTaskId: undefined,
     selectedPresetId: undefined,
@@ -74,6 +77,7 @@ export function createTasksStore() {
     setShowChildren: (value: boolean) => setState("showChildren", value),
     setGrouped: (value: boolean) => setState("grouped", value),
     setDateField: (field: TaskDateField) => setState("dateField", field),
+    toggleRail: () => setState("railCollapsed", (collapsed) => !collapsed),
     setProjectId: (projectId: string) =>
       setState(produce((draft) => {
         draft.projectId = projectId
@@ -161,14 +165,9 @@ export function createTasksStore() {
   }
 }
 
-/**
- * Active is the work in play, so it holds neither the parked nor the finished;
- * All is everything, archived rows included, and is the only place an archived
- * task can be seen at all.
- */
+/** All is the only place an archived task can be seen at all. */
 function matchesCollection(task: TaskSummary, collection: TaskCollection) {
   if (collection === "all") return true
   if (task.archivedAt !== null) return false
-  if (collection === "backlog") return task.status === "backlog"
-  return task.status !== "backlog" && task.status !== "done"
+  return TASK_COLLECTION_STATUSES[collection].includes(task.status)
 }

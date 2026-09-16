@@ -3,6 +3,7 @@ import { createComputed, createRoot, createSignal } from "solid-js"
 import {
   collectRouteResolutionDirectories,
   directSessionResolutionDependencies,
+  focusMovedOffDirectSessionRoute,
 } from "./route-bridge-reactivity"
 
 describe("route bridge reactive dependencies", () => {
@@ -39,6 +40,18 @@ describe("route bridge reactive dependencies", () => {
       expect(activeDependencyReads).toBe(2)
       dispose()
     })
+  })
+
+  test("focusing a pane holding another session is not a route to resolve", () => {
+    expect(focusMovedOffDirectSessionRoute(["ses_route", "ses_other"], ["ses_route", "ses_route"])).toBe(true)
+    expect(focusMovedOffDirectSessionRoute(["ses_route", undefined], ["ses_route", "ses_route"])).toBe(true)
+  })
+
+  test("route, first-run, and same-session resolver runs still resolve", () => {
+    expect(focusMovedOffDirectSessionRoute(["ses_next", "ses_route"], ["ses_route", "ses_route"])).toBe(false)
+    expect(focusMovedOffDirectSessionRoute(["ses_route", "ses_other"], undefined)).toBe(false)
+    expect(focusMovedOffDirectSessionRoute(["ses_route", "ses_route"], ["ses_route", "ses_other"])).toBe(false)
+    expect(focusMovedOffDirectSessionRoute(["ses_route", "ses_other"], ["ses_route", "ses_other"])).toBe(false)
   })
 
   test("route directory candidates preserve priority while removing duplicates and sentinels", () => {

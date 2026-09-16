@@ -22,6 +22,8 @@ function mount(initial: string) {
 }
 
 const RICH = "# Importer\n\nWhat it does:\n\n- reads the file\n- writes the rows\n"
+/** A link definition nothing references: the parser drops the line outright. */
+const DROPPED = "See the doc.\n\n[doc]: https://example.com\n"
 
 describe("a Tasks markdown field", () => {
   test("renders the description as markdown, not as its source", async () => {
@@ -87,33 +89,55 @@ describe("a Tasks markdown field", () => {
   /**
    * A refetch, a rebase or a discard replaces the description with text the
    * field never saw. Admitting it on the strength of the first value would
-   * hand `RichMode` an HTML comment it drops on `setContent`, and the next
+   * hand `RichMode` a link definition it drops on `setContent`, and the next
    * keystroke would save that loss.
    */
   test("a replacement the extensions cannot hold drops the field to the textarea", async () => {
     const { setValue } = mount(RICH)
 
     await waitFor(() => expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich"))
-    setValue("keep <!-- x --> this\n")
+    setValue(DROPPED)
 
     const field = await waitFor(() => screen.getByTestId<HTMLTextAreaElement>("task-detail-description"))
     expect(field.tagName).toBe("TEXTAREA")
-    expect(field.value).toBe("keep <!-- x --> this\n")
+    expect(field.value).toBe(DROPPED)
   })
 
   /**
-   * `{token}` is outside the rich contract, so re-running the detector over
-   * what the editor itself just wrote would take the field away mid-sentence.
+   * A footnote reference is outside the rich contract, so re-running the
+   * detector over what the editor itself just wrote would take the field away
+   * mid-sentence.
    */
   test("what the field itself emits keeps the surface it was typed into", async () => {
     const { value } = mount(RICH)
 
     const field = await waitFor(() => screen.getByTestId("task-detail-description"))
-    field.querySelector("p")!.textContent = "a {token} here"
+    field.querySelector("p")!.textContent = "a claim[^n] here"
     fireEvent.input(field.querySelector<HTMLElement>(".tiptap")!)
 
-    await waitFor(() => expect(value()).toContain("{token}"))
+    await waitFor(() => expect(value()).toContain("[^n]"))
     expect(detectMarkdown(value(), "normalizing").status).toBe("source")
+    expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich")
+  })
+
+  /**
+   * A description says `Open <project>` as prose. The browser's parser would
+   * drop the tag with its text, so the editor is shown it as entity text and
+   * hands the record that spelling back.
+   */
+  test("angle-bracket placeholders open rich and come back as entity text, code spans untouched", async () => {
+    const { value } = mount("Open <project> now\n\n`<dataDir>/x`\n")
+
+    const field = await waitFor(() => screen.getByTestId("task-detail-description"))
+    expect(field.getAttribute("data-prose-mode")).toBe("rich")
+    const paragraphs = field.querySelectorAll("p")
+    expect(paragraphs[0].textContent).toBe("Open <project> now")
+    expect(paragraphs[1].querySelector("code")!.textContent).toBe("<dataDir>/x")
+
+    paragraphs[0].textContent = "Open <project> now please"
+    fireEvent.input(field.querySelector<HTMLElement>(".tiptap")!)
+
+    await waitFor(() => expect(value()).toBe("Open &lt;project&gt; now please\n\n`<dataDir>/x`\n"))
     expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich")
   })
 
@@ -121,25 +145,26 @@ describe("a Tasks markdown field", () => {
    * A discard restores exactly what the field last wrote. Recognising it by
    * the text alone reused whatever detection was in force by then — the rich
    * one the replacement in between had earned — and `RichMode` would have
-   * dropped the comment on `setContent`.
+   * dropped the link definition on `setContent`.
    */
   test("a replacement that restores what the field wrote keeps that text's own surface", async () => {
-    const { setValue } = mount("keep <!-- edited --> this\n")
+    const { setValue } = mount(DROPPED)
+    const edited = `${DROPPED}More.\n`
 
     const textarea = screen.getByTestId<HTMLTextAreaElement>("task-detail-description")
     expect(textarea.tagName).toBe("TEXTAREA")
-    fireEvent.input(textarea, { target: { value: "keep <!-- edited --> this again\n" } })
+    fireEvent.input(textarea, { target: { value: edited } })
 
     setValue(RICH)
     await waitFor(() =>
       expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich"),
     )
 
-    setValue("keep <!-- edited --> this again\n")
+    setValue(edited)
 
     const restored = await waitFor(() => screen.getByTestId<HTMLTextAreaElement>("task-detail-description"))
     expect(restored.tagName).toBe("TEXTAREA")
-    expect(restored.value).toBe("keep <!-- edited --> this again\n")
+    expect(restored.value).toBe(edited)
   })
 
   test("an empty description offers the placeholder to write into", () => {

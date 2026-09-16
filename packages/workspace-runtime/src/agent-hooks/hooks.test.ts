@@ -178,6 +178,54 @@ describe("generateNotifyScript", () => {
     }
   })
 
+  it("delivers only the config owned by the terminal's agent and labels an unwrapped launch", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-harness-gate-"))
+    const delivered: { provider: string | null; event: string | null }[] = []
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      async fetch(request) {
+        const form = new URLSearchParams(await request.text())
+        delivered.push({ provider: form.get("provider"), event: JSON.parse(form.get("providerEvent")!).hook_event_name })
+        return Response.json({ success: true })
+      },
+    })
+    try {
+      const script = path.join(root, "notify.sh")
+      await writeFile(script, generateNotifyScript(server.port!))
+      const invoke = async (args: string[], env: Record<string, string>) => {
+        const child = Bun.spawn(["/bin/bash", script, ...args], {
+          env: { ...process.env, CLAXEDO_AGENT: "", CURSOR_VERSION: "", CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "pty", WORKSPACE_RUNTIME_STATE_DIR: root, ...env },
+          stdin: "ignore", stdout: "ignore", stderr: "ignore",
+        })
+        return await child.exited
+      }
+      const stop = JSON.stringify({ hook_event_name: "Stop" })
+      const postToolUse = JSON.stringify({ hook_event_name: "postToolUse", tool_name: "Read" })
+      // Cursor replays ~/.claude/settings.json inside its own sessions.
+      expect(await invoke(["--harness=claude", postToolUse], { CLAXEDO_AGENT: "cursor-agent" })).toBe(0)
+      // Claude's Bash tool running `codex exec` fires Codex's config under a Claude terminal.
+      expect(await invoke(["--harness=codex", stop], { CLAXEDO_AGENT: "claude" })).toBe(0)
+      expect(delivered).toEqual([])
+      expect(await invoke(["--harness=cursor", stop], { CLAXEDO_AGENT: "cursor-agent" })).toBe(0)
+      expect(await invoke(["--harness=claude", stop], { CLAXEDO_AGENT: "claude" })).toBe(0)
+      // Launched by absolute path, outside the wrapper: the config names the agent...
+      expect(await invoke(["--harness=droid", stop], {})).toBe(0)
+      // ...unless it is Claude's config replayed by cursor-agent, which stamps CURSOR_VERSION.
+      expect(await invoke(["--harness=claude", stop], { CURSOR_VERSION: "2026.09.10" })).toBe(0)
+      // A config with no label keeps today's delivery.
+      expect(await invoke([stop], { CLAXEDO_AGENT: "gemini" })).toBe(0)
+      expect(delivered).toEqual([
+        { provider: "cursor-agent", event: "Stop" },
+        { provider: "claude", event: "Stop" },
+        { provider: "droid", event: "Stop" },
+        { provider: "gemini", event: "Stop" },
+      ])
+    } finally {
+      await server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it("includes marker and port", () => {
     const script = generateNotifyScript(7860)
     expect(script).toContain(NOTIFY_MARKER)
@@ -230,6 +278,44 @@ describe("generateCursorHook", () => {
     const script = generateCursorHook("/tmp/hooks/notify.sh")
     expect(script).toContain(NOTIFY_MARKER)
     expect(script).toContain("/tmp/hooks/notify.sh")
+  })
+
+  it("forwards each Cursor event under the cursor harness and answers the permission hooks", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-cursor-hook-"))
+    const app = AgentHookRoutes()
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+      const url = new URL(request.url)
+      url.pathname = "/agent-lifecycle"
+      return app.fetch(new Request(url, request))
+    } })
+    try {
+      const notify = path.join(root, "notify.sh")
+      const hook = path.join(root, "cursor-hook.sh")
+      await writeFile(notify, generateNotifyScript(server.port!))
+      await writeFile(hook, generateCursorHook(notify))
+      const terminalId = path.basename(root)
+      const run = async (arg: string, payload: Record<string, unknown>) => {
+        const child = Bun.spawn(["/bin/bash", hook, arg], {
+          env: { ...process.env, CLAXEDO_AGENT: "cursor-agent", CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: terminalId, CLAXEDO_TERMINAL_ID: terminalId, WORKSPACE_RUNTIME_STATE_DIR: root },
+          stdin: new Blob([JSON.stringify({ conversation_id: "conv-1", ...payload })]), stdout: "pipe", stderr: "ignore",
+        })
+        const reply = await new Response(child.stdout).text()
+        expect(await child.exited).toBe(0)
+        return reply.trim()
+      }
+      const state = async () => (await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()).session.eventType
+      expect(await run("Start", { hook_event_name: "beforeSubmitPrompt", prompt: "run the tests" })).toBe("{}")
+      expect(await state()).toBe("Busy")
+      expect(await run("PermissionRequest", { hook_event_name: "beforeShellExecution", command: "bun test", cwd: root })).toBe('{"continue":true}')
+      expect(await state()).toBe("UserActionRequired")
+      expect(await run("PostToolUse", { hook_event_name: "postToolUseFailure", tool_name: "Shell", tool_input: { command: "bun test", cwd: root }, failure_type: "permission_denied" })).toBe("{}")
+      expect(await state()).toBe("Busy")
+      expect(await run("Stop", { hook_event_name: "stop", status: "completed" })).toBe("{}")
+      expect(await state()).toBe("Idle")
+    } finally {
+      await server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

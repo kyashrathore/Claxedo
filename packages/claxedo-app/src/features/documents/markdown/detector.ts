@@ -64,10 +64,12 @@ export type MarkdownSerialization =
  *
  * `exact` is a file on disk: rich mode is offered only when opening and saving
  * without an edit would write back the same bytes, so Documents never
- * reformats someone's file behind their back. `normalizing` is a record the
- * app itself owns, where the first edit rewriting `* item` as `- item` is an
- * acceptable price for editing prose as prose. Everything else — the size and
- * complexity limits, CRLF, and the syntax outside the contract — gates both.
+ * reformats someone's file behind their back, and every syntax the editor
+ * cannot render as what it is stays in source mode. `normalizing` is a record
+ * the app itself owns, where the first edit rewriting `* item` as `- item` is
+ * an acceptable price for editing prose as prose: syntax the parser keeps as
+ * literal text is admitted, and only what it would drop or misread stays
+ * gated. The size and complexity limits and CRLF gate both.
  */
 export type MarkdownFidelity = "exact" | "normalizing"
 
@@ -119,7 +121,7 @@ export function detectMarkdown(
       },
     }
   }
-  const unsupported = unsupportedSyntax(envelope.body)
+  const unsupported = unsupportedSyntax(envelope.body, fidelity)
   if (unsupported) {
     return {
       status: "source",
@@ -175,21 +177,57 @@ function exceedsComplexityLimit(markdown: string) {
   })
 }
 
-function unsupportedSyntax(markdown: string) {
-  const prose = markdown
-    .replace(/^(?<fence>`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?^\k<fence>[ \t]*(?=\n|$)|$)/gm, "")
-    .replace(/(`+)[^\n]*?\1/g, "")
+/**
+ * `lossy` marks what @tiptap/markdown 3.23.4 drops or misreads in a browser:
+ * an unknown tag such as `<project>` is parsed as an element and vanishes
+ * with its text, an unreferenced link definition vanishes, a footnote's
+ * continuation paragraph becomes a code block, and a `=======` conflict line
+ * is read as a setext underline and disappears. The rest it keeps as literal
+ * text — math, Liquid, braces and `import` lines verbatim, setext headings as
+ * ATX — which a normalizing record can absorb.
+ */
+function unsupportedSyntax(markdown: string, fidelity: MarkdownFidelity) {
+  const prose = markdown.replace(CODE_SPANS, "")
   return [
-    { name: "Reference links", pattern: /^\s{0,3}\[[^\]\n]+\]:\s*\S|\[[^\]\n]+\]\[[^\]\n]*\]/m },
-    { name: "Setext headings", pattern: /^\S.*\n(?:=+|-+)[ \t]*$/m },
-    { name: "HTML", pattern: /<!--[\s\S]*?-->|<\/?[A-Za-z][^>\n]*>/ },
-    { name: "Footnotes", pattern: /\[\^[^\]\n]+\]/ },
-    { name: "Math", pattern: /\$\$|(?<!\\)\$(?!\s)(?:[^$\n]|\\\$)+\$/ },
-    { name: "Liquid templates", pattern: /\{[{%]-?[\s\S]*?-?[%}]\}/ },
-    { name: "MDX modules", pattern: /^(?:import|export)\s/m },
-    { name: "Brace expressions", pattern: /\{[\s\S]*?\}/ },
-    { name: "Merge conflict markers", pattern: /^(?:<{7}|\|{7}|={7}|>{7})(?: |$)/m },
-  ].find((entry) => entry.pattern.test(prose))?.name
+    { name: "Reference links", lossy: true, pattern: /^\s{0,3}\[[^\]\n]+\]:\s*\S|\[[^\]\n]+\]\[[^\]\n]*\]/m },
+    { name: "Setext headings", lossy: false, pattern: /^\S.*\n(?:=+|-+)[ \t]*$/m },
+    { name: "HTML", lossy: true, pattern: HTML_SPAN },
+    { name: "Footnotes", lossy: true, pattern: /\[\^[^\]\n]+\]/ },
+    { name: "Math", lossy: false, pattern: /\$\$|(?<!\\)\$(?!\s)(?:[^$\n]|\\\$)+\$/ },
+    { name: "Liquid templates", lossy: false, pattern: /\{[{%]-?[\s\S]*?-?[%}]\}/ },
+    { name: "MDX modules", lossy: false, pattern: /^(?:import|export)\s/m },
+    { name: "Brace expressions", lossy: false, pattern: /\{[\s\S]*?\}/ },
+    { name: "Merge conflict markers", lossy: true, pattern: /^(?:<{7}|\|{7}|={7}|>{7})(?: |$)/m },
+  ].find((entry) => (fidelity === "exact" || entry.lossy) && entry.pattern.test(prose))?.name
+}
+
+const CODE_SPANS = /^(?<fence>`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?^\k<fence>[ \t]*(?=\n|$)|$)|(?<tick>`+)[^\n]*?\k<tick>/gm
+const HTML_SPAN = /<!--[\s\S]*?-->|<\/?[A-Za-z][^>\n]*>/
+const AUTOLINK = /<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+)>/
+const LITERALIZED_SPANS = new RegExp(`${CODE_SPANS.source}|${AUTOLINK.source}|(?<tag>${HTML_SPAN.source})`, "gm")
+
+/**
+ * The markdown with every HTML-looking span outside code rewritten as the
+ * entity text the rich editor keeps.
+ *
+ * In a browser @tiptap/markdown 3.23.4 parses `<project>` as an element and
+ * drops it with its text, and its serializer writes any `<` it does keep as
+ * `&lt;`. Rewriting the span up front hands the editor the text it would have
+ * produced itself, so a placeholder or a generic such as `Map<K, V>` survives
+ * as prose; the HTML gate above then has nothing to find. Code spans and
+ * fences are the parser's own to keep verbatim, and an autolink is left for
+ * it to turn into a link.
+ */
+export function literalizeHtml(markdown: string): string {
+  let out = ""
+  let last = 0
+  for (const span of markdown.matchAll(LITERALIZED_SPANS)) {
+    const text = span[0]
+    out += markdown.slice(last, span.index)
+    out += span.groups?.tag === undefined ? text : text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    last = span.index + text.length
+  }
+  return out + markdown.slice(last)
 }
 
 function decodeMarkdown(input: string | Uint8Array) {

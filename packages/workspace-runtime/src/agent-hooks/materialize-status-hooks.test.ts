@@ -72,15 +72,20 @@ describe("materializeAgentHooks", () => {
     })
 
     expect(results.every((item) => item.status === "applied")).toBe(true)
+    // Each config carries the harness that owns it, so notify.sh can drop a
+    // config replayed by a different agent.
+    expect(getClaudeManagedHookCommand()).toContain("/hooks/notify.sh\" --harness=claude")
     await expect(readJson(path.join(root, ".claude", "settings.json"))).resolves.toMatchObject({
       hooks: {
         UserPromptSubmit: [{ hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
+        PermissionRequest: [{ matcher: "*", hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
+        PermissionDenied: [{ matcher: "*", hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
       },
     })
     await expect(readJson(path.join(root, ".codex", "hooks.json"))).resolves.toMatchObject({
       hooks: {
-        SessionStart: [{ hooks: [{ type: "command", command: notifyPath }] }],
-        Interrupt: [{ hooks: [{ type: "command", command: notifyPath }] }],
+        SessionStart: [{ hooks: [{ type: "command", command: `'${notifyPath}' --harness=codex` }] }],
+        Interrupt: [{ hooks: [{ type: "command", command: `'${notifyPath}' --harness=codex` }] }],
       },
     })
     await expect(readJson(path.join(root, ".gemini", "settings.json"))).resolves.toMatchObject({
@@ -88,15 +93,39 @@ describe("materializeAgentHooks", () => {
         BeforeAgent: [{ hooks: [{ type: "command", command: geminiHookPath }] }],
       },
     })
-    await expect(readJson(path.join(root, ".cursor", "hooks.json"))).resolves.toMatchObject({
+    await expect(readJson(path.join(root, ".cursor", "hooks.json"))).resolves.toEqual({
       version: 1,
       hooks: {
         beforeSubmitPrompt: [{ command: `${cursorHookPath} Start` }],
+        stop: [{ command: `${cursorHookPath} Stop` }],
+        beforeShellExecution: [{ command: `${cursorHookPath} PermissionRequest` }],
+        beforeMCPExecution: [{ command: `${cursorHookPath} PermissionRequest` }],
+        postToolUse: [{ command: `${cursorHookPath} PostToolUse`, matcher: "^(Shell|MCP:.+)$" }],
+        postToolUseFailure: [{ command: `${cursorHookPath} PostToolUse`, matcher: "^(Shell|MCP:.+)$" }],
       },
     })
     await expect(readJson(path.join(root, ".mastracode", "hooks.json"))).resolves.toMatchObject({
-      UserPromptSubmit: [{ type: "command", command: `bash '${notifyPath}'` }],
+      UserPromptSubmit: [{ type: "command", command: `bash '${notifyPath}' --harness=mastracode` }],
     })
+  })
+
+  test("Cursor keeps user hooks and replaces an older registration of the same event", async () => {
+    const file = path.join(root, ".cursor", "hooks.json")
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, JSON.stringify({ version: 1, hooks: {
+      beforeShellExecution: [{ command: "./scripts/approve-network.sh", matcher: "curl|wget" }, { command: `${cursorHookPath} PermissionRequest` }],
+      postToolUse: [{ command: `${cursorHookPath} Start` }],
+      afterFileEdit: [{ command: "./scripts/format.sh" }],
+    } }))
+    const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
+    for (let i = 0; i < 2; i++) await materializeAgentHooks(input)
+    const hooks = (await readJson(file) as { hooks: Record<string, unknown[]> }).hooks
+    expect(hooks.beforeShellExecution).toEqual([
+      { command: "./scripts/approve-network.sh", matcher: "curl|wget" },
+      { command: `${cursorHookPath} PermissionRequest` },
+    ])
+    expect(hooks.postToolUse).toEqual([{ command: `${cursorHookPath} PostToolUse`, matcher: "^(Shell|MCP:.+)$" }])
+    expect(hooks.afterFileEdit).toEqual([{ command: "./scripts/format.sh" }])
   })
 
   test("Droid uses standalone hooks and retires only its owned settings entries", async () => {
@@ -111,11 +140,12 @@ describe("materializeAgentHooks", () => {
     await fs.writeFile(file, JSON.stringify({ Stop: [user] }))
     const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
     for (let i = 0; i < 2; i++) await materializeAgentHooks(input)
+    const command = `'${notifyPath}' --harness=droid`
     expect(await readJson(file)).toEqual({
-      UserPromptSubmit: [{ hooks: [{ type: "command", command: notifyPath }] }],
-      Notification: [{ hooks: [{ type: "command", command: notifyPath }] }],
-      Stop: [user, { hooks: [{ type: "command", command: notifyPath }] }],
-      PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command: notifyPath }] }],
+      UserPromptSubmit: [{ hooks: [{ type: "command", command }] }],
+      Notification: [{ hooks: [{ type: "command", command }] }],
+      Stop: [user, { hooks: [{ type: "command", command }] }],
+      PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command }] }],
     })
     expect(await readJson(settings)).toEqual({ model: "keep", hooks: { Stop: [user] } })
   })

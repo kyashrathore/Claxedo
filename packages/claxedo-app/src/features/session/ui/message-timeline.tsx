@@ -1574,7 +1574,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <TurnFoldRow
                 durationMs={turnFoldRow().durationMs}
                 folded={turnFoldRow().folded}
-                groupCount={turnFoldRow().foldCount}
                 tokens={turnFoldRow().tokens}
                 cost={turnFoldRow().cost}
                 running={turnFoldRow().running}

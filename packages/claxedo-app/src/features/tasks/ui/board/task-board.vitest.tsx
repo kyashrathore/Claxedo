@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
-import { taskSummaryOf, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
+import { TASK_STATUSES, taskSummaryOf, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { taskRow } from "@claxedo/tasks/test-support"
 import { TaskBoard } from "./task-board"
+import { TASK_COLLECTION_STATUSES } from "../../view-model"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
 
@@ -31,13 +32,14 @@ function checkedStatus(id: string) {
     .find((item) => item.getAttribute("aria-checked") === "true")?.textContent
 }
 
-function mount(tasks: readonly TaskSummary[]) {
+function mount(tasks: readonly TaskSummary[], statuses: readonly TaskStatus[] = TASK_STATUSES) {
   const onStatusChange = vi.fn()
   const onSelect = vi.fn()
   const onCreate = vi.fn()
   render(() => (
     <TaskBoard
       tasks={tasks}
+      statuses={statuses}
       projectName="Demo project"
       dateField="updated"
       subtaskProgress={(taskId) => tasks.find((task) => task.id === taskId)?.children}
@@ -64,6 +66,24 @@ describe("task board", () => {
     expect(screen.getByTestId("tasks-board-column-todo").contains(screen.getByTestId("tasks-board-card-a"))).toBe(true)
     expect(screen.getByTestId("tasks-board-column-needs_you").contains(screen.getByTestId("tasks-board-card-b"))).toBe(true)
     expect(screen.getByTestId("tasks-board-column-backlog").contains(screen.getByTestId("tasks-board-card-c"))).toBe(true)
+  })
+
+  test("under Active the columns are the statuses Active holds: no Backlog, no Done", () => {
+    mount([summary("a", "todo")], TASK_COLLECTION_STATUSES.active)
+
+    const columns = screen.getAllByTestId(/^tasks-board-column-/).map((column) => column.getAttribute("data-testid"))
+    expect(columns).toEqual(["tasks-board-column-todo", "tasks-board-column-doing", "tasks-board-column-needs_you"])
+    expect(screen.queryByTestId("tasks-board-create-backlog")).toBeNull()
+  })
+
+  test("under Backlog the board is the one column a parked task can sit in", () => {
+    const { onCreate } = mount([summary("a", "backlog")], TASK_COLLECTION_STATUSES.backlog)
+
+    expect(screen.getAllByTestId(/^tasks-board-column-/).map((column) => column.getAttribute("data-testid"))).toEqual([
+      "tasks-board-column-backlog",
+    ])
+    fireEvent.click(screen.getByTestId("tasks-board-create-backlog"))
+    expect(onCreate).toHaveBeenCalledWith("backlog")
   })
 
   test("Backlog is the first column and the only other one that can start a task", () => {

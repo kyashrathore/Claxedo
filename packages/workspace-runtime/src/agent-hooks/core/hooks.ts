@@ -31,7 +31,7 @@ export default function (amp: PluginAPI) {
   if (!home || !process.env.CLAXEDO_TAB_ID) return
   const send = async (hook_event_name: string, event: unknown) => {
     await new Promise<void>((resolve) => {
-      const child = spawn("bash", [home + "/hooks/notify.sh"], {
+      const child = spawn("bash", [home + "/hooks/notify.sh", "--harness=amp"], {
         env: { ...process.env, CLAXEDO_AGENT: "amp" },
         stdio: ["pipe", "ignore", "ignore"],
         timeout: 3000,

@@ -156,7 +156,7 @@ describe("the registered surface", () => {
   test("adds the Tasks tools the grant covers, and nothing else", () => {
     const granted = surface(runtimeCredential, { fetch: async () => new Response(null, { status: 204 }), operations: ["read", "create", "start"] })
     const without = new Set(surface(runtimeCredential).listed)
-    expect(granted.listed.filter((name) => !without.has(name))).toEqual(["task_create", "task_get", "task_list", "task_start"])
+    expect(granted.listed.filter((name) => !without.has(name))).toEqual(["task_create", "task_edit", "task_get", "task_list", "task_start"])
   })
 
   test("lists the outside-in set for a user credential", () => {

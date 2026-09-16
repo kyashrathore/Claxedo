@@ -4,9 +4,10 @@ const eventTypes: Record<string, "Busy" | "Idle" | "UserActionRequired" | "Error
   Busy: "Busy", Start: "Busy", SessionStart: "Busy", UserPromptSubmit: "Busy", PostToolUse: "Busy",
   BeforeAgent: "Busy", AfterTool: "Busy", beforeSubmitPrompt: "Busy", sessionStart: "Busy",
   userPromptSubmitted: "Busy", postToolUse: "Busy", "agent-turn-start": "Busy",
+  PostToolUseFailure: "Busy", postToolUseFailure: "Busy", PermissionDenied: "Busy",
   Idle: "Idle", Interrupt: "Idle", Stop: "Idle", SessionEnd: "Idle", AfterAgent: "Idle", stop: "Idle", sessionEnd: "Idle",
   "agent-turn-complete": "Idle",
-  Error: "Error", Failed: "Error", PostToolUseFailure: "Error", StopFailure: "Error",
+  Error: "Error", Failed: "Error", StopFailure: "Error",
   "session.error": "Error", sessionError: "Error", "agent-turn-error": "Error", "task-failed": "Error",
   UserActionRequired: "UserActionRequired", beforeShellExecution: "UserActionRequired",
   beforeMCPExecution: "UserActionRequired", PermissionRequest: "UserActionRequired",
@@ -14,8 +15,45 @@ const eventTypes: Record<string, "Busy" | "Idle" | "UserActionRequired" | "Error
   Notification: "UserActionRequired", "permission-request": "UserActionRequired", "question-request": "UserActionRequired",
 }
 
+/**
+ * Hooks that end one tool call while the turn goes on. A failed or denied tool
+ * is a completion, not the turn's error: Claude's StopFailure is the hook that
+ * ends a turn in failure.
+ */
+const toolCompletionHooks = new Set([
+  "PostToolUse", "postToolUse", "AfterTool", "PostToolUseFailure", "postToolUseFailure", "PermissionDenied",
+])
+
+/**
+ * Identity that pairs a tool's ask with its completion. Claude repeats
+ * `tool_input` on PermissionRequest and PostToolUse; Cursor sends only
+ * `command` on beforeShellExecution and `tool_input.command` on postToolUse.
+ * Cursor's beforeMCPExecution carries `tool_input` as a JSON string and a
+ * `command` naming the MCP server process, so it pairs with nothing.
+ */
+function toolKey(input: Record<string, unknown>): string | null {
+  if (input.tool_input !== undefined) {
+    const tool = rec(input.tool_input)
+    if (!tool) return null
+    return str(tool.command) ?? JSON.stringify(tool)
+  }
+  return str(input.command) ?? null
+}
+
+export type ProviderLifecycle = {
+  eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
+  outcome?: "done" | "error" | "cancelled"
+  provider?: string
+  sessionId?: string
+  transcriptPath?: string
+  prompt?: string
+  lastAssistantMessage?: string
+  userAction?: { toolKey: string | null }
+  toolCompletion?: { toolKey: string | null }
+}
+
 /** Normalize raw CLI hook JSON before it can mutate terminal lifecycle state. */
-export function providerLifecycle(input: Record<string, unknown>) {
+export function providerLifecycle(input: Record<string, unknown>): ProviderLifecycle | undefined {
   const first = (...keys: string[]) => keys.map((key) => str(input[key])).find((value) => !!value)
   const hook = first("hook_event_name")
   const type = hook ?? first("type")
@@ -57,6 +95,8 @@ export function providerLifecycle(input: Record<string, unknown>) {
     .map((key) => arr(input[key])).find((value) => value?.length)
   return {
     eventType,
+    ...(eventType === "UserActionRequired" ? { userAction: { toolKey: toolKey(input) } } : {}),
+    ...(type && toolCompletionHooks.has(type) ? { toolCompletion: { toolKey: toolKey(input) } } : {}),
     ...(hook === "Interrupt" ? { outcome: "cancelled" as const } : {}),
     provider: first("provider", "provider_id", "providerId", "agent", "cli") ?? (!hook ? "codex" : undefined),
     sessionId: first("session_id", "sessionId", "conversation_id", "conversationId", "thread-id", "thread_id"),

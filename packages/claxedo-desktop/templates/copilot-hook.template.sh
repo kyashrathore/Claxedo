@@ -9,7 +9,7 @@ if [ ! -t 0 ]; then
 fi
 
 if [ -n "$EVENT" ]; then
-  printf '{"hook_event_name":"%s"}' "$EVENT" | "{{NOTIFY_PATH}}" >/dev/null 2>&1 || true
+  printf '{"hook_event_name":"%s"}' "$EVENT" | "{{NOTIFY_PATH}}" --harness=copilot >/dev/null 2>&1 || true
 fi
 
 printf '{}\n'

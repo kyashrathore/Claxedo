@@ -1,12 +1,21 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [Remote machine connection: implementation plan](./2026-09-14-003-feat-connect-implementation-plan.md) — P1–P3 implemented on `feat/connect`, live acceptance green; P4–P7 not started. Companions: [investigation](./2026-09-14-001-feat-connect-enrollment-foundation-proposal.md), [components and flows](./2026-09-14-002-feat-connect-components-and-flows.md).
+  - First slice = invitation-file bootstrap with idempotent redeem,
+    route-local machine verifier keyed by enrollment id with key-version and
+    nonce guards, revision-aware assignment discovery, serving-generation
+    fencing including relay host-tunnel checks, durable host state, serving
+    with private sessions, Tier R fixture host with named fixture deliverables.
+    Deferred: pending approvals, host folder ops and machine worktrees, project
+    regrouping, idle metadata, desktop provenance work.
 
 - [Session titles: harness-native where it exists, runtime-generated elsewhere](./2026-09-15-002-fix-session-auto-title.md) — proposed; not started.
   - Today the title is the first 72 characters of the first prompt, written
@@ -22,22 +31,15 @@ explain a maintained package or cross-package delivery contract.
     the harness's own listing. Fixes the Codex `threadName` field and the
     ACP `session-info` empty-title overwrite on the way.
 
-- [Remote machine connection: implementation plan](./2026-09-14-003-feat-connect-implementation-plan.md) — P1–P3 implemented on `feat/connect`, live acceptance green; P4–P7 not started. Companions: [investigation](./2026-09-14-001-feat-connect-enrollment-foundation-proposal.md), [components and flows](./2026-09-14-002-feat-connect-components-and-flows.md).
-  - First slice = invitation-file bootstrap with idempotent redeem,
-    route-local machine verifier keyed by enrollment id with key-version and
-    nonce guards, revision-aware assignment discovery, serving-generation
-    fencing including relay host-tunnel checks, durable host state, serving
-    with private sessions, Tier R fixture host with named fixture deliverables.
-    Deferred: pending approvals, host folder ops and machine worktrees, project
-    regrouping, idle metadata, desktop provenance work.
-
-- [Onboarding v1: make setup yield to a working product](./2026-09-14-002-feat-onboarding-v1-repair.md) — proposed; not started.
-  - Setup shows only when it has something to ask: first turn becomes a
-    server-served inventory fact, harness logins are discovered at mount,
-    project → AI → first turn is the required path, cloud and remote access
-    become go-further cards, Skip setup writes the dismissal the mode already
-    reads, and the first-project canvas is the no-project screen. Six observed
-    defects listed with their owners.
+- [Onboarding v2: project → AI → where it runs](./2026-09-15-001-feat-onboarding-v2-project-ai-execution.md) — proposed; not started.
+  - The no-project canvas becomes a three-step wizard: folder-first project
+    with a server-derived name and a GitHub repository list for clones, AI
+    logins verified through the Providers page's own detect and probe, and
+    an execution step (this machine / cloud sandbox / another machine) that
+    is optional where the server runs work and required on the hosted web.
+    Onboarding v1 and its flag are deleted; the remote-access surface moves
+    to Settings where its only caller is. Recorded gap: a connected machine
+    cannot yet clone the chosen repository (connect plan P4).
 
 - [Provider accounts: one provider, many logins, one active](./2026-09-12-001-feat-provider-accounts-design.md) — proposed; not started.
   - One explicit active account per provider, set in Settings → Providers

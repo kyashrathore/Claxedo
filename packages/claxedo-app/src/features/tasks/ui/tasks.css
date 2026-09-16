@@ -603,20 +603,26 @@
   opacity: 0.4;
 }
 
+/* The hover tools sit on the key's line, so only the key gives them room;
+   the title below runs the card's full width. */
 .tsk-card-key {
-  display: block;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
   padding-right: 92px;
 }
 
 .tsk-card-title {
+  width: 100%;
   padding: 0;
-  padding-right: 92px;
   background: transparent;
   border: 0;
   color: var(--text-strong);
   font: inherit;
   font-size: var(--font-size-compact);
+  line-height: var(--line-height-relaxed);
   text-align: left;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -633,8 +639,9 @@
 
 .tsk-card .tsk-row-tools {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 10px;
+  right: 8px;
+  height: 24px;
 }
 
 /* The only mark a drop target needs. */
@@ -645,14 +652,25 @@
 }
 
 .tsk-detail {
+  --tsk-rail-width: 260px;
+  --tsk-rail: var(--tsk-rail-width);
+  --tsk-rail-gap: 28px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr) var(--tsk-rail);
+  gap: var(--tsk-rail-gap);
   height: 100%;
   min-height: 0;
   padding: 12px var(--tsk-gutter) var(--tsk-gutter);
   overflow: auto;
   container-type: inline-size;
+  transition:
+    grid-template-columns 220ms cubic-bezier(0.2, 0, 0, 1),
+    gap 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.tsk-detail[data-rail="collapsed"] {
+  --tsk-rail: 0px;
+  --tsk-rail-gap: 0px;
 }
 
 .tsk-detail-main {
@@ -767,18 +785,53 @@
   color: var(--text-weak);
 }
 
+/* Sized by its own width rather than its track, so the content holds its
+   layout and is clipped while the track closes instead of rewrapping; the 8px
+   clip margin is what the ghost Open button hangs past the edge. */
 .tsk-rail {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: var(--tsk-rail-width);
   min-width: 0;
   padding-top: 4px;
+  overflow: clip;
+  overflow-clip-margin: 8px;
+  transition:
+    opacity 140ms linear,
+    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 0s;
+}
+
+.tsk-detail[data-rail="collapsed"] .tsk-rail {
+  opacity: 0;
+  transform: translateX(12px);
+  visibility: hidden;
+  transition-delay: 0s, 0s, 220ms;
+}
+
+.tsk-rail-toggle.ui-icon-button {
+  flex: none;
+  color: var(--icon-weak-base, var(--icon-base));
+}
+
+.tsk-rail-toggle.ui-icon-button:hover,
+.tsk-rail-toggle.ui-icon-button[aria-expanded="true"] {
+  color: var(--icon-base);
 }
 
 @container (max-width: 720px) {
   .tsk-detail {
     grid-template-columns: minmax(0, 1fr);
     gap: 20px;
+  }
+
+  .tsk-rail {
+    width: auto;
+  }
+
+  .tsk-detail[data-rail="collapsed"] .tsk-rail {
+    display: none;
   }
 }
 
@@ -1315,7 +1368,9 @@
     animation: none;
   }
 
-  .tsk-card {
+  .tsk-card,
+  .tsk-detail,
+  .tsk-rail {
     transition: none;
   }
 }

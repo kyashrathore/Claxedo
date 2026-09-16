@@ -815,7 +815,6 @@ export function AssistantParts(
         <TurnFoldRow
           durationMs={props.turnDurationMs}
           folded={fold().folded}
-          groupCount={foldableCount()}
           running={fold().canFoldRunning}
           onToggle={() => setFoldChoice(!fold().folded)}
         />
@@ -1928,7 +1927,7 @@ export function ToolAttachments(props: { attachments?: AgentFilePart[] }) {
 function ToolImageUnavailable(props: { name: string; location?: AgentFileLocation }) {
   return (
     <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
-      <Icon name="file" size="small" />
+      <Icon name="photo" size="small" />
       <span>{props.name}</span>
       <Show when={props.location?.kind === "unretained" ? props.location : undefined}>
         {(location) => <span data-slot="tool-image-size">{`${Math.round(location().bytes / 1024)} KB`}</span>}

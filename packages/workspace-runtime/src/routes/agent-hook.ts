@@ -98,7 +98,11 @@ const TerminalSessionPayload = z.object({
   updatedAt: z.number(),
 })
 type TerminalSessionPayload = z.infer<typeof TerminalSessionPayload>
-type TerminalSessionRecord = TerminalSessionPayload & { ownerActorId?: string }
+type PendingUserAction = string | null
+type TerminalSessionRecord = TerminalSessionPayload & {
+  ownerActorId?: string
+  pendingUserActions?: PendingUserAction[]
+}
 
 const TERMINAL_SESSION_TTL_MS = (() => {
   const v = Number(process.env.WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS)
@@ -236,6 +240,13 @@ const upsertTerminalSession = (input: {
   lastAssistantMessage?: string
   eventType?: AgentEventType
   ownerActorId?: string
+  pendingUserActions?: PendingUserAction[]
+  /**
+   * A tool-scoped hook reports the conversation that ran the tool, which for a
+   * subagent's shell command is the child's id. Only turn boundaries may bind
+   * the terminal to a session.
+   */
+  toolScoped?: boolean
 }) => {
   pruneTerminalSessions()
   const terminalId = clean(input.terminalId)
@@ -247,8 +258,9 @@ const upsertTerminalSession = (input: {
   // guessed terminal id from seeding provider, transcript, prompt, or Session
   // scope into the managed record.
   const previous = verifiedOwner && found?.ownerActorId !== verifiedOwner ? undefined : found
-  const providerSessionId = clean(input.providerSessionId)
-  const sessionId = clean(input.sessionId)
+  const bound = input.toolScoped && clean(previous?.providerSessionId)
+  const providerSessionId = bound ? clean(previous?.providerSessionId) : clean(input.providerSessionId)
+  const sessionId = bound ? clean(previous?.sessionId) : clean(input.sessionId)
   const transcriptPath = clean(input.transcriptPath)
   const refName = clean(input.refName)
   const prompt = clean(input.prompt)
@@ -285,10 +297,38 @@ const upsertTerminalSession = (input: {
         : clean(previous?.lastAssistantMessage) || undefined,
     eventType: input.eventType || previous?.eventType,
     ownerActorId: input.ownerActorId || previous?.ownerActorId,
+    pendingUserActions: input.pendingUserActions ?? previous?.pendingUserActions,
     updatedAt: Date.now(),
   }
   rememberTerminalSession(next)
   return next
+}
+
+/**
+ * A raw CLI hook stream interleaves the asks of one tool with the completions
+ * of others: Cursor and Claude run read-only tools while a shell command waits
+ * for approval, and Cursor also replays Claude-compat PostToolUse hooks. A
+ * completion therefore only retires the ask it pairs with; while any ask is
+ * still open the terminal stays on UserActionRequired. Turn boundaries and a
+ * new prompt retire every ask.
+ */
+function settlePendingUserActions(input: {
+  pending: readonly PendingUserAction[]
+  eventType: AgentEventType
+  userAction?: { toolKey: PendingUserAction }
+  toolCompletion?: { toolKey: PendingUserAction }
+}): { pending: PendingUserAction[]; held: boolean } {
+  if (input.eventType === "UserActionRequired") {
+    return { pending: [...input.pending, input.userAction?.toolKey ?? null], held: false }
+  }
+  if (input.eventType !== "Busy" || !input.toolCompletion || input.pending.length === 0) {
+    return { pending: [], held: false }
+  }
+  const key = input.toolCompletion.toolKey
+  const pending = [...input.pending]
+  const index = key === null ? 0 : pending.findIndex((entry) => entry === key || entry === null)
+  if (index >= 0) pending.splice(index, 1)
+  return { pending, held: pending.length > 0 }
 }
 
 const clearTerminalSession = (terminalId: string) => {
@@ -333,7 +373,7 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
   if (!terminalId) return undefined
   const mapped = terminalSessions.get(terminalId)
   if (!mapped) return undefined
-  const { ownerActorId: _ownerActorId, ...session } = mapped
+  const { ownerActorId: _ownerActorId, pendingUserActions: _pendingUserActions, ...session } = mapped
   return { source: "memory" as const, terminalId, session }
 }
 
@@ -479,7 +519,18 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
       if (raw !== undefined && (eventType === "Idle" || eventType === "Error") && previous?.eventType === eventType) {
         return c.json({ success: true, duplicate: true })
       }
+      const settled = raw === undefined ? undefined : settlePendingUserActions({
+        pending: previous?.pendingUserActions ?? [],
+        eventType,
+        ...(providerEvent?.userAction ? { userAction: providerEvent.userAction } : {}),
+        ...(providerEvent?.toolCompletion ? { toolCompletion: providerEvent.toolCompletion } : {}),
+      })
+      if (settled?.held && previous) {
+        rememberTerminalSession({ ...previous, pendingUserActions: settled.pending })
+        return c.json({ success: true, held: true })
+      }
       const workspaceId = access.context.authority?.workspaceId ?? (clean(payload.workspaceId) || undefined)
+      const toolScoped = !!(providerEvent?.userAction || providerEvent?.toolCompletion)
       const providerSessionId = clean(payload.sessionId) || undefined
       const sessionId = access.context.authority ? Pty.get(resolvedTerminalId)?.sessionId : providerSessionId
 
@@ -499,6 +550,8 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
             lastAssistantMessage: payload.lastAssistantMessage,
             eventType,
             ownerActorId: access.context.actor?.actorId,
+            ...(settled ? { pendingUserActions: settled.pending } : {}),
+            toolScoped,
           })
         : undefined
 
@@ -507,8 +560,8 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
         terminalId: resolvedTerminalId || clean(payload.terminalId) || undefined,
         workspaceId,
         provider: normalizeProvider(payload.provider) || undefined,
-        providerSessionId,
-        sessionId,
+        providerSessionId: toolScoped ? stored?.providerSessionId || providerSessionId : providerSessionId,
+        sessionId: toolScoped ? stored?.sessionId || sessionId : sessionId,
         transcriptPath: clean(payload.transcriptPath) || undefined,
         refName: stored?.refName || clean(payload.refName) || undefined,
         prompt: stored?.prompt || clean(payload.prompt) || undefined,
@@ -516,7 +569,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
         eventType,
       }
       // Raw provider input is an ingestion detail, never a UI event or stored field.
-      const published = { ...AgentLifecyclePayload.parse(normalized), providerSessionId }
+      const published = { ...AgentLifecyclePayload.parse(normalized), providerSessionId: normalized.providerSessionId }
 
       log.info("agent lifecycle (POST)", lifecycleLogMetadata(published))
       workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...published })

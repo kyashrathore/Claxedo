@@ -8,7 +8,7 @@ EVENT="${1:-}"
 if [ ! -t 0 ]; then
   INPUT=$(cat)
   if [ -n "$INPUT" ]; then
-    bash "{{NOTIFY_PATH}}" "$INPUT" >/dev/null 2>&1 || true
+    bash "{{NOTIFY_PATH}}" --harness=cursor "$INPUT" >/dev/null 2>&1 || true
   fi
 fi
 

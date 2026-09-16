@@ -32,4 +32,4 @@ if [ -n "${CLAXEDO_TAB_ID:-}" ] && [ -n "${CODEX_TUI_SESSION_LOG_PATH:-}" ]; the
   fi
 fi
 
-exec "{{CODEX_NOTIFY_PATH}}" "$INPUT"
+exec "{{CODEX_NOTIFY_PATH}}" --harness=codex "$INPUT"

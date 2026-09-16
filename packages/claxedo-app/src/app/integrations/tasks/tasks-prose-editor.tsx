@@ -1,7 +1,12 @@
 import { Show, createMemo, createSignal } from "solid-js"
 import type { ProseEditorProps } from "@/features/tasks/app-ports"
 import { RichMode } from "@/features/documents/editor/rich-mode"
-import { detectMarkdown, type MarkdownDetection, type RichMarkdown } from "@/features/documents/markdown/detector"
+import {
+  detectMarkdown,
+  literalizeHtml,
+  type MarkdownDetection,
+  type RichMarkdown,
+} from "@/features/documents/markdown/detector"
 import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter"
 
 /**
@@ -9,10 +14,14 @@ import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter
  *
  * The record stays a markdown string: the editor is given the body the envelope
  * splits off and hands back what it serialized, re-joined. The detector is the
- * same read-only gate Documents uses — it admits text only when this exact
- * extension set can parse AND re-serialize it unchanged — so anything it
- * classifies `source` or `rejected` gets the plain textarea rather than an
- * editor that would rewrite the user's bytes.
+ * same gate Documents uses, so anything it classifies `source` or `rejected`
+ * gets the plain textarea rather than an editor that would lose text.
+ *
+ * A description written as prose says `Open <project>` or `Map<K, V>`, which
+ * the browser's parser would drop as unknown elements, so the editor is shown
+ * the description with those spans as the entity text its serializer writes
+ * anyway; the record takes that spelling on the first edit and reads the same
+ * everywhere markdown is rendered. The textarea still shows the raw record.
  *
  * Every value the field did not just emit is a replacement from outside — a
  * refetch, a rebase, a discard — and is put through the detector again, because
@@ -26,11 +35,12 @@ export function TasksProseEditor(props: ProseEditorProps) {
   // text the field last wrote, and matching it against the detection in force
   // by then would hand `RichMode` a document parsed from different text.
   let emitted: { markdown: string; detection: MarkdownDetection } | undefined
+  const shown = createMemo(() => literalizeHtml(props.value))
   // A task description is the app's own record, not a file the user owns, so
   // the first edit normalizing `* item` to `- item` is acceptable here and the
   // byte-exact gate Documents needs would only put this field in a textarea.
   const admitted = createMemo<MarkdownDetection>(() =>
-    emitted && props.value === emitted.markdown ? emitted.detection : detectMarkdown(props.value, "normalizing"),
+    emitted && props.value === emitted.markdown ? emitted.detection : detectMarkdown(shown(), "normalizing"),
   )
   // A serializer that cannot write the tree belongs to the text that produced
   // it; a replacement is a different text and is owed its own attempt.
@@ -44,7 +54,7 @@ export function TasksProseEditor(props: ProseEditorProps) {
     if (detection.status !== "rich" || failed() === detection) return undefined
     // The envelope is re-split from the live value so a discard or a rebase
     // reaches the editor; `RichMode` ignores a body it just serialized itself.
-    return { ...detection, envelope: splitMarkdownEnvelope(props.value) }
+    return { ...detection, envelope: splitMarkdownEnvelope(shown()) }
   }
 
   return (

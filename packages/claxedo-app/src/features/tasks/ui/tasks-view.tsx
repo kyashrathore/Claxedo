@@ -2,7 +2,7 @@ import { Show, createMemo } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { TaskCreateStatus, TaskStatus, TaskSummary } from "@claxedo/tasks"
-import { TASK_COLLECTION_LABELS } from "../view-model"
+import { TASK_COLLECTION_LABELS, TASK_COLLECTION_STATUSES } from "../view-model"
 import { TaskBoard } from "./board/task-board"
 import { TaskList } from "./list/task-list"
 import { uuid } from "@/lib/uuid"
@@ -133,6 +133,7 @@ export function TasksView(props: TasksViewProps) {
       >
         <TaskBoard
           tasks={visible()}
+          statuses={TASK_COLLECTION_STATUSES[props.store.state.collection]}
           projectName={projectName()}
           dateField={props.store.state.dateField}
           more={morePages(tasks)}

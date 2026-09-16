@@ -119,7 +119,12 @@ function targetPaths(homeDir: string) {
 }
 
 export function getClaudeManagedHookCommand() {
-  return `[ -n "$CLAXEDO_HOME_DIR" ] && [ -x "$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}" ] && "$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}" || true`
+  return `[ -n "$CLAXEDO_HOME_DIR" ] && [ -x "$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}" ] && "$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}" --harness=claude || true`
+}
+
+/** The notify command a foreign hook config runs, labelled with the harness that owns the config. */
+function notifyCommand(notifyPath: string, harness: string) {
+  return `${shellQuote(notifyPath)} --harness=${harness}`
 }
 
 function isManagedClaudeHookCommand(command: string | undefined, notifyScriptPath: string) {
@@ -193,6 +198,7 @@ async function materializeClaude(input: { file: string; notifyPath: string; forc
       { event: "PostToolUse", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
       { event: "PostToolUseFailure", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
       { event: "PermissionRequest", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
+      { event: "PermissionDenied", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
     ],
     isManaged: (command) => isManagedClaudeHookCommand(command, input.notifyPath),
   })
@@ -211,12 +217,13 @@ async function materializeDroid(input: { file: string; notifyPath: string; force
     : asRecordOrEmpty(await readJson(input.file))
   const isManaged = (command: string | undefined) =>
     !!command && (command.includes(input.notifyPath) || isManagedHookCommand(command, NOTIFY_SCRIPT))
+  const command = notifyCommand(input.notifyPath, "droid")
   reconcileNestedHooks(hooks, {
     events: [
-      { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
-      { event: "Notification", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
-      { event: "Stop", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
-      { event: "PostToolUse", definition: { matcher: "*", hooks: [{ type: "command", command: input.notifyPath }] } },
+      { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command }] } },
+      { event: "Notification", definition: { hooks: [{ type: "command", command }] } },
+      { event: "Stop", definition: { hooks: [{ type: "command", command }] } },
+      { event: "PostToolUse", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
     ],
     isManaged,
   })
@@ -254,11 +261,12 @@ async function materializeCodex(input: { file: string; notifyPath: string; force
   pruneCodexHooks(hooks, input.notifyPath)
 
   if (input.native) {
+    const command = notifyCommand(input.notifyPath, "codex")
     const events = [
-      { event: "SessionStart", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
-      { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
-      { event: "Stop", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
-      { event: "Interrupt", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
+      { event: "SessionStart", definition: { hooks: [{ type: "command", command }] } },
+      { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command }] } },
+      { event: "Stop", definition: { hooks: [{ type: "command", command }] } },
+      { event: "Interrupt", definition: { hooks: [{ type: "command", command }] } },
     ]
     for (const item of events) {
       const current = hooks[item.event]
@@ -296,11 +304,18 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
   const root = asRecordOrEmpty(await readJson(input.file))
   if (typeof root.version !== "number") root.version = 1
   const hooks = recordAt(root, "hooks")
-  const desired: Record<string, { command: string }> = {
+  // Cursor has no hook for "waiting on approval": the before-hooks fire for
+  // every shell/MCP call and the runtime holds the terminal on that ask until
+  // the same call completes or fails. Cursor applies the matcher itself, so
+  // file-tool completions never spawn the hook.
+  const toolMatcher = "^(Shell|MCP:.+)$"
+  const desired: Record<string, { command: string; matcher?: string }> = {
     beforeSubmitPrompt: { command: `${input.hookPath} Start` },
     stop: { command: `${input.hookPath} Stop` },
     beforeShellExecution: { command: `${input.hookPath} PermissionRequest` },
     beforeMCPExecution: { command: `${input.hookPath} PermissionRequest` },
+    postToolUse: { command: `${input.hookPath} PostToolUse`, matcher: toolMatcher },
+    postToolUseFailure: { command: `${input.hookPath} PostToolUse`, matcher: toolMatcher },
   }
 
   for (const [event, entry] of Object.entries(desired)) {
@@ -320,7 +335,7 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
 
 async function materializeMastra(input: { file: string; notifyPath: string; force: boolean }) {
   const root = asRecordOrEmpty(await readJson(input.file))
-  const command = `bash ${shellQuote(input.notifyPath)}`
+  const command = `bash ${notifyCommand(input.notifyPath, "mastracode")}`
 
   for (const event of ["UserPromptSubmit", "Stop", "PostToolUse"]) {
     root[event] = reconcileManagedEntries({

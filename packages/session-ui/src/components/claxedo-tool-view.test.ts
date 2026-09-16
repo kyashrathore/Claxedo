@@ -93,6 +93,30 @@ describe("claxedoToolView", () => {
     })
   })
 
+  test("task_edit links the edited task and keeps its status", () => {
+    const output = JSON.stringify({
+      task: {
+        id: "tsk_4f4f",
+        key: "5",
+        title: "MCP smoke tonight",
+        description: "updated",
+        status: "todo",
+        revision: 4,
+        parent: null,
+        project: "prj",
+      },
+      replayed: false,
+    })
+    expect(view("task_edit", { task: "tsk_4f4f", title: "MCP smoke tonight" }, output)).toEqual({
+      name: "task_edit",
+      title: "Edit task",
+      link: { kind: "task", id: "tsk_4f4f", label: "#5 MCP smoke tonight" },
+      status: "todo",
+      facts: [],
+      rows: [],
+    })
+  })
+
   test("a running task_create shows the title it was asked for", () => {
     expect(view("task_create", { title: "Fix the clip" })).toMatchObject({ title: "Create task", subject: "Fix the clip", status: "todo" })
   })

@@ -3,6 +3,30 @@
 # Forward provider JSON unchanged. The runtime owns normalization and state.
 [ -z "$CLAXEDO_TAB_ID" ] && exit 0
 
+# Every hook config Claxedo writes names the harness that owns it. Agents
+# replay each other's configs (cursor-agent runs ~/.claude/settings.json) and
+# run each other as tools (Claude's Bash launching `codex exec`); a config
+# firing under a different agent than this terminal's is not this terminal's
+# lifecycle.
+HARNESS=""
+case "${1:-}" in
+  --harness=*) HARNESS="${1#--harness=}"; shift ;;
+esac
+AGENT="$CLAXEDO_AGENT"
+case "$AGENT" in
+  cursor-agent) AGENT="cursor" ;;
+esac
+if [ -n "$HARNESS" ]; then
+  if [ -z "$AGENT" ]; then
+    # No wrapper set the agent. Cursor stamps CURSOR_VERSION into every hook it
+    # runs, including Claude's replayed config.
+    if [ "$HARNESS" = "claude" ] && [ -n "$CURSOR_VERSION" ]; then exit 0; fi
+    CLAXEDO_AGENT="$HARNESS"
+  elif [ "$HARNESS" != "$AGENT" ]; then
+    exit 0
+  fi
+fi
+
 if [ -n "$1" ]; then
   INPUT="$1"
 elif [ -t 0 ]; then

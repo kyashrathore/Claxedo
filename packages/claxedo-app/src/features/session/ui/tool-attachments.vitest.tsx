@@ -108,6 +108,7 @@ describe("a tool row shows the images its call produced", () => {
     const chip = view.container.querySelector('[data-slot="tool-image-unavailable"]')
     expect(chip?.textContent).toContain("huge.png")
     expect(chip?.textContent).toContain("96 KB")
+    expect(chip?.querySelector("use")?.getAttribute("href")).toContain("-photo-")
     expect(view.container.querySelector('[data-slot="tool-image-thumbnail"]')).toBeNull()
   })
 

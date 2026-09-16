@@ -435,7 +435,7 @@ describe("tool groups", () => {
   test("every registered group's inventory is the names its registration declares", () => {
     expect(inventory.map((group) => group.id)).toEqual(CLAXEDO_MCP_TOOL_GROUP_IDS)
     expect(inventory.every((group) => group.tools.length > 0)).toBe(true)
-    expect(toolsOf("tasks")).toEqual(["task_create", "task_get", "task_list", "task_start"])
+    expect(toolsOf("tasks")).toEqual(["task_create", "task_edit", "task_get", "task_list", "task_start"])
   })
 
   test("a mount serving a subset lists and admits exactly that subset's tools", async () => {

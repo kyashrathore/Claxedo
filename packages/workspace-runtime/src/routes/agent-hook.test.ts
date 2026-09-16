@@ -44,6 +44,91 @@ test("raw provider hooks keep background waits busy and deduplicate only accepte
   }
 })
 
+test("a pending ask survives unrelated tool completions and retires with its own", async () => {
+  const app = AgentHookRoutes()
+  const terminalId = "pty_raw_pending_ask"
+  const events: unknown[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+  })
+  const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tabId: "tab_raw_pending_ask", terminalId, provider: "cursor-agent", providerEvent: JSON.stringify(providerEvent) }),
+  })
+  const status = async () => (await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()).session
+  try {
+    // Cursor's session log, 2026-09-15: two shell asks, then Claude-compat
+    // postToolUse for an earlier Read and a parallel Grep, before any approval.
+    await post({ hook_event_name: "beforeSubmitPrompt", prompt: "add task_edit" })
+    expect((await post({ hook_event_name: "beforeShellExecution", command: "bun run test -- a.test.ts", cwd: "/repo" })).status).toBe(200)
+    expect((await post({ hook_event_name: "beforeShellExecution", command: "bun run test -- b.test.ts", cwd: "/repo" })).status).toBe(200)
+    expect((await status()).eventType).toBe("UserActionRequired")
+    expect(await (await post({ hook_event_name: "postToolUse", tool_name: "Read", tool_input: { path: "/repo/x.ts" }, tool_use_id: "t1" })).json()).toMatchObject({ held: true })
+    expect(await (await post({ hook_event_name: "postToolUse", tool_name: "Grep", tool_input: { pattern: "task_edit" }, tool_use_id: "t2" })).json()).toMatchObject({ held: true })
+    expect((await status()).eventType).toBe("UserActionRequired")
+    expect(events.map((event) => (event as { eventType: string }).eventType)).toEqual(["Busy", "UserActionRequired", "UserActionRequired"])
+    // Approving the second command first leaves the first still waiting.
+    expect(await (await post({ hook_event_name: "postToolUse", tool_name: "Shell", tool_input: { command: "bun run test -- b.test.ts", cwd: "/repo" }, tool_use_id: "t4" })).json()).toMatchObject({ held: true })
+    expect((await status()).eventType).toBe("UserActionRequired")
+    expect(await (await post({ hook_event_name: "postToolUse", tool_name: "Shell", tool_input: { command: "bun run test -- a.test.ts", cwd: "/repo" }, tool_use_id: "t3" })).json()).toMatchObject({ eventType: "Busy" })
+    expect((await status()).eventType).toBe("Busy")
+    expect((await status()).pendingUserActions).toBeUndefined()
+    // A turn boundary retires an ask that never paired (denied, or unpairable).
+    await post({ hook_event_name: "beforeShellExecution", command: "rm -rf build", cwd: "/repo" })
+    expect((await status()).eventType).toBe("UserActionRequired")
+    expect((await post({ hook_event_name: "stop" })).status).toBe(200)
+    expect((await status()).eventType).toBe("Idle")
+    await post({ hook_event_name: "postToolUse", tool_name: "Read", tool_input: { path: "/repo/y.ts" } })
+    expect((await status()).eventType).toBe("Busy")
+    expect(events.every((event) => !("userAction" in (event as object)) && !("toolCompletion" in (event as object)))).toBe(true)
+  } finally {
+    unsubscribe()
+  }
+})
+
+test("a denial or failure retires only its own ask, and tool hooks never rebind the terminal's session", async () => {
+  const app = AgentHookRoutes()
+  const terminalId = "pty_raw_deny_and_bind"
+  const events: unknown[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+  })
+  const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tabId: "tab_raw_deny_and_bind", terminalId, provider: "claude", providerEvent: JSON.stringify(providerEvent) }),
+  })
+  const session = async () => (await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()).session
+  try {
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "parent", prompt: "ship it" })
+    await post({ hook_event_name: "PermissionRequest", session_id: "parent", tool_name: "Bash", tool_input: { command: "rm -rf dist" } })
+    await post({ hook_event_name: "PermissionRequest", session_id: "parent", tool_name: "Edit", tool_input: { file_path: "/repo/a.ts", old_string: "x", new_string: "y" } })
+    expect((await session()).eventType).toBe("UserActionRequired")
+    // An unrelated tool erroring mid-turn is not the turn's failure and keeps both asks open.
+    expect(await (await post({ hook_event_name: "PostToolUseFailure", session_id: "parent", tool_name: "Grep", tool_input: { pattern: "x" }, error: "no matches" })).json()).toMatchObject({ held: true })
+    expect((await session()).eventType).toBe("UserActionRequired")
+    // A subagent's shell command reports the child's session; the binding stays with the parent.
+    expect(await (await post({ hook_event_name: "PostToolUse", session_id: "child-agent", agent_id: "child", tool_name: "Bash", tool_input: { command: "ls" } })).json()).toMatchObject({ held: true })
+    expect((await session()).sessionId).toBe("parent")
+    // Denying the shell command retires that ask; the edit is still waiting.
+    expect(await (await post({ hook_event_name: "PermissionDenied", session_id: "parent", tool_name: "Bash", tool_input: { command: "rm -rf dist" }, reason: "user" })).json()).toMatchObject({ held: true })
+    expect((await session()).eventType).toBe("UserActionRequired")
+    const approved = await (await post({ hook_event_name: "PostToolUse", session_id: "parent", tool_name: "Edit", tool_input: { file_path: "/repo/a.ts", old_string: "x", new_string: "y" }, tool_use_id: "t2" })).json()
+    expect(approved).toMatchObject({ eventType: "Busy", sessionId: "parent" })
+    expect((await session()).eventType).toBe("Busy")
+    // With nothing pending a subagent's ask and completion publish, still under the parent's session.
+    expect(await (await post({ hook_event_name: "PermissionRequest", session_id: "child-agent", agent_id: "child", tool_name: "Bash", tool_input: { command: "ls" } })).json()).toMatchObject({ eventType: "UserActionRequired", sessionId: "parent" })
+    expect(await (await post({ hook_event_name: "PostToolUse", session_id: "child-agent", agent_id: "child", tool_name: "Bash", tool_input: { command: "ls" } })).json()).toMatchObject({ eventType: "Busy", sessionId: "parent" })
+    expect((await session()).sessionId).toBe("parent")
+    expect(events.map((event) => (event as { sessionId?: string }).sessionId)).toEqual(["parent", "parent", "parent", "parent", "parent", "parent"])
+    expect(events.every((event) => (event as { providerSessionId?: string }).providerSessionId === "parent")).toBe(true)
+    // The turn's own failure still ends it.
+    await post({ hook_event_name: "StopFailure", session_id: "parent" })
+    expect((await session()).eventType).toBe("Error")
+  } finally {
+    unsubscribe()
+  }
+})
+
 function privateSessionPolicy(owners: Record<string, string>): SessionAccessPolicy {
   const allowed = (actorId: string | undefined, sessionId: string | undefined) =>
     !!sessionId && owners[sessionId] === actorId

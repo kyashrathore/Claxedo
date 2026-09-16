@@ -302,6 +302,19 @@
   margin-top: 6px;
 }
 
+.ui-tool-image-unavailable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+
+  [data-slot="tool-image-size"] {
+    font-size: var(--font-size-compact);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-weak);
+  }
+}
+
 [data-component="compaction-part"] {
   width: 100%;
   display: flex;

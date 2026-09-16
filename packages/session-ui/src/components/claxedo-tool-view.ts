@@ -15,6 +15,7 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   task_list: "ui.claxedoTool.task_list",
   task_get: "ui.claxedoTool.task_get",
   task_create: "ui.claxedoTool.task_create",
+  task_edit: "ui.claxedoTool.task_edit",
   task_start: "ui.claxedoTool.task_start",
   session_create: "ui.claxedoTool.session_create",
   sessions_list: "ui.claxedoTool.sessions_list",
@@ -180,6 +181,19 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
           ...(parent ? [cardFact(i18n.t("ui.claxedoTool.fact.parent"), taskLink(parent))] : []),
           ...linkFact(i18n.t("ui.claxedoTool.fact.createdFrom"), session(nonEmptyString(from?.sessionId))),
         ],
+      }
+    }
+    case "task_edit": {
+      const task = asRecord(result?.task)
+      const link = task
+        ? taskLink(nonEmptyString(task.id), nonEmptyString(task.key), nonEmptyString(task.title))
+        : taskLink(nonEmptyString(args.task))
+      return {
+        ...base,
+        ...(link ? { link } : { subject: nonEmptyString(args.title) }),
+        ...(nonEmptyString(task?.status) ? { status: nonEmptyString(task?.status) } : {}),
+        ...(result?.replayed === true ? { note: i18n.t("ui.claxedoTool.note.replayed") } : {}),
+        facts: [],
       }
     }
     case "task_start": {

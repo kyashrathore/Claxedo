@@ -9,9 +9,10 @@ import { createTransport } from "@/platform/runtime/transport"
 import { terminalPtyApiPath } from "../../../features/terminal/core/terminal-connection"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { usePermission } from "@/features/session/providers/permission"
 import { useClaxedoState } from "./provider"
 import type { ClaxedoStateApi } from "./provider"
-import { contentScopeDir, type ContentMeta } from "./types"
+import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 import { terminalAgentStatusFromEventType } from "@/features/terminal/core/terminal-agent-status"
 import { readField, readString } from "@/lib/record"
@@ -25,6 +26,35 @@ export function sessionStatusForAgentLifecycle(
   return input.eventType === "Busy" || input.eventType === "UserActionRequired"
     ? { type: "busy" as const }
     : { type: "idle" as const }
+}
+
+type LifecycleSounds = {
+  agentEnabled: () => boolean
+  agent: () => string
+  permissionsEnabled: () => boolean
+  permissions: () => string
+}
+
+/**
+ * Which sound a terminal lifecycle frame earns. A focused terminal never
+ * plays: the user is already looking at it. Asks arriving while an earlier
+ * one is still open stay silent, so Cursor's "Approval 1 of 2" is one sound.
+ */
+export function terminalLifecycleSound(input: {
+  eventType: AgentLifecycleEvent["eventType"]
+  outcome?: AgentLifecycleEvent["outcome"]
+  previousStatus: TerminalAgentStatus
+  focused: boolean
+  sounds: LifecycleSounds
+}) {
+  if (input.focused) return undefined
+  if (input.eventType === "Idle" && input.outcome !== "cancelled" && input.sounds.agentEnabled()) {
+    return input.sounds.agent()
+  }
+  if (input.eventType === "UserActionRequired" && input.previousStatus !== "permission" && input.sounds.permissionsEnabled()) {
+    return input.sounds.permissions()
+  }
+  return undefined
 }
 
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : ""
@@ -183,6 +213,7 @@ function useAgentLifecycleListener() {
 
       const terminalStatus = terminalAgentStatusFromEventType(eventType)
       if (!terminalStatus) return
+      const previousStatus = state.terminal.agentStatus(actualTerminalId)
 
       batch(() => {
         state.terminal.setAgentStatus(actualTerminalId, terminalStatus)
@@ -227,13 +258,14 @@ function useAgentLifecycleListener() {
         }
 
         const paneId = paneFor(state, content.id)
-        const isActiveTab =
-          !!paneId && state.wb.state.focusedPaneId === paneId
-
-        if (eventType === "Idle" && event.outcome !== "cancelled" && !isActiveTab && settings.sounds.agentEnabled()) {
-          void playSoundById(settings.sounds.agent())
-          return
-        }
+        const sound = terminalLifecycleSound({
+          eventType,
+          outcome: event.outcome,
+          previousStatus,
+          focused: !!paneId && state.wb.state.focusedPaneId === paneId,
+          sounds: settings.sounds,
+        })
+        if (sound) void playSoundById(sound)
       })
     })
 
@@ -247,12 +279,25 @@ function useSessionStatusListener() {
   const globalSDK = useGlobalSDK()
   const state = useClaxedoState()
   const settings = useSettings()
+  const permission = usePermission()
 
   createEffect(() => {
     const unsub = globalSDK.event.listen((e) => {
-      // SDK event details are opaque; this listener reads two frames out of them.
       const type = readString(e.details, "type")
       const sessionID = readString(readField(e.details, "properties"), "sessionID")
+
+      if (e.details?.type === "permission.asked") {
+        if (permission.autoResponds(e.details.properties, e.name)) return
+        const result = findSessionContent(state, e.details.properties.sessionID)
+        if (!result) return
+
+        const { paneId } = result
+        const isActive = !!paneId && state.wb.state.focusedPaneId === paneId
+
+        if (!isActive && settings.sounds.permissionsEnabled()) {
+          void playSoundById(settings.sounds.permissions())
+        }
+      }
 
       if (type === "session.idle" && sessionID) {
         const result = findSessionContent(state, sessionID)

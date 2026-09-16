@@ -133,7 +133,19 @@ function tasksService(input: Partial<ServiceState> = {}) {
     }
     if (method === "GET" && route === "/presets/pst_1") return Response.json({ preset: PRESET })
     if (method === "POST" && route === "/commands") {
-      return Response.json({ result: { type: "task.create", task: { ...TASK, createdFrom: body?.command?.input?.createdFrom ?? null }, parent: null }, replayed: false })
+      const type = body?.command?.type === "task.edit" ? "task.edit" : "task.create"
+      const input = body?.command?.input ?? {}
+      const task =
+        type === "task.edit"
+          ? {
+              ...TASK,
+              title: input.title ?? TASK.title,
+              description: input.description ?? TASK.description,
+              revision: (input.revision ?? TASK.revision) + 1,
+              workspaceId: input.workspaceId ?? TASK.workspaceId,
+            }
+          : { ...TASK, createdFrom: input.createdFrom ?? null }
+      return Response.json({ result: { type, task, parent: null }, replayed: false })
     }
     if (method === "POST" && route === "/tasks/tsk_1/start-preview") return Response.json({ preview: state.preview })
     if (method === "POST" && route === "/tasks/tsk_1/sessions") {
@@ -345,6 +357,71 @@ describe("task_get", () => {
 
     expect(await call(client, "task_get", { task: "tsk_1" })).toEqual({
       text: "The Tasks service could not be reached from this session: fetch failed.",
+      isError: true,
+    })
+  })
+})
+
+describe("task_edit", () => {
+  test("reads the task, then sends task.edit with the merged title and description", async () => {
+    const service = tasksService()
+    const { url, audits } = await listen({ service })
+    const client = await connect(url)
+
+    const answer = await json(client, "task_edit", {
+      task: "tsk_1",
+      title: "Ship the store tonight",
+      clientRequestId: "req_edit",
+    })
+
+    expect(service.calls).toEqual([
+      { method: "GET", path: "/api/claxedo/tasks/tasks/tsk_1" },
+      {
+        method: "POST",
+        path: "/api/claxedo/tasks/commands",
+        body: {
+          clientRequestId: "req_edit",
+          command: {
+            type: "task.edit",
+            input: {
+              taskId: "tsk_1",
+              revision: 3,
+              title: "Ship the store tonight",
+              description: "the whole body",
+              workspaceId: null,
+            },
+          },
+        },
+      },
+    ])
+    expect(answer.task).toEqual({
+      id: "tsk_1",
+      key: "7",
+      title: "Ship the store tonight",
+      description: "the whole body",
+      status: "todo",
+      revision: 4,
+      parent: null,
+      project: "prj_1",
+    })
+    expect(audits).toEqual([{ tool: "task_edit", actor: "runtime:rt_1", client: "runtime:rt_1", workspaceId: "ws_local", callerSessionId: "ses_caller" }])
+  })
+
+  test("refuses when neither title nor description is named", async () => {
+    const { url } = await listen({ service: tasksService() })
+    expect(await call(await connect(url), "task_edit", { task: "tsk_1" })).toEqual({
+      text: "Name a new title, a new description, or both.",
+      isError: true,
+    })
+  })
+
+  test("passes a stale revision back in the service's own words", async () => {
+    const service = tasksService({
+      answers: { "POST /commands": { status: 409, body: { error: { code: "stale_revision", message: "Task tsk_1 moved to revision 4" } } } },
+    })
+    const { url } = await listen({ service })
+    expect(await call(await connect(url), "task_edit", { task: "tsk_1", title: "Later", revision: 1 })).toEqual({
+      text: "Task tsk_1 moved to revision 4",
       isError: true,
     })
   })
@@ -641,12 +718,12 @@ describe("the Tasks grant", () => {
   }
 
   test("lists every tool the granted operations cover", async () => {
-    expect(await listed({ service: tasksService() })).toEqual(["task_create", "task_get", "task_list", "task_start"])
+    expect(await listed({ service: tasksService() })).toEqual(["task_create", "task_edit", "task_get", "task_list", "task_start"])
   })
 
   test("omits the tool whose operation the grant lacks", async () => {
     expect(await listed({ service: tasksService(), operations: ["read"] })).toEqual(["task_get", "task_list"])
-    expect(await listed({ service: tasksService(), operations: ["read", "create"] })).toEqual(["task_create", "task_get", "task_list"])
+    expect(await listed({ service: tasksService(), operations: ["read", "create"] })).toEqual(["task_create", "task_edit", "task_get", "task_list"])
     expect(await listed({ service: tasksService(), operations: ["start"] })).toEqual(["task_start"])
   })
 

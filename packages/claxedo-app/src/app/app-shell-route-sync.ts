@@ -79,16 +79,13 @@ export function useAppShellRouteSync(input: {
     on(
       input.activeSurface,
       (surface) => {
-        if (
-          input.params.sessionId ||
-          input.params.id ||
-          input.shellRouteKind() === "session" ||
-          input.shellRouteKind() === "workspace"
-        ) return
         const shellRoute = parseShellRoute(input.pathname())
         const target = focusedSurfaceRouteTarget({
           route: {
             ...input.params,
+            // The session spine declares `:sessionId`; only the legacy
+            // `/:dir/session/:id` spine still yields `id`.
+            id: input.params.sessionId ?? input.params.id,
             marketplace: input.shellRouteKind() === "marketplace",
             tasks: input.shellRouteKind() === "tasks",
             // Read from the URL rather than from a router param: the nested

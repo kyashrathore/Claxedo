@@ -45,6 +45,15 @@ inline code. Autolinks, backslash hard breaks, alternate list markers,
 underscore emphasis, and non-canonical tables are lossless Markdown but
 normalize under the pinned serializer, so they also open in source mode.
 
+A record the app owns rather than a file — a task description — asks the
+detector for `normalizing` fidelity. That skips the byte comparison and gates
+only the constructs the parser drops or misreads in a browser: reference
+links, HTML, footnotes, and merge-conflict markers. Math, Liquid, brace
+expressions, MDX module lines, and setext headings survive as literal text or
+their ATX form and open rich. The Tasks field additionally rewrites HTML-looking
+spans outside code as entity text before the gate (`literalizeHtml` in
+`detector.ts`), which is the spelling the serializer writes for any `<` it keeps.
+
 ## Byte envelope and normalization
 
 The byte envelope consists of an optional UTF-8 BOM, optional frontmatter, the

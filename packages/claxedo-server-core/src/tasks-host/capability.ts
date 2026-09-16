@@ -64,10 +64,11 @@ export type TasksRequestCost = Readonly<{
 /**
  * The cost of a request, or undefined for a route no capability may reach.
  *
- * Reads are reads; creating a task is `create`; both halves of Start are
- * `start`. Every other command — editing, reparenting, archiving, anything a
- * preset owns — is refused here rather than given an operation, so widening
- * the grant is a change to this table and not to a caller.
+ * Reads are reads; creating or editing a task's title and description is
+ * `create`; both halves of Start are `start`. Every other command —
+ * reparenting, archiving, anything a preset owns — is refused here rather
+ * than given an operation, so widening the grant is a change to this table
+ * and not to a caller.
  */
 export async function tasksRequestCost(request: Request): Promise<TasksRequestCost | undefined> {
   const url = new URL(request.url)
@@ -83,7 +84,8 @@ export async function tasksRequestCost(request: Request): Promise<TasksRequestCo
   const body = parseJsonRecord(await request.clone().text())
   if (start) return { operation: "start", ...(body?.startedFrom === undefined ? {} : { startedFrom: body.startedFrom }) }
   const command = asRecord(body?.command)
-  if (stringField(command, "type") !== "task.create") return undefined
+  const type = stringField(command, "type")
+  if (type !== "task.create" && type !== "task.edit") return undefined
   const input = asRecord(command?.input)
   const projectId = stringField(input, "projectId")
   const workspaceId = stringField(input, "workspaceId")
@@ -91,6 +93,6 @@ export async function tasksRequestCost(request: Request): Promise<TasksRequestCo
     operation: "create",
     ...(projectId ? { projectId } : {}),
     ...(workspaceId ? { workspaceId } : {}),
-    ...(input?.createdFrom === undefined ? {} : { createdFrom: input.createdFrom }),
+    ...(type === "task.create" && input?.createdFrom !== undefined ? { createdFrom: input.createdFrom } : {}),
   }
 }

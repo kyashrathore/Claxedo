@@ -50,6 +50,7 @@ import {
 import {
   collectRouteResolutionDirectories,
   directSessionResolutionDependencies,
+  focusMovedOffDirectSessionRoute,
 } from "./route-bridge-reactivity"
 import { routeSessionHarness } from "./route-session-harness"
 import {
@@ -720,10 +721,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
             .join("|"),
         ] as const
       }),
-      ([sessionId]) => {
+      ([sessionId, surfaceSessionId], previous) => {
         if (!sessionId) return
         if (suppressedByFastSessionSwitch(sessionId)) return
         if (isRouteIntentClosed({ sessionId })) return
+        if (focusMovedOffDirectSessionRoute([sessionId, surfaceSessionId], previous)) return
         const surface = activeSurface()
 
         const inventory = sessionInventory()

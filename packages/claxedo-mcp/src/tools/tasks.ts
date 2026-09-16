@@ -1,6 +1,7 @@
 /**
  * Tasks as the agent inside a session uses them: read the project's tasks,
- * write one down, and start a task's session on an execution preset.
+ * write one down, edit its title or description, and start a task's session
+ * on an execution preset.
  *
  * The mount decides whether these exist at all. It hands the client a fetch
  * onto the control plane's Tasks routes and the operations that grant carries,
@@ -121,6 +122,68 @@ export function registerTaskTools(registry: ToolRegistrar) {
       const { task } = response.result
       return toolJson({
         task: { id: task.id, key: taskNumber(task), title: task.title, status: task.status, parent: task.parentTaskId, project: task.projectId, createdFrom: task.createdFrom },
+        replayed: response.replayed,
+      })
+    }),
+  )
+
+  registry.tool(
+    "task_edit",
+    {
+      description:
+        "Change a task's title and/or description. Fields left out stay as they are. The edit keeps the task's preferred workspace; it does not move the task between projects or change its status.",
+      inputSchema: {
+        ...TASK_ARG,
+        title: z.string().trim().min(1).optional().describe("New title. Leave out to keep the current one."),
+        description: z.string().optional().describe("New description as Markdown. Leave out to keep the current one."),
+        revision: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Revision last read for this task. Defaults to the service's current revision."),
+        clientRequestId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Retrying with the same id returns the edit already applied instead of editing again."),
+      },
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", operation: "create" }),
+    },
+    async (args, ctx) => tasksRefusals(async () => {
+      if (args.title === undefined && args.description === undefined) {
+        throw new RefusalSentence("Name a new title, a new description, or both.")
+      }
+      const client = tasksClient(ctx)
+      const detail = await client.getTask(args.task)
+      const response = await client.command({
+        clientRequestId: args.clientRequestId ?? crypto.randomUUID(),
+        command: {
+          type: "task.edit",
+          input: {
+            taskId: detail.task.id,
+            revision: args.revision ?? detail.task.revision,
+            title: args.title ?? detail.task.title,
+            description: args.description ?? detail.task.description,
+            workspaceId: detail.task.workspaceId,
+          },
+        },
+      })
+      if (response.result.type !== "task.edit") {
+        return mcpToolRefusal(`The Tasks service answered a task.edit with a ${response.result.type} result.`)
+      }
+      const { task } = response.result
+      return toolJson({
+        task: {
+          id: task.id,
+          key: taskNumber(task),
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          revision: task.revision,
+          parent: task.parentTaskId,
+          project: task.projectId,
+        },
         replayed: response.replayed,
       })
     }),

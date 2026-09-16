@@ -4,6 +4,7 @@
 // a workspace authority, or cloud provisioning, and its own closure test
 // asserts so.
 import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
+import { createLocalAgentPluginsComposition } from "@claxedo/local-server/agent-plugins/local-composition"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"
@@ -17,18 +18,24 @@ import {
   type ClaxedoDaemonDiscovery,
 } from "../src/main/server-daemon-discovery"
 
-const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
-  .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition())
-void agentPlugins.ready.catch((error) => {
-  console.error("Agent Plugins startup reconciliation failed", error)
-})
-
 // The V8 compile cache is already enabled and already seeded by the time this
 // module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
 // bundle's entry and reaches this file through a dynamic import. It cannot be
 // done from here — a graph is compiled before its own bodies run, so a cache
 // switched on in this body would arrive 9.11 MB too late.
+//
+// Before any composition is created: the compile-cache build evaluates this
+// chunk with the startup variables absent and relies on this throw to stop it.
+// Creating the Agent Plugins composition opens `claxedo.db` and applies
+// migrations, so anything ahead of this line runs against the developer's real
+// data directory during `predev` and `prebuild`.
 const startup = claxedoServerStartup(process.env)
+
+const agentPlugins = createLocalAgentPluginsComposition()
+void agentPlugins.ready.catch((error) => {
+  console.error("Agent Plugins startup reconciliation failed", error)
+})
+
 const parent = diagnosticsParent()
 const binding = diagnosticsBinding(process.env, Boolean(parent))
 const transport = binding && parent

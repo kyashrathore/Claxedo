@@ -5,6 +5,7 @@ import {
   MARKDOWN_MAX_BYTES,
   RICH_MARKDOWN_MAX_BYTES,
   detectMarkdown,
+  literalizeHtml,
   serializeMarkdownDocument,
   type RichMarkdown,
 } from "./detector"
@@ -34,11 +35,38 @@ describe("Markdown fidelity", () => {
     expect(detectMarkdown("* item").status).toBe("source")
   })
 
-  // Relaxing the round-trip check is not relaxing the contract: what the
-  // editor cannot represent at all is still refused in both modes.
-  test("syntax outside the contract stays in source mode however forgiving the caller is", () => {
-    for (const markdown of ["<div>html</div>", "text[^1]", "$$x$$", "[ref]: https://example.com"]) {
+  // In a browser the parser reads `<project>` as an element and drops it with
+  // its text, so an unknown tag is as lossy as a dropped link definition.
+  test("syntax the parser drops or misreads stays in source mode however forgiving the caller is", () => {
+    for (const markdown of [
+      "Open <project> now",
+      "<div>html</div>",
+      "keep <!-- x --> this",
+      "text[^1]",
+      "[ref]: https://example.com",
+      "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> b",
+    ]) {
       expect(detectMarkdown(markdown, "normalizing").status, markdown).toBe("source")
+      expect(detectMarkdown(markdown).status, markdown).toBe("source")
+    }
+  })
+
+  test("syntax the parser keeps as literal text opens rich for a normalizing record and source for a file", () => {
+    for (const markdown of [
+      "$$x$$",
+      "costs $5, budget $10",
+      "call { id, worktree }",
+      "Hello {{ name }}",
+      "import X from 'y'",
+      "Title\n=====",
+    ]) {
+      const result = detectMarkdown(markdown, "normalizing")
+      expect(result.status, markdown).toBe("rich")
+      if (result.status !== "rich") continue
+      const serialized = serializeMarkdownDocument(result.document, result.envelope)
+      expect(serialized.status, markdown).toBe("serialized")
+      if (serialized.status !== "serialized") continue
+      expect(serialized.markdown, markdown).toBe(markdown === "Title\n=====" ? "# Title" : markdown)
       expect(detectMarkdown(markdown).status, markdown).toBe("source")
     }
   })
@@ -245,3 +273,53 @@ function serializedMarkdown(document: JSONContent, envelope: RichMarkdown["envel
   expect(result.status).toBe("serialized")
   return result.status === "serialized" ? result.markdown : ""
 }
+
+describe("literalizeHtml", () => {
+  test("rewrites tags, comments and generics outside code as entity text", () => {
+    expect(literalizeHtml("Button reads **Open <project> →** for <owner/repo>")).toBe(
+      "Button reads **Open &lt;project&gt; →** for &lt;owner/repo&gt;",
+    )
+    expect(literalizeHtml("returns Map<K, V> or <b>bold</b> <!-- note -->")).toBe(
+      "returns Map&lt;K, V&gt; or &lt;b&gt;bold&lt;/b&gt; &lt;!-- note --&gt;",
+    )
+  })
+
+  test("leaves code spans, fences, autolinks and bare comparisons alone", () => {
+    const markdown = [
+      "into `<dataDir>/projects/<slug>` and a < b",
+      "",
+      "```html",
+      "<div>kept</div>",
+      "```",
+      "",
+      "see <https://example.com> and <me@example.com>",
+    ].join("\n")
+
+    expect(literalizeHtml(markdown)).toBe(markdown)
+  })
+
+  test("is idempotent", () => {
+    const once = literalizeHtml("Open <project> and `<x>`")
+    expect(literalizeHtml(once)).toBe(once)
+  })
+
+  // The whole point: text the detector would send to a textarea opens rich,
+  // and what the editor writes back is the same text, so the record settles
+  // after one edit.
+  test("the rewritten text opens rich and serializes to itself", () => {
+    const markdown = literalizeHtml(
+      "# Open <project> now\n\n- **Creates one <provider> workspace for <owner/repo>**\n\n| id | Screen |\n| --- | --- |\n| D1 | Picks `<name>` and <owner/repo> |",
+    )
+    const result = detectMarkdown(markdown, "normalizing")
+
+    expect(result.status).toBe("rich")
+    if (result.status !== "rich") return
+    const serialized = serializeMarkdownDocument(result.document, result.envelope)
+    expect(serialized.status).toBe("serialized")
+    if (serialized.status !== "serialized") return
+    expect(serialized.markdown).toContain("# Open &lt;project&gt; now")
+    expect(serialized.markdown).toContain("**Creates one &lt;provider&gt; workspace for &lt;owner/repo&gt;**")
+    expect(serialized.markdown).toContain("Picks `<name>` and &lt;owner/repo&gt;")
+    expect(literalizeHtml(serialized.markdown)).toBe(serialized.markdown)
+  })
+})

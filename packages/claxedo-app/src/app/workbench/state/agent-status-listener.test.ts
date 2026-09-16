@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
-import { agentLifecycleTitle, reconcilePtyExit, useReconnectReconciliation } from "./agent-status-listener"
+import { agentLifecycleTitle, reconcilePtyExit, terminalLifecycleSound, useReconnectReconciliation } from "./agent-status-listener"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -65,6 +65,31 @@ async function settleEffects() {
   await Promise.resolve()
   await Promise.resolve()
 }
+
+describe("terminalLifecycleSound", () => {
+  const sounds = (enabled: { agent?: boolean; permissions?: boolean } = {}) => ({
+    agentEnabled: () => enabled.agent ?? true,
+    agent: () => "agent-sound",
+    permissionsEnabled: () => enabled.permissions ?? true,
+    permissions: () => "permission-sound",
+  })
+
+  test("an unfocused terminal that starts waiting on the user plays the permissions sound once", () => {
+    expect(terminalLifecycleSound({ eventType: "UserActionRequired", previousStatus: "working", focused: false, sounds: sounds() })).toBe("permission-sound")
+    expect(terminalLifecycleSound({ eventType: "UserActionRequired", previousStatus: "idle", focused: false, sounds: sounds() })).toBe("permission-sound")
+    expect(terminalLifecycleSound({ eventType: "UserActionRequired", previousStatus: "permission", focused: false, sounds: sounds() })).toBeUndefined()
+    expect(terminalLifecycleSound({ eventType: "UserActionRequired", previousStatus: "working", focused: true, sounds: sounds() })).toBeUndefined()
+    expect(terminalLifecycleSound({ eventType: "UserActionRequired", previousStatus: "working", focused: false, sounds: sounds({ permissions: false }) })).toBeUndefined()
+  })
+
+  test("completion keeps the agent sound and cancellation, busy and error frames stay silent", () => {
+    expect(terminalLifecycleSound({ eventType: "Idle", previousStatus: "working", focused: false, sounds: sounds() })).toBe("agent-sound")
+    expect(terminalLifecycleSound({ eventType: "Idle", outcome: "cancelled", previousStatus: "working", focused: false, sounds: sounds() })).toBeUndefined()
+    expect(terminalLifecycleSound({ eventType: "Idle", previousStatus: "working", focused: false, sounds: sounds({ agent: false }) })).toBeUndefined()
+    expect(terminalLifecycleSound({ eventType: "Busy", previousStatus: "permission", focused: false, sounds: sounds() })).toBeUndefined()
+    expect(terminalLifecycleSound({ eventType: "Error", previousStatus: "working", focused: false, sounds: sounds() })).toBeUndefined()
+  })
+})
 
 describe("reconcilePtyExit", () => {
   test("externally exited working terminal drops to idle AND clears seen so the done dot disappears", () => {

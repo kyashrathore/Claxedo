@@ -614,7 +614,7 @@ describe("hosted Agent Plugins routes", () => {
       })
     const tasks = builtIn.groups.find((group: { id: string }) => group.id === "tasks")
     expect(tasks).toMatchObject({ pluginInstanceId: "claxedo:tasks" })
-    expect(tasks.tools).toEqual(["task_list", "task_get", "task_create", "task_start"])
+    expect(tasks.tools).toEqual(["task_list", "task_get", "task_create", "task_edit", "task_start"])
   })
 
   test("a group switch writes through the ordinary activation route, with nothing to acquire", async () => {

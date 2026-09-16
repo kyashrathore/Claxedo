@@ -56,6 +56,40 @@ describe("provider lifecycle normalization", () => {
     expect(providerLifecycle({ hook_event_name: stop })?.eventType).toBe("Idle")
   })
 
+  test("pairs a tool's ask with its completion by the input both sides repeat", () => {
+    const bash = { command: "bun test", description: "run tests" }
+    expect(providerLifecycle({ hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: bash })).toMatchObject({
+      eventType: "UserActionRequired", userAction: { toolKey: "bun test" },
+    })
+    expect(providerLifecycle({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: bash, tool_use_id: "t1" })).toMatchObject({
+      eventType: "Busy", toolCompletion: { toolKey: "bun test" },
+    })
+    const edit = { file_path: "/repo/a.ts", old_string: "x", new_string: "y" }
+    expect(providerLifecycle({ hook_event_name: "PermissionRequest", tool_name: "Edit", tool_input: edit })?.userAction).toEqual({ toolKey: JSON.stringify(edit) })
+    expect(providerLifecycle({ hook_event_name: "beforeShellExecution", command: "ls", cwd: "/repo" })?.userAction).toEqual({ toolKey: "ls" })
+    expect(providerLifecycle({ hook_event_name: "postToolUse", tool_name: "Shell", tool_input: { command: "ls", cwd: "/repo" } })?.toolCompletion).toEqual({ toolKey: "ls" })
+    expect(providerLifecycle({ hook_event_name: "beforeMCPExecution", tool_name: "search", tool_input: "{\"q\":1}", command: "node server.js" })?.userAction).toEqual({ toolKey: null })
+    expect(providerLifecycle({ hook_event_name: "Notification", message: "Claude needs your permission" })?.userAction).toEqual({ toolKey: null })
+    const submit = providerLifecycle({ hook_event_name: "UserPromptSubmit", prompt: "hi" })
+    expect(submit).not.toHaveProperty("userAction")
+    expect(submit).not.toHaveProperty("toolCompletion")
+  })
+
+  test("a failed or denied tool completes its call while only StopFailure ends the turn", () => {
+    const bash = { command: "bun test" }
+    expect(providerLifecycle({ hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_input: bash, error: "exit 1" })).toMatchObject({
+      eventType: "Busy", toolCompletion: { toolKey: "bun test" },
+    })
+    expect(providerLifecycle({ hook_event_name: "PermissionDenied", tool_name: "Bash", tool_input: bash, tool_use_id: "t1", reason: "user" })).toMatchObject({
+      eventType: "Busy", toolCompletion: { toolKey: "bun test" },
+    })
+    expect(providerLifecycle({ hook_event_name: "postToolUseFailure", tool_name: "Shell", tool_input: { command: "ls", cwd: "/repo" }, failure_type: "permission_denied" })).toMatchObject({
+      eventType: "Busy", toolCompletion: { toolKey: "ls" },
+    })
+    expect(providerLifecycle({ hook_event_name: "StopFailure", session_id: "s" })).toMatchObject({ eventType: "Error" })
+    expect(providerLifecycle({ hook_event_name: "StopFailure", session_id: "s" })).not.toHaveProperty("toolCompletion")
+  })
+
   test("does not invent an event for unrelated provider payloads", () => {
     expect(providerLifecycle({ hook_event_name: "toString" })).toBeUndefined()
     expect(providerLifecycle({})).toBeUndefined()

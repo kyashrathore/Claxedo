@@ -7,6 +7,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
+import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
 // Boot-level coverage for the desktop server composition using the real bundle
@@ -66,6 +67,66 @@ test("requireLocalServerBundle names the artifact and the command that builds it
     fs.rmSync(empty, { recursive: true, force: true })
   }
 })
+
+test("the deferred server chunk refuses an empty startup environment before opening a database", async () => {
+  // The compile-cache build evaluates this chunk with the startup variables
+  // absent and treats the refusal as proof that nothing ran. That proof is
+  // only as good as the ORDER inside the chunk: a composition created before
+  // `claxedoServerStartup` opens `claxedo.db` in whatever data directory the
+  // developer's shell names and applies migrations to it during `predev`.
+  if (!fs.existsSync(SERVER_BUNDLE)) {
+    console.warn("[skip] claxedo-server bundle missing — run `bun run predev` first")
+    return
+  }
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-refusal-test-"))
+  const dataDir = path.join(root, "data")
+  fs.mkdirSync(dataDir)
+  const stub = path.join(root, "evaluate.mjs")
+  fs.writeFileSync(
+    stub,
+    `import { pathToFileURL } from "node:url"
+try {
+  await import(pathToFileURL(process.argv[2]).href)
+  console.log("EVALUATED")
+} catch (error) {
+  console.log("REFUSED " + (error instanceof Error ? error.message : String(error)))
+}
+process.exit(0)
+`,
+  )
+  const env = Object.fromEntries(
+    Object.entries(Bun.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
+  for (const key of [
+    "CLAXEDO_CHILD_PORT",
+    "CLAXEDO_DAEMON_PROTOCOL",
+    "CLAXEDO_DAEMON_TOKEN",
+    "CLAXEDO_DAEMON_GENERATION",
+    "CLAXEDO_DAEMON_DISCOVERY_PATH",
+  ]) {
+    delete env[key]
+  }
+  try {
+    const child = Bun.spawn({
+      cmd: [electronExecutable(), stub, resolveDeferredServerEntry(SERVER_BUNDLE)],
+      env: { ...env, HOME: root, CLAXEDO_DATA_DIR: dataDir, ELECTRON_RUN_AS_NODE: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(code).toBe(0)
+    expect(stdout).toContain("REFUSED Claxedo server utility process is missing its startup configuration")
+    expect(stderr).not.toContain("opening claxedo database")
+    expect(fs.readdirSync(dataDir)).toEqual([])
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}, 30_000)
 
 test("bundled claxedo-server boots and serves Claxedo-owned routes", async () => {
   if (!fs.existsSync(SERVER_BUNDLE)) {

@@ -168,6 +168,7 @@ export const dict: Record<string, string> = {
   "ui.claxedoTool.task_list": "List tasks",
   "ui.claxedoTool.task_get": "Read task",
   "ui.claxedoTool.task_create": "Create task",
+  "ui.claxedoTool.task_edit": "Edit task",
   "ui.claxedoTool.task_start": "Start task",
   "ui.claxedoTool.session_create": "Create session",
   "ui.claxedoTool.sessions_list": "List sessions",

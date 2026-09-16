@@ -18,7 +18,7 @@ touch "$LOG_PATH" 2>/dev/null || true
 LAST_STARTED=$(tail -n 50 "$LOG_PATH" 2>/dev/null | grep -n '"task_started"' | tail -1 | cut -d: -f1)
 LAST_COMPLETE=$(tail -n 50 "$LOG_PATH" 2>/dev/null | grep -n '"task_complete"' | tail -1 | cut -d: -f1)
 if [ -n "$LAST_STARTED" ] && { [ -z "$LAST_COMPLETE" ] || [ "$LAST_STARTED" -gt "$LAST_COMPLETE" ]; }; then
-  echo '{"hook_event_name":"Busy"}' | "{{CODEX_NOTIFY_PATH}}" 2>/dev/null || true
+  echo '{"hook_event_name":"Busy"}' | "{{CODEX_NOTIFY_PATH}}" --harness=codex 2>/dev/null || true
 fi
 
 tail -n0 -F "$LOG_PATH" 2>/dev/null | while IFS= read -r line; do
@@ -29,7 +29,7 @@ tail -n0 -F "$LOG_PATH" 2>/dev/null | while IFS= read -r line; do
         continue
       fi
       [ -n "$turn" ] && echo "$turn" > "$TURN_FILE"
-      echo '{"hook_event_name":"Busy"}' | "{{CODEX_NOTIFY_PATH}}" 2>/dev/null || true
+      echo '{"hook_event_name":"Busy"}' | "{{CODEX_NOTIFY_PATH}}" --harness=codex 2>/dev/null || true
       ;;
   esac
 done

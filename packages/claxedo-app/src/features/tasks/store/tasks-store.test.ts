@@ -59,6 +59,16 @@ describe("tasks store drafts", () => {
     expect(store.editDraft(task()).title).toBe("Ship the importer")
   })
 
+  test("the task page's rail folds and unfolds as one setting for every task", () => {
+    const store = createTasksStore()
+
+    expect(store.state.railCollapsed).toBe(false)
+    store.toggleRail()
+    expect(store.state.railCollapsed).toBe(true)
+    store.toggleRail()
+    expect(store.state.railCollapsed).toBe(false)
+  })
+
   test("collections split the catalog by status without dropping archived rows from All", () => {
     const store = createTasksStore()
     const rows = [
