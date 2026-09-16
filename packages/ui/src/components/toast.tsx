@@ -55,13 +55,6 @@ function ToastTitle(props: ToastTitleProps & ComponentProps<"div">) {
   return <Kobalte.Title data-slot="toast-title" {...props} />
 }
 
-/**
- * Heading line, optionally led by a monochrome severity glyph.
- *
- * A border-colour hairline reads as decoration rather than meaning, and it
- * would be the only chroma on an otherwise neutral card; a monochrome glyph
- * beside the title carries the same signal in the surface's own ink.
- */
 function ToastTitleRow(props: { icon?: IconProps["name"]; children: JSX.Element }) {
   return (
     <div data-slot="toast-title-row">
@@ -89,7 +82,7 @@ function ToastCloseButton(props: ToastCloseButtonProps & ComponentProps<"button"
     <Kobalte.CloseButton
       data-slot="toast-close-button"
       as={IconButton}
-      icon="close"
+      icon="close-small"
       variant="ghost"
       aria-label={i18n.t("ui.common.dismiss")}
       {...props}

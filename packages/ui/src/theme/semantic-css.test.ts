@@ -26,6 +26,7 @@ const overlayFiles = [
   "../components/dropdown-menu.css",
   "../components/popover.css",
   "../components/select.css",
+  "../components/toast.css",
 ]
 
 /*
@@ -35,11 +36,10 @@ const overlayFiles = [
  *
  * v2 components: `--overlay-surface` falls back to a v1 token, so pointing a v2
  * surface at it would move every non-Codex theme off its v2 ramp.
- * toast/tooltip (v1): the app's chip is deliberately inverted for other themes;
- * only Codex opts out, and there is no semantic role for "inverted chip".
+ * tooltip (v1): the chip is deliberately inverted for other themes; only Codex
+ * opts out, and there is no semantic role for "inverted chip".
  */
 const bridgedFiles = [
-  "../components/toast.css",
   "../components/tooltip.css",
   "../v2/components/menu-v2.css",
   "../v2/components/select-v2.css",

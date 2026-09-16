@@ -706,41 +706,17 @@ html[data-theme="codex"] .ui-tooltip-v2 {
 }
 
 /*
- * Tooltips are NOT inverted in Codex: the shipped app defines
- * `--tooltip-background-color: var(--color-surface-elevated)` (gray-0, i.e.
- * white in light) with `--tooltip-text-color: var(--color-text)`. Its dark chip
- * is a separate "compact" variant we do not have. So tooltips follow the
- * overlay family with everything else that floats, and the inverted family is
- * left serving toasts alone.
+ * Codex tooltips are not inverted: the shipped app defines
+ * `--tooltip-background-color: var(--color-surface-elevated)` (gray-0, white
+ * in light) with `--tooltip-text-color: var(--color-text)`. Its dark chip is a
+ * separate "compact" variant we do not have, so the tooltip's float/invert
+ * roles are remapped onto the overlay family everything else that floats uses.
  */
 html[data-theme="codex"] .ui-tooltip {
   --surface-float-base: var(--overlay-surface);
   --text-invert-strong: var(--overlay-text);
   --text-invert-base: var(--overlay-text-muted);
   --border-weak-base: var(--overlay-border);
-}
-
-/* Toasts are the one inverted surface Codex keeps. */
-html[data-theme="codex"] .ui-toast {
-  --surface-float-base: var(--codex-surface-inverted);
-  --surface-float-base-hover: var(--codex-surface-inverted-hover);
-  --border-weak-base: var(--codex-border-inverted);
-  --text-invert-strong: var(--codex-text-inverted);
-  --text-invert-stronger: var(--codex-icon-inverted);
-  --text-invert-base: var(--codex-text-inverted-muted);
-  --text-invert-weak: var(--codex-text-inverted-muted);
-  --icon-base: var(--codex-icon-inverted-muted);
-  --icon-hover: var(--codex-icon-inverted);
-}
-
-html[data-theme="codex"] .ui-toast-v2 {
-  --v2-background-bg-layer-01: var(--codex-surface-inverted);
-  --v2-text-text-base: var(--codex-text-inverted);
-  --v2-text-text-muted: var(--codex-text-inverted-muted);
-  --v2-icon-icon-base: var(--codex-icon-inverted);
-  --v2-icon-icon-muted: var(--codex-icon-inverted-muted);
-  --v2-overlay-simple-overlay-hover: var(--codex-surface-inverted-hover);
-  border-color: var(--codex-border-inverted);
 }
 
 html[data-theme="codex"] [data-component="prompt-input"] {

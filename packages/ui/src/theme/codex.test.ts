@@ -89,49 +89,12 @@ describe("Codex theme", () => {
     expect(theme.light["background-base"]).toBe(theme.light["overlay-surface"])
   })
 
-  /*
-   * Codex's own tooltip is NOT inverted: the shipped app defines
-   * `--tooltip-background-color: var(--color-surface-elevated)` (gray-0, i.e.
-   * white in light) with `--tooltip-text-color: var(--color-text)`. Its dark
-   * chip is a separate "compact" variant we do not have. So tooltips follow the
-   * overlay family with everything else that floats, and the inverted family is
-   * left serving toasts alone — which is why it survives the rename to semantic
-   * roles: there is no semantic role for "inverted chip".
-   */
-  test("keeps light-mode floating surfaces light and toasts inverted", () => {
-    expect(theme.light["overlay-surface"]).toBe("#ffffff")
-    expect(theme.light).toMatchObject({
-      "codex-surface-inverted": "#1f1f1f",
-      "codex-surface-inverted-hover": "#343434",
-      "codex-border-inverted": "#383838",
-      "codex-text-inverted": "#f4f4f4",
-      "codex-text-inverted-muted": "#b8b8b8",
-      "codex-icon-inverted": "#d8d8d8",
-      "codex-icon-inverted-muted": "#9f9f9f",
-    })
-  })
-
   test("preserves the verified dark surfaces", () => {
     expect(theme.dark).toMatchObject({
       "border-base": "#303030",
       "border-weak-base": "#282828",
       "border-weaker-base": "#212121",
     })
-  })
-
-  /* Dark mode already had one coherent elevated family; splitting the roles
-     must not move it, so both resolve to the same verified values. */
-  test("leaves dark surfaces unsplit", () => {
-    expect(theme.dark).toMatchObject({
-      "codex-surface-inverted": "#212121",
-      "codex-surface-inverted-hover": "#303030",
-      "codex-border-inverted": "#414141",
-      "codex-text-inverted": "#f2f2f2",
-      "codex-text-inverted-muted": "#bdbdbd",
-      "codex-icon-inverted": "#dedede",
-      "codex-icon-inverted-muted": "#a3a3a3",
-    })
-    expect(theme.dark["codex-surface-inverted"]).toBe(theme.dark["overlay-surface"])
   })
 
   /*

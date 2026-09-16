@@ -1,15 +1,12 @@
 [data-component="toast-region"] {
   position: fixed;
-  bottom: 48px;
-  right: 32px;
+  bottom: 24px;
+  right: 24px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: min(400px, calc(100vw - 64px));
-  max-height: calc(100dvh - 96px);
-  width: 100%;
-  overflow: hidden;
+  width: min(360px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
   pointer-events: none;
 
   [data-slot="toast-list"] {
@@ -17,9 +14,11 @@
     flex-direction: column;
     gap: 8px;
     list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 100%;
+    /* Scrolling clips overflow, and the card's elevation paints outside its box
+       (a 0.5px stroke plus a 20px blur). Inset by that much so it survives. */
+    padding: 24px;
+    margin: -24px;
+    min-height: 0;
     overflow-y: auto;
     scrollbar-width: none;
 
@@ -33,29 +32,19 @@
   position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 20px;
-  padding: 16px 20px;
-  max-height: min(420px, calc(100dvh - 96px));
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  max-height: min(420px, calc(100dvh - 48px));
   overflow: hidden;
   pointer-events: auto;
   transition: all 150ms ease-out;
 
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-weak-base);
-  /* Theme-tracking, NOT `--surface-float-base`: that token is hardcoded #161616 in
-     every theme (see styles/theme.css), so the toast stayed a dark card on the
-     light themes while everything around it turned white. The `--text-invert-*`
-     roles it paired with flip meaning between schemes, which is why the copy went
-     from readable to near-invisible depending on the theme. */
-  background: var(--surface-raised-stronger-non-alpha);
-  color: var(--text-base);
-  box-shadow: var(--shadow-md);
-
-  [data-slot="toast-inner"] {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }
+  border-radius: var(--surface-overlay-radius, var(--radius-lg));
+  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
+  background-clip: padding-box;
+  background: var(--overlay-surface);
+  color: var(--overlay-text);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
 
   &[data-opened] {
     animation: toastPopIn 150ms ease-out;
@@ -78,25 +67,14 @@
     animation: toastSwipeOut 100ms ease-out forwards;
   }
 
-  /* No coloured edge for any severity. The card is a neutral floating surface
-     like every other one in the system; severity is carried by the heading
-     glyph. A green/red/blue hairline was the only chroma on an otherwise
-     monochrome surface, so it read as decoration rather than meaning — and it
-     is the one place the toast stopped looking like the rest of the app. */
-  &[data-variant="success"],
-  &[data-variant="error"],
-  &[data-variant="loading"] {
-    border-color: var(--border-weak-base);
-  }
-
   [data-slot="toast-icon"] {
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    height: var(--line-height-large);
 
     .ui-icon {
-      color: var(--icon-base);
+      color: var(--overlay-icon);
     }
   }
 
@@ -107,19 +85,13 @@
     gap: 2px;
     min-height: 0;
     min-width: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar {
-      display: none;
-    }
+    overflow: hidden;
   }
 
   [data-slot="toast-title-row"] {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
 
     [data-slot="toast-title-icon"] {
@@ -127,40 +99,41 @@
       display: flex;
 
       .ui-icon-svg {
-        color: var(--icon-base);
+        color: var(--overlay-icon);
       }
     }
   }
 
   [data-slot="toast-title"] {
-    color: var(--text-strong);
+    color: var(--overlay-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 
-    /* text-14-medium */
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-large); /* 142.857% */
+    line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
 
     margin: 0;
   }
 
   [data-slot="toast-description"] {
-    color: var(--text-weak);
+    color: var(--overlay-text-muted);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
     text-wrap-style: pretty;
     overflow-wrap: anywhere;
-    word-break: break-word;
 
-    /* text-14-regular */
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-regular);
-    line-height: var(--line-height-x-large); /* 171.429% */
+    line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
 
     margin: 0;
@@ -170,7 +143,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
-    margin-top: 8px;
+    margin-top: 6px;
   }
 
   [data-slot="toast-action"] {
@@ -184,7 +157,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 
-    color: var(--text-weak);
+    color: var(--overlay-text-muted);
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
@@ -196,24 +169,26 @@
     }
 
     &:first-child {
-      color: var(--text-strong);
+      color: var(--overlay-text);
     }
   }
 
   [data-slot="toast-close-button"] {
     flex-shrink: 0;
-    color: var(--icon-base);
+    /* 24px button over a 20px title line: -2px keeps the glyph centred on the title. */
+    margin-top: -2px;
+    color: var(--overlay-icon-muted);
 
     .ui-icon-svg {
-      color: var(--icon-base);
+      color: var(--overlay-icon-muted);
     }
 
     &:hover:not(:disabled),
     &:focus-visible:not(:disabled) {
-      background-color: var(--surface-base-hover);
+      background-color: var(--overlay-surface-hover);
 
       .ui-icon-svg {
-        color: var(--icon-hover);
+        color: var(--overlay-icon);
       }
     }
   }
@@ -224,8 +199,7 @@
     left: 0;
     right: 0;
     height: 3px;
-    background-color: var(--surface-base);
-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    background-color: var(--overlay-surface-hover);
     overflow: hidden;
   }
 
