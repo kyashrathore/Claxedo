@@ -1,4 +1,9 @@
-import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
+import {
+  makePersisted,
+  type AsyncStorage,
+  type PersistenceSyncAPI,
+  type SyncStorage,
+} from "@solid-primitives/storage"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import { scopeUrl } from "@/lib/url"
 import { createSignal, type Accessor } from "solid-js"
@@ -25,6 +30,8 @@ type PersistTarget = {
   key: string
   legacy?: string[]
   migrate?: (value: unknown) => unknown
+  /** Follow writes other same-origin tabs make to this key. Web only: desktop storage has no change events. */
+  sync?: boolean
 }
 
 const LEGACY_STORAGE = "default.dat"
@@ -379,6 +386,28 @@ export function removePersisted(target: { storage?: string; key: string }) {
 }
 
 /**
+ * `storageSync` from the same package drops an event whose `url` differs from
+ * this document's, so two tabs on different routes never sync. A `storage`
+ * event is already one write by another tab; report it under this tab's URL
+ * with the name `makePersisted` registered.
+ */
+function tabSync(storedName: string, registeredName: string): PersistenceSyncAPI {
+  return [
+    (subscriber) =>
+      window.addEventListener("storage", (event) => {
+        if (event.key !== storedName || event.newValue === null) return
+        subscriber({
+          key: registeredName,
+          newValue: event.newValue,
+          timeStamp: event.timeStamp,
+          url: window.location.href,
+        })
+      }),
+    () => {},
+  ]
+}
+
+/**
  * The key-value surface both storage shapes share. `await` on a synchronous
  * return is a no-op, so a caller that awaits every call works against either.
  */
@@ -568,9 +597,18 @@ export function persisted<T>(
     return api
   })()
 
+  const sync =
+    config.sync && !desktopStorage
+      ? tabSync(config.storage ? `${config.storage}:${config.key}` : config.key, config.key)
+      : undefined
+
   // `makePersisted` takes an erased tuple; `@/platform/persistence/solid-store-erasure`
   // owns both halves of that round trip and says why neither is expressible.
-  const [state, setState, init] = makePersisted(eraseStoreTuple(store), { name: config.key, storage })
+  const [state, setState, init] = makePersisted(eraseStoreTuple(store), {
+    name: config.key,
+    storage,
+    ...(sync ? { sync } : {}),
+  })
 
   const isAsync = init instanceof Promise
   const [ready, setReady] = createSignal(!isAsync)

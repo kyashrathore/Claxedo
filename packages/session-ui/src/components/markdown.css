@@ -10,9 +10,10 @@
   max-width: 100%;
   overflow-wrap: break-word;
   color: var(--v2-text-text-base);
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-base); /* 14px */
-  line-height: var(--line-height-relaxed);
+  font-family: var(--transcript-font-family-body, var(--font-family-sans));
+  font-size: var(--transcript-font-size, var(--font-size-base));
+  line-height: var(--transcript-line-height, var(--line-height-relaxed));
+  letter-spacing: var(--transcript-letter-spacing, normal);
 
   &[data-markdown-stage="plain"] {
     white-space: pre-wrap;
@@ -33,31 +34,43 @@
   }
 
   /* Headings: Sized by level, distinguished by color and spacing */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--transcript-font-family-heading, inherit);
+  }
+
   h1 {
-    font-size: var(--font-size-title-small);
+    font-size: var(--transcript-h1-size, var(--font-size-title-small));
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-semibold);
-    margin-top: 28px;
-    margin-bottom: 12px;
-    line-height: var(--line-height-large);
+    font-weight: var(--transcript-h1-weight, var(--font-weight-semibold));
+    margin-top: var(--transcript-h1-top, 28px);
+    margin-bottom: var(--transcript-h1-bottom, 12px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h1-tracking, normal);
   }
 
   h2 {
-    font-size: var(--font-size-intermediate);
+    font-size: var(--transcript-h2-size, var(--font-size-intermediate));
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-semibold);
-    margin-top: 24px;
-    margin-bottom: 10px;
-    line-height: var(--line-height-large);
+    font-weight: var(--transcript-h2-weight, var(--font-weight-semibold));
+    margin-top: var(--transcript-h2-top, 24px);
+    margin-bottom: var(--transcript-h2-bottom, 10px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h2-tracking, normal);
   }
 
   h3 {
-    font-size: var(--font-size-compact);
+    font-size: var(--transcript-h3-size, var(--font-size-compact));
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
-    margin-top: 20px;
-    margin-bottom: 8px;
-    line-height: var(--line-height-large);
+    font-weight: var(--transcript-h3-weight, var(--font-weight-medium));
+    margin-top: var(--transcript-h3-top, 20px);
+    margin-bottom: var(--transcript-h3-bottom, 8px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h3-tracking, normal);
   }
 
   h4,
@@ -75,12 +88,12 @@
   strong,
   b {
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--transcript-bold-weight, var(--font-weight-semibold));
   }
 
   /* Paragraphs */
   p {
-    margin-bottom: 6px;
+    margin-bottom: var(--transcript-paragraph-gap, 6px);
   }
 
   /* Links */
@@ -99,9 +112,9 @@
   ul,
   ol {
     margin-top: 8px;
-    margin-bottom: 12px;
+    margin-bottom: var(--transcript-block-gap, 12px);
     margin-left: 0;
-    padding-left: 32px;
+    padding-left: var(--transcript-list-indent, 32px);
     list-style-position: outside;
   }
 
@@ -111,11 +124,11 @@
 
   ol {
     list-style-type: decimal;
-    padding-left: 2.25rem;
+    padding-left: calc(var(--transcript-list-indent, 32px) + 4px);
   }
 
   li {
-    margin-bottom: 8px;
+    margin-bottom: var(--transcript-list-gap, 8px);
   }
 
   li > p:first-child {
@@ -161,23 +174,23 @@
   /* Blockquotes */
   blockquote {
     border-left: 0.5px solid var(--v2-border-border-base);
-    margin: 1rem 0;
+    margin: var(--transcript-block-gap, 1rem) 0;
     padding-left: 0.5rem;
     color: var(--v2-text-text-muted);
     font-style: normal;
   }
 
-  /* Horizontal Rule - Invisible spacing only */
   hr {
     border: none;
-    height: 0;
-    margin: 32px 0;
+    height: var(--transcript-hr-height, 0);
+    background: var(--border-weak-base);
+    margin: var(--transcript-hr-margin, 32px) 0;
   }
 
   .shiki {
     background: var(--background-stronger);
     color: var(--text-base);
-    font-size: var(--font-size-compact);
+    font-size: var(--transcript-code-font-size, var(--font-size-compact));
     padding: 12px;
     border-radius: var(--radius-md);
     border: 0.5px solid var(--v2-border-border-base);
@@ -291,7 +304,7 @@
 
   pre {
     margin-top: 12px;
-    margin-bottom: 24px;
+    margin-bottom: var(--transcript-block-gap, 24px);
     overflow: auto;
 
     scrollbar-width: none;
@@ -318,12 +331,12 @@
   }
 
   :not(pre) > code {
-    font-family: var(--font-family-mono);
-    font-size: var(--font-size-inline-code);
+    font-family: var(--transcript-inline-code-family, var(--font-family-mono));
+    font-size: var(--transcript-inline-code-size, var(--font-size-inline-code));
     font-feature-settings: var(--font-family-mono--font-feature-settings);
     color: var(--v2-text-text-base, var(--text-strong));
-    font-weight: var(--font-weight-medium);
-    padding: 1px 0.3rem;
+    font-weight: var(--transcript-inline-code-weight, var(--font-weight-medium));
+    padding: var(--transcript-inline-code-padding, 1px 0.3rem);
     border-radius: var(--radius-sm);
     /* Pill (D§3.12): hairline inset ring on a legacy token so it reads as an object in
        both themes even when the v2 palette is absent. */
@@ -500,7 +513,7 @@ body[data-new-layout] .ui-markdown {
 }
 
 body:not([data-new-layout]) .ui-markdown {
-  color: var(--text-strong);
+  color: var(--transcript-prose-color, var(--text-strong));
 
   h1,
   h2,
@@ -508,9 +521,24 @@ body:not([data-new-layout]) .ui-markdown {
   h4,
   h5,
   h6 {
-    font-size: var(--font-size-base);
+    font-size: var(--transcript-font-size, var(--font-size-base));
     color: var(--text-strong);
     font-weight: var(--font-weight-medium);
+  }
+
+  h1 {
+    font-size: var(--transcript-h1-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h1-weight, var(--font-weight-medium));
+  }
+
+  h2 {
+    font-size: var(--transcript-h2-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h2-weight, var(--font-weight-medium));
+  }
+
+  h3 {
+    font-size: var(--transcript-h3-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h3-weight, var(--font-weight-medium));
   }
 
   strong,
@@ -539,10 +567,10 @@ body:not([data-new-layout]) .ui-markdown {
    */
   :not(pre) > code {
     color: var(--text-strong);
-    padding: 1px 0.3rem;
+    padding: var(--transcript-inline-code-padding, 1px 0.3rem);
     border-radius: var(--radius-sm);
-    box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
-    background: color-mix(in oklch, var(--text-base) 8%, transparent);
+    box-shadow: var(--transcript-inline-code-ring, inset 0 0 0 0.5px var(--border-weak-base));
+    background: var(--transcript-inline-code-bg, color-mix(in oklch, var(--text-base) 8%, transparent));
   }
 
   th,

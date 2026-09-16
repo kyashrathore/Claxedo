@@ -46,6 +46,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
 import { TimelineErrorPresentation } from "@/features/session/onboarding/first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { resolveTranscriptTypography, transcriptTypographyStyle } from "@opencode-ai/ui/theme/transcript-typography"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
@@ -1412,7 +1413,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
-          "md:max-w-192 2xl:max-w-[880px]": props.centered,
+          "md:max-w-[var(--transcript-measure,48rem)] 2xl:max-w-[var(--transcript-measure,880px)]": props.centered,
           "md:mx-auto": props.centered,
           "pt-3": previousAssistantPart(),
         }}
@@ -1783,6 +1784,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
         style={{
+          ...transcriptTypographyStyle(resolveTranscriptTypography(settings.appearance.transcript())),
           "--sticky-accordion-top": showHeader() ? "48px" : "0px",
         }}
       >
@@ -1798,7 +1800,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               "w-full": true,
               "pb-4": true,
               "pl-2 pr-3 md:pl-4 md:pr-3": true,
-              "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
+              "md:max-w-[var(--transcript-measure,48rem)] md:mx-auto 2xl:max-w-[var(--transcript-measure,880px)]": props.centered,
             }}
           >
             <Show when={workingStatus() !== "hidden" && settings.general.showSessionProgressBar()}>
@@ -1957,7 +1959,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         <Show when={ambientSubagents().length > 0}>
           <section
             aria-labelledby="background-subagents-heading"
-            class="w-full px-4 pb-4 md:max-w-192 md:mx-auto 2xl:max-w-[880px]"
+            class="w-full px-4 pb-4 md:max-w-[var(--transcript-measure,48rem)] md:mx-auto 2xl:max-w-[var(--transcript-measure,880px)]"
           >
             <h2 id="background-subagents-heading" class="pb-2 text-12-medium text-text-weak">
               Background subagents

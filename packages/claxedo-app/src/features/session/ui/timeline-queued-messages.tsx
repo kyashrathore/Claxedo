@@ -26,7 +26,7 @@ export function TimelineQueuedMessages(props: {
         data-timeline-queued-messages
         classList={{
           "flex w-full min-w-0 flex-col gap-2 px-4 pb-10 md:px-5": true,
-          "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
+          "md:max-w-[var(--transcript-measure,48rem)] md:mx-auto 2xl:max-w-[var(--transcript-measure,880px)]": props.centered,
         }}
       >
         <Show when={props.queued.loadFailed()}>

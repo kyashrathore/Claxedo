@@ -42,6 +42,7 @@ vi.mock("@/features/settings/ui/account-section", () => ({ AccountSettingsSectio
 vi.mock("@/features/settings/ui/connected-apps-section", () => ({ ConnectedAppsSettingsSection: () => null }))
 
 const { SettingsProvider, useSettings } = await import("@/platform/settings/provider")
+const { removePersisted } = await import("@/platform/persistence/persist")
 const { SettingsGeneral } = await import("./general")
 
 const foldSwitch = (container: HTMLElement) =>
@@ -72,9 +73,10 @@ async function mount() {
   return { fold: () => foldSwitch(view.container)! }
 }
 
+// The persist layer keeps an in-memory copy that outlives `localStorage.clear()`.
 afterEach(() => {
   cleanup()
-  localStorage.clear()
+  removePersisted({ key: "settings.v3" })
 })
 
 describe("SettingsGeneral fold-a-running-turn row", () => {
@@ -97,5 +99,134 @@ describe("SettingsGeneral fold-a-running-turn row", () => {
 
     await waitFor(() => expect(stored.read()).toBe(false))
     expect(view.fold().checked).toBe(false)
+  })
+})
+
+const transcriptTrigger = (container: HTMLElement, action: string) =>
+  container.querySelector<HTMLButtonElement>(`[data-action="${action}"] [data-slot="select-select-trigger"]`)
+
+/** jsdom has no PointerEvent, so the trigger's pointerdown path never sees `button`; ArrowDown opens it too. */
+const openSelect = (trigger: HTMLButtonElement) => fireEvent.keyDown(trigger, { key: "ArrowDown" })
+
+describe("SettingsGeneral transcript typography rows (dev-only knob)", () => {
+  let port!: ReturnType<typeof useSettings>["appearance"]
+  function AppearancePort() {
+    port = useSettings().appearance
+    return null
+  }
+  async function mountTranscript() {
+    const view = render(() => (
+      <SettingsProvider>
+        <AppearancePort />
+        <SettingsGeneral />
+      </SettingsProvider>
+    ))
+    await waitFor(() => expect(transcriptTrigger(view.container, "settings-transcript-pairing")).toBeTruthy())
+    return view
+  }
+
+  test("the rows exist only in a dev build", async () => {
+    vi.stubEnv("DEV", false)
+    try {
+      const view = render(() => (
+        <SettingsProvider>
+          <SettingsGeneral />
+        </SettingsProvider>
+      ))
+      await waitFor(() => expect(foldSwitch(view.container)).toBeTruthy())
+      expect(transcriptTrigger(view.container, "settings-transcript-pairing")).toBeNull()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  test("each row shows the stored answer: the pairing by name, an absent override as follow-pairing", async () => {
+    const view = await mountTranscript()
+    port.setTranscriptPairing("editorial")
+    port.setTranscriptOverride({ mono: "menlo", fontSize: 16, codeFontSize: 14, headingScale: "clear", inlineCode: "tint", bodyWeight: 430 })
+
+    await waitFor(() =>
+      expect(transcriptTrigger(view.container, "settings-transcript-pairing")).toHaveTextContent("Editorial"),
+    )
+    expect(transcriptTrigger(view.container, "settings-transcript-body-face")).toHaveTextContent("Follow pairing")
+    expect(transcriptTrigger(view.container, "settings-transcript-mono-face")).toHaveTextContent("Menlo")
+    expect(transcriptTrigger(view.container, "settings-transcript-font-size")).toHaveTextContent("16 px")
+    expect(transcriptTrigger(view.container, "settings-transcript-line-height")).toHaveTextContent("Follow pairing")
+    expect(transcriptTrigger(view.container, "settings-transcript-code-font-size")).toHaveTextContent("14 px")
+    expect(transcriptTrigger(view.container, "settings-transcript-heading-scale")).toHaveTextContent("Clear")
+    expect(transcriptTrigger(view.container, "settings-transcript-measure")).toHaveTextContent("Follow pairing")
+    expect(transcriptTrigger(view.container, "settings-transcript-inline-code")).toHaveTextContent("Tint, no ring")
+    expect(transcriptTrigger(view.container, "settings-transcript-body-weight")).toHaveTextContent("430")
+    expect(transcriptTrigger(view.container, "settings-transcript-prose-color")).toHaveTextContent("Follow pairing")
+  })
+
+  test("picking a body face writes that override and leaves the pairing alone", async () => {
+    const view = await mountTranscript()
+    port.setTranscriptPairing("quiet")
+    await waitFor(() => expect(transcriptTrigger(view.container, "settings-transcript-pairing")).toHaveTextContent("Quiet"))
+
+    openSelect(transcriptTrigger(view.container, "settings-transcript-body-face")!)
+    const option = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[role="option"][data-key="charter"]')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    fireEvent.click(option)
+
+    await waitFor(() => expect(port.transcript()).toEqual({ pairing: "quiet", body: "charter" }))
+    expect(transcriptTrigger(view.container, "settings-transcript-body-face")).toHaveTextContent("Charter")
+  })
+
+  test("reset returns to the shipped pairing with no overrides and disables itself there", async () => {
+    const view = await mountTranscript()
+    const reset = () => view.container.querySelector<HTMLButtonElement>('[data-action="settings-transcript-reset"]')!
+    expect(reset().disabled).toBe(true)
+
+    port.setTranscriptPairing("classic")
+    port.setTranscriptOverride({ measure: 64 })
+    await waitFor(() => expect(reset().disabled).toBe(false))
+
+    fireEvent.click(reset())
+
+    await waitFor(() => expect(port.transcript()).toEqual({ pairing: "default" }))
+    expect(reset().disabled).toBe(true)
+  })
+
+  test("an enumerated row writes the knob's own type and 'follow pairing' clears it", async () => {
+    const view = await mountTranscript()
+    openSelect(transcriptTrigger(view.container, "settings-transcript-rules")!)
+    const visible = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[role="option"][data-key="visible"]')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    fireEvent.click(visible)
+    await waitFor(() => expect(port.transcript()).toEqual({ pairing: "default", rules: "visible" }))
+
+    openSelect(transcriptTrigger(view.container, "settings-transcript-rules")!)
+    const auto = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[role="option"][data-key="auto"]')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    fireEvent.click(auto)
+    await waitFor(() => expect(port.transcript()).toEqual({ pairing: "default" }))
+  })
+
+  test("picking a pairing drops every override", async () => {
+    const view = await mountTranscript()
+    port.setTranscriptOverride({ heading: "newyork", lineHeight: 1.7 })
+    await waitFor(() => expect(transcriptTrigger(view.container, "settings-transcript-line-height")).toHaveTextContent("1.7"))
+
+    openSelect(transcriptTrigger(view.container, "settings-transcript-pairing")!)
+    const option = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[role="option"][data-key="swiss"]')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    fireEvent.click(option)
+
+    await waitFor(() => expect(port.transcript()).toEqual({ pairing: "swiss" }))
+    expect(transcriptTrigger(view.container, "settings-transcript-heading-face")).toHaveTextContent("Follow pairing")
   })
 })

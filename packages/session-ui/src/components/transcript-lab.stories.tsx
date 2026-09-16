@@ -7,6 +7,20 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
+import {
+  TRANSCRIPT_FACES,
+  TRANSCRIPT_PAIRING_KEYS,
+  TRANSCRIPT_PAIRINGS,
+  isTranscriptPairing,
+  resolveTranscriptTypography,
+  transcriptFacesOfKind,
+  transcriptTypographyStyle,
+  type TranscriptFace,
+  type TranscriptHeadingScale,
+  type TranscriptInlineCode,
+  type TranscriptPairing,
+  type TranscriptRules,
+} from "@opencode-ai/ui/theme/transcript-typography"
 import { DataProvider } from "../context/data"
 import { renderable } from "./message-part"
 import {
@@ -24,96 +38,23 @@ import { FileStub } from "./story-stubs"
 import type { SubagentView } from "../context/data"
 import { TRANSCRIPT_LAB_SESSIONS, type TranscriptLabSession } from "./transcript-lab-fixture"
 
-/** Every stack resolves to a face that ships with macOS, so the lab needs no network. */
-const FACES = {
-  system: { label: "SF Pro Text", kind: "sans", stack: `ui-sans-serif, system-ui, -apple-system, "SF Pro Text", sans-serif` },
-  sfdisplay: { label: "SF Pro Display", kind: "sans", stack: `"SF Pro Display", ui-sans-serif, system-ui, sans-serif` },
-  avenir: { label: "Avenir Next", kind: "sans", stack: `"Avenir Next", Avenir, system-ui, sans-serif` },
-  seravek: { label: "Seravek", kind: "sans", stack: `Seravek, "Avenir Next", system-ui, sans-serif` },
-  optima: { label: "Optima", kind: "sans", stack: `Optima, "Gill Sans", system-ui, sans-serif` },
-  gill: { label: "Gill Sans", kind: "sans", stack: `"Gill Sans", "Gill Sans MT", Optima, sans-serif` },
-  helvetica: { label: "Helvetica Neue", kind: "sans", stack: `"Helvetica Neue", Helvetica, Arial, sans-serif` },
-  ptsans: { label: "PT Sans", kind: "sans", stack: `"PT Sans", system-ui, sans-serif` },
-  verdana: { label: "Verdana", kind: "sans", stack: `Verdana, Geneva, sans-serif` },
-  newyork: { label: "New York", kind: "serif", stack: `ui-serif, "New York", Charter, Georgia, serif` },
-  charter: { label: "Charter", kind: "serif", stack: `Charter, "Bitstream Charter", Georgia, serif` },
-  iowan: { label: "Iowan Old Style", kind: "serif", stack: `"Iowan Old Style", Charter, Georgia, serif` },
-  athelas: { label: "Athelas", kind: "serif", stack: `Athelas, Charter, Georgia, serif` },
-  palatino: { label: "Palatino", kind: "serif", stack: `Palatino, "Palatino Linotype", "Book Antiqua", serif` },
-  hoefler: { label: "Hoefler Text", kind: "serif", stack: `"Hoefler Text", Charter, Georgia, serif` },
-  baskerville: { label: "Baskerville", kind: "serif", stack: `Baskerville, "Times New Roman", serif` },
-  clarendon: { label: "SuperClarendon", kind: "serif", stack: `SuperClarendon, Charter, Georgia, serif` },
-  georgia: { label: "Georgia", kind: "serif", stack: `Georgia, Charter, serif` },
-  ptserif: { label: "PT Serif", kind: "serif", stack: `"PT Serif", Charter, Georgia, serif` },
-  sfmono: { label: "SF Mono", kind: "mono", stack: `ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace` },
-  menlo: { label: "Menlo", kind: "mono", stack: `Menlo, Monaco, ui-monospace, monospace` },
-  ptmono: { label: "PT Mono", kind: "mono", stack: `"PT Mono", Menlo, ui-monospace, monospace` },
-  typewriter: { label: "American Typewriter", kind: "mono", stack: `"American Typewriter", Courier, monospace` },
-} as const
-
-type FaceKey = keyof typeof FACES
-
-const isFaceKey = (value: string): value is FaceKey => Object.hasOwn(FACES, value)
-
-const facesOfKind = (kind: string) =>
-  Object.keys(FACES).filter(isFaceKey).filter((key) => FACES[key].kind === kind)
-
-/** Selecting a pairing writes body/heading/mono plus size, leading and tracking at once. */
-const PAIRINGS = {
-  shipped: { label: "Shipped", body: "system", heading: "system", mono: "sfmono", size: 14, lh: 1.6, track: 0 },
-  technical: { label: "Technical", body: "system", heading: "sfdisplay", mono: "sfmono", size: 14, lh: 1.55, track: -0.08 },
-  editorial: { label: "Editorial", body: "charter", heading: "newyork", mono: "sfmono", size: 15.5, lh: 1.55, track: 0 },
-  quiet: { label: "Quiet", body: "newyork", heading: "newyork", mono: "sfmono", size: 15, lh: 1.6, track: 0 },
-  humanist: { label: "Humanist", body: "iowan", heading: "avenir", mono: "menlo", size: 15, lh: 1.6, track: 0 },
-  workbench: { label: "Workbench", body: "seravek", heading: "seravek", mono: "sfmono", size: 15, lh: 1.55, track: 0 },
-  classic: { label: "Classic", body: "palatino", heading: "hoefler", mono: "menlo", size: 15, lh: 1.62, track: 0 },
-  swiss: { label: "Swiss", body: "helvetica", heading: "helvetica", mono: "menlo", size: 14, lh: 1.5, track: -0.1 },
-  slab: { label: "Slab", body: "clarendon", heading: "clarendon", mono: "typewriter", size: 14.5, lh: 1.58, track: 0 },
-  terminal: { label: "Terminal", body: "sfmono", heading: "sfmono", mono: "sfmono", size: 13, lh: 1.55, track: 0 },
-} as const satisfies Record<string, { label: string; body: FaceKey; heading: FaceKey; mono: FaceKey; size: number; lh: number; track: number }>
-
-type PairingKey = keyof typeof PAIRINGS
-
-const isPairingKey = (value: string): value is PairingKey => Object.hasOwn(PAIRINGS, value)
-
-const HEADING_SCALES = {
-  flat: undefined,
-  subtle: [
-    { tag: "h1", size: 17, weight: 600, top: 28, bottom: 10 },
-    { tag: "h2", size: 15, weight: 600, top: 24, bottom: 8 },
-    { tag: "h3", size: 14, weight: 600, top: 20, bottom: 6 },
-  ],
-  clear: [
-    { tag: "h1", size: 21, weight: 600, top: 34, bottom: 12 },
-    { tag: "h2", size: 17, weight: 600, top: 28, bottom: 10 },
-    { tag: "h3", size: 15, weight: 600, top: 22, bottom: 6 },
-  ],
-  editorial: [
-    { tag: "h1", size: 25, weight: 620, top: 40, bottom: 14, tracking: "-0.02em" },
-    { tag: "h2", size: 19, weight: 600, top: 32, bottom: 10, tracking: "-0.012em" },
-    { tag: "h3", size: 15, weight: 640, top: 24, bottom: 6, tracking: "0.01em" },
-  ],
-} as const
-
-type HeadingScale = keyof typeof HEADING_SCALES
-
 type LabState = {
   session: string
   layout: "legacy" | "v2"
-  headings: HeadingScale
+  headings: TranscriptHeadingScale
   boldWeight: number
-  rules: "hidden" | "visible"
+  rules: TranscriptRules
   turnSeparator: "none" | "hairline" | "numbered"
-  inlineCode: "pill" | "tint" | "quiet" | "plain"
+  inlineCode: TranscriptInlineCode
   inlineCodeSize: number
   measure: string
   lineHeight: number
   paraGap: number
   listIndent: "shipped" | "uniform24" | "uniform20"
-  pairing: PairingKey
-  bodyFace: FaceKey | "auto"
-  headingFace: FaceKey | "auto"
-  monoFace: FaceKey | "auto"
+  pairing: TranscriptPairing
+  bodyFace: TranscriptFace | "auto"
+  headingFace: TranscriptFace | "auto"
+  monoFace: TranscriptFace | "auto"
   fontSize: number
   tracking: number
   mutedLift: number
@@ -145,7 +86,7 @@ const SHIPPED: LabState = {
   lineHeight: 1.6,
   paraGap: 6,
   listIndent: "shipped",
-  pairing: "shipped",
+  pairing: "default",
   bodyFace: "auto",
   headingFace: "auto",
   monoFace: "auto",
@@ -181,57 +122,37 @@ type Lever = {
 }
 
 const SCOPE = "#tl-stage"
-const PROSE = `${SCOPE} .ui-markdown`
 
 /** The app's own transcript geometry: message-timeline.tsx:1415-1420 plus its `px-5` rows. */
 const BASE_CSS = [
-  `${SCOPE} .tl-column{width:100%;max-width:48rem;margin-inline:auto;padding-inline:20px;`,
+  `${SCOPE} .tl-column{width:100%;max-width:var(--transcript-measure,48rem);margin-inline:auto;padding-inline:20px;`,
   `padding-block:28px 64px;display:flex;flex-direction:column}`,
-  `@media (min-width:1536px){${SCOPE} .tl-column{max-width:880px}}`,
+  `@media (min-width:1536px){${SCOPE} .tl-column{max-width:var(--transcript-measure,880px)}}`,
 ].join("")
 
-function headingCss(scale: HeadingScale) {
-  const levels = HEADING_SCALES[scale]
-  if (!levels) return ""
-  return levels
-    .map(
-      (level) =>
-        `${PROSE} ${level.tag}{font-size:${level.size}px;font-weight:${level.weight};` +
-        `line-height:1.25;margin-top:${level.top}px;margin-bottom:${level.bottom}px;` +
-        `letter-spacing:${"tracking" in level ? level.tracking : "normal"};color:var(--text-strong)}`,
-    )
-    .join("\n")
-}
-
-function resolveFaces(s: LabState) {
-  const pairing = PAIRINGS[s.pairing]
-  return {
-    body: s.bodyFace === "auto" ? pairing.body : s.bodyFace,
-    heading: s.headingFace === "auto" ? pairing.heading : s.headingFace,
-    mono: s.monoFace === "auto" ? pairing.mono : s.monoFace,
-  }
-}
-
-function fontCss(s: LabState) {
-  const faces = resolveFaces(s)
-  const rules = [`${SCOPE}{--font-family-sans:${FACES[faces.body].stack};--font-family-mono:${FACES[faces.mono].stack}}`]
-  if (faces.heading !== faces.body) {
-    rules.push(`${PROSE} :is(h1,h2,h3,h4,h5,h6){font-family:${FACES[faces.heading].stack}}`)
-  }
-  return rules.join("\n")
-}
-
-function inlineCodeCss(variant: LabState["inlineCode"], size: number) {
-  const target = `${PROSE} :not(pre) > code`
-  const sizing = size === 1 ? "" : `font-size:${size}em;`
-  const body: Record<LabState["inlineCode"], string> = {
-    pill: "",
-    tint: "box-shadow:none;font-weight:400;",
-    quiet: "box-shadow:none;background:none;font-weight:400;padding:0;",
-    plain: "box-shadow:none;background:none;font-weight:inherit;padding:0;font-family:inherit;",
-  }
-  const rules = `${body[variant]}${sizing}`
-  return rules ? `${target}{${rules}}` : ""
+/** The app applies the same declarations inline on its timeline root; the lab writes them as a rule. */
+function typographyCss(s: LabState) {
+  const resolved = resolveTranscriptTypography({
+    pairing: s.pairing,
+    ...(s.bodyFace === "auto" ? {} : { body: s.bodyFace }),
+    ...(s.headingFace === "auto" ? {} : { heading: s.headingFace }),
+    ...(s.monoFace === "auto" ? {} : { mono: s.monoFace }),
+    fontSize: s.fontSize,
+    lineHeight: s.lineHeight,
+    tracking: s.tracking,
+    inlineCodeSize: s.inlineCodeSize,
+    paragraphGap: s.paraGap,
+    boldWeight: s.boldWeight,
+    headingScale: s.headings,
+    inlineCode: s.inlineCode,
+    rules: s.rules,
+    ...(s.listIndent === "shipped" ? {} : { listIndent: s.listIndent === "uniform24" ? 24 : 20 }),
+    ...(s.measure === "shipped" ? {} : { measure: Number(s.measure) }),
+  })
+  const declarations = Object.entries(transcriptTypographyStyle(resolved))
+    .map(([property, value]) => `${property}:${value}`)
+    .join(";")
+  return `${SCOPE}{${declarations}}`
 }
 
 const LEVERS: Lever[] = [
@@ -255,7 +176,7 @@ const LEVERS: Lever[] = [
     group: "Hierarchy",
     label: "Heading scale",
     finding: "Legacy collapses h1–h6 to 14px/500 — identical pixels to a bold span.",
-    origin: "markdown.css:471-476",
+    origin: "ui/src/theme/transcript-typography.ts TRANSCRIPT_HEADING_SCALES",
     control: {
       kind: "segment",
       options: [
@@ -265,7 +186,7 @@ const LEVERS: Lever[] = [
         { value: "editorial", label: "editorial" },
       ],
     },
-    css: (s) => headingCss(s.headings),
+    css: () => "",
   },
   {
     key: "boldWeight",
@@ -274,7 +195,7 @@ const LEVERS: Lever[] = [
     finding: "600 against a 400 body. At 500 the emphasis was near the perceptual floor on a UI font.",
     origin: "markdown.css:78-80",
     control: { kind: "range", min: 400, max: 800, step: 10, unit: "" },
-    css: (s) => (s.boldWeight === SHIPPED.boldWeight ? "" : `${PROSE} :is(strong,b){font-weight:${s.boldWeight}}`),
+    css: () => "",
   },
   {
     key: "rules",
@@ -289,10 +210,7 @@ const LEVERS: Lever[] = [
         { value: "visible", label: "visible" },
       ],
     },
-    css: (s) =>
-      s.rules === "visible"
-        ? `${PROSE} hr{height:1px;background:var(--border-weak-base);margin:28px 0;border:none}`
-        : "",
+    css: () => "",
   },
   {
     key: "turnSeparator",
@@ -336,7 +254,7 @@ const LEVERS: Lever[] = [
         { value: "plain", label: "plain" },
       ],
     },
-    css: (s) => inlineCodeCss(s.inlineCode, s.inlineCodeSize),
+    css: () => "",
   },
   {
     key: "inlineCodeSize",
@@ -363,17 +281,16 @@ const LEVERS: Lever[] = [
         { value: "76", label: "76ch" },
       ],
     },
-    css: (s) =>
-      s.measure === "shipped" ? "" : `${SCOPE} .tl-column{max-width:calc(${s.measure}ch + 40px)}`,
+    css: () => "",
   },
   {
     key: "lineHeight",
     group: "Measure & rhythm",
     label: "Line height",
     finding: "1.6 on a 14px UI font at a 110ch measure.",
-    origin: "markdown.css:12 (--line-height-relaxed)",
+    origin: "Settings → General → Transcript line height",
     control: { kind: "range", min: 1.35, max: 1.9, step: 0.05, unit: "" },
-    css: (s) => (s.lineHeight === SHIPPED.lineHeight ? "" : `${PROSE}{line-height:${s.lineHeight}}`),
+    css: () => "",
   },
   {
     key: "paraGap",
@@ -382,7 +299,7 @@ const LEVERS: Lever[] = [
     finding: "6px. Spacing is the only structure prose has, so the values need to stay distinguishable.",
     origin: "markdown.css:84-86",
     control: { kind: "range", min: 6, max: 28, step: 1, unit: "px" },
-    css: (s) => (s.paraGap === SHIPPED.paraGap ? "" : `${PROSE} p{margin-bottom:${s.paraGap}px}`),
+    css: () => "",
   },
   {
     key: "listIndent",
@@ -398,50 +315,46 @@ const LEVERS: Lever[] = [
         { value: "uniform20", label: "20 / 20" },
       ],
     },
-    css: (s) => {
-      if (s.listIndent === "shipped") return ""
-      const step = s.listIndent === "uniform24" ? 24 : 20
-      return `${PROSE} :is(ul,ol){padding-left:${step}px}\n${PROSE} li > :is(ul,ol){padding-left:${step}px}`
-    },
+    css: () => "",
   },
   {
     key: "pairing",
     group: "Type",
     label: "Pairing",
     finding: "Sets body, heading and mono faces plus size, leading and tracking together.",
-    origin: "ui/src/styles/theme.css:2 (--font-family-sans)",
+    origin: "ui/src/theme/transcript-typography.ts, Settings → General → Transcript typography",
     control: {
       kind: "segment",
-      options: Object.keys(PAIRINGS).filter(isPairingKey).map((key) => ({ value: key, label: PAIRINGS[key].label })),
+      options: TRANSCRIPT_PAIRING_KEYS.map((key) => ({ value: key, label: TRANSCRIPT_PAIRINGS[key].label })),
     },
     apply: (value) => {
-      if (!isPairingKey(value)) return {}
-      const preset = PAIRINGS[value]
+      if (!isTranscriptPairing(value)) return {}
+      const preset = TRANSCRIPT_PAIRINGS[value]
       return {
         pairing: value,
         bodyFace: "auto",
         headingFace: "auto",
         monoFace: "auto",
         fontSize: preset.size,
-        lineHeight: preset.lh,
-        tracking: preset.track,
+        lineHeight: preset.lineHeight,
+        tracking: preset.tracking,
       }
     },
-    css: (s) => fontCss(s),
+    css: (s) => typographyCss(s),
   },
   {
     key: "bodyFace",
     group: "Type",
     label: "Body face",
     finding: "The transcript is set in the OS UI font, drawn for labels rather than reading.",
-    origin: "ui/src/styles/theme.css:2",
+    origin: "Settings → General → Transcript body face",
     control: {
       kind: "select",
       options: [
         { value: "auto", label: `follow pairing` },
-        ...facesOfKind("serif").map((key) => ({ value: key, label: `serif · ${FACES[key].label}` })),
-        ...facesOfKind("sans").map((key) => ({ value: key, label: `sans · ${FACES[key].label}` })),
-        ...facesOfKind("mono").map((key) => ({ value: key, label: `mono · ${FACES[key].label}` })),
+        ...transcriptFacesOfKind("serif").map((key) => ({ value: key, label: `serif · ${TRANSCRIPT_FACES[key].label}` })),
+        ...transcriptFacesOfKind("sans").map((key) => ({ value: key, label: `sans · ${TRANSCRIPT_FACES[key].label}` })),
+        ...transcriptFacesOfKind("mono").map((key) => ({ value: key, label: `mono · ${TRANSCRIPT_FACES[key].label}` })),
       ],
     },
     css: () => "",
@@ -451,14 +364,14 @@ const LEVERS: Lever[] = [
     group: "Type",
     label: "Heading face",
     finding: "Headings share the body face today, so a scale change is the only signal.",
-    origin: "markdown.css:471-476",
+    origin: "Settings → General → Transcript heading face",
     control: {
       kind: "select",
       options: [
         { value: "auto", label: `follow pairing` },
-        ...facesOfKind("sans").map((key) => ({ value: key, label: `sans · ${FACES[key].label}` })),
-        ...facesOfKind("serif").map((key) => ({ value: key, label: `serif · ${FACES[key].label}` })),
-        ...facesOfKind("mono").map((key) => ({ value: key, label: `mono · ${FACES[key].label}` })),
+        ...transcriptFacesOfKind("sans").map((key) => ({ value: key, label: `sans · ${TRANSCRIPT_FACES[key].label}` })),
+        ...transcriptFacesOfKind("serif").map((key) => ({ value: key, label: `serif · ${TRANSCRIPT_FACES[key].label}` })),
+        ...transcriptFacesOfKind("mono").map((key) => ({ value: key, label: `mono · ${TRANSCRIPT_FACES[key].label}` })),
       ],
     },
     css: () => "",
@@ -468,12 +381,12 @@ const LEVERS: Lever[] = [
     group: "Type",
     label: "Mono face",
     finding: "Drives inline code and every fenced block.",
-    origin: "ui/src/styles/theme.css:4",
+    origin: "Settings → General → Transcript code face",
     control: {
       kind: "select",
       options: [
         { value: "auto", label: `follow pairing` },
-        ...facesOfKind("mono").map((key) => ({ value: key, label: FACES[key].label })),
+        ...transcriptFacesOfKind("mono").map((key) => ({ value: key, label: TRANSCRIPT_FACES[key].label })),
       ],
     },
     css: () => "",
@@ -483,9 +396,9 @@ const LEVERS: Lever[] = [
     group: "Type",
     label: "Body size",
     finding: "14px.",
-    origin: "markdown.css:11 (--font-size-base)",
+    origin: "Settings → General → Transcript text size",
     control: { kind: "range", min: 13, max: 18, step: 0.5, unit: "px" },
-    css: (s) => (s.fontSize === SHIPPED.fontSize ? "" : `${PROSE}{font-size:${s.fontSize}px}`),
+    css: () => "",
   },
   {
     key: "tracking",
@@ -494,7 +407,7 @@ const LEVERS: Lever[] = [
     finding: "Prose sets none; --letter-spacing-chat (-0.13px) exists and is never applied here.",
     origin: "ui/src/styles/theme.css:88",
     control: { kind: "range", min: -0.3, max: 0.15, step: 0.01, unit: "px" },
-    css: (s) => (s.tracking === SHIPPED.tracking ? "" : `${PROSE}{letter-spacing:${s.tracking}px}`),
+    css: () => "",
   },
   {
     key: "mutedLift",

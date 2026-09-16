@@ -427,8 +427,13 @@ export const appLocal: Policy = {
   // fetches a stored image through the Tasks client and shows it. Both are the
   // Tasks feature's own, reached from its create form and detail page over the
   // `@claxedo/tasks` edge this product already carried. No new package edge.
-  // Measured 1075 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1075, packages: 58 },
+  //
+  // +1 module (2026-09-16): `features/settings/ui/transcript-typography-section.tsx`
+  // — the dev-only Settings → General card that picks the transcript
+  // pairing, reached from `general.tsx`; the pairing model itself lives in
+  // `@opencode-ai/ui/theme/transcript-typography`, an edge already carried.
+  // Measured 1076 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1076, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

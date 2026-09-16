@@ -1,6 +1,12 @@
 import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import {
+  DEFAULT_TRANSCRIPT_TYPOGRAPHY,
+  normalizeTranscriptTypography,
+  type TranscriptPairing,
+  type TranscriptTypography,
+} from "@opencode-ai/ui/theme/transcript-typography"
 import { persisted } from "@/platform/persistence/persist"
 import { DEFAULT_SOUND_ID, isSoundID } from "@/platform/notifications/sound"
 import { asRecord } from "@/lib/record"
@@ -38,10 +44,11 @@ export interface Settings {
     startup: boolean
   }
   appearance: {
-    fontSize: number
     mono: string
     sans: string
     terminal: string
+    /** Faces, size and leading of the session transcript alone; the UI chrome keeps `sans`/`mono`. */
+    transcript: TranscriptTypography
     /** Which side of the workspace panel the files navigator docks on. */
     navigatorSide: "left" | "right"
   }
@@ -124,10 +131,10 @@ const defaultSettings: Settings = {
     startup: true,
   },
   appearance: {
-    fontSize: 14,
     mono: "",
     sans: "",
     terminal: "",
+    transcript: DEFAULT_TRANSCRIPT_TYPOGRAPHY,
     navigatorSide: "right",
   },
   keybinds: {},
@@ -177,8 +184,10 @@ const settingsContextInput = {
   name: "Settings", gate: true,
   init: () => {
     const [store, setStore, _, ready] = persisted(
-      { key: "settings.v3", migrate: migrateSettings },
-      createStore<Settings>(defaultSettings),
+      { key: "settings.v3", migrate: migrateSettings, sync: true },
+      // A store writes into the object it is created from; the defaults must
+      // survive for the fallbacks and for the next provider instance.
+      createStore<Settings>(structuredClone(defaultSettings)),
     )
 
     createEffect(() => {
@@ -192,6 +201,11 @@ const settingsContextInput = {
       if (store.general?.followup !== "queue") return
       setStore("general", "followup", "steer")
     })
+
+    const transcript = createMemo(() => normalizeTranscriptTypography(store.appearance?.transcript))
+    // A plain object write would merge into the stored record and keep the
+    // overrides a pairing change is meant to clear.
+    const writeTranscript = (next: TranscriptTypography) => setStore("appearance", "transcript", reconcile(next))
 
     return {
       ready,
@@ -272,10 +286,6 @@ const settingsContextInput = {
         },
       },
       appearance: {
-        fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),
-        setFontSize(value: number) {
-          setStore("appearance", "fontSize", value)
-        },
         font: withFallback(() => store.appearance?.mono, defaultSettings.appearance.mono),
         setFont(value: string) {
           setStore("appearance", "mono", value.trim() ? value : "")
@@ -291,6 +301,14 @@ const settingsContextInput = {
         navigatorSide: withFallback(() => store.appearance?.navigatorSide, defaultSettings.appearance.navigatorSide),
         setNavigatorSide(value: "left" | "right") {
           setStore("appearance", "navigatorSide", value)
+        },
+        transcript,
+        setTranscriptPairing(pairing: TranscriptPairing) {
+          writeTranscript({ pairing })
+        },
+        /** An `undefined` value returns that knob to following the pairing. */
+        setTranscriptOverride(patch: Partial<Omit<TranscriptTypography, "pairing">>) {
+          writeTranscript({ ...transcript(), ...patch })
         },
       },
       keybinds: {
