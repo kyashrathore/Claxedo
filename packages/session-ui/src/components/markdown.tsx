@@ -1,4 +1,4 @@
-import { OpenCodeTheme, useMarked } from "@opencode-ai/ui/context/marked"
+import { OpenCodeTheme, useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
@@ -22,6 +22,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
+import { Marked } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
@@ -46,7 +47,6 @@ import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
-import { escapedMarkdown, firstFrameHtml } from "./markdown-first-frame"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -70,6 +70,32 @@ type RenderResult = {
 const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
 const highlightedCodeTokenLimit = 800
 
+function escape(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+function fallback(markdown: string) {
+  return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
+}
+
+const syncParser = new Marked(...transcriptMarkdownExtensions)
+
+/** First-frame HTML for live tokens and cold remounts. Escaped source is not markdown. */
+function syncRichHtml(src: string) {
+  try {
+    const parsed = syncParser.parse(src, { async: false })
+    if (typeof parsed !== "string") return fallback(src)
+    return sanitizeMarkdown(parsed)
+  } catch {
+    return fallback(src)
+  }
+}
+
 function syncBlock(owner: string, cacheKey: string | undefined, index: number, block: Block): RenderedBlock {
   const key = markdownBlockKey(owner, cacheKey, index, block.mode)
   if (block.mode === "code") {
@@ -90,7 +116,7 @@ function syncBlock(owner: string, cacheKey: string | undefined, index: number, b
     mode: block.mode,
     raw: block.raw,
     hash: String(block.raw.length),
-    html: firstFrameHtml(block.src),
+    html: syncRichHtml(block.src),
   }
 }
 
@@ -909,7 +935,7 @@ export function Markdown(
               mode: "full" as const,
               raw: src.text,
               hash: checksum(src.text) ?? "",
-              html: escapedMarkdown(src.text),
+              html: fallback(src.text),
             },
           ],
         } satisfies RenderResult
