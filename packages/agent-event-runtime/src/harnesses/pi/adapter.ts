@@ -38,6 +38,10 @@ export function piRpcAdapter(): HarnessEventAdapter<State> {
               ],
             },
           ]
+        case "session_info_changed": {
+          const name = string(message.name).trim()
+          return name ? [{ type: "session-title", title: name }] : []
+        }
         case "agent_start":
           return { state: { blocks: {}, finished: false }, events: [] }
         case "message_start":

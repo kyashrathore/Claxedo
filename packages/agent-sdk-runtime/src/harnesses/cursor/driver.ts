@@ -50,6 +50,8 @@ import {
 } from "./auth"
 import { harnessProjection } from "../../harness-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
+import { generateCursorTitle } from "./title"
+import type { SessionTitleRequest } from "../../title-generation"
 import {
   deliverPromptAttachments,
   promptImageAttachments,
@@ -287,6 +289,21 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       harness: this.type,
       threadId,
       adapter: cursorSdkAdapter(),
+    })
+  }
+
+  async generateTitle(input: { request: SessionTitleRequest }) {
+    const { Agent } = await this.loadAgent()
+    const apiKey = this.cursorApiKey()
+    const directory = input.request.directory
+    return await generateCursorTitle({
+      request: input.request,
+      model: cursorSdkModel(input.request.model?.modelID),
+      createAgent: () => Agent.create({
+        name: "Claxedo session title",
+        ...(apiKey ? { apiKey } : {}),
+        local: { cwd: directory, ...cursorPluginLocalOptions(this.currentPluginRoots) },
+      }),
     })
   }
 

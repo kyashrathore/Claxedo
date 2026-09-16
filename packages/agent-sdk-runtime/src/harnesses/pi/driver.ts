@@ -28,6 +28,8 @@ import { providerProjectionRecord, type ProviderProjection } from "../../provide
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
+import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
+import type { SessionTitleRequest } from "../../title-generation"
 
 export type PiDriverOptions = {
   binary?: string
@@ -239,10 +241,11 @@ class PiRpcDriver implements SdkRuntimeDriver {
     await fs.mkdir(path.join(this.agentDir, "sessions"), { recursive: true })
     const binary = this.options.binary ?? requirePiExecutable()
     await verifyPiExecutable(binary)
+    const titleExtension = await ensurePiTitleExtension(this.agentDir)
     const process = new PiRpcProcess({
       binary,
       directory,
-      args: ["--mode", "rpc", "--session-dir", path.join(this.agentDir, "sessions"), ...args],
+      args: ["--mode", "rpc", "--session-dir", path.join(this.agentDir, "sessions"), "-e", titleExtension, ...args],
       env: this.environment(),
       observer: this.host.processObserver,
     })
@@ -275,6 +278,18 @@ class PiRpcDriver implements SdkRuntimeDriver {
       process.dispose()
       throw error
     }
+  }
+  async generateTitle(input: { agentSessionId: string; request: SessionTitleRequest }) {
+    const entry = await this.ensure(input.agentSessionId, input.request.directory)
+    if (entry.busy) return null
+    this.reap(entry)
+    return await generatePiTitle(entry.process, input.request)
+  }
+  /** Only a live process is renamed: a reaped session's name lives on in the Claxedo store, and is not worth a respawn. */
+  async setAgentSessionTitle(input: { agentSessionId: string; title: string }) {
+    const entry = this.entries.get(input.agentSessionId)
+    if (!entry || entry.busy || !entry.process.alive) return
+    await setPiSessionName(entry.process, input.title)
   }
   private remember(id: string, process: PiRpcProcess, directory: string) {
     const entry: Entry = { process, directory, busy: false, idleGeneration: 0 }
