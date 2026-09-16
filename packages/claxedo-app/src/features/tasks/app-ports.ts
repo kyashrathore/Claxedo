@@ -1,6 +1,7 @@
 import type { Accessor, JSX } from "solid-js"
 import type { SessionReference } from "@claxedo/tasks"
 import type { TasksPage } from "@/platform/identity/route"
+import type * as PaneCtxModule from "@/app/workbench/context/pane-ctx"
 import type { ConfigurationEditor } from "./preset-editor-model"
 import type { CapabilityCatalogReader } from "./view-model"
 
@@ -52,6 +53,8 @@ export type TasksAppPorts = {
   useOpenPage: () => (page?: TasksPage) => void
   /** Presets live in Settings; a feature may not import the dialog that holds them. */
   openPresetSettings: (dialog: { show: (element: () => JSX.Element) => unknown }) => void
+  /** The workbench slot a Tasks surface renders in; keys with no focus arrive through it. */
+  usePaneCtx: typeof PaneCtxModule.usePaneCtx
 }
 
 let ports: TasksAppPorts | undefined

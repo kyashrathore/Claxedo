@@ -444,6 +444,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const { addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
     editor: () => editorRef,
+    root: () => rootEl,
     isDialogActive: () => !!dialog.active,
     setDraggingType: engine.setDraggingType,
     focusEditor: () => {

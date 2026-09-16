@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createRoot, createSignal, onCleanup } from "solid-js"
+import { createRoot, createSignal } from "solid-js"
 import {
   clearConversationChatRegistryForTest,
   registerSessionConversationChat,
@@ -178,10 +178,13 @@ vi.doMock("@opencode-ai/ui/toast", () => ({
   showToast: () => undefined,
 }))
 
+const owners: Array<{ isVisible: () => boolean; isFocused: () => boolean } | undefined> = []
+
 vi.doMock("@/features/session/app-ports", () => ({
   useCommand: () => ({
-    register: (_group: string, factory: () => any[]) => {
+    register: (_group: string, factory: () => any[], opts?: { owner?: { isVisible: () => boolean; isFocused: () => boolean } }) => {
       registered.push(factory)
+      owners.push(opts?.owner)
       return () => undefined
     },
   }),
@@ -243,7 +246,7 @@ vi.doMock("@/features/session/app-ports", () => ({
   openSettingsProviders: vi.fn(),
 }))
 
-const { registerActiveSessionCommandOwner, useSessionCommands } = await import("./use-session-commands")
+const { registerSessionCommands, useSessionCommands } = await import("./use-session-commands")
 
 function registeredCommands() {
   return registered.flatMap((factory) => factory())
@@ -473,44 +476,79 @@ describe("session command contracts", () => {
 
 describe("Claxedo behavior", () => {
 
-  test("only the active retained session owns the global command registration", () => {
-    const [active, setActive] = createSignal(true)
-    let owner: string | undefined
-    const dispose = createRoot((rootDispose) => {
-      registerActiveSessionCommandOwner({
+  test("a session page outside the workbench serves commands only while it is active", () => {
+    const [active, setActive] = createSignal(false)
+    owners.length = 0
+    createRoot((dispose) => {
+      useSessionCommands({
         active,
+        sessionId: () => "session-1",
+        directory: () => "/repo",
+        workspaceRouteId: () => undefined,
+        activeMessage: () => undefined,
+        showAllFiles: () => undefined,
+        navigateMessageByOffset: () => undefined,
+        setExpanded: () => undefined,
+        setActiveMessage: () => undefined,
+        focusInput: () => undefined,
+        status: () => ({ type: "idle" }),
+      })
+      const owner = owners.at(-1)
+      expect(owner).toBeDefined()
+      expect(owner!.isVisible() && owner!.isFocused()).toBe(false)
+      setActive(true)
+      expect(owner!.isVisible() && owner!.isFocused()).toBe(true)
+      dispose()
+    })
+  })
+
+  test("a session page in a workbench slot hands the slot to the registry as its owner", () => {
+    const slot = { isVisible: () => true, isFocused: () => false }
+    owners.length = 0
+    createRoot((dispose) => {
+      useSessionCommands({
+        active: () => true,
+        owner: slot,
+        sessionId: () => "session-1",
+        directory: () => "/repo",
+        workspaceRouteId: () => undefined,
+        activeMessage: () => undefined,
+        showAllFiles: () => undefined,
+        navigateMessageByOffset: () => undefined,
+        setExpanded: () => undefined,
+        setActiveMessage: () => undefined,
+        focusInput: () => undefined,
+        status: () => ({ type: "idle" }),
+      })
+      expect(owners.at(-1)).toBe(slot)
+      dispose()
+    })
+  })
+
+  test("registers unconditionally and leaves ownership to the registry", () => {
+    let registered: (() => { id: string }[]) | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerSessionCommands({
         commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
         register: (factory) => {
-          owner = factory()[0]?.id
-          onCleanup(() => {
-            owner = undefined
-          })
+          registered = factory
         },
       })
       return rootDispose
     })
 
-    expect(owner).toBe("owned")
-    setActive(false)
-    expect(owner).toBeUndefined()
-    setActive(true)
-    expect(owner).toBe("owned")
+    expect(registered?.()[0]?.id).toBe("owned")
     dispose()
   })
 
-  test("defers only the first command build and installs warm owners synchronously", () => {
-    const [active, setActive] = createSignal(true)
+  test("defers only the first command build to the scheduled install", () => {
     let scheduled: (() => void) | undefined
-    let owner: string | undefined
+    let registered: (() => { id: string }[]) | undefined
     const dispose = createRoot((rootDispose) => {
-      registerActiveSessionCommandOwner({
-        active,
+      registerSessionCommands({
         commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
         register: (factory) => {
-          owner = factory()[0]?.id
-          onCleanup(() => {
-            owner = undefined
-          })
+          registered = factory
         },
         scheduleInitial: (install) => {
           scheduled = install
@@ -522,13 +560,9 @@ describe("Claxedo behavior", () => {
       return rootDispose
     })
 
-    expect(owner).toBeUndefined()
+    expect(registered?.()).toEqual([])
     scheduled?.()
-    expect(owner).toBe("owned")
-    setActive(false)
-    expect(owner).toBeUndefined()
-    setActive(true)
-    expect(owner).toBe("owned")
+    expect(registered?.()[0]?.id).toBe("owned")
     dispose()
   })
 

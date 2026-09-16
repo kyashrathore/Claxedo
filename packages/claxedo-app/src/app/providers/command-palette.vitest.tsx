@@ -1,12 +1,15 @@
 import { describe, expect, test } from "vitest"
 import { createComputed, createRoot, createSignal } from "solid-js"
 import {
+  commandOwnerActive,
   createCommandPresence,
   createCoalescedMicrotask,
   formatKeybind,
   indexCommandOptions,
   projectCommandRegistrations,
   resolveEffectiveKeybind,
+  upsertCommandRegistration,
+  type CommandRegistration,
 } from "./command-palette"
 
 describe("resolveEffectiveKeybind", () => {
@@ -116,5 +119,36 @@ describe("formatKeybind", () => {
     expect(rebound).toContain("K")
     expect(rebound).not.toContain("P")
     expect(formatKeybind(resolveEffectiveKeybind("none", "mod+shift+p") ?? "")).toBe("")
+  })
+})
+
+describe("command ownership", () => {
+  const owner = (state: { visible: boolean; focused: boolean }) => ({
+    isVisible: () => state.visible,
+    isFocused: () => state.focused,
+  })
+
+  test("two panes may each hold the same keyed registration", () => {
+    const a: CommandRegistration = { key: "session", owner: owner({ visible: true, focused: true }), options: () => [] }
+    const b: CommandRegistration = { key: "session", owner: owner({ visible: true, focused: false }), options: () => [] }
+    const both = upsertCommandRegistration(upsertCommandRegistration([], a), b)
+    expect(both).toEqual([b, a])
+
+    const replaced = upsertCommandRegistration(both, { ...a })
+    expect(replaced).toHaveLength(2)
+    expect(replaced.some((entry) => entry === a)).toBe(false)
+  })
+
+  test("a registration without an owner replaces its key as before", () => {
+    const first: CommandRegistration = { key: "workspace", options: () => [] }
+    const second: CommandRegistration = { key: "workspace", options: () => [] }
+    expect(upsertCommandRegistration([first], second)).toEqual([second])
+  })
+
+  test("only the shown surface of the focused pane serves; a hidden retained tab in that pane does not", () => {
+    expect(commandOwnerActive(undefined)).toBe(true)
+    expect(commandOwnerActive(owner({ visible: true, focused: true }))).toBe(true)
+    expect(commandOwnerActive(owner({ visible: true, focused: false }))).toBe(false)
+    expect(commandOwnerActive(owner({ visible: false, focused: true }))).toBe(false)
   })
 })

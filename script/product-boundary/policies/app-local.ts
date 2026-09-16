@@ -432,8 +432,15 @@ export const appLocal: Policy = {
   // — the dev-only Settings → General card that picks the transcript
   // pairing, reached from `general.tsx`; the pairing model itself lives in
   // `@opencode-ai/ui/theme/transcript-typography`, an edge already carried.
-  // Measured 1076 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1076, packages: 58 },
+  //
+  // +1 module (2026-09-16): `app/workbench/context/pane-ctx.tsx` — the
+  // workbench slot's `PaneCtx` published as Solid context (`PaneCtxProvider` /
+  // `usePaneCtx`), so a surface binds pointer input to its slot and receives
+  // window keys through the workbench's router instead of listening on
+  // `document`; mounted by `workbench.tsx`, consumed through the session and
+  // tasks app-ports. No new package edge.
+  // Measured 1077 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1077, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

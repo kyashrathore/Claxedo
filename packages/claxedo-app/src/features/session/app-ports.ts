@@ -20,6 +20,7 @@ import type * as State from "@/app/workbench/state"
 import type * as StateTypes from "@/app/workbench/state/types"
 import type * as StatePayload from "@/app/workbench/state/session-content-payload"
 import type * as PaneID from "@/app/workbench/context/pane-id"
+import type * as PaneCtxModule from "@/app/workbench/context/pane-ctx"
 import type * as Workbench from "@/app/workbench/workbench"
 import type * as WorkspaceQuery from "@/features/workspaces/data/use-workspace-query"
 import type * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
@@ -64,6 +65,7 @@ export type SessionAppPorts = {
   sessionContentPayload: typeof StatePayload.sessionContentPayload
   usePaneId: typeof PaneID.usePaneId
   PaneIdProvider: typeof PaneID.PaneIdProvider
+  usePaneCtx: typeof PaneCtxModule.usePaneCtx
   useWorkspaceQuery: typeof WorkspaceQuery.useWorkspaceQuery
   isWorkspaceReady: typeof WorkspaceConnection.isWorkspaceReady
   workspacePlacement: typeof WorkspaceConnection.workspacePlacement
@@ -128,6 +130,7 @@ export const DialogSelectMcp = bind((ports) => ports.DialogSelectMcp)
 export const formatKeybind = bind((ports) => ports.formatKeybind)
 export const useCommand = bind((ports) => ports.useCommand)
 export type CommandOption = Command.CommandOption
+export type CommandOwner = Command.CommandOwner
 export const useFile = bind((ports) => ports.useFile)
 export const useProviders = bind((ports) => ports.useProviders)
 export const useGlobalSync = bind((ports) => ports.useGlobalSync)
@@ -146,6 +149,7 @@ export type TerminalLifecycleState = StateTypes.TerminalLifecycleState
 export const sessionContentPayload = bind((ports) => ports.sessionContentPayload)
 export const usePaneId = bind((ports) => ports.usePaneId)
 export const PaneIdProvider = bind((ports) => ports.PaneIdProvider)
+export const usePaneCtx = bind((ports) => ports.usePaneCtx)
 export type PaneCtx = Workbench.PaneCtx
 export const useWorkspaceQuery = bind((ports) => ports.useWorkspaceQuery)
 export const isWorkspaceReady = bind((ports) => ports.isWorkspaceReady)

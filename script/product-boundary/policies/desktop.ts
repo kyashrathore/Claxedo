@@ -456,8 +456,11 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-16): the same dev-only transcript typography card
   // `features/settings/ui/transcript-typography-section.tsx` — see the app-local
   // ledger. Re-measured, no headroom.
-  // Measured 1119 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1119, packages: 58 },
+  //
+  // +1 module (2026-09-16): `app/workbench/context/pane-ctx.tsx` — see the
+  // app-local ledger. Re-measured, no headroom.
+  // Measured 1120 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1120, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

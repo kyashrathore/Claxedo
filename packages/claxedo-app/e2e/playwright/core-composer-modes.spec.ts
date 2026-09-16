@@ -457,25 +457,31 @@ test.describe("core composer modes @core", () => {
 
     const dropzoneLabel = page.getByText("Drop images, PDFs, or text files here")
 
+    // The drop zone is the workbench slot the composer renders in, not the
+    // document: a drop reaches the surface it lands on and no other.
     await page.evaluate(() => {
+      const zone = document.querySelector('[data-component="prompt-input"]')?.closest("[data-workbench-content]")
+      if (!zone) throw new Error("composer is not inside a workbench slot")
       const dt = new DataTransfer()
       dt.items.add(new File([new Uint8Array([1, 2, 3])], "dragged.png", { type: "image/png" }))
-      document.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }))
+      zone.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }))
     })
     await expect(dropzoneLabel).toBeVisible({ timeout: 10_000 })
 
     await page.evaluate(() => {
-      document.dispatchEvent(new DragEvent("dragleave", { bubbles: true, cancelable: true, relatedTarget: null }))
+      const zone = document.querySelector('[data-component="prompt-input"]')!.closest("[data-workbench-content]")!
+      zone.dispatchEvent(new DragEvent("dragleave", { bubbles: true, cancelable: true, relatedTarget: null }))
     })
     await expect(dropzoneLabel).toHaveCount(0)
     await expect(page.locator('img[alt="dragged.png"]')).toHaveCount(0)
 
     await page.evaluate((base64) => {
+      const zone = document.querySelector('[data-component="prompt-input"]')!.closest("[data-workbench-content]")!
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
       const dt = new DataTransfer()
       dt.items.add(new File([bytes], "dropped.png", { type: "image/png" }))
-      document.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }))
-      document.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }))
+      zone.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }))
+      zone.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }))
     }, PNG_BASE64)
 
     await expect(dropzoneLabel).toHaveCount(0)

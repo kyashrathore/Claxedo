@@ -429,15 +429,18 @@ export const MermaidCodeBlock = CodeBlock.extend({
           closed = true
           fsPz.destroy()
           overlay.remove()
-          document.removeEventListener("keydown", onKeyDown)
           if (closeFullscreen === close) closeFullscreen = undefined
         }
         closeFullscreen = close
 
-        const onKeyDown = (e: KeyboardEvent) => {
+        // The overlay holds focus while it is up, so Escape reaches it without
+        // a window listener; the viewport inside it is itself focusable, and a
+        // key pressed there bubbles here.
+        overlay.tabIndex = -1
+        overlay.addEventListener("keydown", (e) => {
           if (e.key === "Escape") close()
-        }
-        document.addEventListener("keydown", onKeyDown)
+        })
+        overlay.focus()
 
         // Render into fullscreen
         renderMermaid(source)

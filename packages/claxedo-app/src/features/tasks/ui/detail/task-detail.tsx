@@ -1,4 +1,4 @@
-import { For, Show, onCleanup, type JSX } from "solid-js"
+import { For, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -79,18 +79,6 @@ export function TaskDetail(props: TaskDetailProps) {
   // service wrote at start rather than by whatever the catalog holds now.
   const presetName = () => openableSlot(props.view.groups)?.current.presetNameAtStart
   const key = () => taskKey(props.projectLabel, task())
-
-  // On `window` rather than this subtree: the menus and selects on this page
-  // portal to the body, so a keydown raised while one is open never reaches the
-  // article.
-  const save = (event: KeyboardEvent) => {
-    if (event.key !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey) return
-    if (!props.dirty || props.busy) return
-    event.preventDefault()
-    props.onSave()
-  }
-  window.addEventListener("keydown", save)
-  onCleanup(() => window.removeEventListener("keydown", save))
 
   return (
     <article

@@ -118,6 +118,34 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
       <Show when={task()} fallback={<p class="tsk-empty">Select a task.</p>}>
       {(current) => {
         const draft = () => props.store.editDraft(current())
+        const dirty = () => props.store.editDirty(current())
+        const save = () =>
+          void mutate(
+            () =>
+              client().command({
+                clientRequestId: uuid(),
+                command: {
+                  type: "task.edit",
+                  input: {
+                    taskId: current().id,
+                    revision: draft().revision,
+                    title: draft().title,
+                    description: draft().description,
+                    workspaceId: current().workspaceId,
+                  },
+                },
+              }),
+            current().id,
+          )
+        // Through the pane rather than the article: the menus and selects on
+        // this page portal to the body, so a keydown raised while one is open
+        // never reaches the article.
+        ports.usePaneCtx()?.onKeyDown((event) => {
+          if (event.key !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey) return
+          if (!dirty() || busy()) return
+          event.preventDefault()
+          save()
+        })
         return (
           <TaskDetail
             view={{
@@ -132,7 +160,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
               ),
             }}
             edit={{ title: draft().title, description: draft().description }}
-            dirty={props.store.editDirty(current())}
+            dirty={dirty()}
             busy={busy()}
             error={sendError() ?? props.store.state.taskErrors[current().id]}
             conflict={props.store.state.taskConflicts[current().id]}
@@ -141,25 +169,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
             onEditChange={(edit) =>
               props.store.setEditDraft(current().id, { title: edit.title, description: edit.description, revision: draft().revision })
             }
-            onSave={() =>
-              void mutate(
-                () =>
-                  client().command({
-                    clientRequestId: uuid(),
-                    command: {
-                      type: "task.edit",
-                      input: {
-                        taskId: current().id,
-                        revision: draft().revision,
-                        title: draft().title,
-                        description: draft().description,
-                        workspaceId: current().workspaceId,
-                      },
-                    },
-                  }),
-                current().id,
-              )
-            }
+            onSave={save}
             onDiscard={() => props.store.discardEdit(current().id)}
             onStatusChange={setStatus}
             onOpenSession={(session) => openSession(session)}

@@ -115,14 +115,29 @@ export type CommandCatalogItem = {
   hidden?: boolean
 }
 
+/**
+ * A workbench surface that registers commands. Every mounted surface registers
+ * unconditionally; the registry serves the one that is shown in the focused
+ * pane, so a retained hidden tab or the other half of a split never answers a
+ * keybind. The shape is `PaneCtx`'s, taken structurally so this module does not
+ * depend on the workbench.
+ */
+export type CommandOwner = { isVisible: () => boolean; isFocused: () => boolean }
+
 export type CommandRegistration = {
   key?: string
+  owner?: CommandOwner
   options: Accessor<CommandOption[]>
 }
 
+export function commandOwnerActive(owner: CommandOwner | undefined) {
+  return !owner || (owner.isVisible() && owner.isFocused())
+}
+
+/** A key names one registration per owner: two panes may each hold `session`. */
 export function upsertCommandRegistration(registrations: CommandRegistration[], entry: CommandRegistration) {
   if (entry.key === undefined) return [entry, ...registrations]
-  return [entry, ...registrations.filter((x) => x.key !== entry.key)]
+  return [entry, ...registrations.filter((x) => x.key !== entry.key || x.owner !== entry.owner)]
 }
 
 export type CommandRegistrationProjection = {
@@ -476,14 +491,22 @@ const commandContextInput = {
     })
 
     function register(cb: () => CommandOption[]): void
-    function register(key: string, cb: () => CommandOption[]): void
-    function register(key: string | (() => CommandOption[]), cb?: () => CommandOption[]) {
+    function register(key: string, cb: () => CommandOption[], opts?: { owner?: CommandOwner }): void
+    function register(
+      key: string | (() => CommandOption[]),
+      cb?: () => CommandOption[],
+      opts?: { owner?: CommandOwner },
+    ) {
       const id = typeof key === "string" ? key : undefined
       const next = typeof key === "function" ? key : cb
       if (!next) return
-      const options = createMemo(next)
+      const owner = opts?.owner
+      // An owner that is not serving contributes nothing and does not build its
+      // command set: a hidden retained page's memos stay uninitialized.
+      const options = createMemo(() => (commandOwnerActive(owner) ? next() : []))
       const entry: CommandRegistration = {
         key: id,
+        ...(owner ? { owner } : {}),
         options,
       }
       setStore("registrations", (arr) => upsertCommandRegistration(arr, entry))

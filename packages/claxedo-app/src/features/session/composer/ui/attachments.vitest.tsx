@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { createSignal } from "solid-js"
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 
-vi.mock("@/features/session/app-ports", () => ({
+vi.mock("@/features/session/app-ports", async () => ({
   useServer: () => ({ url: "http://localhost:4096" }),
+  usePaneCtx: (await import("@/app/workbench/context/pane-ctx")).usePaneCtx,
 }))
 
 vi.mock("@/platform/persistence/persist", async () => {
@@ -27,6 +28,8 @@ vi.mock("@opencode-ai/ui/toast", () => ({ showToast: vi.fn() }))
 
 import { showToast } from "@opencode-ai/ui/toast"
 import { PromptProvider, usePrompt } from "@/features/session/providers/prompt"
+import { PaneCtxProvider } from "@/app/workbench/context/pane-ctx"
+import type { PaneCtx } from "@/app/workbench/workbench/workbench"
 import { createPromptAttachments } from "./attachments"
 import type { AttachmentTarget } from "./files"
 
@@ -41,16 +44,62 @@ const hostedClaude: AttachmentTarget = { harness: { kind: "native", harnessId: "
 function Probe(props: { target: AttachmentTarget }) {
   prompt = usePrompt()
   const editor = document.createElement("div")
+  let root: HTMLDivElement | undefined
   attachments = createPromptAttachments({
     editor: () => editor,
+    root: () => root,
     isDialogActive: () => false,
     setDraggingType: () => {},
     focusEditor: () => {},
     addPart: () => false,
     target: () => props.target,
   })
-  return <div data-testid="probe">{prompt.current().filter((part) => part.type === "image").length}</div>
+  return <div ref={root} data-testid="probe">{prompt.current().filter((part) => part.type === "image").length}</div>
 }
+
+/** A workbench slot as the workbench hands it down: the surface binds pointer input to `element`. */
+function slot(paneId: string, element: () => HTMLDivElement | undefined): PaneCtx {
+  return {
+    paneId,
+    isVisible: () => true,
+    isFocused: () => true,
+    element,
+    onKeyDown: () => {},
+    requestClose: () => {},
+    requestFocus: () => {},
+    presentation: () => "docked",
+  }
+}
+
+/** Two composers in two workbench slots, as a split view mounts them. */
+function mountSplit(sessions: [string, string]) {
+  let slotA: HTMLDivElement | undefined
+  let slotB: HTMLDivElement | undefined
+  return render(() => (
+    <>
+      <div ref={slotA} data-pane-id="pane-a">
+        <PaneCtxProvider ctx={slot("pane-a", () => slotA)}>
+          <PromptProvider directory="/repo" sessionId={sessions[0]}><Probe target={localClaude} /></PromptProvider>
+        </PaneCtxProvider>
+      </div>
+      <div ref={slotB} data-pane-id="pane-b">
+        <PaneCtxProvider ctx={slot("pane-b", () => slotB)}>
+          <PromptProvider directory="/repo" sessionId={sessions[1]}><Probe target={localClaude} /></PromptProvider>
+        </PaneCtxProvider>
+      </div>
+      <div data-testid="outside" />
+    </>
+  ))
+}
+
+function drop(target: Element, files: File[]) {
+  const event = new Event("drop", { bubbles: true, cancelable: true })
+  Object.defineProperty(event, "dataTransfer", {
+    value: { files, types: ["Files"], getData: () => "" },
+  })
+  target.dispatchEvent(event)
+}
+
 
 function attachmentsIn(scope: { dir: string; id?: string; draftId?: string }) {
   return prompt.capture(scope).store[0]().prompt.filter((part) => part.type === "image")
@@ -100,6 +149,35 @@ describe("prompt attachments", () => {
 
     await waitFor(() => expect(attachmentsIn({ dir: "/repo", id: "ses-a" })).toHaveLength(1))
     expect(attachmentsIn({ dir: "/repo", id: "ses-b" })).toHaveLength(0)
+  })
+
+  test("a drop on one slot attaches only to that slot's composer", async () => {
+    const view = mountSplit(["ses-split-a", "ses-split-b"])
+
+    drop(view.container.querySelector('[data-pane-id="pane-b"]')!, [pngFile("shot.png")])
+
+    await waitFor(() => expect(attachmentsIn({ dir: "/repo", id: "ses-split-b" })).toHaveLength(1))
+    expect(attachmentsIn({ dir: "/repo", id: "ses-split-a" })).toHaveLength(0)
+  })
+
+  test("a drop outside every slot attaches to no composer", async () => {
+    const view = mountSplit(["ses-out-a", "ses-out-b"])
+
+    drop(view.getByTestId("outside"), [pngFile("shot.png")])
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(attachmentsIn({ dir: "/repo", id: "ses-out-a" })).toHaveLength(0)
+    expect(attachmentsIn({ dir: "/repo", id: "ses-out-b" })).toHaveLength(0)
+  })
+
+  test("outside the workbench the composer's own element is the drop zone", async () => {
+    setSessionId("ses-own")
+    mount(localClaude)
+    const view = document.querySelector('[data-testid="probe"]')!
+
+    drop(view, [pngFile("shot.png")])
+
+    await waitFor(() => expect(attachmentsIn({ dir: "/repo", id: "ses-own" })).toHaveLength(1))
   })
 
   test("keeps a pasted video on a local session, where the runtime can write it into the workspace", async () => {

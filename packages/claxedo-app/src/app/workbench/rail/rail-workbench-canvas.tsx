@@ -1,7 +1,9 @@
 import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { PaneCtxProvider } from "../context/pane-ctx"
 import type { NewSessionProjectSelection } from "@/features/session/ui/components/session-new-design-view"
 
-import { Workbench } from "../workbench/index"
+import { Workbench, type PaneCtx } from "../workbench/index"
 import { contentSurfacePaneDraggable } from "@/app/integrations/first-party-content-surfaces"
 import { createMountIdleGovernor } from "../workbench/mount-idle-governor"
 import { ContentRenderer } from "../content/index"
@@ -152,20 +154,26 @@ function EmptyDraftSessionComposer(props: {
     },
   }))
 
+  let rootEl: HTMLDivElement | undefined
+  // The empty state stands in for a workbench slot while there is no content
+  // to mount, so it is the one surface on screen: its keydown may bind to
+  // `document` directly, and its own element is the drop zone.
+  const ctx: PaneCtx = {
+    paneId: props.paneId ?? "",
+    isFocused: () => true,
+    isVisible: () => true,
+    element: () => rootEl,
+    onKeyDown: (handler) => makeEventListener(document, "keydown", handler),
+    requestClose: () => {},
+    requestFocus: () => {},
+    presentation: () => "docked",
+  }
   return (
-    <div data-testid="empty-draft-session-composer" class="h-full w-full">
+    <div ref={rootEl} data-testid="empty-draft-session-composer" class="h-full w-full">
       <Suspense fallback={<div class="size-full bg-background-base" />}>
-        <SessionContent
-          meta={meta()}
-          ctx={{
-            paneId: props.paneId ?? "",
-            isFocused: () => true,
-            isVisible: () => true,
-            requestClose: () => {},
-            requestFocus: () => {},
-            presentation: () => "docked",
-          }}
-        />
+        <PaneCtxProvider ctx={ctx}>
+          <SessionContent meta={meta()} ctx={ctx} />
+        </PaneCtxProvider>
       </Suspense>
     </div>
   )

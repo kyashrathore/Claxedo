@@ -79,6 +79,7 @@ function configureHost() {
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
     openPresetSettings: () => {},
+    usePaneCtx: () => undefined,
   })
 
   return requested
@@ -214,6 +215,7 @@ function failingSecondPageHost() {
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
     openPresetSettings: () => {},
+    usePaneCtx: () => undefined,
   })
   return {
     requested,

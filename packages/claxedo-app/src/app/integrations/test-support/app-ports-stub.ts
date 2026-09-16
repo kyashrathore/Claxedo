@@ -82,6 +82,7 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   sessionContentPayload: lazy("@/app/workbench/state/session-content-payload", "sessionContentPayload"),
   usePaneId: lazy("@/app/workbench/context/pane-id", "usePaneId"),
   PaneIdProvider: lazy("@/app/workbench/context/pane-id", "PaneIdProvider"),
+  usePaneCtx: lazy("@/app/workbench/context/pane-ctx", "usePaneCtx"),
   useWorkspaceQuery: lazy("@/features/workspaces/data/use-workspace-query", "useWorkspaceQuery"),
   isWorkspaceReady: lazy("@/features/workspaces/data/workspace-connection", "isWorkspaceReady"),
   workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),
@@ -226,6 +227,7 @@ const tasksThunks: Thunks<TasksAppPorts> = {
   useOpenSession: lazy("@/app/integrations/tasks/open-task-session", "useOpenTaskSession"),
   useOpenPage: lazy("@/app/integrations/tasks/open-tasks-page", "useOpenTasksPage"),
   openPresetSettings: lazy("@/app/integrations/tasks/tasks-ports", "openPresetSettings"),
+  usePaneCtx: lazy("@/app/workbench/context/pane-ctx", "usePaneCtx"),
 }
 
 /**

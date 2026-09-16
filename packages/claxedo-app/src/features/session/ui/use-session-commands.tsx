@@ -1,10 +1,10 @@
 // Claxedo routes session commands through Workbench panes.
 import { asRecord } from "@/lib/record"
-import { createMemo, createRenderEffect, createRoot, onCleanup } from "solid-js"
+import { createMemo, createSignal, onCleanup } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { DialogSelectMcp, useCommand, type CommandOption } from "@/features/session/app-ports"
+import { DialogSelectMcp, useCommand, type CommandOption, type CommandOwner } from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useFile } from "@/features/session/app-ports"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/platform/files/types"
@@ -77,8 +77,14 @@ const DialogFork = lazyDialog(() => import("@/features/session/ui/dialogs/fork")
 })))
 
 export type SessionCommandContext = {
-  /** Only the painted retained pane owns the global `session` command slot. */
+  /** Whether this page is shown; a hidden retained page keeps its last conversation snapshot. */
   active: Accessor<boolean>
+  /**
+   * The workbench slot; the command registry serves the shown, focused one.
+   * A session page outside the workbench (the review panel's subagent tabs)
+   * has no slot, and there `active` alone decides whether it serves.
+   */
+  owner?: CommandOwner
   sessionId: Accessor<string | undefined>
   directory: Accessor<string>
   workspaceRouteId: (dir: string) => string | undefined
@@ -93,39 +99,21 @@ export type SessionCommandContext = {
   scheduleInitialCommands?: (install: () => void) => () => void
 }
 
-export function registerActiveSessionCommandOwner(input: {
-  active: Accessor<boolean>
+/**
+ * Building the first session command set initializes every command memo,
+ * keybind projection, and slash-command projection. None of that is needed to
+ * paint the conversation, so the first build waits for `scheduleInitial`; the
+ * registration itself is unconditional, and which pane's set the registry
+ * serves is the registry's decision.
+ */
+export function registerSessionCommands(input: {
   register: (factory: () => CommandOption[]) => void
   commands: () => CommandOption[]
   scheduleInitial?: (install: () => void) => () => void
 }) {
-  let installedOnce = false
-  createRenderEffect(() => {
-    if (!input.active()) return
-    let disposeRegistration: (() => void) | undefined
-    const install = () => {
-      if (!input.active()) return
-      installedOnce = true
-      disposeRegistration = createRoot((dispose) => {
-        input.register(input.commands)
-        return dispose
-      })
-    }
-
-    // Building the first session command set initializes every command memo,
-    // keybind projection, and slash-command projection. None of that is needed
-    // to paint the conversation. Put only that first initialization after the
-    // first visible frame; later warm activations install synchronously so the
-    // already-built command set follows the active retained pane immediately.
-    const cancel = installedOnce || !input.scheduleInitial
-      ? (install(), undefined)
-      : input.scheduleInitial(install)
-
-    onCleanup(() => {
-      cancel?.()
-      disposeRegistration?.()
-    })
-  })
+  const [ready, setReady] = createSignal(!input.scheduleInitial)
+  if (input.scheduleInitial) onCleanup(input.scheduleInitial(() => setReady(true)))
+  input.register(() => (ready() ? input.commands() : []))
 }
 
 export function scheduleSessionCommandsAfterFirstPaint(install: () => void) {
@@ -649,15 +637,9 @@ export const useSessionCommands = (args: SessionCommandContext) => {
     }),
   ])
 
-  // SessionPages are retained for warm restores. A permanent keyed
-  // registration meant the most recently COLD-mounted page owned commands
-  // forever; returning to an older warm page did not remount it, so commands
-  // remained bound to a hidden session. Register inside an active-owned root.
-  // `command.register` attaches its removal to this render effect's cleanup,
-  // leaving exactly one global session-command producer after every switch.
-  registerActiveSessionCommandOwner({
-    active: args.active,
-    register: (factory) => command.register("session", factory),
+  const owner: CommandOwner = args.owner ?? { isVisible: args.active, isFocused: args.active }
+  registerSessionCommands({
+    register: (factory) => command.register("session", factory, { owner }),
     scheduleInitial: args.scheduleInitialCommands,
     commands: () =>
       [

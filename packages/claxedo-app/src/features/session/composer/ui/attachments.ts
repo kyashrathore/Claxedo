@@ -1,6 +1,7 @@
-import { onMount } from "solid-js"
+import { createEffect } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { showToast } from "@opencode-ai/ui/toast"
+import { usePaneCtx } from "@/features/session/app-ports"
 import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/features/session/providers/prompt"
 import { useLanguage } from "@/platform/i18n/provider"
 import { uuid } from "@/lib/uuid"
@@ -40,6 +41,8 @@ export type PromptPasteEvent = {
 
 type PromptAttachmentsInput = {
   editor: () => HTMLDivElement | undefined
+  /** The composer's own element; the drop zone when the composer is not in a workbench slot. */
+  root: () => HTMLElement | undefined
   isDialogActive: () => boolean
   setDraggingType: (type: "image" | "@mention" | null) => void
   focusEditor: () => void
@@ -50,6 +53,7 @@ type PromptAttachmentsInput = {
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
   const prompt = usePrompt()
+  const pane = usePaneCtx()
   const language = useLanguage()
 
   const unreadable = (filename: string) => {
@@ -186,7 +190,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     put()
   }
 
-  const handleGlobalDragOver = (event: DragEvent) => {
+  const handleDragOver = (event: DragEvent) => {
     if (input.isDialogActive()) return
 
     event.preventDefault()
@@ -199,14 +203,16 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     }
   }
 
-  const handleGlobalDragLeave = (event: DragEvent) => {
+  const handleDragLeave = (event: DragEvent) => {
     if (input.isDialogActive()) return
-    if (!event.relatedTarget) {
+    const zone = event.currentTarget
+    const next = event.relatedTarget
+    if (!(zone instanceof Node) || !(next instanceof Node) || !zone.contains(next)) {
       input.setDraggingType(null)
     }
   }
 
-  const handleGlobalDrop = async (event: DragEvent) => {
+  const handleDrop = async (event: DragEvent) => {
     if (input.isDialogActive()) return
 
     event.preventDefault()
@@ -227,10 +233,17 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     await addAttachments(Array.from(dropped))
   }
 
-  onMount(() => {
-    makeEventListener(document, "dragover", handleGlobalDragOver)
-    makeEventListener(document, "dragleave", handleGlobalDragLeave)
-    makeEventListener(document, "drop", handleGlobalDrop)
+  // A drop is bound to the surface it can land on — the workbench slot, or the
+  // composer's own frame outside the workbench — never to `document`: every
+  // mounted composer would hear a window-wide drop and attach the file to its
+  // own draft, and a hidden slot is `pointer-events: none` so it cannot be the
+  // target here.
+  createEffect(() => {
+    const zone = pane?.element() ?? input.root()
+    if (!zone) return
+    makeEventListener(zone, "dragover", handleDragOver)
+    makeEventListener(zone, "dragleave", handleDragLeave)
+    makeEventListener(zone, "drop", handleDrop)
   })
 
   return {

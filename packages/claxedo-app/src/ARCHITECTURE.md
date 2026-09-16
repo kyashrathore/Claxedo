@@ -45,6 +45,8 @@ Inside `workbench/`, `rail/` owns the project/session rail and the workspace pan
 
 `PaneCtx.presentation` (`workbench/workbench/workbench.tsx`, resolved through `workbench/workbench/pane-presentation.ts`) tells a pane's content whether it is `"docked"` or `"floating"`; the shell resolves it in `app-shell-layout.tsx` through `resolvePanePresentation`, and a session pane floats while the workspace panel covers it at full view, keeping only its last turn and composer on top of the panel; content with no floating layout (terminal, file tab) stays docked and hidden under the panel.
 
+Input that arrives at the window is the workbench's to route, never a surface's to listen for. The workbench keeps hidden surfaces mounted (retained tabs, the other half of a split), and a hidden slot's `inert` / `pointer-events: none` stops nothing aimed at `document`. So the slot publishes itself as `PaneCtx` through `context/pane-ctx.tsx` (`usePaneCtx()`): keys pressed with no focus reach a surface through `PaneCtx.onKeyDown`, forwarded by the workbench's one `keydown` listener to the shown surface of the focused pane (`workbench/keyboard.ts#createSurfaceKeyRouter`); pointer-carried input such as a file drop is bound to `PaneCtx.element()`, the slot; keybinds are commands registered with `{ owner: ctx }` and the command registry serves the focused pane's set (`providers/command-palette.tsx#CommandOwner`). `architecture/window-input-listeners.guard.test.ts` refuses a new `document`/`window` input listener outside the recorded shell singletons and explains why.
+
 Add a route in `app/routes`. Add a provider here only when it composes multiple owners or its lifetime is the entire application.
 
 ### `features/`

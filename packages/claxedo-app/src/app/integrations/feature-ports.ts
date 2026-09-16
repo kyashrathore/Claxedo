@@ -21,6 +21,7 @@ import * as GlobalBootstrap from "@/app/integrations/sync/global-bootstrap"
 import * as State from "@/app/workbench/state"
 import * as StatePayload from "@/app/workbench/state/session-content-payload"
 import * as PaneID from "@/app/workbench/context/pane-id"
+import * as PaneCtxModule from "@/app/workbench/context/pane-ctx"
 import * as WorkspaceQuery from "@/features/workspaces/data/use-workspace-query"
 import * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
 import * as WorkspaceCreate from "@/features/workspaces/data/workspace-create-api"
@@ -107,6 +108,7 @@ configureSessionAppPorts({
   sessionContentPayload: StatePayload.sessionContentPayload,
   usePaneId: PaneID.usePaneId,
   PaneIdProvider: PaneID.PaneIdProvider,
+  usePaneCtx: PaneCtxModule.usePaneCtx,
   useWorkspaceQuery: WorkspaceQuery.useWorkspaceQuery,
   isWorkspaceReady: WorkspaceConnection.isWorkspaceReady,
   workspacePlacement: WorkspaceConnection.workspacePlacement,

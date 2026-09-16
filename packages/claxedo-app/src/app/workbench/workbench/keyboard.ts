@@ -46,3 +46,37 @@ export function eventTargetIsEditable(target: EventTarget | null): boolean {
   if (target instanceof HTMLElement && target.isContentEditable) return true
   return false
 }
+
+/**
+ * A key pressed with no element focused reaches `document`, where every mounted
+ * surface would hear it — including the retained hidden tabs and the other half
+ * of a split. The workbench holds the one listener and forwards to the shown
+ * surface of the focused pane; surfaces subscribe through `PaneCtx.onKeyDown`.
+ */
+export type SurfaceKeySlot = {
+  paneId: () => string | null
+  visible: () => boolean
+  keydown: Set<(event: KeyboardEvent) => void>
+}
+
+export function createSurfaceKeyRouter(focusedPaneId: () => string | null) {
+  const slots = new Map<string, SurfaceKeySlot>()
+  return {
+    add(contentId: string, slot: SurfaceKeySlot) {
+      slots.set(contentId, slot)
+      return () => slots.delete(contentId)
+    },
+    subscribe(slot: SurfaceKeySlot, handler: (event: KeyboardEvent) => void) {
+      slot.keydown.add(handler)
+      return () => slot.keydown.delete(handler)
+    },
+    forward(event: KeyboardEvent) {
+      const focused = focusedPaneId()
+      if (!focused) return
+      for (const slot of slots.values()) {
+        if (slot.paneId() !== focused || !slot.visible()) continue
+        for (const handler of slot.keydown) handler(event)
+      }
+    },
+  }
+}

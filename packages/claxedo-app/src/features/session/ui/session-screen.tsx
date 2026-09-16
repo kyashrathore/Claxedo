@@ -2,7 +2,6 @@
 import { requestErrorMessage } from "../lib/request-error-message"
 import {
   onCleanup,
-  onMount,
   Show,
   Match,
   Switch,
@@ -25,6 +24,7 @@ import {
   useConfigOptional,
   useGlobalSDK,
   useLayout,
+  usePaneCtx,
   usePaneId,
   useSDK,
   useServer,
@@ -149,6 +149,7 @@ export default function SessionPage(props: {
   const navigate = useNavigate()
   const location = useLocation()
   const paneActive = () => sessionParams.active?.() ?? true
+  const paneCtx = usePaneCtx()
   const paneLocation = createActiveLocationSnapshot({
     active: paneActive,
     pathname: () => location.pathname,
@@ -892,6 +893,7 @@ export default function SessionPage(props: {
 
   useSessionCommands({
     active: paneActive,
+    owner: paneCtx,
     scheduleInitialCommands: scheduleSessionCommandsAfterFirstPaint,
     sessionId: sessionID,
     directory: dir,
@@ -1217,9 +1219,7 @@ export default function SessionPage(props: {
     consumePendingMessage: (sessionKey: string) => layout.pendingMessage.consume(sessionKey),
   })
 
-  onMount(() => {
-    document.addEventListener("keydown", handleKeyDown)
-  })
+  paneCtx?.onKeyDown(handleKeyDown)
   trackSessionOpen({ sessionId: sessionID, directory: dir, messagesReady, firstFoldReady, messageCount: () => messages().length })
 
   createEffect(() => {
@@ -1229,7 +1229,6 @@ export default function SessionPage(props: {
   })
 
   onCleanup(() => {
-    document.removeEventListener("keydown", handleKeyDown)
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
     historyFill.cancel()
     promptDockResize.dispose()

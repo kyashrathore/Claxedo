@@ -97,7 +97,8 @@ vi.mock("@/platform/query/query-client", () => ({
   },
 }))
 
-vi.mock("@/features/session/app-ports", () => ({
+vi.mock("@/features/session/app-ports", async () => ({
+  ...(await import("@/app/workbench/context/pane-ctx")),
   useCommand: () => ({
     options: [],
     slashOptions: [],

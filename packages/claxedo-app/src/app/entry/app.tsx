@@ -22,6 +22,7 @@ import { Font } from "@opencode-ai/ui/font"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
 import { syncIconLibraryWithTheme } from "@/ui/icons/config"
 import { MetaProvider } from "@solidjs/meta"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { type BaseRouterProps, Router, Route, Navigate, useLocation, useNavigate } from "@solidjs/router"
 import {
   type Accessor,
@@ -539,6 +540,16 @@ function AuthenticatedLayout(
     })
     return null
   }
+  // A file dropped where nothing takes it makes Chromium navigate to it. This
+  // is the one window-wide drop listener; a surface that wants the file binds
+  // to its own element (a workbench slot), which sees the event first.
+  const FileDropGuard = () => {
+    onMount(() => {
+      makeEventListener(document, "dragover", (event) => event.preventDefault())
+      makeEventListener(document, "drop", (event) => event.preventDefault())
+    })
+    return null
+  }
 
   return (
     <ServerProvider defaultServer={defaultServer} servers={props.servers}>
@@ -552,6 +563,7 @@ function AuthenticatedLayout(
           <Suspense fallback={shellRevealed() ? <Loading /> : <BootSplash />}>
             <RuntimeProviders>
               <ShellRevealed />
+              <FileDropGuard />
               {props.children}
             </RuntimeProviders>
           </Suspense>

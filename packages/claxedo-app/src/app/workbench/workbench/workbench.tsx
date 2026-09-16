@@ -19,16 +19,21 @@ import { computePaneRects } from "./reducers/tree-helpers"
 import { hitTestPaneAt, type DropTarget } from "./drag-drop"
 import { collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
 import { useDragSource, workbenchDrag } from "./pointer-drag"
-import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
+import { createSurfaceKeyRouter, matchKey, resolveKeyMap, eventTargetIsEditable, type SurfaceKeySlot } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { DropTargetOverlay } from "./drop-target-overlay"
 import { usePanePresentation, type PanePresentation } from "./pane-presentation"
+import { PaneCtxProvider } from "../context/pane-ctx"
 
 export type PaneCtx = {
   paneId: string
   isFocused: () => boolean
   isVisible: () => boolean
+  /** The slot element: the drop zone, since a hidden slot is `pointer-events: none`. */
+  element: () => HTMLDivElement | undefined
+  /** Keys with no focus, forwarded by the workbench to the focused pane's shown surface only. */
+  onKeyDown: (handler: (event: KeyboardEvent) => void) => void
   requestClose: (opts?: { destroyContent: boolean }) => void
   requestFocus: () => void
   presentation: () => PanePresentation
@@ -179,8 +184,13 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 
   // -- keyboard
   const keyMap = createMemo(() => resolveKeyMap(props.keyMap))
+  const surfaceKeys = createSurfaceKeyRouter(() => ctx.getState().focusedPaneId)
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.defaultPrevented) return
+    handleChord(e)
+    if (!e.defaultPrevented) surfaceKeys.forward(e)
+  }
+  const handleChord = (e: KeyboardEvent) => {
     const km = keyMap()
     const s = ctx.getState()
     if (matchKey(e, km.closePane)) {
@@ -603,6 +613,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                     }),
               }
             }
+            let slotEl: HTMLDivElement | undefined
+            const slotInput: SurfaceKeySlot = { paneId, visible, keydown: new Set() }
+            onCleanup(surfaceKeys.add(contentId, slotInput))
             const paneCtx: PaneCtx = {
               paneId: paneId() ?? "",
               isFocused: () => {
@@ -610,6 +623,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 return pid !== null && ctx.getState().focusedPaneId === pid
               },
               isVisible: () => visible(),
+              element: () => slotEl,
+              onKeyDown: (handler) => onCleanup(surfaceKeys.subscribe(slotInput, handler)),
               requestClose: (opts) => {
                 const pid = paneId()
                 if (pid) wb.split.close(pid, opts ?? { destroyContent: false })
@@ -624,6 +639,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             // rendered content up to its owning pane (elementFromPoint → slot).
             return (
               <div
+                ref={slotEl}
                 data-workbench-content={contentId}
                 data-pane-id={paneId() ?? undefined}
                 data-pane-presentation={paneCtx.presentation()}
@@ -646,7 +662,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                   if (pid) wb.split.focus(pid)
                 }}
               >
-                {props.renderContent(contentId, paneCtx)}
+                <PaneCtxProvider ctx={paneCtx}>{props.renderContent(contentId, paneCtx)}</PaneCtxProvider>
               </div>
             )
           }}

@@ -32,6 +32,9 @@ import { SessionContextTab } from "@/features/session/ui/components/session-cont
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
 import { useWorkspaceProcessPane } from "@/app/workbench/context/process-pane"
+import { PaneCtxProvider } from "@/app/workbench/context/pane-ctx"
+import type { PaneCtx } from "@/app/workbench/workbench/index"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-panel"
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
@@ -578,24 +581,45 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             />
           </div>
         )
-      case "subagent":
+      case "subagent": {
+        let tabEl: HTMLDivElement | undefined
+        const shown = () => store.activeTabId === tab.id
+        // The panel is this tab's workbench: it hands the session the slot the
+        // workbench would — its element as the drop zone, and window keys only
+        // while it is the shown tab.
+        const ctx: PaneCtx = {
+          paneId: props.leafId ?? "",
+          isFocused: shown,
+          isVisible: shown,
+          element: () => tabEl,
+          onKeyDown: (handler) =>
+            makeEventListener(document, "keydown", (event) => {
+              if (shown()) handler(event)
+            }),
+          requestClose: () => {},
+          requestFocus: () => {},
+          presentation: () => "docked",
+        }
         return (
-          <div class="relative flex h-full min-h-0 flex-col overflow-hidden">
-            <SessionPaneScope
-              directory={props.directory}
-              sessionId={() => tab.sessionId}
-              paneId={() => props.leafId ?? ""}
-              surfaceId={() => tab.id}
-              leafId={() => tab.id}
-              active={() => store.activeTabId === tab.id}
-            >
-              {/* Docked, not floating: the panel is the surface here, so the child
-                  session renders as a column rather than overlaying a pane it does
-                  not have. SessionPage owns the conversation registration itself. */}
-              <SessionPage presentation={() => "docked"} readOnly={() => true} />
-            </SessionPaneScope>
+          <div ref={tabEl} class="relative flex h-full min-h-0 flex-col overflow-hidden">
+            <PaneCtxProvider ctx={ctx}>
+              <SessionPaneScope
+                directory={props.directory}
+                sessionId={() => tab.sessionId}
+                paneId={() => props.leafId ?? ""}
+                surfaceId={() => tab.id}
+                leafId={() => tab.id}
+                active={shown}
+              >
+                {/* Docked, not floating: the panel is the surface here, so the child
+                    session renders as a column rather than overlaying a pane it does
+                    not have. SessionPage owns the conversation registration itself. */}
+                <SessionPage presentation={() => "docked"} readOnly={() => true} />
+              </SessionPaneScope>
+            </PaneCtxProvider>
           </div>
         )
+      }
       default:
         return unhandledReviewWorkspaceTab(tab)
     }

@@ -1,0 +1,93 @@
+[
+  {
+    "file": "app/entry/app.tsx",
+    "events": {
+      "dragover": 1,
+      "drop": 1
+    },
+    "owner": "app root file-drop guard",
+    "reason": "The one window-wide drop listener: a file dropped where no surface takes it would make Chromium navigate to it. Surfaces bind their own drop zone (a workbench slot), which fires first."
+  },
+  {
+    "file": "app/providers/command-palette.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "command palette keybind dispatcher",
+    "reason": "The keybind dispatcher. A keybind is a global gesture by definition; which surface answers it is the registry's decision (`CommandOwner`), not the listener's."
+  },
+  {
+    "file": "app/workbench/workbench/workbench.tsx",
+    "events": {
+      "keydown": 2
+    },
+    "owner": "workbench",
+    "reason": "Pane chords, Escape during a pane drag, and the forward of an unhandled key to the shown surface of the focused pane \u2014 the router every surface's `PaneCtx.onKeyDown` goes through."
+  },
+  {
+    "file": "app/workbench/rail/rail-workbench-canvas.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "empty-state draft composer",
+    "reason": "Stands in for a workbench slot while there is no content; it is the only surface on screen, so its `PaneCtx.onKeyDown` binds to `document` directly."
+  },
+  {
+    "file": "app/workbench/review/review-workspace.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "workspace-panel subagent tab host",
+    "reason": "The review panel is the workbench for its subagent session tabs: it hands each one a PaneCtx whose onKeyDown binds to document and forwards only while that tab is the shown one."
+  },
+  {
+    "file": "app/workbench/compact-switcher/compact-switcher.tsx",
+    "events": {
+      "keydown": 1,
+      "keyup": 1
+    },
+    "owner": "compact switcher",
+    "reason": "Hold-modifier tab switcher; one instance in the shell."
+  },
+  {
+    "file": "features/settings/ui/keybinds.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "keybind recorder",
+    "reason": "Records the next chord while the recorder is open; a modal affordance with no rival."
+  },
+  {
+    "file": "features/terminal/core/link-providers/multi-line-link-provider.ts",
+    "events": {
+      "keydown": 1,
+      "keyup": 1
+    },
+    "owner": "terminal link modifier tracker",
+    "reason": "Module-level singleton tracking whether cmd/ctrl is held so link decorations match what a click would do; not per terminal, writes no surface state. Could read the modifier off the pointer event instead."
+  },
+  {
+    "file": "features/browser/components/browser-pane.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "workspace-panel browser pane",
+    "reason": "Escape leaves inspect mode. Lives in the workspace panel, not a workbench slot; gated by its own inspect state. Debt: bind to the pane root, which can hold focus while inspecting."
+  },
+  {
+    "file": "features/review/ui/review-tab.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "workspace-panel review tab",
+    "reason": "`d` toggles diff style. Lives in the workspace panel, not a workbench slot; guards itself with a `#review-panel` rect check because it listens too broadly. Debt: register as a command."
+  },
+  {
+    "file": "features/session/ui/components/session-context-row.tsx",
+    "events": {
+      "keydown": 1
+    },
+    "owner": "context-row search typeahead",
+    "reason": "Extends the search query after focus deliberately leaves the input, only while its popover is open; a hidden slot cannot open the popover."
+  }
+]

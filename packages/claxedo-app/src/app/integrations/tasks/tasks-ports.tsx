@@ -11,6 +11,7 @@ import { useOpenTaskSession } from "./open-task-session"
 import { useOpenTasksPage } from "./open-tasks-page"
 import { TASKS_PRESETS_SETTINGS_TAB } from "./settings-section"
 import { openSettings } from "@/features/settings/open-settings"
+import { usePaneCtx } from "@/app/workbench/context/pane-ctx"
 import type { ConfigurationEditorProps } from "@/features/tasks/preset-editor-model"
 import type { ProseEditorProps } from "@/features/tasks/app-ports"
 
@@ -90,5 +91,6 @@ export function tasksAppPorts(): TasksAppPorts {
     useOpenSession: useOpenTaskSession,
     useOpenPage: useOpenTasksPage,
     openPresetSettings,
+    usePaneCtx,
   }
 }
