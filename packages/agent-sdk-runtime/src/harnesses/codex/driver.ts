@@ -31,13 +31,8 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import {
-  CODEX_PERMISSION_MODES,
-  CODEX_SETTINGS,
-  PermissionModeSelection,
-  codexSandboxPolicy,
-  codexSettingsFor,
-} from "../shared/permission-modes"
+import { CODEX_PERMISSION_MODES, CODEX_SETTINGS, PermissionModeSelection, codexSandboxPolicy, codexSettingsFor } from "../shared/permission-modes"
+import { generateCodexTitle, setCodexThreadName } from "./title"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
 import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthFailure } from "./broker"
@@ -45,6 +40,7 @@ import { harnessProjection } from "../../harness-projection"
 import { providerProjectionRecord } from "../../provider-projection"
 import { CodexOperatorLogin } from "./operator-login"
 import { codexPluginLaunch, type CodexPluginLaunch } from "./plugin-launch"
+import type { SessionTitleRequest } from "../../title-generation"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
 import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"
@@ -221,6 +217,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
     return { id: threadId }
   }
+
+  generateTitle = ({ sessionId, request }: { sessionId: string; request: SessionTitleRequest }) => generateCodexTitle({ request, process: () => this.ensureProcess(request.directory), lease: () => this.idle.lease(), model: codexAppServerModel(request.model?.modelID), ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}), ...this.threadConfig(sessionId) })
+  setAgentSessionTitle = ({ agentSessionId, title }: { agentSessionId: string; title: string }) => setCodexThreadName(this.process?.alive ? this.process : null, agentSessionId, title)
 
   createRuntime(threadId: string): AgentEventRuntime {
     return createAgentEventRuntime({
