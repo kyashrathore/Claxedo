@@ -1,6 +1,8 @@
 # Session titles: harness-native where it exists, runtime-generated elsewhere
 
-Status: proposed; not started.
+Status: implemented on `feat/session-auto-title` (2026-09-16), all lanes;
+live-verified for Claude; Codex and Pi live proofs blocked by account quota
+and auth on the dev machine (recorded per row below).
 
 Assessed 2026-09-15 on local `dev` `156e7e0ab8` against the installed
 harnesses: Claude Code 2.1.270 (`@anthropic-ai/claude-agent-sdk` 0.3.220),
@@ -269,53 +271,78 @@ harness's own listing where it has one.
       entry in `~/.claude/projects/<dir>/<session>.jsonl`) before or at the
       end of the first turn; the prompt-derived title is visible during the
       turn and replaced, not appended. `claude --resume` lists the same
-      title. Progress:
+      title. Progress: DONE at the runtime boundary (real Claude Code
+      2.1.270 through `createAgentRuntime`): placeholder `source=prompt` at
+      turn start, `"Date parser leap year testing" source=harness` during
+      the turn, store `titleSource: "harness"` after idle. Rail check on the
+      web app not yet run.
 - [ ] Codex: after the first turn the rail shows a generated title;
       `codex resume` (thread list) shows the same `name`; the ephemeral
       title thread does not appear in `thread/list`; a session whose title
       turn fails (kill the app-server mid-call) keeps the prompt title and
-      logs one warning. Progress:
+      logs one warning. Progress: failure path DONE live (real app-server
+      accepted `thread/start { ephemeral }` + `turn/start { outputSchema }`,
+      turn failed on quota → null, one warning, thread absent from
+      `thread/list`). Positive proof BLOCKED: Codex account usage limit
+      exhausted until 2026-09-19.
 - [ ] Pi: after the first turn the rail shows a generated title that
       arrived as an RPC `session_info_changed` frame (asserted by the
       driver test with a recorded frame); `get_state.sessionName` on the
       live RPC process equals it; the `pi --resume` picker shows it; the
       extension runs the completion with the session's model and auth and
-      no second process is spawned. Progress:
+      no second process is spawned. Progress: mechanics DONE live (command
+      registered in a real `pi --mode rpc`, dispatched with its args, model
+      resolved, completion attempted, no second process). Positive proof
+      BLOCKED: Pi's Anthropic OAuth refresh fails on this machine (`pi -p`
+      fails identically) and the openai-codex provider is out of quota.
 - [ ] Cursor (local): after the first turn the rail shows a generated
-      title. Progress:
+      title. Progress: implemented (`cursor/title.ts`), unit-tested with a
+      fake agent; not live-verified.
 - [ ] ACP (Gemini CLI): an agent that sends `session_info_update { title }`
       wins over generation; an agent that never sends it gets a generated
       title through a temp ACP session that is cancelled on timeout; a
       `session_info_update { updatedAt }` with no `title` leaves the title
-      untouched (projection unit test + live). Progress:
+      untouched (projection unit test + live). Progress: projection and
+      golden tests DONE; `generateAcpTitle` unit-tested; not live-verified.
 - [ ] OpenCode: the server's title lands in the rail, including when it
       arrives after `session.idle`; no runtime-generated title is requested
-      for OpenCode. Progress:
+      for OpenCode. Progress: adapter unchanged; not live-verified.
 - [ ] Rename is final: rename a session in the rail, send another turn, and
       no `harness` or `prompt` write changes it — asserted by a store test
       (`user` beats `harness` beats `prompt`) and live for one harness.
       A rename inside Claude Code (`/rename` in a resumed session) reaches
-      the rail as `user`. Progress:
+      the rail as `user`. Progress: store rank test (`sqlite.test.ts`) and
+      runtime test (rename beats a later generated title) DONE; a title
+      chosen at create is also user-ranked. Claude `/rename` mapping
+      unit-tested (`custom-title` → `user`), not live.
 - [ ] Child sessions (subagents) never receive a prompt or generated title;
       `runtime.test.ts` asserts no `session.updated` title frame for a
-      session with `parentID`. Progress:
+      session with `parentID`. Progress: enforced in
+      `runtime/session-titles.ts` (both placeholder and generation skip
+      `parentID`); no dedicated test yet.
 - [ ] Row order: a title write (any rank) does not move a row under
       `human_turn_desc`; existing `session-list-events.test.ts` extended
-      with a `titleSource: "harness"` frame. Progress:
+      with a `titleSource: "harness"` frame. Progress: existing client tests
+      pass unchanged; no new frame-shape test added.
 - [ ] Single owner: `grep -rn "auto-title\|commitSdkAutomaticTitle\|maybeAutoTitle\|generateAITitle\|hasConcreteSessionTitle" packages/*/src`
       returns only `runtime.ts` (`method: "auto-title"`) and the
       `bus.ts`/`app.ts` comments; exactly one `deriveSessionTitle`. Progress:
+      DONE (grep returns runtime/session-titles.ts and the two comments).
 - [ ] Contract tests: `projection.test.ts` covers `session-info` with and
       without `title` and `session-title` with each `titleSource`; the Codex
       adapter test feeds a real `thread/name/updated { threadId, threadName }`
       frame; the Claude adapter test feeds real `ai-title` and
-      `custom-title` entries. Progress:
+      `custom-title` entries. Progress: DONE.
 - [ ] Gates: `bun run typecheck` per touched package,
       `bun run test:architecture-ratchets` (new production import edges:
       `title-generation.ts`, driver `generateTitle`), the agent-sdk-runtime
       and agent-event-runtime test suites, `claxedo-app` vitest for the
       session sync files. Commands and outcomes recorded in the PR body.
-      Progress:
+      Progress: typecheck clean on 8 packages; ratchets green (after naming
+      two helpers); agent-sdk-runtime 799/0, agent-event-runtime 240/0,
+      claxedo-app session-sync 52/0; workspace-runtime 1117/4 where the 4
+      are `agent-hooks`/`agent-hook` tests from another lane's WIP commit on
+      the branch.
 
 ## Non-goals
 
