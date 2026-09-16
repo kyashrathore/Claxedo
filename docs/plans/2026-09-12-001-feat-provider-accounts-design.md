@@ -388,6 +388,15 @@ miniature — it read as a second account — so there is none.
   it was pasted into: the registry reads the secret's form at save and at
   Reconnect, so the metadata-only readers — the Usage page's quota cards and the
   reach marks — list it as the plan login it is, refused or not.
+- **A setup-token cannot report the plan.** Claude Code mints it with
+  `user:inference` only (the CLI's own words: "env-var and setup-token sessions
+  default to user:inference only"), so `/api/oauth/usage` turns it away while
+  every turn on it runs. The Check therefore treats a refused usage read on an
+  Anthropic token as a question, not a verdict, and asks `GET /v1/models` —
+  the inference scope's own route — whether the provider knows the token. Live
+  and windowless, the Settings row reads "Working" and the Usage card says the
+  token can run turns but cannot report plan usage; only the CLI's own login
+  (or a full-scope token) draws bars.
 - **"This computer's login" is the last entry**, in every state the harness can
   be in — choosing it is the withdrawal of a stored account, not a login, so a
   user whose CLI is signed out still needs to be able to say "run on whatever

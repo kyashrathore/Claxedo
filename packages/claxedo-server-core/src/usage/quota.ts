@@ -27,6 +27,8 @@ import type { QuotaAccount, QuotaSnapshot, UnifiedUsageResponse } from "@claxedo
 
 const log = Log.create({ service: "usage-quota" })
 
+const INFERENCE_ONLY_LOGIN = "This token can run turns but cannot report plan usage. Sign the CLI in to see the plan."
+
 /** A Check spends a vendor request per stored account, so refreshes are spaced. */
 const REFRESH_INTERVAL_MS = 60_000
 
@@ -112,6 +114,7 @@ async function composeSnapshot(
       .map((row) => row.label?.trim())
       .find((label) => label && label !== account.first.provider_id)
     const health = account.rows.map((row) => row.health).find((value) => value != null)
+    const checkedAt = account.rows.map((row) => row.last_validated_at).find((value) => value != null)
     return {
       harness: account.harness,
       credentialId: account.first.id,
@@ -123,6 +126,14 @@ async function composeSnapshot(
       ...(health == null ? {} : { health }),
       windows: read?.usage_windows ?? [],
       ...(read?.usage_at == null ? {} : { usageAt: read.usage_at }),
+      // A Claude login the provider accepted and that reported no windows is a
+      // `claude setup-token`: minted with the inference scope only, it can run
+      // every turn and cannot read the plan. Said here, or the card asks for a
+      // check that has already happened. Claude only: a ChatGPT usage read that
+      // names no window is an empty answer, not a scope.
+      ...(account.harness === "claude" && health === "ok" && !read && checkedAt != null
+        ? { usageAt: checkedAt, usageError: INFERENCE_ONLY_LOGIN }
+        : {}),
     }
   })
   const logins = await machineLoginsWithUsage(credentials, {

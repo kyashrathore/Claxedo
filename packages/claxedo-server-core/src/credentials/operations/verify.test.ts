@@ -5,6 +5,7 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 const NOW = 1_700_000_000_000
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
 const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
+const CATALOG_URL = "https://api.anthropic.com/v1/models"
 
 function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata {
   return {
@@ -42,6 +43,8 @@ function transport(input: {
   token?: { ok?: boolean; body?: unknown }
   probe?: { ok?: boolean; status?: number; body?: string; json?: unknown }
   profile?: { ok?: boolean; status?: number; json?: unknown }
+  /** The model catalog an inference-scoped Anthropic token is asked for. */
+  catalog?: { ok?: boolean; status?: number; body?: string }
 }) {
   const calls: Array<{
     url: string
@@ -69,6 +72,15 @@ function transport(input: {
         text: async () => "",
       } as unknown as Response
     }
+    if (target === CATALOG_URL) {
+      const catalog = input.catalog ?? {}
+      return {
+        ok: catalog.ok ?? true,
+        status: catalog.status ?? (catalog.ok === false ? 401 : 200),
+        text: async () => catalog.body ?? "",
+        body: { cancel: async () => undefined },
+      } as unknown as Response
+    }
     if (target === PROFILE_URL) {
       const profile = input.profile ?? {}
       return {
@@ -90,7 +102,7 @@ function transport(input: {
     stub,
     calls,
     tokenCalls: () => calls.filter((call) => call.url === TOKEN_URL),
-    probeCalls: () => calls.filter((call) => call.url !== TOKEN_URL && call.url !== PROFILE_URL),
+    probeCalls: () => calls.filter((call) => call.url !== TOKEN_URL && call.url !== PROFILE_URL && call.url !== CATALOG_URL),
     profileCalls: () => calls.filter((call) => call.url === PROFILE_URL),
   }
 }
@@ -576,7 +588,7 @@ describe("verifyCredential — naming the account", () => {
   })
 
   test("a rejected token is never asked who it belongs to", async () => {
-    const transports = transport({ probe: { ok: false, status: 401 } })
+    const transports = transport({ probe: { ok: false, status: 401 }, catalog: { ok: false, status: 401 } })
 
     const outcome = await verifyCredential(
       credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
@@ -585,7 +597,49 @@ describe("verifyCredential — naming the account", () => {
     )
 
     expect(outcome).toEqual({ health: "auth_failed" })
-    expect(transports.calls.map((call) => call.url)).toEqual(["https://api.anthropic.com/api/oauth/usage"])
+    expect(transports.calls.map((call) => call.url)).toEqual([
+      "https://api.anthropic.com/api/oauth/usage",
+      "https://api.anthropic.com/v1/models",
+    ])
+  })
+
+  /**
+   * `claude setup-token` mints `user:inference` only, so the usage read turns
+   * the token away while every turn on it runs. The refusal is a verdict only
+   * once the inference scope's own route refuses too.
+   */
+  test("a setup-token the usage read turns away is live if the model catalog answers it", async () => {
+    const transports = transport({ probe: { ok: false, status: 403, body: '{"type":"error","error":{"type":"permission_error"}}' } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      "sk-ant-oat01-inference-only-setup-token",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok" })
+    const catalog = transports.calls.find((call) => call.url === CATALOG_URL)!
+    expect(catalog.headers.Authorization).toBe("Bearer sk-ant-oat01-inference-only-setup-token")
+    expect(catalog.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+    expect(catalog.headers["x-api-key"]).toBeUndefined()
+    expect(transports.profileCalls()).toHaveLength(0)
+  })
+
+  test("a token the catalog also refuses is refused, and a console key never reaches the catalog", async () => {
+    const refused = transport({ probe: { ok: false, status: 401 }, catalog: { ok: false, status: 401 } })
+    expect(await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      "sk-ant-oat01-revoked",
+      { fetch: refused.stub, now: () => NOW },
+    )).toEqual({ health: "auth_failed" })
+
+    const key = transport({ probe: { ok: false, status: 401 } })
+    expect(await verifyCredential(
+      credential({ provider_id: "anthropic", kind: "api_key" }),
+      "sk-ant-api03-bad-key",
+      { fetch: key.stub, now: () => NOW },
+    )).toEqual({ health: "auth_failed" })
+    expect(key.calls.map((call) => call.url)).toEqual(["https://api.anthropic.com/v1/messages"])
   })
 
   test("an API key names no account", async () => {

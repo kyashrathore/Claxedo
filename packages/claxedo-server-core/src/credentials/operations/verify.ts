@@ -98,9 +98,11 @@ export async function verifyCredential(
     ...(detail.usage ? { usage: detail.usage } : {}),
     ...(detail.accountEmail ? { accountEmail: detail.accountEmail } : {}),
   })
-  const response = await (options.fetch ?? globalThis.fetch)(probe.url, probe.init).catch(() => {
-    throw new CredentialVerificationError("Credential provider request failed")
-  })
+  const ask = (url: string, init: RequestInit) =>
+    (options.fetch ?? globalThis.fetch)(url, init).catch(() => {
+      throw new CredentialVerificationError("Credential provider request failed")
+    })
+  const response = await ask(probe.url, probe.init)
   if (response.ok) {
     if (probe.usage) {
       const body: unknown = await response.json().catch(() => undefined)
@@ -114,6 +116,24 @@ export async function verifyCredential(
     await response.body?.cancel().catch(() => undefined)
     return outcome("ok")
   }
+  const verdict = await refusalVerdict(response)
+  // A `claude setup-token` is minted with `user:inference` only — the CLI's own
+  // words — so the usage read turns away a token that runs every turn. The
+  // model catalog is the inference scope's own route, and answers the one
+  // question left: whether the provider knows this token at all.
+  if (verdict === "auth_failed" && anthropicSubscription) {
+    const catalog = await ask("https://api.anthropic.com/v1/models", anthropicInferenceProbe(auth.token))
+    if (catalog.ok) {
+      await catalog.body?.cancel().catch(() => undefined)
+      return outcome("ok")
+    }
+    return outcome(await refusalVerdict(catalog))
+  }
+  return outcome(verdict)
+}
+
+/** What a non-ok probe answer says about the material, or nothing a verdict can carry. */
+async function refusalVerdict(response: Response): Promise<CredentialHealth> {
   const failure = (await response.text().catch(() => "")).slice(0, 8_192).toLowerCase()
   if (
     response.status === 402 ||
@@ -121,11 +141,24 @@ export async function verifyCredential(
     failure.includes("usage_not_included") ||
     failure.includes("billing") ||
     failure.includes("credit balance")
-  ) return outcome("no_billing")
-  if (failure.includes("token_expired") || failure.includes("expired_token")) return outcome("expired")
-  if (response.status === 429) return outcome("rate_capped")
-  if (response.status === 401 || response.status === 403) return outcome("auth_failed")
+  ) return "no_billing"
+  if (failure.includes("token_expired") || failure.includes("expired_token")) return "expired"
+  if (response.status === 429) return "rate_capped"
+  if (response.status === 401 || response.status === 403) return "auth_failed"
   throw new CredentialVerificationError("Credential provider verification failed")
+}
+
+function anthropicInferenceProbe(token: string): RequestInit {
+  return {
+    method: "GET",
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "oauth-2025-04-20",
+    },
+  }
 }
 
 /**
@@ -161,8 +194,10 @@ async function anthropicAccountEmail(token: string, fetchImpl: typeof fetch | un
  * Subscription tokens are checked against the vendor's usage read, the same
  * call each CLI's own status screen makes: it authenticates the token, spends
  * no quota, and answers the question a completion cannot, how much of the
- * plan is left. API keys have no usage read, so they keep a minimal completion
- * (Anthropic, OpenAI) or the key-introspection route (Cursor).
+ * plan is left. An Anthropic token the read turns away is asked the model
+ * catalog next, in `verifyCredential`. API keys have no usage read, so they
+ * keep a minimal completion (Anthropic, OpenAI) or the key-introspection
+ * route (Cursor).
  */
 function providerProbe(
   auth: CredentialSecretMaterial,

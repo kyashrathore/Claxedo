@@ -336,6 +336,25 @@ describe("usage quota reader", () => {
     expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("b", "ok", 1_000, ORG)
   })
 
+  test("a plan login the provider accepted without windows says why its card has no bars", async () => {
+    const credentials = store({
+      rows: [
+        credential({ id: "setup", provider_id: "claude-sdk", kind: "oauth_token", account_id: "fp_1…xgAA", health: "ok", last_validated_at: 77 }),
+        credential({ id: "unchecked", provider_id: "claude-sdk", kind: "oauth_token", account_id: "fp_2…bbbb" }),
+        credential({ id: "chatgpt", provider_id: "codex-app-server", kind: "oauth_token", account_id: "acct_c", health: "ok", last_validated_at: 78 }),
+      ],
+    })
+    const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
+
+    const { snapshot } = await read({ org: ORG, refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.credentialId, account.usageAt, account.usageError])).toEqual([
+      ["setup", 77, "This token can run turns but cannot report plan usage. Sign the CLI in to see the plan."],
+      ["unchecked", undefined, undefined],
+      ["chatgpt", undefined, undefined],
+    ])
+  })
+
   test("a card claims no cloud reach the authority has not granted", async () => {
     // A ChatGPT subscription answers on a backend that reads a companion
     // account header, and a provider edge attaches one header per secret. It
