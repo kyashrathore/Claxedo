@@ -445,8 +445,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         ...(fence ? { fencingToken: fence.fencingToken() } : {}),
       })
       for (const payload of finished.events) publishTurn({ sessionId, directory, payload })
-      if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
-      if (outcome?.status === "completed") void titles.generate(binding, runtimeDirectory(directory), adapter)
+      if (outcome?.status === "completed") {
+        if (clearsHandoff) store.updateSessionConfig(sessionId, { handoff: null })
+        void titles.generate(binding, runtimeDirectory(directory), adapter)
+      }
     } catch (err) {
       if (!admitted()) return
       const message = err instanceof Error ? err.message : "turn failed"
