@@ -1,6 +1,6 @@
 import type { Accessor } from "solid-js"
 import type { FileSelection } from "@/platform/files/types"
-import type { ContextItem, ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
+import type { ContextItem, ImageAttachmentPart, Prompt, PromptDraftScope } from "@/features/session/providers/prompt"
 import type { HarnessSubmitController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SubmitMode } from "../../submit/index"
@@ -53,7 +53,7 @@ type PromptSubmitEditorBridge = {
   editor: () => HTMLDivElement | undefined
   queueScroll: () => void
   promptLength: (prompt: Prompt) => number
-  addToHistory: (prompt: Prompt, mode: SubmitMode) => void
+  addToHistory: (prompt: Prompt, mode: SubmitMode, scope?: PromptDraftScope) => void
   resetHistoryNavigation: () => void
   setMode: (mode: SubmitMode) => void
   setPopover: (popover: "at" | "slash" | null) => void

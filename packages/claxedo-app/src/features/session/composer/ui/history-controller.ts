@@ -1,19 +1,20 @@
-import { createStore } from "solid-js/store"
 import { selectionFromLines, type SelectedLineRange } from "@/platform/files/types"
-import type { FileContextItem, Prompt } from "@/features/session/providers/prompt"
-import { Persist, persisted } from "@/platform/persistence/persist"
+import type {
+  FileContextItem,
+  Prompt,
+  PromptDraftScope,
+  PromptHistoryComment,
+  PromptHistoryEntry,
+  PromptHistoryMode,
+  PromptHistoryStoredEntry,
+} from "@/features/session/providers/prompt"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import {
   navigatePromptHistory,
   normalizePromptHistoryEntry,
   prependHistoryEntry,
-  type PromptHistoryComment,
-  type PromptHistoryEntry,
-  type PromptHistoryStoredEntry,
   promptLength,
 } from "@/features/session/composer/ui/history"
-
-type PromptHistoryMode = "normal" | "shell"
 
 type PromptContextItem = FileContextItem & { key: string }
 
@@ -41,6 +42,10 @@ type PromptHistoryPrompt = {
     items: () => PromptContextItem[]
     replaceComments: (items: FileContextItem[]) => void
   }
+  history: {
+    entries: (mode: PromptHistoryMode, scope?: PromptDraftScope) => PromptHistoryStoredEntry[]
+    replace: (mode: PromptHistoryMode, entries: PromptHistoryStoredEntry[], scope?: PromptDraftScope) => void
+  }
 }
 
 export function createPromptHistoryController(input: {
@@ -56,23 +61,6 @@ export function createPromptHistoryController(input: {
   savedPrompt: () => PromptHistoryEntry | null
   setSavedPrompt: (value: PromptHistoryEntry | null) => void
 }) {
-  const [history, setHistory] = persisted(
-    Persist.global("prompt-history", ["prompt-history.v1"]),
-    createStore<{
-      entries: PromptHistoryStoredEntry[]
-    }>({
-      entries: [],
-    }),
-  )
-  const [shellHistory, setShellHistory] = persisted(
-    Persist.global("prompt-history-shell", ["prompt-history-shell.v1"]),
-    createStore<{
-      entries: PromptHistoryStoredEntry[]
-    }>({
-      entries: [],
-    }),
-  )
-
   const historyComments = () => promptHistoryComments({
     comments: input.comments.all(),
     items: input.prompt.context.items(),
@@ -118,19 +106,15 @@ export function createPromptHistoryController(input: {
   return {
     historyActive: () => input.historyIndex() >= 0,
     historyComments,
-    // The two accessors below exist so the CONTROLLER engine (plan
-    // 2026-07-25-005 T2.2) can own history NAVIGATION in upstream's state
-    // machine while this module stays the single owner of the persisted entry
-    // lists and the comment round-trip. Nothing about the legacy path changes.
-    entries: (mode: PromptHistoryMode) =>
-      (mode === "shell" ? shellHistory.entries : history.entries).map(normalizePromptHistoryEntry),
+    // `entries`/`applyComments` let upstream's controller own navigation while
+    // the comment round-trip stays here.
+    entries: (mode: PromptHistoryMode) => input.prompt.history.entries(mode).map(normalizePromptHistoryEntry),
     applyComments: applyHistoryComments,
-    addToHistory: (prompt: Prompt, mode: PromptHistoryMode) => {
-      const currentHistory = mode === "shell" ? shellHistory : history
-      const setCurrentHistory = mode === "shell" ? setShellHistory : setHistory
-      const next = prependHistoryEntry(currentHistory.entries, prompt, mode === "shell" ? [] : historyComments())
-      if (next === currentHistory.entries) return
-      setCurrentHistory("entries", next)
+    addToHistory: (prompt: Prompt, mode: PromptHistoryMode, scope?: PromptDraftScope) => {
+      const entries = input.prompt.history.entries(mode, scope)
+      const next = prependHistoryEntry(entries, prompt, mode === "shell" ? [] : historyComments())
+      if (next === entries) return
+      input.prompt.history.replace(mode, next, scope)
     },
     resetHistoryNavigation: (force = false) => {
       if (!force && (input.historyIndex() < 0 || input.applyingHistory())) return
@@ -140,7 +124,7 @@ export function createPromptHistoryController(input: {
     navigateHistory: (direction: "up" | "down") => {
       const result = navigatePromptHistory({
         direction,
-        entries: input.mode() === "shell" ? shellHistory.entries : history.entries,
+        entries: input.prompt.history.entries(input.mode()),
         historyIndex: input.historyIndex(),
         currentPrompt: input.prompt.current(),
         currentComments: historyComments(),

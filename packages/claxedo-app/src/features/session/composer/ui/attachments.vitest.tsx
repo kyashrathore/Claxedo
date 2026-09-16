@@ -12,8 +12,10 @@ vi.mock("@/platform/persistence/persist", async () => {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),
       serverScoped: (...input: unknown[]) => JSON.stringify(input),
+      global: (...input: unknown[]) => JSON.stringify(input),
     },
     persisted: (_key: string, initial: ReturnType<typeof createStore>) => [...initial, undefined, () => true] as const,
+    removePersisted: () => undefined,
   }
 })
 

@@ -9,8 +9,8 @@ import type {
   PromptInputV2StoreInput,
   PromptInputV2StoreTuple,
 } from "@/ui/session-kit"
-import type { FileSelection } from "@/platform/files/types"
-import { Persist, persisted } from "@/platform/persistence/persist"
+import type { FileSelection, SelectedLineRange } from "@/platform/files/types"
+import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import { useServer } from "@/features/session/app-ports"
 import { createRefCountedLruResourceCache } from "@/platform/sync/live-resource-cache"
@@ -98,6 +98,28 @@ export type Prompt = ContentPart[]
  * draft, decides whether the message still exists.
  */
 export type QueuedMessageEdit = { seq: number; messageId?: string; cancel: () => void }
+
+export type PromptHistoryComment = {
+  id: string
+  path: string
+  selection: SelectedLineRange
+  comment: string
+  time: number
+  origin?: "review" | "file"
+  preview?: string
+}
+
+export type PromptHistoryEntry = {
+  prompt: Prompt
+  comments: PromptHistoryComment[]
+}
+
+/** Entries written before comments travelled with a prompt are a bare `Prompt`. */
+export type PromptHistoryStoredEntry = Prompt | PromptHistoryEntry
+
+export type PromptHistoryMode = "normal" | "shell"
+
+export type PromptHistoryState = Record<PromptHistoryMode, PromptHistoryStoredEntry[]>
 
 export type FileContextItem = {
   type: "file"
@@ -319,6 +341,13 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
     }),
   )
 
+  const [history, setHistory] = persisted(
+    SERVER_SCOPED_PERSIST
+      ? Persist.serverScoped(serverUrl, dir, id, "prompt-history")
+      : Persist.scoped(dir, id, "prompt-history"),
+    createStore<PromptHistoryState>({ normal: [], shell: [] }),
+  )
+
   function keyForItem(item: ContextItem) {
     if (item.type !== "file") return item.type
     const start = item.selection?.startLine
@@ -353,6 +382,14 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
     queuedEdit: {
       current: queuedEdit,
       set: setQueuedEdit,
+    },
+    history: {
+      entries(mode: PromptHistoryMode) {
+        return history[mode]
+      },
+      replace(mode: PromptHistoryMode, entries: PromptHistoryStoredEntry[]) {
+        setHistory(mode, entries)
+      },
     },
     context: {
       items: createMemo(() => store.context.items),
@@ -401,12 +438,23 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
   }
 }
 
+// Entries under the global keys name no session, so no session's history can
+// claim them; they are deleted, not migrated.
+let globalPromptHistoryDropped = false
+function dropGlobalPromptHistory() {
+  if (globalPromptHistoryDropped) return
+  globalPromptHistoryDropped = true
+  void removePersisted(Persist.global("prompt-history"))
+  void removePersisted(Persist.global("prompt-history-shell"))
+}
+
 const promptContextInput = {
   name: "Prompt",
   gate: false,
   init: (props: PromptProviderProps) => {
     const server = useServer()
     const owner = getOwner()
+    dropGlobalPromptHistory()
     const acquire = (dir: string, id: string | undefined) => {
       const key = SERVER_SCOPED_PERSIST
         ? `${server.url}:${dir}:${id ?? WORKSPACE_KEY}`
@@ -501,6 +549,15 @@ const promptContextInput = {
       queuedEdit: {
         current: () => session().queuedEdit.current(),
         set: (edit: QueuedMessageEdit | undefined) => session().queuedEdit.set(edit),
+      },
+      // Recall reads the mounted draft's own sends. A write may name the scope
+      // because a first send happens from a `draft:` scope and belongs to the
+      // session it creates, which is only known once the send has resolved.
+      history: {
+        entries: (mode: PromptHistoryMode, scope?: Scope) =>
+          withScope(scope, (target) => target.history.entries(mode)),
+        replace: (mode: PromptHistoryMode, entries: PromptHistoryStoredEntry[], scope?: Scope) =>
+          withScope(scope, (target) => target.history.replace(mode, entries)),
       },
       context: {
         items: () => session().context.items(),

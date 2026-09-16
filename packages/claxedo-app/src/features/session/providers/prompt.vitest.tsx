@@ -9,14 +9,20 @@ vi.mock("@/features/session/app-ports", () => ({
   useServer: () => ({ url: "http://localhost:4096" }),
 }))
 
+const removed: string[] = []
+
 vi.mock("@/platform/persistence/persist", async () => {
   const { createStore } = await import("solid-js/store")
   return {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),
       serverScoped: (...input: unknown[]) => JSON.stringify(input),
+      global: (key: string) => ({ storage: "claxedo.global.dat", key }),
     },
     persisted: (_key: string, initial: ReturnType<typeof createStore>) => [...initial, undefined, () => true] as const,
+    removePersisted: (target: { storage?: string; key: string }) => {
+      removed.push(`${target.storage}:${target.key}`)
+    },
   }
 })
 
@@ -316,5 +322,52 @@ describe("PromptProvider", () => {
 
     expect(view.getByTestId("other").textContent).toBe("")
     expect(other.current().filter((part) => part.type === "image")).toHaveLength(0)
+  })
+
+  test("deletes the process-wide recall stack once, since its entries name no session", () => {
+    // Two providers have mounted by now (earlier tests); the drop ran for the first only.
+    render(() => (
+      <PromptProvider directory="/repo" sessionId="drop-check">
+        <Probe />
+      </PromptProvider>
+    ))
+    expect(removed).toEqual(["claxedo.global.dat:prompt-history", "claxedo.global.dat:prompt-history-shell"])
+  })
+
+  test("recall history belongs to the mounted session and follows a session switch", async () => {
+    setSessionId("session-a")
+    render(() => (
+      <PromptProvider directory="/repo" sessionId={sessionId}>
+        <Probe />
+      </PromptProvider>
+    ))
+
+    latest.history.replace("normal", [{ prompt: text("sent from a"), comments: [] }])
+    expect(latest.history.entries("normal")).toHaveLength(1)
+    expect(latest.history.entries("shell")).toHaveLength(0)
+
+    setSessionId("session-b")
+    await waitFor(() => expect(latest.history.entries("normal")).toHaveLength(0))
+
+    setSessionId("session-a")
+    await waitFor(() => expect(latest.history.entries("normal")).toHaveLength(1))
+  })
+
+  test("a first send from a draft surface is recorded into the session it created", async () => {
+    setSessionId("new")
+    setDraftId("draft-first-send")
+    render(() => (
+      <PromptProvider directory="/repo" sessionId={sessionId} draftId={draftId}>
+        <Probe />
+      </PromptProvider>
+    ))
+    const created = { dir: "/repo", id: "session-created" }
+
+    latest.history.replace("normal", [{ prompt: text("first"), comments: [] }], created)
+    expect(latest.history.entries("normal")).toHaveLength(0)
+    expect(latest.history.entries("normal", created)).toHaveLength(1)
+
+    setSessionId("session-created")
+    await waitFor(() => expect(latest.history.entries("normal")).toHaveLength(1))
   })
 })

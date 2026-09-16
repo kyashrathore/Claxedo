@@ -11,6 +11,10 @@ export function createSubmitDraftLifecycle(input: {
   prompt: PromptWriter
   current: Prompt
   scopes: PromptDraftScope[]
+  /** The draft whose recall stack the send joins: the session it went to. */
+  historyScope: PromptDraftScope
+  addToHistory: (prompt: Prompt, mode: SubmitMode, scope: PromptDraftScope) => void
+  resetHistoryNavigation: VoidFunction
   length: (prompt: Prompt) => number
   userMode: SubmitMode
   setMode: (mode: SubmitMode) => void
@@ -25,7 +29,12 @@ export function createSubmitDraftLifecycle(input: {
     setCursorPosition(editor, position)
     input.queueScroll()
   })
+  // Recorded here rather than before the send so a first send from a `draft:`
+  // scope lands in the history of the session it created, which does not exist
+  // until the send resolves. A failed send restores the draft instead.
   const clear = () => {
+    input.addToHistory(input.current, input.userMode, input.historyScope)
+    input.resetHistoryNavigation()
     for (const scope of input.scopes) input.prompt.reset(scope)
     input.setMode("normal")
     input.setPopover(null)

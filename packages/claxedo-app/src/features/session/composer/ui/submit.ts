@@ -192,9 +192,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     if (goalIntent.kind === "arm") return undefined
 
-    input.addToHistory(currentPrompt, userMode)
-    input.resetHistoryNavigation()
-
     // The draft this composer is mounted on, taken from the provider that owns
     // it rather than re-derived here: clearing or restoring a submitted draft
     // must reach the one the composer reads, and must not mutate another draft
@@ -575,10 +572,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         })
       },
     }
+    const sessionScope = replaceSession && session?.id
+      ? promptViewScope({ directory: sessionDirectory, sessionId: session.id })
+      : undefined
     const draft = createSubmitDraftLifecycle({
       prompt, current: currentPrompt, length: input.promptLength, userMode,
-      scopes: uniquePromptScopes([promptScope, replaceSession && session?.id
-        ? promptViewScope({ directory: sessionDirectory, sessionId: session.id }) : undefined]),
+      scopes: uniquePromptScopes([promptScope, sessionScope]),
+      historyScope: sessionScope ?? promptScope,
+      addToHistory: input.addToHistory,
+      resetHistoryNavigation: input.resetHistoryNavigation,
       setMode: input.setMode, setPopover: input.setPopover, editor: input.editor, queueScroll: input.queueScroll,
     })
     const { clear: clearInput, restore: restoreInput } = draft

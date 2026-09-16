@@ -1,26 +1,14 @@
-import type { Prompt } from "@/features/session/providers/prompt"
+import type {
+  Prompt,
+  PromptHistoryComment,
+  PromptHistoryEntry,
+  PromptHistoryStoredEntry,
+} from "@/features/session/providers/prompt"
 import type { SelectedLineRange } from "@/platform/files/types"
 
 const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
 export const MAX_HISTORY = 100
-
-export type PromptHistoryComment = {
-  id: string
-  path: string
-  selection: SelectedLineRange
-  comment: string
-  time: number
-  origin?: "review" | "file"
-  preview?: string
-}
-
-export type PromptHistoryEntry = {
-  prompt: Prompt
-  comments: PromptHistoryComment[]
-}
-
-export type PromptHistoryStoredEntry = Prompt | PromptHistoryEntry
 
 export function canNavigateHistoryAtCursor(direction: "up" | "down", text: string, cursor: number, inHistory = false) {
   const position = Math.max(0, Math.min(cursor, text.length))

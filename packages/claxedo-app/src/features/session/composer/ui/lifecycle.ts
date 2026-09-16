@@ -1,7 +1,7 @@
 import { createEffect, on, onCleanup, type Accessor } from "solid-js"
-import type { usePrompt } from "@/features/session/providers/prompt"
+import type { PromptHistoryEntry, usePrompt } from "@/features/session/providers/prompt"
 import { getCursorPosition, setCursorPosition } from "@/features/session/composer/ui/editor-dom"
-import { promptLength, type PromptHistoryEntry } from "@/features/session/composer/ui/history"
+import { promptLength } from "@/features/session/composer/ui/history"
 import { PROMPT_EXAMPLES } from "@/features/session/composer/examples"
 import type { PromptInputProps } from "@/features/session/composer/prompt-input-props"
 

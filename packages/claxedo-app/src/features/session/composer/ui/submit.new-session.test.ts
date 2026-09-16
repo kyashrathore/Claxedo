@@ -47,6 +47,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   test("clears the visible workspace draft after creating a new session", async () => {
     state.runtimeSessionUrl = "http://runtime.example.com"
     const stateAtSubmit: Array<{ resetCount: number; optimisticCount: number }> = []
+    const historyWrites: Array<{ mode: string; scope: unknown; resets: number }> = []
 
     const submit = createPromptSubmit({
       info: () => undefined,
@@ -61,7 +62,9 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       editor: () => undefined,
 
       promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
-      addToHistory: () => undefined,
+      addToHistory: (_prompt, mode, scope) => {
+        historyWrites.push({ mode, scope, resets: promptCalls.reset.length })
+      },
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
       setPopover: () => undefined,
@@ -104,6 +107,9 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
     expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 0 }])
     expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
+    // The send is recorded once, into the created session's recall stack — not
+    // the draft surface's — and before the drafts are reset.
+    expect(historyWrites).toEqual([{ mode: "normal", scope: { dir: "/repo/main", id: "session-1" }, resets: 0 }])
   })
 
   test("unattached drafts refuse to create a session from the sdk directory fallback", async () => {

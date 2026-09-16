@@ -7,7 +7,7 @@
 // boot state, composer-mode scoping) stays outside this contract, in our frame,
 // so the upstream controller runs unforked.
 import type { Accessor } from "solid-js"
-import type { ContentPart, ImageAttachmentPart, Prompt, usePrompt } from "@/features/session/providers/prompt"
+import type { ContentPart, ImageAttachmentPart, Prompt, PromptDraftScope, usePrompt } from "@/features/session/providers/prompt"
 import type { ComposerDocumentOption, createDocumentPickerController } from "@/features/session/composer/document-picker-controller"
 import type { PromptHistoryComments } from "@/features/session/composer/ui/history-controller"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
@@ -91,7 +91,8 @@ export type ComposerEngine = {
   handleCompositionStart: VoidFunction
   handleCompositionEnd: VoidFunction
   handleKeyDown: (event: KeyboardEvent) => void
-  addToHistory: (prompt: Prompt, mode: ComposerEngineMode) => void
+  /** `scope` names the draft that owns the send when it is not the mounted one. */
+  addToHistory: (prompt: Prompt, mode: ComposerEngineMode, scope?: PromptDraftScope) => void
   resetHistoryNavigation: (force?: boolean) => void
   documentPicker: ComposerEngineDocumentPicker
   popoverView: ComposerEnginePopoverView

@@ -113,8 +113,10 @@ export async function dispatchNormalPromptSubmit(input: {
   }
   const handoff = (promptRequest: ReturnType<typeof preparePromptRequest>) => {
     const timeline = timelineFor(promptRequest)
-    input.removeCommentItems(promptRequest.submittedCommentItems)
+    // The clear records the send's comments into history, so it runs while the
+    // comment items are still on the draft.
     input.clearInput()
+    input.removeCommentItems(promptRequest.submittedCommentItems)
     return {
       replaceSession: input.replaceSession,
       draftId: input.draftId,

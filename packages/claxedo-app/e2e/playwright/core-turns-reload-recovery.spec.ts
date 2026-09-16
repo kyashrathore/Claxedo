@@ -17,11 +17,12 @@
  * (`historyMore()` / `x-next-cursor` / `sessionController.loadMore`) is unreachable through
  * the shared mock's non-paginated `/session/:id/message` and is not exercised here.
  *
- * Prompt history is one global stack (`claxedo.global.dat:prompt-history`), not per session.
- * `input.addToHistory(...)` writes it before the network call, so a failed send still
- * records its entry, and ArrowUp reads whichever stack the composer's mode selects at that
- * moment. There is no Edit control on a sent row — `UserActions` exposes only fork/revert —
- * so recall-then-edit is the edit affordance.
+ * Prompt history is per session: it lives beside the session's draft under
+ * `claxedo.workspace.<scope>.dat:workspace:prompt-history`, and ArrowUp reads the stack the
+ * composer's mode selects for the mounted session. The entry is written by the post-send
+ * clear, so a failed send restores the draft instead of recording it. There is no Edit
+ * control on a sent row — `UserActions` exposes only fork/revert — so recall-then-edit is
+ * the edit affordance.
  *
  * A thrown `POST /session/:id/prompt_async` runs `rollbackPromptDispatch`: the optimistic
  * user row is removed and the composer's text, image attachments, and context items are
@@ -246,8 +247,14 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
 
     await sendAndProve(page, "core turns persisted before reload", "ack 1: core turns persisted before reload")
 
-    const storedBeforeReload = await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history"))
-    expect(storedBeforeReload).toContain("core turns persisted before reload")
+    const storedBeforeReload = await page.evaluate(() => {
+      const keys = Object.keys(localStorage).filter((key) => key.endsWith(":workspace:prompt-history"))
+      return { keys, values: keys.map((key) => localStorage.getItem(key) ?? "") }
+    })
+    expect(storedBeforeReload.keys).toHaveLength(1)
+    expect(storedBeforeReload.keys[0]).toMatch(/^claxedo\.workspace\./)
+    expect(storedBeforeReload.values[0]).toContain("core turns persisted before reload")
+    expect(await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history"))).toBeNull()
 
     await page.reload()
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })

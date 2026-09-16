@@ -27,7 +27,7 @@ import { readWithoutSuspending } from "@/features/session/composer/suspense-safe
 // and the session-kit barrel statically pulls @pierre/diffs + shiki.
 import { createPromptInputV2Controller, type PromptInputV2Suggestion } from "@/ui/session-kit-prompt"
 import { promptDraftControllerInput } from "@/features/session/providers/prompt"
-import type { ContentPart } from "@/features/session/providers/prompt"
+import type { ContentPart, PromptHistoryComment } from "@/features/session/providers/prompt"
 import {
   promptAgentOptions,
   promptAtOptionKey,
@@ -37,7 +37,7 @@ import {
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import { moveBeforeZeroWidthSentinel } from "@/features/session/composer/ui/editor-keymap"
 import { createPromptHistoryController } from "@/features/session/composer/ui/history-controller"
-import { promptLength, type PromptHistoryComment } from "@/features/session/composer/ui/history"
+import { promptLength } from "@/features/session/composer/ui/history"
 import { createComposerEditorBridge } from "@/features/session/composer/v2/editor-bridge"
 import {
   atOptionSuggestion,
@@ -299,7 +299,13 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
       if (input.working() && input.blank()) return
       input.handleSubmit(event)
     },
-    addToHistory: (prompt, entryMode) => batch(() => controller.addHistory(prompt, entryMode)),
+    // Upstream's `addHistory` is `history.add` plus a navigation reset and
+    // cannot name a scope, so the two halves are done here.
+    addToHistory: (prompt, entryMode, scope) =>
+      batch(() => {
+        history.addToHistory(prompt, entryMode, scope)
+        controller.resetHistory()
+      }),
     resetHistoryNavigation: () => controller.resetHistory(),
     documentPicker,
     popoverView: {
