@@ -306,12 +306,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-strong);
+  color: var(--text-weak);
+
+  .ui-icon {
+    color: inherit;
+  }
 
   [data-slot="tool-image-size"] {
     font-size: var(--font-size-compact);
     font-variant-numeric: tabular-nums;
-    color: var(--text-weak);
+    color: var(--text-weaker);
   }
 }
 
