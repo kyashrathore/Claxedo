@@ -155,10 +155,12 @@
 }
 
 .tsk-status-trigger {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 24px;
+  white-space: nowrap;
   padding: 0 6px;
   background: transparent;
   border: 0;
@@ -655,6 +657,7 @@
   --tsk-rail-width: 260px;
   --tsk-rail: var(--tsk-rail-width);
   --tsk-rail-gap: 28px;
+  --tsk-measure: 720px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--tsk-rail);
   gap: var(--tsk-rail-gap);
@@ -678,6 +681,13 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+}
+
+/* Title, description and the sections under them share one column so the
+   title wraps where the body does; the breadcrumb row keeps the full width
+   because the rail's expand control sits at its far end. */
+.tsk-detail-main > :not(.tsk-crumbs) {
+  max-width: var(--tsk-measure);
 }
 
 .tsk-crumbs {
@@ -766,6 +776,7 @@
 }
 
 .tsk-bare-title {
+  display: block;
   width: 100%;
   padding: 0;
   background: transparent;
@@ -774,7 +785,10 @@
   font: inherit;
   font-size: var(--font-size-2x-large);
   font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
   letter-spacing: var(--letter-spacing-title);
+  overflow: hidden;
+  resize: none;
 }
 
 .tsk-bare-title:focus-visible {
@@ -785,39 +799,34 @@
   color: var(--text-weak);
 }
 
-/* Sized by its own width rather than its track, so the content holds its
-   layout and is clipped while the track closes instead of rewrapping; the 8px
-   clip margin is what the ghost Open button hangs past the edge. */
+/* The rail is exactly its grid track, so a closed 0px track adds nothing to
+   the page's scroll width; the sections keep the open width so their content
+   holds its layout and is clipped while the track closes instead of
+   rewrapping. The 8px clip margin is what the ghost Open button hangs past
+   the edge. */
 .tsk-rail {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  width: var(--tsk-rail-width);
   min-width: 0;
   padding-top: 4px;
   overflow: clip;
   overflow-clip-margin: 8px;
   transition:
     opacity 140ms linear,
-    transform 220ms cubic-bezier(0.2, 0, 0, 1),
     visibility 0s linear 0s;
 }
 
 .tsk-detail[data-rail="collapsed"] .tsk-rail {
   opacity: 0;
-  transform: translateX(12px);
   visibility: hidden;
-  transition-delay: 0s, 0s, 220ms;
+  transition-delay: 0s, 220ms;
 }
 
-.tsk-rail-toggle.ui-icon-button {
-  flex: none;
-  color: var(--icon-weak-base, var(--icon-base));
-}
-
-.tsk-rail-toggle.ui-icon-button:hover,
-.tsk-rail-toggle.ui-icon-button[aria-expanded="true"] {
-  color: var(--icon-base);
+/* The slide lives on the sections, inside the rail's clip: a transform on
+   the rail itself would extend the page's scroll width past the gutter. */
+.tsk-detail[data-rail="collapsed"] .tsk-rail-section {
+  transform: translateX(12px);
 }
 
 @container (max-width: 720px) {
@@ -826,7 +835,7 @@
     gap: 20px;
   }
 
-  .tsk-rail {
+  .tsk-rail-section {
     width: auto;
   }
 
@@ -839,7 +848,19 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: var(--tsk-rail-width);
   min-width: 0;
+  transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* The 20px button is taller than the title line; the negative block margins
+   keep the title on the same row the rail's 4px top padding was set for. */
+.tsk-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -4px -4px -2px 0;
 }
 
 .tsk-rail-title {
@@ -1034,12 +1055,15 @@
   height: 28px;
 }
 
+/* Inset by the same 6px the hover wash needs, and pulled back out by it, so
+   the title text stays on the column's left edge. */
 .tsk-subtask {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: 0 6px 0 0;
+  margin-left: -6px;
+  padding: 0 6px;
   border-radius: var(--radius-sm);
 }
 
@@ -1302,10 +1326,7 @@
   font-size: var(--font-size-small);
 }
 
-/* The editor paints its own body; this only gives it the page's measure and a
-   focus ring that matches the other borderless fields. */
 .tsk-prose {
-  max-width: 80ch;
   min-width: 0;
 }
 
@@ -1339,11 +1360,66 @@
   opacity: 0.7;
 }
 
-/* The Documents editor sizes itself for a page: a 200px writing area and a
-   160px scroll runway under it. A description is a field on a page that already
-   has both, so this surface asks for neither. */
+/* The Documents editor sizes itself for a page: a 200px writing area, a
+   160px scroll runway under it, 16px body and a 30px h1. A description is a
+   field on a page that already has a title and a scroller, so this surface
+   asks for neither and takes the transcript markdown scale
+   (session-ui markdown.css) — the same text is rendered on that scale when
+   the task is sent to a session. */
 .tsk-prose .notion-editor .tiptap {
   min-height: 1.6em;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-prose .notion-editor .tiptap > :first-child {
+  margin-top: 0;
+}
+
+.tsk-prose .notion-editor .tiptap p {
+  margin: 0 0 6px;
+}
+
+.tsk-prose .notion-editor .tiptap h1 {
+  font-size: var(--font-size-title-small);
+  line-height: var(--line-height-large);
+  margin: 28px 0 12px;
+}
+
+.tsk-prose .notion-editor .tiptap h2 {
+  font-size: var(--font-size-intermediate);
+  line-height: var(--line-height-large);
+  margin: 24px 0 10px;
+}
+
+.tsk-prose .notion-editor .tiptap h3 {
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-large);
+  margin: 20px 0 8px;
+}
+
+.tsk-prose .notion-editor .tiptap ul,
+.tsk-prose .notion-editor .tiptap ol {
+  margin: 8px 0 12px;
+}
+
+.tsk-prose .notion-editor .tiptap code {
+  font-size: var(--font-size-inline-code);
+  font-weight: var(--font-weight-medium);
+  padding: 1px 0.3rem;
+}
+
+.tsk-prose .notion-editor .tiptap pre {
+  padding: 12px;
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-prose .notion-editor .tiptap pre code {
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 0;
 }
 
 .tsk-prose .notion-bottom-space {
@@ -1370,7 +1446,8 @@
 
   .tsk-card,
   .tsk-detail,
-  .tsk-rail {
+  .tsk-rail,
+  .tsk-rail-section {
     transition: none;
   }
 }

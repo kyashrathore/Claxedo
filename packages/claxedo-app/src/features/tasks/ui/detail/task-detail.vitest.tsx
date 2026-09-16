@@ -287,13 +287,17 @@ describe("task detail linked sessions", () => {
 })
 
 describe("the properties rail", () => {
-  test("is open by default, and its toggle in the breadcrumb row asks the owner to fold it", () => {
+  test("is open by default, and the arrow beside its Properties title asks the owner to fold it", () => {
     const { onToggleRail } = mount([])
 
-    const toggle = screen.getByTestId("task-detail-rail-toggle")
+    const rail = screen.getByTestId("task-detail-rail")
+    const toggle = screen.getByTestId("task-detail-rail-collapse")
+    expect(rail.contains(toggle)).toBe(true)
+    expect(screen.queryByTestId("task-detail-rail-expand")).toBeNull()
+    expect(toggle.getAttribute("data-icon")).toBe("chevron-double-right")
     expect(toggle.getAttribute("aria-label")).toBe("Hide properties")
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
-    expect(toggle.getAttribute("aria-controls")).toBe(screen.getByTestId("task-detail-rail").id)
+    expect(toggle.getAttribute("aria-controls")).toBe(rail.id)
     expect(screen.getByTestId("task-detail").getAttribute("data-rail")).toBeNull()
     expect(screen.getByTestId("task-detail-rail").inert).toBe(false)
 
@@ -304,13 +308,20 @@ describe("the properties rail", () => {
 
   // jsdom has no `inert`, so the property Solid drives is what is read here;
   // a browser reflects it to the attribute.
-  test("folded, the rail is inert to focus and readers and the toggle offers to show it again", () => {
-    mount([], {}, undefined, { collapsed: true })
+  test("folded, the rail is inert to focus and readers and an arrow outside it offers to show it again", () => {
+    const { onToggleRail } = mount([], {}, undefined, { collapsed: true })
 
     expect(screen.getByTestId("task-detail").getAttribute("data-rail")).toBe("collapsed")
-    expect(screen.getByTestId("task-detail-rail").inert).toBe(true)
-    const toggle = screen.getByTestId("task-detail-rail-toggle")
+    const rail = screen.getByTestId("task-detail-rail")
+    expect(rail.inert).toBe(true)
+    const toggle = screen.getByTestId("task-detail-rail-expand")
+    expect(rail.contains(toggle)).toBe(false)
+    expect(toggle.getAttribute("data-icon")).toBe("chevron-double-left")
     expect(toggle.getAttribute("aria-label")).toBe("Show properties")
     expect(toggle.getAttribute("aria-expanded")).toBe("false")
+
+    fireEvent.click(toggle)
+
+    expect(onToggleRail).toHaveBeenCalledTimes(1)
   })
 })

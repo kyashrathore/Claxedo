@@ -12,6 +12,7 @@ import {
 } from "@claxedo/tasks"
 import type { ProseEditor, TasksProjectOption } from "../../app-ports"
 import { TaskStatusChip } from "../shared/status-control"
+import { TaskTitleField } from "../shared/title-field"
 import { TASK_STATUS_LABELS, type FieldErrors } from "../../view-model"
 import { draftImageUrl, imageRefusalMessage, isImageRefusal, readImageDraft, type ImageShrink } from "./image-drafts"
 
@@ -145,15 +146,13 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
         <span class="tsk-crumb-current">New task</span>
       </nav>
 
-      <input
-        class="tsk-bare-title"
-        data-testid="task-create-title"
-        aria-label="Task title"
+      <TaskTitleField
+        testId="task-create-title"
+        ariaLabel="Task title"
         placeholder="Task title"
-        maxLength={TASKS_BOUNDS.taskTitleMax}
-        aria-invalid={fieldError("title") ? "true" : undefined}
+        invalid={fieldError("title") !== undefined}
         value={props.draft.title}
-        onInput={(event) => patch({ title: event.currentTarget.value })}
+        onInput={(title) => patch({ title })}
       />
       <Show when={fieldError("title")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
 

@@ -5,7 +5,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
 import {
-  TASKS_BOUNDS,
   type ConfigurationSlot,
   type SessionReference,
   type Task,
@@ -14,6 +13,7 @@ import {
 } from "@claxedo/tasks"
 import type { ProseEditor } from "../../app-ports"
 import { StatusControl } from "../shared/status-control"
+import { TaskTitleField } from "../shared/title-field"
 import { TaskStartControl, type TaskStartOffer } from "../shared/task-row-controls"
 import {
   SLOT_LABELS,
@@ -155,17 +155,20 @@ export function TaskDetail(props: TaskDetailProps) {
           <Show when={!props.dirty}>
             <span class="tsk-spacer" />
           </Show>
-          <IconButton
-            icon={props.railCollapsed ? "layout-right" : "layout-right-partial"}
-            size="small"
-            variant="ghost"
-            class="tsk-rail-toggle"
-            data-testid="task-detail-rail-toggle"
-            aria-label={props.railCollapsed ? "Show properties" : "Hide properties"}
-            aria-expanded={!props.railCollapsed}
-            aria-controls="task-detail-rail"
-            onClick={() => props.onToggleRail()}
-          />
+          {/* The folded rail is inert, so its expand control must live out here. */}
+          <Show when={props.railCollapsed}>
+            <IconButton
+              icon="chevron-double-left"
+              size="small"
+              variant="ghost"
+              data-icon-interaction="subdued"
+              data-testid="task-detail-rail-expand"
+              aria-label="Show properties"
+              aria-expanded={false}
+              aria-controls="task-detail-rail"
+              onClick={() => props.onToggleRail()}
+            />
+          </Show>
         </nav>
 
         <Show when={props.view.parent}>
@@ -183,14 +186,12 @@ export function TaskDetail(props: TaskDetailProps) {
           )}
         </Show>
 
-        <input
-          class="tsk-bare-title"
-          data-testid="task-detail-title"
-          aria-label="Task title"
+        <TaskTitleField
+          testId="task-detail-title"
+          ariaLabel="Task title"
           placeholder="Untitled task"
-          maxLength={TASKS_BOUNDS.taskTitleMax}
           value={props.edit.title}
-          onInput={(event) => patch({ title: event.currentTarget.value })}
+          onInput={(title) => patch({ title })}
         />
 
         <div class="tsk-prose">
@@ -220,7 +221,20 @@ export function TaskDetail(props: TaskDetailProps) {
 
       <aside id="task-detail-rail" class="tsk-rail" data-testid="task-detail-rail" inert={props.railCollapsed === true}>
         <section class="tsk-rail-section" aria-label="Properties">
-          <h3 class="tsk-section-title tsk-rail-title">Properties</h3>
+          <div class="tsk-rail-head">
+            <h3 class="tsk-section-title tsk-rail-title">Properties</h3>
+            <IconButton
+              icon="chevron-double-right"
+              size="small"
+              variant="ghost"
+              data-icon-interaction="subdued"
+              data-testid="task-detail-rail-collapse"
+              aria-label="Hide properties"
+              aria-expanded={true}
+              aria-controls="task-detail-rail"
+              onClick={() => props.onToggleRail()}
+            />
+          </div>
           {/* Each row is its value: the status control is the status, and a
               property nothing can change is the glyph and the name alone. */}
           <div class="tsk-props-list">

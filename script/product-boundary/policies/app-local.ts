@@ -439,8 +439,12 @@ export const appLocal: Policy = {
   // window keys through the workbench's router instead of listening on
   // `document`; mounted by `workbench.tsx`, consumed through the session and
   // tasks app-ports. No new package edge.
-  // Measured 1077 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1077, packages: 58 },
+  //
+  // +1 module (2026-09-16): `features/tasks/ui/shared/title-field.tsx` — the
+  // Tasks title textarea that wraps a long title and refuses line breaks,
+  // reached from the task detail page and the create form. No new package edge.
+  // Measured 1078 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1078, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
