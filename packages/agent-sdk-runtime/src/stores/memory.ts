@@ -18,6 +18,7 @@ import type {
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { isPlaceholderTitle } from "../session-title"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
@@ -141,6 +142,11 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       parentID: input.parentSessionId ?? prev?.parentID ?? null,
       directory: input.directory,
       title: input.title ?? prev?.title ?? null,
+      // A name chosen at create is the caller's; only a placeholder leaves the
+      // session open to the prompt-derived and generated titles.
+      ...(input.title !== undefined && input.title !== prev?.title
+        ? isPlaceholderTitle(input.title) ? {} : { titleSource: "user" as const }
+        : prev?.titleSource ? { titleSource: prev.titleSource } : {}),
       agentSessionId: input.upstreamSessionId ?? input.agentSessionId,
       workspaceId: input.workspaceId ?? prev?.workspaceId,
       connectionId: input.connectionId ?? prev?.connectionId,

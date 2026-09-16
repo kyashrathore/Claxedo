@@ -2348,7 +2348,7 @@ describe("createAgentRuntime", () => {
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
-      title: "Old",
+      title: "New session - 2026-07-08T09:09:30.378Z",
       agentSessionId: "ses_1",
     })
 
@@ -2358,10 +2358,21 @@ describe("createAgentRuntime", () => {
         id: "ses_1",
         directory: "/repo",
         title: "Generated title",
+        titleSource: "harness",
       })),
     })
 
-    expect(store.getSession("ses_1")).toMatchObject({ title: "Generated title" })
+    expect(store.getSession("ses_1")).toMatchObject({ title: "Generated title", titleSource: "harness" })
+  })
+
+  test("a title chosen at create outranks the prompt placeholder and generation", () => {
+    const store = createMemoryRuntimeStore()
+    store.bindSession({ sessionId: "ses_1", directory: "/repo", title: "Chosen at create", agentSessionId: "ses_1" })
+    store.appendEvent({
+      sessionId: "ses_1",
+      payload: sessionUpdated(buildSession({ id: "ses_1", directory: "/repo", title: "Generated title", titleSource: "harness" })),
+    })
+    expect(store.getSession("ses_1")).toMatchObject({ title: "Chosen at create", titleSource: "user" })
   })
 
   test("persists sessions with the sqlite store subpath", async () => {

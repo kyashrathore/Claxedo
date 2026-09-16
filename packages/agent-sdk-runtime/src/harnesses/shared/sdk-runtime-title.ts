@@ -2,6 +2,9 @@ import { assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxed
 import type { SessionTitleRequest } from "../../title-generation"
 import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { SdkRuntimeDriver } from "./sdk-runtime-driver"
+import { Log } from "../../log"
+
+const log = Log.create({ service: "sdk-runtime-title" })
 
 export type { SessionTitleRequest }
 
@@ -16,9 +19,17 @@ export async function generateDriverTitle(driver: SdkRuntimeDriver, store: Title
   return await driver.generateTitle({ sessionId: binding.sessionId, agentSessionId, request })
 }
 
-/** Record an accepted title on the harness's own session, where the driver has a rename. */
+/**
+ * Record an accepted title on the harness's own session, where the driver has
+ * a rename. The Claxedo store stays authoritative: a harness that cannot take
+ * the name right now (process gone, protocol error) must not fail the rename.
+ */
 export async function pushDriverTitle(driver: SdkRuntimeDriver, store: TitleStore, binding: AgentExecutionBinding, title: string) {
   const agentSessionId = store.getAgentSessionId(binding.sessionId)
   if (!agentSessionId || !driver.setAgentSessionTitle) return
-  await driver.setAgentSessionTitle({ sessionId: binding.sessionId, agentSessionId, directory: binding.directory, title })
+  try {
+    await driver.setAgentSessionTitle({ sessionId: binding.sessionId, agentSessionId, directory: binding.directory, title })
+  } catch (error) {
+    log.warn("Harness rejected the session title", { harness: driver.type, sessionId: binding.sessionId, error: error instanceof Error ? error.message : String(error) })
+  }
 }

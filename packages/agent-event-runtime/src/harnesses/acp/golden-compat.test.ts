@@ -126,7 +126,8 @@ describe("ACP frozen compat output", () => {
     expect(payloads.find((payload) => payload.type === "session.updated")).toMatchObject({
       properties: {
         info: {
-          title: "",
+          title: null,
+          titleSource: "harness",
           time: {
             created: Date.parse("2026-06-16T00:00:00.000Z"),
             updated: Date.parse("2026-06-16T00:00:00.000Z"),

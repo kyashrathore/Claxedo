@@ -43,7 +43,9 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     case "set_model": case "set_thinking_level": case "clear_queue": ok({}); break
     case "steer": ok({}); done("steered: " + cmd.message); break
     case "abort": ok({}); emit({ type: "agent_settled" }); break
+    case "set_session_name": ok({}); emit({ type: "session_info_changed", name: cmd.name }); break
     case "prompt":
+      if (cmd.message.startsWith("/claxedo-title ")) { emit({ type: "session_info_changed", name: "Fake generated title" }); ok({}); break }
       ok({}); emit({ type: "agent_start" });
       if (cmd.message === "die") { process.exit(9) }
       if (cmd.message === "hold") break

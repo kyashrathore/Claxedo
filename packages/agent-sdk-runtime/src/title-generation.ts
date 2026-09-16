@@ -45,8 +45,8 @@ export function transcriptExcerpt(messages: AgentMessage[]) {
   const user = first("user")
   const assistant = first("assistant")
   const userBudget = assistant ? Math.floor(EXCERPT_MAX_CHARS * 0.6) : EXCERPT_MAX_CHARS
-  const lines = [`User: ${clip(user, userBudget)}`]
-  if (assistant) lines.push(`Assistant: ${clip(assistant, EXCERPT_MAX_CHARS - Math.min(user.length, userBudget))}`)
+  const lines = [`User: ${excerptHead(user, userBudget)}`]
+  if (assistant) lines.push(`Assistant: ${excerptHead(assistant, EXCERPT_MAX_CHARS - Math.min(user.length, userBudget))}`)
   return lines.join("\n\n")
 }
 
@@ -77,14 +77,16 @@ export function acceptGeneratedTitle(raw: string | null | undefined, placeholder
   const cleaned = line.replace(/\s+/g, " ").replace(/[.!:;,]+$/, "").trim()
   if (!cleaned) return null
   const title = cleaned.length > SESSION_TITLE_MAX_CHARS ? cleaned.slice(0, SESSION_TITLE_MAX_CHARS - 1).trimEnd() + "…" : cleaned
-  if (placeholder && normalize(title) === normalize(placeholder)) return null
+  if (placeholder && comparableTitle(title) === comparableTitle(placeholder)) return null
   return title
 }
 
-function normalize(value: string) {
+/** Titles compare without case, whitespace runs, or the trailing ellipsis a truncated placeholder carries. */
+function comparableTitle(value: string) {
   return value.replace(/\s+/g, " ").replace(/[.…]+$/, "").trim().toLowerCase()
 }
 
-function clip(value: string, max: number) {
+/** The opening `max` characters of a transcript text, marked as cut. */
+function excerptHead(value: string, max: number) {
   return value.length > max ? value.slice(0, max).trimEnd() + "…" : value
 }
