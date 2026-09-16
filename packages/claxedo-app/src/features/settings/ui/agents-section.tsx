@@ -180,14 +180,12 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     })
 
   /**
-   * The provider's answer, where the row does not already carry it. A refusal
-   * is the ring on the radio and the Reconnect beside it; every other answer —
-   * a check that never reached the provider included — has nowhere else to be
-   * read, and a fresh read time beside nothing else reads as a check that
-   * succeeded.
+   * The provider's answer, in words, whatever it was: a check that never
+   * reached the provider included, because a fresh read time beside nothing
+   * else reads as a check that succeeded.
    */
   const verdictWords = (live: LiveCheck | undefined) => {
-    if (live?.verdict === undefined || isRefusal(live.verdict)) return []
+    if (live?.verdict === undefined) return []
     return [language.t(VERDICT_KEY[live.verdict]), ...(live.reason === undefined ? [] : [live.reason])]
   }
 
@@ -235,11 +233,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const reachWords = (login: MachineLogin) =>
     partialMachineLogin(login) ? (MACHINE_REACH[login.harness] ?? []).map((key) => language.t(key)) : []
 
-  /** The provider's refusal, which the row draws as a ring rather than as text. */
-  const refusedWord = (live: LiveCheck | undefined) => {
-    const verdict = live?.verdict
-    return verdict !== undefined && isRefusal(verdict) ? language.t(VERDICT_KEY[verdict]) : undefined
-  }
+  const refused = (live: LiveCheck | undefined) => live?.verdict !== undefined && isRefusal(live.verdict)
 
   const listedAccounts = (check: LocalHarnessCheck): AgentAccount[] => {
     const selected = selectedKey(check)
@@ -249,14 +243,13 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       const label = accountLabel(row)
       const readable = identity && identity.readable && identity.text !== label ? identity.text : undefined
       const detail = detailWords(live, readable)
-      const refused = refusedWord(live)
       return {
         key: row.id,
         ids: row.ids,
         label,
         ...(detail === undefined ? {} : { detail }),
         ...(live === undefined ? {} : { checkedAt: live.at }),
-        ...(refused === undefined ? {} : { refused }),
+        ...(refused(live) ? { refused: true as const } : {}),
         // An id the reader cannot match to an account is worth having and not
         // worth a line, so the row carries it where a full value belongs.
         ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),

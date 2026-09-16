@@ -379,10 +379,15 @@ miniature — it read as a second account — so there is none.
   account — every real Codex row carries a ChatGPT UUID — is the row's tooltip,
   never a line.
 - **A refused account** (rejected, expired, no billing, not working) is drawn as
-  a **ring on its own radio** in the danger token, with the verdict in the row's
-  tooltip and in a screen-reader-only description. Nothing else: no red text, no
-  sentence. Its repair is a Reconnect on its own row, whether or not it is the
-  account in use; the header says nothing about it.
+  a **ring on its own radio** in the danger token, with the verdict worded on
+  the row's second line in the same muted text every other verdict uses
+  ("Rejected by the provider"), where it needs no hover and reads once to a
+  screen reader. No red text. Its repair is a Reconnect on its own row, whether
+  or not it is the account in use; the header says nothing about it.
+- **A pasted `claude setup-token` is stored as `oauth_token`**, whichever field
+  it was pasted into: the registry reads the secret's form at save and at
+  Reconnect, so the metadata-only readers — the Usage page's quota cards and the
+  reach marks — list it as the plan login it is, refused or not.
 - **"This computer's login" is the last entry**, in every state the harness can
   be in — choosing it is the withdrawal of a stored account, not a login, so a
   user whose CLI is signed out still needs to be able to say "run on whatever

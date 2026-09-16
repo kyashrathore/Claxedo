@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { credentialSecretMaterial } from "./secret-material"
+import { credentialSecretMaterial, storedCredentialKind } from "./secret-material"
 
 function jwt(claims: Record<string, unknown>) {
   return `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`
@@ -29,5 +29,20 @@ describe("credentialSecretMaterial", () => {
       kind: "oauth_token",
       secret: JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
     })).toEqual({ token: "sk-ant-oat01-keychain", form: "subscription" })
+  })
+})
+
+describe("storedCredentialKind", () => {
+  test("a pasted key keeps its kind unless the secret is an OAuth token", () => {
+    expect(storedCredentialKind({ kind: "api_key", secret: "sk-ant-api03-console-key" })).toBe("api_key")
+    expect(storedCredentialKind({ kind: "api_key", secret: " sk-ant-oat01-setup-token " })).toBe("oauth_token")
+    expect(storedCredentialKind({ kind: "api_key", secret: JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-x" } }) }))
+      .toBe("oauth_token")
+  })
+
+  test("only the key field's kind is read; every other kind is the caller's word", () => {
+    expect(storedCredentialKind({ kind: "oauth_token", secret: "sk-ant-api03-console-key" })).toBe("oauth_token")
+    expect(storedCredentialKind({ kind: "subscription_session", secret: "sk-ant-oat01-x" })).toBe("subscription_session")
+    expect(storedCredentialKind({ kind: "sandbox_driver", secret: "{}" })).toBe("sandbox_driver")
   })
 })

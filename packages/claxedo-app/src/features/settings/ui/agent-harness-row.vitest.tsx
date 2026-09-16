@@ -249,7 +249,7 @@ describe("AgentHarnessRow accounts", () => {
   })
 
   test("Reconnect belongs to the row the provider refused, never to the header", () => {
-    row({ accounts: [account({ refused: "settings.providers.live.authFailed" })] })
+    row({ accounts: [account({ refused: true })] })
 
     expect([...document.querySelectorAll<HTMLElement>('[data-component="provider-actions"] button')]
       .map((button) => button.dataset.action)).toEqual(["agent-add-account"])
@@ -264,19 +264,19 @@ describe("AgentHarnessRow accounts", () => {
       .toBe("cred_1")
   })
 
-  test("a refused account is a ring and a screen-reader verdict, not red words", () => {
-    row({ accounts: [account({ refused: "settings.providers.live.authFailed" })] })
+  test("a refused account is a ring and the provider's word on its second line, not red words or a hover", () => {
+    row({ accounts: [account({ refused: true, detail: "…xgAA · settings.providers.live.authFailed" })] })
 
     expect(entry("cred_1").hasAttribute("data-invalid")).toBe(true)
-    expect(entry("cred_1").querySelector('[data-component="agent-account-refusal"]')?.textContent)
-      .toBe("settings.providers.live.authFailed")
-    // Said once: a title repeating it reads the verdict twice to a screen
-    // reader and is unreachable by anyone who cannot hover.
+    const description = entry("cred_1").querySelector<HTMLElement>('[data-slot="radio-list-item-description"]')!
+    expect(description.textContent).toBe("…xgAA · settings.providers.live.authFailed")
+    expect(description.querySelector(".sr-only")).toBeNull()
+    expect(description.querySelector('[class*="danger"], [class*="error"]')).toBeNull()
     expect(entry("cred_1").getAttribute("title")).toBeNull()
   })
 
   test("a refused row rests as a ring alone: Reconnect waits with the other two for the pointer", () => {
-    row({ accounts: [account({ refused: "settings.providers.live.expired", selected: true })] })
+    row({ accounts: [account({ refused: true, selected: true })] })
 
     const actions = entry("cred_1").querySelector('[data-component="agent-account-actions"]')!
     expect([...actions.querySelectorAll("button")].map((node) => node.dataset.action))

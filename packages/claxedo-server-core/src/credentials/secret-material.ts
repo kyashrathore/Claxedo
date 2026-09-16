@@ -40,6 +40,20 @@ export function isSubscriptionKind(kind: CredentialKind): boolean {
   return SUBSCRIPTION_KINDS.has(kind)
 }
 
+/**
+ * The kind a row keeps once its secret has been read.
+ *
+ * A pasted `claude setup-token` arrives under the key field's kind, and the
+ * row is what every listing that never opens the secret reads — the usage
+ * snapshot and the reach marks — so a plan login stored as `api_key` is a plan
+ * with no card and no windows. Only this direction is decidable: a bare secret
+ * under `oauth_token` reads as a subscription whatever it looks like.
+ */
+export function storedCredentialKind(input: { kind: CredentialKind; secret: string }): CredentialKind {
+  if (input.kind !== "api_key") return input.kind
+  return credentialSecretMaterial(input)?.form === "subscription" ? "oauth_token" : "api_key"
+}
+
 export function credentialSecretMaterial(input: {
   kind: CredentialKind
   secret: string

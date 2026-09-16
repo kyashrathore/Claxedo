@@ -689,8 +689,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     rowAction("anthropic", "sdk_work", "check").click()
 
     await waitFor(() => expect(accountRefused("anthropic", "sdk_work")).toBe(true))
-    expect(accountRow("anthropic", "sdk_work").querySelector('[data-component="agent-account-refusal"]')?.textContent)
-      .toBe("settings.providers.live.authFailed")
+    expect(accountDetail("anthropic", "sdk_work")).toBe("acc_work · settings.providers.live.authFailed")
     expect(accountRow("anthropic", "sdk_work").querySelector('[data-action="agent-reconnect"]')).not.toBeNull()
     expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/sdk_work/verify")
   })
@@ -703,8 +702,9 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountRefused("anthropic", "cred_bad")).toBe(true))
     // The header says nothing about it; the failing row carries its own repair.
     expect(agentAction("anthropic")).toBe("agent-add-account")
-    expect(accountRow("anthropic", "cred_bad").querySelector('[data-component="agent-account-refusal"]')?.textContent)
-      .toBe("settings.providers.live.authFailed")
+    // The provider's word is readable on the line, not hidden behind a hover.
+    expect(accountDetail("anthropic", "cred_bad")).toBe("settings.providers.live.authFailed")
+    expect(accountRow("anthropic", "cred_bad").querySelector(".sr-only")).toBeNull()
     expect(accountRow("anthropic", "cred_bad").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
 
     accountRow("anthropic", "cred_bad").querySelector<HTMLButtonElement>('[data-action="agent-reconnect"]')!.click()

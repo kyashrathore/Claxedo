@@ -39,6 +39,7 @@ import {
 } from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
+import { storedCredentialKind } from "./secret-material"
 import { parseUsageWindows, serializeUsageWindows } from "./usage-windows"
 
 export { SINGLE_TENANT_ORG } from "./provider-credential.sql"
@@ -110,9 +111,11 @@ function readWithPolicy<T>(label: string, onOutage: RegistryOutage, empty: T, re
  * dashboard shows, so the row is recognisable in the accounts list without ever
  * revealing the key.
  *
- * OAuth and subscription rows carry the provider's account id already, and
- * everything that is not harness auth (sandbox drivers, `integration:` and
- * `channel:` secrets) has one row per provider by design.
+ * Keyed on the caller's kind rather than the stored one: a pasted setup token
+ * settles under `oauth_token` and still names no account. Logins that arrive
+ * from an OAuth flow carry the provider's account id already, and everything
+ * that is not harness auth (sandbox drivers, `integration:` and `channel:`
+ * secrets) has one row per provider by design.
  */
 function pastedAccountId(input: CredentialWrite): string | undefined {
   if (input.kind !== "api_key" || !fanoutEligibleAuth(input.kind, input.provider_id)) return undefined
@@ -131,7 +134,10 @@ export async function putCredential(
     throw new Error("Secret backend unavailable — refusing to store credential")
   }
 
+  // The fingerprint keys on what the caller pasted, so the same token pasted
+  // twice stays one row whichever kind it settles under.
   const accountId = input.account_id ?? pastedAccountId(input)
+  const kind = storedCredentialKind(input)
 
   // Check for existing credential for this org+provider+kind. The org
   // predicate is what stops org A's write from adopting (and then
@@ -144,7 +150,7 @@ export async function putCredential(
         and(
           inOrg(orgId),
           eq(ClaxedoProviderCredentialTable.provider_id, input.provider_id),
-          eq(ClaxedoProviderCredentialTable.kind, input.kind),
+          eq(ClaxedoProviderCredentialTable.kind, kind),
         ),
       )
       .all(),
@@ -157,7 +163,7 @@ export async function putCredential(
   // Exclusive-kind replacement DELETES rows. Unscoped, org A storing an
   // `openai` api_key would delete org B's `openai` oauth_token — cross-tenant
   // denial of service. Scoped to the writer's org it can only replace its own.
-  const replacing = exclusiveAuthKinds.some((kind) => kind === input.kind)
+  const replacing = exclusiveAuthKinds.some((exclusive) => exclusive === kind)
     ? ClaxedoDB.use((db) =>
         db
           .select()
@@ -193,7 +199,7 @@ export async function putCredential(
     org_id: orgId,
     owner,
     provider_id: input.provider_id,
-    kind: input.kind,
+    kind,
     source: input.source,
     label: input.label ?? null,
     account_id: accountId ?? null,
@@ -253,7 +259,7 @@ export async function putCredential(
       .all()
       .filter((other) => other.id !== id)
     const usable = holders.some((other) => other.status === "available")
-    const active = fanoutEligibleAuth(input.kind, input.provider_id) && !usable
+    const active = fanoutEligibleAuth(kind, input.provider_id) && !usable
     const row = { ...fields, is_active: active, activated_at: active ? ts : null }
     if (row.is_active && holders.length > 0) {
       db.update(ClaxedoProviderCredentialTable)
@@ -279,7 +285,7 @@ export async function putCredential(
     })
   }
 
-  log.info("Credential stored", { id, org_id: orgId, provider_id: input.provider_id, kind: input.kind })
+  log.info("Credential stored", { id, org_id: orgId, provider_id: input.provider_id, kind })
 
   return toMetadata(stored)
 }
@@ -581,6 +587,7 @@ export async function updateCredentialSecret(
     .update(ClaxedoProviderCredentialTable)
     .set({
       secure_ref: ref,
+      kind: storedCredentialKind({ kind: credential.kind, secret }),
       // `null` is a caller saying the replacement has no expiry, which is a
       // different fact from not knowing one: the stored expiry described the
       // material being replaced, so carrying it over expires a live secret.

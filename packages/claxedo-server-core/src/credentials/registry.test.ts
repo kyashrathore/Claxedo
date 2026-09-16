@@ -403,6 +403,55 @@ describe("credential registry", () => {
     expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ health: null, status: "available", last_validated_at: null })
   })
 
+  test("a setup token pasted into the key field is stored as the plan login it is", async () => {
+    const token = "sk-ant-oat01-setup-token-pasted-as-a-key-xgAA"
+    const stored = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      label: "kanusdlp@gmail.com",
+      secret: token,
+    })
+
+    expect(stored.kind).toBe("oauth_token")
+    expect(stored.account_id).toMatch(/^fp_[0-9a-f]{8}…xgAA$/)
+    await expect(resolveSecretById(stored.id)).resolves.toBe(token)
+
+    const again = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      label: "kanusdlp@gmail.com",
+      secret: token,
+    })
+    expect(again.id).toBe(stored.id)
+    expect(listCredentials().filter((c) => c.provider_id === "claude-sdk")).toHaveLength(1)
+
+    const key = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      label: "console key",
+      secret: "sk-ant-api03-console-key-bbbb",
+    })
+    expect(key.kind).toBe("api_key")
+    expect(key.id).not.toBe(stored.id)
+  })
+
+  test("reconnecting a key row with a setup token moves the row to the plan kind", async () => {
+    const credential = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-api03-console-key-aaaa",
+    })
+    expect(credential.kind).toBe("api_key")
+
+    expect(await updateCredentialSecret(credential.id, "sk-ant-oat01-fresh-setup-token-ccAA")).toBe(true)
+
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ kind: "oauth_token", account_id: credential.account_id })
+  })
+
   test("replacing the secret supersedes the verdict reached against the old one", async () => {
     const credential = await putCredential({
       provider_id: "verify-refresh-test",

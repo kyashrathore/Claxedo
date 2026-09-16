@@ -36,8 +36,8 @@ export type AgentAccount = {
    * handed words it would have to shorten again.
    */
   checkedAt?: number
-  /** The provider's refusal, in words. The row shows it as a ring, not as text. */
-  refused?: string
+  /** The provider refused this login: a ring on the radio and a Reconnect on the row. */
+  refused?: true
   /** An identity worth having on the row but not worth reading. */
   identity?: string
   /** Where the authority says a turn on this account can run, where anywhere. */
@@ -55,8 +55,8 @@ export type AgentAccount = {
  * The rows carry everything — which login runs next, which one the provider
  * refused, and what to do about it — so the header is the name and the one
  * action no row can offer: adding an account. A refused account is a ring on
- * its own radio and a Reconnect on its own row; nothing else about it is
- * coloured or worded.
+ * its own radio, the provider's word on its second line and a Reconnect on its
+ * own row; nothing else about it is coloured.
  */
 export const AgentHarnessRow: Component<{
   id: string
@@ -143,7 +143,7 @@ export const AgentHarnessRow: Component<{
           when={confirmingRemove() === self.account.key}
           fallback={(
             <>
-              <Show when={self.account.refused !== undefined && self.account.ids.length > 0}>
+              <Show when={self.account.refused && self.account.ids.length > 0}>
                 <Button
                   size="small"
                   variant="secondary"
@@ -244,7 +244,7 @@ export const AgentHarnessRow: Component<{
                   class="group py-1"
                   value={account.key}
                   disabled={account.disabled === true}
-                  invalid={account.refused !== undefined}
+                  invalid={account.refused === true}
                   data-component="agent-account"
                   data-account={account.key}
                   data-selected={account.selected ? "true" : "false"}
@@ -271,18 +271,9 @@ export const AgentHarnessRow: Component<{
                       </Show>
                     </span>
                   )}
-                  description={(account.detail ?? account.refused) !== undefined
-                    ? (
-                      <>
-                        <Show when={account.detail}>
-                          {(detail) => <span class="text-13-regular text-text-weak">{detail()}</span>}
-                        </Show>
-                        <Show when={account.refused}>
-                          {(refused) => <span class="sr-only" data-component="agent-account-refusal">{refused()}</span>}
-                        </Show>
-                      </>
-                    )
-                    : undefined}
+                  description={account.detail === undefined
+                    ? undefined
+                    : <span class="text-13-regular text-text-weak">{account.detail}</span>}
                 >
                   <span class="relative flex shrink-0 items-center justify-end">
                     <Show when={account.checkedAt}>
