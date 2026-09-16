@@ -349,7 +349,7 @@ describe("usage quota reader", () => {
     const { snapshot } = await read({ org: ORG, refresh: false })
 
     expect(snapshot?.accounts.map((account) => [account.credentialId, account.usageAt, account.usageError])).toEqual([
-      ["setup", 77, "This token can run turns but cannot report plan usage. Sign the CLI in to see the plan."],
+      ["setup", 77, "Setup-tokens are inference-only, so this account runs turns but cannot report its plan usage. Sign the Claude CLI in to this account to see it."],
       ["unchecked", undefined, undefined],
       ["chatgpt", undefined, undefined],
     ])

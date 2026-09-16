@@ -27,7 +27,7 @@ import type { QuotaAccount, QuotaSnapshot, UnifiedUsageResponse } from "@claxedo
 
 const log = Log.create({ service: "usage-quota" })
 
-const INFERENCE_ONLY_LOGIN = "This token can run turns but cannot report plan usage. Sign the CLI in to see the plan."
+const INFERENCE_ONLY_LOGIN = "Setup-tokens are inference-only, so this account runs turns but cannot report its plan usage. Sign the Claude CLI in to this account to see it."
 
 /** A Check spends a vendor request per stored account, so refreshes are spaced. */
 const REFRESH_INTERVAL_MS = 60_000
