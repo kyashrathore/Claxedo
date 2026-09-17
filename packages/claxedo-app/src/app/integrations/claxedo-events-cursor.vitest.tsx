@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
 import { resetSessionEventScope } from "@/platform/runtime/session-event-scope"
@@ -145,5 +146,68 @@ describe("ClaxedoEventsProvider reconnects", () => {
     await vi.advanceTimersByTimeAsync(0)
     for (const delay of [250, 250, 500]) await vi.advanceTimersByTimeAsync(delay)
     expect(errors).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("the workspace stream's two arms", () => {
+  const workspaceRequests = () =>
+    transport.request.mock.calls
+      .map(([input, init]) => ({ url: new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url), init }))
+      .filter(({ url }) => url.pathname.endsWith("/api/wr/events"))
+  const quiet = () => new Response('id: 3\ndata: {"type":"heartbeat"}\n\n')
+
+  function mountRoute(pathname: () => string) {
+    return render(() => (
+      <ClaxedoEventsProvider pathname={pathname} serverUrl={() => "http://127.0.0.1:3001"} accountState={() => ({ status: "unsigned" })}>
+        <ConnectionState />
+      </ClaxedoEventsProvider>
+    ))
+  }
+
+  test("opens unscoped; a runtime that refuses the workspace is asked again for the routed session", async () => {
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      return url.searchParams.has("sessionID") ? quiet() : new Response("forbidden", { status: 403 })
+    })
+    mountRoute(() => "/w/ws_shared/session/ses_shared")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const opens = workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))
+    expect(opens).toEqual([null, "ses_shared"])
+  })
+
+  test("a workspace-wide stream keeps its connection and cursor across a session navigation", async () => {
+    transport.request.mockImplementation(async () => quiet())
+    const [pathname, setPathname] = createSignal("/w/ws_owned/session/ses_a")
+    mountRoute(pathname)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests()).toHaveLength(1)
+    setPathname("/w/ws_owned/session/ses_b")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests()).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAY_MS)
+    const second = workspaceRequests()[1]
+    expect(second?.url.searchParams.get("sessionID")).toBeNull()
+    expect(new Headers(second?.init?.headers).get("Last-Event-ID")).toBe("3")
+  })
+
+  test("a session-scoped stream is reopened, cursor-less, for the session a navigation names", async () => {
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      return url.searchParams.has("sessionID") ? quiet() : new Response("forbidden", { status: 403 })
+    })
+    const [pathname, setPathname] = createSignal("/w/ws_shared/session/ses_a")
+    mountRoute(pathname)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_a"])
+    setPathname("/w/ws_shared/session/ses_b")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const opens = workspaceRequests()
+    expect(opens.map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_a", null, "ses_b"])
+    expect(new Headers(opens.at(-1)?.init?.headers).get("Last-Event-ID")).toBeNull()
   })
 })
