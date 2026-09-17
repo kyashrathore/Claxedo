@@ -99,7 +99,6 @@ export namespace Timeline {
     isActive: boolean,
     firstTurnRecovery = index === 0,
     isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
-    foldWhileRunning = true,
     lastTurn?: SessionTurnOutcome,
     visibleAssistantMessageIDs?: ReadonlySet<string>,
     priorFoldableCount: (userMessageID: string) => number | undefined = () => undefined,
@@ -234,8 +233,7 @@ export namespace Timeline {
       settled,
       interrupted,
       errored: !!error,
-      busy: isActive && status === "busy",
-      foldWhileRunning,
+      busy: isActive && (status === "busy" || status === "retry" || settlePending),
       userChoice: isFoldedChoice(userMessage.id),
     })
     const turnTokens = assistantMessages.reduce((sum, message) => {
@@ -263,7 +261,6 @@ export namespace Timeline {
           durationMs,
           foldCount: foldableCount,
           folded: fold.folded,
-          running: fold.running,
           tokens: turnTokens,
           cost: turnCost,
         }),

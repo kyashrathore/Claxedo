@@ -182,9 +182,8 @@ const LEVERS: Lever[] = [
     key: "liveTurn",
     group: "Density",
     label: "Last turn",
-    finding:
-      "Folding a running turn is on by default and keeps the live group visible; Settings \u2192 General turns it off.",
-    origin: "settings general.timelineFoldWhileRunning",
+    finding: "A turn the session is still working on shows every row and no fold control; it folds once it finishes.",
+    origin: "turn-fold.ts turnFoldDecision",
     control: {
       kind: "segment",
       options: [
@@ -1080,7 +1079,6 @@ function TranscriptLab() {
                       }
                       showReasoningSummaries={effective().machinery === "thinking"}
                       foldSettledTurn={effective().turnFold !== "off"}
-                      foldRunningTurn={effective().turnFold !== "off"}
                       shellToolDefaultOpen={effective().machinery === "expanded"}
                       editToolDefaultOpen={effective().machinery === "expanded"}
                       classes={{

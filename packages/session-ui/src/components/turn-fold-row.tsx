@@ -14,12 +14,9 @@ export function TurnFoldRow(props: {
   tokens?: number
   cost?: number
   showTokens?: boolean
-  running?: boolean
 }) {
-  const label = () => {
-    const verb = props.running ? "Working" : "Worked"
-    return typeof props.durationMs === "number" ? `${verb} for ${formatDuration(props.durationMs)}` : verb
-  }
+  const label = () =>
+    typeof props.durationMs === "number" ? `Worked for ${formatDuration(props.durationMs)}` : "Worked"
   const footer = () => {
     if (!props.showTokens || !props.tokens) return undefined
     const parts = [`${formatTokenCount(props.tokens)} tokens`]

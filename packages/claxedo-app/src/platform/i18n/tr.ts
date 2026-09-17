@@ -558,9 +558,6 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Yönlendir",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
-  "settings.general.row.timelineFoldWhileRunning.title": "Devam eden turu daralt",
-  "settings.general.row.timelineFoldWhileRunning.description":
-    "Bir tur devam ederken tamamlanan işi daraltır ve son adımı görünür bırakır",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
   "settings.general.row.shellToolPartsExpanded.description":
     "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",

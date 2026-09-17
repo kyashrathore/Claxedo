@@ -484,9 +484,6 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Orientar",
   "settings.general.row.reasoningSummaries.title": "Mostrar resumos de raciocínio",
   "settings.general.row.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
-  "settings.general.row.timelineFoldWhileRunning.title": "Recolher um turno em andamento",
-  "settings.general.row.timelineFoldWhileRunning.description":
-    "Recolher o trabalho concluído enquanto um turno ainda está em andamento, mantendo a última etapa visível",
   "settings.general.row.shellToolPartsExpanded.title": "Expandir partes da ferramenta shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostrar partes da ferramenta shell expandidas por padrão na linha do tempo",

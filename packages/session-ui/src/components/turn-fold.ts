@@ -13,10 +13,7 @@ type FoldablePart = { type: string; tool?: string; userOpen?: boolean }
 // A single tool is already one compact, useful row: folding it replaces the only
 // actionable content with an extra click. Grouped runs count as one row because
 // they own their own disclosure.
-const SETTLED_FOLD_MINIMUM = 2
-// A running turn keeps its latest group visible, so it needs one more than the
-// settled minimum before the fold hides anything worth a click.
-const RUNNING_FOLD_MINIMUM = 3
+const FOLD_MINIMUM = 2
 
 const NO_KEYS: ReadonlySet<string> = new Set()
 
@@ -26,11 +23,9 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
 
 /**
  * Machinery — everything a turn did that is not the message it is addressing to
- * the user, subagent spawns included: a running turn's auto-fold keeps its live
- * group on screen, so delegated work is visible while it is in flight and folds
- * with the rest once the turn moves past it. An answered question is not
- * machinery: it holds the words the reader typed, the one part of the turn they
- * authored, so it stays up beside the prose.
+ * the user, subagent spawns included. An answered question is not machinery: it
+ * holds the words the reader typed, the one part of the turn they authored, so
+ * it stays up beside the prose.
  *
  * Text and reasoning never fold. No harness marks which text part is the answer —
  * `AgentAssistantMessage.finish` is never set natively and `AgentStepFinishPart` is
@@ -56,16 +51,11 @@ export type TurnFoldStatus = {
   busy?: boolean
   /** Folding a settled turn is the product rule, so omitting this opts in. */
   foldWhenSettled?: boolean
-  /** Folding a running turn hides work the user is still watching, so omitting this opts out. */
-  foldWhileRunning?: boolean
   /** An explicit user toggle. `undefined` leaves the turn on auto. */
   userChoice?: boolean
 }
 
 export type TurnFoldDecision = {
-  running: boolean
-  canFoldSettled: boolean
-  canFoldRunning: boolean
   canFold: boolean
   folded: boolean
   /** The reader folded this turn themselves, rather than it folding on its own. */
@@ -73,8 +63,12 @@ export type TurnFoldDecision = {
 }
 
 /**
- * A settled turn folds its machinery behind one "Worked for Xs" divider, leaving
+ * A finished turn folds its machinery behind one "Worked for Xs" divider, leaving
  * the prose visible; an explicit user toggle beats the auto-fold.
+ *
+ * A turn the session is still working on gets no fold and no control: the rows
+ * are the work the reader is watching, and `settled` alone cannot tell a finished
+ * turn from one between steps.
  *
  * An interrupted or failed turn keeps the control but does not fold on its own:
  * the rows the fold would hide are the ones that explain what happened, so they
@@ -83,16 +77,11 @@ export type TurnFoldDecision = {
  * by hand and then interrupted could never be collapsed again.
  */
 export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
-  const running = !!status.busy && !status.settled && !status.errored
-  const canFoldSettled =
-    status.foldWhenSettled !== false && status.settled && status.foldableCount >= SETTLED_FOLD_MINIMUM
-  const canFoldRunning = running && !!status.foldWhileRunning && status.foldableCount >= RUNNING_FOLD_MINIMUM
-  const canFold = canFoldSettled || canFoldRunning
+  const running = !!status.busy && !status.errored
+  const canFold =
+    !running && status.foldWhenSettled !== false && status.settled && status.foldableCount >= FOLD_MINIMUM
   const explainsItself = !!status.interrupted || !!status.errored
   return {
-    running,
-    canFoldSettled,
-    canFoldRunning,
     canFold,
     folded: canFold ? (status.userChoice ?? !explainsItself) : false,
     explicit: status.userChoice !== undefined,
@@ -102,8 +91,6 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
 /**
  * The groups the fold hides, keyed by `PartGroup.key`.
  *
- * A running turn folding on its own hides its *completed* phases only — the last
- * foldable group is the live one and stays on screen so active work never disappears.
  * A reader who folds the turn themselves means all of it, expanded rows included: a
  * row left open under a control that reads collapsed contradicts the control.
  */
@@ -117,15 +104,13 @@ export function foldedGroupKeys(
   part: FoldablePartLookup,
 ): ReadonlySet<string> {
   if (!decision.folded) return NO_KEYS
-  const foldable = groups.filter((group) => isFoldableGroup(group, part))
-  const live = decision.canFoldRunning && !decision.explicit ? foldable.at(-1)?.key : undefined
   return new Set(
-    foldable
+    groups
       .filter(
         // An automatic fold must not take a row the reader opened themselves;
         // an explicit fold already means all of it.
         (group) =>
-          group.key !== live &&
+          isFoldableGroup(group, part) &&
           (decision.explicit || !groupMembers(group).some((ref) => part(ref)?.userOpen)),
       )
       .map((group) => group.key),

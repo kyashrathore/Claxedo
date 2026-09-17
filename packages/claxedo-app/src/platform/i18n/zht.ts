@@ -544,9 +544,6 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "顯示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在時間軸中顯示模型推理摘要",
 
-  "settings.general.row.timelineFoldWhileRunning.title": "摺疊執行中的回合",
-  "settings.general.row.timelineFoldWhileRunning.description":
-    "在回合仍在執行時摺疊已完成的工作，並保持最新步驟可見",
   "settings.general.row.shellToolPartsExpanded.title": "展開 shell 工具區塊",
   "settings.general.row.shellToolPartsExpanded.description": "在時間軸中預設展開 shell 工具區塊",
   "settings.general.row.editToolPartsExpanded.title": "展開 edit 工具區塊",

@@ -753,8 +753,6 @@ export function AssistantParts(
     showReasoningSummaries?: boolean
     /** Folds a settled turn's machinery behind one "Worked for Xs" divider. */
     foldSettledTurn?: boolean
-    /** Folds a running turn's completed phases behind "Working for Xs", keeping the live group. */
-    foldRunningTurn?: boolean
     turnInterrupted?: boolean
     turnErrored?: boolean
   },
@@ -799,7 +797,6 @@ export function AssistantParts(
       errored: props.turnErrored,
       busy: props.working,
       foldWhenSettled: props.foldSettledTurn,
-      foldWhileRunning: props.foldRunningTurn ?? true,
       userChoice: foldChoice(),
     }),
   )
@@ -815,7 +812,6 @@ export function AssistantParts(
         <TurnFoldRow
           durationMs={props.turnDurationMs}
           folded={fold().folded}
-          running={fold().canFoldRunning}
           onToggle={() => setFoldChoice(!fold().folded)}
         />
       </Show>

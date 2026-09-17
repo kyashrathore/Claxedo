@@ -228,24 +228,6 @@ export const SettingsGeneral: Component = () => {
             </SettingsRow>
 
             <SettingsRow
-              title={language.t("settings.general.row.timelineFoldWhileRunning.title")}
-              description={language.t("settings.general.row.timelineFoldWhileRunning.description")}
-            >
-              <div data-action="settings-feed-timeline-fold-while-running">
-                <Switch
-                  hideLabel
-                  checked={settings.general.timelineFoldWhileRunning()}
-                  onChange={(checked) => {
-                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "timeline_fold_while_running", value: checked })
-                    settings.general.setTimelineFoldWhileRunning(checked)
-                  }}
-                >
-                  {language.t("settings.general.row.timelineFoldWhileRunning.title")}
-                </Switch>
-              </div>
-            </SettingsRow>
-
-            <SettingsRow
               title={language.t("settings.general.row.shellToolPartsExpanded.title")}
               description={language.t("settings.general.row.shellToolPartsExpanded.description")}
             >

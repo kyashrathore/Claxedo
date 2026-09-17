@@ -495,9 +495,6 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.row.reasoningSummaries.description":
     "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
-  "settings.general.row.timelineFoldWhileRunning.title": "Laufenden Zug einklappen",
-  "settings.general.row.timelineFoldWhileRunning.description":
-    "Abgeschlossene Arbeit einklappen, während ein Zug noch läuft, und den letzten Schritt sichtbar lassen",
   "settings.general.row.shellToolPartsExpanded.title": "Shell-Tool-Abschnitte ausklappen",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",

@@ -581,7 +581,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
             isActive(),
             props.firstTurnRecovery !== false && indexAccessor() === 0,
             (userMessageID) => turnFold.isFolded(userMessageID),
-            settings.general.timelineFoldWhileRunning(),
             lastTurnOutcome(),
             visibleAssistantMessageIDs(),
             (userMessageID) => cached?.turnFoldableCounts?.[userMessageID],
@@ -1580,7 +1579,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 folded={turnFoldRow().folded}
                 tokens={turnFoldRow().tokens}
                 cost={turnFoldRow().cost}
-                running={turnFoldRow().running}
                 showTokens={settings.general.timelineShowTurnTokens()}
                 onToggle={() => {
                   turnFold.setFolded(turnFoldRow().userMessageID, !turnFoldRow().folded)

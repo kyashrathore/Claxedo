@@ -92,9 +92,8 @@ describe("turnFoldDecision", () => {
     expect(turnFoldDecision({ ...settledTurn }).folded).toBe(true)
   })
 
-  test("the settled fold is on by default and the running fold is off", () => {
+  test("the settled fold is on by default and can be opted out", () => {
     expect(turnFoldDecision({ ...settledTurn, foldWhenSettled: false }).canFold).toBe(false)
-    expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4 }).canFoldRunning).toBe(false)
   })
 
   test("an interrupted or failed turn keeps its control but does not fold itself", () => {
@@ -115,20 +114,20 @@ describe("turnFoldDecision", () => {
     expect(turnFoldDecision({ settled: true, foldableCount: 1, userChoice: true }).folded).toBe(false)
   })
 
-  test("a running turn folds only when asked, and only from three foldable groups", () => {
-    const running = { settled: false, busy: true, foldWhileRunning: true }
-    expect(turnFoldDecision({ ...running, foldableCount: 2 }).canFold).toBe(false)
-    expect(turnFoldDecision({ ...running, foldableCount: 3 }).canFoldRunning).toBe(true)
-    expect(turnFoldDecision({ ...running, foldWhileRunning: false, foldableCount: 3 }).canFold).toBe(false)
-    expect(turnFoldDecision({ settled: false, busy: false, foldWhileRunning: true, foldableCount: 3 }).canFold).toBe(
-      false,
-    )
+  test("a turn the session is still working on has no fold, even by hand", () => {
+    expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4 }).canFold).toBe(false)
+    expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4, userChoice: true }).folded).toBe(false)
   })
 
-  test("running reports the label verb: only an unsettled, unfailed, busy turn is still working", () => {
-    expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4 }).running).toBe(true)
-    expect(turnFoldDecision({ settled: true, busy: true, foldableCount: 4 }).running).toBe(false)
-    expect(turnFoldDecision({ settled: false, busy: true, errored: true, foldableCount: 4 }).running).toBe(false)
+  test("a multi-step turn whose first step completed is still running while the session is busy on it", () => {
+    expect(turnFoldDecision({ settled: true, busy: true, foldableCount: 4 }).canFold).toBe(false)
+    expect(turnFoldDecision({ settled: true, busy: false, foldableCount: 4 }).canFold).toBe(true)
+  })
+
+  test("a turn that failed while the session was still busy keeps its control", () => {
+    const decision = turnFoldDecision({ settled: true, busy: true, errored: true, foldableCount: 4 })
+    expect(decision.canFold).toBe(true)
+    expect(decision.folded).toBe(false)
   })
 })
 
@@ -177,39 +176,9 @@ describe("foldedGroupKeys", () => {
     const decision = turnFoldDecision({
       settled: false,
       busy: true,
-      foldWhileRunning: true,
       foldableCount: countFoldableGroups(withAgents.groups, withAgents.part),
     })
-    const keys = foldedGroupKeys(decision, withAgents.groups, withAgents.part)
-    expect(withAgents.groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual([
-      "part",
-      "agents",
-    ])
-  })
-
-  test("an expanded turn hides nothing", () => {
-    const decision = turnFoldDecision({ settled: true, foldableCount: 4, userChoice: false })
-    expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
-  })
-
-  test("folding a running turn by hand hides the live group too", () => {
-    const running = { settled: false, busy: true, foldWhileRunning: true, foldableCount: countFoldableGroups(groups, part) }
-    const auto = turnFoldDecision(running)
-    const byHand = turnFoldDecision({ ...running, userChoice: true })
-    expect(foldedGroupKeys(auto, groups, part).has(groups.at(-1)!.key)).toBe(false)
-    expect(foldedGroupKeys(byHand, groups, part).has(groups.at(-1)!.key)).toBe(true)
-  })
-
-  test("a running fold keeps the live group on screen", () => {
-    const decision = turnFoldDecision({
-      settled: false,
-      busy: true,
-      foldWhileRunning: true,
-      foldableCount: countFoldableGroups(groups, part),
-    })
-    const keys = foldedGroupKeys(decision, groups, part)
-    expect(keys.has(groups.at(-1)!.key)).toBe(false)
-    expect(keys.size).toBe(2)
+    expect(foldedGroupKeys(decision, withAgents.groups, withAgents.part).size).toBe(0)
   })
 })
 

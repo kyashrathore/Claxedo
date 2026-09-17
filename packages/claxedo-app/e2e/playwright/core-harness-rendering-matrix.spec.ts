@@ -570,72 +570,6 @@ test.describe("core harness rendering matrix @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("enabling live folding preserves a manually opened Codex shell output", async ({ page }, testInfo) => {
-    const dir = "/tmp/e2e-live-fold-manual-output"
-    const sessionId = "ses_live_fold_manual_output"
-    const mock = await installMockRuntime(page, {
-      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID,
-      harness: "codex-app-server", holdTurn: true,
-    })
-    await seedOneProject(page, dir)
-    await page.goto(`/${slug(dir)}/session`)
-    await selectComposerAgent(page, "Codex")
-    await ensureComposerModelSelected(page)
-    const setLiveFolding = async (checked: boolean) => {
-      await page.getByTestId("rail-account-trigger").click()
-      await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-      const dialog = page.locator('[data-slot="dialog-container"]').last()
-      const setting = dialog.locator('[data-action="settings-feed-timeline-fold-while-running"]')
-      const input = setting.locator("input")
-      await expect(input).toBeAttached()
-      if (await input.isChecked() !== checked) await setting.locator('[data-slot="switch-control"]').click()
-      await expect(input).toBeChecked({ checked })
-      await page.keyboard.press("Escape")
-      await expect(dialog).toBeHidden()
-    }
-    await setLiveFolding(false)
-    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Keep my shell output open")
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expect(page).toHaveURL(sessionUrlPattern(sessionId))
-    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
-    let assistantInfo: Record<string, unknown> = {}
-    await expect.poll(async () => {
-      const body = await page.evaluate(async id => (await fetch(`/session/${id}/message`)).json(), sessionId)
-      assistantInfo = body.messages?.find((row: { info: { id: string } }) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
-      return assistantInfo.id
-    }).toBeTruthy()
-    const assistantId = String(assistantInfo.id)
-    for (const item of [
-      { id: "live_fold_read_before", tool: "read", input: { filePath: "before.ts" }, output: "before" },
-      { id: "live_fold_shell", tool: "bash", input: { command: "pwd" }, output: "/tmp/manual-output" },
-      { id: "live_fold_read_after", tool: "read", input: { filePath: "after.ts" }, output: "after" },
-    ]) mock.emit({ type: "message.part.updated", properties: { part: {
-      id: item.id, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id, tool: item.tool,
-      state: { status: "completed", input: item.input, output: item.output, title: item.tool, metadata: {}, time: { start: Date.now() - 100, end: Date.now() } },
-    } } } as never, dir)
-    const shell = page.locator('[data-timeline-part-id="live_fold_shell"]')
-    const trigger = shell.locator('[data-slot="collapsible-trigger"]')
-    await expect(trigger).toBeVisible()
-    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
-    const output = shell.locator('[data-slot="bash-pre"]')
-    await expect(output).toBeVisible()
-    await expect(output).toContainText("/tmp/manual-output")
-    await page.screenshot({ path: testInfo.outputPath("manual-output-before.png") })
-    await setLiveFolding(true)
-    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
-    await expect.soft(output, "the manually opened output remains visible when live folding is enabled").toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath("manual-output-after.png") })
-    mock.emit({ type: "message.part.updated", properties: { part: {
-      id: `${assistantId}_text`, sessionID: sessionId, messageID: assistantId, type: "text", text: "Manual folding probe complete",
-    } } } as never, dir)
-    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: {
-      ...assistantInfo, time: { ...(assistantInfo.time as Record<string, unknown>), completed: Date.now() },
-    } } } as never, dir)
-    mock.emit({ type: "session.idle", properties: { sessionID: sessionId } } as never, dir)
-    await expectAssistantReplyVisible(page, "Manual folding probe complete")
-    expect(mock.requests.promptCount).toBe(1)
-  })
-
   test("a consecutive MCP group names the tools hidden inside it", async ({ page }, testInfo) => {
     const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
     for (const [index, name] of ["sessions_list", "processes"].entries()) {
@@ -659,8 +593,10 @@ test.describe("core harness rendering matrix @core", () => {
     await page.screenshot({ path: testInfo.outputPath("mcp-group-expanded.png") })
   })
 
-  test("a manually folded Codex turn retains its three-group count after completion", async ({ page }, testInfo) => {
+  test("a running turn shows every row and no fold control; it folds once the turn completes", async ({ page }, testInfo) => {
     const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    // The primed assistant message is already completed, so this is a turn between
+    // steps: settled by its message, still running by the session.
     mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "busy" } } } as never, dir)
     const entries = [
       { id: "count1_read", tool: "read", input: { filePath: "a.ts" } },
@@ -672,24 +608,28 @@ test.describe("core harness rendering matrix @core", () => {
       id: item.id, tool: item.tool, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id,
       state: { status: "completed", input: item.input, output: "hi", title: item.tool, metadata: {}, time: { start: Date.now() - 1000, end: Date.now() } },
     } } } as never, dir)
-    await revealTurn(page)
-    const fold = page.locator('[data-component="turn-fold"] button').first()
-    await expect(fold).toContainText("Working")
-    if (await fold.getAttribute("aria-expanded") === "false") await fold.click()
-    await expect(fold).toHaveAttribute("aria-expanded", "true")
-    await expect(page.locator('[data-timeline-part-ids="count1_read,count2_read"]')).toHaveCount(1)
-    await expect(page.locator('[data-timeline-part-id="count3_bash"]')).toHaveCount(1)
-    await expect(page.locator('[data-timeline-part-ids="count4_read"]')).toHaveCount(1)
-    await page.screenshot({ path: testInfo.outputPath("running-three-groups.png") })
-    await fold.click()
-    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    const fold = page.locator('[data-component="turn-fold"] button')
+    const groups = [
+      page.locator('[data-timeline-part-ids="count1_read,count2_read"]'),
+      page.locator('[data-timeline-part-id="count3_bash"]'),
+      page.locator('[data-timeline-part-ids="count4_read"]'),
+    ]
+    for (const group of groups) await expect(group).toHaveCount(1)
+    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
+    await expect(fold).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath("running-three-groups-unfolded.png") })
     mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
     mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "idle" } } } as never, dir)
-    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
     await expect(fold).toHaveAttribute("aria-expanded", "false")
     await expect(fold).toContainText("Worked")
+    for (const group of groups) await expect(group).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath("completed-three-group-fold.png") })
-    await expect(fold, "the collapsed header identifies all three tool groups").toContainText(/\b3 groups?\b/)
+    await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "true")
+    for (const group of groups) await expect(group).toHaveCount(1)
+    await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    for (const group of groups) await expect(group).toHaveCount(0)
   })
 
   test("process inspection output does not turn an MCP endpoint into a Local preview", async ({ page }, testInfo) => {

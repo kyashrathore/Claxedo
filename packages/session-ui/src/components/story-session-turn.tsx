@@ -146,11 +146,6 @@ export function SessionTurn(
      * group expanded.
      */
     foldSettledTurn?: boolean
-    /**
-     * Folds a running turn's completed phases behind "Working for Xs", keeping the
-     * live group visible. Defaults to the app's `timelineFoldWhileRunning` default.
-     */
-    foldRunningTurn?: boolean
     active?: boolean
     status?: AgentRuntimeStatus
     onUserInteracted?: () => void
@@ -406,7 +401,6 @@ export function SessionTurn(
                     shellToolDefaultOpen={props.shellToolDefaultOpen}
                     editToolDefaultOpen={props.editToolDefaultOpen}
                     foldSettledTurn={props.foldSettledTurn}
-                    foldRunningTurn={props.foldRunningTurn}
                     turnInterrupted={interrupted()}
                     turnErrored={!!error()}
                   />

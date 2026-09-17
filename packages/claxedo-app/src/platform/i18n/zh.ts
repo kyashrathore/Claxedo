@@ -549,9 +549,6 @@ export const dict = {
   "settings.general.row.followup.option.steer": "引导",
   "settings.general.row.reasoningSummaries.title": "显示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在时间线中显示模型推理摘要",
-  "settings.general.row.timelineFoldWhileRunning.title": "折叠运行中的回合",
-  "settings.general.row.timelineFoldWhileRunning.description":
-    "在回合仍在运行时折叠已完成的工作，并保持最新步骤可见",
   "settings.general.row.shellToolPartsExpanded.title": "展开 shell 工具部分",
   "settings.general.row.shellToolPartsExpanded.description": "默认在时间线中展开 shell 工具部分",
   "settings.general.row.editToolPartsExpanded.title": "展开编辑工具部分",
