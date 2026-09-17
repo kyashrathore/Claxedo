@@ -200,10 +200,7 @@ export namespace Timeline {
       const found = partByID.get(ref.partID)
       return found ? { ...found, userOpen: isPartExpanded(ref.partID) } : found
     }
-    const liveFoldableCount = groupSegments(assistantPartRefs).reduce(
-      (count, segment) => count + countFoldableGroups(segment, partOfRef),
-      0,
-    )
+    const liveFoldableCount = countFoldableGroups(groupSegments(assistantPartRefs).flat(), partOfRef)
     // A switched-to session is seeded with two messages — the turn's owning user
     // message and its tail assistant message — and the messages holding the rest
     // of its groups arrive 900ms later. Counting only what is here folds the turn
@@ -293,7 +290,24 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-    if (isActive && (status === "busy" || settlePending) && !settled && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    // The turn's trailing group is its live row while a tool runs or a thought
+    // streams: the work-group header reads "Running <command>" and the reasoning
+    // row shimmers on its own. The Thinking row fills every other stretch of a
+    // working turn — before the first part, and between one group and the next —
+    // so the live row flips between "Running …" and "Thinking" rather than
+    // stacking both. Only the newest message says whether the turn is still
+    // open, and only its groups can be live: a step-per-message harness
+    // completes each earlier step as it goes, and a busy status gone stale must
+    // not hang the row under a completed answer.
+    const trailingGroup = assistantItems.findLast((item) => item.type === "part")?.group
+    const trailingRef = trailingGroup?.type === "part" ? trailingGroup.ref : trailingGroup?.refs.at(-1)
+    const trailingPart = trailingRef ? partByID.get(trailingRef.partID) : undefined
+    const trailingGroupIsLive =
+      !!trailingGroup &&
+      trailingRef?.messageID === lastAssistantMessage?.id &&
+      (trailingGroup.type !== "part" || trailingPart?.type === "tool" || trailingPart?.type === "reasoning")
+    const newestOpen = !lastAssistantMessage || !assistantMessageSettled(lastAssistantMessage)
+    if (isActive && (status === "busy" || settlePending) && newestOpen && !error && !trailingGroupIsLive) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))

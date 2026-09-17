@@ -151,7 +151,7 @@ describe("turn fold placement", () => {
     expect(rows[0]?._tag).toBe("TurnFold")
   })
 
-  test("folded turn hides the work rows but keeps the prose", () => {
+  test("folded turn hides the work rows and the narration between them, and keeps the answer", () => {
     const user = userMessage("u1")
     const rows = Timeline.constructMessageRows(
       user,
@@ -164,7 +164,51 @@ describe("turn fold placement", () => {
       false,
       () => true, // explicitly folded
     )
-    expect(groupTypes(rows)).toEqual(["part", "part", "part"]) // three text parts, no work groups
+    expect(groupTypes(rows)).toEqual(["part"])
+    expect(rows.flatMap((row) => (row._tag === "AssistantPart" && row.group.type === "part" ? [row.group.ref.partID] : []))).toEqual(["p7"])
     expect(rows.some((row) => row._tag === "TurnFold")).toBe(true)
+  })
+
+  // The assistant message here is completed: a multi-step turn reads settled from
+  // its first step on, so the session's status is what says the turn is still going.
+  const activeTurn = (
+    status: Parameters<typeof Timeline.constructMessageRows>[5],
+    options: { settlePending?: boolean; choice?: boolean } = {},
+  ) =>
+    Timeline.constructMessageRows(
+      userMessage("u1"),
+      (id) => (id === "a1" ? withProseThenTools : []),
+      [assistantMessage("a1")],
+      0,
+      false,
+      status,
+      true,
+      false,
+      () => options.choice,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      options.settlePending ?? false,
+    )
+
+  test("a turn the session is still working on shows every row and no fold control", () => {
+    for (const rows of [activeTurn("busy"), activeTurn("retry"), activeTurn("idle", { settlePending: true })]) {
+      expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
+      expect(groupTypes(rows)).toEqual(["part", "work", "part", "work", "part"])
+    }
+  })
+
+  test("a remembered fold choice does not fold a turn that is still working", () => {
+    const rows = activeTurn("busy", { choice: true })
+    expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
+    expect(groupTypes(rows)).toEqual(["part", "work", "part", "work", "part"])
+  })
+
+  test("the same turn folds once the session goes idle on it", () => {
+    const rows = activeTurn("idle")
+    const fold = rows.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")
+    expect(fold?.folded).toBe(true)
+    expect(groupTypes(rows)).toEqual(["part"])
   })
 })

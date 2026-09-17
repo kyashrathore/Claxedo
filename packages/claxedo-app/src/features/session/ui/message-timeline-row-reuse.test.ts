@@ -49,7 +49,6 @@ describe("timeline row reuse", () => {
       false,
       true,
       () => undefined,
-      false,
       undefined,
       new Set([final.id]),
     )
@@ -149,6 +148,58 @@ describe("timeline row reuse", () => {
       true,
     )
     expect(rows.some((row) => row._tag === "Thinking")).toBe(true)
+  })
+
+  describe("the live row flips between the trailing tool group and Thinking", () => {
+    const busyRows = (parts: Part[], showReasoning = false) =>
+      Timeline.constructMessageRows(
+        userMessage("msg_user"),
+        (messageID) => (messageID === "msg_assistant" ? parts : []),
+        [assistantMessage("msg_assistant", "msg_user")],
+        0,
+        showReasoning,
+        "busy",
+        true,
+      )
+    const thinking = (rows: TimelineRow.TimelineRow[]) => rows.some((row) => row._tag === "Thinking")
+
+    test("a running tool at the tail is the live row, so no Thinking row stacks under it", () => {
+      expect(thinking(busyRows([toolPart("p1", "msg_assistant", "bash", "running")]))).toBe(false)
+    })
+
+    test("a completed tool still at the tail keeps the group header live instead of a Thinking row", () => {
+      expect(thinking(busyRows([toolPart("p1", "msg_assistant", "bash", "completed")]))).toBe(false)
+    })
+
+    test("text after the tools puts the turn back into Thinking", () => {
+      expect(
+        thinking(
+          busyRows([
+            toolPart("p1", "msg_assistant", "bash", "completed"),
+            textPart("p2", "msg_assistant", "Now the next step."),
+          ]),
+        ),
+      ).toBe(true)
+    })
+
+    test("a streaming thought is its own live row when reasoning summaries are shown", () => {
+      const parts = [textPart("p1", "msg_assistant", "Let me look."), reasoningPart("r1", "msg_assistant", "hmm")]
+      expect(thinking(busyRows(parts, true))).toBe(false)
+      expect(thinking(busyRows(parts, false))).toBe(true)
+    })
+
+    test("a step-per-message turn keeps Thinking while its newest message is open", () => {
+      const rows = Timeline.constructMessageRows(
+        userMessage("msg_user"),
+        (messageID) => (messageID === "msg_step1" ? [toolPart("p1", "msg_step1", "bash", "completed")] : []),
+        [assistantMessage("msg_step1", "msg_user", { completed: 20 }), assistantMessage("msg_step2", "msg_user")],
+        0,
+        false,
+        "busy",
+        true,
+      )
+      expect(thinking(rows)).toBe(true)
+    })
   })
 
   test("drops Thinking as soon as status leaves busy (hold is applied by the timeline shell)", () => {
@@ -311,7 +362,6 @@ describe("T8: interrupted-turn detection (D2)", () => {
       false,
       true,
       () => undefined,
-      false,
     )
 
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "TurnDivider"])
@@ -330,7 +380,6 @@ describe("T8: interrupted-turn detection (D2)", () => {
       false,
       true,
       () => undefined,
-      false,
       { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
@@ -351,7 +400,6 @@ describe("T8: interrupted-turn detection (D2)", () => {
       false,
       true,
       () => undefined,
-      false,
       { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
@@ -374,7 +422,6 @@ describe("T8: interrupted-turn detection (D2)", () => {
       false,
       true,
       () => undefined,
-      false,
       { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
@@ -402,7 +449,6 @@ describe("T8: interrupted-turn detection (D2)", () => {
       false,
       true,
       () => undefined,
-      false,
       { status: "completed", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
@@ -441,7 +487,6 @@ describe("T8: interrupted-turn detection (D2)", () => {
       false,
       true,
       () => undefined,
-      false,
       { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
@@ -478,6 +523,18 @@ function assistantMessage(
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   }
+}
+
+function toolPart(id: string, messageID: string, tool: string, status: "running" | "completed"): Part {
+  const state =
+    status === "running"
+      ? { status, input: { command: "ls" }, time: { start: 1 } }
+      : { status, input: { command: "ls" }, output: "ok", title: tool, metadata: {}, time: { start: 1, end: 2 } }
+  return { id, sessionID: "ses_1", messageID, type: "tool", tool, callID: `${id}_c`, state } as Part
+}
+
+function reasoningPart(id: string, messageID: string, text: string): Part {
+  return { id, sessionID: "ses_1", messageID, type: "reasoning", text, time: { start: 1 } } as Part
 }
 
 function textPart(id: string, messageID: string, text: string): Part {

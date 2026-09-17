@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AgentAssistantMessage, AgentContentPart } from "@claxedo/agent-runtime-contract"
 import { groupParts, type PartRef } from "./part-groups"
 import {
+  answerGroupKey,
   assistantMessageSettled,
   countFoldableGroups,
   foldedGroupKeys,
@@ -27,10 +28,9 @@ function text(id: string, value: string): AgentContentPart {
 
 function turn(parts: AgentContentPart[]) {
   const byID = new Map(parts.map((part) => [part.id, part] as const))
-  return {
-    groups: groupParts(parts.map((part) => ({ messageID: "a1", part }))),
-    part: (ref: PartRef) => byID.get(ref.partID),
-  }
+  const groups = groupParts(parts.map((part) => ({ messageID: "a1", part })))
+  const part = (ref: PartRef) => byID.get(ref.partID)
+  return { groups, part, foldable: groups.map((group) => isFoldableGroup(group, part, answerGroupKey(groups, part))) }
 }
 
 function assistant(fields: Partial<AgentAssistantMessage>): AgentAssistantMessage {
@@ -40,9 +40,9 @@ function assistant(fields: Partial<AgentAssistantMessage>): AgentAssistantMessag
 const settledTurn = { settled: true, foldableCount: 4 }
 
 describe("isFoldableGroup", () => {
-  test("counts every tool group, subagent spawns included, not prose", () => {
-    const { groups, part } = turn([
-      text("p0", "prose"),
+  test("counts every tool group, subagent spawns included, not the answer", () => {
+    const { groups, part, foldable } = turn([
+      text("p0", "answer"),
       tool("p1", "read"),
       tool("p2", "read"),
       tool("p3", "bash"),
@@ -50,26 +50,26 @@ describe("isFoldableGroup", () => {
       tool("p5", "task"),
     ])
     expect(groups.map((group) => group.type)).toEqual(["part", "context", "part", "agents"])
-    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([false, true, true, true])
+    expect(foldable).toEqual([false, true, true, true])
     expect(countFoldableGroups(groups, part)).toBe(3)
   })
 
   test("a subagent spawn folds whether it grouped or stands alone", () => {
     const grouped = turn([tool("p1", "bash"), tool("p2", "agent"), tool("p3", "agent")])
-    expect(grouped.groups.map((group) => isFoldableGroup(group, grouped.part))).toEqual([true, true])
+    expect(grouped.foldable).toEqual([true, true])
 
     const alone = turn([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "agent")])
     expect(alone.groups.map((group) => group.type)).toEqual(["work", "agents"])
-    expect(alone.groups.map((group) => isFoldableGroup(group, alone.part))).toEqual([true, true])
+    expect(alone.foldable).toEqual([true, true])
   })
 
-  test("an answered question stays visible and does not count toward the fold", () => {
-    const { groups, part } = turn([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "question"), text("p4", "done")])
+  test("an answered question folds with the rest of the machinery", () => {
+    const { groups, part, foldable } = turn([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "question"), text("p4", "done")])
     expect(groups.map((group) => group.type)).toEqual(["work", "part", "part"])
-    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([true, false, false])
-    expect(countFoldableGroups(groups, part)).toBe(1)
+    expect(foldable).toEqual([true, true, false])
+    expect(countFoldableGroups(groups, part)).toBe(2)
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
-    expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
+    expect([...foldedGroupKeys(decision, groups, part)]).toEqual(["work:p1", "part:a1:p3"])
   })
 
   test("a bash row and a subagent group are enough for a settled turn to fold", () => {
@@ -81,7 +81,13 @@ describe("isFoldableGroup", () => {
 
   test("a standalone group whose part is gone is not foldable", () => {
     const { groups } = turn([tool("p1", "bash")])
-    expect(isFoldableGroup(groups[0], () => undefined)).toBe(false)
+    expect(isFoldableGroup(groups[0], () => undefined, undefined)).toBe(false)
+  })
+
+  test("a turn with no text has no answer, so every tool folds", () => {
+    const { groups, part } = turn([tool("p1", "bash"), tool("p2", "read")])
+    expect(answerGroupKey(groups, part)).toBeUndefined()
+    expect(countFoldableGroups(groups, part)).toBe(2)
   })
 })
 
@@ -141,13 +147,13 @@ describe("foldedGroupKeys", () => {
     tool("p5", "glob"),
   ])
 
-  test("a settled fold hides every machinery group and keeps the prose", () => {
+  test("a settled fold hides every machinery group and keeps the answer", () => {
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
     const keys = foldedGroupKeys(decision, groups, part)
     expect(groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual(["part"])
   })
 
-  test("a settled fold hides the subagent card with the rest and keeps only the prose", () => {
+  test("a settled fold hides the subagent card with the rest and keeps only the answer", () => {
     const withAgents = turn([
       text("p0", "prose"),
       tool("p1", "read"),
@@ -164,7 +170,12 @@ describe("foldedGroupKeys", () => {
     expect(withAgents.groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual(["part"])
   })
 
-  test("a running fold keeps in-flight subagents on screen as the live group", () => {
+  test("an expanded turn hides nothing", () => {
+    const decision = turnFoldDecision({ settled: true, foldableCount: 4, userChoice: false })
+    expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
+  })
+
+  test("a running turn hides nothing, in-flight subagents included", () => {
     const withAgents = turn([
       text("p0", "prose"),
       tool("p1", "read"),
@@ -209,21 +220,30 @@ describe("narration", () => {
       text("t2", "Here is the answer."),
     ])
 
-  test("every text and reasoning row stays outside the fold", () => {
-    const { groups, part } = narratedTurn()
-    const outside = groups.filter((group) => !isFoldableGroup(group, part))
-    expect(outside.map((group) => (group.type === "part" ? group.ref.partID : group.type))).toEqual([
-      "t0",
-      "r0",
-      "t1",
-      "t2",
-    ])
+  test("only the last text row is the answer; narration and reasoning are machinery", () => {
+    const { groups, part, foldable } = narratedTurn()
+    expect(answerGroupKey(groups, part)).toBe("part:a1:t2")
+    const outside = groups.filter((_, index) => !foldable[index])
+    expect(outside.map((group) => (group.type === "part" ? group.ref.partID : group.type))).toEqual(["t2"])
   })
 
-  test("folding a narrated turn hides its tool runs and nothing else", () => {
+  test("folding a narrated turn hides its tool runs, thoughts and narration, and keeps the answer", () => {
     const { groups, part } = narratedTurn()
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
     const folded = foldedGroupKeys(decision, groups, part)
-    expect([...folded]).toEqual(["work:p1", "work:p3"])
+    expect([...folded]).toEqual(["part:a1:t0", "work:p1", "part:a1:r0", "part:a1:t1", "work:p3"])
+  })
+
+  test("a turn whose answer came before a trailing tool call still keeps that answer up", () => {
+    const { groups, part } = turn([tool("p1", "bash"), tool("p2", "bash"), text("t0", "Done."), tool("p3", "todowrite")])
+    expect(answerGroupKey(groups, part)).toBe("part:a1:t0")
+    const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
+    expect([...foldedGroupKeys(decision, groups, part)]).toEqual(["work:p1", "part:a1:p3"])
+  })
+
+  test("a thought and an answer alone do not fold: the thought row stays", () => {
+    const { groups, part } = turn([reasoning("r0", "thinking"), text("t0", "Answer.")])
+    expect(countFoldableGroups(groups, part)).toBe(1)
+    expect(turnFoldDecision({ settled: true, foldableCount: 1 }).canFold).toBe(false)
   })
 })

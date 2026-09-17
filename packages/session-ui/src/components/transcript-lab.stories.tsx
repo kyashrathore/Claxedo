@@ -167,13 +167,13 @@ const LEVERS: Lever[] = [
     key: "turnFold",
     group: "Density",
     label: "Turn fold",
-    finding: "Only tool rows count as machinery, so narration text and reasoning stay visible under the fold.",
+    finding: "Everything before the turn's last text row is machinery — tools, thoughts and narration fold; only the answer stays up.",
     origin: "turn-fold.ts isFoldableGroup",
     control: {
       kind: "segment",
       options: [
         { value: "off", label: "no fold" },
-        { value: "tools", label: "tools only" },
+        { value: "machinery", label: "fold machinery" },
       ],
     },
     css: () => "",

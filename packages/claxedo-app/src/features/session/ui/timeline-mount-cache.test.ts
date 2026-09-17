@@ -53,7 +53,8 @@ function textPart(id: string, messageID: string, text: string): Part {
 const USER = userMessage("u1")
 
 // What the session's transcript holds once every message has landed: three
-// assistant messages, three foldable groups.
+// assistant messages, four foldable groups — the opening narration, two tool
+// runs and the tool call after the answer.
 const SETTLED_PARTS: Record<string, Part[]> = {
   u1: [],
   a1: [textPart("p1", "a1", "Looking at the rail."), toolPart("p2", "a1", "command"), toolPart("p3", "a1", "command")],
@@ -85,7 +86,6 @@ function rows(
     false,
     false,
     () => undefined,
-    true,
     undefined,
     undefined,
     priorFoldableCount,
@@ -134,7 +134,7 @@ describe("timeline mount snapshot", () => {
   test("keeps the foldable count behind every fold row the visit rendered, per session", () => {
     unmountWith(SESSION_KEY, rows(SETTLED_PARTS, SETTLED_MESSAGES))
 
-    expect(readTimelineMountSnapshot(SESSION_KEY)?.turnFoldableCounts).toEqual({ u1: 3 })
+    expect(readTimelineMountSnapshot(SESSION_KEY)?.turnFoldableCounts).toEqual({ u1: 4 })
     expect(readTimelineMountSnapshot("ses_other:0")).toBeUndefined()
   })
 
@@ -148,7 +148,7 @@ describe("timeline mount snapshot", () => {
     unmountWith("ses_window:0", rows(SETTLED_PARTS, SETTLED_MESSAGES))
     unmountWith("ses_window:0", [])
 
-    expect(readTimelineMountSnapshot("ses_window:0")?.turnFoldableCounts).toEqual({ u1: 3 })
+    expect(readTimelineMountSnapshot("ses_window:0")?.turnFoldableCounts).toEqual({ u1: 4 })
   })
 
   test("a snapshot written without rows still loads", () => {
@@ -170,7 +170,7 @@ describe("switching back to a session folds before the first paint", () => {
     const firstPaint = rows(MOUNT_PARTS, MOUNT_MESSAGES, restoredCount(SESSION_KEY))
 
     expect(foldRow(firstPaint)?.folded).toBe(true)
-    expect(foldRow(firstPaint)?.foldCount).toBe(3)
+    expect(foldRow(firstPaint)?.foldCount).toBe(4)
   })
 
   test("no row on screen at the first paint is taken away when the deferred messages land", () => {
@@ -179,12 +179,7 @@ describe("switching back to a session folds before the first paint", () => {
     const landed = keys(rows(SETTLED_PARTS, SETTLED_MESSAGES, restoredCount(SESSION_KEY)))
 
     expect(firstPaint).toEqual(["user-message:u1", "turn-fold:u1", "assistant-part:u1:part:a3:p6"])
-    expect(landed).toEqual([
-      "user-message:u1",
-      "turn-fold:u1",
-      "assistant-part:u1:part:a1:p1",
-      "assistant-part:u1:part:a3:p6",
-    ])
+    expect(landed).toEqual(["user-message:u1", "turn-fold:u1", "assistant-part:u1:part:a3:p6"])
     expect(firstPaint.filter((key) => !landed.includes(key))).toEqual([])
   })
 
@@ -205,7 +200,7 @@ describe("switching back to a session folds before the first paint", () => {
 
     expect(seeded?.measurements).toEqual([])
     expect(foldRow(firstPaint)?.folded).toBe(true)
-    expect(foldRow(firstPaint)?.foldCount).toBe(3)
+    expect(foldRow(firstPaint)?.foldCount).toBe(4)
     expect(keys(firstPaint)).toEqual(["user-message:u1", "turn-fold:u1", "assistant-part:u1:part:a3:p6"])
   })
 
@@ -281,7 +276,6 @@ describe("switching back to a session folds before the first paint", () => {
       false,
       false,
       () => false,
-      true,
       undefined,
       undefined,
       restoredCount(SESSION_KEY),

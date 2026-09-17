@@ -1199,7 +1199,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const turnAssistantMessages = (userMessageID: string) =>
     assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-  const turnSettled = (userMessageID: string) => turnAssistantMessages(userMessageID).some(assistantMessageSettled)
+  // The newest message says whether the turn is open: a step-per-message
+  // harness completes each earlier step while the next one is still streaming.
+  const turnSettled = (userMessageID: string) => {
+    const newest = turnAssistantMessages(userMessageID).at(-1)
+    return !!newest && assistantMessageSettled(newest)
+  }
   const workingTurn = (userMessageID: string) =>
     (sessionStatus().type !== "idle" || turnSettleRefreshPending(userMessageID)) &&
     activeMessageID() === userMessageID &&

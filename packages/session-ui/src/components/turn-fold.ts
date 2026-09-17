@@ -1,14 +1,13 @@
 import type { AgentAssistantMessage } from "@claxedo/agent-runtime-contract"
-import { isStandaloneTool, type PartGroup, type PartRef } from "./part-groups"
+import type { PartGroup, PartRef } from "./part-groups"
 
 /**
- * Resolves a group member to the part it renders. A standalone group is foldable
- * only when it holds a tool, so the caller's part index is the only way to tell
- * machinery from prose.
+ * Resolves a group member to the part it renders: a group carries only refs, so the
+ * caller's part index is the only way to find the turn's last text group.
  */
 export type FoldablePartLookup = (ref: PartRef) => FoldablePart | undefined
 
-type FoldablePart = { type: string; tool?: string; userOpen?: boolean }
+type FoldablePart = { type: string; userOpen?: boolean }
 
 // A single tool is already one compact, useful row: folding it replaces the only
 // actionable content with an extra click. Grouped runs count as one row because
@@ -22,28 +21,37 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
 }
 
 /**
- * Machinery — everything a turn did that is not the message it is addressing to
- * the user, subagent spawns included. An answered question is not machinery: it
- * holds the words the reader typed, the one part of the turn they authored, so
- * it stays up beside the prose.
- *
- * Text and reasoning never fold. No harness marks which text part is the answer —
- * `AgentAssistantMessage.finish` is never set natively and `AgentStepFinishPart` is
- * never emitted — so narration and answer are indistinguishable here, and guessing
- * from position hides answers that arrived before the turn's last tool call.
+ * The turn's answer: its last text group. No harness marks which text part is the
+ * answer — `AgentAssistantMessage.finish` is never set natively and
+ * `AgentStepFinishPart` is never emitted — so position stands in for it, the way it
+ * does in every settled transcript: the model narrates between tool calls and
+ * addresses the reader once the work is done. Narration that arrived before the
+ * turn's last tool call folds with that work and is one click away.
  */
-export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup): boolean {
+export function answerGroupKey(groups: readonly PartGroup[], part: FoldablePartLookup): string | undefined {
+  return groups.findLast((group) => group.type === "part" && part(group.ref)?.type === "text")?.key
+}
+
+/**
+ * Machinery — everything a turn did that is not its answer: tool runs, answered
+ * questions, subagent spawns, reasoning, and narration between tool calls.
+ */
+export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKey: string | undefined): boolean {
   if (group.type !== "part") return true
+  if (group.key === answerKey) return false
   const resolved = part(group.ref)
-  return resolved?.type === "tool" && !isStandaloneTool(resolved)
+  if (!resolved) return false
+  return resolved.type === "text" || resolved.type === "reasoning" || resolved.type === "tool"
 }
 
 export function countFoldableGroups(groups: readonly PartGroup[], part: FoldablePartLookup) {
-  return groups.reduce((count, group) => (isFoldableGroup(group, part) ? count + 1 : count), 0)
+  const answerKey = answerGroupKey(groups, part)
+  return groups.reduce((count, group) => (isFoldableGroup(group, part, answerKey) ? count + 1 : count), 0)
 }
 
 export type TurnFoldStatus = {
   foldableCount: number
+  /** Some assistant message of the turn completed or failed. Per message, so a multi-step turn reads settled from its first step on. */
   settled: boolean
   interrupted?: boolean
   errored?: boolean
@@ -64,7 +72,7 @@ export type TurnFoldDecision = {
 
 /**
  * A finished turn folds its machinery behind one "Worked for Xs" divider, leaving
- * the prose visible; an explicit user toggle beats the auto-fold.
+ * the answer visible; an explicit user toggle beats the auto-fold.
  *
  * A turn the session is still working on gets no fold and no control: the rows
  * are the work the reader is watching, and `settled` alone cannot tell a finished
@@ -104,13 +112,14 @@ export function foldedGroupKeys(
   part: FoldablePartLookup,
 ): ReadonlySet<string> {
   if (!decision.folded) return NO_KEYS
+  const answerKey = answerGroupKey(groups, part)
   return new Set(
     groups
       .filter(
         // An automatic fold must not take a row the reader opened themselves;
         // an explicit fold already means all of it.
         (group) =>
-          isFoldableGroup(group, part) &&
+          isFoldableGroup(group, part, answerKey) &&
           (decision.explicit || !groupMembers(group).some((ref) => part(ref)?.userOpen)),
       )
       .map((group) => group.key),
