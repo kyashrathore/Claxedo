@@ -45,17 +45,17 @@ type Source<T> = {
   subscribe(listener: (event: T) => unknown): () => void
 }
 
-type Connection<T> = {
+type Connection<T extends object> = {
   principal: EventDeliveryPrincipal
   push(event: T): unknown
   terminate(): unknown
   authorizedSessions: Set<string>
   /** Frames this connection was pushed; a frame decided twice for the scope is pushed once. */
-  delivered: WeakSet<object>
+  delivered: WeakSet<T>
   renewalTimer?: ReturnType<typeof setInterval>
 }
 
-type Scope<T> = {
+type Scope<T extends object> = {
   key: string
   replayPrincipal?: EventDeliveryPrincipal
   replay: SseReplayBuffer<T>
@@ -69,7 +69,7 @@ type Scope<T> = {
   queued: number
 }
 
-export type IdentityAwareEventSource<T> = {
+export type IdentityAwareEventSource<T extends object> = {
   open(principal: EventDeliveryPrincipal): {
     replay: SseReplayBuffer<T>
     ready: Promise<void>
@@ -235,7 +235,7 @@ function scopeKey(principal: EventDeliveryPrincipal) {
  * the presenting credential, so one renewed credential cannot authorize an
  * older or revoked simultaneous connection.
  */
-export function createIdentityAwareEventSource<T>(input: {
+export function createIdentityAwareEventSource<T extends object>(input: {
   subscribe: Source<T>["subscribe"]
   policy: EventDeliveryPolicy<T>
   sessionId: (event: T) => string | undefined
@@ -298,8 +298,8 @@ export function createIdentityAwareEventSource<T>(input: {
         continue
       }
       if (sessionId) result.connection.authorizedSessions.add(sessionId)
-      if (result.connection.delivered.has(event as object)) continue
-      result.connection.delivered.add(event as object)
+      if (result.connection.delivered.has(event)) continue
+      result.connection.delivered.add(event)
       deliveries.push(result.connection)
     }
     const delivered = deliveries.length > 0 || replayDecision === "deliver"

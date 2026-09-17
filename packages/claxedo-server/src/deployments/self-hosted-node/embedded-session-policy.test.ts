@@ -102,7 +102,7 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     const authorizeRuntimeSession = vi.fn(async () => {})
     const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ authorizeRuntimeSession }))
     const host = (role: "viewer" | "editor" | "admin" | "owner", minimumRole: "viewer" | "admin") =>
-      policy.authorizeHost!({ ...input, operation: "session_event_stream", authority: { ...input.authority!, role }, minimumRole })
+      policy.authorizeHost!({ ...input, operation: "session_event_stream", authority: { ...input.authority, role }, minimumRole })
 
     expect(await host("viewer", "viewer")).toEqual({ allowed: true })
     expect(await host("editor", "admin")).toMatchObject({ allowed: false, status: 403, code: "host_authority_denied" })
