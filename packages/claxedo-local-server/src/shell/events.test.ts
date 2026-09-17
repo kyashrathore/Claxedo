@@ -71,7 +71,7 @@ const opened = (seen: string) => seen.includes('"type":"heartbeat"')
 
 function harness() {
   const bus = createBus<ControlPlaneEvent>()
-  const app = mount(createControlPlaneEventsHandler(bus))
+  const app = mount(createControlPlaneEventsHandler(bus, { sequenceOrigin: () => 0 }))
   return { bus, app }
 }
 
@@ -177,6 +177,7 @@ describe("cp/events — the control plane's notice stream", () => {
     const bus = createBus<ControlPlaneEvent>()
     const release: Array<() => void> = []
     const handler = createControlPlaneEventsHandler(bus, {
+      sequenceOrigin: () => 0,
       resolveSubscription: () => ({
         identity: { mode: "verified", connectionId: crypto.randomUUID(), actorId: "user_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", role: "editor" },
         visible: () => new Promise<boolean>((resolve) => { release.push(() => resolve(true)) }),
@@ -210,6 +211,7 @@ describe("cp/events — the control plane's notice stream", () => {
   test("a signed subscriber is delivered only the frames visible to it", async () => {
     const bus = createBus<ControlPlaneEvent>()
     const handler = createControlPlaneEventsHandler(bus, {
+      sequenceOrigin: () => 0,
       resolveSubscription: (c) => {
         const actorId = c.req.query("actor")!
         return {

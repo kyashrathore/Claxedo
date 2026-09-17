@@ -48,6 +48,8 @@ export type ControlPlaneEventSubscription = {
 export type ControlPlaneEventsHandlerOptions = {
   upgradeWebSocket?: UpgradeWebSocket
   resolveSubscription?: (context: Context) => ControlPlaneEventSubscription | Promise<ControlPlaneEventSubscription>
+  /** Where a fresh ring starts numbering: the clock, or 0 for a test that reads ids as 1, 2, 3. */
+  sequenceOrigin?: () => number
 }
 
 /**
@@ -107,7 +109,11 @@ export function createControlPlaneEventsHandler(
     unknownSequence: boolean
     sharedRetained: boolean
   }
-  const retained = createSseReplayBuffer<ControlPlaneFrame>({ isTerminal: isTerminalControlPlaneFrame })
+  // Numbered from the origin (the clock) so a cursor from a previous daemon
+  // process lies below this ring's window and reads as a gap, not as a
+  // position here.
+  const sequenceOrigin = options.sequenceOrigin ?? Date.now
+  const retained = createSseReplayBuffer<ControlPlaneFrame>({ isTerminal: isTerminalControlPlaneFrame, initialSequence: sequenceOrigin() })
   const scopes = new Map<string, Scope>()
   const tombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
   const subscriptionKey = (subscription: ControlPlaneEventSubscription) => subscription.identity.mode === "unmanaged-local"
@@ -232,7 +238,7 @@ export function createControlPlaneEventsHandler(
         ? retained
         : createSseReplayBuffer<ControlPlaneFrame>({
             isTerminal: isTerminalControlPlaneFrame,
-            ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
+            initialSequence: tombstone?.sequence ?? sequenceOrigin(),
           }),
       connections: new Set(),
       reservations: 0,
@@ -302,6 +308,8 @@ export function createControlPlaneEventsHandler(
           const close = () => stream.abort()
           const connection: Connection = { subscription, push: listener, close, delivered: new WeakSet() }
           scope.connections.add(connection)
+          // A cursor presented from here on is this scope's own numbering.
+          scope.unknownSequence = false
           scope.reservations -= 1
           for (const retainedFrame of retained.replayAfter(retainedCursor)) enqueue(scope, retainedFrame.payload)
           return () => {

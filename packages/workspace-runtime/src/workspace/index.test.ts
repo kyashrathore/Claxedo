@@ -271,18 +271,24 @@ describe("workspace module wiring", () => {
     const eventHub = createRuntimeEventHub()
     mountWorkspaceCore(app, (() => () => ({})) as never, { directory: "/workspace", eventHub, exposure: loopbackExposure })
 
+    const first = new AbortController()
+    const opened = await app.request("http://localhost/api/wr/events", { signal: first.signal })
     eventHub.publishGlobal(withDir("/repo/main", sessionIdle("old-session")))
+    const seen = await readUntil(opened, "old-session")
+    first.abort()
+    const cursor = seen.split("\n\n").find((block) => block.includes("old-session"))
+      ?.split("\n").find((line) => line.startsWith("id:"))?.slice("id:".length).trim()
+    expect(cursor).toBeTruthy()
     eventHub.publishGlobal(withDir("/repo/main", sessionIdle("new-session")))
 
     const ac = new AbortController()
     const res = await app.request("http://localhost/api/wr/events", {
-      headers: { "Last-Event-ID": "1" },
+      headers: { "Last-Event-ID": cursor! },
       signal: ac.signal,
     })
     const text = await readUntil(res, "new-session")
     ac.abort()
 
-    expect(text).toContain("id: 2")
     expect(text).toContain("new-session")
     expect(text).not.toContain("old-session")
   })

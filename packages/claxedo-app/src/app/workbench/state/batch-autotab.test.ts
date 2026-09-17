@@ -73,10 +73,7 @@ describe("batch auto-tab listener", () => {
 
     harness.emit({
       name: "global",
-      details: {
-        type: "pty.created",
-        properties: { info: { id: "pty_1", title: "Codex", directory: "/repo/sandbox" } },
-      },
+      details: { type: "pty.created", info: { id: "pty_1", title: "Codex", cwd: "/repo/sandbox" } },
     })
 
     expect(harness.calls.terminals).toEqual([

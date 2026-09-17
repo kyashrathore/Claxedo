@@ -86,9 +86,19 @@ export type SessionStreamLeaseBinding =
 export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionStreamLeaseBinding & {
   orgId: string
   workspaceId: string
+  /**
+   * The session the lease is bound to, or `"*"`: a WORKSPACE stream lease,
+   * minted by `host_read` for the runtime's unscoped `wr/events` arm, which
+   * proves the reader's identity for every session that first appears on a
+   * connection that outlives its one-request relay host token. It proves who
+   * the reader is, never what they may read: each session is still authorized
+   * on its own when the lease is presented for it.
+   */
   sessionId: string
   action: "read" | "write"
 }
+
+export const WORKSPACE_STREAM_LEASE_SESSION = "*"
 
 /** Prompt admission is reached over a proof a runtime presents, never from inside the plane's own process. */
 type TurnLeaseClaims = Extract<SessionStreamLeaseClaims, { transport: "relay-host" | "owner-grant" }> & {
@@ -238,38 +248,61 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     action: HostAuthorityAction,
     body: Record<string, unknown> | undefined,
   ) {
-    if (body && Object.keys(body).some((key) => key !== "action")) {
+    if (body && Object.keys(body).some((key) => key !== "action" && key !== "lease")) {
       return context.json(
         {
-          error: { code: "host_authority_request_invalid", message: "Host authority accepts only its action" },
+          error: { code: "host_authority_request_invalid", message: "Host authority accepts only its action and a lease" },
         },
         400,
       )
     }
-    const token = bearerToken(context.req.header("authorization") ?? null)
-    if (!token) {
-      return context.json(
-        { error: { code: "relay_host_token_required", message: "Relay Host Token is required" } },
-        401,
-      )
-    }
-    const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
-    if (!verified) {
-      return context.json(
-        { error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" } },
-        401,
-      )
-    }
     const minimumRole = action === "host_admin" ? ("admin" as const) : ("viewer" as const)
-    if (!verified.role || roleRank(verified.role) < roleRank(minimumRole)) {
+    // A workspace lease renews itself: the reader's runtime access token is
+    // rechecked, as it is for a relay host token, and a fresh lease minted.
+    const lease = trimToUndefined(body?.lease)
+    const held = lease
+      ? await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
+      : undefined
+    if (lease && (!held || held.sessionId !== WORKSPACE_STREAM_LEASE_SESSION || held.transport !== "relay-host")) {
       return context.json(
-        {
-          error: { code: "host_authority_denied", message: `Workspace ${minimumRole} authority is required` },
-        },
-        403,
+        { error: { code: "session_stream_lease_invalid", message: "Workspace stream lease is invalid or expired" } },
+        401,
       )
     }
-    const proof = privateSessionRuntimeProof(verified)
+    let proof: PrivateSessionRuntimePrincipal & { orgId: string; workspaceId: string; hostId: string; parentRuntimeAccessTokenJti: string }
+    if (held && held.transport === "relay-host") {
+      proof = {
+        ...sessionLeasePrincipal(held),
+        orgId: held.orgId,
+        workspaceId: held.workspaceId,
+        hostId: held.hostId,
+        parentRuntimeAccessTokenJti: held.parentRuntimeAccessTokenJti,
+      }
+    } else {
+      const token = bearerToken(context.req.header("authorization") ?? null)
+      if (!token) {
+        return context.json(
+          { error: { code: "relay_host_token_required", message: "Relay Host Token is required" } },
+          401,
+        )
+      }
+      const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
+      if (!verified) {
+        return context.json(
+          { error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" } },
+          401,
+        )
+      }
+      if (!verified.role || roleRank(verified.role) < roleRank(minimumRole)) {
+        return context.json(
+          {
+            error: { code: "host_authority_denied", message: `Workspace ${minimumRole} authority is required` },
+          },
+          403,
+        )
+      }
+      proof = privateSessionRuntimeProof(verified)
+    }
     const active = asRecord(
       await options.authority.runtimeAccessTokenActive({
         jti: proof.parentRuntimeAccessTokenJti,
@@ -289,7 +322,22 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
-    return context.json({ allowed: true })
+    if (action !== "host_read") return context.json({ allowed: true })
+    // A plane without a lease signing key mints no session leases either, so
+    // its runtimes' streams live on the host token alone; the read is still
+    // granted.
+    const minter = options.mintStreamLease ?? streamLeaseMinter(env)
+    const minted = await minter({
+      ...sessionLeasePrincipal({ ...proof, transport: "relay-host", sessionId: WORKSPACE_STREAM_LEASE_SESSION, action: "read" }),
+      transport: "relay-host",
+      hostId: proof.hostId,
+      parentRuntimeAccessTokenJti: proof.parentRuntimeAccessTokenJti,
+      orgId: proof.orgId,
+      workspaceId: proof.workspaceId,
+      sessionId: WORKSPACE_STREAM_LEASE_SESSION,
+      action: "read",
+    }).catch(() => undefined)
+    return context.json({ allowed: true, ...minted })
   }
 
   const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
@@ -335,7 +383,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       claims = verified
     } else if (lease) {
       const verified = await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
-      if (!verified || verified.sessionId !== sessionId || verified.action !== action) {
+      // A workspace lease stands for the reader on every session of its
+      // workspace; the session named by the request is what is then authorized.
+      const workspaceWide = verified?.sessionId === WORKSPACE_STREAM_LEASE_SESSION && verified.action === "read"
+      if (!verified || (!workspaceWide && verified.sessionId !== sessionId) || verified.action !== action) {
         return context.json(
           {
             error: { code: "session_stream_lease_invalid", message: "Session stream lease is invalid or mismatched" },
@@ -343,7 +394,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      claims = verified
+      claims = workspaceWide ? { ...verified, sessionId } : verified
     } else {
       const token = bearerToken(context.req.header("authorization") ?? null)
       if (!token) {

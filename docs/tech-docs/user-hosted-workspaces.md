@@ -184,8 +184,11 @@ grantee with no workspace access) is answered 403, and the reader re-opens
 `?sessionID=` for its session under a lease, receiving that session and its
 subagent children only. On a loopback local daemon the runtime is
 unmanaged and the stream is read whole.
-The control plane's stream is read on a loopback central always and on a
-signed-web central only with an account.
+The daemon's own `cp/events` is always read over loopback; a signed desktop
+reads the hosted control plane's as well, through the Electron account
+bridge (the daemon's is the only one that rings for local workspaces); a
+signed-web page reads the hosted one, the server's own, only with an
+account.
 
 **F.3 Frame address** — every frame from a user-hosted host names the host's
 own filesystem directory, because the producer knows only its own path.

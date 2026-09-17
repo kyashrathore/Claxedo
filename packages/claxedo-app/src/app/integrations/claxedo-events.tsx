@@ -150,7 +150,7 @@ export type ClaxedoEvent =
    * plane could have sent — a worktree landing, a share, a document save —
    * has to be re-read from its source.
    */
-  | { type: "stream.replay-gap"; stream: "cp" }
+  | { type: "stream.replay-gap"; stream: "cp"; transport: "server" | "account" }
   | { type: "stream.replay-gap"; stream: "wr"; workspaceId: string; directory?: string }
   | { type: "subagent.updated"; directory?: string; workspaceId?: string; properties: unknown }
   | { type: "goal.updated"; directory?: string; workspaceId?: string; properties: unknown }
@@ -341,7 +341,7 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
   const message = errorMessage(error)
   const name = error instanceof Error ? error.name : typeof error
   const ctx = target.kind === "cp"
-    ? { stream: "cp" as const, url: target.url }
+    ? { stream: "cp" as const, transport: target.transport, url: target.url }
     : {
         stream: "wr" as const,
         workspaceId: target.workspaceId,
@@ -421,7 +421,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           emitter.emit({ type: "stream.replay-gap", stream: "wr", workspaceId: target.workspaceId, ...(directory ? { directory } : {}) }, source)
           return
         }
-        emitter.emit({ type: "stream.replay-gap", stream: "cp" }, source)
+        emitter.emit({ type: "stream.replay-gap", stream: "cp", transport: target.transport }, source)
         return
       }
       const event = normalizeClaxedoStreamEvent(frame, address)
@@ -501,8 +501,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // Timer-exclusivity invariant from the connection lifecycle machine: entering
     // the reconnect state reconciles timers to `streamSyncArmedTimer(...)`, so the
     // heartbeat and reconnect timers can never both be armed.
+    // Set by `close()`: a target removed from the reconciled set never
+    // reconnects, whatever its transport does with the aborted body.
+    let closed = false
     const scheduleReconnect = () => {
-      if (stopped) return
+      if (stopped || closed) return
       if (streamSyncArmedTimer(state.lifecycle) !== "reconnect") {
         if (state.lifecycle === "idle") stepLifecycle("connect")
         if (state.lifecycle === "connecting" || state.lifecycle === "live") stepLifecycle("error")
@@ -534,7 +537,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
 
     const connect = () => {
-      if (stopped) return
+      if (stopped || closed) return
       beginConnect()
       const quietDelay = fastSessionSwitchAnyQuietDelay()
       if (quietDelay > 0) {
@@ -674,9 +677,10 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     connect()
 
     const close = () => {
+      closed = true
       state.abort?.abort()
       state.abort = null
-      setStreamConnected(false)
+      setStreamConnected.release()
       releaseLane?.()
       stepLifecycle("stop")
       // Deliberate teardown (target removed / provider cleanup) must not leave

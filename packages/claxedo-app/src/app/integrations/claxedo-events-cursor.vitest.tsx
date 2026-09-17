@@ -15,6 +15,17 @@ vi.mock("@/platform/api/api", async (importOriginal) => ({
 
 vi.mock("@/platform/sync/local-event-websocket", () => ({ openLocalEventWebSocket: transport.request }))
 
+const account = vi.hoisted(() => ({
+  available: false,
+  open: vi.fn<(input: { operation: string; params?: Record<string, unknown>; signal?: AbortSignal }) => Promise<Response>>(),
+}))
+
+vi.mock("@/platform/account/account-stream-fetch", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/account/account-stream-fetch")>(),
+  accountStreamAvailable: () => account.available,
+  openAccountStreamResponse: account.open,
+}))
+
 import { ClaxedoEventsProvider, useClaxedoEvents } from "./claxedo-events"
 
 function ConnectionState() {
@@ -49,6 +60,8 @@ beforeEach(() => {
   queryClient.clear()
   resetSessionEventScope()
   resetSessionHistoryResyncForTest()
+  account.available = false
+  account.open.mockReset()
 })
 
 afterEach(() => {
@@ -281,9 +294,51 @@ describe("what a stream's open and its gap ask the store to re-read", () => {
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(0)
     expect(gaps).toEqual(expect.arrayContaining([
-      { type: "stream.replay-gap", stream: "cp" },
+      { type: "stream.replay-gap", stream: "cp", transport: "server" },
       { type: "stream.replay-gap", stream: "wr", workspaceId: "ws_owned", directory: "workspace:ws_owned" },
     ]))
     expect(sessionHistoryResyncRequest()).toMatchObject({ reason: "sse-gap", directory: "workspace:ws_owned" })
+  })
+})
+
+describe("a signed desktop's two control planes", () => {
+  test("reads the daemon's cp/events over loopback and the hosted control plane's through the account bridge, and closes the bridge stream on sign-out", async () => {
+    const daemon = openStream()
+    transport.request.mockImplementation(async () => daemon.response)
+    account.available = true
+    // The bridge ends its body the way the account transport does on abort:
+    // as an error, not as a clean close a reader would reconnect after.
+    let bridge!: ReturnType<typeof openStream>
+    account.open.mockImplementation(async (input) => {
+      bridge = openStream(input.signal)
+      return bridge.response
+    })
+    const [accountState, setAccountState] = createSignal<{ status: "signed" | "unsigned" }>({ status: "signed" })
+    render(() => (
+      <ClaxedoEventsProvider pathname={() => "/"} serverUrl={() => "http://127.0.0.1:3001"} accountState={accountState}>
+        <ConnectionState />
+      </ClaxedoEventsProvider>
+    ))
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const daemonOpens = transport.request.mock.calls.filter(([input]) =>
+      new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).pathname.endsWith("/api/cp/events"))
+    expect(daemonOpens).toHaveLength(1)
+    expect(account.open).toHaveBeenCalledTimes(1)
+    expect(account.open.mock.calls[0]?.[0]).toMatchObject({ operation: "controlPlane.events" })
+    daemon.send({ type: "heartbeat" })
+    bridge.send({ type: "heartbeat" })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(screen.getByText("connected")).toBeInTheDocument()
+
+    // Signing out removes the account target: its stream is aborted and not
+    // reopened, while the daemon's stays.
+    account.available = false
+    setAccountState({ status: "unsigned" })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(account.open.mock.calls[0]?.[0].signal?.aborted).toBe(true)
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAY_MS * 8)
+    expect(account.open).toHaveBeenCalledTimes(1)
+    expect(screen.getByText("connected")).toBeInTheDocument()
   })
 })

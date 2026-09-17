@@ -53,7 +53,7 @@ describe("createIdentityAwareEventSource", () => {
       active -= 1
       return "deliver" as const
     }
-    const source = createIdentityAwareEventSource<Event>({ subscribe: (fn) => bus.subscribe(fn), policy, sessionId: (event) => event.sessionId })
+    const source = createIdentityAwareEventSource<Event>({ subscribe: (fn) => bus.subscribe(fn), sequenceOrigin: () => 0, policy, sessionId: (event) => event.sessionId })
     for (let index = 0; index < 24; index += 1) {
       bus.publish({ sessionId: `ses_${index}`, value: `event_${index}` })
     }
@@ -68,7 +68,7 @@ describe("createIdentityAwareEventSource", () => {
   test("terminates an overflowed stream instead of growing an unbounded authority queue", async () => {
     const bus = createBus<Event>()
     const policy: EventDeliveryPolicy<Event> = () => new Promise(() => {})
-    const source = createIdentityAwareEventSource<Event>({ subscribe: (fn) => bus.subscribe(fn), policy, sessionId: (event) => event.sessionId })
+    const source = createIdentityAwareEventSource<Event>({ subscribe: (fn) => bus.subscribe(fn), sequenceOrigin: () => 0, policy, sessionId: (event) => event.sessionId })
     const opened = source.open(participant("slow_connection"))
     let terminated = false
     opened.subscribe(() => undefined, () => { terminated = true })
@@ -84,6 +84,7 @@ describe("createIdentityAwareEventSource", () => {
     const bus = createBus<Event>()
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => new Promise(() => {}),
       sessionId: (event) => event.sessionId,
       replayStartupDeadlineMs: 20,
@@ -105,6 +106,7 @@ describe("createIdentityAwareEventSource", () => {
         : "omit"
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy,
       sessionId: (event) => event.sessionId,
     })
@@ -132,6 +134,7 @@ describe("createIdentityAwareEventSource", () => {
     const bus = createBus<Event>()
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => "deliver",
       sessionId: (event) => event.sessionId,
     })
@@ -170,6 +173,7 @@ describe("createIdentityAwareEventSource", () => {
     const release: Array<() => void> = []
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => new Promise<"deliver">((resolve) => { release.push(() => resolve("deliver")) }),
       sessionId: (event) => event.sessionId,
     })
@@ -202,6 +206,7 @@ describe("createIdentityAwareEventSource", () => {
     const release: Array<() => void> = []
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => new Promise<"deliver">((resolve) => { release.push(() => resolve("deliver")) }),
       sessionId: (event) => event.sessionId,
     })
@@ -230,6 +235,7 @@ describe("createIdentityAwareEventSource", () => {
     const release: Array<() => void> = []
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => new Promise<"deliver">((resolve) => { release.push(() => resolve("deliver")) }),
       sessionId: (event) => event.sessionId,
     })
@@ -255,6 +261,7 @@ describe("createIdentityAwareEventSource", () => {
     const bus = createBus<Event>()
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => "deliver",
       sessionId: (event) => event.sessionId,
     })
@@ -274,10 +281,32 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
+  test("a cursor issued by another process's ring lies below this ring's window and is a gap, whoever attached first", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => "deliver",
+      sessionId: (event) => event.sessionId,
+    })
+    const credential = "Bearer rat_shared"
+    // The previous process numbered this reader's ring 1, 2, 3 …; this one
+    // numbers from the clock. Another tab already re-attached, so the scope
+    // is not fresh — the numbering alone has to tell the old cursor apart.
+    const first = source.open({ ...participant("connection_1"), credential })
+    first.subscribe(() => undefined)
+    bus.publish({ sessionId: "ses_a", value: "after-restart" })
+    await source.flush()
+    const second = source.open({ ...participant("connection_2"), credential })
+    expect(second.replay.hasGap("300", second.replay.lastId())).toBe(true)
+    expect(Number(second.replay.lastId())).toBeGreaterThan(300)
+    source.close()
+  })
+
   test("a cursor from a scope this process never held is a gap; a live scope's own cursor resumes", async () => {
     const bus = createBus<Event>()
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => "deliver",
       sessionId: (event) => event.sessionId,
     })
@@ -310,6 +339,7 @@ describe("createIdentityAwareEventSource", () => {
     const decisions: Array<{ actorId?: string; connectionId: string; value: string }> = []
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: ({ principal, event }) => {
         decisions.push({
           actorId: principal.mode === "verified" ? principal.actorId : undefined,
@@ -344,6 +374,7 @@ describe("createIdentityAwareEventSource", () => {
     let revoked = false
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: () => revoked ? "terminate" : "deliver",
       sessionId: (event) => event.sessionId,
     })
@@ -374,6 +405,7 @@ describe("createIdentityAwareEventSource", () => {
     const revoked = new Set<string>()
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: ({ principal }) => {
         if (principal.mode !== "verified" || !principal.credential) return "terminate"
         return revoked.has(principal.credential) ? "terminate" : "deliver"
@@ -411,6 +443,7 @@ describe("createIdentityAwareEventSource", () => {
     const revoked = new Set(["Bearer revoked"])
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: ({ principal }) => {
         if (principal.mode !== "verified" || !principal.credential) return "terminate"
         return revoked.has(principal.credential) ? "terminate" : "deliver"
@@ -436,6 +469,7 @@ describe("createIdentityAwareEventSource", () => {
     const decisions: string[] = []
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 0,
       policy: ({ event }) => {
         decisions.push(event.value)
         return "deliver"

@@ -92,6 +92,10 @@ export type SessionAccessDecision =
 export type SessionAccessStreamDecision =
   | { allowed: true; lease: string; expiresAt: number }
   | Exclude<SessionAccessDecision, { allowed: true }>
+
+export type SessionHostAccessDecision =
+  | { allowed: true; lease?: string; expiresAt?: number }
+  | Exclude<SessionAccessDecision, { allowed: true }>
 export type SessionTurnLeaseDecision =
   | {
       allowed: true
@@ -117,9 +121,16 @@ export type SessionAccessPolicy = {
     input: SessionAccessPolicyInput & { sessionIds: readonly string[] },
   ): Promise<readonly string[]> | readonly string[]
   authorizePrefix(input: SessionAccessPolicyInput & { method: string; path: string }): Promise<SessionAccessDecision> | SessionAccessDecision
+  /**
+   * Workspace-level access. A remote authority answers a read with a
+   * workspace stream lease when it can mint one: the credential a long-lived
+   * unscoped `wr/events` connection presents for every session that first
+   * appears on it after the request's own token has expired, and what renews
+   * that lease (`lease`) in turn.
+   */
   authorizeHost?(
-    input: SessionAccessPolicyInput & { minimumRole: "viewer" | "editor" | "admin" | "owner" },
-  ): Promise<SessionAccessDecision> | SessionAccessDecision
+    input: SessionAccessPolicyInput & { minimumRole: "viewer" | "editor" | "admin" | "owner"; lease?: string },
+  ): Promise<SessionHostAccessDecision> | SessionHostAccessDecision
   registerSession?(
     input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision

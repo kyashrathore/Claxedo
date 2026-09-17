@@ -108,18 +108,26 @@ export function remoteWorkspaceSessionAccessPolicy(
   })
   policy.authorizeHost = async (input) => {
     const url = options.url?.trim()
-    if (!url || !input.credential) return denied(503, "session_authority_unavailable")
+    if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
     const action: HostAuthorityAction =
       input.minimumRole === "admin" || input.minimumRole === "owner" ? "host_admin" : "host_read"
     try {
       const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000)
       const response = await (options.fetch ?? globalThis.fetch)(url, {
         method: "POST",
-        headers: { authorization: input.credential, "content-type": "application/json" },
-        body: JSON.stringify({ action }),
+        headers: {
+          ...(input.credential && !input.lease ? { authorization: input.credential } : {}),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action, ...(input.lease ? { lease: input.lease } : {}) }),
         signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
       })
-      if (response.ok) return { allowed: true }
+      if (response.ok) {
+        const body = await jsonBody(response)
+        const lease = str(body?.lease)
+        const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
+        return lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
+      }
       const error = rec((await jsonBody(response))?.error)
       // Only the authority's own refusal is a refusal; anything else it
       // answered — a fault, a missing route, a throttle — is the authority

@@ -92,11 +92,9 @@
  *       AND activates the row (`RailSidebarShell` wraps `onSessionSelect` with
  *       `closeMobileSidebar()` — the row's own navigation stays owned by
  *       `RailSidebar.activateSession`, the shell wrapper only dismisses).
- *   15. A session created with a NON-opencode harness (e.g. Codex via ACP)
- *       becomes visible once its `session.lifecycle` "created" event reaches
- *       the client, where an opencode-native session rides the native
- *       `session.created` SSE event instead. Harness/ACP session creation only
- *       ever publishes `session.lifecycle` on `workspaceRuntimeBus`, which the
+ *   15. A created session becomes visible once its `session.lifecycle`
+ *       "created" frame reaches the client. Session creation publishes
+ *       `session.lifecycle` on `workspaceRuntimeBus`, which the
  *       workspace's `/api/wr/events` (`workspace-runtime/src/routes/events.ts`)
  *       serves as a `{ directory, payload }` control frame. Tier M mocks
  *       bypass the real server, so this spec can only pin the frontend half:

@@ -373,10 +373,11 @@ describe("two-user signed runtime transport acceptance", () => {
     const profile = async (auth: SignedAuth) => await authority.usersMe(auth) as Identity
     // The relay mints a fresh host token per request from one recorded
     // access token; `remint` is that per-request mint.
-    const remint = async (auth: SignedAuth, jti: string, role: "editor" | "owner" = "editor") => {
+    const remint = async (auth: SignedAuth, jti: string, role: "editor" | "owner" = "editor", ttlSeconds?: number) => {
       const identity = await profile(auth)
       return await mintRelayHostToken({
         principalKind: "user",
+        ...(ttlSeconds ? { ttlSeconds } : {}),
         parentJti: jti,
         actorId: identity.actor_id,
         actorKind: identity.actor_kind,
@@ -586,9 +587,13 @@ describe("two-user signed runtime transport acceptance", () => {
     // opens it; the session authority decides per session what each receives.
     // Alice owns the session, Bob is a participant, Casey holds only the
     // workspace share.
-    const aliceWide = await connect(runtimeApp, aliceRht, undefined, "workspace")
+    // Alice's host token dies a second after her stream opens: the session's
+    // first frame reaches the connection later than that, so what admits it
+    // is the workspace lease her admission minted, not the request's token.
+    const aliceWide = await connect(runtimeApp, await remint(aliceAuth, "jti_runtime_alice", "owner", 1), undefined, "workspace")
     const bobWide = await connect(runtimeApp, bobRht, undefined, "workspace")
     const caseyWide = await connect(runtimeApp, caseyRht, undefined, "workspace")
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
     sessionBus.publish({ type: "process.status", directory: "/workspace", configId: "workspace-process", status: "running" })
     sessionBus.publish({
       type: "session.lifecycle",

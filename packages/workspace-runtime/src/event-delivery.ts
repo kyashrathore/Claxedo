@@ -39,6 +39,8 @@ export type EventDeliveryPolicy<T> = ((input: {
 }) => EventDeliveryDecision | Promise<EventDeliveryDecision>) & {
   renew?: (principal: EventDeliveryPrincipal) => EventDeliveryDecision | Promise<EventDeliveryDecision>
   release?: (principal: EventDeliveryPrincipal) => void
+  /** The workspace stream lease a connection was admitted with; presented for every session it first sees. */
+  holdHost?: (principal: EventDeliveryPrincipal, lease: { lease: string; expiresAt: number }) => void
 }
 
 type Source<T> = {
@@ -83,6 +85,12 @@ export type IdentityAwareEventSource<T extends object> = {
 export type EventDeliveryOptions<T> = {
   policy?: EventDeliveryPolicy<T>
   principal?: (context: Context) => EventDeliveryPrincipal | Promise<EventDeliveryPrincipal>
+  /**
+   * Where a ring that continues no tombstone starts numbering. The clock, so
+   * a cursor issued by another process's ring lies below this ring's window
+   * and reads as a gap; a test pins it to 0 to read ids as 1, 2, 3.
+   */
+  sequenceOrigin?: () => number
 }
 
 export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal {
@@ -141,9 +149,15 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     sessionId: string
     lease?: string
     expiresAt: number
+    denied?: boolean
     inflight?: Promise<EventDeliveryDecision>
   }>()
   const grantKey = (principal: EventDeliveryPrincipal, sessionId: string) => `${principal.connectionId}:${sessionId}`
+  // Per connection: the workspace lease the unscoped arm was admitted with.
+  // The request's own credential is a one-request relay host token that
+  // expires within a minute; a session first seen on the connection after
+  // that is authorized under this lease instead.
+  const hosts = new Map<string, { lease: string; expiresAt: number; renewing?: Promise<EventDeliveryDecision> }>()
   const accessInput = (principal: EventDeliveryPrincipal, sessionId: string) => ({
     ...(principal.mode === "verified"
       ? { actor: { actorId: principal.actorId, actorKind: principal.actorKind } }
@@ -171,13 +185,25 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     const key = grantKey(principal, sessionId)
     const existing = grants.get(key) ?? { principal, sessionId, expiresAt: 0 }
     grants.set(key, existing)
-    if (!force && existing.expiresAt > Date.now() + 1_000) return "deliver"
+    if (!force && existing.expiresAt > Date.now() + 1_000) return existing.denied ? "omit" : "deliver"
     if (existing.inflight) return await existing.inflight
     const pending = (async () => {
       const decision = policy.authorizeStream
-        ? await policy.authorizeStream(accessInput(principal, sessionId), existing.lease)
+        ? await policy.authorizeStream(accessInput(principal, sessionId), existing.lease ?? hosts.get(principal.connectionId)?.lease)
         : await policy.authorize(accessInput(principal, sessionId))
-      if (!decision.allowed) return eventDecision(decision)
+      if (!decision.allowed) {
+        const next = eventDecision(decision)
+        // A session the reader may not read streams on regardless: its every
+        // delta would be one authority round trip, and a scope whose queue
+        // fills with those is torn down. The refusal is held for as long as a
+        // grant would be, and the renewal cadence re-asks.
+        if (next === "omit") {
+          existing.denied = true
+          existing.expiresAt = Date.now() + DENIED_GRANT_TTL_MS
+        }
+        return next
+      }
+      existing.denied = false
       existing.lease = "lease" in decision && typeof decision.lease === "string" ? decision.lease : undefined
       existing.expiresAt = "expiresAt" in decision && typeof decision.expiresAt === "number"
         ? decision.expiresAt
@@ -197,19 +223,51 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     }
     return authorizeGrant(principal, sessionId)
   }
+  // The workspace lease rolls once it is inside the renewal cadence of its
+  // life, so a session that first appears late still finds a live one.
+  const renewHost = async (principal: EventDeliveryPrincipal): Promise<EventDeliveryDecision> => {
+    const held = hosts.get(principal.connectionId)
+    if (!held || !policy.authorizeHost || principal.mode === "unmanaged-local") return "deliver"
+    if (held.expiresAt - Date.now() > HOST_LEASE_RENEW_WITHIN_MS) return "deliver"
+    if (held.renewing) return await held.renewing
+    held.renewing = (async () => {
+      const { sessionId: _session, ...input } = accessInput(principal, "")
+      const decision = await policy.authorizeHost!({ ...input, minimumRole: "viewer", lease: held.lease })
+      if (!decision.allowed) return eventDecision(decision)
+      if (decision.lease && decision.expiresAt !== undefined) {
+        held.lease = decision.lease
+        held.expiresAt = decision.expiresAt
+      }
+      return "deliver" as const
+    })().catch(() => "terminate" as const).finally(() => {
+      held.renewing = undefined
+    })
+    return await held.renewing
+  }
   eventPolicy.renew = async (principal) => {
     const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId)
-    if (current.length === 0) return "deliver"
-    const decisions = await Promise.all(current.map((grant) => authorizeGrant(principal, grant.sessionId, true)))
+    const decisions = await Promise.all([
+      renewHost(principal),
+      ...current.map((grant) => authorizeGrant(principal, grant.sessionId, true)),
+    ])
     return decisions.every((decision) => decision === "deliver") ? "deliver" : "terminate"
   }
   eventPolicy.release = (principal) => {
+    hosts.delete(principal.connectionId)
     for (const [key, grant] of grants) {
       if (grant.principal.connectionId === principal.connectionId) grants.delete(key)
     }
   }
+  eventPolicy.holdHost = (principal, lease) => {
+    hosts.set(principal.connectionId, lease)
+  }
   return eventPolicy
 }
+
+/** Renewal runs every 5 s per connection; a 15 s lease is rolled with two renewals to spare. */
+const HOST_LEASE_RENEW_WITHIN_MS = 10_000
+/** A refused session is not re-asked before the next renewal would re-ask it anyway. */
+const DENIED_GRANT_TTL_MS = 5_000
 
 function eventDecision(decision: Awaited<ReturnType<SessionAccessPolicy["authorize"]>>): EventDeliveryDecision {
   if (decision.allowed) return "deliver"
@@ -236,10 +294,13 @@ function scopeKey(principal: EventDeliveryPrincipal) {
  * This source assigns ids only after the content-aware policy delivers an
  * event to a principal, so filtered traffic cannot punch holes in that
  * principal's cursor. Empty scopes are evicted; a reconnect reconstructs its
- * credential-scoped replay from the bounded retained ring using the
- * reconnecting principal. Both replay and live authorization remain bound to
- * the presenting credential, so one renewed credential cannot authorize an
- * older or revoked simultaneous connection.
+ * replay from the bounded retained ring using the reconnecting principal.
+ * A scope is keyed by the reader's durable identity (the runtime access
+ * token behind the relay's per-request host tokens, or the in-process
+ * actor), while live authorization presents what the connection was
+ * admitted with — the workspace lease its admission minted, and the session
+ * leases the authority hands back — so a revoked reader is ended at the
+ * next renewal whichever connection it holds.
  */
 export function createIdentityAwareEventSource<T extends object>(input: {
   subscribe: Source<T>["subscribe"]
@@ -250,8 +311,10 @@ export function createIdentityAwareEventSource<T extends object>(input: {
   maxQueuedPerScope?: number
   replayConcurrency?: number
   replayStartupDeadlineMs?: number
+  sequenceOrigin?: () => number
 }): IdentityAwareEventSource<T> {
   const maxQueuedPerScope = input.maxQueuedPerScope ?? 256
+  const sequenceOrigin = input.sequenceOrigin ?? Date.now
   const replayConcurrency = input.replayConcurrency ?? 8
   const replayStartupDeadlineMs = input.replayStartupDeadlineMs ?? 10_000
   const scopes = new Map<string, Scope<T>>()
@@ -297,6 +360,10 @@ export function createIdentityAwareEventSource<T extends object>(input: {
       decided.add(result.connection)
       if (!scope.connections.has(result.connection)) continue
       if (result.next === "terminate") {
+        // The frame is not rung for this scope's ring (it may be one the
+        // connection was never allowed), so the numbering runs on over a
+        // hole: the connection's reconnect must not resume through it.
+        scope.attached = false
         disconnect(scope, result.connection)
         continue
       }
@@ -420,9 +487,14 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     if (existing) return existing
     const tombstone = tombstones.get(key)
     tombstones.delete(key)
+    // A ring that does not continue a tombstone numbers from the origin (the
+    // clock): a cursor issued by another process's ring — a runtime restart,
+    // seen by a reader that reconnects after another reader already
+    // re-attached — then lies below this ring's window and reads as a gap,
+    // never as a resumable position in a numbering it never saw.
     const replay = createSseReplayBuffer<T>({
       ...(input.isTerminal ? { isTerminal: input.isTerminal } : {}),
-      ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
+      initialSequence: tombstone?.sequence ?? sequenceOrigin(),
     })
     // A scope created without a tombstone numbers its ring from 1 (from the
     // retained ring), so a cursor a reader presents to it came from some other

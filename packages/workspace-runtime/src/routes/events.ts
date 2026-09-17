@@ -24,6 +24,7 @@ import {
   defaultEventDeliveryPolicy,
   eventDeliveryPrincipal,
   type EventDeliveryOptions,
+  type EventDeliveryPolicy,
 } from "../event-delivery"
 
 /**
@@ -134,9 +135,9 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
  * or for a pty (and the terminal a lifecycle frame names) by the cwd it was
  * created under. A pty is remembered from its creation frame because its
  * exit and deletion name only the id, by which time the pty service may have
- * forgotten it. A lifecycle frame that names neither a directory nor a
- * terminal (an agent hook's own report) has no workspace to check against
- * and passes.
+ * forgotten it. A lifecycle frame that names a workspace is that workspace's;
+ * one that names neither a workspace, a directory nor a terminal (an agent
+ * hook's own report) has nothing to check against and passes.
  */
 function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "workspaceId" | "ptyDirectory">) {
   const root = realDirectoryPath(options.directory)
@@ -171,7 +172,7 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
       case "pty.stream":
         return ownsPty(event.id)
       case "agent.lifecycle":
-        if (event.workspaceId && event.workspaceId === options.workspaceId) return true
+        if (event.workspaceId && options.workspaceId) return event.workspaceId === options.workspaceId
         if (event.directory) return under(event.directory)
         if (event.terminalId) return ownsPty(event.terminalId)
         return true
@@ -225,7 +226,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     if (!sessionId) return undefined
     return options.sessionParents?.parentSessionIdFor(sessionId) ?? sessionId
   }
-  const delivery = options.policy ?? defaultEventDeliveryPolicy
+  const delivery: EventDeliveryPolicy<StreamFrame> = options.policy ?? defaultEventDeliveryPolicy
   const owns = ownsControlFrames(options)
   const source = createIdentityAwareEventSource<StreamFrame>({
     subscribe: (fn) => {
@@ -249,6 +250,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       !isGapFrame(frame) && isControlFrame(frame) && frame.payload.type === "agent.lifecycle" &&
       (!!frame.payload.prompt || !!frame.payload.lastAssistantMessage),
     isTerminal: isRetainedWorkspaceEventFrame,
+    ...(options.sequenceOrigin ? { sequenceOrigin: options.sequenceOrigin } : {}),
   })
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
 
@@ -259,6 +261,9 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       ? (frame: StreamFrame) => !isGapFrame(frame) && scopeSessionId(frame) === scope.sessionId
       : (_frame: StreamFrame) => true
     const principal = await (options.principal?.(c) ?? eventDeliveryPrincipal(c))
+    if (!scope.managed && scope.lease && scope.expiresAt !== undefined) {
+      delivery.holdHost?.(principal, { lease: scope.lease, expiresAt: scope.expiresAt })
+    }
     const opened = source.open(principal)
     await opened.ready
     const replayForScope = scope.managed ? scopedReplay(opened.replay, allows) : opened.replay

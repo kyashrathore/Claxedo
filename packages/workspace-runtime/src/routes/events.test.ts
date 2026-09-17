@@ -48,6 +48,7 @@ function harness(input: {
     workspaceId: WORKSPACE_ID,
     eventHub: hub,
     bus,
+    sequenceOrigin: () => 0,
     ptyDirectory: (id) => ptys.get(id),
     ...(input.policy ? { sessionAccessPolicy: input.policy, policy: sessionEventDeliveryPolicy(input.policy) } : {}),
     ...(input.parents ? { sessionParents: { parentSessionIdFor: (id) => input.parents?.[id] } } : {}),

@@ -164,14 +164,16 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   createEffect(() => {
     const unsub = createBatchAutoTabListener({
-      // A terminal's `pty.created` arrives as a presentation frame; a session's
-      // `session.lifecycle` is a control frame the coalescer does not carry.
+      // Both are control frames off the workspace stream, which the coalescer
+      // does not carry; they come straight from the events emitter.
       listen: (listener) => {
-        const frames = globalSDK.event.listen(listener)
         const lifecycle = events?.on("session.lifecycle", (event) => {
           listener({ name: event.directory ?? "", details: event })
         })
-        return () => { frames(); lifecycle?.() }
+        const terminals = events?.on("pty.created", (event) => {
+          listener({ name: "directory" in event && typeof event.directory === "string" ? event.directory : "", details: event })
+        })
+        return () => { lifecycle?.(); terminals?.() }
       },
       adapters: {
         addSession: (dir, sid, title) => {

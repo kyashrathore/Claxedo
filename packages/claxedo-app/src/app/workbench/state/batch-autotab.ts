@@ -12,7 +12,7 @@
  * testable.
  */
 
-import { readField, readString } from "@/lib/record"
+import { readString } from "@/lib/record"
 
 type TabActions = {
   addSession(dir: string, sessionId: string, title: string): string | undefined
@@ -27,16 +27,14 @@ type ProjectInfo = {
 }
 
 /**
- * One frame as the caller's emitter delivers it: a presentation frame's
- * `properties`, or a `session.lifecycle` control frame's own fields.
- *
- * `properties` is `unknown` on purpose: declaring the two shapes this reads
- * would force the caller to cast `event.listen` to subscribe at all. The
- * fields it wants are read out below instead of declared here.
+ * One control frame off the workspace stream, as the events emitter
+ * delivers it: `session.lifecycle` (`phase`, `sessionID`, `info`) or
+ * `pty.created` (`info`). `info` is `unknown` on purpose: the fields this
+ * reads are read out below rather than declared as the two shapes.
  */
 type ListenEvent = {
   name: string // directory
-  details: { type: string; properties?: unknown; phase?: string; sessionID?: string; info?: unknown }
+  details: { type: string; phase?: string; sessionID?: string; info?: unknown }
 }
 
 export type BatchAutoTabDeps = {
@@ -64,7 +62,7 @@ function isSandboxDirectory(directory: string, projects: ProjectInfo[]): boolean
 export function createBatchAutoTabListener(deps: BatchAutoTabDeps): () => void {
   return deps.listen((e) => {
     const event = e.details
-    const info = event?.type === "session.lifecycle" ? event.info : readField(event?.properties, "info")
+    const info = event?.info
     const id = event?.type === "session.lifecycle" ? event.sessionID : readString(info, "id")
     const title = readString(info, "title")
     const directory =

@@ -398,7 +398,7 @@ describe("the owner grant as a session proof", () => {
       ...transitionStubs,
       registerRuntimeSession: vi.fn(async () => ({})),
       authorizeRuntimeSession: vi.fn(input.authorize ?? (async () => {})),
-      runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
+      runtimeAccessTokenActive: vi.fn(async (): Promise<{ active: boolean; code?: string; reason?: string }> => ({ active: true })),
       ...(input.reserve === false ? {} : {
         reserveRuntimeSession: vi.fn(async (_principal: PrivateSessionRuntimePrincipal, intent: ReservePrivateSessionInput) => ({
           changed: true,
@@ -575,5 +575,35 @@ describe("the owner grant as a session proof", () => {
     const ended = await renew()
     expect(ended.status).toBe(401)
     expect(await ended.json()).toMatchObject({ error: { code: "owner_grant_invalid" } })
+  })
+
+  test("a workspace read mints a workspace lease that stands for the reader on any session, renews itself, and ends with its access token", async () => {
+    const { target, authority, relay } = await fixture()
+    const admitted = await request(target, await relay(), { action: "host_read" })
+    expect(admitted.status).toBe(200)
+    const { lease, expiresAt } = await admitted.json() as { allowed: true; lease: string; expiresAt: number }
+    expect(expiresAt).toBeGreaterThan(Date.now())
+
+    // A session first seen after the relay host token expired: the lease
+    // proves the reader, and the session is still authorized on its own.
+    const first = await request(target, undefined, { action: "read", sessionId: "ses_late", stream: true, lease })
+    expect(first.status).toBe(200)
+    expect(authority.authorizeRuntimeSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: "ses_late", action: "read" }))
+    const sessionLease = (await first.json() as { lease: string }).lease
+    // What it hands back is bound to that session, not workspace-wide.
+    expect((await request(target, undefined, { action: "read", sessionId: "ses_other", stream: true, lease: sessionLease })).status).toBe(401)
+    // Writes are never workspace-wide.
+    expect((await request(target, undefined, { action: "write", sessionId: "ses_late", stream: true, lease })).status).toBe(401)
+
+    const renewed = await request(target, undefined, { action: "host_read", lease })
+    expect(renewed.status).toBe(200)
+    expect((await renewed.json() as { lease: string }).lease).not.toBe(lease)
+    expect((await request(target, undefined, { action: "host_admin", lease })).status).toBe(200)
+
+    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "revoked" })
+    const ended = await request(target, undefined, { action: "host_read", lease })
+    expect(ended.status).toBe(401)
+    expect(await ended.json()).toMatchObject({ error: { code: "runtime_access_token_revoked" } })
+    expect((await request(target, undefined, { action: "host_read", lease: sessionLease })).status).toBe(401)
   })
 })

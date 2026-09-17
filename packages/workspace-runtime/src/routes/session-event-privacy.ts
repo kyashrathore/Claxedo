@@ -11,7 +11,7 @@ import {
 } from "../session-access-policy"
 
 export type SessionEventScope =
-  | { managed: false; grant?: "workspace" }
+  | { managed: false; grant?: "workspace"; lease?: string; expiresAt?: number }
   | {
       managed: true
       sessionId: string
@@ -74,7 +74,13 @@ export async function authorizeSessionEventScope(
       method: c.req.method,
       path: c.req.path,
     })
-    if (workspace.allowed) return { managed: false, grant: "workspace" }
+    if (workspace.allowed) {
+      return {
+        managed: false,
+        grant: "workspace",
+        ...(workspace.lease && workspace.expiresAt !== undefined ? { lease: workspace.lease, expiresAt: workspace.expiresAt } : {}),
+      }
+    }
     // A refusal at workspace level is the reader's cue to reopen for one
     // session under a lease; it is named as such so a 403 minted elsewhere on
     // the path (the relay, the token mint) is not mistaken for it.
@@ -116,9 +122,10 @@ export async function authorizeSessionEventScope(
     }, { status: 503 })
   }
 
-  // The connection-establishment RHT is intentionally not retained by the
-  // long-lived stream. Renewals use the short lease and the authority service
-  // rechecks its durable parent RAT plus current session membership.
+  // The request's own host token expires within a minute and is not what the
+  // long-lived stream renews with: renewals present the short lease, and the
+  // authority rechecks its durable parent access token plus current session
+  // membership.
   const { credential: _credential, signal: _requestSignal, ...renewalInput } = input
   return {
     managed: true,
