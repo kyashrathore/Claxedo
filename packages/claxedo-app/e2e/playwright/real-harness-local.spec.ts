@@ -1079,7 +1079,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
-  test("a session created elsewhere reaches the home route's rail from a cp/events notice", async ({ page }) => {
+  test("a session created elsewhere reaches the rail of a route with no workspace from a cp/events notice", async ({ page }) => {
     const dir = await makeWorkspace("inventory-notice", "claude")
     await seedOneProject(page, dir)
     const notices: string[] = []
@@ -1087,18 +1087,23 @@ test.describe("real harness journeys @core @tier-real", () => {
       if (!socket.url().includes("/api/cp/events")) return
       socket.on("framereceived", (frame) => { notices.push(String(frame.payload)) })
     })
-    const workspaceOpens: string[] = []
+    const workspaceOpens: Array<{ at: number; url: string }> = []
     page.on("response", (response) => {
-      if (new URL(response.url()).pathname === "/api/wr/events") workspaceOpens.push(response.url())
+      if (new URL(response.url()).pathname === "/api/wr/events") workspaceOpens.push({ at: Date.now(), url: response.url() })
     })
-    await page.goto("/")
-    await expect.poll(() => notices.some((frame) => frame.includes('"type":"heartbeat"')), { message: "cp/events is open on the home route", timeout: 30_000 }).toBe(true)
-    // No workspace is routed on `/`, so no wr/events stream is open; the only
+    // `/` opens the seeded project's own route, which has a workspace stream;
+    // the Tasks route names no workspace, so the rail there holds none, and
+    // only what opens once that route is the document counts.
+    const homeAt = Date.now()
+    await page.goto("/tasks")
+    await expect(page).toHaveURL(/\/tasks$/)
+    await expect.poll(() => notices.some((frame) => frame.includes('"type":"heartbeat"')), { message: "cp/events is open on the Tasks route", timeout: 30_000 }).toBe(true)
+    // No workspace is routed here, so no wr/events stream is open; the only
     // way the rail learns of this session is the control plane's own notice.
     const created = await createHarnessSession(dir, { title: "Created from the CLI", harness: "claude", providerID: "anthropic", modelID: "claude-sonnet-4-5" })
     await expectRailRowVisible({ page, sessionId: created.id, timeout: 30_000 })
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"session.inventory.changed"')), { timeout: 15_000 }).toBe(true)
-    expect(workspaceOpens, "no workspace stream is open on the home route").toEqual([])
+    expect(workspaceOpens.filter((open) => open.at >= homeAt), "no workspace stream is open on the Tasks route").toEqual([])
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {
