@@ -1,5 +1,6 @@
 import type { Hono } from "hono"
 import { PtyRoutes } from "../routes/pty"
+import { Pty } from "../pty/index"
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { workspaceEventsHandler, type WorkspaceEventParents } from "../routes/events"
 import { TranscriptRoutes } from "../routes/transcript"
@@ -42,6 +43,7 @@ export function mountWorkspaceEvents(app: Hono, options: {
   const handler = workspaceEventsHandler({
     directory: options.directory,
     eventHub: options.eventHub,
+    ptyDirectory: (id) => Pty.get(id)?.cwd,
     policy,
     sessionAccessPolicy: options.sessionAccessPolicy,
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),

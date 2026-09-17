@@ -48,8 +48,8 @@ describe("workspaceRuntimeBus", () => {
 
     const seen: string[] = []
     const unsubscribe = b.workspaceRuntimeBus.subscribe((event) => seen.push(event.type))
-    a.workspaceRuntimeBus.publish({ type: "heartbeat" })
+    a.workspaceRuntimeBus.publish({ type: "process.config.changed", directory: "/repo", configs: [] })
     unsubscribe()
-    expect(seen).toEqual(["heartbeat"])
+    expect(seen).toEqual(["process.config.changed"])
   })
 })

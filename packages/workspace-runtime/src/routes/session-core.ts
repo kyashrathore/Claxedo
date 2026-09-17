@@ -1744,7 +1744,6 @@ export function createSessionRoutes(opts: Opts) {
                 directory,
                 body,
                 publishGlobal: opts.publishGlobal,
-                publishStatus: (event) => opts.sessionBus.publish(event),
                 activeTurn,
                 ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
                 actor: access.actor,
@@ -1763,7 +1762,6 @@ export function createSessionRoutes(opts: Opts) {
                 directory,
                 body,
                 publishGlobal: opts.publishGlobal,
-                publishStatus: (event) => opts.sessionBus.publish(event),
                 createActiveTurnScope: opts.createActiveTurnScope
                   ? ({ adapter, directory, sessionId }) => turnScope(
                       opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
@@ -2202,7 +2200,6 @@ export function createSessionRoutes(opts: Opts) {
             directory,
             body,
             publishGlobal: opts.publishGlobal,
-            publishStatus: (event) => opts.sessionBus.publish(event),
             createActiveTurnScope: opts.createActiveTurnScope
               ? () => turnScope(
                   opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
@@ -2241,7 +2238,6 @@ export function createSessionRoutes(opts: Opts) {
             directory,
             body,
             publishGlobal: opts.publishGlobal,
-            publishStatus: (event) => opts.sessionBus.publish(event),
             publishUserMessage: false,
             streamErrorMessage: streamTurnErrorMessage,
             createActiveTurnScope: opts.createActiveTurnScope

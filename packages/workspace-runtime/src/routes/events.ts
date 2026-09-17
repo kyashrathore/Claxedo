@@ -5,6 +5,8 @@ import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runt
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
+import { realpathSync } from "node:fs"
+import { resolve, sep } from "node:path"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -110,12 +112,74 @@ export type WorkspaceEventParents = {
 }
 
 export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
-  /** The runtime's own directory, stamped on control frames that name none. */
+  /** The runtime's own directory: what its control frames are addressed as, and what admits a bus frame as its own. */
   directory: string
   eventHub: RuntimeEventHub
   bus?: Pick<typeof workspaceRuntimeBus, "subscribe">
+  /** The cwd a live pty was created under; a pty's later frames name only its id. */
+  ptyDirectory?: (id: string) => string | undefined
   sessionParents?: WorkspaceEventParents
   sessionAccessPolicy?: SessionAccessPolicy
+}
+
+/**
+ * The runtime bus is process-global — one daemon hosts an embedded runtime
+ * per open workspace — so a handler admits a bus frame only when it names
+ * this runtime's workspace: by directory, or for a pty (and the terminal a
+ * lifecycle frame names) by the cwd it was created under. A pty is remembered
+ * from its creation frame because its exit and deletion name only the id, by
+ * which time the pty service may have forgotten it. A lifecycle frame that
+ * names neither a directory nor a terminal (an agent hook's own report) has
+ * no workspace to check against and passes.
+ */
+function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "ptyDirectory">) {
+  const root = realDirectory(options.directory)
+  const ptys = new Set<string>()
+  const under = (directory: string | undefined) => {
+    if (!directory) return false
+    const real = realDirectory(directory)
+    return real === root || real.startsWith(root + sep)
+  }
+  const ownsPty = (id: string) => {
+    if (ptys.has(id)) return true
+    if (!under(options.ptyDirectory?.(id))) return false
+    ptys.add(id)
+    return true
+  }
+  return (event: WorkspaceRuntimeEvent): boolean => {
+    switch (event.type) {
+      case "pty.created":
+      case "pty.updated": {
+        if (!under(event.info.cwd)) return false
+        ptys.add(event.info.id)
+        return true
+      }
+      case "pty.deleted": {
+        const owned = ownsPty(event.id)
+        ptys.delete(event.id)
+        return owned
+      }
+      case "pty.exited":
+      case "pty.stream":
+        return ownsPty(event.id)
+      case "agent.lifecycle":
+        if (event.directory) return under(event.directory)
+        if (event.terminalId) return ownsPty(event.terminalId)
+        return true
+      case "session.lifecycle":
+        return !event.directory || realDirectory(event.directory) === root
+      default:
+        return realDirectory(event.directory) === root
+    }
+  }
+}
+
+function realDirectory(directory: string) {
+  try {
+    return realpathSync(directory)
+  } catch {
+    return resolve(directory)
+  }
 }
 
 /**
@@ -159,19 +223,17 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     return options.sessionParents?.parentSessionIdFor(sessionId) ?? sessionId
   }
   const delivery = options.policy ?? defaultEventDeliveryPolicy
+  const owns = ownsControlFrames(options)
   const source = createIdentityAwareEventSource<StreamFrame>({
     subscribe: (fn) => {
       const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => fn(event))
       const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
         for (const event of presentationEventsFromRuntimeEnvelope(envelope)) fn(event)
       })
-      // The runtime bus is process-global (one daemon hosts several embedded
-      // runtimes), so a frame that names its own directory keeps it; only a
-      // frame that names none is addressed as this runtime's.
-      const unsubscribeControl = bus.subscribe((event) => fn({
-        directory: "directory" in event && typeof event.directory === "string" && event.directory ? event.directory : options.directory,
-        payload: event,
-      }))
+      const unsubscribeControl = bus.subscribe((event) => {
+        if (!owns(event)) return
+        fn({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: event })
+      })
       return () => {
         unsubscribeCompat()
         unsubscribeRuntime()

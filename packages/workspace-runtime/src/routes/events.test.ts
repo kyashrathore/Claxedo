@@ -32,6 +32,9 @@ function harness(input: {
   const app = new Hono()
   const hub = createRuntimeEventHub()
   const bus = createBus<WorkspaceRuntimeEvent>()
+  // The ptys the runtime's pty service knows, by cwd; a test registers the
+  // ones it exits or streams, the way a real pty exists before it exits.
+  const ptys = new Map<string, string>()
   if (input.relayAuth) {
     app.use("*", async (c, next) => {
       ;(c as any).set("relayHostAuth", input.relayAuth)
@@ -42,10 +45,11 @@ function harness(input: {
     directory: DIRECTORY,
     eventHub: hub,
     bus,
+    ptyDirectory: (id) => ptys.get(id),
     ...(input.policy ? { sessionAccessPolicy: input.policy, policy: sessionEventDeliveryPolicy(input.policy) } : {}),
     ...(input.parents ? { sessionParents: { parentSessionIdFor: (id) => input.parents?.[id] } } : {}),
   }))
-  return { app, hub, bus }
+  return { app, hub, bus, ptys }
 }
 
 const managedPolicy = (input: {
@@ -103,7 +107,8 @@ function dataFrames(text: string) {
 
 describe("wr/events — one stream per workspace runtime", () => {
   test("carries projected turn frames, control frames and subagent revisions as {directory, payload}", async () => {
-    const { app, hub, bus } = harness({})
+    const { app, hub, bus, ptys } = harness({})
+    ptys.set("pty-1", DIRECTORY)
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
     hub.publishGlobal(part("ses-1", "prt-1", { status: "running" }))
@@ -121,6 +126,37 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("raw runtime frames stay off the wire")
     const pty = frames.find((f) => f.payload?.type === "pty.exited")
     expect(pty.directory).toBe(DIRECTORY)
+  })
+
+  test("the process-global bus reaches a workspace's stream only with that workspace's frames", async () => {
+    const { app, hub, bus, ptys } = harness({})
+    ptys.set("pty-here", `${DIRECTORY}/sub`)
+    ptys.set("pty-elsewhere", "/elsewhere")
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    bus.publish({ type: "process.started", directory: "/elsewhere", configId: "cfg-elsewhere", ptyId: "pty-elsewhere" })
+    bus.publish({ type: "pty.created", info: { id: "pty-new-elsewhere", title: "t", command: "sh", args: [], cwd: "/elsewhere", status: "running", pid: 1 } })
+    bus.publish({ type: "pty.exited", id: "pty-elsewhere", exitCode: 0 })
+    bus.publish({ type: "session.lifecycle", phase: "created", directory: "/elsewhere", sessionID: "ses-elsewhere", ts: 1 })
+    bus.publish({ type: "agent.lifecycle", tabId: "tab", terminalId: "pty-elsewhere", eventType: "Busy" })
+    bus.publish({ type: "pty.created", info: { id: "pty-new-here", title: "t", command: "sh", args: [], cwd: `${DIRECTORY}/sub`, status: "running", pid: 2 } })
+    bus.publish({ type: "pty.exited", id: "pty-here", exitCode: 0 })
+    bus.publish({ type: "agent.lifecycle", tabId: "tab", terminalId: "pty-here", eventType: "Idle" })
+    ptys.delete("pty-here")
+    bus.publish({ type: "pty.deleted", id: "pty-here" })
+    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "cfg-here", ptyId: "pty-new-here" })
+    hub.publishGlobal(part("ses-1", "prt-last", { status: "running" }))
+    const text = await readUntil(response, "prt-last")
+    controller.abort()
+
+    const frames = dataFrames(text)
+    const payloads = frames.map((f) => f.payload).filter(Boolean)
+    expect(payloads.map((p) => p.type)).toEqual([
+      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted", "process.started", "message.part.updated",
+    ])
+    expect(payloads.find((p) => p.type === "pty.created")?.info?.id).toBe("pty-new-here")
+    expect(frames.find((f) => f.payload?.type === "pty.exited")?.directory).toBe(DIRECTORY)
+    expect(text).not.toContain("elsewhere")
   })
 
   test("a tool's settling part and a subagent's settlement are retained; starts and deltas are not", () => {
@@ -163,7 +199,7 @@ describe("wr/events — one stream per workspace runtime", () => {
   })
 
   test.each([relayAuth, viewerAuth])("the unscoped stream carries a session's frames — parts, subagents, goals, its pty — only to a principal the authority grants it (role %#)", async (auth) => {
-    const { app, hub, bus } = harness({
+    const { app, hub, bus, ptys } = harness({
       policy: managedPolicy({ workspace: "allow", session: (id) => id === "shared" }),
       relayAuth: auth,
     })
@@ -173,6 +209,8 @@ describe("wr/events — one stream per workspace runtime", () => {
     hub.publishGlobal(part("private", "prt-private", { status: "running" }))
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "private", payload: { type: "subagent-updated", subagentKey: "private-child", revision: 1, status: "running" } })
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "private", payload: { type: "goal-updated", sessionId: "private", goal: { id: "g", status: "active", text: "private-goal" } as never } })
+    ptys.set("pty-private", DIRECTORY)
+    ptys.set("pty-workspace", DIRECTORY)
     bus.publish({ type: "pty.exited", id: "pty-private", sessionId: "private", exitCode: 0, tail: "private-terminal-bytes" })
     bus.publish({ type: "pty.exited", id: "pty-workspace", exitCode: 0 })
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })
@@ -202,7 +240,7 @@ describe("wr/events — one stream per workspace runtime", () => {
   })
 
   test("a share grantee's session-scoped stream carries that session and its subagent children only", async () => {
-    const { app, hub, bus } = harness({
+    const { app, hub, bus, ptys } = harness({
       policy: managedPolicy({ workspace: "deny", session: (id) => id === "shared" }),
       parents: { "child-of-shared": "shared" },
       relayAuth,
@@ -212,6 +250,8 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(response.status).toBe(200)
     hub.publishGlobal(part("other", "prt-other", { status: "running" }))
     hub.publishGlobal(part("child-of-shared", "prt-child", { status: "running" }))
+    ptys.set("pty-x", DIRECTORY)
+    ptys.set("pty-shared", DIRECTORY)
     bus.publish({ type: "pty.exited", id: "pty-x", exitCode: 0 })
     bus.publish({ type: "pty.exited", id: "pty-shared", sessionId: "shared", exitCode: 0 })
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })

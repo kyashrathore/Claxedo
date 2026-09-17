@@ -47,6 +47,8 @@ type Connection<T> = {
   push(event: T): unknown
   terminate(): unknown
   authorizedSessions: Set<string>
+  /** Frames this connection was pushed; a frame decided twice for the scope is pushed once. */
+  delivered: WeakSet<object>
   renewalTimer?: ReturnType<typeof setInterval>
 }
 
@@ -311,15 +313,21 @@ export function createIdentityAwareEventSource<T>(input: {
         if (sessionId && result.connection.authorizedSessions.has(sessionId)) disconnect(scope, result.connection)
         continue
       }
-      deliveries.push(result.connection)
       if (sessionId) result.connection.authorizedSessions.add(sessionId)
+      if (result.connection.delivered.has(event as object)) continue
+      result.connection.delivered.add(event as object)
+      deliveries.push(result.connection)
     }
     const delivered = deliveries.length > 0 || replayDecision === "deliver"
-    if (delivered) {
+    // A frame reaches the scope's ring once even when it was decided twice —
+    // a connection's catch-up re-enqueues a frame whose first decision was
+    // still awaiting the policy when that connection attached, so that
+    // connection is decided for it too.
+    if (delivered && scope.replay.idFor(event) === undefined) {
       scope.replay.push(event)
       scope.retainedCursor = retained.idFor(event) ?? scope.retainedCursor
-      for (const connection of deliveries) void Promise.resolve(connection.push(event)).catch(() => undefined)
     }
+    for (const connection of deliveries) void Promise.resolve(connection.push(event)).catch(() => undefined)
     evict(scope)
   }
 
@@ -369,10 +377,9 @@ export function createIdentityAwareEventSource<T>(input: {
   const enqueue = (scope: Scope<T>, event: T): void => {
     // A frame this scope's ring already holds was delivered to every
     // connection attached at the time and is what a later connection's replay
-    // recovers; deciding it again would push it under a second id. Reaches
-    // here from a connection's catch-up over the retained ring when the scope
-    // was live during that connection's open, and from two connections catching
-    // up over overlapping ranges.
+    // recovers. A frame still being decided is enqueued again so the
+    // connection that attached meanwhile is decided for it; `apply` pushes it
+    // to no connection twice and rings it once.
     if (scope.replay.idFor(event) !== undefined) return
     if (!scope.pending) {
       const result = evaluate(scope, event)
@@ -505,7 +512,7 @@ export function createIdentityAwareEventSource<T>(input: {
             const sessionId = input.sessionId(retainedEvent.payload)
             if (sessionId) authorizedSessions.add(sessionId)
           }
-          const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions }
+          const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions, delivered: new WeakSet() }
           scope.connections.add(connection)
           scope.attached = true
           if (input.policy.renew) {

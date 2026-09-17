@@ -172,7 +172,6 @@ export type SessionPromptTurnInput = {
   /** Decided by the caller, so a refusal is the answer its client is waiting on. */
   admitted: AdmittedSessionPromptTurn
   publishGlobal: (event: CompatEnvelope) => void
-  publishStatus: (event: RuntimeSessionBusEvent) => void
   createActiveTurnScope?: (input: {
     adapter: AgentHarnessAdapter
     directory: RuntimeDirectory
@@ -190,7 +189,6 @@ export type RuntimePromptTurnInput = {
   directory: RuntimeDirectory
   body: SessionPromptBody
   publishGlobal: (event: CompatEnvelope) => void
-  publishStatus: (event: RuntimeSessionBusEvent) => void
   activeTurn?: ActiveTurnScope
   createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
@@ -571,7 +569,6 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of projection.events(item.payload)) {
         if (input.turnAdmission && !input.turnAdmission.valid()) break
-        input.publishStatus({ type: "process.status", directory: scope, configId: input.sessionId, status: "streaming" })
         input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
           assistantId = event.properties.info.id
@@ -632,7 +629,6 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
       if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of events.events(item)) {
         if (input.turnAdmission && !input.turnAdmission.valid()) break
-        input.publishStatus({ type: "process.status", directory: scope, configId: input.sessionId, status: "streaming" })
         input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
           assistantId = event.properties.info.id

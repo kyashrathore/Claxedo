@@ -149,6 +149,44 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
+  test("a frame still awaiting the policy when a second connection attaches reaches both connections once, under one id", async () => {
+    const bus = createBus<Event>()
+    // Every managed runtime's policy is asynchronous (the session authority
+    // is awaited), so a frame's decision is pending when the next connection
+    // attaches and catches up over the retained ring.
+    const release: Array<() => void> = []
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => new Promise<"deliver">((resolve) => { release.push(() => resolve("deliver")) }),
+      sessionId: (event) => event.sessionId,
+    })
+    const credential = "Bearer rat_shared"
+    const first = source.open({ ...participant("connection_1"), credential })
+    const seenByFirst: string[] = []
+    first.subscribe((event) => { seenByFirst.push(event.value) })
+    bus.publish({ sessionId: "ses_a", value: "before" })
+    release.shift()!()
+    await source.flush()
+
+    const second = source.open({ ...participant("connection_2"), credential })
+    bus.publish({ sessionId: "ses_a", value: "during" })
+    const seenBySecond: string[] = []
+    second.subscribe((event) => { seenBySecond.push(event.value) })
+    // Each decision the scope queues asks the policy afresh; answer them as
+    // they are asked until the scope drains.
+    for (let round = 0; round < 8; round += 1) {
+      while (release.length > 0) release.shift()!()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    await source.flush()
+
+    expect(seenByFirst).toEqual(["before", "during"])
+    expect(seenBySecond).toEqual(["during"])
+    const ring = second.replay.replayAfter(undefined).map((entry) => `${entry.id}:${entry.payload.value}`)
+    expect(ring).toEqual(["1:before", "2:during"])
+    source.close()
+  })
+
   test("a cursor from a scope this process never held is a gap; a live scope's own cursor resumes", async () => {
     const bus = createBus<Event>()
     const source = createIdentityAwareEventSource<Event>({

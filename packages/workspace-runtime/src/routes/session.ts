@@ -28,7 +28,7 @@ import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
-import type { QueuedPromptAction, RuntimeSessionBusEvent, SessionPromptBody } from "../session/service"
+import type { QueuedPromptAction, SessionPromptBody } from "../session/service"
 import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -51,6 +51,7 @@ function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]
     type: "agent.lifecycle",
     tabId: sessionID ?? event.directory,
     workspaceId: workspaceId(),
+    directory: event.directory,
     ...(sessionID ? { sessionId: sessionID } : {}),
     eventType,
   })
@@ -249,7 +250,6 @@ export function SessionRoutes(
     const adapter = await getAdapter({ sessionId: input.sessionId, directory: input.directory })
     const runtime = await options?.resolveRuntime?.({ sessionId: input.sessionId, directory: input.directory })
     const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
-    const publishStatus = (event: RuntimeSessionBusEvent) => workspaceRuntimeBus.publish(event)
     const scope = () => options?.createActiveTurnScope?.({ adapter, directory: input.directory, sessionId: input.sessionId })
     return await new Promise<"started" | "busy">((resolve) => {
       const run = runtime
@@ -259,7 +259,6 @@ export function SessionRoutes(
             directory: input.directory,
             body: input.body,
             publishGlobal,
-            publishStatus,
             createActiveTurnScope: scope,
             ...(input.author ? { author: input.author } : {}),
             ...(input.actor ? { actor: input.actor } : {}),
@@ -287,7 +286,6 @@ export function SessionRoutes(
               directory: input.directory,
               body: input.body,
               publishGlobal,
-              publishStatus,
               createActiveTurnScope: ({ adapter, directory, sessionId }) =>
                 options?.createActiveTurnScope?.({ adapter, directory: requiredDirectory(directory), sessionId }),
             })

@@ -90,7 +90,6 @@ function hostFor(runtimeStore: RuntimeStore, runtime: AgentRuntime, directory: s
         directory: input.directory,
         body: input.body,
         publishGlobal: () => {},
-        publishStatus: () => {},
         onDelivery: input.onDelivery,
         onAdmissionSettled: () => resolve(),
         ...(input.actor ? { actor: input.actor } : {}),

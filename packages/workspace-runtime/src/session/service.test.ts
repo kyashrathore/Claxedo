@@ -14,7 +14,6 @@ import {
   runSessionPromptTurn,
   sessionPromptReply,
   sessionTurnRefusal,
-  type RuntimeSessionBusEvent,
   type SessionPromptTurnInput,
 } from "./service"
 
@@ -75,7 +74,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [] },
       publishGlobal: () => {},
-      publishStatus: () => {},
     })).rejects.toThrow("execution binding sessionId mismatch")
     expect(executed).toBe(false)
   })
@@ -98,7 +96,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [], agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture" },
       publishGlobal: () => {},
-      publishStatus: () => {},
     }).then(() => undefined, (error: unknown) => error)
 
     expect(refusal).toBeInstanceOf(AgentRuntimeContractError)
@@ -115,7 +112,6 @@ describe("session service", () => {
 
   it("runs a prompt turn without a Hono route", async () => {
     const events: CompatEnvelope[] = []
-    const statuses: RuntimeSessionBusEvent[] = []
     const turn = await promptTurn({
       binding: executionBinding,
       adapter: adapter({
@@ -156,7 +152,6 @@ describe("session service", () => {
         parts: [{ type: "text", text: "hello" }],
       },
       publishGlobal: (event) => events.push(event),
-      publishStatus: (event) => statuses.push(event),
     })
 
     const output = sessionPromptReply(turn)
@@ -165,11 +160,6 @@ describe("session service", () => {
       "message.updated",
       "message.part.updated",
       "message.updated",
-    ])
-    expect(statuses).toEqual([
-      { type: "process.status", directory: "/work", configId: "s1", status: "streaming" },
-      { type: "process.status", directory: "/work", configId: "s1", status: "streaming" },
-      { type: "process.status", directory: "/work", configId: "s1", status: "streaming" },
     ])
     expect(output.body).toEqual({
       info: { id: "msg-user_r", sessionID: "s1", role: "assistant" },
@@ -191,7 +181,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
       publishGlobal: () => {},
-      publishStatus: () => {},
     })
 
     expect(modes).toEqual(["agent-full-access"])
@@ -215,7 +204,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text" as const, text: "hello" }] },
       publishGlobal: () => {},
-      publishStatus: () => {},
     })
 
     expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
@@ -249,7 +237,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
       publishGlobal: (event) => events.push(event),
-      publishStatus: () => {},
     })
 
     expect(events.map((event) => event.payload.type)).toEqual([
@@ -294,7 +281,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
       publishGlobal: () => {},
-      publishStatus: () => {},
     })
 
     expect(starts).toEqual([expect.objectContaining({ permissionMode: "agent-full-access" })])
@@ -326,7 +312,6 @@ describe("session service", () => {
       directory: "/work" as const,
       body: { parts: [{ type: "text" as const, text: "hello" }] },
       publishGlobal: () => {},
-      publishStatus: () => {},
     }
 
     await runRuntimePromptTurn({ ...common, actor: { actorId: "actor-1", actorKind: "human" } })
@@ -366,7 +351,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
       publishGlobal: () => {},
-      publishStatus: () => {},
     })
 
     expect(subscribes).toEqual([{ sessionId: "s1", hostInternal: true }])
@@ -385,7 +369,6 @@ describe("session service", () => {
         parts: [{ type: "text", text: "hello" }],
       },
       publishGlobal: (event) => events.push(event),
-      publishStatus: () => {},
       publishUserMessage: false,
     })
 
@@ -420,7 +403,6 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
       publishGlobal: (event) => events.push(event),
-      publishStatus: () => {},
     })).rejects.toThrow("missing session")
 
     expect(returned).toBe(true)

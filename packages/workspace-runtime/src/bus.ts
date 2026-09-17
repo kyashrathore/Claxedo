@@ -73,6 +73,7 @@ export type WorkspaceRuntimeEvent =
       tabId: string
       terminalId?: string
       workspaceId?: string
+      directory?: string
       provider?: string
       /** Provider-native agent id; never accepted as private-session scope. */
       providerSessionId?: string
@@ -84,7 +85,6 @@ export type WorkspaceRuntimeEvent =
       eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
       outcome?: "done" | "error" | "cancelled"
     }
-  | { type: "heartbeat" }
   | { type: "process.started"; directory: string; configId: string; ptyId: string }
   | { type: "process.stopped"; directory: string; configId: string; exitCode: number }
   | { type: "process.crashed"; directory: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
