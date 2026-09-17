@@ -189,6 +189,54 @@ describe("timeline row reuse", () => {
       expect(fold(rows(surface, false))).toBeUndefined()
     })
 
+    test("a turn that would paint open from the preview holds its body behind a loader until the full read", () => {
+      const aborted = { ...assistantMessage("msg_assistant", "msg_user", { completed: 20 }), error: { name: "MessageAbortedError", data: {} } } as AssistantMessage
+      const interrupted = (parts: Part[], fragment: boolean) =>
+        Timeline.constructMessageRows(
+          userMessage("msg_user"),
+          (messageID) => (messageID === "msg_assistant" ? parts : []),
+          [aborted],
+          0,
+          false,
+          "idle",
+          true,
+          false,
+          () => undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          () => fragment,
+        )
+      expect(interrupted(surface, true).map((row) => row._tag)).toEqual(["UserMessage", "TurnLoading"])
+      const landed = interrupted(full, false).map((row) => row._tag)
+      expect(landed).not.toContain("TurnLoading")
+      expect(landed.filter((tag) => tag === "AssistantPart")).toHaveLength(4)
+      expect(fold(interrupted(full, false))?.folded).toBe(false)
+    })
+
+    test("a turn the reader unfolded holds its body the same way", () => {
+      const unfolded = Timeline.constructMessageRows(
+        userMessage("msg_user"),
+        (messageID) => (messageID === "msg_assistant" ? surface : []),
+        [assistantMessage("msg_assistant", "msg_user", { completed: 20 })],
+        0,
+        false,
+        "idle",
+        true,
+        false,
+        () => false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        () => true,
+      )
+      expect(unfolded.map((row) => row._tag)).toEqual(["UserMessage", "TurnLoading"])
+    })
+
     test("a fold shown on the preview is a floor: the full read cannot take the row away", () => {
       const shown = fold(rows(surface, true))
       expect(shown?.foldCount).toBe(2)

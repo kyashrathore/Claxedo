@@ -13,6 +13,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { normalize } from "@/ui/session-kit"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
@@ -28,6 +29,15 @@ export function TimelineThinkingRow(props: { reasoningHeading?: string; showReas
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
+    </div>
+  )
+}
+
+/** Stands in for a turn body held back until its full read lands; its reveal delay lives in session-turn.css. */
+export function TimelineLoadingRow() {
+  return (
+    <div data-slot="session-turn-loading" aria-busy="true">
+      <Spinner />
     </div>
   )
 }

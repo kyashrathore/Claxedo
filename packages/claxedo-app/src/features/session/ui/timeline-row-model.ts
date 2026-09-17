@@ -33,6 +33,8 @@ export type TimelineRowMap = {
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
+  /** The turn's body is held back until its full read lands; drawn as a loader once the wait is noticeable. */
+  TurnLoading: { userMessageID: string }
   TurnFold: {
     userMessageID: string
     durationMs?: number
@@ -134,6 +136,8 @@ export namespace TimelineRow {
   export type Error = ReturnType<typeof Error>
   export const Retry = taggedRow<"Retry", TimelineRowMap["Retry"]>("Retry")
   export type Retry = ReturnType<typeof Retry>
+  export const TurnLoading = taggedRow<"TurnLoading", TimelineRowMap["TurnLoading"]>("TurnLoading")
+  export type TurnLoading = ReturnType<typeof TurnLoading>
   export const TurnFold = taggedRow<"TurnFold", TimelineRowMap["TurnFold"]>("TurnFold")
   export type TurnFold = ReturnType<typeof TurnFold>
 
@@ -148,6 +152,7 @@ export namespace TimelineRow {
     | DiffSummary
     | Error
     | Retry
+    | TurnLoading
     | TurnFold
 
   export const key = (row: TimelineRow) => {
@@ -172,6 +177,8 @@ export namespace TimelineRow {
         return `error:${row.userMessageID}`
       case "Retry":
         return `retry:${row.userMessageID}`
+      case "TurnLoading":
+        return `turn-loading:${row.userMessageID}`
       case "TurnFold":
         return `turn-fold:${row.userMessageID}`
       default: {
@@ -194,6 +201,7 @@ export namespace TimelineRow {
       case "DiffSummary":
       case "Error":
       case "Retry":
+      case "TurnLoading":
       case "TurnFold":
         return true
     }
@@ -209,6 +217,7 @@ export namespace TimelineRow {
       case "TurnGap":
       case "CommentStrip":
       case "Retry":
+      case "TurnLoading":
         return true
       case "UserMessage":
         return b._tag === "UserMessage" && a.anchor === b.anchor

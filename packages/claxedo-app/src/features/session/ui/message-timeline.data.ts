@@ -227,15 +227,24 @@ export namespace Timeline {
       endTimes.length && typeof createdTime === "number"
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
+    const partsPending = assistantMessages.some((message) => partsFragment(message.id))
     const fold = turnFoldDecision({
       foldableCount,
       settled,
       interrupted,
       errored: !!error,
       busy: isActive && (status === "busy" || status === "retry" || settlePending),
-      partsPending: assistantMessages.some((message) => partsFragment(message.id)),
+      partsPending,
       userChoice: isFoldedChoice(userMessage.id),
     })
+    // A turn that would paint open from the first-paint surface — interrupted,
+    // failed, or unfolded by the reader — holds its body until the full read:
+    // painting the surface's texts and then the tools under them moves what the
+    // reader was given. A folded turn paints now; its answer is the surface.
+    if (partsPending && !fold.folded) {
+      rows.push(TimelineRow.TurnLoading({ userMessageID: userMessage.id }))
+      return rows
+    }
     const turnTokens = assistantMessages.reduce((sum, message) => {
       const t = message.tokens
       if (!t) return sum

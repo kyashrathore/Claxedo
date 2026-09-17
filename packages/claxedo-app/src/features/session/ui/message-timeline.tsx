@@ -77,7 +77,7 @@ import { createActivePaneProjection } from "../store/active-pane-projection"
 import { createTimelineWorkingStatus } from "./timeline-working-status"
 import { MessageComment, Timeline } from "./message-timeline.data"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
-import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
+import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineLoadingRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
 import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
@@ -1562,6 +1562,16 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
               />
+            </div>
+          </TimelineRowFrame>
+        )
+      }
+      case "TurnLoading": {
+        const loadingRow = rowOfTag(row, "TurnLoading", current)
+        return (
+          <TimelineRowFrame row={loadingRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <TimelineLoadingRow />
             </div>
           </TimelineRowFrame>
         )
