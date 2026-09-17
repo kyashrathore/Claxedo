@@ -1064,8 +1064,14 @@ test.describe("real harness journeys @core @tier-real", () => {
     expect(controlPlaneSockets.length).toBeGreaterThan(0)
     const controlPlaneCounts = counts(frameTypes(controlPlaneFrames))
     for (const type of Object.keys(controlPlaneCounts)) {
-      expect(type, `a session frame on cp/events: ${type}`).not.toMatch(/^(message|session|permission|question|todo|subagent|goal)\./)
+      expect(type, `a session frame on cp/events: ${type}`).not.toMatch(/^(message|permission|question|todo|subagent|goal)\./)
+      // The control plane's own session notices — a share, an inventory
+      // change — name a workspace or a session id, never a session's content.
+      expect(type, `a session frame on cp/events: ${type}`).not.toMatch(/^session\.(?!share\.changed$|inventory\.changed$)/)
     }
+    // One session was created; its turn's deltas, retitle and settlement ring
+    // the inventory notice for no other reason.
+    expect(controlPlaneCounts["session.inventory.changed"]).toBe(1)
 
     await testInfo.attach("stream-frame-counts.json", {
       body: JSON.stringify({ workspaceOpens, workspace: workspaceCounts, controlPlane: controlPlaneCounts }, null, 2),
@@ -2037,11 +2043,15 @@ setTimeout(() => process.exit(2), 60000).unref();
       await expectAssistantReplyVisible(page, marker)
       await expect(status).not.toContainText("Running")
       await expect(status).toContainText("Ran")
-      // The workspace stream reopened WITH its cursor, and what settled the row
-      // came down it: the retained settlement replayed behind that cursor, or —
-      // when the ring had rolled — the gap notice that made the reader re-read.
+      // The workspace stream reopens WITH its cursor — after a backoff the
+      // outage's failed attempts grew, so it can trail the settlement the
+      // control plane's own reads already showed — and what settled the row
+      // comes down it: the retained settlement replayed behind that cursor,
+      // or, when the ring had rolled, the gap notice that makes the reader
+      // re-read.
+      await expect.poll(() => workspaceOpens.length, { message: "the workspace stream reopened after the outage", timeout: 30_000 })
+        .toBeGreaterThan(opensBeforeReconnect)
       const reopened = workspaceOpens.slice(opensBeforeReconnect)
-      expect(reopened.length, "the workspace stream reopened after the outage").toBeGreaterThan(0)
       expect(reopened[0]?.cursor, "the reopened workspace stream resumed by cursor").not.toBeNull()
       await expect.poll(
         async () => (await traffic()).some((chunk) => chunk.at >= reconnectedAt
