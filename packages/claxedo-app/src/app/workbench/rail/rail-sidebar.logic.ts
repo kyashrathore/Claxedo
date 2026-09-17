@@ -288,10 +288,12 @@ export function mergedSessionStatusType(
 /**
  * Which authority a rail row's status comes from.
  *
- * The focused pane owns a live status stream of its own, so its session-id
- * cache entry always participates. A BACKGROUND row has no such stream — the
- * workspace SSE is opened per focused session (`/api/wr/events?sessionID=`) —
- * so it follows the rail's own `/session/status` batch read.
+ * The focused pane's session-id cache entry always participates: a gap on
+ * its stream resyncs that session. A BACKGROUND row's entry is written by
+ * the same `wr/events` stream (every session of the routed workspace frames
+ * its status there) but nothing resyncs it across a gap, and a row of a
+ * workspace not routed has no stream at all — so a background row follows
+ * the rail's own `/session/status` batch read, which every row gets.
  *
  * The exception is the window this function exists for. The client's own send
  * writes an OPTIMISTIC busy for the session it sent to; a background row used

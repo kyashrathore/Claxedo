@@ -542,6 +542,90 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     expect(await policy.renew!(reader)).toBe("terminate")
   })
 
+  test("a session still being asked about when renewal runs is not the stream's to lose", async () => {
+    const calls: string[] = []
+    let answer!: (allowed: boolean) => void
+    const pending = new Promise<boolean>((resolve) => { answer = resolve })
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...sessionPolicy({ granted: () => true, calls }),
+      authorizeStream: async ({ sessionId }) => {
+        calls.push(`stream ${sessionId}`)
+        return (await pending)
+          ? { allowed: true, lease: "l", expiresAt: Date.now() + 15_000 }
+          : { allowed: false, status: 403, code: "denied", message: "denied" }
+      },
+    })
+    const reader = participant("connection_3")
+    const first = policy({ principal: reader, event: { sessionId: "ses_private", value: "x" }, sessionId: "ses_private", sensitive: false })
+    const renewal = policy.renew!(reader)
+    answer(false)
+    expect(await first).toBe("omit")
+    expect(await renewal).toBe("deliver")
+    expect(calls).toEqual(["stream ses_private"])
+  })
+
+  test("the authority being away for a session the reader was never granted omits the frame; for a granted one it ends the stream", async () => {
+    const calls: string[] = []
+    let away = false
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...sessionPolicy({ granted: () => true, calls }),
+      authorizeStream: async ({ sessionId }) => {
+        calls.push(`stream ${sessionId}`)
+        if (away) return { allowed: false, status: 503, code: "authority_unavailable", message: "away" }
+        return { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 15_000 }
+      },
+    })
+    const reader = participant("connection_4")
+    expect(await policy({ principal: reader, event: { sessionId: "ses_a", value: "a" }, sessionId: "ses_a", sensitive: false })).toBe("deliver")
+    away = true
+    expect(await policy({ principal: reader, event: { sessionId: "ses_b", value: "b" }, sessionId: "ses_b", sensitive: false })).toBe("omit")
+    // Held as refused for one cadence: the next frame is not another round trip.
+    expect(await policy({ principal: reader, event: { sessionId: "ses_b", value: "b2" }, sessionId: "ses_b", sensitive: false })).toBe("omit")
+    expect(calls).toEqual(["stream ses_a", "stream ses_b"])
+    expect(await policy.renew!(reader)).toBe("terminate")
+  })
+
+  test("a session-scoped connection is granted its session on the lease it was admitted with, and renews on it", async () => {
+    const calls: string[] = []
+    const policy = sessionEventDeliveryPolicy<Event>(sessionPolicy({ granted: () => true, calls }))
+    const reader = participant("connection_5")
+    policy.holdSession?.(reader, "ses_shared", { lease: "session_lease", expiresAt: Date.now() + 15_000 })
+    // The first frame is delivered on the seeded grant: no round trip on the
+    // request's own token, which may already have expired.
+    expect(await policy({ principal: reader, event: { sessionId: "ses_shared", value: "s" }, sessionId: "ses_shared", sensitive: false })).toBe("deliver")
+    expect(calls).toEqual([])
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(calls).toEqual(["stream ses_shared lease=session_lease"])
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(calls.at(-1)).toBe("stream ses_shared lease=lease_ses_shared")
+  })
+
+  test("a granted session whose renewal stalls past its lease expiry is closed on the clock", async () => {
+    const calls: string[] = []
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...sessionPolicy({ granted: () => true, calls }),
+      authorizeStream: () => new Promise(() => {}),
+    })
+    const reader = participant("connection_6")
+    policy.holdSession?.(reader, "ses_x", { lease: "l", expiresAt: Date.now() + 30 })
+    void policy.renew!(reader)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(await policy.renew!(reader)).toBe("terminate")
+  })
+
+  test("a deleted session's grant is forgotten, so renewal does not read the deletion as a revocation", async () => {
+    const calls: string[] = []
+    const alive = new Set(["ses_gone"])
+    const policy = sessionEventDeliveryPolicy<Event>(sessionPolicy({ granted: (id) => alive.has(id), calls }))
+    const reader = participant("connection_7")
+    policy.holdHost?.(reader, { lease: "ws", expiresAt: Date.now() + 15_000 })
+    expect(await policy({ principal: reader, event: { sessionId: "ses_gone", value: "g" }, sessionId: "ses_gone", sensitive: false })).toBe("deliver")
+    alive.delete("ses_gone")
+    policy.forgetSession?.("ses_gone")
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(calls).toEqual(["stream ses_gone lease=ws"])
+  })
+
   test("the workspace lease rolls at renewal and its access token's revocation ends the stream", async () => {
     const calls: string[] = []
     let active = true

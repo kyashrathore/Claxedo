@@ -19,6 +19,8 @@ export type EventDeliveryPrincipal =
       credential?: string
       /** What the reader's replay scope is keyed by when it is not the credential itself. */
       replayKey?: string
+      /** The one session a session-scoped connection reads; its scope's ring numbers only that session's frames. */
+      sessionScope?: string
     }
   | {
       mode: "signed-unattributed"
@@ -28,6 +30,7 @@ export type EventDeliveryPrincipal =
       role: WorkspaceRole
       credential?: string
       replayKey?: string
+      sessionScope?: string
     }
 
 export type EventDeliveryDecision = "deliver" | "omit" | "terminate"
@@ -36,12 +39,18 @@ export type EventDeliveryPolicy<T> = ((input: {
   principal: EventDeliveryPrincipal
   event: T
   sessionId?: string
+  /** The one actor a session-less frame is for (a create's own protocol, before the session exists). */
+  actorId?: string
   sensitive: boolean
 }) => EventDeliveryDecision | Promise<EventDeliveryDecision>) & {
   renew?: (principal: EventDeliveryPrincipal) => EventDeliveryDecision | Promise<EventDeliveryDecision>
   release?: (principal: EventDeliveryPrincipal) => void
   /** The workspace stream lease a connection was admitted with; presented for every session it first sees. */
   holdHost?: (principal: EventDeliveryPrincipal, lease: { lease: string; expiresAt: number }) => void
+  /** The session lease a session-scoped connection was admitted with: that session is granted, and renewed on it. */
+  holdSession?: (principal: EventDeliveryPrincipal, sessionId: string, lease: { lease: string; expiresAt: number }) => void
+  /** A deleted session is no reader's to keep: its grants are dropped so renewal does not read the deletion as a revocation. */
+  forgetSession?: (sessionId: string) => void
 }
 
 type Source<T> = {
@@ -92,6 +101,8 @@ export type EventDeliveryOptions<T> = {
    * and reads as a gap; a test pins it to 0 to read ids as 1, 2, 3.
    */
   sequenceOrigin?: () => number
+  /** How often a connection's grants and workspace lease are re-asked; 5 s, which a 15 s lease is rolled inside with two to spare. */
+  renewalIntervalMs?: number
 }
 
 export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal {
@@ -137,12 +148,17 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
 export function defaultEventDeliveryPolicy({
   principal,
   sessionId,
+  actorId,
   sensitive,
 }: Parameters<EventDeliveryPolicy<unknown>>[0]): EventDeliveryDecision {
   if (principal.mode === "unmanaged-local") return "deliver"
+  if (!sessionId && actorId) return forActor(principal, actorId)
   if (!sessionId && !sensitive) return "deliver"
   return principal.mode === "signed-unattributed" ? "terminate" : "omit"
 }
+
+const forActor = (principal: EventDeliveryPrincipal, actorId: string): EventDeliveryDecision =>
+  principal.mode === "verified" && principal.actorId === actorId ? "deliver" : "omit"
 
 export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): EventDeliveryPolicy<T> {
   const grants = new Map<string, {
@@ -150,6 +166,8 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     sessionId: string
     lease?: string
     expiresAt: number
+    /** The authority granted this session to the connection at least once; only such a session is the stream's to lose. */
+    granted: boolean
     denied?: boolean
     inflight?: Promise<EventDeliveryDecision>
   }>()
@@ -184,41 +202,47 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
   ): Promise<EventDeliveryDecision> => {
     if (principal.mode === "unmanaged-local") return "deliver"
     const key = grantKey(principal, sessionId)
-    const existing = grants.get(key) ?? { principal, sessionId, expiresAt: 0 }
+    const existing = grants.get(key) ?? { principal, sessionId, expiresAt: 0, granted: false }
     grants.set(key, existing)
-    if (!force && existing.expiresAt > Date.now() + 1_000) return existing.denied ? "omit" : "deliver"
-    if (existing.inflight) return await existing.inflight
+    const now = Date.now()
+    if (!force && existing.expiresAt > now + 1_000) return existing.denied ? "omit" : "deliver"
+    // A granted session whose lease lapsed while its renewal is still in
+    // flight is closed on the clock, not on the authority's answer.
+    if (existing.inflight) return existing.granted && existing.expiresAt <= now ? "terminate" : await existing.inflight
     const pending = (async () => {
       const decision = policy.authorizeStream
         ? await policy.authorizeStream(accessInput(principal, sessionId), existing.lease ?? hosts.get(principal.connectionId)?.lease)
         : await policy.authorize(accessInput(principal, sessionId))
-      if (!decision.allowed) {
-        const next = eventDecision(decision)
-        // A session the reader may not read streams on regardless: its every
-        // delta would be one authority round trip, and a scope whose queue
-        // fills with those is torn down. The refusal is held for as long as a
-        // grant would be, and the renewal cadence re-asks.
-        if (next === "omit") {
-          existing.denied = true
-          existing.expiresAt = Date.now() + DENIED_GRANT_TTL_MS
-        }
-        return next
-      }
+      if (!decision.allowed) return refusal(existing, eventDecision(decision))
+      existing.granted = true
       existing.denied = false
       existing.lease = "lease" in decision && typeof decision.lease === "string" ? decision.lease : undefined
       existing.expiresAt = "expiresAt" in decision && typeof decision.expiresAt === "number"
-        ? decision.expiresAt
+        ? Math.min(decision.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS)
         : Date.now() + 5_000
       return "deliver" as const
-    })().catch(() => "terminate" as const).finally(() => {
+    })().catch(() => refusal(existing, "terminate")).finally(() => {
       existing.inflight = undefined
     })
     existing.inflight = pending
     return await pending
   }
-  const eventPolicy: EventDeliveryPolicy<T> = ({ principal, sessionId, sensitive }) => {
+  // A refusal of a session the reader was never granted is not the stream's
+  // to end, whatever its shape: the authority being away for one frame of
+  // another member's private session must not tear every admitted reader
+  // down. Its every delta would be one authority round trip, so the refusal
+  // is held for as long as a grant would be. A granted session refused is a
+  // revocation.
+  const refusal = (grant: { granted: boolean; denied?: boolean; expiresAt: number }, decision: EventDeliveryDecision): EventDeliveryDecision => {
+    if (grant.granted && decision === "terminate") return "terminate"
+    grant.denied = true
+    grant.expiresAt = Date.now() + DENIED_GRANT_TTL_MS
+    return "omit"
+  }
+  const eventPolicy: EventDeliveryPolicy<T> = ({ principal, sessionId, actorId, sensitive }) => {
     if (principal.mode === "unmanaged-local") return "deliver"
     if (!sessionId) {
+      if (actorId) return forActor(principal, actorId)
       if (!sensitive) return "deliver"
       return "omit"
     }
@@ -245,13 +269,12 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     })
     return await held.renewing
   }
-  // Renewal re-asks the sessions this connection was DELIVERED: one of them
+  // Renewal re-asks the sessions this connection was GRANTED: one of them
   // now refused is a revocation, and ends the stream. A session it was never
-  // delivered is not the stream's to lose — on the unscoped arm every other
-  // member's private session is one — and is re-asked only when its hold
-  // lapses and it next frames.
+  // granted — refused, or still being asked about — is not the stream's to
+  // lose: on the unscoped arm every other member's private session is one.
   eventPolicy.renew = async (principal) => {
-    const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId && !grant.denied)
+    const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId && grant.granted)
     const decisions = await Promise.all([
       renewHost(principal),
       ...current.map((grant) => authorizeGrant(principal, grant.sessionId, true)),
@@ -264,17 +287,31 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
       if (grant.principal.connectionId === principal.connectionId) grants.delete(key)
     }
   }
-  // The lease's expiry is clamped to this clock: the plane's may lead it,
-  // and a lease presented after the plane's expiry ends the stream.
+  // A lease's expiry is clamped to this clock: the plane's may lead it, and
+  // a lease presented after the plane's expiry ends the stream.
   eventPolicy.holdHost = (principal, lease) => {
     hosts.set(principal.connectionId, { lease: lease.lease, expiresAt: Math.min(lease.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS) })
+  }
+  eventPolicy.holdSession = (principal, sessionId, lease) => {
+    grants.set(grantKey(principal, sessionId), {
+      principal,
+      sessionId,
+      lease: lease.lease,
+      expiresAt: Math.min(lease.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS),
+      granted: true,
+    })
+  }
+  eventPolicy.forgetSession = (sessionId) => {
+    for (const [key, grant] of grants) {
+      if (grant.sessionId === sessionId) grants.delete(key)
+    }
   }
   return eventPolicy
 }
 
 /** Renewal runs every 5 s per connection; a 15 s lease is rolled with two renewals to spare. */
 const HOST_LEASE_RENEW_WITHIN_MS = 10_000
-/** A refused session is not re-asked before the next renewal would re-ask it anyway. */
+/** A refused session is held as refused for one renewal cadence. */
 const DENIED_GRANT_TTL_MS = 5_000
 
 function eventDecision(decision: Awaited<ReturnType<SessionAccessPolicy["authorize"]>>): EventDeliveryDecision {
@@ -285,9 +322,9 @@ function eventDecision(decision: Awaited<ReturnType<SessionAccessPolicy["authori
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
   const key = principal.replayKey ?? principal.credential
-  const credential = key
+  const credential = (key
     ? createHash("sha256").update(key).digest("base64url")
-    : `connection:${principal.connectionId}`
+    : `connection:${principal.connectionId}`) + (principal.sessionScope ? `:session:${principal.sessionScope}` : "")
   if (principal.mode === "signed-unattributed") {
     return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}:${credential}`
   }
@@ -314,12 +351,14 @@ export function createIdentityAwareEventSource<T extends object>(input: {
   subscribe: Source<T>["subscribe"]
   policy: EventDeliveryPolicy<T>
   sessionId: (event: T) => string | undefined
+  actorId?: (event: T) => string | undefined
   sensitive?: (event: T) => boolean
   isTerminal?: (event: T) => boolean
   maxQueuedPerScope?: number
   replayConcurrency?: number
   replayStartupDeadlineMs?: number
   sequenceOrigin?: () => number
+  renewalIntervalMs?: number
 }): IdentityAwareEventSource<T> {
   const maxQueuedPerScope = input.maxQueuedPerScope ?? 256
   const sequenceOrigin = input.sequenceOrigin ?? Date.now
@@ -333,6 +372,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
       principal,
       event,
       sessionId: input.sessionId(event),
+      ...(input.actorId ? { actorId: input.actorId(event) } : {}),
       sensitive: input.sensitive?.(event) === true,
     })
   const decide = (principal: EventDeliveryPrincipal, event: T) => Promise.resolve(decision(principal, event))
@@ -613,7 +653,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
               void Promise.resolve(input.policy.renew!(principal)).then((next) => {
                 if (next !== "deliver") terminateConnection()
               }).catch(terminateConnection)
-            }, 5_000)
+            }, input.renewalIntervalMs ?? 5_000)
             ;(connection.renewalTimer as { unref?: () => void }).unref?.()
           }
           scope.reservations -= 1

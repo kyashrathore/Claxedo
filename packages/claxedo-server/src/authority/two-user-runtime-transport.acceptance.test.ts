@@ -472,6 +472,9 @@ describe("two-user signed runtime transport acceptance", () => {
       bus: sessionBus as never,
       sessionAccessPolicy: policy,
       policy: sessionEventDeliveryPolicy(policy),
+      // A revocation reaches a delivered session at the renewal cadence, not
+      // on its next frame; the cadence is shortened so `ended()` sees it.
+      renewalIntervalMs: 200,
     }))
 
     const operationId = "op_runtime_private"
@@ -677,15 +680,9 @@ describe("two-user signed runtime transport acceptance", () => {
       hostId: "host_runtime_private",
     })).resolves.toMatchObject({ active: false, code: "runtime_access_token_revoked" })
 
-    sessionBus.publish({
-      type: "session.lifecycle",
-      phase: "failed",
-      directory: "/workspace",
-      sessionID: "ses_runtime_private",
-      info: { id: "ses_runtime_private", title: "must-not-deliver" },
-      message: "revoked",
-      ts: 3,
-    })
+    // The revocation reaches the stream at its renewal cadence, which the
+    // handler above runs at 200 ms; a frame of the session published before
+    // that tick is delivered from the held grant.
     expect(await bobReconnect.ended()).toBe(true)
     bobReconnect.close()
     expect((await runtimeRequest(runtimeApp, bobRht, "/session/ses_runtime_private")).status).toBe(403)

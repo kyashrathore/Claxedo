@@ -338,6 +338,24 @@ describe("eventStreamFetch", () => {
     }])
   })
 
+  test("a desktop reads a cloud workspace's stream through its daemon's proxy, cursor forwarded, no browser relay mint", async () => {
+    const seen: Array<{ url: string; auth: string | null; cursor: string | null }> = []
+    const request: typeof fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+      if (url.includes("/connection")) throw new Error(`unexpected relay connection mint: ${url}`)
+      seen.push({ url, auth: headers.get("authorization"), cursor: headers.get("last-event-id") })
+      return new Response("data: {\"type\":\"heartbeat\"}\n\n", { status: 200, headers: { "content-type": "text/event-stream" } })
+    }
+    const res = await eventStreamFetch(
+      { kind: "wr", serverUrl: "http://127.0.0.1:3001", workspaceId: "ws_cloud", workspaceKind: "cloud" },
+      { headers: { Accept: "text/event-stream", Authorization: "Bearer browser-token", "Last-Event-ID": "7" } },
+      { request },
+    )
+    expect(res.status).toBe(200)
+    expect(seen).toEqual([{ url: "http://127.0.0.1:3001/workspaces/ws_cloud/api/wr/events", auth: null, cursor: "7" }])
+  })
+
   test("the workspace events path is the runtime's one stream", () => {
     expect(WORKSPACE_EVENTS_PATH).toBe("/api/wr/events")
   })

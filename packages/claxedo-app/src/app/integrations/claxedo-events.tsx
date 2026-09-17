@@ -43,7 +43,7 @@ import {
   registerSessionEventStreamLane,
   reportSessionEventStreamClosed,
   reportSessionEventStreamOpen,
-  sessionEventScopeDirectory,
+  sessionEventScopeWorkspaceAddress,
   sessionEventScopeId,
   setSessionEventRouteScope,
 } from "@/platform/runtime/session-event-scope"
@@ -194,8 +194,7 @@ export type ClaxedoDirectoryEvent = { [Type in ClaxedoDirectoryEventType]: {
 type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventOf<T extends ClaxedoEventType> = Extract<ClaxedoEvent, { type: T }>
 
-export type ClaxedoEventOrigin = "cp" | "wr"
-type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>, origin: ClaxedoEventOrigin) => void
+type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>) => void
 
 // ─── Event Emitter ────────────────────────────────────────────────────────
 
@@ -217,7 +216,7 @@ export function createClaxedoEventEmitter() {
         handlers.get(type)?.delete(handler as unknown as Handler<ClaxedoEventType>)
       }
     },
-    emit(event: ClaxedoEvent, source: ClaxedoEventOrigin) {
+    emit(event: ClaxedoEvent) {
       applyWorktreeLifecycleEvent(event)
       for (const listener of listeners) {
         try { listener(event) } catch {}
@@ -226,7 +225,7 @@ export function createClaxedoEventEmitter() {
       if (!set) return
       for (const handler of set) {
         try {
-          handler(event as ClaxedoEventOf<ClaxedoEventType>, source)
+          handler(event as ClaxedoEventOf<ClaxedoEventType>)
         } catch {
         }
       }
@@ -302,10 +301,9 @@ type ClaxedoEventsContextValue = {
   listen(listener: (event: ClaxedoEvent) => void): () => void
   on<T extends ClaxedoEventType>(type: T, handler: Handler<T>): () => void
   /**
-   * ANY stream target is up (`cp` OR any workspace's `wr`). Correct for "is
-   * the app talking to anything", WRONG as a revalidation edge for a
-   * control-plane doorbell — see `centralConnected` and the rationale in
-   * `app/connection/stream-connectivity.ts`.
+   * ANY stream target is up (`cp` OR the workspace's `wr`). Correct for "is
+   * the app talking to anything", wrong as a revalidation edge for either
+   * kind's consumers — see `app/connection/stream-connectivity.ts`.
    */
   connected: () => boolean
   /**
@@ -316,11 +314,15 @@ type ClaxedoEventsContextValue = {
    */
   centralConnected: () => boolean
   /**
-   * Counts every control-plane stream's return after a drop — the
-   * revalidation edge for the doorbells above, which no level signal shows
-   * once a second control plane holds the level up.
+   * Counts a control-plane stream's return after a drop the level never
+   * showed (a second control plane held it up) — with `centralConnected`, the
+   * revalidation edge for the doorbells above, each outage once.
    */
   controlPlaneReconnects: () => number
+  /** The routed workspace's stream (`wr`) is up: the one carrying `agent.lifecycle` and `pty.*`. */
+  workspaceConnected: () => boolean
+  /** Counts a workspace stream's return after a drop the level never showed; with `workspaceConnected`, the agent-status reconciliation edge. */
+  workspaceReconnects: () => number
 }
 
 const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue>()
@@ -408,7 +410,6 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
   const emitEvent = (input: string, target: ClaxedoEventStreamTarget) => {
     const address = eventStreamFrameAddress(target)
-    const source: ClaxedoEventOrigin = target.kind
     try {
       const frame = JSON.parse(input) as unknown
       // The producer's own notice that frames between this reader's cursor and
@@ -422,15 +423,15 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           // a relay-backed workspace's host path names nothing here.
           const directory = target.directory ? address(target.directory) : undefined
           requestSessionHistoryResync({ reason: "sse-gap", ...(directory ? { directory } : {}) })
-          emitter.emit({ type: "stream.replay-gap", stream: "wr", workspaceId: target.workspaceId, ...(directory ? { directory } : {}) }, source)
+          emitter.emit({ type: "stream.replay-gap", stream: "wr", workspaceId: target.workspaceId, ...(directory ? { directory } : {}) })
           return
         }
-        emitter.emit({ type: "stream.replay-gap", stream: "cp", transport: target.transport }, source)
+        emitter.emit({ type: "stream.replay-gap", stream: "cp", transport: target.transport })
         return
       }
       const event = normalizeClaxedoStreamEvent(frame, address)
       if (!event || event.type === "heartbeat") return
-      emitter.emit(stampWorkspace(event, target), source)
+      emitter.emit(stampWorkspace(event, target))
     } catch {
       // ignore parse errors
     }
@@ -442,7 +443,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
     const emitTestEvent = (event: ClaxedoEvent | { type: "heartbeat" }) => {
       if (!isClaxedoEvent(event) || event.type === "heartbeat") return
-      emitter.emit(event, "cp")
+      emitter.emit(event)
     }
     target.__claxedoEmitTestEvent = emitTestEvent
     onCleanup(() => {
@@ -739,7 +740,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // A bare `/s/<id>` route names no workspace; the pane that opened the
       // session says which, and until it has, the session's inventory row does.
       directory: routeDirectory(props.pathname())
-        ?? sessionEventScopeDirectory(routedSession)
+        ?? sessionEventScopeWorkspaceAddress(routedSession)
         ?? (routedSession ? sessionInventoryDirectory(props.serverUrl(), routedSession) : undefined),
       // `session-event-scope` owns which session the scoped stream must carry;
       // the route is its standing input, not a second decider.
@@ -798,6 +799,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     connected: connectivity.connected,
     centralConnected: connectivity.centralConnected,
     controlPlaneReconnects: connectivity.controlPlaneReconnects,
+    workspaceConnected: connectivity.workspaceConnected,
+    workspaceReconnects: connectivity.workspaceReconnects,
   }
 
   return (

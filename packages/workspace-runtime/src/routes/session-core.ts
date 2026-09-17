@@ -121,6 +121,8 @@ export type SessionLifecycleEvent = {
   sessionID?: string
   workspaceId?: string
   draftId?: string
+  /** The creator, when the runtime knows one: a frame with no session yet is theirs alone. */
+  actorId?: string
   info?: unknown
   message?: string
   ts: number
@@ -1345,12 +1347,14 @@ export function createSessionRoutes(opts: Opts) {
         const config = normalizeSessionCreateConfig(wire)
         const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
         const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
+        const creator = sessionAccessContext(c).actor?.actorId
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
           phase: "creating",
           directory,
           ...(draftId ? { draftId } : {}),
           ...(workspaceId ? { workspaceId } : {}),
+          ...(creator ? { actorId: creator } : {}),
           ts: Date.now(),
         })
         try {
@@ -1487,6 +1491,7 @@ export function createSessionRoutes(opts: Opts) {
               directory,
               ...(draftId ? { draftId } : {}),
               ...(workspaceId ? { workspaceId } : {}),
+              ...(creator ? { actorId: creator } : {}),
               message: "Session creator registration was denied",
               ts: Date.now(),
             })
@@ -1531,6 +1536,7 @@ export function createSessionRoutes(opts: Opts) {
             directory,
             ...(draftId ? { draftId } : {}),
             ...(workspaceId ? { workspaceId } : {}),
+            ...(creator ? { actorId: creator } : {}),
             message: errorMessage(error),
             ts: Date.now(),
           })

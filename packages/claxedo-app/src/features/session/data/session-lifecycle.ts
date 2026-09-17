@@ -1,6 +1,7 @@
-// Canonical `session.lifecycle` event envelope (rubric D4).
-// Single source of truth for frontend consumers. The server's `bus.ts` keeps
-// its own matching definition across the Bun/Node boundary.
+// The app's copy of the runtime's `SessionLifecycleEvent`
+// (`workspace-runtime/src/routes/session-core.ts`), which crosses the wire on
+// `wr/events`. A `creating`/`failed` frame is delivered to its creator only
+// (`actorId`); the app matches it by `draftId`.
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
   phase: "creating" | "created" | "failed"
@@ -8,6 +9,7 @@ export type SessionLifecycleEvent = {
   sessionID?: string
   workspaceId?: string
   draftId?: string
+  actorId?: string
   info?: unknown
   message?: string
   ts: number

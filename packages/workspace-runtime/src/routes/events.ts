@@ -15,8 +15,6 @@ import {
   authorizeSessionEventScope,
   compatEnvelopeSessionId,
   isSessionEventScopeResponse,
-  scopedReplay,
-  waitForSessionEventStream,
   workspaceRuntimeEventSessionId,
 } from "./session-event-privacy"
 import {
@@ -25,6 +23,7 @@ import {
   eventDeliveryPrincipal,
   type EventDeliveryOptions,
   type EventDeliveryPolicy,
+  type EventDeliveryPrincipal,
 } from "../event-delivery"
 
 /**
@@ -200,10 +199,12 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
  *
  * The unscoped arm is admitted on a workspace lease the control plane mints
  * for the read: the request's own relay host token expires within a minute,
- * so a session first framing after that is authorized under the lease, and
- * the delivery policy's renewal cadence rolls the lease and re-asks the
- * sessions this connection was delivered. A signed runtime whose plane mints
- * no leases reads on the host token alone.
+ * so a session first framing after that is authorized under the lease. The
+ * session-scoped arm is admitted on that session's lease, which grants the
+ * session outright. The delivery policy is the one renewer of both: its
+ * cadence rolls the leases and re-asks the sessions a connection was granted,
+ * and a refusal there ends the stream. A session-scoped connection reads in
+ * a scope of its own, whose ring numbers only that session's frames.
  *
  * `close()` releases the bus subscription when the runtime is disposed.
  *
@@ -234,10 +235,28 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     return options.sessionParents?.parentSessionIdFor(sessionId) ?? sessionId
   }
   const delivery: EventDeliveryPolicy<StreamFrame> = options.policy ?? defaultEventDeliveryPolicy
+  // A session-scoped connection reads one session, in a scope of its own
+  // whose ring numbers only that session's frames — so its cursor is
+  // contiguous in that ring, and a scope rebuilt after it was away has no
+  // hole where a frame its wire never carried was numbered.
+  const policy: EventDeliveryPolicy<StreamFrame> = Object.assign(
+    (input: Parameters<EventDeliveryPolicy<StreamFrame>>[0]) => {
+      const sessionScope = input.principal.mode === "unmanaged-local" ? undefined : input.principal.sessionScope
+      if (sessionScope && input.sessionId !== sessionScope) return "omit" as const
+      return delivery(input)
+    },
+    delivery,
+  )
   const owns = ownsControlFrames(options)
   const source = createIdentityAwareEventSource<StreamFrame>({
     subscribe: (fn) => {
-      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => fn(event))
+      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => {
+        fn(event)
+        if (event.payload.type === "session.deleted") {
+          const sessionId = compatEnvelopeSessionId(event)
+          if (sessionId) delivery.forgetSession?.(sessionId)
+        }
+      })
       const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
         for (const event of presentationEventsFromRuntimeEnvelope(envelope)) fn(event)
       })
@@ -251,29 +270,37 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         unsubscribeControl()
       }
     },
-    policy: delivery,
+    policy,
     sessionId: scopeSessionId,
+    // A create's protocol before the session exists is the creator's alone;
+    // its draft id and failure message are nobody else's.
+    actorId: (frame) =>
+      !isGapFrame(frame) && isControlFrame(frame) && frame.payload.type === "session.lifecycle" && !frame.payload.sessionID
+        ? frame.payload.actorId
+        : undefined,
     sensitive: (frame) =>
       !isGapFrame(frame) && isControlFrame(frame) && frame.payload.type === "agent.lifecycle" &&
       (!!frame.payload.prompt || !!frame.payload.lastAssistantMessage),
     isTerminal: isRetainedWorkspaceEventFrame,
     ...(options.sequenceOrigin ? { sequenceOrigin: options.sequenceOrigin } : {}),
+    ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
 
   const handler = async (c: Context) => {
     const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
-    const allows = scope.managed
-      ? (frame: StreamFrame) => !isGapFrame(frame) && scopeSessionId(frame) === scope.sessionId
-      : (_frame: StreamFrame) => true
-    const principal = await (options.principal?.(c) ?? eventDeliveryPrincipal(c))
-    if (!scope.managed && scope.lease && scope.expiresAt !== undefined) {
+    const admitted = await (options.principal?.(c) ?? eventDeliveryPrincipal(c))
+    const principal: EventDeliveryPrincipal = scope.managed && admitted.mode !== "unmanaged-local"
+      ? { ...admitted, sessionScope: scope.sessionId }
+      : admitted
+    if (scope.managed) {
+      delivery.holdSession?.(principal, scope.sessionId, { lease: scope.lease, expiresAt: scope.expiresAt })
+    } else if (scope.lease && scope.expiresAt !== undefined) {
       delivery.holdHost?.(principal, { lease: scope.lease, expiresAt: scope.expiresAt })
     }
     const opened = source.open(principal)
     await opened.ready
-    const replayForScope = scope.managed ? scopedReplay(opened.replay, allows) : opened.replay
     return streamSSE(c, async (stream) => {
       const heartbeat = { type: "heartbeat" } as const
       const resumeFrom = c.req.header("last-event-id")
@@ -285,42 +312,56 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       // Decided BEFORE the fanout attaches: attaching is what marks a scope as
       // one whose numbering this reader has seen, and a cursor from another
       // numbering must be judged before that.
-      const gap = resumeFrom !== undefined && replayForScope.hasGap(resumeFrom, opened.replay.lastId())
-      const replay = { ...replayForScope, hasGap: () => gap }
+      const gap = resumeFrom !== undefined && opened.replay.hasGap(resumeFrom, opened.replay.lastId())
+      const replay = { ...opened.replay, hasGap: () => gap }
       await stream
         .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
         .catch(() => {})
 
-      let cleanup: () => void = () => {}
-      cleanup = attachSseFanout<StreamFrame>({
-        subscribe: (listener) => opened.subscribe((frame) => {
-          if (allows(frame)) listener(frame)
-        }, () => {
+      await new Promise<void>((resolve) => {
+        let finished = false
+        let cleanup: () => void = () => {}
+        const finish = () => {
+          if (finished) return
+          finished = true
           cleanup()
-          stream.abort()
-        }),
-        write: async (frame, meta) => {
-          return stream.writeSSE({
-            ...(meta?.id ? { id: meta.id } : {}),
-            data: JSON.stringify(frame),
-          })
-        },
-        heartbeat,
-        heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
-        lastEventId: cursor,
-        replay,
-        replayLive: false,
-        replayGap: ({ lastEventId, throughId }) => ({
-          type: "stream.replay-gap",
-          code: "runtime.sse_replay_gap",
-          message: "Workspace runtime event replay cursor is no longer available; refetch session state.",
-          severity: "warn",
-          ...(lastEventId ? { lastEventId } : {}),
-          ...(throughId ? { throughId } : {}),
-        }),
+          resolve()
+        }
+        cleanup = attachSseFanout<StreamFrame>({
+          subscribe: (listener) => opened.subscribe(listener, () => {
+            finish()
+            stream.abort()
+          }),
+          write: async (frame, meta) => {
+            return stream.writeSSE({
+              ...(meta?.id ? { id: meta.id } : {}),
+              data: JSON.stringify(frame),
+            })
+          },
+          heartbeat,
+          heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
+          lastEventId: cursor,
+          replay,
+          replayLive: false,
+          replayGap: ({ lastEventId, throughId }) => ({
+            type: "stream.replay-gap",
+            code: "runtime.sse_replay_gap",
+            message: "Workspace runtime event replay cursor is no longer available; refetch session state.",
+            severity: "warn",
+            ...(lastEventId ? { lastEventId } : {}),
+            ...(throughId ? { throughId } : {}),
+          }),
+        })
+        // A client gone during the authority round trip or the ring's startup
+        // is not reported by the stream: Hono fires `onAbort` only for an abort
+        // after registration, and its writes swallow their errors. The
+        // stream's flag and the request's own signal are what a connection
+        // that never attached is released on.
+        stream.onAbort(finish)
+        const signal = c.req.raw.signal
+        signal.addEventListener("abort", finish, { once: true })
+        if (stream.aborted || signal.aborted) finish()
       })
-
-      await waitForSessionEventStream(stream, scope, options.sessionAccessPolicy, cleanup)
     })
   }
   handler.close = () => source.close()

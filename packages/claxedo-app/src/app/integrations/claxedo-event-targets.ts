@@ -35,8 +35,12 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  * and the daemon's is the only one that rings for its local workspaces. `wr`
  * is one workspace runtime's stream: a runtime-owned long-lived GET behind
  * the workspace's relay connection, reached with the Runtime Access Token
- * exactly like provider, file and PTY reads — or, for a local workspace,
- * through the daemon's loopback proxy to its embedded runtime.
+ * exactly like provider, file and PTY reads — or, on a loopback surface (the
+ * desktop, a local page), through the daemon's proxy: to its embedded
+ * runtime for a local workspace, and for a cloud or user-hosted workspace
+ * through `localWorkspaceRelayProxy` (`/workspaces/<id>/api/wr/events`),
+ * where the daemon mints the owner's runtime token itself and forwards the
+ * cursor. The desktop's cloud wire is that proxy, not the browser relay.
  *
  * A `wr` target opens the stream unscoped: a principal the workspace admits
  * reads every session-less frame and every session the session authority

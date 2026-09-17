@@ -66,6 +66,9 @@ export function signedControlPlaneEventVisibleTo(frame: ControlPlaneFrame, princ
 /**
  * `/api/cp/events` — the control plane's stream, served by the local daemon
  * to its own surface and by a self-hosted node to its signed subscribers.
+ * The hosted plane serves the same route from its room
+ * (`claxedo-server/src/routes/hosted/shell.ts`), with the narrower notice
+ * set `ControlPlaneEvent`'s docblock names.
  *
  * It carries notices only — provision steps, worktree readiness, document
  * doorbells, share grants, a workspace's inventory change — never a
@@ -342,10 +345,21 @@ export function createControlPlaneEventsHandler(
       })
 
       await new Promise<void>((resolve) => {
-        stream.onAbort(() => {
+        let finished = false
+        const finish = () => {
+          if (finished) return
+          finished = true
           cleanup()
           resolve()
-        })
+        }
+        // A client gone while the ring was filling is not reported by the
+        // stream: Hono fires `onAbort` only for an abort after registration,
+        // and the WebSocket path's close may land before it. The stream's flag
+        // and the request's own signal are what such a connection is released on.
+        stream.onAbort(finish)
+        const signal = c.req.raw.signal
+        signal.addEventListener("abort", finish, { once: true })
+        if (stream.aborted || signal.aborted) finish()
       })
     }, options.upgradeWebSocket)
   }

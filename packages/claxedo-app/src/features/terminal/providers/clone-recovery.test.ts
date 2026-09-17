@@ -109,6 +109,7 @@ function createSession(
   createRoot((d) => {
     dispose = d
     session = createTerminalSession(sdk, input?.dir ?? "/workspace", {
+      claxedoEvents: sdk.claxedoEvents,
       claxedoServerUrl: "http://127.0.0.1:3001",
     })
   })

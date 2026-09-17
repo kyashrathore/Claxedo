@@ -89,13 +89,43 @@ describe("createStreamConnectivity", () => {
     })
   })
 
-  test("a workspace stream never moves the central bit", () => {
+  test("a workspace stream never moves the central bit, and a control-plane stream never moves the workspace bit", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
       const workspace = connectivity.track("wr")
+      const central = connectivity.track("cp")
       workspace(true)
       expect(connectivity.connected()).toBe(true)
       expect(connectivity.centralConnected()).toBe(false)
+      expect(connectivity.workspaceConnected()).toBe(true)
+      central(true)
+      workspace(false)
+      expect(connectivity.workspaceConnected()).toBe(false)
+      expect(connectivity.centralConnected()).toBe(true)
+      dispose()
+    })
+  })
+
+  test("a workspace stream's drop and return under a held aggregate is the workspace level's own edge", () => {
+    createRoot((dispose) => {
+      const connectivity = createStreamConnectivity()
+      const central = connectivity.track("cp")
+      const workspace = connectivity.track("wr")
+      central(true)
+      workspace(true)
+      workspace(false)
+      expect(connectivity.connected()).toBe(true)
+      expect(connectivity.workspaceConnected()).toBe(false)
+      workspace(true)
+      expect(connectivity.workspaceConnected()).toBe(true)
+      expect(connectivity.workspaceReconnects()).toBe(0)
+      // A retarget overlaps the old and new workspace streams: the new one's
+      // return while the old still holds the level is what the counter shows.
+      const next = connectivity.track("wr")
+      next(true)
+      next(false)
+      next(true)
+      expect(connectivity.workspaceReconnects()).toBe(1)
       dispose()
     })
   })

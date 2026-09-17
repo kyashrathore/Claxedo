@@ -71,8 +71,8 @@ export function createDocumentIndexController(input: {
    */
   subscribe?: (handler: (event: DocumentChangedEvent) => void) => () => void
   /**
-   * Central-stream connectivity. `false → true` is the revalidation edge that
-   * covers every nudge missed while the stream was down.
+   * The control plane's stream (`cp`) connectivity. `false → true` is the
+   * revalidation edge that covers every doorbell missed while it was down.
    */
   subscribeConnected?: (handler: (connected: boolean) => void) => () => void
   onChange: (state: IndexState) => void

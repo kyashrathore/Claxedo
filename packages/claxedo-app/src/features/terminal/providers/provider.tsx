@@ -234,20 +234,15 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     })
   }
 
-  // Helper: subscribe to PTY events from ClaxedoEventsProvider (claxedo mode)
-  // or fall back to SDK events (vanilla mode). ClaxedoEvent has flat structure
-  // (event.id / event.info), SDK events use event.properties.*.
+  // Pty frames ride `wr/events` and reach here through the events emitter,
+  // flat (`event.id`, `event.info`); a session created without one sees none.
   const ptyEvent = (
     type: "pty.exited" | "pty.created" | "pty.updated" | "pty.deleted",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (props: any) => void,
   ): (() => void) => {
-    if (options?.claxedoEvents) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return options.claxedoEvents.on(type, (event: any) => handler(event))
-    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return sdk.event.on(type, (event: any) => handler(event.properties))
+    return options?.claxedoEvents?.on(type, (event: any) => handler(event)) ?? (() => {})
   }
 
   const unsub = ptyEvent("pty.exited", ({ id }: { id: string }) => {

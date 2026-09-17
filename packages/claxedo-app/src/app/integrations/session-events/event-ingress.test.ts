@@ -134,7 +134,7 @@ function claxedoEventSource() {
   const emitter = createClaxedoEventEmitter()
   return {
     source: emitter,
-    emit: (event: ClaxedoEvent) => emitter.emit(event, "wr"),
+    emit: (event: ClaxedoEvent) => emitter.emit(event),
   }
 }
 

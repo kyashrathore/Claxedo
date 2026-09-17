@@ -208,6 +208,34 @@ describe("cp/events — the control plane's notice stream", () => {
     expect(names(bText)).toEqual(["1:pending", "2:after"])
   })
 
+  test("a client gone while its subscription was resolving is released, not kept as a subscriber", async () => {
+    const bus = createBus<ControlPlaneEvent>()
+    let visibilityChecks = 0
+    const handler = createControlPlaneEventsHandler(bus, {
+      sequenceOrigin: () => 0,
+      resolveSubscription: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return {
+          identity: { mode: "verified", connectionId: crypto.randomUUID(), actorId: "user_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", role: "editor" },
+          visible: () => {
+            visibilityChecks += 1
+            return true
+          },
+        }
+      },
+    })
+    const app = mount(handler)
+    const ac = new AbortController()
+    const pending = app.request("http://127.0.0.1/api/cp/events", { signal: ac.signal })
+    ac.abort()
+    const res = await pending
+    expect(res.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    bus.publish(worktree("after-abort"))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(visibilityChecks).toBe(0)
+  })
+
   test("a signed subscriber is delivered only the frames visible to it", async () => {
     const bus = createBus<ControlPlaneEvent>()
     const handler = createControlPlaneEventsHandler(bus, {

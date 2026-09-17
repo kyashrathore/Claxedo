@@ -63,7 +63,7 @@ export function createRailSessionActivity(input: {
   focusedTarget: Accessor<RailSessionStatusTarget | undefined>
   /** Bumped by the rail's session-activity subscriptions; re-reads the non-reactive sources below. */
   activityRevision: Accessor<number>
-  /** The session-id status cache, which only the focused pane's own stream keeps live. */
+  /** The session-id status cache, written by the routed workspace's stream; only the focused pane's entry is resynced across a gap. */
   liveStatusType: (sessionID: string) => string | undefined
   /** When this client's own send optimistically marked the session busy. */
   optimisticStartedAt: (sessionID: string) => number | undefined

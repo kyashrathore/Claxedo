@@ -228,9 +228,11 @@ Two properties the plan is not done without:
   and goal envelopes are projected where the turn driver already projects
   everything else, so the hub's compat channel carries them.
 - Retention is per runtime scope (`createIdentityAwareEventSource` already
-  keeps one ring per principal scope), sized for whole-part payloads with
-  the terminal reserve for settlements — one setting, recorded once, not
-  shared with `cp/events`. This keeps `shell/events.ts:226`'s warning (a
+  keeps one ring per principal scope; a session-scoped connection's scope is
+  its own, numbering only that session's frames), sized for whole-part
+  payloads with the terminal reserve for settlements — the SDK ring's
+  defaults (256 + 64, `agent-sdk-runtime/src/sse.ts`), not shared with
+  `cp/events`. This keeps `shell/events.ts:226`'s warning (a
   central ring pinning a long turn's parts for the process lifetime) true
   by construction: the central ring holds notices only.
 - `claxedo-local-server/shell/events.ts` becomes the `cp/events` handler,
@@ -450,7 +452,7 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
       `bun run test:architecture-ratchets` with the closure ceilings
       LOWERED to the measured values. Progress: `routes/events.test.ts`
-      (17), `event-delivery.test.ts` (18), local `shell/events.test.ts` (10)
+      (21), `event-delivery.test.ts` (23), local `shell/events.test.ts` (11)
       + `event-stream-response.test.ts`; reader suite
       `claxedo-events-cursor.vitest.tsx` (12) + `claxedo-event-targets.test.ts`;
       ceilings lowered in `2c10b5aaa4` (app-local 1077, renderer 1120,
@@ -662,11 +664,83 @@ commit after this one):
   names both control planes; the unused `PtyInfo` re-export through
   server-core and claxedo-server is gone; the connectivity test tracks
   `"wr"`; test titles and a spec variable renamed.
-- Recorded follow-ups (not fixed): a signed self-hosted node whose plane has
-  no lease signing key reads on the host token alone and a session first
-  seen after that token's expiry ends the stream with a 503 terminate — the
-  same shape round 4 fixed for the hosted plane; `host_read` mints a lease
-  on every call, renewal included. The hosted worker publishes no
+- Recorded follow-ups (not fixed): a signed plane without a lease signing
+  key mints no lease for any stream (`decideStream` answers 503), so its
+  runtimes serve no managed stream past a session's first frame — the
+  workspace read itself is granted; `host_read` mints a lease on every call,
+  renewal included. The hosted worker publishes no
   `session.inventory.changed`.
 
-**Round 6**: see below.
+**Round 6** (tree `38e24692cf`, two reviewers). Findings and fixes (the
+commit after this one):
+
+- MAJOR (server): round 5's renewal filter skipped refused sessions but not
+  one whose FIRST decision was still in flight, so a renewal tick landing
+  during that round trip read the refusal as a revocation and ended the
+  stream. Grants now carry `granted`; renewal re-asks granted sessions only,
+  and a refusal of a never-granted session — 403, 401, 503 or a thrown
+  authority — is an omit held for one cadence, never a terminate. A granted
+  session whose renewal stalls past its lease expiry is closed on the
+  runtime's clock.
+- MAJOR (server): the session-scoped arm still authorized its first frame
+  on the request's relay host token; the scope's session lease now seeds
+  the grant (`holdSession`), and the delivery policy is the ONE renewer of
+  both arms — the separate lease watch (`watchSessionEventLease`, its seven
+  tests) is deleted. The session-scoped connection reads in a scope of its
+  own (`sessionScope` on the principal), whose ring numbers only that
+  session's frames, so a cursor from it is contiguous and a scope rebuilt
+  after the reader was away has no hole where a workspace frame its wire
+  never carried was numbered; the wire-side `allows` filter and
+  `scopedReplay` are gone with it. Revocation of a granted session is
+  observed at the renewal cadence (the acceptance test runs it at 200 ms),
+  not on the session's next frame.
+- MAJOR (server): a client gone during the authority round trip or the
+  ring's startup was never released — Hono reports an abort only to a hook
+  registered before it and its writes swallow errors — so its subscription
+  and renewal round trips lived until the runtime disposed. Both handlers
+  now register on the stream AND the request's own signal, and check both
+  after attaching; the `wr` route test aborts mid-open and asserts no
+  authority call follows, the `cp` test the same with a per-frame
+  visibility check.
+- MAJOR (server): deleting a session ended every workspace-arm reader that
+  held it (the plane answers a deleted session 403, which renewal read as a
+  revocation). The runtime forgets the session's grants on its
+  `session.deleted` frame.
+- MINOR (server): `session.lifecycle` `creating`/`failed` frames carry no
+  session and reached every admitted principal — another member's draft id
+  and failure message. They now carry the creator's `actorId` and the
+  delivery policy delivers a session-less frame naming an actor to that
+  actor alone.
+- MINOR (server, docs): the heartbeat contract names the three cadences
+  (wr 10 s, local cp 5 s, hosted cp 30 s against the reader's 45 s); the
+  no-signing-key account is corrected in code and above; the hosted room's
+  narrower notice set is stated on `ControlPlaneEvent` and the local
+  handler; the plan's retention sentence names the SDK defaults.
+- MAJOR (client): agent-status reconciliation was keyed on the aggregate
+  `connected()`, which never drops while `cp` holds it up, so a `wr`-only
+  outage across a `pty.exited` left a terminal pinned busy. The tracker now
+  keeps a level and an edge per kind (`workspaceConnected` /
+  `workspaceReconnects` beside the `cp` pair) and the reconciliation reads
+  the `wr` pair.
+- MINOR (client): the desktop's cloud wire — the daemon's
+  `localWorkspaceRelayProxy` at `/workspaces/<id>/api/wr/events`, owner
+  token minted by the daemon, cursor forwarded — is documented on the target
+  module and tested at the fetch seam. The retired `origin` parameter of
+  the emitter's handlers (whose only meaning was the two-lane overlap) is
+  removed; the terminal provider's "vanilla mode" `sdk.event` fallback,
+  dead since pty frames stopped carrying `properties`, is deleted and its
+  fixtures feed the emitter's shape; the rail's status comments state the
+  real reason a background row follows the batch read (nothing resyncs its
+  live entry across a gap, and a row of a workspace not routed has no
+  stream); stale docblocks and a test's stream-id spelling corrected.
+- Recorded follow-ups (not fixed): `presentation-frames.ts` still admits
+  `file.watcher.updated`, `project.updated`, `vcs.branch.updated` and
+  `global.disposed` and their consumers (`tab-file.tsx`,
+  `global-event-projector.ts`, `files/watcher.ts`,
+  `review-vcs-invalidation.ts`, `session-list-events.ts`) still expect them,
+  while no producer publishes any of them on either stream — the engine's
+  own event names, already recorded as the unresolved file-watcher gap; the
+  rail's background-row status policy discards live `session.status` it now
+  holds for the routed workspace's sessions.
+
+**Round 7**: see below.

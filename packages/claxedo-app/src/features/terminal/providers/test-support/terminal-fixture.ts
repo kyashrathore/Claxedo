@@ -56,22 +56,29 @@ export function createMockSDK() {
   const serverPtys = new Map<string, { id: string; title: string; cwd: string }>()
   const createCalls: any[] = []
 
+  // The events emitter's shape: a flat `ClaxedoEvent` per `on(type)` handler.
   function emit(type: string, properties: any) {
     const fns = listeners.get(type)
     if (!fns) return
-    for (const fn of fns) fn({ type, properties })
+    for (const fn of fns) fn({ type, ...properties })
   }
 
   const sdk = {
     url: "http://localhost:7860",
     directory: "/workspace",
     workspace: () => undefined,
-    event: {
+    claxedoEvents: {
       on(type: string, fn: Listener) {
         if (!listeners.has(type)) listeners.set(type, new Set())
         listeners.get(type)!.add(fn)
         return () => listeners.get(type)?.delete(fn)
       },
+      listen: () => () => undefined,
+      connected: () => true,
+      centralConnected: () => true,
+      controlPlaneReconnects: () => 0,
+      workspaceConnected: () => true,
+      workspaceReconnects: () => 0,
     },
     client: {
       pty: {

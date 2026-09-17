@@ -108,7 +108,7 @@ function createSession(sdk: ReturnType<typeof createMockSDK>) {
   let dispose: () => void
   createRoot((d) => {
     dispose = d
-    session = createTerminalSession(sdk, "/workspace")
+    session = createTerminalSession(sdk, "/workspace", { claxedoEvents: sdk.claxedoEvents })
   })
   return { session: session!, dispose: dispose! }
 }

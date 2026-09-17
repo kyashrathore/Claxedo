@@ -323,9 +323,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       )
     }
     if (action !== "host_read") return context.json({ allowed: true })
-    // A plane without a lease signing key mints no session leases either, so
-    // its runtimes' streams live on the host token alone; the read is still
-    // granted.
+    // A plane without a lease signing key mints no lease here and none for a
+    // session's stream either (`decideStream` answers 503), so its runtimes
+    // serve no managed stream past a session's first frame; the workspace
+    // read itself is still granted.
     const minter = options.mintStreamLease ?? streamLeaseMinter(env)
     const minted = await minter({
       ...sessionLeasePrincipal({ ...proof, transport: "relay-host", sessionId: WORKSPACE_STREAM_LEASE_SESSION, action: "read" }),

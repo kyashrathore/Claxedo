@@ -420,23 +420,29 @@ function useReconnectCleanup() {
   if (!claxedoEvents) return
 
   useReconnectReconciliation({
-    connected: claxedoEvents.connected,
+    connected: claxedoEvents.workspaceConnected,
+    reconnects: claxedoEvents.workspaceReconnects,
     reconcile: () => reconcileAgentStatuses(state, platform.fetch ?? fetch),
   })
 }
 
+/**
+ * The agent statuses reconciled here are driven by `agent.lifecycle` and
+ * `pty.*` frames, which ride the workspace's own stream (`wr`) — so the edge
+ * is that stream's return: its level, and the returns the level cannot show
+ * (`workspaceReconnects`, see `app/connection/stream-connectivity.ts`). The
+ * aggregate `connected()` never drops while the control plane's stream holds
+ * it up, and a `wr`-only outage across a `pty.exited` would leave a terminal
+ * pinned "busy".
+ */
 export function useReconnectReconciliation(input: {
   connected: Accessor<boolean>
+  reconnects?: Accessor<number>
   reconcile: () => void | Promise<void>
 }) {
   let hadConnection = false
 
   createEffect(on(input.connected, (isConnected) => {
-    // Deliberately the AGGREGATE `connected()`, not `centralConnected()`: the
-    // agent statuses reconciled here are driven by `agent.lifecycle` /
-    // `pty.*` events, which arrive on each workspace's own stream. Any of
-    // those coming back up can mean statuses drifted, so "any stream
-    // reconnected" is the right edge here.
     if (!isConnected) return
     if (!hadConnection) {
       hadConnection = true
@@ -448,6 +454,7 @@ export function useReconnectReconciliation(input: {
     // the connection remains up.
     void input.reconcile()
   }))
+  if (input.reconnects) createEffect(on(input.reconnects, () => void input.reconcile(), { defer: true }))
 }
 
 function terminalReconnectTargets(state: ClaxedoStateApi) {

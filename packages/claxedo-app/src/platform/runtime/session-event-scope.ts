@@ -65,7 +65,8 @@ type SessionEventScopeState = {
    * `/s/<id>` route names no workspace, so the reader learns which stream the
    * routed session needs from the pane that opened it.
    */
-  live?: { sessionId: string; directory: string }
+  /** The address the pane registered the session's workspace under: a local path, or `workspace:<id>`. */
+  live?: { sessionId: string; workspaceAddress: string }
   lanes: Partial<Record<SessionEventStreamLane, LaneState>>
 }
 
@@ -118,14 +119,14 @@ export function sessionEventScopeId(): string | undefined {
 }
 
 /** Published by the session pane once it has resolved the session it shows. */
-export function setSessionEventLiveWorkspace(sessionId: string, directory: string): void {
-  setScopeState("live", { sessionId, directory })
+export function setSessionEventLiveWorkspace(sessionId: string, workspaceAddress: string): void {
+  setScopeState("live", { sessionId, workspaceAddress })
 }
 
 /** The workspace address the pane resolved for `sessionId`, if it has. */
-export function sessionEventScopeDirectory(sessionId: string | undefined): string | undefined {
+export function sessionEventScopeWorkspaceAddress(sessionId: string | undefined): string | undefined {
   const live = scopeState.live
-  return live && sessionId && live.sessionId === sessionId ? live.directory : undefined
+  return live && sessionId && live.sessionId === sessionId ? live.workspaceAddress : undefined
 }
 
 /** Declares that the reader drives this stream, so readiness waits for it. */

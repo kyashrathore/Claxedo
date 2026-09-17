@@ -574,7 +574,7 @@ export type MockRuntimeHandles = {
 // must be known at the moment `fulfill()` is called. The app's stream reader
 // (`src/app/integrations/claxedo-events.tsx`) reads each stream via `fetch` + a
 // streaming `ReadableStream` reader and RECONNECTS on stream end with a backoff that
-// resets to the floor whenever the previous connection delivered at least one event.
+// resets to the floor whenever the previous connection opened successfully.
 //
 // So: each SSE "connection" here BLOCKS (does not call route.fulfill) until at least one
 // event is pending, then fulfills with the queued batch and ends the stream — which

@@ -114,6 +114,7 @@ function createSession(input: {
   createRoot((d) => {
     dispose = d
     session = createTerminalSession(sdk, input.directory ?? "/workspace", {
+      claxedoEvents: sdk.claxedoEvents,
       claxedoServerUrl: input.claxedoServerUrl ?? "http://server.test",
       request: input.request,
       resolveWorkspaceRuntime: input.resolveWorkspaceRuntime ?? (async () => ({
@@ -216,6 +217,7 @@ describe("terminal relay lifecycle", () => {
     createRoot((d) => {
       disposeChild = d
       childSession = createTerminalSession(sdk, "C:\\repo", {
+        claxedoEvents: sdk.claxedoEvents,
         claxedoServerUrl: "http://server.test",
         request,
         resolveWorkspaceRuntime: async () => ({ kind: "local" }),

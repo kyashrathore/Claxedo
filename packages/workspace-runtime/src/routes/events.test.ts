@@ -4,7 +4,7 @@ import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler } from "./events"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
-import { messagePartUpdated, withDir, type CompatEnvelope } from "../compat-events"
+import { messagePartUpdated, sessionDeleted, withDir, type CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
 
@@ -30,6 +30,7 @@ function harness(input: {
   policy?: SessionAccessPolicy
   parents?: Record<string, string>
   relayAuth?: Record<string, unknown>
+  renewalIntervalMs?: number
 }) {
   const app = new Hono()
   const hub = createRuntimeEventHub()
@@ -51,6 +52,7 @@ function harness(input: {
     sequenceOrigin: () => 0,
     ptyDirectory: (id) => ptys.get(id),
     ...(input.policy ? { sessionAccessPolicy: input.policy, policy: sessionEventDeliveryPolicy(input.policy) } : {}),
+    ...(input.renewalIntervalMs !== undefined ? { renewalIntervalMs: input.renewalIntervalMs } : {}),
     ...(input.parents ? { sessionParents: { parentSessionIdFor: (id) => input.parents?.[id] } } : {}),
   }))
   return { app, hub, bus, ptys }
@@ -345,6 +347,95 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("prt-old")
   })
 
+  test("a session-scoped reader's first frame rides the lease it was admitted with, not the request's token", async () => {
+    const asked: Array<string | undefined> = []
+    const policy = managedPolicy({ workspace: "deny" })
+    policy.authorizeStream = async (_input, lease) => {
+      asked.push(lease)
+      return { allowed: true, lease: "lease_session", expiresAt: Date.now() + 60_000 }
+    }
+    const { app, hub } = harness({ policy, relayAuth })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events?sessionID=shared", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    hub.publishGlobal(part("shared", "prt-first", { status: "running" }))
+    expect(await readUntil(response, "prt-first")).toContain("prt-first")
+    controller.abort()
+    // One authority call: the scope's. The frame was granted on its lease.
+    // (`toEqual` reads `[undefined, undefined]` as `[undefined]`.)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toBeUndefined()
+  })
+
+  test("a client gone during the open is released, not kept as a subscriber the authority is asked for", async () => {
+    const asked: string[] = []
+    const policy = managedPolicy({ workspace: "allow" })
+    policy.authorizeHost = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return { allowed: true, lease: "ws", expiresAt: Date.now() + 60_000 }
+    }
+    policy.authorizeStream = async ({ sessionId }) => {
+      asked.push(sessionId ?? "")
+      return { allowed: true, lease: "l", expiresAt: Date.now() + 60_000 }
+    }
+    const { app, hub } = harness({ policy, relayAuth })
+    const controller = new AbortController()
+    const pending = app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    controller.abort()
+    const response = await pending
+    expect(response.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    hub.publishGlobal(part("ses_b", "prt-b", { status: "running" }))
+    hub.publishGlobal(part("ses_c", "prt-c", { status: "running" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(asked).toEqual([])
+  })
+
+  test("a create's own protocol before the session exists reaches its creator and no other admitted reader", async () => {
+    const policy = managedPolicy({ workspace: "allow" })
+    const { app, bus } = harness({ policy, relayAuth })
+    const creator = new AbortController()
+    const other = new AbortController()
+    const mine = await app.request("http://localhost/api/wr/events", { signal: creator.signal })
+    // The harness binds one relay identity per app, so the viewer reads a
+    // second runtime that publishes the same frames.
+    const app2 = harness({ policy, relayAuth: viewerAuth })
+    const theirs = await app2.app.request("http://localhost/api/wr/events", { signal: other.signal })
+    const creating = { type: "session.lifecycle" as const, phase: "creating" as const, directory: DIRECTORY, draftId: "draft_1", actorId: "actor_1", ts: 1 }
+    bus.publish(creating)
+    app2.bus.publish(creating)
+    const unscoped = { type: "session.lifecycle" as const, phase: "failed" as const, directory: DIRECTORY, message: "nobody's", ts: 2 }
+    bus.publish(unscoped)
+    app2.bus.publish(unscoped)
+    expect(await readUntil(mine, "draft_1")).toContain("draft_1")
+    // The actor-less frame arrives; the creator's does not.
+    const seen = await readUntil(theirs, "nobody's")
+    expect(seen).toContain("nobody's")
+    expect(seen).not.toContain("draft_1")
+    creator.abort()
+    other.abort()
+  })
+
+  test("deleting a session the reader held does not end the workspace arm at the next renewal", async () => {
+    const alive = new Set(["ses_mine"])
+    const policy = managedPolicy({ workspace: "allow", session: (id) => alive.has(id) })
+    policy.authorizeHost = () => ({ allowed: true, lease: "ws", expiresAt: Date.now() + 60_000 })
+    const { app, hub } = harness({ policy, relayAuth, renewalIntervalMs: 20 })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    hub.publishGlobal(part("ses_mine", "prt-mine", { status: "running" }))
+    expect(await readUntil(response, "prt-mine")).toContain("prt-mine")
+    alive.delete("ses_mine")
+    hub.publishGlobal(withDir(DIRECTORY, sessionDeleted("ses_mine", DIRECTORY)))
+    expect(await readUntil(response, "session.deleted")).toContain("session.deleted")
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    // The stream is still live: a later frame of another granted session arrives.
+    alive.add("ses_other")
+    hub.publishGlobal(part("ses_other", "prt-other", { status: "running" }))
+    expect(await readUntil(response, "prt-other")).toContain("prt-other")
+    controller.abort()
+  })
+
   test("a revoked session lease ends the reader and no later frame of that session reaches it", async () => {
     let authorityCalls = 0
     const policy = managedPolicy({ workspace: "deny" })
@@ -354,7 +445,7 @@ describe("wr/events — one stream per workspace runtime", () => {
         ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
         : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
     }
-    const { app, hub } = harness({ policy, relayAuth })
+    const { app, hub } = harness({ policy, relayAuth, renewalIntervalMs: 20 })
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events?sessionID=shared", { signal: controller.signal })
     expect(response.status).toBe(200)

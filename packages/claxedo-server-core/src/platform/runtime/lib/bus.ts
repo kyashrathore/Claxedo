@@ -117,6 +117,13 @@ export type SessionInventoryChangedEvent = {
  * runtime's stream. One bus, one publisher per event kind: the sandbox
  * provisioner, the worktree routes, the documents backend, the session-share
  * authority, the session-meta store (`session/meta/index.ts`).
+ *
+ * The local daemon and a self-hosted node serve all six kinds. The hosted
+ * plane's room (`hosted-workerd/live-sync-room.cf.ts`) carries `provision`,
+ * `document.changed` and `session.share.changed` only: worktrees are a
+ * machine's, and the hosted worker has no publisher for
+ * `session.inventory.changed`, so a signed web client on it learns of a
+ * session created elsewhere by its next inventory read, not by a notice.
  */
 export type ControlPlaneEvent =
   | {

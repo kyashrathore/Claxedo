@@ -91,7 +91,7 @@ type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventSource = {
   on: <T extends ClaxedoEventType>(
     type: T,
-    handler: (event: Extract<ClaxedoEvent, { type: T }>, origin: "cp" | "wr") => void,
+    handler: (event: Extract<ClaxedoEvent, { type: T }>) => void,
   ) => (() => void) | undefined
 }
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { shouldShowConnectionLine } from "./session-connection-line"
 import { clearStreamSyncLifecycle, reportStreamSyncLifecycle, streamSyncLifecycleSnapshot } from "@/platform/runtime/stream-sync-status"
 
-const streamId = "workspace:connection-line-test" as const
+const streamId = "wr:connection-line-test" as const
 afterEach(() => clearStreamSyncLifecycle(streamId))
 
 describe("shouldShowConnectionLine (T7 / B5)", () => {
