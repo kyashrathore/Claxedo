@@ -3,18 +3,21 @@ import { escapeRegExp } from "@claxedo/helpers/string"
 /**
  * The home directory has to go first: `/Users/<user>/x` only collapses to `~/x` while the
  * username is still inside it, so a username-first pass would leave every path absolute.
- * The username also stands alone away from any path — the owner column of `ls -l` output,
- * and the dash-encoded project directory names under `~/.claude/projects` — which is what
- * the word boundaries catch.
+ * A query string carries it URL-encoded (`directory=%2FUsers%2F<user>%2F…`), where the
+ * `%2F` on either side is not a word boundary, so that form is its own pass. The username
+ * also stands alone away from any path — the owner column of `ls -l` output, and the
+ * dash-encoded project directory names under `~/.claude/projects` — which is what the
+ * word boundaries catch.
  */
 export function redactMachineIdentity<T>(value: T, home: string, user: string): T
 /** The walk below rebuilds unknown values, so the shape it preserves can only be declared above. */
 export function redactMachineIdentity(value: unknown, home: string, user: string): unknown {
   const homePattern = new RegExp(escapeRegExp(home), "g")
+  const encodedHomePattern = new RegExp(escapeRegExp(encodeURIComponent(home)), "g")
   const userPattern = user ? new RegExp(`\\b${escapeRegExp(user)}\\b`, "g") : undefined
 
   const scrub = (text: string) => {
-    const withoutHome = text.replaceAll(homePattern, "~")
+    const withoutHome = text.replaceAll(homePattern, "~").replaceAll(encodedHomePattern, "~")
     return userPattern ? withoutHome.replaceAll(userPattern, "user") : withoutHome
   }
 

@@ -44,6 +44,30 @@ const SOURCES = [
      */
     untilUuid: "bf279bde-0ab1-4b42-b19d-4a63c53dde62",
   },
+  /**
+   * Finished logs below: nothing writes to them any more. `cfdeploy` is the long
+   * one — a day of work with thinking on, task-notification wakes, subagents and a
+   * few hundred edits, the shape the reader scrolls through in the real app. Whole,
+   * it is 211 prompts and 7.5 MB of fixture; the marker keeps the first 90 prompts,
+   * about 3.8 MB, ending on the assistant text that settles prompt #90 at
+   * 2026-09-01T06:14:14Z.
+   */
+  {
+    id: "cfdeploy",
+    title: "Make Claxedo Cloudflare-deployable",
+    file: `${OC}/96533740-7b84-4125-9a96-7d48599c3e81.jsonl`,
+    untilUuid: "35ed3f4e-0c5a-4dcd-bfe5-522a47e6e65f",
+  },
+  {
+    id: "landing",
+    title: "Landing page copy and themes",
+    file: `${OC}/927a8ff9-c660-4880-aa8c-ac8a4d97b0b0.jsonl`,
+  },
+  {
+    id: "onboarding",
+    title: "Onboarding redesign",
+    file: `${OC}/672d7858-c3b8-4983-a7b4-a76f394d5544.jsonl`,
+  },
 ]
 
 

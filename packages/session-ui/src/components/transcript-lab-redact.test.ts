@@ -84,6 +84,16 @@ describe("redactMachineIdentity", () => {
     expect(subject.parts.m0001[1].text).toContain("owned by adamson.")
   })
 
+  test("replaces the home directory inside a URL-encoded query string", () => {
+    const subject = redactMachineIdentity(
+      { url: `http://127.0.0.1:4444/session?directory=${encodeURIComponent(`${HOME}/test/opencode`)}&x=1` },
+      HOME,
+      USER,
+    )
+
+    expect(subject.url).toBe("http://127.0.0.1:4444/session?directory=~%2Ftest%2Fopencode&x=1")
+  })
+
   test("carries non-string values and the shape through unchanged", () => {
     const subject = redactMachineIdentity(session(), HOME, USER)
 
