@@ -21,7 +21,6 @@
 
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
-import { createHash } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
 import type { Duplex } from "node:stream"
@@ -284,16 +283,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         Object.entries(await usageSourceCoverage.starts())
           .filter(([source]) => !incompleteSources.has(source)),
       )
-      const classificationKey = createHash("sha256").update(JSON.stringify({
-        entries: entries.toSorted((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-        completeAfter,
-      })).digest("hex")
       return await scanTokenTrackerLocalHistory({
         sourceHome: os.homedir(),
         stateDir: path.join(dataDir(), "usage-scanner"),
         since,
         until,
-        classificationKey,
         refresh,
         classify: createUsageProvenanceClassifier(entries, { completeAfter }),
       })
