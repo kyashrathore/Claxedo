@@ -257,6 +257,22 @@ Two properties the plan is not done without:
    wanted, stays inside the harness adapter — memory
    `project_opencode_native_events` — never as an HTTP stream).
 
+## What this keeps and what it deletes from 2026-09-17-001 (`71504ab131`)
+
+| Plan 001 piece | Here |
+|---|---|
+| §1 hydrator: `resolveStoredParts` hands the server row through; `mergeChatPart` decides — the change that healed the "Running" rows | Kept unchanged; it is what lets any re-read advance a part |
+| §2 `session-history-resync` request + the controller effect | Kept; the one resync trigger, raised by the one reader on `stream.replay-gap` |
+| §2 the hook in `claxedo-events.tsx` | Kept; that loop is the surviving reader |
+| §2 `provider.tsx` no-abort-on-gap, heartbeat → watchdog, `resetRuntimeReplayGapState`, the `event-router` diagnostic → resync | Deleted with the runtime lane |
+| §3 `attachSseFanout` overflow gap notice | Kept; one transport for both streams |
+| §3 `settlesToolPart` (central) / `isTerminalRuntimeEvent` tool settlements (runtime) | The first becomes `wr/events`' terminal policy; the second is deleted with P5 |
+| 001's open DoD row (central-lane gap → resync, live) | Absorbed by Phase 0 and the stall e2e spec, polls disabled |
+| 001's non-goal: cursor-less first open loses the reply | A DoD row here |
+
+001's transport narrative (frames lost on the wire) is not carried as a
+diagnosis; Phase 0 either confirms it or records "no wire".
+
 ## Change points
 
 - `packages/workspace-runtime/src/routes/{events,runtime-events}.ts`,
