@@ -586,6 +586,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             (userMessageID) => cached?.turnFoldableCounts?.[userMessageID],
             (partID) => toolOpen[partID] === true || toolRevealed[partID] === true,
             turnSettleRefreshPending(userMessage.id),
+            (messageID) => sessionConversation()?.fragmentParts.has(messageID) === true,
           )
 
           return TimelineRow.reuse(previous, rows)

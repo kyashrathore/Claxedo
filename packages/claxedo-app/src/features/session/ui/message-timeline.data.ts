@@ -107,6 +107,7 @@ export namespace Timeline {
     // post-acceptance reconciliation still owns that read the turn is working
     // even though the session status already says idle.
     settlePending = false,
+    partsFragment: (messageID: string) => boolean = () => false,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -231,6 +232,7 @@ export namespace Timeline {
       interrupted,
       errored: !!error,
       busy: isActive && (status === "busy" || status === "retry" || settlePending),
+      partsPending: assistantMessages.some((message) => partsFragment(message.id)),
       userChoice: isFoldedChoice(userMessage.id),
     })
     const turnTokens = assistantMessages.reduce((sum, message) => {

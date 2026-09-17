@@ -31,6 +31,11 @@ export type ConversationChatHandle = {
 // event only until a canonical row confirms/replaces it, and cannot make a stale
 // row immortal after reload.
 const unpersistedLiveMessages = new WeakSet<UIMessage>()
+// Assistant messages whose parts came only from a `latest-surface` fragment, so
+// the parts held are a text-only subset of the turn. Identity-keyed like the set
+// above: the canonical read merges a new object and the mark goes with the old
+// one, and so does a live event replacing the message.
+const fragmentPartMessages = new WeakSet<UIMessage>()
 
 
 export function agentConversationSnapshot(input: {
@@ -55,7 +60,9 @@ const projectionCache = new WeakMap<UIMessage, { message: ProjectedAgentMessage;
 
 export function agentConversationProjection(messages: UIMessage[]) {
   const parts: Record<string, Part[] | undefined> = {}
+  const fragmentParts = new Set<string>()
   const projected = messages.map((message) => {
+    if (fragmentPartMessages.has(message)) fragmentParts.add(message.id)
     let entry = projectionCache.get(message)
     if (!entry) {
       entry = {
@@ -70,6 +77,8 @@ export function agentConversationProjection(messages: UIMessage[]) {
   return {
     messages: projected,
     parts,
+    /** Assistant messages whose parts are still a `latest-surface` subset of their turn. */
+    fragmentParts,
   }
 }
 
@@ -81,6 +90,8 @@ export type ConversationSnapshotMergeOptions = {
   canonicalMessageIDs?: ReadonlySet<string>
   /** Messages whose complete persisted part list is authoritative, including []. */
   canonicalPartMessageIDs?: ReadonlySet<string>
+  /** The snapshot's parts are a `latest-surface` fragment: a subset of each turn's, never the whole. */
+  fragmentParts?: boolean
 }
 
 export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMessage[], options?: ConversationSnapshotMergeOptions) {
@@ -107,7 +118,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
     )
     if (index === -1) {
       indexById.set(message.id, merged.length)
-      merged.push(message)
+      merged.push(options?.fragmentParts && message.role === "assistant" ? markFragmentParts(message) : message)
       changed = true
       continue
     }
@@ -128,6 +139,9 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
     })
     // A projected fragment confirms neither persistence nor membership. Keep a
     // newer event's transient protection until a canonical row replaces it.
+    // A fragment merged over parts that were only ever a fragment is still one;
+    // over anything fuller it is not.
+    if (options?.fragmentParts && fragmentPartMessages.has(existing)) markFragmentParts(next)
     merged[index] = !canonicalMessage && unpersistedLiveMessages.has(existing)
       ? markUnpersistedLive(next)
       : next
@@ -487,6 +501,11 @@ function appendPartDelta(
 
 function markUnpersistedLive(message: UIMessage): UIMessage {
   unpersistedLiveMessages.add(message)
+  return message
+}
+
+function markFragmentParts(message: UIMessage): UIMessage {
+  fragmentPartMessages.add(message)
   return message
 }
 

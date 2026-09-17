@@ -127,6 +127,7 @@ export function hydrateRegisteredConversationSnapshot(input: {
   resolvedMembership?: boolean
   canonicalMessageIDs?: ReadonlySet<string>
   canonicalPartMessageIDs?: ReadonlySet<string>
+  fragmentParts?: boolean
 }) {
   // The hydrator passes its merged working set here, so `input.messages` can
   // include client-only optimistic rows. Only ids explicitly identified as
@@ -145,6 +146,7 @@ export function hydrateRegisteredConversationSnapshot(input: {
     ...(input.resolvedMembership ? { membership: "resolved" as const } : {}),
     canonicalMessageIDs: input.canonicalMessageIDs,
     canonicalPartMessageIDs: input.canonicalPartMessageIDs,
+    ...(input.fragmentParts ? { fragmentParts: true } : {}),
   })
   if (sameConversationMessages(current, next)) return false
   entry.handle.setMessages(next)

@@ -192,6 +192,7 @@ export function hydrateConversationPage(input: {
     resolvedMembership: true,
     canonicalMessageIDs,
     canonicalPartMessageIDs: canonicalIds,
+    fragmentParts: input.partCompleteness === "fragment",
   })
   return registeredConversationSnapshot(input.directory, input.sessionID).messages.length
 }

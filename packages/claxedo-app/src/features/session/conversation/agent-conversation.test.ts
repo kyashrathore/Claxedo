@@ -743,3 +743,43 @@ describe("agentConversationProjection caching", () => {
     expect(second.parts.msg_2).toMatchObject([{ id: "part_2", text: "world" }])
   })
 })
+
+describe("fragment parts", () => {
+  const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+  const surface = () =>
+    agentConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("msg_assistant_answer", "msg_assistant", "done")] },
+    })
+  const full = () =>
+    agentConversationSnapshot({
+      messages: [settled],
+      parts: {
+        msg_assistant: [
+          toolPart("msg_assistant_tool", "msg_assistant", "completed"),
+          textPart("msg_assistant_answer", "msg_assistant", "done"),
+        ],
+      },
+    })
+
+  test("a message hydrated from a latest-surface fragment is marked, and stays marked across another fragment", () => {
+    const first = mergeConversationSnapshot([], surface(), { fragmentParts: true })
+    expect(agentConversationProjection(first).fragmentParts).toEqual(new Set(["msg_assistant"]))
+    const again = mergeConversationSnapshot(first, surface(), { fragmentParts: true })
+    expect(agentConversationProjection(again).fragmentParts).toEqual(new Set(["msg_assistant"]))
+  })
+
+  test("the canonical read clears the mark, and a later fragment does not restore it", () => {
+    const first = mergeConversationSnapshot([], surface(), { fragmentParts: true })
+    const canonical = mergeConversationSnapshot(first, full(), { canonicalPartMessageIDs: new Set(["msg_assistant"]) })
+    expect(agentConversationProjection(canonical).fragmentParts).toEqual(new Set())
+    const refreshed = mergeConversationSnapshot(canonical, surface(), { fragmentParts: true })
+    expect(agentConversationProjection(refreshed).fragmentParts).toEqual(new Set())
+    expect(refreshed[0]?.parts).toHaveLength(2)
+  })
+
+  test("a snapshot that is not a fragment marks nothing", () => {
+    const merged = mergeConversationSnapshot([], full())
+    expect(agentConversationProjection(merged).fragmentParts).toEqual(new Set())
+  })
+})

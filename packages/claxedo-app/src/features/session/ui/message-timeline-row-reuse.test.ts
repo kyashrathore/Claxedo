@@ -150,6 +150,46 @@ describe("timeline row reuse", () => {
     expect(rows.some((row) => row._tag === "Thinking")).toBe(true)
   })
 
+  describe("a cold switch folds from the first frame", () => {
+    const rows = (parts: Part[], fragment: boolean) =>
+      Timeline.constructMessageRows(
+        userMessage("msg_user"),
+        (messageID) => (messageID === "msg_assistant" ? parts : []),
+        [assistantMessage("msg_assistant", "msg_user", { completed: 20 })],
+        0,
+        false,
+        "idle",
+        true,
+        false,
+        () => undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        () => fragment,
+      )
+    const fold = (list: TimelineRow.TimelineRow[]) => list.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")
+    const surface = [textPart("p1", "msg_assistant", "Let me look."), textPart("p2", "msg_assistant", "Done.")]
+    const full = [
+      textPart("p1", "msg_assistant", "Let me look."),
+      toolPart("t1", "msg_assistant", "bash", "completed"),
+      toolPart("t2", "msg_assistant", "read", "completed"),
+      textPart("p2", "msg_assistant", "Done."),
+    ]
+
+    test("the latest-surface frame is folded before the tools arrive, and stays folded when they do", () => {
+      expect(fold(rows(surface, true))?.folded).toBe(true)
+      expect(rows(surface, true).filter((row) => row._tag === "AssistantPart")).toHaveLength(1)
+      expect(fold(rows(full, false))?.folded).toBe(true)
+      expect(rows(full, false).filter((row) => row._tag === "AssistantPart")).toHaveLength(1)
+    })
+
+    test("the same texts read canonically do not fold: there is nothing to hide", () => {
+      expect(fold(rows(surface, false))).toBeUndefined()
+    })
+  })
+
   describe("the live row flips between the trailing tool group and Thinking", () => {
     const busyRows = (parts: Part[], showReasoning = false) =>
       Timeline.constructMessageRows(

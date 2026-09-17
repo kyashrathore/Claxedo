@@ -57,6 +57,11 @@ export type TurnFoldStatus = {
   errored?: boolean
   /** The session is mid-turn on THIS turn. */
   busy?: boolean
+  /**
+   * The parts held are a first-paint subset of the turn (the `latest-surface`
+   * texts), so the count above is a floor the full read will raise.
+   */
+  partsPending?: boolean
   /** Folding a settled turn is the product rule, so omitting this opts in. */
   foldWhenSettled?: boolean
   /** An explicit user toggle. `undefined` leaves the turn on auto. */
@@ -78,6 +83,12 @@ export type TurnFoldDecision = {
  * are the work the reader is watching, and `settled` alone cannot tell a finished
  * turn from one between steps.
  *
+ * A settled turn whose parts are still pending folds on the count it will have,
+ * not the one it has: the first paint holds the answer and little else, and a
+ * fold decided from that reopened seconds later when the tools arrived, moving
+ * everything below it. The full read's count then rules, and only a turn that
+ * turns out to hold nothing foldable loses the row.
+ *
  * An interrupted or failed turn keeps the control but does not fold on its own:
  * the rows the fold would hide are the ones that explain what happened, so they
  * stay up unless the reader asks otherwise. Withholding the control instead
@@ -87,7 +98,10 @@ export type TurnFoldDecision = {
 export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
   const running = !!status.busy && !status.errored
   const canFold =
-    !running && status.foldWhenSettled !== false && status.settled && status.foldableCount >= FOLD_MINIMUM
+    !running &&
+    status.foldWhenSettled !== false &&
+    status.settled &&
+    (status.foldableCount >= FOLD_MINIMUM || !!status.partsPending)
   const explainsItself = !!status.interrupted || !!status.errored
   return {
     canFold,

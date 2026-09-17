@@ -120,6 +120,14 @@ describe("turnFoldDecision", () => {
     expect(turnFoldDecision({ settled: true, foldableCount: 1, userChoice: true }).folded).toBe(false)
   })
 
+  test("a settled turn whose parts are still a first-paint fragment folds on the count it will have", () => {
+    expect(turnFoldDecision({ settled: true, foldableCount: 0, partsPending: true }).canFold).toBe(true)
+    expect(turnFoldDecision({ settled: true, foldableCount: 0, partsPending: true }).folded).toBe(true)
+    expect(turnFoldDecision({ settled: true, foldableCount: 0, partsPending: false }).canFold).toBe(false)
+    expect(turnFoldDecision({ settled: false, foldableCount: 0, partsPending: true }).canFold).toBe(false)
+    expect(turnFoldDecision({ settled: true, busy: true, foldableCount: 0, partsPending: true }).canFold).toBe(false)
+  })
+
   test("a turn the session is still working on has no fold, even by hand", () => {
     expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4 }).canFold).toBe(false)
     expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4, userChoice: true }).folded).toBe(false)
