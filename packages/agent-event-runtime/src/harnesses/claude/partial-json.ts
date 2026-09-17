@@ -27,7 +27,7 @@ export function readPartialJsonRecord(partial: string): Record<string, unknown> 
   let bareTokenStart = -1
 
   for (let i = 0; i < partial.length; i += 1) {
-    const ch = partial[i]
+    const ch = partial.charAt(i)
     if (inString) {
       if (unicodeRemaining > 0) {
         unicodeRemaining -= 1
