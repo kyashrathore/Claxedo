@@ -428,9 +428,10 @@ export const appLocal: Policy = {
   // Tasks feature's own, reached from its create form and detail page over the
   // `@claxedo/tasks` edge this product already carried. No new package edge.
   //
-  // +1 module (2026-09-16): `features/settings/ui/transcript-typography-section.tsx`
-  // — the dev-only Settings → General card that picks the transcript
-  // pairing, reached from `general.tsx`; the pairing model itself lives in
+  // +1 module (2026-09-16): `app/workbench/rail/rail-transcript-typography-panel.tsx`
+  // — the dev-only rail panel that picks the transcript pairing beside the
+  // open transcript (it replaced the Settings → General card of the same
+  // purpose); the pairing model itself lives in
   // `@opencode-ai/ui/theme/transcript-typography`, an edge already carried.
   //
   // +1 module (2026-09-16): `app/workbench/context/pane-ctx.tsx` — the
@@ -444,12 +445,21 @@ export const appLocal: Policy = {
   // Tasks title textarea that wraps a long title and refuses line breaks,
   // reached from the task detail page and the create form. No new package edge.
   //
+  // +1 module (2026-09-17): `features/session/composer/collapsed-state.ts` —
+  // `composerCollapsed`, the rule that folds the floating session composer to
+  // one row while it is idle, read by `composer.tsx`. No new package edge.
+  //
+  // +1 module (2026-09-17): `platform/settings/transcript-typography.ts` —
+  // `useTranscriptTypography`, where the stored transcript choice is composed
+  // over the active theme's (`DesktopTheme.transcript`), read by
+  // `message-timeline.tsx` and the rail typography panel. No new package edge.
+  //
   // +1 module (2026-09-17): `features/session/store/session-history-resync.ts`
   // — the request an event stream's gap notice raises so the session
   // controller re-reads history and todo; raised by `claxedo-events.tsx` and
   // `session-events/event-router.ts`. No new package edge.
-  // Measured 1079 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1079, packages: 58 },
+  // Measured 1081 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1081, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

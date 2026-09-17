@@ -3,16 +3,17 @@ import {
   DEFAULT_TRANSCRIPT_TYPOGRAPHY,
   TRANSCRIPT_FACES,
   TRANSCRIPT_PAIRINGS,
+  composeTranscriptTypography,
   normalizeTranscriptTypography,
   resolveTranscriptTypography,
   transcriptTypographyStyle,
 } from "./transcript-typography"
 
 describe("normalizeTranscriptTypography", () => {
-  test("non-objects and unknown pairings fall back to the default pairing", () => {
+  test("non-objects and unknown pairings read as no pairing at all, which is 'the theme's'", () => {
     expect(normalizeTranscriptTypography(undefined)).toEqual(DEFAULT_TRANSCRIPT_TYPOGRAPHY)
-    expect(normalizeTranscriptTypography("editorial")).toEqual(DEFAULT_TRANSCRIPT_TYPOGRAPHY)
-    expect(normalizeTranscriptTypography({ pairing: "retired" })).toEqual({ pairing: "default" })
+    expect(normalizeTranscriptTypography("editorial")).toEqual({})
+    expect(normalizeTranscriptTypography({ pairing: "retired", fontSize: 15 })).toEqual({ fontSize: 15 })
   })
 
   test("keeps every valid override and drops each invalid one independently", () => {
@@ -66,6 +67,31 @@ describe("normalizeTranscriptTypography", () => {
   })
 })
 
+describe("composeTranscriptTypography", () => {
+  test("no pairing anywhere resolves to the shipped default", () => {
+    expect(composeTranscriptTypography({}, undefined)).toEqual({ pairing: "default" })
+    expect(composeTranscriptTypography({ fontSize: 15 }, undefined)).toEqual({ pairing: "default", fontSize: 15 })
+  })
+
+  test("a setting without a pairing layers its overrides on the theme's pairing and overrides", () => {
+    const theme = { pairing: "codex", listGap: 4, fontSize: 15 }
+    expect(composeTranscriptTypography({}, theme)).toEqual({ pairing: "codex", listGap: 4, fontSize: 15 })
+    expect(composeTranscriptTypography({ fontSize: 16 }, theme)).toEqual({ pairing: "codex", listGap: 4, fontSize: 16 })
+  })
+
+  test("a setting that names a pairing replaces the theme's choice and its overrides wholesale", () => {
+    expect(composeTranscriptTypography({ pairing: "swiss" }, { pairing: "codex", listGap: 4 })).toEqual({ pairing: "swiss" })
+  })
+
+  test("a theme's transcript is untrusted JSON: a retired pairing or bad knob in it falls away", () => {
+    expect(composeTranscriptTypography({}, { pairing: "gone", fontSize: 99, measure: 64 })).toEqual({
+      pairing: "default",
+      measure: 64,
+    })
+    expect(composeTranscriptTypography({}, "codex")).toEqual({ pairing: "default" })
+  })
+})
+
 describe("resolveTranscriptTypography", () => {
   test("an override wins over the pairing; the rest follows the pairing or the shipped CSS", () => {
     const resolved = resolveTranscriptTypography({ pairing: "swiss", body: "charter", fontSize: 17, codeFontSize: 14 })
@@ -103,7 +129,7 @@ describe("resolveTranscriptTypography", () => {
       codeFontSize: 13,
       inlineCodeSize: 0.9,
       headingScale: "cursor",
-      proseColor: "base",
+      proseColor: "soft",
       inlineCode: "tint",
       rules: "visible",
       bodyWeight: 400,
@@ -123,7 +149,7 @@ describe("resolveTranscriptTypography", () => {
       listGap: 0,
       listIndent: 23,
       headingScale: "codex",
-      proseColor: "base",
+      proseColor: "soft",
       inlineCode: "pill",
       rules: "visible",
     })
@@ -140,7 +166,7 @@ describe("resolveTranscriptTypography", () => {
 
 describe("transcriptTypographyStyle", () => {
   test("the default pairing sets only the shipped numeric variables: no family, measure or heading scale", () => {
-    expect(transcriptTypographyStyle(resolveTranscriptTypography(DEFAULT_TRANSCRIPT_TYPOGRAPHY))).toEqual({
+    expect(transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "default" }))).toEqual({
       "--transcript-font-size": "14px",
       "--transcript-line-height": "1.6",
       "--transcript-letter-spacing": "normal",
@@ -166,6 +192,7 @@ describe("transcriptTypographyStyle", () => {
     )
     expect(style["--transcript-prose-color"]).toBe("var(--text-base)")
     expect(style["font-weight"]).toBe("430")
+    expect(style["--transcript-body-weight"]).toBe("430")
     expect(style["--transcript-hr-height"]).toBe("1px")
     expect(style["--transcript-block-gap"]).toBe("14px")
     expect(style["--transcript-inline-code-ring"]).toBe("none")
@@ -192,19 +219,31 @@ describe("transcriptTypographyStyle", () => {
     expect(Object.keys(subtle).filter((key) => key.startsWith("--transcript-h"))).toHaveLength(16)
   })
 
-  test("a named body face sets the root family and the prose variable; a differing heading gets its own", () => {
+  test("the soft prose colour is the theme's strong text mixed 85% toward its background", () => {
+    const style = transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "cursor" }))
+    expect(style["--transcript-prose-color"]).toBe("color-mix(in oklab, var(--text-strong) 85%, var(--background-base))")
+  })
+
+  test("a named body face rescopes the sans token so tool rows and user text take it, and sets the prose variable; a differing heading gets its own", () => {
     const style = transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "editorial" }))
     expect(style["font-family"]).toBe(TRANSCRIPT_FACES.charter.stack)
+    expect(style["--font-family-sans"]).toBe(TRANSCRIPT_FACES.charter.stack)
     expect(style["--transcript-font-family-body"]).toBe(TRANSCRIPT_FACES.charter.stack)
     expect(style["--transcript-font-family-heading"]).toBe(TRANSCRIPT_FACES.newyork.stack)
     expect(style["--font-family-mono"]).toBeUndefined()
     expect(style["--transcript-font-size"]).toBe("15.5px")
   })
 
-  test("a heading that follows the app UI font reads the app token even under a named body face", () => {
+  test("a heading that follows the app UI font reads the fixed UI alias, since the sans token is rescoped beneath it", () => {
     const style = transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "editorial", heading: "system" }))
-    expect(style["--transcript-font-family-heading"]).toBe("var(--font-family-sans)")
+    expect(style["--transcript-font-family-heading"]).toBe("var(--font-family-ui)")
+    expect(style["--font-family-sans"]).toBe(TRANSCRIPT_FACES.charter.stack)
+  })
+
+  test("a system body face leaves the sans token to the theme", () => {
+    const style = transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "codex" }))
     expect(style["--font-family-sans"]).toBeUndefined()
+    expect(style["font-family"]).toBeUndefined()
   })
 
   test("a named mono face overrides the mono token for the whole transcript; tracking is emitted in px", () => {

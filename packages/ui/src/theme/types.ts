@@ -1,3 +1,5 @@
+import type { PairedTranscriptTypography } from "./transcript-typography"
+
 export type HexColor = `#${string}`
 
 export interface OklchColor {
@@ -47,6 +49,8 @@ export interface DesktopTheme {
   id: string
   light: ThemeVariant
   dark: ThemeVariant
+  /** The transcript pairing (and overrides) the theme reads in unless the user picks their own. */
+  transcript?: PairedTranscriptTypography
 }
 
 export type TokenCategory =

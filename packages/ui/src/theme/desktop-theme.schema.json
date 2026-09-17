@@ -26,6 +26,17 @@
     "dark": {
       "$ref": "#/definitions/ThemeVariant",
       "description": "Dark mode color variant"
+    },
+    "transcript": {
+      "type": "object",
+      "description": "Transcript typography the theme reads in unless the user picks their own: a pairing name from @opencode-ai/ui/theme/transcript-typography plus optional per-knob overrides",
+      "required": ["pairing"],
+      "properties": {
+        "pairing": {
+          "type": "string",
+          "enum": ["default", "cursor", "codex", "technical", "editorial", "quiet", "humanist", "workbench", "classic", "swiss", "slab", "terminal"]
+        }
+      }
     }
   },
   "definitions": {

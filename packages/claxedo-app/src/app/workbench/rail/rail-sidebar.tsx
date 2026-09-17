@@ -57,6 +57,7 @@ import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { DialogEditProject } from "../../../features/workspaces/ui/dialog-edit-project"
 import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { RailOrgTeamSwitcher } from "./rail-org-team-switcher"
+import { RailTranscriptTypographyMenuItem, RailTranscriptTypographyPanel } from "./rail-transcript-typography-panel"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
@@ -511,6 +512,7 @@ export function RailSidebar(props: RailSidebarProps) {
   })
 
   const [view, setView] = createSignal(loadView() ?? defaultView())
+  const [typographyOpen, setTypographyOpen] = createSignal(false)
 
   createEffect(() => {
     saveView(view())
@@ -2316,6 +2318,10 @@ export function RailSidebar(props: RailSidebarProps) {
         </Show>
       </div>
 
+      <Show when={typographyOpen()}>
+        <RailTranscriptTypographyPanel onClose={() => setTypographyOpen(false)} onMenuOpenChange={handleRailMenuOpenChange} />
+      </Show>
+
       {/* Footer - fixed at bottom. The inset rule is the inner box's own
           `border-t`, so the padding wrapper and the ruled box stay two
           elements; the third `flex flex-col` around them wrapped a single
@@ -2338,6 +2344,7 @@ export function RailSidebar(props: RailSidebarProps) {
                   <RailOrgTeamSwitcher />
                 </Suspense>
                 <FilterMenu />
+                <RailTranscriptTypographyMenuItem open={typographyOpen()} onToggle={() => setTypographyOpen((open) => !open)} />
               </>
             )}
           />

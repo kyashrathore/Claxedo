@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
   toolNameAliases,
@@ -8,18 +8,11 @@ import {
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import {
-  TRANSCRIPT_FACES,
-  TRANSCRIPT_PAIRING_KEYS,
-  TRANSCRIPT_PAIRINGS,
-  isTranscriptPairing,
+  composeTranscriptTypography,
+  normalizeTranscriptTypography,
   resolveTranscriptTypography,
-  transcriptFacesOfKind,
   transcriptTypographyStyle,
-  type TranscriptFace,
-  type TranscriptHeadingScale,
-  type TranscriptInlineCode,
-  type TranscriptPairing,
-  type TranscriptRules,
+  type TranscriptTypography,
 } from "@opencode-ai/ui/theme/transcript-typography"
 import { DataProvider } from "../context/data"
 import { renderable } from "./message-part"
@@ -34,34 +27,19 @@ import {
 } from "./part-groups"
 import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
 import { SessionTurn } from "./story-session-turn"
+import { TranscriptTypographyKnobs } from "./transcript-typography-knobs"
 import { FileStub } from "./story-stubs"
 import type { SubagentView } from "../context/data"
 import { TRANSCRIPT_LAB_SESSIONS, type TranscriptLabSession } from "./transcript-lab-fixture"
 
 type LabState = {
   session: string
-  layout: "legacy" | "v2"
-  headings: TranscriptHeadingScale
-  boldWeight: number
-  rules: TranscriptRules
   turnSeparator: "none" | "hairline" | "numbered"
-  inlineCode: TranscriptInlineCode
-  inlineCodeSize: number
-  measure: string
-  lineHeight: number
-  paraGap: number
-  listIndent: "shipped" | "uniform24" | "uniform20"
-  pairing: TranscriptPairing
-  bodyFace: TranscriptFace | "auto"
-  headingFace: TranscriptFace | "auto"
-  monoFace: TranscriptFace | "auto"
-  fontSize: number
-  tracking: number
   mutedLift: number
   machinery: "shipped" | "thinking" | "expanded" | "prose"
   rowGap: number
   proseLeadIn: number
-  turnFold: "off" | "tools"
+  turnFold: "off" | "machinery"
   liveTurn: "settled" | "running"
   toolOutput: "shipped" | "boxed" | "scrollbar"
   errorCard: "shipped" | "hairline" | "quiet"
@@ -71,32 +49,18 @@ type LabState = {
  * Every value here is what the shipped Claxedo app renders today, so the lab opens at
  * parity and each control is a deliberate departure. `machinery: "shipped"` encodes
  * settings default `showReasoningSummaries: false`
- * (claxedo-app/src/platform/settings/provider.tsx:116).
+ * (claxedo-app/src/platform/settings/provider.tsx:116). Typography is not a lever:
+ * the app's own dev-only knobs render beside these, over an empty
+ * `TranscriptTypography` — the theme's pairing, as a fresh install renders.
  */
 const SHIPPED: LabState = {
   session: TRANSCRIPT_LAB_SESSIONS[0]?.id ?? "",
-  layout: "legacy",
-  headings: "flat",
-  boldWeight: 600,
-  rules: "hidden",
   turnSeparator: "none",
-  inlineCode: "pill",
-  inlineCodeSize: 0.8,
-  measure: "shipped",
-  lineHeight: 1.6,
-  paraGap: 6,
-  listIndent: "shipped",
-  pairing: "default",
-  bodyFace: "auto",
-  headingFace: "auto",
-  monoFace: "auto",
-  fontSize: 14,
-  tracking: 0,
   mutedLift: 0,
   machinery: "shipped",
   rowGap: 12,
   proseLeadIn: 24,
-  turnFold: "tools",
+  turnFold: "machinery",
   liveTurn: "settled",
   toolOutput: "shipped",
   errorCard: "shipped",
@@ -107,7 +71,6 @@ type Muted = { weak: string; weaker: string }
 
 type Control =
   | { kind: "segment"; options: { value: string; label: string }[] }
-  | { kind: "select"; options: { value: string; label: string }[] }
   | { kind: "range"; min: number; max: number; step: number; unit: string }
 
 type Lever = {
@@ -118,7 +81,6 @@ type Lever = {
   origin: string
   control: Control
   css: (state: LabState, muted: Muted | undefined) => string
-  apply?: (value: string, state: LabState) => Partial<LabState>
 }
 
 const SCOPE = "#tl-stage"
@@ -130,25 +92,12 @@ const BASE_CSS = [
   `@media (min-width:1536px){${SCOPE} .tl-column{max-width:var(--transcript-measure,880px)}}`,
 ].join("")
 
-/** The app applies the same declarations inline on its timeline root; the lab writes them as a rule. */
-function typographyCss(s: LabState) {
-  const resolved = resolveTranscriptTypography({
-    pairing: s.pairing,
-    ...(s.bodyFace === "auto" ? {} : { body: s.bodyFace }),
-    ...(s.headingFace === "auto" ? {} : { heading: s.headingFace }),
-    ...(s.monoFace === "auto" ? {} : { mono: s.monoFace }),
-    fontSize: s.fontSize,
-    lineHeight: s.lineHeight,
-    tracking: s.tracking,
-    inlineCodeSize: s.inlineCodeSize,
-    paragraphGap: s.paraGap,
-    boldWeight: s.boldWeight,
-    headingScale: s.headings,
-    inlineCode: s.inlineCode,
-    rules: s.rules,
-    ...(s.listIndent === "shipped" ? {} : { listIndent: s.listIndent === "uniform24" ? 24 : 20 }),
-    ...(s.measure === "shipped" ? {} : { measure: Number(s.measure) }),
-  })
+/**
+ * The app sets these declarations inline on its timeline root; the lab writes them as a
+ * rule. No theme here, so an empty setting composes to the shipped `default` pairing.
+ */
+function typographyCss(typography: TranscriptTypography) {
+  const resolved = resolveTranscriptTypography(composeTranscriptTypography(typography, undefined))
   const declarations = Object.entries(transcriptTypographyStyle(resolved))
     .map(([property, value]) => `${property}:${value}`)
     .join(";")
@@ -156,62 +105,6 @@ function typographyCss(s: LabState) {
 }
 
 const LEVERS: Lever[] = [
-  {
-    key: "layout",
-    group: "Structure",
-    label: "Style branch",
-    finding: "The app never sets data-new-layout, so half the transcript CSS never ships.",
-    origin: "storybook/.storybook/preview.tsx:51 is the only writer in the repo",
-    control: {
-      kind: "segment",
-      options: [
-        { value: "legacy", label: "legacy" },
-        { value: "v2", label: "v2" },
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "headings",
-    group: "Hierarchy",
-    label: "Heading scale",
-    finding: "Legacy collapses h1–h6 to 14px/500 — identical pixels to a bold span.",
-    origin: "ui/src/theme/transcript-typography.ts TRANSCRIPT_HEADING_SCALES",
-    control: {
-      kind: "segment",
-      options: [
-        { value: "flat", label: "flat" },
-        { value: "subtle", label: "subtle" },
-        { value: "clear", label: "clear" },
-        { value: "editorial", label: "editorial" },
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "boldWeight",
-    group: "Hierarchy",
-    label: "Bold weight",
-    finding: "600 against a 400 body. At 500 the emphasis was near the perceptual floor on a UI font.",
-    origin: "markdown.css:78-80",
-    control: { kind: "range", min: 400, max: 800, step: 10, unit: "" },
-    css: () => "",
-  },
-  {
-    key: "rules",
-    group: "Hierarchy",
-    label: "Horizontal rule",
-    finding: "hr is height:0 — a model-authored --- renders as 32px of nothing.",
-    origin: "markdown.css:168-172",
-    control: {
-      kind: "segment",
-      options: [
-        { value: "hidden", label: "invisible" },
-        { value: "visible", label: "visible" },
-      ],
-    },
-    css: () => "",
-  },
   {
     key: "turnSeparator",
     group: "Hierarchy",
@@ -238,176 +131,6 @@ const LEVERS: Lever[] = [
           `font:500 10px/1 var(--font-family-mono);color:var(--text-weaker);font-variant-numeric:tabular-nums}`,
       ].join("\n")
     },
-  },
-  {
-    key: "inlineCode",
-    group: "Prose texture",
-    label: "Inline code",
-    finding: "Five treatments at once (mono, weight, padding, radius, ring, tint) on 3.6 spans per 100 words.",
-    origin: "markdown.css:352-366",
-    control: {
-      kind: "segment",
-      options: [
-        { value: "pill", label: "pill" },
-        { value: "tint", label: "tint" },
-        { value: "quiet", label: "quiet" },
-        { value: "plain", label: "plain" },
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "inlineCodeSize",
-    group: "Prose texture",
-    label: "Inline code size",
-    finding: "0.8em via --font-size-inline-code. At 1em the mono ran larger than the prose beside it.",
-    origin: "ui/src/styles/theme.css:34",
-    control: { kind: "range", min: 0.8, max: 1, step: 0.01, unit: "em" },
-    css: () => "",
-  },
-  {
-    key: "measure",
-    group: "Measure & rhythm",
-    label: "Line length",
-    finding: "768px (880px at 2xl) is ~100–120 characters; user bubbles already use 64ch.",
-    origin: "message-timeline.tsx:1415-1420 vs message-part.css:132-136",
-    control: {
-      kind: "segment",
-      options: [
-        { value: "shipped", label: "768/880px" },
-        { value: "56", label: "56ch" },
-        { value: "64", label: "64ch" },
-        { value: "68", label: "68ch" },
-        { value: "76", label: "76ch" },
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "lineHeight",
-    group: "Measure & rhythm",
-    label: "Line height",
-    finding: "1.6 on a 14px UI font at a 110ch measure.",
-    origin: "Settings → General → Transcript line height",
-    control: { kind: "range", min: 1.35, max: 1.9, step: 0.05, unit: "" },
-    css: () => "",
-  },
-  {
-    key: "paraGap",
-    group: "Measure & rhythm",
-    label: "Paragraph gap",
-    finding: "6px. Spacing is the only structure prose has, so the values need to stay distinguishable.",
-    origin: "markdown.css:84-86",
-    control: { kind: "range", min: 6, max: 28, step: 1, unit: "px" },
-    css: () => "",
-  },
-  {
-    key: "listIndent",
-    group: "Measure & rhythm",
-    label: "List indent",
-    finding: "Level 1 indents 32px, the nested level only 16px — nesting shrinks the step.",
-    origin: "markdown.css:105-110 vs :146-152",
-    control: {
-      kind: "segment",
-      options: [
-        { value: "shipped", label: "32 / 16" },
-        { value: "uniform24", label: "24 / 24" },
-        { value: "uniform20", label: "20 / 20" },
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "pairing",
-    group: "Type",
-    label: "Pairing",
-    finding: "Sets body, heading and mono faces plus size, leading and tracking together.",
-    origin: "ui/src/theme/transcript-typography.ts, Settings → General → Transcript typography",
-    control: {
-      kind: "segment",
-      options: TRANSCRIPT_PAIRING_KEYS.map((key) => ({ value: key, label: TRANSCRIPT_PAIRINGS[key].label })),
-    },
-    apply: (value) => {
-      if (!isTranscriptPairing(value)) return {}
-      const preset = TRANSCRIPT_PAIRINGS[value]
-      return {
-        pairing: value,
-        bodyFace: "auto",
-        headingFace: "auto",
-        monoFace: "auto",
-        fontSize: preset.size,
-        lineHeight: preset.lineHeight,
-        tracking: preset.tracking,
-      }
-    },
-    css: (s) => typographyCss(s),
-  },
-  {
-    key: "bodyFace",
-    group: "Type",
-    label: "Body face",
-    finding: "The transcript is set in the OS UI font, drawn for labels rather than reading.",
-    origin: "Settings → General → Transcript body face",
-    control: {
-      kind: "select",
-      options: [
-        { value: "auto", label: `follow pairing` },
-        ...transcriptFacesOfKind("serif").map((key) => ({ value: key, label: `serif · ${TRANSCRIPT_FACES[key].label}` })),
-        ...transcriptFacesOfKind("sans").map((key) => ({ value: key, label: `sans · ${TRANSCRIPT_FACES[key].label}` })),
-        ...transcriptFacesOfKind("mono").map((key) => ({ value: key, label: `mono · ${TRANSCRIPT_FACES[key].label}` })),
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "headingFace",
-    group: "Type",
-    label: "Heading face",
-    finding: "Headings share the body face today, so a scale change is the only signal.",
-    origin: "Settings → General → Transcript heading face",
-    control: {
-      kind: "select",
-      options: [
-        { value: "auto", label: `follow pairing` },
-        ...transcriptFacesOfKind("sans").map((key) => ({ value: key, label: `sans · ${TRANSCRIPT_FACES[key].label}` })),
-        ...transcriptFacesOfKind("serif").map((key) => ({ value: key, label: `serif · ${TRANSCRIPT_FACES[key].label}` })),
-        ...transcriptFacesOfKind("mono").map((key) => ({ value: key, label: `mono · ${TRANSCRIPT_FACES[key].label}` })),
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "monoFace",
-    group: "Type",
-    label: "Mono face",
-    finding: "Drives inline code and every fenced block.",
-    origin: "Settings → General → Transcript code face",
-    control: {
-      kind: "select",
-      options: [
-        { value: "auto", label: `follow pairing` },
-        ...transcriptFacesOfKind("mono").map((key) => ({ value: key, label: TRANSCRIPT_FACES[key].label })),
-      ],
-    },
-    css: () => "",
-  },
-  {
-    key: "fontSize",
-    group: "Type",
-    label: "Body size",
-    finding: "14px.",
-    origin: "Settings → General → Transcript text size",
-    control: { kind: "range", min: 13, max: 18, step: 0.5, unit: "px" },
-    css: () => "",
-  },
-  {
-    key: "tracking",
-    group: "Type",
-    label: "Tracking",
-    finding: "Prose sets none; --letter-spacing-chat (-0.13px) exists and is never applied here.",
-    origin: "ui/src/styles/theme.css:88",
-    control: { kind: "range", min: -0.3, max: 0.15, step: 0.01, unit: "px" },
-    css: () => "",
   },
   {
     key: "mutedLift",
@@ -672,32 +395,6 @@ function Segmented(props: {
   )
 }
 
-function Picker(props: {
-  options: { value: string; label: string }[]
-  value: string
-  dirty: boolean
-  onSelect: (value: string) => void
-}) {
-  return (
-    <select
-      value={props.value}
-      onChange={(event) => props.onSelect(event.currentTarget.value)}
-      style={{
-        width: "100%",
-        padding: "5px 6px",
-        border: `0.5px solid ${props.dirty ? SIGNAL : PANEL_LINE}`,
-        background: PANEL_BG,
-        color: props.dirty ? SIGNAL : "#d8d8d8",
-        cursor: "pointer",
-        "font-family": "var(--font-family-mono)",
-        "font-size": "10px",
-      }}
-    >
-      <For each={props.options}>{(option) => <option value={option.value}>{option.label}</option>}</For>
-    </select>
-  )
-}
-
 function Range(props: {
   control: Extract<Control, { kind: "range" }>
   value: number
@@ -765,19 +462,18 @@ function TranscriptLab() {
 
   /* Every LabState field holds a string or a number, so this call typechecks for any
      lever; only the control's own option list keeps the value in its key's range. */
-  const setLever = (lever: Lever, value: string | number) => {
-    if (lever.apply && typeof value === "string") {
-      setState(lever.apply(value, state))
-      return
-    }
-    setState(lever.key, value)
-  }
+  const setLever = (lever: Lever, value: string | number) => setState(lever.key, value)
+  const [typography, setTypography] = createSignal<TranscriptTypography>({})
   const [holding, setHolding] = createSignal(false)
   const [showDiff, setShowDiff] = createSignal(false)
   const [themeTick, setThemeTick] = createSignal(0)
 
   const effective = createMemo<LabState>(() =>
     holding() ? { ...SHIPPED, session: state.session } : { ...state },
+  )
+  const effectiveTypography = createMemo<TranscriptTypography>(() => (holding() ? {} : typography()))
+  const typographyChanges = createMemo(() =>
+    Object.entries(effectiveTypography()).flatMap(([key, value]) => (value === undefined ? [] : [`${key}: ${String(value)}`])),
   )
 
   const session = createMemo<TranscriptLabSession | undefined>(
@@ -798,21 +494,19 @@ function TranscriptLab() {
     })
   })
 
-  /* The preview decorator mirrors an app.tsx body class that no longer exists, so the lab
-     strips it to render at true app parity and restores it for the rest of Storybook. */
+  /* The preview decorator mirrors an app.tsx body class that no longer exists and sets
+     `data-new-layout`, which the app never does, so the lab strips both to render at true
+     app parity and restores them for the rest of Storybook. */
   onMount(() => {
     const stripped = ["font-(family-name:--font-family-text)", "text-[13px]", "font-[440]"].filter((name) =>
       document.body.classList.contains(name),
     )
     for (const name of stripped) document.body.classList.remove(name)
+    document.body.toggleAttribute("data-new-layout", false)
     onCleanup(() => {
       for (const name of stripped) document.body.classList.add(name)
       document.body.toggleAttribute("data-new-layout", true)
     })
-  })
-
-  createEffect(() => {
-    document.body.toggleAttribute("data-new-layout", effective().layout === "v2")
   })
 
   const probe = createMemo(() => {
@@ -838,7 +532,7 @@ function TranscriptLab() {
   })
 
   const overrides = createMemo(() =>
-    LEVERS.map((lever) => lever.css(effective(), muted()))
+    [typographyCss(effectiveTypography()), ...LEVERS.map((lever) => lever.css(effective(), muted()))]
       .filter(Boolean)
       .join("\n"),
   )
@@ -848,6 +542,7 @@ function TranscriptLab() {
   const changed = createMemo(() =>
     LEVERS.filter((lever) => effective()[lever.key] !== SHIPPED[lever.key]),
   )
+  const changeCount = createMemo(() => changed().length + typographyChanges().length)
 
   const lastUserID = createMemo(() => {
     const list = session()?.messages ?? []
@@ -1067,6 +762,28 @@ function TranscriptLab() {
         </div>
 
         <div style={{ flex: "1", "overflow-y": "auto", padding: "4px 14px 14px" }}>
+          <section style={{ "margin-top": "16px" }}>
+            <div style={{ ...groupLabel, "margin-bottom": "6px", color: typographyChanges().length ? SIGNAL : undefined }}>
+              Typography · the app's dev panel
+            </div>
+            {/* The panel's rows read the theme's text tokens; the lab's aside is always dark. */}
+            <div
+              style={{
+                margin: "0 -6px",
+                "--color-text-base": "rgba(255,255,255,0.72)",
+                "--color-text-strong": "rgba(255,255,255,0.92)",
+                "--color-text-weak": PANEL_DIM,
+                "--color-surface-base-hover": "rgba(255,255,255,0.08)",
+              }}
+            >
+              <TranscriptTypographyKnobs
+                value={effectiveTypography()}
+                pairingDetail="Theme · Default"
+                onPairing={(pairing) => setTypography(pairing ? { pairing } : {})}
+                onOverride={(patch) => setTypography((current) => normalizeTranscriptTypography({ ...current, ...patch }))}
+              />
+            </div>
+          </section>
           <For each={GROUPS}>
             {(group) => (
               <section style={{ "margin-top": "16px" }}>
@@ -1111,16 +828,6 @@ function TranscriptLab() {
                           <Match when={lever.control.kind === "segment" ? lever.control : undefined}>
                             {(control) => (
                               <Segmented
-                                options={control().options}
-                                value={String(effective()[lever.key])}
-                                dirty={dirty()}
-                                onSelect={(value) => setLever(lever, value)}
-                              />
-                            )}
-                          </Match>
-                          <Match when={lever.control.kind === "select" ? lever.control : undefined}>
-                            {(control) => (
-                              <Picker
                                 options={control().options}
                                 value={String(effective()[lever.key])}
                                 dirty={dirty()}
@@ -1264,20 +971,23 @@ function TranscriptLab() {
           </div>
           <button
             type="button"
-            disabled={changed().length === 0}
-            onClick={() => setState({ ...SHIPPED, session: state.session })}
+            disabled={changeCount() === 0}
+            onClick={() => {
+              setState({ ...SHIPPED, session: state.session })
+              setTypography({})
+            }}
             style={{
               padding: "9px",
-              border: `0.5px solid ${changed().length ? SIGNAL : PANEL_LINE}`,
-              background: changed().length ? "rgba(224,169,74,0.12)" : "transparent",
-              color: changed().length ? SIGNAL : "rgba(255,255,255,0.22)",
-              cursor: changed().length ? "pointer" : "default",
+              border: `0.5px solid ${changeCount() ? SIGNAL : PANEL_LINE}`,
+              background: changeCount() ? "rgba(224,169,74,0.12)" : "transparent",
+              color: changeCount() ? SIGNAL : "rgba(255,255,255,0.22)",
+              cursor: changeCount() ? "pointer" : "default",
               "font-family": "var(--font-family-mono)",
               "font-size": "10.5px",
               "letter-spacing": "0.04em",
             }}
           >
-            {changed().length ? `↺ reset to current app (${changed().length})` : "↺ at current app"}
+            {changeCount() ? `↺ reset to current app (${changeCount()})` : "↺ at current app"}
           </button>
           <button
             type="button"
@@ -1286,14 +996,14 @@ function TranscriptLab() {
               padding: "7px",
               border: `0.5px solid ${PANEL_LINE}`,
               background: "transparent",
-              color: changed().length ? SIGNAL : PANEL_DIM,
+              color: changeCount() ? SIGNAL : PANEL_DIM,
               cursor: "pointer",
               "font-family": "var(--font-family-mono)",
               "font-size": "10px",
               "text-align": "left",
             }}
           >
-            {showDiff() ? "▾" : "▸"} {changed().length} change{changed().length === 1 ? "" : "s"} vs shipped
+            {showDiff() ? "▾" : "▸"} {changeCount()} change{changeCount() === 1 ? "" : "s"} vs shipped
           </button>
           <Show when={showDiff()}>
             <div
@@ -1306,9 +1016,15 @@ function TranscriptLab() {
               }}
             >
               <Show
-                when={changed().length}
+                when={changeCount()}
                 fallback={<div style={{ color: PANEL_DIM }}>Rendering the shipped app verbatim.</div>}
               >
+                <Show when={typographyChanges().length}>
+                  <div style={{ "margin-bottom": "8px" }}>
+                    <div style={{ color: SIGNAL }}>typography: {typographyChanges().join(", ")}</div>
+                    <div style={{ color: "rgba(255,255,255,0.3)" }}>Transcript typography (dev), rail account menu</div>
+                  </div>
+                </Show>
                 <For each={changed()}>
                   {(lever) => (
                     <div style={{ "margin-bottom": "8px" }}>

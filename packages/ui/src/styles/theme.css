@@ -4,6 +4,8 @@
   --font-family-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-family-mono--font-feature-settings: normal;
+  /* The app sans as a fixed alias, for a subtree that rescopes --font-family-sans to a reading face. */
+  --font-family-ui: var(--font-family-sans);
 
   /*
    * Shared type scale. Components consume these variables instead of baking

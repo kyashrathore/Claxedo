@@ -135,7 +135,7 @@ export const TRANSCRIPT_PAIRINGS = {
     codeFontSize: 13,
     inlineCodeSize: 0.9,
     headingScale: "cursor",
-    proseColor: "base",
+    proseColor: "soft",
     inlineCode: "tint",
     rules: "visible",
   },
@@ -154,7 +154,7 @@ export const TRANSCRIPT_PAIRINGS = {
     bodyWeight: 430,
     codeFontSize: 13,
     headingScale: "codex",
-    proseColor: "base",
+    proseColor: "soft",
     rules: "visible",
   },
   technical: { label: "Technical", body: "system", heading: "sfdisplay", mono: "sfmono", size: 14, lineHeight: 1.55, tracking: -0.08 },
@@ -237,8 +237,14 @@ export const TRANSCRIPT_RANGES = {
   measure: { min: 48, max: 110 },
 } as const
 
-/** Which text token prose is set in; tool rows and chrome keep their own. */
-export const TRANSCRIPT_PROSE_COLORS = ["strong", "base", "weak"] as const
+/**
+ * What prose is set in; tool rows and chrome keep their own tokens. `soft` is
+ * the theme's strong text at 85% over its background — Cursor's
+ * `.markdown-root { opacity: .85 }` on the editor foreground, and within a
+ * step of Codex's gray-850/750 body text. `base` and `weak` are the tool-row
+ * greys and read as secondary text, not as a body colour.
+ */
+export const TRANSCRIPT_PROSE_COLORS = ["strong", "soft", "base", "weak"] as const
 export type TranscriptProseColor = (typeof TRANSCRIPT_PROSE_COLORS)[number]
 
 /**
@@ -259,12 +265,13 @@ const oneOf = <T extends string>(values: readonly T[], value: unknown): value is
 type NumericKnob = keyof typeof TRANSCRIPT_RANGES
 
 /**
- * An absent override follows the pairing (faces, size, leading, tracking) or
- * the shipped value (everything else). Units: px for sizes, gaps and tracking;
- * em for inline code; ch for the measure.
+ * An absent pairing follows the theme's (`composeTranscriptTypography`); an
+ * absent override follows the pairing (faces, size, leading, tracking) or the
+ * shipped value (everything else). Units: px for sizes, gaps and tracking; em
+ * for inline code; ch for the measure.
  */
 export type TranscriptTypography = {
-  pairing: TranscriptPairing
+  pairing?: TranscriptPairing
   body?: TranscriptFace
   heading?: TranscriptFace
   mono?: TranscriptFace
@@ -286,7 +293,10 @@ export type TranscriptTypography = {
   rules?: TranscriptRules
 }
 
-export const DEFAULT_TRANSCRIPT_TYPOGRAPHY: Readonly<TranscriptTypography> = Object.freeze({ pairing: "default" })
+/** A typography whose pairing is settled: what `resolveTranscriptTypography` renders. */
+export type PairedTranscriptTypography = TranscriptTypography & { pairing: TranscriptPairing }
+
+export const DEFAULT_TRANSCRIPT_TYPOGRAPHY: Readonly<TranscriptTypography> = Object.freeze({})
 
 export type ResolvedTranscriptTypography = {
   body: TranscriptFace
@@ -333,9 +343,8 @@ const inRange = (value: unknown, range: { min: number; max: number }): value is 
 export function normalizeTranscriptTypography(value: unknown): TranscriptTypography {
   if (!isRecord(value)) return { ...DEFAULT_TRANSCRIPT_TYPOGRAPHY }
   const record = value
-  const result: TranscriptTypography = {
-    pairing: isTranscriptPairing(record.pairing) ? record.pairing : DEFAULT_TRANSCRIPT_TYPOGRAPHY.pairing,
-  }
+  const result: TranscriptTypography = {}
+  if (isTranscriptPairing(record.pairing)) result.pairing = record.pairing
   if (isTranscriptFace(record.body)) result.body = record.body
   if (isTranscriptFace(record.heading)) result.heading = record.heading
   if (isTranscriptFace(record.mono) && TRANSCRIPT_FACES[record.mono].kind === "mono") result.mono = record.mono
@@ -352,7 +361,19 @@ export function normalizeTranscriptTypography(value: unknown): TranscriptTypogra
 
 const isNumericKnob = (value: string): value is NumericKnob => isKeyOf(TRANSCRIPT_RANGES, value)
 
-export function resolveTranscriptTypography(typography: TranscriptTypography): ResolvedTranscriptTypography {
+/**
+ * The user's setting over the theme's: a setting that names its own pairing
+ * replaces the theme's pairing and overrides wholesale, one that does not
+ * layers its overrides on the theme's. No theme choice means the shipped
+ * `default` pairing. The theme value arrives as JSON, so it is normalized here.
+ */
+export function composeTranscriptTypography(setting: TranscriptTypography, theme: unknown): PairedTranscriptTypography {
+  if (setting.pairing) return { ...setting, pairing: setting.pairing }
+  const base = normalizeTranscriptTypography(theme)
+  return { ...base, ...setting, pairing: base.pairing ?? "default" }
+}
+
+export function resolveTranscriptTypography(typography: PairedTranscriptTypography): ResolvedTranscriptTypography {
   const pairing: PairingSpec = TRANSCRIPT_PAIRINGS[typography.pairing]
   return {
     body: typography.body ?? pairing.body,
@@ -377,9 +398,15 @@ export function resolveTranscriptTypography(typography: TranscriptTypography): R
   }
 }
 
+/**
+ * `--font-family-ui` is the app-level sans as `theme.css` aliases it at `:root`.
+ * A transcript root that rescopes `--font-family-sans` to a named body face
+ * still reaches the UI font through it, so a heading set to follow the UI font
+ * does not silently take the body face.
+ */
 const APP_TOKEN: Record<TranscriptFaceKind, string> = {
-  sans: "var(--font-family-sans)",
-  serif: "var(--font-family-sans)",
+  sans: "var(--font-family-ui)",
+  serif: "var(--font-family-ui)",
   mono: "var(--font-family-mono)",
 }
 
@@ -387,6 +414,12 @@ const APP_TOKEN: Record<TranscriptFaceKind, string> = {
 export const transcriptFaceFamily = (face: TranscriptFace) => {
   const entry = TRANSCRIPT_FACES[face]
   return "stack" in entry ? entry.stack : APP_TOKEN[entry.kind]
+}
+
+const PROSE_COLOR: Record<Exclude<TranscriptProseColor, "strong">, string> = {
+  soft: "color-mix(in oklab, var(--text-strong) 85%, var(--background-base))",
+  base: "var(--text-base)",
+  weak: "var(--text-weak)",
 }
 
 /** Each variant strips one layer off the shipped pill; absent keys keep markdown.css's fallback. */
@@ -409,11 +442,11 @@ const INLINE_CODE_STYLE: Record<TranscriptInlineCode, Record<string, string>> = 
 }
 
 /**
- * Declarations for the element that roots a transcript. `font-family` is set on
- * the root itself so tool rows, group headers and plain user text inherit the
- * body face; `--font-family-sans` is left alone so a heading that follows the
- * app UI font still reads the app-level token through the override.
- * `.ui-markdown` consumes the `--transcript-*` variables (markdown.css).
+ * Declarations for the element that roots a transcript. A named body face is
+ * written to `--font-family-sans` as well as to `font-family`: every row in the
+ * transcript (tool rows, user messages, question cards) sets its family from
+ * that token rather than inheriting, so only the rescoped token reaches them.
+ * `.ui-markdown` and `.ui-user-message` consume the `--transcript-*` variables.
  */
 export function transcriptTypographyStyle(resolved: ResolvedTranscriptTypography): Record<string, string> {
   const style: Record<string, string> = {
@@ -429,8 +462,11 @@ export function transcriptTypographyStyle(resolved: ResolvedTranscriptTypography
   }
   if (resolved.measure !== undefined) style["--transcript-measure"] = `${resolved.measure}ch`
   if (resolved.blockGap !== undefined) style["--transcript-block-gap"] = `${resolved.blockGap}px`
-  if (resolved.bodyWeight !== SHIPPED.bodyWeight) style["font-weight"] = `${resolved.bodyWeight}`
-  if (resolved.proseColor !== "strong") style["--transcript-prose-color"] = `var(--text-${resolved.proseColor})`
+  if (resolved.bodyWeight !== SHIPPED.bodyWeight) {
+    style["font-weight"] = `${resolved.bodyWeight}`
+    style["--transcript-body-weight"] = `${resolved.bodyWeight}`
+  }
+  if (resolved.proseColor !== "strong") style["--transcript-prose-color"] = PROSE_COLOR[resolved.proseColor]
   if (resolved.rules === "visible") {
     style["--transcript-hr-height"] = "1px"
     style["--transcript-hr-margin"] = "24px"
@@ -451,6 +487,7 @@ export function transcriptTypographyStyle(resolved: ResolvedTranscriptTypography
   const body = TRANSCRIPT_FACES[resolved.body]
   if ("stack" in body) {
     style["font-family"] = body.stack
+    style["--font-family-sans"] = body.stack
     style["--transcript-font-family-body"] = body.stack
   }
   if (resolved.heading !== resolved.body) {

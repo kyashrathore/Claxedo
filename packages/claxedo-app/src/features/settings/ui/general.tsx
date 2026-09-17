@@ -31,7 +31,6 @@ import { ConnectedAppsSettingsSection } from "@/features/settings/ui/connected-a
 import { Can } from "@/platform/auth/role"
 import { Link } from "@/features/settings/app-ports"
 import { SettingsList, SettingsRow } from "@/features/settings/ui/list"
-import { TranscriptTypographySection } from "@/features/settings/ui/transcript-typography-section"
 import { getScreenReaderModePreference, setScreenReaderModePreference } from "@/platform/settings/terminal-preferences"
 
 type ThemeOption = {
@@ -481,8 +480,6 @@ export const SettingsGeneral: Component = () => {
             </SettingsRow>
           </SettingsList>
         </div>
-
-        <TranscriptTypographySection />
 
         {/* System notifications Section */}
         <div class="flex flex-col gap-1">

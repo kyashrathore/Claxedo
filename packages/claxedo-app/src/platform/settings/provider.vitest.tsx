@@ -31,10 +31,39 @@ afterEach(() => {
   removePersisted(TARGET)
 })
 
-describe("appearance.transcript", () => {
-  test("a fresh install follows the default pairing with no overrides", async () => {
+describe("appearance fonts on <html>", () => {
+  test("no chosen font leaves the theme's sans and mono tokens alone; a chosen one is written inline and cleared again", async () => {
     await mount()
-    expect(appearance.transcript()).toEqual({ pairing: "default" })
+    const root = document.documentElement.style
+    await waitFor(() => expect(appearance).toBeTruthy())
+    expect(root.getPropertyValue("--font-family-sans")).toBe("")
+    expect(root.getPropertyValue("--font-family-mono")).toBe("")
+
+    appearance.setUIFont("Inter")
+    await waitFor(() => expect(root.getPropertyValue("--font-family-sans")).toMatch(/^Inter, /))
+    expect(root.getPropertyValue("--font-family-mono")).toBe("")
+
+    appearance.setUIFont("  ")
+    await waitFor(() => expect(root.getPropertyValue("--font-family-sans")).toBe(""))
+  })
+})
+
+describe("appearance.transcript", () => {
+  test("a fresh install stores no pairing, which is 'the theme's'", async () => {
+    await mount()
+    expect(appearance.transcript()).toEqual({})
+  })
+
+  test("returning to the theme's pairing drops the stored pairing and every override", async () => {
+    await mount()
+    appearance.setTranscriptPairing("editorial")
+    appearance.setTranscriptOverride({ fontSize: 17 })
+    await waitFor(() => expect(appearance.transcript()).toEqual({ pairing: "editorial", fontSize: 17 }))
+
+    appearance.setTranscriptPairing(undefined)
+
+    await waitFor(() => expect(appearance.transcript()).toEqual({}))
+    await waitFor(() => expect(persisted().appearance?.transcript).toEqual({}))
   })
 
   test("choosing a pairing clears every override the previous pairing carried", async () => {
@@ -65,8 +94,8 @@ describe("appearance.transcript", () => {
 
     appearance.setTranscriptOverride({ heading: undefined })
 
-    await waitFor(() => expect(appearance.transcript()).toEqual({ pairing: "default" }))
-    await waitFor(() => expect(persisted().appearance?.transcript).toEqual({ pairing: "default" }))
+    await waitFor(() => expect(appearance.transcript()).toEqual({}))
+    await waitFor(() => expect(persisted().appearance?.transcript).toEqual({}))
   })
 
   test("a write from another tab reaches this tab's store", async () => {
@@ -81,13 +110,11 @@ describe("appearance.transcript", () => {
     await waitFor(() => expect(appearance.transcript()).toEqual({ pairing: "quiet", measure: 64 }))
   })
 
-  test("a persisted record naming a retired pairing or face reads as the default", async () => {
+  test("a persisted record naming a retired pairing or face keeps only what still resolves", async () => {
     setPersisted(TARGET, {
       appearance: { transcript: { pairing: "gone", body: "comic", fontSize: 15, codeFontSize: 40, headingScale: "clear" } },
     })
     await mount()
-    await waitFor(() =>
-      expect(appearance.transcript()).toEqual({ pairing: "default", fontSize: 15, headingScale: "clear" }),
-    )
+    await waitFor(() => expect(appearance.transcript()).toEqual({ fontSize: 15, headingScale: "clear" }))
   })
 })

@@ -170,7 +170,7 @@ function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
   }
 }
 
-export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
+export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
   init: (props: {
     defaultTheme?: string

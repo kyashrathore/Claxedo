@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import Ajv from "ajv"
 import schema from "./desktop-theme.schema.json"
+import { TRANSCRIPT_PAIRING_KEYS } from "./transcript-typography"
 import { contrastRatio } from "./color"
 import { DEFAULT_THEMES } from "./default-themes"
 import type { DesktopTheme, HexColor } from "./types"
@@ -128,6 +129,10 @@ describe("semantic theme contract", () => {
         }
       }
     }
+  })
+
+  test("the schema's transcript pairing enum is the pairing catalogue", () => {
+    expect(schema.properties.transcript.properties.pairing.enum).toEqual([...TRANSCRIPT_PAIRING_KEYS])
   })
 
   test("validates every bundled theme against the desktop schema", async () => {

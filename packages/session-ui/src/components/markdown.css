@@ -111,7 +111,7 @@
   /* Lists */
   ul,
   ol {
-    margin-top: 8px;
+    margin-top: var(--transcript-block-gap, 8px);
     margin-bottom: var(--transcript-block-gap, 12px);
     margin-left: 0;
     padding-left: var(--transcript-list-indent, 32px);
@@ -303,7 +303,7 @@
   }
 
   pre {
-    margin-top: 12px;
+    margin-top: var(--transcript-block-gap, 12px);
     margin-bottom: var(--transcript-block-gap, 24px);
     overflow: auto;
 
@@ -377,7 +377,7 @@
   [data-component="markdown-table"] {
     position: relative;
     width: 100%;
-    margin: 16px 0;
+    margin: var(--transcript-block-gap, 16px) 0;
   }
 
   [data-markdown-rich] {
@@ -417,7 +417,7 @@
     min-width: 100%;
     border-collapse: collapse;
     margin: 0;
-    font-size: var(--font-size-base);
+    font-size: var(--transcript-font-size, var(--font-size-base));
   }
 
   th,
@@ -522,7 +522,7 @@ body:not([data-new-layout]) .ui-markdown {
   h5,
   h6 {
     font-size: var(--transcript-font-size, var(--font-size-base));
-    color: var(--text-strong);
+    color: var(--transcript-prose-color, var(--text-strong));
     font-weight: var(--font-weight-medium);
   }
 
@@ -543,7 +543,7 @@ body:not([data-new-layout]) .ui-markdown {
 
   strong,
   b {
-    color: var(--text-strong);
+    color: var(--transcript-prose-color, var(--text-strong));
   }
 
   li::marker {
@@ -566,7 +566,7 @@ body:not([data-new-layout]) .ui-markdown {
    * in the base block above. Neutral pill, prose-coloured text.
    */
   :not(pre) > code {
-    color: var(--text-strong);
+    color: var(--transcript-prose-color, var(--text-strong));
     padding: var(--transcript-inline-code-padding, 1px 0.3rem);
     border-radius: var(--radius-sm);
     box-shadow: var(--transcript-inline-code-ring, inset 0 0 0 0.5px var(--border-weak-base));

@@ -47,6 +47,7 @@ import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-se
 import { TimelineErrorPresentation } from "@/features/session/onboarding/first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { resolveTranscriptTypography, transcriptTypographyStyle } from "@opencode-ai/ui/theme/transcript-typography"
+import { useTranscriptTypography } from "@/platform/settings/transcript-typography"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
@@ -217,6 +218,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const data = useData()
   const sessionSync = useSessionSyncOptional()
   const settings = useSettings()
+  const transcriptTypography = useTranscriptTypography()
+  const transcriptStyle = createMemo(() => transcriptTypographyStyle(resolveTranscriptTypography(transcriptTypography.typography())))
   const dialog = useDialog()
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
@@ -1784,7 +1787,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
         style={{
-          ...transcriptTypographyStyle(resolveTranscriptTypography(settings.appearance.transcript())),
+          ...transcriptStyle(),
           "--sticky-accordion-top": showHeader() ? "48px" : "0px",
         }}
       >

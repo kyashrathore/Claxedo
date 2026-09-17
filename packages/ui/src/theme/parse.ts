@@ -10,6 +10,7 @@ import type {
   ThemeVariant,
   V2ColorValue,
 } from "./types"
+import { normalizeTranscriptTypography, type PairedTranscriptTypography } from "./transcript-typography"
 
 /*
  * The single boundary between untyped theme JSON — bundled `themes/*.json` and
@@ -120,6 +121,13 @@ function variant(value: unknown, path: string): ThemeVariant {
  * Validate arbitrary JSON as a `DesktopTheme`. Throws `ThemeParseError` naming
  * the offending path when the value does not match the theme contract.
  */
+function themeTranscript(value: unknown, path: string): PairedTranscriptTypography {
+  const raw = record(value, path)
+  const normalized = normalizeTranscriptTypography(raw)
+  if (!normalized.pairing) throw new ThemeParseError(`${path}.pairing`, "expected a transcript pairing name")
+  return { ...normalized, pairing: normalized.pairing }
+}
+
 export function parseDesktopTheme(value: unknown, path = "theme"): DesktopTheme {
   const raw = record(value, path)
   return {
@@ -128,5 +136,6 @@ export function parseDesktopTheme(value: unknown, path = "theme"): DesktopTheme 
     id: str(raw.id, `${path}.id`),
     light: variant(raw.light, `${path}.light`),
     dark: variant(raw.dark, `${path}.dark`),
+    ...(raw.transcript === undefined ? {} : { transcript: themeTranscript(raw.transcript, `${path}.transcript`) }),
   }
 }

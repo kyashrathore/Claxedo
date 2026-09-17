@@ -190,11 +190,17 @@ const settingsContextInput = {
       createStore<Settings>(structuredClone(defaultSettings)),
     )
 
+    // An inline token on <html> outranks a theme's `html[data-theme] { --font-family-sans }`,
+    // so the property is written only while a font is actually chosen.
     createEffect(() => {
       if (typeof document === "undefined") return
       const root = document.documentElement
-      root.style.setProperty("--font-family-mono", monoFontFamily(store.appearance?.mono))
-      root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
+      const write = (token: string, font: string | undefined, family: (font: string) => string) => {
+        if (font?.trim()) root.style.setProperty(token, family(font))
+        else root.style.removeProperty(token)
+      }
+      write("--font-family-mono", store.appearance?.mono, monoFontFamily)
+      write("--font-family-sans", store.appearance?.sans, sansFontFamily)
     })
 
     createEffect(() => {
@@ -302,9 +308,11 @@ const settingsContextInput = {
         setNavigatorSide(value: "left" | "right") {
           setStore("appearance", "navigatorSide", value)
         },
+        /** The stored choice; an absent pairing follows the theme's (see `useTranscriptTypography`). */
         transcript,
-        setTranscriptPairing(pairing: TranscriptPairing) {
-          writeTranscript({ pairing })
+        /** `undefined` returns to the theme's pairing; either way every override is dropped. */
+        setTranscriptPairing(pairing: TranscriptPairing | undefined) {
+          writeTranscript(pairing ? { pairing } : {})
         },
         /** An `undefined` value returns that knob to following the pairing. */
         setTranscriptOverride(patch: Partial<Omit<TranscriptTypography, "pairing">>) {

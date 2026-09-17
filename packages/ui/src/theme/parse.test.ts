@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { ThemeParseError, parseDesktopTheme } from "./parse"
 import oc2ThemeJson from "./themes/oc-2.json"
 import ayuThemeJson from "./themes/ayu.json"
+import codexThemeJson from "./themes/codex.json"
 
 const minimalSeeds = {
   neutral: "#f4f4f4",
@@ -38,6 +39,22 @@ describe("parseDesktopTheme", () => {
 
   test("accepts a variant with no overrides", () => {
     expect(parseDesktopTheme(minimal).light.overrides).toBeUndefined()
+  })
+
+  test("a theme's transcript choice survives with its pairing and knobs; the Codex theme carries the codex pairing", () => {
+    expect(parseDesktopTheme(minimal).transcript).toBeUndefined()
+    expect(parseDesktopTheme({ ...minimal, transcript: { pairing: "swiss", listGap: 4 } }).transcript).toEqual({
+      pairing: "swiss",
+      listGap: 4,
+    })
+    expect(parseDesktopTheme(codexThemeJson).transcript).toEqual({ pairing: "codex" })
+  })
+
+  test("a transcript block without a known pairing names its path", () => {
+    expect(() => parseDesktopTheme({ ...minimal, transcript: { pairing: "gone" } })).toThrow(
+      new ThemeParseError("theme.transcript.pairing", "expected a transcript pairing name"),
+    )
+    expect(() => parseDesktopTheme({ ...minimal, transcript: "codex" })).toThrow(ThemeParseError)
   })
 
   test("names the offending path when a seed is not a hex color", () => {

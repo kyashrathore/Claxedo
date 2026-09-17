@@ -9,11 +9,11 @@
 
 .ui-user-message {
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-base);
+  font-size: var(--transcript-font-size, var(--font-size-base));
   font-style: normal;
-  font-weight: var(--font-weight-regular);
-  line-height: var(--line-height-large);
-  letter-spacing: var(--letter-spacing-normal);
+  font-weight: var(--transcript-body-weight, var(--font-weight-regular));
+  line-height: var(--transcript-line-height, var(--line-height-large));
+  letter-spacing: var(--transcript-letter-spacing, var(--letter-spacing-normal));
   color: var(--v2-text-text-base);
   display: flex;
   flex-direction: column;
@@ -1519,7 +1519,7 @@ body[data-new-layout] .ui-user-message {
 
 body:not([data-new-layout]) {
   .ui-user-message {
-    color: var(--text-strong);
+    color: var(--transcript-prose-color, var(--text-strong));
 
     [data-slot="user-message-attachments"] + .ui-user-message-body {
       margin-top: 8px;
