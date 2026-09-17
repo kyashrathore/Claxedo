@@ -428,6 +428,18 @@ function hasColumn(db: SqliteDatabase, table: string, column: string) {
   return tableColumns(db, table).includes(column)
 }
 
+const SETTLE_DELTAS_MS = 200
+
+type PendingDelta = {
+  sessionId: string
+  messageId: string
+  partId: string
+  field: string
+  text: string
+  seq: number
+  ts: number
+}
+
 type Row =
   | {
       seq: number
@@ -670,6 +682,16 @@ export class RuntimeStore {
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
   private closed = false
+  /**
+   * Streamed text waiting to be folded into its `part` row. A harness emits a
+   * `message.part.delta` per token chunk; rewriting the growing part JSON and
+   * its checkpoint for each one made a 27 KB reply cost 47 MB of WAL. The
+   * journal row is still written per delta — it is the durable record and what
+   * `replay` re-applies after a crash — but the projection is written once per
+   * settle, and the session's checkpoint advances only when it is.
+   */
+  private pendingDeltas = new Map<string, PendingDelta>()
+  private settleTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(root = workspaceRuntimeStoreDir()) {
     this.root = root
@@ -687,6 +709,7 @@ export class RuntimeStore {
 
   close() {
     if (this.closed) return
+    this.settleDeltas()
     // Bun's SQLite binding defaults `throwOnError` to false. When SQLite
     // refuses to close, that default silently leaves the database handle open
     // and Windows keeps the workspace directory locked. A store close is the
@@ -698,7 +721,66 @@ export class RuntimeStore {
 
   flush() {
     if (this.closed) throw new Error("Runtime store is closed")
+    this.settleDeltas()
     this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+  }
+
+  /**
+   * Fold every pending delta into its part row and advance the checkpoints,
+   * in one transaction. Runs before any other write for a session so the
+   * journal's order is the projection's order, before any read of parts, on
+   * the settle timer, and on close.
+   */
+  private settleDeltas(sessionId?: string) {
+    if (this.pendingDeltas.size === 0) return
+    const pending = [...this.pendingDeltas.values()].filter((item) => !sessionId || item.sessionId === sessionId)
+    if (pending.length === 0) return
+    for (const item of pending) this.pendingDeltas.delete(item.partId)
+    if (this.pendingDeltas.size === 0 && this.settleTimer) {
+      clearTimeout(this.settleTimer)
+      this.settleTimer = undefined
+    }
+    const last = new Map<string, { seq: number; ts: number }>()
+    this.transaction(() => {
+      for (const item of pending) {
+        this.delta(item.sessionId, item.messageId, item.partId, item.field, item.text, item.ts)
+        const prev = last.get(item.sessionId)
+        if (!prev || item.seq > prev.seq) last.set(item.sessionId, { seq: item.seq, ts: item.ts })
+      }
+      for (const [session, { seq, ts }] of last) {
+        this.db
+          .prepare("INSERT OR REPLACE INTO journal_checkpoint (session_id, last_seq, updated_at) VALUES (?, ?, ?)")
+          .run(session, seq, ts)
+      }
+    })
+  }
+
+  private deferDelta(row: Row & { kind: "event" }) {
+    const event = row.payload
+    if (event.type !== "message.part.delta") throw new Error("Expected a message.part.delta row")
+    const key = event.properties.partID
+    const prev = this.pendingDeltas.get(key)
+    if (prev && prev.field === event.properties.field) {
+      prev.text += event.properties.delta
+      prev.seq = row.seq
+      prev.ts = row.ts
+    } else {
+      if (prev) this.settleDeltas(row.sessionId)
+      this.pendingDeltas.set(key, {
+        sessionId: row.sessionId,
+        messageId: event.properties.messageID,
+        partId: key,
+        field: event.properties.field,
+        text: event.properties.delta,
+        seq: row.seq,
+        ts: row.ts,
+      })
+    }
+    this.settleTimer ??= setTimeout(() => {
+      this.settleTimer = undefined
+      if (!this.closed) this.settleDeltas()
+    }, SETTLE_DELTAS_MS)
+    this.settleTimer.unref?.()
   }
 
   private migrate() {
@@ -2006,8 +2088,17 @@ export class RuntimeStore {
     ) {
       throw new Error(`Session ${row.sessionId} was deleted`)
     }
+    // A delta is journaled like any row but projected later, in bulk; every
+    // other row settles the deltas ahead of it first so projection order is
+    // journal order.
+    const deferred = row.kind === "event" && row.payload.type === "message.part.delta"
+    if (!deferred) this.settleDeltas(row.sessionId)
     if (fence.fencingToken === undefined) {
       const journaled = this.insertRuntimeJournal(row)
+      if (deferred && journaled.kind === "event") {
+        this.deferDelta(journaled)
+        return journaled
+      }
       this.transaction(() => {
         this.apply(journaled)
         this.checkpoint(journaled)
@@ -2018,9 +2109,11 @@ export class RuntimeStore {
     this.transaction(() => {
       this.assertFencingToken(row.sessionId, fence.fencingToken, fence.advance)
       journaled = this.insertRuntimeJournal(row, this.next(row.sessionId), { insideTransaction: true })
+      if (deferred) return
       this.apply(journaled)
       this.checkpoint(journaled)
     })
+    if (deferred && journaled.kind === "event") this.deferDelta(journaled)
     return journaled
   }
 
@@ -3662,6 +3755,7 @@ export class RuntimeStore {
   }
 
   getMessages(sessionId: string): AgentMessage[] {
+    this.settleDeltas(sessionId)
     const msgs = this.db
       .prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
       .all(sessionId)
@@ -3669,12 +3763,14 @@ export class RuntimeStore {
   }
 
   getLatestUserMessageId(sessionId: string) {
+    this.settleDeltas(sessionId)
     return this.db.prepare<{ id: string }>(
       "SELECT id FROM message WHERE session_id = ? AND role = 'user' ORDER BY ord DESC LIMIT 1",
     ).get(sessionId)?.id
   }
 
   getMessagePage(sessionId: string, page: AgentMessagePageInput): AgentMessagePage | undefined {
+    this.settleDeltas(sessionId)
     if (!this.getSession(sessionId)) {
       throw new AgentMessagePageError(404, `Session not found: ${sessionId}`)
     }

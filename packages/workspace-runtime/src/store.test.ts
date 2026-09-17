@@ -2815,3 +2815,64 @@ void describe("session ordering timestamps", () => {
     assert.equal(by.get("quiet"), undefined)
   })
 })
+
+void describe("streamed delta settlement", () => {
+  const db = (store: RuntimeStore) => (store as unknown as { db: { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown } } }).db
+  const text = (store: RuntimeStore, sessionId: string) =>
+    store.getMessages(sessionId).flatMap((message) => message.parts).map((part) => (part as { text?: string }).text).join("|")
+  const delta = (store: RuntimeStore, chunk: string) =>
+    store.appendEvent({
+      sessionId: "s1",
+      payload: { type: "message.part.delta", properties: { sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: chunk } },
+    } as never)
+  const bind = (store: RuntimeStore) => {
+    store.bindSession({ sessionId: "s1", directory: "/w", agentSessionId: "a1" })
+    store.appendEvent({ sessionId: "s1", payload: { type: "message.updated", properties: { info: { id: "m1", sessionID: "s1", role: "assistant" } } } } as never)
+  }
+
+  void it("journals every delta at once but writes the part and its checkpoint only when settled", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    bind(store)
+    for (const chunk of ["one ", "two ", "three"]) delta(store, chunk)
+    const rows = db(store).prepare("SELECT seq, type FROM runtime_journal WHERE session_id = ? ORDER BY seq").all("s1") as Array<{ seq: number; type: string }>
+    assert.equal(rows.filter((row) => row.type === "message.part.delta").length, 3)
+    assert.deepEqual(db(store).prepare("SELECT count(*) AS n FROM part WHERE id = ?").get("p1"), { n: 0 }, "no part row before settlement")
+    const checkpoint = db(store).prepare("SELECT last_seq FROM journal_checkpoint WHERE session_id = ?").get("s1") as { last_seq: number }
+    assert.ok(checkpoint.last_seq < rows[rows.length - 1]?.seq, "checkpoint lags the unsettled deltas")
+
+    assert.equal(text(store, "s1"), "one two three")
+    const settled = db(store).prepare("SELECT last_seq FROM journal_checkpoint WHERE session_id = ?").get("s1") as { last_seq: number }
+    assert.equal(settled.last_seq, rows[rows.length - 1]?.seq)
+    store.close()
+  })
+
+  void it("a snapshot or any other event for the session lands after the deltas before it", () => {
+    const store = new RuntimeStore(tmp())
+    bind(store)
+    delta(store, "draft ")
+    store.appendEvent({
+      sessionId: "s1",
+      payload: { type: "message.part.updated", properties: { part: { id: "p1", sessionID: "s1", messageID: "m1", type: "text", text: "final" } } },
+    } as never)
+    delta(store, " plus")
+    assert.equal(text(store, "s1"), "final plus")
+    store.close()
+  })
+
+  void it("deltas the process died on before settling are replayed from the journal on reopen", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    bind(store)
+    for (const chunk of ["never ", "settled"]) delta(store, chunk)
+    // Drop the handle without settling, the way a crash would.
+    const raw = store as unknown as { db: { close(): void }; closed: boolean; pendingDeltas: Map<string, unknown> }
+    raw.pendingDeltas.clear()
+    raw.db.close()
+    raw.closed = true
+
+    const reopened = new RuntimeStore(root)
+    assert.equal(text(reopened, "s1"), "never settled")
+    reopened.close()
+  })
+})
