@@ -134,16 +134,27 @@ Two properties the plan is not done without:
   exercised by an e2e spec against the real handlers (Tier R, not the
   whole-server mock), and the spec is green in CI. Unit tests on the
   handlers and the reader support that; they do not replace it.
-- **Nothing else left.** "Simplified to two streams" means a repository
-  search cannot find a trace of any other event system: no route, handler,
-  bus alias, URL builder, rewrite, throttle case, proxy list entry,
-  ownership entry, e2e mock route, fixture, type, constant, memory note or
-  comment that names or describes a third stream, a compat stream, an
-  alias spelling, or a client-side projection of runtime events. A grep
-  gate in the ratchets enumerates the retired names and fails on any hit
-  outside this plan's own history section; the closure ceilings are
-  lowered to the measured values, not left with the deleted modules'
-  headroom.
+- **Nothing else left, and the two that remain are coherent.**
+  "Simplified to two streams" means no route, handler, bus alias, URL
+  builder, rewrite, throttle case, proxy list entry, ownership entry, e2e
+  mock route, fixture, type, constant, memory note or comment names or
+  describes a third stream, a compat stream, an alias spelling, or a
+  client-side projection of runtime events — and, stronger, that a
+  reader of the code arrives at ONE account of the system: which stream
+  carries what, who may open it, where each frame is produced, where it
+  is consumed, and what happens when it is lost. A grep over retired
+  names is the floor, not the proof; the proof is review. After the
+  code lands, independent reviewers each read the whole event path end
+  to end (producer → bus → handler → transport → reader → store) on
+  every deployment, adversarially, with the brief "find any place where
+  two mechanisms answer the same question, any responsibility that is
+  split or duplicated, any comment or name that describes a stream that
+  no longer exists, any frame whose owner is ambiguous". Every finding
+  is fixed; then a second, fresh review of the fixed tree; the plan is
+  done only when a round returns nothing (two rounds at minimum, per the
+  house rule of review + re-review before reporting). The closure
+  ceilings are lowered to the measured values, not left with the deleted
+  modules' headroom.
 
 ## Design
 
@@ -304,7 +315,7 @@ Two properties the plan is not done without:
       row; stall → gap notice → resync → row settles; cursor-less first
       open → resync reads the reply. All green in CI on the merge commit.
       Progress:
-- [ ] Nothing else left: the ratchet grep gate lists every retired name —
+- [ ] Nothing else left (floor): a grep over the retired names —
       `/global/event`, `/event`, `/api/claxedo/events`,
       `/api/wr/runtime-events`, `runtimeEventsHandler`,
       `runtimeBusEventsHandler`, `createGlobalEventsHandler`'s three
@@ -314,9 +325,23 @@ Two properties the plan is not done without:
       `global-sdk-event-fetch`, `heartbeat-watchdog`, `reconnect-backoff`,
       `CLAXEDO_EVENTS_RELAY_PATH`, the `globalBus` envelope form on the
       central stream, "compat loop", "compat stream", "three spellings" —
-      and returns zero hits across `packages/*/src`, `packages/*/e2e`,
+      returns zero hits across `packages/*/src`, `packages/*/e2e`,
       `packages/*/scripts`, `script/`, `docs/` (outside this plan and plan
       001) and the memory index. Progress:
+- [ ] System coherent (proof): consistency reviews of the landed tree, each
+      by a reviewer who did not write the code, each covering the full
+      producer → bus → handler → transport → reader → store path on desktop
+      local, signed web + cloud, and user-hosted, with the adversarial
+      brief above. Round 1 findings fixed; round 2 on the fixed tree;
+      further rounds until a round returns zero findings. Each round's
+      findings, fixes and the zero-finding report are recorded here with
+      the commit they reviewed. Progress:
+- [ ] One written account of the system exists and matches the code: the
+      module comments on the two handlers, the two reader targets and
+      `session-event-scope.ts` describe the same two streams, the same
+      owner/grantee arms and the same notice/frame split, in present tense,
+      with no history narration; the review rounds above confirm no other
+      description of the event system survives anywhere. Progress:
 - [ ] Tests: one handler suite per stream (replay, gap, terminal reserve,
       overflow notice, owner vs grantee scope); one reader suite (cursor,
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
@@ -335,8 +360,9 @@ Two properties the plan is not done without:
 ## Execution
 
 Phase 0 is serial. Then three lanes with disjoint files, one adversarial
-review each, one re-review, then the integration pass on the installed
-build:
+review each and one re-review per lane, the integration pass on the
+installed build, and then the whole-system consistency rounds from the DoD
+(reviewers who wrote none of the lanes; repeat until a round is clean):
 
 - **Lane A — server `wr/events`** (workspace-runtime routes + hub, the
   server-side projection, local-server proxy list).
