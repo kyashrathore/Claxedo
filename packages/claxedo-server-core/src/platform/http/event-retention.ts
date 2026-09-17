@@ -12,7 +12,7 @@ import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/li
  * these in its second, independent ring; a provision's intermediate steps are
  * the only frames it lets the main ring evict.
  */
-export function isTerminalClaxedoEvent(event: ControlPlaneEvent): boolean {
+export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
   switch (event.type) {
     case "worktree.ready":
     case "worktree.failed":

@@ -47,7 +47,7 @@
 
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
-import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
+import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
@@ -448,7 +448,7 @@ export class LiveSyncRoom {
    * this ring holds coalesced doorbells and provision progress and nothing
    * chatty — 256 is far more than the worst client gap (claxedo-app's 45s
    * heartbeat watchdog plus its 2s reconnect floor) can span. The terminal ring
-   * still earns its keep: `isTerminalClaxedoEvent` protects the doorbells and
+   * still earns its keep: `isRetainedControlPlaneEvent` protects the doorbells and
    * the `ready`/`error` provision settlements, whose loss is not self-healing.
    *
    * ## Why in-memory and not `state.storage`
@@ -475,7 +475,7 @@ export class LiveSyncRoom {
    * (post-reset frames still deliver, and a stale cursor gets the gap notice
    * on its next reconnect) — see scripts/drill/live-sync-post-reset-resume-probe.ts.
    */
-  private readonly retained = createSseReplayBuffer<ControlPlaneEvent>({ isTerminal: isTerminalClaxedoEvent })
+  private readonly retained = createSseReplayBuffer<ControlPlaneEvent>({ isTerminal: isRetainedControlPlaneEvent })
   private readonly replays = new Map<string, {
     replay: ReturnType<typeof createSseReplayBuffer<ControlPlaneEvent>>
     principal: EventScopePrincipal
@@ -502,7 +502,7 @@ export class LiveSyncRoom {
     const tombstone = this.replayTombstones.get(key)
     this.replayTombstones.delete(key)
     const replay = createSseReplayBuffer<ControlPlaneEvent>({
-      isTerminal: isTerminalClaxedoEvent,
+      isTerminal: isRetainedControlPlaneEvent,
       ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
     })
     for (const event of this.retained.replayAfter(tombstone?.retainedCursor)) {

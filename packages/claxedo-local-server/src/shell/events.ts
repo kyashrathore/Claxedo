@@ -2,7 +2,7 @@ import type { Context } from "hono"
 import { eventStreamResponse, type UpgradeWebSocket } from "./event-stream-response"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { controlBus, createBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
+import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import {
   eventVisibleTo,
   type EventScopePrincipal,
@@ -27,7 +27,7 @@ export type ControlPlaneFrame = ControlPlaneEvent | ControlPlaneStreamGapEvent
 
 /** The gap frame is per-connection and never worth a slot in the terminal ring. */
 function isTerminalControlPlaneFrame(frame: ControlPlaneFrame) {
-  return frame.type === "stream.replay-gap" ? false : isTerminalClaxedoEvent(frame)
+  return frame.type === "stream.replay-gap" ? false : isRetainedControlPlaneEvent(frame)
 }
 
 export type ControlPlaneEventSubscription = {
