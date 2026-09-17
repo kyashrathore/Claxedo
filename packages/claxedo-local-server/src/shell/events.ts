@@ -181,13 +181,15 @@ export function createControlPlaneEventsHandler(
       visible: await Promise.resolve(item.visible).catch(() => false),
     }))).then((decisions) => deliver(scope, frame, decisions))
   }
-  // A frame this scope's ring already holds was delivered to every
+  // A frame this scope's own ring already holds was delivered to every
   // connection attached at the time and is what a later connection's replay
-  // recovers; the local scope's ring is the retained ring itself, so its
-  // catch-up never re-decides. A frame still being decided is queued again so
-  // the connection that attached meanwhile is decided for it.
+  // recovers. The local scope's ring IS the retained ring, which holds every
+  // frame before it is decided, so that scope decides each frame and relies
+  // on `delivered` alone against a catch-up's second pass. A frame still
+  // being decided is queued again so the connection that attached meanwhile
+  // is decided for it.
   const enqueue = (scope: Scope, frame: ControlPlaneFrame) => {
-    if (scope.replay.idFor(frame) !== undefined) return
+    if (!scope.sharedRetained && scope.replay.idFor(frame) !== undefined) return
     queue(scope, frame)
   }
   const queue = (scope: Scope, frame: ControlPlaneFrame) => {

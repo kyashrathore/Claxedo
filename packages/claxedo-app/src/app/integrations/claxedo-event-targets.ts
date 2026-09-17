@@ -35,8 +35,11 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  * file and PTY reads — or, for a local workspace, through the daemon's
  * loopback proxy to its embedded runtime.
  *
- * A `wr` target opens the stream unscoped: the workspace's owner sees every
- * session and every session-less frame. `sessionID` is the fallback for a
+ * A `wr` target opens the stream unscoped: a principal the workspace admits
+ * reads every session-less frame and every session the session authority
+ * grants it (creator, participant, share grantee, org admin). The
+ * workspace's owner role is not one of those: a session another member
+ * created reaches it only through a grant. `sessionID` is the fallback for a
  * reader the runtime refuses at workspace level — a share grantee, who holds
  * a grant on one session and no workspace access — and is used only after
  * that refusal.
@@ -219,13 +222,7 @@ export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget): Strea
 
 export function routeDirectory(pathname: string) {
   if (typeof window === "undefined") return undefined
-  const routed = shellRouteDirectoryFromPathname(pathname)
-  if (routed) return routed
-  const configured = (window as typeof window & {
-    __OPENCODE__?: { activeDirectory?: string }
-  }).__OPENCODE__?.activeDirectory
-  if (configured) return configured
-  return undefined
+  return shellRouteDirectoryFromPathname(pathname)
 }
 
 export function eventStreamTargetKey(

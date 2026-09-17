@@ -181,8 +181,7 @@ async function startCloudRuntime(input) {
     // since it is host-agnostic — which is exactly why this hid).
     hostId: workspaceId,
   }
-  let runtime
-  runtime = createWorkspaceRuntimeApp({
+  const runtime = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     target: {
       workspaceId,
@@ -191,10 +190,6 @@ async function startCloudRuntime(input) {
     relayHostAuth,
     configToken: runtimeConfigToken,
     harness: { kind: "native", harnessId: "pi" },
-    runtimeEventAuthorization: {
-      authorizeParent: (_context, parentSessionId) => runtime.host.hasSession(parentSessionId),
-      resolveParentSessionId: (event) => runtime.host.parentSessionIdFor(event.sessionId),
-    },
   })
   // The scripted endpoint is bound the way the control plane's config push
   // binds an account: as the `openai` provider projection. Pi takes a

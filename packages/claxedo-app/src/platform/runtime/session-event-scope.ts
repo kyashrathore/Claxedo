@@ -34,8 +34,8 @@
  * `features/workspaces/data/workspace-connection.ts`).
  *
  * A stream open with NO session id is workspace-wide and satisfies readiness
- * for any session — which is why a local workspace, whose runtime is
- * unmanaged, needs no branch of its own here or in the composer.
+ * for any session — which is why the ordinary case, a principal the workspace
+ * admits, needs no branch of its own here or in the composer.
  */
 
 import { createEffect, createMemo, createRoot } from "solid-js"

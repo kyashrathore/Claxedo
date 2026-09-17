@@ -14,7 +14,7 @@ lower-level packages into one per-workspace service.
 | --- | --- |
 | Harness selection and lifecycle | The host chooses, creates, replaces, and disposes native SDK/Pi adapters or adapters supplied by installed connection providers. The adapter layer comes from [Agent SDK Runtime](./agent-sdk-runtime.md); emitted harness events are normalized through [Agent Event Runtime](./agent-event-runtime.md). |
 | Session APIs | The host mounts normalized session routes from [Agent SDK Runtime](./agent-sdk-runtime.md): create, list, read, send message, abort, config read/update, permissions, questions, todos, command execution, and message replay. Product code can call one session surface instead of branching per harness. |
-| Runtime event streams | The host exposes `/api/wr/runtime-events` so UI clients can subscribe to assistant output, tool progress, permission prompts, questions, and session status. Control-plane lifecycle facts use the central `/api/wr/events` stream. |
+| Workspace event stream | The host exposes one stream, `GET /api/wr/events`, per workspace runtime. Every data frame is `{ directory, payload }`: projected presentation events (assistant output, tool progress, permission prompts, questions, session status), subagent and goal revisions, and the workspace's control frames (pty, process, agent lifecycle, session lifecycle). An admitted principal reads it unscoped and the session authority decides per session what reaches it; a refused principal gets 403 `workspace_event_stream_denied` and reopens with `?sessionID=` under a lease, reading that session and its subagent children. Control-plane notices (provision, worktree, document, share changes) ride the separate `GET /api/cp/events` stream served by the product shell. |
 | PTY lifecycle | The host creates and manages terminal sessions for the workspace: create, list, inspect, resize/update, remove, and connect over WebSocket for input/output streaming. |
 | Managed processes | The host manages repeatable workspace services such as dev servers and watchers. It supports process config CRUD, start, stop, restart, start-all, stop-all, diagnostics, termination diagnostics, port mapping, and log retrieval. |
 | Files | The host exposes workspace file discovery and reads: find files, read file metadata, read content, read raw bytes/text, inspect git-backed file status, and list all known files. |
@@ -173,7 +173,7 @@ The low-level host object exposes:
 | `dispose()` | Dispose the active adapter. |
 
 If your embedded app also needs PTY, process, file, diff, agent hook, and
-runtime-event routes, mount the core routes:
+workspace event routes, mount the core routes:
 
 ```ts
 import { loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
@@ -196,8 +196,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/checkpoint/*` | Freeze, flush, scrub, resume, and restore reconciliation for consistent provider capture. |
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |
 | `GET /api/wr/harness-config-options` | Probe config options for the selected harness when it advertises that capability. |
-| `/api/wr/events` | Process-global compatibility event stream. |
-| `/api/wr/runtime-events` | Runtime event stream. |
+| `GET /api/wr/events` | The workspace runtime's one stream: projected presentation frames, subagent/goal revisions, and control frames (pty, process, agent lifecycle, session lifecycle) as `{ directory, payload }`. Admitted principals read unscoped under the session authority's per-session decision; refused principals reopen with `?sessionID=` under a lease. |
 | `/api/wr/file/*` | File metadata, content, raw content, status, and list routes. |
 | `/api/wr/find/file` | Workspace file search. |
 | `/api/wr/diff/*` | Git diff and refs routes. |
@@ -208,7 +207,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/subagent-transcripts/*` | Resolve authorized opaque transcript handles for a parent session. |
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
-| `/agent`, `/permission`, `/question`, `/command`, `/event` | Compatibility and session support routes. |
+| `/agent`, `/permission`, `/question`, `/command` | Compatibility and session support routes. |
 | `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |
 | `/lsp`, `/vcs` | Client-presentation compatibility surfaces backed by workspace services. |
 | `/global/health` | Control-plane health shape with `healthy`. |

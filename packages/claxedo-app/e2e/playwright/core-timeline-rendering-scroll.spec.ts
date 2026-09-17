@@ -1356,7 +1356,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       badResponses: mock.requests.badResponses,
     }, null, 2))
     expect(mock.requests.unhandled, "no API request escapes the mock").toEqual([])
-    expect(mock.requests.eventWebSocketConnections, "the app consumes the shared central event transport").toBeGreaterThan(0)
+    expect(mock.requests.eventWebSocketConnections, "the app reads cp/events over the loopback WebSocket").toBeGreaterThan(0)
     await page.screenshot({ path: testInfo.outputPath("geometry-after-send.png") })
     expect(mock.requests.promptCount).toBe(2)
     expect(samples.some(sample => sample.submitIcon === "stop"), "sample window includes the running turn").toBe(true)

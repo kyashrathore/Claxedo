@@ -568,9 +568,9 @@ function authErrorResponse(c: Context, err: unknown) {
 
 const HEARTBEAT_MS = 30_000
 
-// The app's event bus (`providers/claxedo-events.tsx`) reads this stream with
-// fetch+ReadableStream and arms a 45s watchdog that is only reset by `data:`
-// lines — SSE comments do NOT reset it. So keepalives must be data heartbeats
+// The app's stream reader (`app/integrations/claxedo-events.tsx`) reads this
+// stream with fetch+ReadableStream and arms a 45s watchdog that is only reset
+// by `data:` lines — SSE comments do NOT reset it. So keepalives must be data heartbeats
 // (`{"type":"heartbeat"}`), the frame the local daemon's `cp/events` writes
 // too. This fallback carries heartbeats only; hosted Worker composition
 // supplies `LiveSyncRoom` for mutation nudges.

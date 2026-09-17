@@ -49,14 +49,16 @@ describe("sessionEventScopeId", () => {
 })
 
 describe("sessionEventScopeId retargets", () => {
-  // The reader reads the scope through `createEffect(on(sessionEventScopeId, …))`
-  // and treats every wake as a RETARGET: a session-scoped stream is aborted and
-  // reopened with no cursor. `e2e/helpers/mock-runtime.ts`'s `EventBus.drain`
-  // serves a cursor-less connection the whole retained log, so a wake that
-  // names the session the stream already carries redelivers every frame it has
-  // already applied — a finished turn's `session.idle` replayed, playing the
-  // completion sound a second time. These count the wakes, because one wake per
-  // SESSION is the property; one wake per WRITE is the bug.
+  // The reader reconciles its targets on every wake of `sessionEventScopeId`,
+  // and a stream the runtime narrowed to one session is aborted and reopened
+  // with no cursor when the session it is retargeted to differs
+  // (`retarget` in `claxedo-events.tsx`). `e2e/helpers/mock-runtime.ts`'s
+  // `EventBus.drain` serves a cursor-less connection the whole retained log,
+  // so a wake that carried a DIFFERENT value for the same session would
+  // redeliver every frame already applied — a finished turn's `session.idle`
+  // replayed, playing the completion sound a second time. These count the
+  // wakes, because one wake per SESSION is the property; one wake per WRITE
+  // is the bug.
   const countRetargets = () => {
     const seen: Array<string | undefined> = []
     const dispose = createRoot((dispose) => {

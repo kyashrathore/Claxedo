@@ -13,7 +13,7 @@ import {
   type ParentProps,
 } from "solid-js"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
-import { asRecord, readString } from "@/lib/record"
+import { asRecord, readField, readString } from "@/lib/record"
 import type { AccountState } from "@/platform/account/account-port"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
@@ -57,7 +57,14 @@ import {
 import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
 import { errorMessage } from "@/lib/server-errors"
 
-// ─── Event Types (must match claxedo-server-core/src/platform/runtime/lib/bus.ts) ─────────────
+// ─── Event Types ──────────────────────────────────────────────────────────
+//
+// The union of everything either stream delivers, each shape kept in sync
+// with its producer across the package boundary: the control-plane notices
+// with `ControlPlaneEvent` (claxedo-server-core `platform/runtime/lib/bus.ts`),
+// the pty/process/agent/session control frames with `WorkspaceRuntimeEvent`
+// (workspace-runtime `bus.ts`), and the session frames with the runtime's
+// projected presentation events (`ClientPresentationEvent`).
 
 export type PtyInfo = {
   id: string
@@ -74,6 +81,14 @@ type SessionShareChangedEvent = {
   phase: "granted" | "revoked"
   ownerUserId: string
   sessionId: string
+  workspaceId: string
+  orgId?: string
+  ts: number
+}
+
+/** A workspace's inventory gained or lost a session in the control plane's projection; the reader re-reads it. */
+type SessionInventoryChangedEvent = {
+  type: "session.inventory.changed"
   workspaceId: string
   orgId?: string
   ts: number
@@ -115,6 +130,7 @@ export type ClaxedoEvent =
   | SessionLifecycleEvent
   | DocumentChangedEvent
   | SessionShareChangedEvent
+  | SessionInventoryChangedEvent
   | ClaxedoDirectoryEvent
   | {
       type: "provision"
@@ -162,13 +178,12 @@ export type ClaxedoDirectoryEvent = { [Type in ClaxedoDirectoryEventType]: {
   type: Type
   directory?: string
   /**
-   * The workspace the frame was published for. Workspace-runtime's bridge
-   * stamps it on every workspace-stream frame (alongside `directory`), and the
-   * session-title projection keys entries by workspaceId as well as directory —
-   * dropping it left a `session.updated` retitle written only under the
-   * directory key while workspace-attributed rail rows kept reading the stale
-   * canonical under the workspace key (see event-ingress's
-   * `applyClaxedoDirectoryEventToSync`).
+   * The workspace the frame was published for: what the frame itself names,
+   * else the workspace whose stream delivered it (`stampWorkspace`). The
+   * session-title projection keys entries by it as well as by `directory`;
+   * a `session.updated` retitle that carries no workspace is written under
+   * the directory key only, which the workspace-attributed rail rows never
+   * read.
    */
   workspaceId?: string
   properties?: unknown
@@ -286,9 +301,9 @@ type ClaxedoEventsContextValue = {
   listen(listener: (event: ClaxedoEvent) => void): () => void
   on<T extends ClaxedoEventType>(type: T, handler: Handler<T>): () => void
   /**
-   * ANY stream target is up (central OR any workspace relay stream). Correct for
-   * "is the app talking to anything", WRONG as a revalidation edge for a
-   * central-bus doorbell — see `centralConnected` and the rationale in
+   * ANY stream target is up (`cp` OR any workspace's `wr`). Correct for "is
+   * the app talking to anything", WRONG as a revalidation edge for a
+   * control-plane doorbell — see `centralConnected` and the rationale in
    * `app/connection/stream-connectivity.ts`.
    */
   connected: () => boolean
@@ -369,8 +384,8 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
 
 
 async function workspaceStreamDenied(res: Response) {
-  const body = await res.clone().json().catch(() => undefined) as { error?: { code?: string } } | undefined
-  return body?.error?.code === "workspace_event_stream_denied"
+  const body: unknown = await res.clone().json().catch(() => undefined)
+  return readString(readField(body, "error"), "code") === "workspace_event_stream_denied"
 }
 
 export function ClaxedoEventsProvider(props: ParentProps<{
@@ -464,7 +479,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
 
     // Per-kind accounting: this stream's bit feeds BOTH the aggregate
-    // `connected()` and, for the central target, `centralConnected()` — the edge
+    // `connected()` and, for the `cp` target, `centralConnected()` — the edge
     // the doorbell consumers revalidate on.
     const setStreamConnected = connectivity.track(target.kind)
 

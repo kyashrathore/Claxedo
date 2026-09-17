@@ -738,8 +738,8 @@ test.describe("core processes @core", () => {
     // Ordered deterministically rather than raced: hold the workspace-scoped
     // `/api/wr/events` connection open behind a gate promise, release it only once
     // the `start()` POST is in flight, and delay that POST's response past the point
-    // the crash event lands. Process events are workspace-runtime events — the bare
-    // central stream is a different authority, not an injection shortcut.
+    // the crash event lands. Process events are workspace-runtime frames —
+    // `cp/events` is a different authority, not an injection shortcut.
     let releaseCrashEvent: (() => void) | undefined
     const crashEventGate = new Promise<void>((resolve) => {
       releaseCrashEvent = resolve

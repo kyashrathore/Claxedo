@@ -19,7 +19,7 @@
  *   `id:`-line contract, and `replayGapEvent` are all production code.
  * - **The real hosted events route** — `HostedShellRoutes` from
  *   `routes/hosted/shell.ts`, mounted on a real Hono app at the real
- *   `/api/wr/events` path. This matters: the route, not the DO, is what resolves
+ *   `/api/cp/events` path. This matters: the route, not the DO, is what resolves
  *   the authority-internal org id at connect and hands it to the room, which is
  *   exactly the namespace half of B3 (problem 1). Tests that call
  *   `connectLiveSyncRoom` directly skip it.
@@ -522,7 +522,7 @@ async function main() {
     const gapPayload = asRecord(gapFrame?.payload)
     record(
       "replay-gap event (evicted cursor yields an explicit notice, not a silent hole)",
-      sawGap && stringField(gapPayload, "code") === "claxedo.sse_replay_gap",
+      sawGap && stringField(gapPayload, "code") === "cp.sse_replay_gap",
       sawGap
         ? `B reconnected at cursor ${gapCursor} after ${RING_OVERRUN_FRAMES} frames and received stream.replay-gap code=${stringField(gapPayload, "code") ?? ""} lastEventId=${stringField(gapPayload, "lastEventId") ?? ""} throughId=${stringField(gapPayload, "throughId") ?? ""}`
         : "no gap event; B would have silently stitched a hole-ridden log",

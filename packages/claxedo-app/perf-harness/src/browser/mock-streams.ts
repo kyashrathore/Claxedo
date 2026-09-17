@@ -1,13 +1,16 @@
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime/contracts"
 
 export const MOCK_STREAM_FIXTURE_HEADER = "x-claxedo-perf-fixture"
-const CENTRAL_HEARTBEAT_MS = 5_000
+/** `createControlPlaneEventsHandler` (claxedo-local-server `shell/events.ts`) beats every 5 s. */
+const CONTROL_PLANE_HEARTBEAT_MS = 5_000
 
-/** The route owner determines each stream's wire contract. */
-export function mockStreamKind(pathname: string): "central" | "workspace-bus" | "runtime" | undefined {
-  if (pathname === "/global/event" || pathname === "/api/claxedo/events") return "central"
-  if (pathname === "/api/wr/events") return "workspace-bus"
-  if (pathname === "/event" || pathname === "/api/wr/runtime-events") return "runtime"
+/**
+ * The two streams the app opens: the control plane's notice stream and one
+ * per workspace runtime. Each has its own heartbeat interval.
+ */
+export function mockStreamKind(pathname: string): "cp" | "wr" | undefined {
+  if (pathname === "/api/cp/events") return "cp"
+  if (pathname === "/api/wr/events") return "wr"
   return undefined
 }
 
@@ -52,7 +55,7 @@ export function startMockStreamServer(input: { port: number }) {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers })
       if (request.method !== "GET") return Response.json({ error: "Fixture streams require GET" }, { status: 405, headers })
       const directory = url.searchParams.get("directory")
-      const sessionId = url.searchParams.get("parentSessionId") ?? url.searchParams.get("sessionID")
+      const sessionId = url.searchParams.get("sessionID")
       if ((directory && !lease.directories.includes(directory)) || (sessionId && !lease.sessionIds.includes(sessionId))) {
         return Response.json({ error: "Stream scope does not belong to this fixture" }, { status: 404, headers })
       }
@@ -72,30 +75,24 @@ export function startMockStreamServer(input: { port: number }) {
         lease.connections.delete(close)
         try { controller?.close() } catch { /* The browser may have cancelled its reader first. */ }
       }
-      const connected = () => ({
-        directory: "global",
-        payload: { id: crypto.randomUUID(), type: "server.connected", properties: {} },
-      })
-      const heartbeat = () => kind === "central" ? connected() : { type: "heartbeat" }
+      const heartbeat = { type: "heartbeat" }
       const body = new ReadableStream<Uint8Array>({
         start(next) {
           controller = next
           lease.connections.add(close)
           request.signal.addEventListener("abort", close, { once: true })
           if (request.signal.aborted) return close()
-          // Match central connectedFrame and runtimeBusEventsHandler. The
-          // snapshot has an empty replay log; periodic heartbeats never advance
-          // its cursor. Runtime/session event streams have no initial event.
-          if (kind !== "runtime") write(heartbeat(), request.headers.get("last-event-id") ?? "0")
-          // Bun buffers headers until the first body bytes. An SSE comment
-          // flushes the transport without dispatching an event or cursor.
-          else next.enqueue(encoder.encode(":\n\n"))
+          // Both real handlers open with a heartbeat carrying the cursor the
+          // connection resumes from (the fixture's ring is empty, so a
+          // cursor-less connection resumes from "0") and then beat with NO
+          // id, so a periodic heartbeat never advances the reader's cursor.
+          write(heartbeat, request.headers.get("last-event-id") ?? "0")
           timer = setInterval(() => {
             if (closed) return
             // An unread stream cannot grow an unbounded heartbeat queue.
             if ((next.desiredSize ?? 0) <= 0) return
-            write(heartbeat())
-          }, kind === "central" ? CENTRAL_HEARTBEAT_MS : EVENT_STREAM_HEARTBEAT_MS)
+            write(heartbeat)
+          }, kind === "cp" ? CONTROL_PLANE_HEARTBEAT_MS : EVENT_STREAM_HEARTBEAT_MS)
         },
         cancel: close,
       })

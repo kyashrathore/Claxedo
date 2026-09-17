@@ -30,19 +30,18 @@
  * The room also holds this deployment's SSE retention ring, so the hosted
  * `cp/events` is resumable on the same terms as the local daemon's
  * (`claxedo-local-server/src/shell/events.ts`) and a workspace runtime's
- * `wr/events` (`workspace-runtime/src/routes/events.ts`). Before this, hosted
- * clients had the resume machinery on the client and nothing to talk to: the
- * bridge wrote no `id:` lines, so claxedo-app's cursor stayed null forever, it
- * never sent `Last-Event-ID`, and every reconnect gap lost whatever was
- * published inside it. Local and hosted diverged on reconnect for the same
- * bundle, which is the divergence this closes.
+ * `wr/events` (`workspace-runtime/src/routes/events.ts`). One client bundle
+ * reads all three, and its resume machinery is only as good as the `id:`
+ * lines it is fed: a bridge that writes none leaves the client's cursor null,
+ * so it never sends `Last-Event-ID` and every reconnect gap loses whatever
+ * was published inside it.
  *
  * Where the pieces live and why is documented on `LiveSyncRoom.replay` (ring
  * placement, in-memory vs `state.storage`) and `cursorAhead` (what a reset
  * sequence does to a stale cursor). The three invariants the sibling streams
- * established hold here too: `id:` on data frames and none on periodic
- * heartbeats, a bootstrap heartbeat carrying the resume cursor written before
- * anything else, and a cursor-less connection served nothing from the ring.
+ * share hold here too: `id:` on data frames and none on periodic heartbeats,
+ * a bootstrap heartbeat carrying the resume cursor written before anything
+ * else, and a cursor-less connection served nothing from the ring.
  */
 
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
@@ -446,8 +445,9 @@ export class LiveSyncRoom {
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
    * admits only `session.share.changed`, `document.changed`, and `provision`, so
    * this ring holds coalesced doorbells and provision progress and nothing
-   * chatty — 256 is far more than the worst client gap (claxedo-app's 45s
-   * heartbeat watchdog plus its 2s reconnect floor) can span. The terminal ring
+   * chatty — 256 is far more than the worst client gap (claxedo-app's 45 s
+   * heartbeat watchdog plus a reconnect backoff that starts at 250 ms and caps
+   * at 15 s) can span. The terminal ring
    * still earns its keep: `isRetainedControlPlaneEvent` protects the doorbells and
    * the `ready`/`error` provision settlements, whose loss is not self-healing.
    *

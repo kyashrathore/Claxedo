@@ -22,7 +22,7 @@ import {
   parseWorktreeCreateBody,
   WORKTREE_CREATE_SUCCESS_STATUS,
 } from "../helpers/contracts/worktrees"
-import { controlPlaneStreamHeartbeat, sseFrame, workspaceStreamHeartbeat } from "../helpers/contracts/sse"
+import { sseFrame, streamHeartbeat } from "../helpers/contracts/sse"
 
 const option: BoundHarnessConfigOption = {
   id: "model",
@@ -36,8 +36,8 @@ const option: BoundHarnessConfigOption = {
 describe("mock-runtime canonical route bindings", () => {
   test("encodes both streams with the shared wire encoder and the cursor-carrying bootstrap heartbeat", () => {
     expect(sseFrame({ type: "event" }, "7")).toBe('id: 7\ndata: {"type":"event"}\n\n')
-    expect(workspaceStreamHeartbeat(4)).toBe('id: 4\ndata: {"type":"heartbeat"}\n\n')
-    expect(controlPlaneStreamHeartbeat(9)).toBe('id: 9\ndata: {"type":"heartbeat"}\n\n')
+    expect(streamHeartbeat(4)).toBe('id: 4\ndata: {"type":"heartbeat"}\n\n')
+    expect(streamHeartbeat()).toBe('id: 0\ndata: {"type":"heartbeat"}\n\n')
   })
 
   test("uses the runtime options response forwarded unchanged by the local control route", () => {

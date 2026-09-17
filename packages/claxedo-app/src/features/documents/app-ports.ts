@@ -9,8 +9,8 @@ import type * as Events from "@/app/integrations/claxedo-events"
 
 export type DocumentsAppPorts = {
   /**
-   * Central events stream carrying the `document.changed` doorbell. The
-   * *Optional* hook variant: it returns `undefined` outside a
+   * The stream reader whose `cp/events` carries the `document.changed`
+   * doorbell. The *Optional* hook variant: it returns `undefined` outside a
    * `ClaxedoEventsProvider`, where a Documents surface degrades to
    * load-on-open + refresh-on-focus and `createDocumentIndexController` warns
    * once.

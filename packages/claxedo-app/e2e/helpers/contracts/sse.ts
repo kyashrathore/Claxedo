@@ -7,12 +7,7 @@ export function sseFrame(payload: unknown, id?: string) {
   return decoder.decode(encodeSseData(payload, id))
 }
 
-/** The bootstrap frame `cp/events` opens with: a heartbeat carrying the resume cursor. */
-export function controlPlaneStreamHeartbeat(lastEventId?: number) {
-  return sseFrame({ type: "heartbeat" }, String(lastEventId ?? 0))
-}
-
-/** The bootstrap frame `wr/events` opens with: a heartbeat carrying the resume cursor. */
-export function workspaceStreamHeartbeat(lastEventId?: number) {
+/** The bootstrap frame both `cp/events` and `wr/events` open with: a heartbeat carrying the resume cursor. */
+export function streamHeartbeat(lastEventId?: number) {
   return sseFrame({ type: "heartbeat" }, String(lastEventId ?? 0))
 }

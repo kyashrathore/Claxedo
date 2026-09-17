@@ -1,14 +1,16 @@
 /**
- * What the CURRENT shell route says about the event streams the global-sdk
- * provider must open: the route's directory, the signed workspace that directory
- * belongs to, and whether this surface reaches its event streams through the
- * signed control-plane boundary at all.
+ * What the CURRENT shell route says about the workspace whose frames the
+ * global-sdk provider is applying: the route's directory, the signed workspace
+ * that directory belongs to, and whether this surface's reads of that
+ * workspace go through the signed control-plane boundary at all.
  *
- * Split out of `provider.tsx` because it is the provider's route-derived INPUT
- * rather than part of its stream machinery: the provider reads it once per
- * connection attempt, and nothing here touches a stream, a projection, or the
- * emitter. Which SESSION those streams carry is a different question with a
- * different owner — `platform/runtime/session-event-scope.ts`.
+ * The provider opens no stream of its own — `ClaxedoEventsProvider` does — but
+ * it needs this to stand in for a live session before one is set
+ * (`eventLiveSession()`) and to decide `signedControlPlane` for the goal and
+ * gap-reset reads (`shouldUseSignedEventAccess()`). Nothing here touches a
+ * stream, a projection, or the emitter. Which SESSION the streams carry is a
+ * different question with a different owner —
+ * `platform/runtime/session-event-scope.ts`.
  */
 
 import { type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"

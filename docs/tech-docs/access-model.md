@@ -165,10 +165,17 @@ release; legacy development and staging tenancy rows are migrated or discarded
 before contract. The OpenCode HTTP and event contract remains the external
 compatibility boundary.
 
-Hosted central event visibility defaults to deny for session-derived content
-unless the subscription has an authority decision. Self-host compatibility
-streams retain the explicit local policy described above; that local boundary
-is not presented as private multiplayer isolation.
+Two event streams exist. The control plane's `GET /api/cp/events` carries
+notices only (provision, worktree readiness, document and session-share
+doorbells), never a session's content; hosted, `eventVisibleTo` filters each
+notice per subscriber by the authority-internal org id and, for share
+doorbells, the recipient. A workspace runtime's `GET /api/wr/events` carries
+that runtime's session frames: a principal the workspace authority admits reads
+it unscoped and the session authority decides per session what reaches it (the
+workspace's owner is not special); a principal it refuses is answered 403 and
+reopens one session under a lease. On a loopback local daemon the workspace
+stream is unmanaged and follows the explicit local policy described above;
+that local boundary is not presented as private multiplayer isolation.
 
 Invite and accept UI, org and team switching, personal-to-org workspace transfer,
 participant and session-share management UI, and presence UI are tracked product

@@ -85,7 +85,7 @@ import {
 import { driveEmptyRuntimeDiffRoute } from "./contracts/runtime-diff"
 
 import { contractRoute } from "./contracts/contract-route"
-import { controlPlaneStreamHeartbeat, sseFrame, workspaceStreamHeartbeat } from "./contracts/sse"
+import { sseFrame, streamHeartbeat } from "./contracts/sse"
 
 /**
  * The harness vocabulary the APP speaks — the `type` string it posts to
@@ -1920,7 +1920,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     requests.eventWebSocketConnections += 1
     const cursor = Number(new URL(socket.url()).searchParams.get("lastEventId") ?? 0)
     const unsubscribe = controlPlaneBus.subscribe(cursor, batch => {
-      socket.send(sseBody(batch, () => controlPlaneStreamHeartbeat(cursor)))
+      socket.send(sseBody(batch, () => streamHeartbeat(cursor)))
     })
     const cleanup = () => {
       unsubscribe()
@@ -1937,7 +1937,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: sseBody(batch, () => controlPlaneStreamHeartbeat(cursor)),
+      body: sseBody(batch, () => streamHeartbeat(cursor)),
     }).catch(() => {})
   })
 
@@ -1986,7 +1986,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: sseBody(scoped, () => workspaceStreamHeartbeat(cursor)),
+      body: sseBody(scoped, () => streamHeartbeat(cursor)),
     }).catch(() => {})
   }
   // `wr/events` on the primary origin: a local workspace's stream, reached

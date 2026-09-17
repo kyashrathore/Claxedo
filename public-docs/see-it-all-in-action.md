@@ -113,9 +113,16 @@ await fetch("http://127.0.0.1:4096/api/wr/process/start-all", {
 const files = await fetch("http://127.0.0.1:4096/file/all")
   .then((res) => res.json())
 
-const events = new EventSource("http://127.0.0.1:4096/api/wr/runtime-events?parentSessionId=SESSION_ID")
+// One stream per workspace runtime. An admitted principal opens it without
+// `sessionID` and reads every session the session authority lets it read; a
+// refused principal is answered 403 and reopens scoped to one session (and
+// its subagent children) under a lease.
+const events = new EventSource("http://127.0.0.1:4096/api/wr/events?sessionID=SESSION_ID")
 events.onmessage = (event) => {
-  console.log(JSON.parse(event.data))
+  const frame = JSON.parse(event.data)
+  if (frame.type === "heartbeat") return
+  const { directory, payload } = frame
+  console.log(directory, payload.type, payload)
 }
 ```
 
@@ -334,7 +341,7 @@ app needs:
 | View logs | `/api/wr/process/logs` reads process or terminal logs. |
 | Browse files | `/find/file`, `/file`, `/file/content`, `/file/raw`, `/file/all`. |
 | Review changes | `/api/wr/diff/*` and `/vcs`. |
-| Watch session/runtime events | `/api/wr/runtime-events`; central lifecycle facts use `/api/wr/events`. |
+| Watch workspace events | `/api/wr/events` streams `{ directory, payload }` frames: presentation events, subagent/goal revisions, and pty/process/agent/session control frames. Control-plane notices ride `/api/cp/events`. |
 | Check host state | `/api/wr/health` and `/api/wr/capabilities`. |
 
 ## User Action: Enable Agent Plugins

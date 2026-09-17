@@ -29,22 +29,22 @@ function frame(bytes: Uint8Array | undefined) {
   return { text, payload: line ? JSON.parse(line.slice(6)) : undefined }
 }
 
-test("stream routing matches the actual central, workspace-bus, and runtime owners", () => {
-  expect(mockStreamKind("/global/event")).toBe("central")
-  expect(mockStreamKind("/api/claxedo/events")).toBe("central")
-  expect(mockStreamKind("/api/wr/events")).toBe("workspace-bus")
-  expect(mockStreamKind("/event")).toBe("runtime")
-  expect(mockStreamKind("/api/wr/runtime-events")).toBe("runtime")
+test("stream routing recognises the control-plane stream and the workspace stream only", () => {
+  expect(mockStreamKind("/api/cp/events")).toBe("cp")
+  expect(mockStreamKind("/api/wr/events")).toBe("wr")
+  expect(mockStreamKind("/api/claxedo/events")).toBeUndefined()
+  expect(mockStreamKind("/global/event")).toBeUndefined()
+  expect(mockStreamKind("/event")).toBeUndefined()
   expect(mockStreamKind("/api/wr/events/unknown")).toBeUndefined()
 })
 
-test("real streams expose headers immediately and preserve route-specific heartbeat and cursor contracts", async () => {
+test("real streams expose headers immediately and preserve each stream's heartbeat and cursor contract", async () => {
   const target = server()
   const lease = fixture(target, "session-a")
   const abort = new AbortController()
   const expiry = setTimeout(() => abort.abort(), 13_000)
   try {
-    const paths = ["/api/claxedo/events", "/api/wr/events", "/api/wr/runtime-events"]
+    const paths = ["/api/cp/events", "/api/wr/events"]
     const responses = await Promise.race([
       Promise.all(paths.map((path) => fetch(`${target.origin}${path}`, { headers: lease.headers, signal: abort.signal }))),
       Bun.sleep(1_000).then(() => { throw new Error("SSE headers waited for the first heartbeat") }),
@@ -55,34 +55,25 @@ test("real streams expose headers immediately and preserve route-specific heartb
       expect(response.headers.get("cache-control")).toBe("no-cache")
       expect(response.headers.get("access-control-allow-origin")).toBe(lease.headers.origin)
     }
-    const [central, bus, runtime] = responses.map((response) => response.body!.getReader())
-    const connected = frame((await central.read()).value)
-    expect(connected.text).toContain("id: 0\n")
-    expect(connected.payload).toMatchObject({ directory: "global", payload: { type: "server.connected", properties: {} } })
-    const initialBus = frame((await bus.read()).value)
-    expect(initialBus.text).toContain("id: 0\n")
-    expect(initialBus.payload).toEqual({ type: "heartbeat" })
+    const [cp, wr] = responses.map((response) => response.body!.getReader())
+    for (const reader of [cp, wr]) {
+      const bootstrap = frame((await reader.read()).value)
+      expect(bootstrap.text).toContain("id: 0\n")
+      expect(bootstrap.payload).toEqual({ type: "heartbeat" })
+    }
 
-    const runtimeFlush = frame((await runtime.read()).value)
-    expect(runtimeFlush.text).toBe(":\n\n")
-    expect(runtimeFlush.payload).toBeUndefined()
-    expect(runtimeFlush.text).not.toContain("id:")
-
-    let runtimeYielded = false
-    const runtimeRead = runtime.read().then((result) => { runtimeYielded = true; return result })
-    await Bun.sleep(30)
-    expect(runtimeYielded).toBe(false)
-    const [centralHeartbeat, busHeartbeat, runtimeHeartbeat] = await Promise.all([
-      central.read(), bus.read(), runtimeRead,
-    ])
-    for (const result of [centralHeartbeat, busHeartbeat, runtimeHeartbeat]) {
+    let wrYielded = false
+    const wrRead = wr.read().then((result) => { wrYielded = true; return result })
+    // The control plane beats at 5 s, the workspace runtime at 10 s.
+    const cpHeartbeat = await cp.read()
+    expect(wrYielded).toBe(false)
+    const wrHeartbeat = await wrRead
+    for (const result of [cpHeartbeat, wrHeartbeat]) {
       expect(result.done).toBe(false)
       expect(frame(result.value).text).not.toContain("id:")
+      expect(frame(result.value).payload).toEqual({ type: "heartbeat" })
     }
-    expect(frame(centralHeartbeat.value).payload.payload.type).toBe("server.connected")
-    expect(frame(busHeartbeat.value).payload).toEqual({ type: "heartbeat" })
-    expect(frame(runtimeHeartbeat.value).payload).toEqual({ type: "heartbeat" })
-    expect(target.activeConnections).toBe(3)
+    expect(target.activeConnections).toBe(2)
     abort.abort()
     await until(() => target.activeConnections === 0)
   } finally {

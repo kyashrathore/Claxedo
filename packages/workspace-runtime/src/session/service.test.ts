@@ -209,7 +209,7 @@ describe("session service", () => {
     expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
   })
 
-  it("announces the reply row before the first part event on the runtime lane", async () => {
+  it("announces the reply row before the first part event on the workspace stream", async () => {
     const events: CompatEnvelope[] = []
     await runRuntimePromptTurn({
       runtime: {

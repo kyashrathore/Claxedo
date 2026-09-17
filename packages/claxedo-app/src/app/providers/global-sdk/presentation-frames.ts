@@ -59,7 +59,10 @@ export function compatEventEnvelope(input: unknown): { directory?: string; paylo
   const payload = asRecord(row.payload) ?? row
   if (typeof payload.type !== "string" || payload.type === "server.heartbeat") return undefined
   const properties = asRecord(payload.properties)
-  // Flat control-plane lifecycle frames are consumed by ClaxedoEventsProvider.
+  // A frame with no `properties` is not presentation-shaped: a pty, process,
+  // agent or session lifecycle control frame off `wr/events`, or a
+  // control-plane notice off `cp/events`, both applied by ClaxedoEventsProvider
+  // itself. Only presentation-shaped frames reach the conversation ingress.
   if (!properties) return undefined
   if (!isGlobalSdkEvent(payload)) return undefined
   const info = asRecord(properties.info)

@@ -23,9 +23,9 @@ type LifecycleEvent = {
  * the app runs with OPENCODE_URL pointed at the harness's fake engine
  * (`agent-fake-engine.ts`), the scenario sends one real prompt through the
  * claxedo server, and the fake engine replays the corpus lifecycle events
- * over `/api/wr/runtime-events` on the corpus timing — adapter -> runtime event
- * hub -> client presentation -> renderer, the same seam the T3 arm fakes with its replay
- * server. Interaction probes (trusted ArrowDown presses) interleave on the
+ * over the engine's own `/global/event` on the corpus timing — adapter ->
+ * runtime event hub -> `/api/wr/events` -> client presentation -> renderer,
+ * the same seam the T3 arm fakes with its replay server. Interaction probes (trusted ArrowDown presses) interleave on the
  * same schedule as before; Event Timing + LoAF observation is unchanged.
  */
 export async function runControlledStreamScenario(input: {

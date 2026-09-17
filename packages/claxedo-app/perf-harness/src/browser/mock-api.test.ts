@@ -132,7 +132,7 @@ test("activation auxiliary reads expose the fixture's goal and device state with
 test("mock preflights stay local while SSE continues through the private page lease and closes with the page", async () => {
   for (const event of ["close", "crash"] as const) {
     const api = await transport("launch-project")
-    const path = `/api/claxedo/events?directory=${encodeURIComponent(api.fixture.directory)}`
+    const path = `/api/wr/events?directory=${encodeURIComponent(api.fixture.directory)}`
     const preflight = await api.request(path, "OPTIONS", undefined, {
       "access-control-request-headers": "authorization, last-event-id",
     })
@@ -154,10 +154,7 @@ test("mock preflights stay local while SSE continues through the private page le
     const body = new TextDecoder().decode((await reader.read()).value)
     expect(body.split("\n")[0]).toBe("id: 17")
     const frame = JSON.parse(body.split("\n").find((line) => line.startsWith("data: "))!.slice(6))
-    expect(frame).toEqual({
-      directory: "global",
-      payload: { id: expect.any(String), type: "server.connected", properties: {} },
-    })
+    expect(frame).toEqual({ type: "heartbeat" })
     expect(api.streams.activeConnections).toBe(1)
     expect(api.fixture.requestCounts.stability.sse).toBe(1)
     expect(api.fixture.requestCounts.messages).toBe(0)

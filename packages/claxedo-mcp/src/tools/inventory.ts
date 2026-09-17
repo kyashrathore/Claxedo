@@ -88,8 +88,6 @@ export const MCP_OPERATIONS_SERVED_ELSEWHERE = {
  * refusing an operation that is both covered and excluded.
  */
 export const MCP_OPERATIONS_WITHOUT_TOOLS = {
-  session_event_stream:
-    "GET /event is an SSE stream and a tool call answers once; the attention group reads the pending lists the stream would carry.",
   permission_mode_read:
     "A session's permission mode is set once at creation under the caller's ceiling; reading it back invites the widening security review S4 closed.",
   permission_mode_write: "Widening a live session's permission mode is the escalation security review S4 closed.",

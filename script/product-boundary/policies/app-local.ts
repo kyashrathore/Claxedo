@@ -164,9 +164,10 @@ export const appLocal: Policy = {
   // Reviewed owners: the platform runtime layer, which both the events provider
   // and the global-sdk provider already depend on, and the events integration
   // itself. Two modules, no package edge, and the measured closure is 964.
-  // `app/providers/global-sdk/route-event-scope.ts` is the runtime-events
-  // lane's route-derived scope input, split out of the global-sdk provider;
-  // one module, no package edge; the measured closure is 965.
+  // `app/providers/global-sdk/route-event-scope.ts` is the shell route's
+  // workspace as the global-sdk provider reads it — the stand-in live session
+  // and the signed-boundary decision — split out of the provider; one module,
+  // no package edge; the measured closure is 965.
   // `app/providers/global-sdk/presentation-frames.ts` is what a frame off a
   // stream MEANS — which presentation events are admitted, and what a replay
   // gap invalidates — split out of the global-sdk provider. Reviewed owner:
@@ -290,7 +291,8 @@ export const appLocal: Policy = {
   // connected-apps-api and better-auth-api-error for OAuth consent revocation.
   // server-routes replaces server-client-contract at the connection boundary.
   // Full verify:closure measured 1005 modules / 38 packages; no headroom.
-  // +1 module: local-event-websocket owns central stream transport across
+  // +1 module: `platform/sync/local-event-websocket.ts` owns the loopback
+  // WebSocket transport of the control-plane stream (`cp/events`) across
   // windows. Authoritative builds and identity checks passed; measured 1006 / 38.
   // +1 module (2026-09-09): the terminal agent catalog and the commands saved
   // for it move out of the Settings UI into their owner,
@@ -458,11 +460,10 @@ export const appLocal: Policy = {
   // controller re-reads history and todo; raised by `claxedo-events.tsx` and
   // `session-events/event-router.ts`. No new package edge.
   //
-  // -4 modules (2026-09-17): the app reads two streams and no more —
-  // `app/providers/global-sdk/runtime-envelope.ts`,
-  // `app/providers/global-sdk-event-fetch.ts`,
-  // `platform/sync/global-sdk/heartbeat-watchdog.ts` and
-  // `platform/sync/global-sdk/reconnect-backoff.ts` were the second reader.
+  // -4 modules (2026-09-17): `app/integrations/claxedo-events.tsx` is the
+  // app's one stream reader (`cp/events` and each workspace's `wr/events`),
+  // with its reconnect policy in `app/providers/claxedo-events-reconnect.ts`;
+  // the global-sdk provider consumes its frames and opens nothing of its own.
   // Measured 1077 modules / 58 packages, with no headroom.
   ceilings: { modules: 1077, packages: 58 },
 

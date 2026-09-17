@@ -399,9 +399,9 @@ export const desktopRendererUnsigned: Policy = {
   // +3 modules (2026-09-08): the same connected-apps UI, consent API and
   // auth-error owner reviewed by app-local; server-routes replaces the old
   // client contract. Full verify:closure measured 1056 / 57, no headroom.
-  // +1 module (2026-09-08): local-event-websocket owns the central event
-  // transport used by ClaxedoEventsProvider to avoid exhausting HTTP slots
-  // across windows. Full authoritative checks passed; measured 1057 / 57.
+  // +1 module (2026-09-08): local-event-websocket owns the loopback
+  // WebSocket `ClaxedoEventsProvider` reads `cp/events` over, so several
+  // windows do not exhaust the browser's HTTP slots. Measured 1057 / 57.
   // +1 module (2026-09-09): the same terminal agent catalog / saved-commands
   // owner app-local reviews, reached from the rail and the terminal creator.
   // No new package edge. Measured 1058 / 57.

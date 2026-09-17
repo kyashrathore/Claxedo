@@ -129,7 +129,7 @@
         // point, so a first connect deliberately sends no header at all.
         if (state.lastEventId) headers.set("Last-Event-ID", state.lastEventId)
 
-        const res = await fetch("/api/wr/events", { headers, signal: state.abort.signal })
+        const res = await fetch("/api/cp/events", { headers, signal: state.abort.signal })
         if (!res.ok || !res.body) throw new Error(`events stream failed: ${res.status}`)
         setStatus("open")
 

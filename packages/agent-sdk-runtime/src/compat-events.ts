@@ -70,6 +70,19 @@ export type CompatEnvelope = {
 // These helpers are the package-level constructors for Claxedo client-presentation
 // events. Route/adapters should use them instead of hand-assembling shapes
 // except when they are validating external harness payloads.
+
+/**
+ * The presentation-shaped frames an adapter's stream may carry as-is: the
+ * runtime commits one of these to the session's event log and publishes it
+ * on the hub's global channel, and projects everything else as a raw
+ * `AgentRuntimeEvent`. Deliberately a subset of `CompatEvent["type"]`:
+ * `subagent.updated` and `goal.*` exist on the wire only as the projection
+ * of their `subagent-updated` / `goal-*` runtime events, so admitting the
+ * dot form here would publish a second copy outside the runtime channel;
+ * `session.deleted` is published by the session routes straight to the
+ * global channel; `message.removed` and `message.part.removed` have no
+ * producer in this runtime.
+ */
 const kinds: ReadonlySet<string> = new Set<CompatEvent["type"]>([
   "message.updated",
   "message.part.updated",
@@ -99,11 +112,7 @@ export function withDir(directory: string, payload: CompatEvent): CompatEnvelope
   return { directory, payload }
 }
 
-/**
- * An unknown frame is a compat event when it names one of the kinds and carries
- * a properties object. Sound because `kinds` is built from `CompatEvent["type"]`
- * and holds every member of it.
- */
+/** An unknown frame is a compat event when it names one of `kinds` and carries a properties object. */
 function isCompatEvent(value: unknown): value is CompatEvent {
   const row = asRecord(value)
   return !!row && typeof row.type === "string" && kinds.has(row.type) && !!asRecord(row.properties)

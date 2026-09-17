@@ -24,7 +24,7 @@
 // per page — at the boot idle warm-up, about 28ms after transcript-ready — and
 // never again, so they cannot appear in a later interrupt window. The requests
 // that do land there are unrelated background traffic (the rail's
-// session-status batch, /global/health, /api/wr/runtime-events).
+// session-status batch, /global/health, the workspace event stream).
 //
 // Run (about 60s with a prebuilt dist):
 //   cd packages/claxedo-app/perf-harness

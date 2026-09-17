@@ -92,10 +92,11 @@ export const serverSelfHosted: Policy = {
    * both planes; and `src/platform/http/status.ts`, which the two route
    * modules answer authority refusals through.
    *
-   * -1 module (2026-09-17): `platform/runtime/lib/process-events.ts` — the
-   * process-event mirror onto the control bus, gone with the bus's session
-   * arms; a workspace runtime's `wr/events` is the only carrier of process
-   * frames. Measured 124 modules / 40 packages, with no headroom.
+   * -1 module (2026-09-17): the control bus (`platform/runtime/lib/bus.ts`)
+   * carries control-plane notices only; a process frame reaches a client on
+   * its workspace runtime's `wr/events` (`workspace-runtime/src/routes/
+   * events.ts`) and nothing mirrors it here. Measured 124 modules / 40
+   * packages, with no headroom.
    */
   ceilings: { modules: 124, packages: 40 },
 

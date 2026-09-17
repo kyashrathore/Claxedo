@@ -9,12 +9,11 @@ const api = vi.hoisted(() => ({
   listStatuses: vi.fn(),
 }))
 
-// The index reads the `document.changed` doorbell off the central events stream
-// instead of holding its own `/documents/events` SSE. Stand in for the events
-// context the app ports would supply.
+// The index reads the `document.changed` doorbell off `cp/events`. Stand in
+// for the events context the app ports would supply.
 //
-// `centralConnected`, not the aggregate `connected`: the doorbell rides the
-// central stream, so that is the signal the index bridges to its controller.
+// `centralConnected`, not the aggregate `connected`: the doorbell rides
+// `cp/events`, so that is the signal the index bridges to its controller.
 const events = vi.hoisted(() => ({
   on: vi.fn(),
   listen: vi.fn(() => () => undefined),

@@ -36,7 +36,7 @@ function verifiedApp(accessPolicy: SessionAccessPolicy, capture?: (scope: Sessio
     })
     await next()
   })
-  app.get("/event", async (c) => {
+  app.get("/api/wr/events", async (c) => {
     const scope = await authorizeSessionEventScope(c, accessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
     capture?.(scope)
@@ -48,7 +48,7 @@ function verifiedApp(accessPolicy: SessionAccessPolicy, capture?: (scope: Sessio
 describe("managed session event stream leases", () => {
   test("fails closed when a managed policy cannot renew stream authority", async () => {
     const accessPolicy = policy({ authorizeStream: undefined })
-    const response = await verifiedApp(accessPolicy).request("http://localhost/event?sessionID=ses_1")
+    const response = await verifiedApp(accessPolicy).request("http://localhost/api/wr/events?sessionID=ses_1")
 
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ error: { code: "session_stream_authority_required" } })
@@ -64,7 +64,7 @@ describe("managed session event stream leases", () => {
       },
     })
     const response = await verifiedApp(accessPolicy, (value) => { scope = value }).request(
-      "http://localhost/event?sessionID=ses_1",
+      "http://localhost/api/wr/events?sessionID=ses_1",
       { headers: { authorization: "Bearer rht_secret" } },
     )
 

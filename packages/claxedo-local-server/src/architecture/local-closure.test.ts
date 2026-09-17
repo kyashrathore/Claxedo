@@ -185,7 +185,8 @@ describe("@claxedo/local-server closure", () => {
     //    hosted `claxedo` entry into the Claude Code, Cursor and Codex configs
     //    on this machine; the desktop's own agent-config routes are what a user
     //    clicks.
-    //  - `shell/event-stream-response.ts` — the central event transport owner.
+    //  - `shell/event-stream-response.ts` — the one writer that serves the
+    //    daemon's `cp/events` over HTTP SSE or a loopback WebSocket alike.
     //  - `app/local-documents.ts` — the desktop composition of shared Documents.
     //  - `credentials/broker.ts` — the credential authority that derives a
     //    binding per active registry row and hands the loopback broker its
@@ -218,7 +219,7 @@ describe("@claxedo/local-server closure", () => {
     const { modules, packages } = closure({ runtimeOnly: true })
     // The merged dev tree also publishes agent-plugins/discovery/skills.ts,
     // the restored machine-installed skill reader (82 modules at HEAD).
-    // shell/event-stream-response.ts adds the central event transport owner;
+    // shell/event-stream-response.ts adds the `cp/events` SSE-or-WebSocket writer;
     // the published closure now measures exactly 83 modules / 24 packages.
     // app/local-documents adds the desktop composition of shared Documents;
     // the published closure measures 84 modules / 24 packages.

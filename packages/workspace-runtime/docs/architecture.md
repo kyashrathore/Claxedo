@@ -30,10 +30,10 @@ non-loopback hostname). See the README's
 [Standalone listen policy](../README.md#standalone-listen-policy) sections
 for the full auth/env matrix.
 
-## Two event systems
+## One event stream, two in-process sources
 
-`workspace-runtime` has two independent event surfaces with different jobs —
-they are not two views onto the same stream:
+`workspace-runtime` serves one event stream, `GET /api/wr/events`, fed by two
+in-process sources with different jobs:
 
 - **`RuntimeEventHub`** ([`src/runtime-event-hub.ts`](../src/runtime-event-hub.ts))
   is the hub for session/runtime events. Session routes publish Claxedo
@@ -52,11 +52,16 @@ they are not two views onto the same stream:
   subscribers are isolated — a throwing subscriber is reported but cannot
   block later subscribers from receiving the same event.
 
-`RuntimeEventHub` bridges only terminal lifecycle states into
-`workspaceRuntimeBus` as `agent.lifecycle` compatibility events (busy →
-`Busy`, permission/question asks → `UserActionRequired`, `session.idle` →
-`Idle`, `session.error` → `Error`) — the bridge is one-directional and
-narrow, not a merge of the two systems. The README's
+The session routes' `publishGlobal` (`bridgeLifecycleEvent` in
+[`src/routes/session.ts`](../src/routes/session.ts)) forwards a session's
+lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames
+(busy `session.status` → `Busy`, permission/question asks →
+`UserActionRequired`, `session.idle` → `Idle`, `session.error` → `Error`) —
+one-directional and narrow, not a merge of the two sources. Who may read
+the stream is decided per connection: a principal the workspace authority
+admits reads it unscoped and the session authority decides per session what
+reaches it (the workspace's owner is not special); a principal it refuses
+reads one session under `?sessionID=` and a lease. The README's
 [Event contract](../README.md#event-contract) table has the full route list.
 
 ## Harness adapter seam

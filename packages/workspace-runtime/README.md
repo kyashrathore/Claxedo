@@ -162,7 +162,7 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
 | `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth |
-| `GET  /api/wr/events` | [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth; owner reads the workspace whole, a share grantee reads one session |
+| `GET  /api/wr/events` | [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth; a principal the workspace admits reads unscoped and the session authority decides per session what reaches it (the workspace's owner is not special); a refused principal reads one session under `?sessionID=` |
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/diff/*`, `* /api/wr/git/*` | [`routes/diff.ts`](src/routes/diff.ts), [`routes/git-source.ts`](src/routes/git-source.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
@@ -181,22 +181,24 @@ capability; the runtime HTTP surface remains the workspace execution boundary.
 
 ## Event contract
 
-`workspace-runtime` has two event systems with different jobs:
+`workspace-runtime` serves one event stream. Terminal bytes and process logs
+are not event streams and have their own transports:
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, process status/config, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. The workspace's owner reads it unscoped; a share grantee is refused at workspace level and reads `?sessionID=` under a lease. |
+| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, process status/config, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a lease, that session and its subagent children. |
 | `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/api/wr/events`, but terminal bytes are delivered over this WebSocket. |
 | `GET /api/wr/process/logs` | HTTP snapshot | Text log tail | Process output is poll/snapshot based through PTY log snapshots. There is no separate supported process-output event stream. Process status summaries appear on `/api/wr/events`. |
 
 `RuntimeEventHub` is the hub for session/runtime events: session routes
 publish client-presentation events to its global channel, which `/api/wr/events`
 serves, and runtime-channel events (subagent revisions, goal changes) to its
-runtime channel, which `/api/wr/events` projects onto the wire. The hub bridges
-only terminal lifecycle states into `workspaceRuntimeBus` as `agent.lifecycle`
-compatibility events. That bridge maps `session.status` with busy status to
-`Busy`, permission/question asks to `UserActionRequired`, `session.idle` to
-`Idle`, and `session.error` to `Error`.
+runtime channel, which `/api/wr/events` projects onto the wire. The session
+routes' `publishGlobal` (`bridgeLifecycleEvent` in
+[`routes/session.ts`](src/routes/session.ts)) also forwards a session's
+lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames:
+`session.status` with busy status becomes `Busy`, a permission or question ask
+`UserActionRequired`, `session.idle` `Idle`, and `session.error` `Error`.
 
 `workspaceRuntimeBus` is intentionally process-global runtime state. It is used
 by PTY, process, and agent-hook code that already lives inside the

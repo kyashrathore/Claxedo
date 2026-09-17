@@ -224,7 +224,6 @@ function apiPath(pathName: string) {
     "/auth",
     "/command",
     "/config",
-    "/event",
     "/experimental",
     "/file",
     "/find",

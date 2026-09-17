@@ -129,7 +129,6 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         "/auth",
         "/command",
         "/config",
-        "/event",
         "/experimental",
         "/file",
         "/find",
@@ -150,7 +149,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         "/tui",
         "/vcs",
       ].reduce<Record<string, { target: string; changeOrigin: boolean; ws?: boolean }>>((acc, route) => {
-        acc[route] = { target: backendTarget, changeOrigin: true, ws: route === "/event" || route === "/api" }
+        acc[route] = { target: backendTarget, changeOrigin: true, ws: route === "/api" }
         return acc
       }, {}),
     },

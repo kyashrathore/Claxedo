@@ -50,8 +50,9 @@ describe("session switch with workspace benchmark contract", () => {
     expect(stabilityRequestClass("/api/workspace/resolve")).toBe("workspace")
     expect(stabilityRequestClass("/api/claxedo/workspace/resolve")).toBe("workspace")
     expect(stabilityRequestClass("/worktree")).toBe("workspace")
-    expect(stabilityRequestClass("/event")).toBe("sse")
+    expect(stabilityRequestClass("/api/cp/events")).toBe("sse")
     expect(stabilityRequestClass("/api/wr/events")).toBe("sse")
+    expect(stabilityRequestClass("/event")).toBeUndefined()
     // Session data itself is NOT a stability class: a cold session switch
     // legitimately fetches its messages.
     expect(stabilityRequestClass("/session/ses_1/message")).toBeUndefined()

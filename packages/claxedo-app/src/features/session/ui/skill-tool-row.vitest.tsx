@@ -84,8 +84,8 @@ describe("a settled skill row names and opens what the skill did", () => {
     })
   })
 
-  // The runtime lane settles a skill whose completion frame carried no output
-  // with `output: ""` — falsy — so the row's only child unmounts, hasChildren
+  // The workspace stream settles a skill whose completion frame carried no
+  // output with `output: ""` — falsy — so the row's only child unmounts, hasChildren
   // drops the arrow, and the trigger still swallows the click onto nothing.
   test("a completed skill with empty output still expands to its call", async () => {
     const view = mount(skillPart(""))

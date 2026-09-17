@@ -145,7 +145,8 @@ export async function startSignedFixture(input: {
  * backend and the desktop app are loopback on one machine, so without the proxy the
  * signed path is never exercised. Reuses `live-user-hosted-relay-frontend-server.mjs`,
  * which already proxies the `vite.cloud.config.ts` route table including WebSocket
- * upgrades for `/pty` and `/event`; the desktop app never loads its HTML.
+ * upgrades under `/api` (pty connects and the loopback `cp/events` socket); the
+ * desktop app never loads its HTML.
  *
  * Spawned with `e2eAppViteEnvironment()`: `vite.cloud.config.ts` refuses to resolve a
  * browser auth adapter implicitly and exits before listening without it.

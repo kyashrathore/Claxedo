@@ -45,9 +45,9 @@ type IndexState = {
 
 /**
  * Documents index live sync: listens for the `document.changed` doorbell on the
- * already-open central events stream and re-reads the list. No socket of its
- * own — a per-surface SSE would hold one of the browser's six per-origin
- * connections and stall ordinary fetches.
+ * already-open control-plane stream (`cp/events`) and re-reads the list. No
+ * socket of its own — a per-surface SSE would hold one of the browser's six
+ * per-origin connections and stall ordinary fetches.
  *
  * The doorbell is a hint, never a source of truth: every rendered field comes
  * from `api.list`. A missed nudge costs freshness until the next reconnect or
@@ -64,7 +64,7 @@ export function createDocumentIndexController(input: {
   queries: DocumentQuery[]
   api: DocumentsApi
   /**
-   * `document.changed` from the central bus, supplied through the events port
+   * `document.changed` off `cp/events`, supplied through the events port
    * (see `app-ports.ts`). Absent only when the surface renders outside a
    * `ClaxedoEventsProvider`, in which case the index loads on open and
    * refreshes on reconnect but does not live-update (and `connect` warns once).
@@ -193,14 +193,15 @@ export function createDocumentIndexController(input: {
     if (!input.subscribe) {
       // Loud on purpose: a silently non-live index must not ship unnoticed.
       console.warn(
-        "[documents] central events port unavailable — the Documents index will not live-update.",
+        "[documents] control-plane events port unavailable — the Documents index will not live-update.",
       )
     }
     unsubscribe = input.subscribe?.((event) => {
       if (stopped) return
-      // The central stream carries every project's documents. Server-side org
-      // filtering in `routes/events.ts` is the authorization boundary — this is
-      // only routing.
+      // One `cp/events` connection carries every project's doorbells its
+      // subscriber may see. The server-side org filter (`eventVisibleTo`, applied
+      // by the local daemon's `shell/events.ts` and the hosted `LiveSyncRoom`)
+      // is the authorization boundary — this is only routing.
       if (!concernsUs(event.projectId)) return
       void refresh()
     })
@@ -304,9 +305,9 @@ export function PageIndex(props: PageIndexProps) {
   // The controller is a plain object, so the connectivity signal is bridged to it
   // through this handler rather than the controller reading the signal itself.
   //
-  // `centralConnected`, NOT the aggregate `connected`: `document.changed` rides
-  // the CENTRAL stream only, and the aggregate ORs in every remote workspace
-  // relay stream — so it stays true across a central drop/recover, the
+  // `centralConnected` (the `cp` bit), NOT the aggregate `connected`:
+  // `document.changed` rides `cp/events` only, and the aggregate ORs in every
+  // workspace stream — so it stays true across a `cp` drop/recover, the
   // reconnect edge never fires, and the nudges missed during the gap are never
   // recovered (silent staleness). See `app/connection/stream-connectivity.ts`.
   let connectionHandler: ((connected: boolean) => void) | undefined

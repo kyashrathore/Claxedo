@@ -270,10 +270,7 @@ describe("what a stream's open and its gap ask the store to re-read", () => {
   })
 
   test("a workspace stream's gap re-reads that workspace; the control plane's gap re-reads no session", async () => {
-    transport.request.mockImplementation(async (input) => {
-      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-      return url.pathname.endsWith("/api/wr/events") ? gap() : gap()
-    })
+    transport.request.mockImplementation(async () => gap())
     const gaps: unknown[] = []
     function Consumer() {
       const events = useClaxedoEvents()

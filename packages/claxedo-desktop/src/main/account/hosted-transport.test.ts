@@ -124,7 +124,7 @@ describe("fetchHosted", () => {
           init.signal?.addEventListener("abort", () => reject(new Error("caller cancelled")))
         })
       },
-      "https://core.example/api/wr/events",
+      "https://core.example/api/cp/events",
       INIT_GET,
       track,
       parent.signal,
@@ -144,7 +144,7 @@ describe("fetchHosted", () => {
         streamSignal = init.signal
         return Promise.resolve(new Response("data: x\n\n"))
       },
-      "https://core.example/api/wr/events",
+      "https://core.example/api/cp/events",
       INIT_GET,
       track,
       parent.signal,

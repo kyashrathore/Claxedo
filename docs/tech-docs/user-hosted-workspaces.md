@@ -168,12 +168,19 @@ the session it is scoped to; a workspace-wide stream satisfies any session.
 `src/app/integrations/claxedo-event-targets.ts` opens one `wr` target per
 resolved workspace, unscoped, carrying the route's session only as a fallback.
 The runtime decides the arm (`authorizeSessionEventScope`,
-`packages/workspace-runtime/src/routes/session-event-privacy.ts`): the
-workspace's owner — a `local`-authority host, or a principal the authority
-admits to the workspace — reads it workspace-wide, so a terminal or process
-route with no session opens it; a reader refused at workspace level (a share
-grantee) is answered 403, and the reader re-opens `?sessionID=` for its
-session under a lease, receiving that session and its subagent children only.
+`packages/workspace-runtime/src/routes/session-event-privacy.ts`): a
+principal the authority admits to the workspace reads it unscoped, so a
+terminal or process route with no session opens it — it sees the
+session-less frames and, session by session, only what the session authority
+grants it (`hasPrivateAccess` in
+`packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`:
+the creator, a participant, a share grantee, or an org owner/admin). The RAT
+role `owner` earns nothing here: a workspace owner who is none of those for a
+session does not receive it. A reader refused at workspace level (a share
+grantee with no workspace access) is answered 403, and the reader re-opens
+`?sessionID=` for its session under a lease, receiving that session and its
+subagent children only. On a loopback local daemon the runtime is
+unmanaged and the stream is read whole.
 The control plane's stream is read on a loopback central always and on a
 signed-web central only with an account.
 
