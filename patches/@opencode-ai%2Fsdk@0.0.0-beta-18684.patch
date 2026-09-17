@@ -3,8 +3,18 @@ diff --git a/dist/opencode.js b/dist/opencode.js
 +++ b/dist/opencode.js
 @@ -1,2 +1,2 @@
 -import { PromiseSdk } from "./promise";
+-export const create = (options = {}) => PromiseSdk.create(options);
 +import { PromiseSdk } from "./promise.js";
- export const create = (options = {}) => PromiseSdk.create(options);
++export const create = (options = {}, embed = {}) => PromiseSdk.create(options, embed);
+diff --git a/dist/opencode.d.ts b/dist/opencode.d.ts
+--- a/dist/opencode.d.ts
++++ b/dist/opencode.d.ts
+@@ -3,3 +3,4 @@
+ export type CreateOptions = PromiseSdk.CreateOptions;
++export type EmbedOptions = NonNullable<Parameters<typeof PromiseSdk.create>[1]>;
+ export type Interface = PromiseSdk.Interface;
+-export declare const create: (options?: CreateOptions) => Promise<PromiseSdk.Interface>;
++export declare const create: (options?: CreateOptions, embed?: EmbedOptions) => Promise<PromiseSdk.Interface>;
 diff --git a/dist/promise.js b/dist/promise.js
 --- a/dist/promise.js
 +++ b/dist/promise.js

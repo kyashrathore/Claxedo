@@ -13,6 +13,34 @@ type Manifest = {
   cpu?: string[]
 }
 
+/**
+ * Specifiers a server bundle must leave to Node resolution against the staged
+ * closure, never inline. The engine hoists one `ChildProcessSpawner` layer per
+ * process and compares node implementations by identity, so a second module
+ * instance of `@opencode-ai/core` or `@opencode-ai/util` reaching its graph —
+ * one inlined node passed as an override was enough — fails every
+ * location-scoped request with "Tag global has conflicting implementations".
+ */
+export const OPENCODE_SDK_EXTERNALS = [
+  "@opencode-ai/sdk",
+  "@opencode-ai/sdk/*",
+  "@opencode-ai/core",
+  "@opencode-ai/core/*",
+  "@opencode-ai/util",
+  "@opencode-ai/util/*",
+  "@opencode-ai/server",
+  "@opencode-ai/server/*",
+  "@opencode-ai/client",
+  "@opencode-ai/client/*",
+  "@opencode-ai/protocol",
+  "@opencode-ai/protocol/*",
+  "@opencode-ai/schema",
+  "@opencode-ai/schema/*",
+  "@opencode-ai/plugin",
+  "@opencode-ai/plugin/*",
+  "koffi",
+]
+
 function manifest(directory: string): Manifest {
   return JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf8"))
 }

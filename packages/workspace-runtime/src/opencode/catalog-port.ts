@@ -10,6 +10,7 @@
  * reports what the running host can resolve for a workspace, a different
  * question with a different authority.
  */
+import { engineRead } from "./engine-read"
 import type { OpenCodeHost } from "./host"
 import type { WorkspaceScope } from "./scope"
 import { arr, rec, str } from "../json-value"
@@ -62,7 +63,7 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
   return {
     async agents(scope) {
       const client = await host.client()
-      const response = await client.agent.list({ location: { directory: scope.directory } })
+      const response = await engineRead("agent.list", scope, () => client.agent.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
         const model = modelRef(row.model)
         return {
@@ -77,7 +78,7 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
 
     async commands(scope) {
       const client = await host.client()
-      const response = await client.command.list({ location: { directory: scope.directory } })
+      const response = await engineRead("command.list", scope, () => client.command.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
         const model = modelRef(row.model)
         return {
@@ -91,7 +92,7 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
 
     async models(scope) {
       const client = await host.client()
-      const response = await client.model.list({ location: { directory: scope.directory } })
+      const response = await engineRead("model.list", scope, () => client.model.list({ location: { directory: scope.directory } }))
       return rows(response).flatMap((row) => {
         const ref = modelRef(row)
         if (ref === undefined) return []

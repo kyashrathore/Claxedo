@@ -46,11 +46,14 @@ afterAll(() => {
   fs.rmSync(OUT, { recursive: true, force: true })
 })
 
-/** Every emitted JS file, entry and chunks alike. */
+/**
+ * Every emitted JS file, entry and chunks alike. The staged `node_modules`
+ * beside them is the SDK closure the bundle resolves at runtime, not output.
+ */
 function emitted(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return emitted(full)
+    if (entry.isDirectory()) return entry.name === "node_modules" ? [] : emitted(full)
     return entry.name.endsWith(".js") ? [full] : []
   })
 }
@@ -113,5 +116,34 @@ describe("shipped claxedo-server bundle", () => {
       // Zero means the marker drifted and this test is dead, not passing.
       expect(count, `${name}: expected exactly one copy in the bundle`).toBe(1)
     }
+  }, 300_000)
+
+  test("reaches the OpenCode SDK family only through Node resolution, never as an inlined copy", async () => {
+    await bundleOnce()
+
+    // The engine compares layer-node implementations by identity when it
+    // hoists one `ChildProcessSpawner` per process. A second module instance of
+    // `@opencode-ai/core`/`@opencode-ai/util` inlined here — a single node
+    // handed to `OpenCode.create` as an override did it — makes every
+    // location-scoped engine request answer 500 "Tag global has conflicting
+    // implementations". These identifiers exist only inside those packages.
+    const files = emitted(OUT)
+    const inlined = {
+      "layer-node registry": /makeGlobalNode\(/,
+      "location service map": /LocationServiceMap/,
+      "process spawner layer": /ChildProcessSpawner/,
+    }
+    const found = Object.entries(inlined)
+      .filter(([, pattern]) => files.some((file) => pattern.test(fs.readFileSync(file, "utf8"))))
+      .map(([name]) => name)
+    expect(found).toEqual([])
+
+    // The SDK itself must still be reached, and as an import the runtime
+    // resolves against the staged node_modules — not absent, not inlined.
+    const sdkImports = files.reduce(
+      (total, file) => total + (fs.readFileSync(file, "utf8").match(/import\("@opencode-ai\/sdk"\)/g)?.length ?? 0),
+      0,
+    )
+    expect(sdkImports).toBeGreaterThanOrEqual(1)
   }, 300_000)
 })

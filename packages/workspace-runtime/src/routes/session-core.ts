@@ -23,7 +23,7 @@ import type {
   AgentMessagePage,
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
   IMMUTABLE_SESSION_CONFIG_FIELDS,
@@ -84,6 +84,7 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
+import { errorBody } from "./error-body"
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
@@ -592,14 +593,19 @@ function sessionNotFound() {
   return errorBody("session_not_found", "Session not found")
 }
 
-function errorBody(code: string, message: string) {
-  return {
-    error: { code, message },
-  }
-}
-
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Session creation failed"
+}
+
+/**
+ * Hono's default turns a thrown error into a bare "Internal Server Error",
+ * which the client cannot tell from its own bug. An engine refusal is an
+ * upstream failure: 502, carrying the call and the workspace the adapter
+ * recorded when the engine's client gave it nothing else.
+ */
+function engineRefusalResponse(c: Ctx, error: unknown) {
+  if (!isAgentHarnessEngineError(error)) throw error
+  return c.json(errorBody(error.code, error.message), 502)
 }
 
 function goalRuntimeErrorResponse(c: Ctx, error: unknown) {
@@ -2346,21 +2352,31 @@ export function createSessionRoutes(opts: Opts) {
         return c.json(await adapter.listAgents(directory))
       } catch (err) {
         if (unsupportedLiveAgentListError(err)) return c.json([])
-        throw err
+        return engineRefusalResponse(c, err)
       }
     })
     .get("/permission", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const rows = opts.listPermissions
-        ? await opts.listPermissions(c, directory)
-        : await (await opts.resolveAdapter(c)).listPermissions?.(directory) ?? []
+      let rows: AgentPermission[]
+      try {
+        rows = opts.listPermissions
+          ? await opts.listPermissions(c, directory)
+          : await (await opts.resolveAdapter(c)).listPermissions?.(directory) ?? []
+      } catch (error) {
+        return engineRefusalResponse(c, error)
+      }
       return c.json(await filterSessionRows(opts, c, "permission_list", rows))
     })
     .get("/question", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const rows = opts.listQuestions
-        ? await opts.listQuestions(c, directory)
-        : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
+      let rows: AgentQuestion[]
+      try {
+        rows = opts.listQuestions
+          ? await opts.listQuestions(c, directory)
+          : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
+      } catch (error) {
+        return engineRefusalResponse(c, error)
+      }
       const sessionId = c.req.query("sessionId")
       return c.json(await filterSessionRows(opts, c, "question_list", sessionId ? rows.filter((row) => row.sessionID === sessionId) : rows))
     })
@@ -2478,7 +2494,11 @@ export function createSessionRoutes(opts: Opts) {
     app.get("/command", async (c) => {
       const adapter = await opts.resolveAdapter(c)
       const directory = await opts.resolveDirectory(c)
-      return c.json(await adapter.listCommands?.(directory) ?? [])
+      try {
+        return c.json(await adapter.listCommands?.(directory) ?? [])
+      } catch (error) {
+        return engineRefusalResponse(c, error)
+      }
     })
   }
 

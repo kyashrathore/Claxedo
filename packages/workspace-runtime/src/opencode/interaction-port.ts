@@ -9,6 +9,7 @@
  * `answer` is a structured record, not a string, so form values keep their
  * types across the harness-neutral question reply.
  */
+import { engineRead } from "./engine-read"
 import type { OpenCodeHost } from "./host"
 import { assertLocationInScope, type WorkspaceScope } from "./scope"
 import { arr, num, rec } from "../json-value"
@@ -81,7 +82,8 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
       // instead of booting the engine on a read path.
       if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
-      const response = await client.permission.request.list({ location: { directory: scope.directory } })
+      const response = await engineRead("permission.request.list", scope, () =>
+        client.permission.request.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
         const at = createdAt(row)
         return {
@@ -109,7 +111,8 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
     async forms(scope) {
       if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
-      const response = await client.form.request.list({ location: { directory: scope.directory } })
+      const response = await engineRead("form.request.list", scope, () =>
+        client.form.request.list({ location: { directory: scope.directory } }))
       return rows(response).map((row) => {
         const at = createdAt(row)
         return {

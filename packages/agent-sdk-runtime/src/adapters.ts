@@ -39,6 +39,7 @@ export type {
 } from "./adapter-contract"
 export { requireGoalResource, resolvedModelFromConfigOptions } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
+export { AgentHarnessEngineError, isAgentHarnessEngineError } from "./harness-engine-error"
 export {
   GOAL_ACTIONS,
   GOAL_OPTIONAL_FIELDS,

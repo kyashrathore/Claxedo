@@ -96,6 +96,16 @@ export function createOpenCodeHost(options: OpenCodeHostOptions): OpenCodeHost {
         plugins: options.plugins,
         database: { path: options.databasePath },
         events: { persist: options.persistEvents ?? true },
+        // The engine's file search picks `fff` on a VCS checkout: a native
+        // indexer whose background workers walk and hash the whole tree when a
+        // location opens — 7 GB read at 200% CPU for this monorepo — to answer
+        // searches this product serves from its own routes. ripgrep, the
+        // engine's other implementation, lists files on demand only. Set here
+        // and not as an `overrides` layer: a layer node imported from this
+        // package is a second module instance of `@opencode-ai/core` (the
+        // server bundle inlines core and externalizes the SDK), and the engine
+        // refuses a graph holding two `ChildProcessSpawner` implementations.
+        fs: { fff: false },
         ...(options.configContent ? { config: { content: options.configContent } } : {}),
       })
       client = created

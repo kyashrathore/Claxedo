@@ -14,6 +14,7 @@ import type {
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
 import {
+  AgentHarnessEngineError,
   AgentMessagePageError,
   type AgentHarnessAdapter,
   type AgentMessagePage,
@@ -2397,5 +2398,40 @@ describe("GET /session/capabilities effort levels", () => {
     const app = capabilityRoutes(NO_HARNESS_EFFORT)
     expect(await (await app.request("http://localhost/session/capabilities")).json())
       .toMatchObject({ effortLevels: { status: "unsupported", models: [] } })
+  })
+})
+
+describe("createSessionRoutes engine refusals", () => {
+  const engineRefusal = new AgentHarnessEngineError({
+    harness: "opencode",
+    operation: "permission.request.list",
+    directory: "/workspace",
+    status: 500,
+  })
+  const refusingRoutes = (listPermissions: () => Promise<never>) =>
+    managedRoutes({
+      policy: managedPolicy(),
+      adapter: { ...adapter(), listPermissions, listQuestions: listPermissions },
+    })
+
+  test("an engine that refuses a pending-interaction read answers 502 with the call and workspace named", async () => {
+    const app = refusingRoutes(async () => { throw engineRefusal })
+    for (const route of ["/permission", "/question"]) {
+      const response = await app.request(`http://localhost${route}`)
+      expect(response.status).toBe(502)
+      expect(await response.json()).toEqual({
+        error: {
+          code: "harness_engine_error",
+          message: "opencode answered permission.request.list for /workspace with status 500",
+        },
+      })
+    }
+  })
+
+  test("any other adapter failure keeps propagating to the host's error handler", async () => {
+    const app = refusingRoutes(async () => { throw new Error("adapter exploded") })
+    const response = await app.request("http://localhost/permission")
+    expect(response.status).toBe(500)
+    expect(await response.text()).toBe("Internal Server Error")
   })
 })

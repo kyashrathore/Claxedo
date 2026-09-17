@@ -3,7 +3,7 @@ import { createRequire } from "node:module"
 import * as path from "node:path"
 
 import { resolveLocalServerMigrationJournal } from "./local-server"
-import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
+import { OPENCODE_SDK_EXTERNALS, stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 import { resolveTargetOsArch } from "./target-platform"
 import { runBunBuild } from "../../../script/bun-build"
 import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
@@ -11,7 +11,7 @@ import { publishedExportsPlugin } from "../../../script/published-exports-plugin
 // Native modules cannot be bundled — they ship as node_modules content, and the
 // public OpenCode SDK's asset-relative graph is staged separately under
 // resources/node_modules (see electron-builder.config.ts). Everything else is inlined.
-const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "@opencode-ai/sdk"]
+const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", ...OPENCODE_SDK_EXTERNALS]
 
 const require = createRequire(import.meta.url)
 

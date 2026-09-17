@@ -18,6 +18,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { rollup } from "rollup"
 import dts from "rollup-plugin-dts"
+import { OPENCODE_SDK_EXTERNALS } from "./stage-opencode-sdk"
 import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
@@ -38,11 +39,7 @@ const EXTERNALS = [
   // The public embedded OpenCode SDK (and its Node process-lock helper) stay
   // install-time dependencies: the SDK carries native PTY packages and an
   // asset-relative module graph that cannot be folded into this bundle.
-  "@opencode-ai/sdk",
-  "@opencode-ai/sdk/*",
-  "@opencode-ai/schema/*",
-  "@opencode-ai/plugin",
-  "koffi",
+  ...OPENCODE_SDK_EXTERNALS,
   "@agentclientprotocol/sdk",
   "@hono/node-server",
   "@hono/node-ws",
