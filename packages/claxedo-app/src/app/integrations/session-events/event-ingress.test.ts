@@ -25,7 +25,7 @@ import {
 } from "@/features/session/conversation/conversation-registry"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
-import { eventDirectoryForLiveSession } from "@/app/providers/global-sdk/live-session"
+import { eventStreamFrameAddress } from "@/app/integrations/claxedo-event-targets"
 import { compatEventEnvelope } from "@/app/providers/global-sdk/presentation-frames"
 import {
   flushQueryPersistence,
@@ -1272,8 +1272,8 @@ describe("live session events reach the pane that registered the session", () =>
   // by the host; nothing here creates transcript rows or part identities.
   //
   // Producer and consumer have to name ONE scope for that to land:
-  // `eventDirectoryForLiveSession` decides the address the projected events are
-  // published under, and `conversationScopeKey` is an exact
+  // `eventStreamFrameAddress` decides the address a workspace stream's frames
+  // are published under, and `conversationScopeKey` is an exact
   // `directory\0sessionID` match on the address the pane registered. Both go
   // through `sessionRowDirectory`, so this pins them against each other rather
   // than against a literal.
@@ -1379,13 +1379,12 @@ describe("live session events reach the pane that registered the session", () =>
     const globalEvents = eventSource()
     const dispose = attachedPaneIngress(globalEvents)
 
-    // The runtime stamps its own filesystem path on the frame; the live session
-    // carries the workspace identity. This is the address the provider hands the
-    // ingress for every projected event of that session.
-    const directory = eventDirectoryForLiveSession({
-      directory: HOST_DIR,
-      liveSession: { sessionID: SESSION_ID, directory: HOST_DIR, workspaceId: WORKSPACE_ID },
-    })
+    // The runtime stamps its own filesystem path on the frame; the stream's
+    // target carries the workspace identity. This is the address the reader
+    // publishes every frame of that workspace's stream under.
+    const directory = eventStreamFrameAddress({
+      kind: "wr", serverUrl: "http://127.0.0.1:3001", workspaceId: WORKSPACE_ID, workspaceKind: "user-hosted",
+    })(HOST_DIR)
     globalEvents.emit({
       name: directory,
       details: {

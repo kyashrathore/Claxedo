@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import {
+  HEARTBEAT_TIMEOUT_MS,
   MAX_RECONNECT_DELAY_MS,
   RECONNECT_DELAY_MS,
   SUSTAINED_FAILURE_THRESHOLD,
@@ -49,5 +51,11 @@ describe("failureEscalation", () => {
     expect(failureEscalation(SUSTAINED_FAILURE_THRESHOLD)).toBe("escalate")
     expect(failureEscalation(SUSTAINED_FAILURE_THRESHOLD + 1)).toBe("silent")
     expect(failureEscalation(SUSTAINED_FAILURE_THRESHOLD + 5)).toBe("silent")
+  })
+})
+
+describe("HEARTBEAT_TIMEOUT_MS", () => {
+  it("waits for more than one producer heartbeat before calling a stream stalled", () => {
+    expect(HEARTBEAT_TIMEOUT_MS).toBeGreaterThan(EVENT_STREAM_HEARTBEAT_MS)
   })
 })

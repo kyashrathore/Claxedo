@@ -155,13 +155,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   createEffect(() => {
     onCleanup(listenForSessionDeletion({
-      listen: (listener) => {
-        const global = globalSDK.event.listen(listener)
-        const workspace = events?.on("session.deleted", (event) => {
-          listener({ name: event.directory ?? "", details: event })
-        })
-        return () => { global(); workspace?.() }
-      },
+      listen: globalSDK.event.listen,
       surfaces: state.meta.all,
       closeContent: state.layout.closeContent,
       closeSubagentTabs: state.workspacePanel.noteDeletedSession,

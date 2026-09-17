@@ -812,12 +812,14 @@ export function createSessionController(input: {
     })
   }
 
-  // An event stream reported a hole: the frames behind it are gone and the
-  // stream is already live again, so the turn's state is repaired by reading
-  // it — the latest-turn window, where the hole is, and the todo list, which
-  // has no stream-independent read of its own. Each mounted controller answers
-  // once per request for its own session.
-  let handledHistoryResync = 0
+  // The workspace stream reported a hole or opened without a cursor: what the
+  // session did meanwhile is behind the stream, and the stream is live again,
+  // so the turn's state is repaired by reading it — the latest-turn window and
+  // the todo list, which has no stream-independent read of its own. Each
+  // mounted controller answers once per request for its own session; a
+  // request raised before this controller mounted is already covered by the
+  // history its activation loads.
+  let handledHistoryResync = sessionHistoryResyncRequest()?.sequence ?? 0
   createEffect(
     on(
       () => [sessionHistoryResyncRequest(), input.sessionID(), input.directory(), paneActive()] as const,

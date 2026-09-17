@@ -32,7 +32,7 @@ import {
 } from "./route-event-scope"
 import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent } from "@/features/session/subagents/subagent-ingress"
-export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession } from "./live-session"
+export { globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession } from "./live-session"
 import {
   compatEventEnvelope,
   partUpdateSupersedesDeltas,
@@ -200,9 +200,11 @@ const globalSDKContextInput = {
     }
 
     /**
-     * Resolves once the streams that carry the CURRENT live session's frames
-     * are open — `cp` and the session's `wr`, as reported to
-     * `session-event-scope`. The composer awaits it before dispatching a turn,
+     * Resolves once every workspace stream the reader has registered with
+     * `session-event-scope` is open and carries the CURRENT scoped session —
+     * either workspace-wide or scoped to that session. The control-plane
+     * stream is not registered there: it carries no session frames, so a turn
+     * never waits for it. The composer awaits this before dispatching a turn,
      * so the turn's frames arrive live rather than as a late burst.
      *
      * `timeoutMs` bounds how long a user's prompt is held for a stream that is

@@ -1,5 +1,4 @@
 import { createServerClient } from "@/app/connection/server-client"
-import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -54,38 +53,6 @@ export function liveSessionTransition(
   return { next, workspaceScopeChanged }
 }
 
-/**
- * The directory identity a live session's events are published under.
- *
- * A workspace id is the only identity of a relay-backed workspace both ends
- * agree on: the runtime stamps every frame with its OWN filesystem path, which
- * addresses nothing here, so the id — not the frame's `directory` — is what an
- * event is routed by. The consumers, though, are keyed by the ADDRESS the pane
- * resolved for that workspace, and that address is `sessionRowDirectory`'s
- * `workspace:<id>`: the same form the workspace catalog gives the row
- * (`workspaceRowDirectory`), the route resolves for the pane
- * (`resolveWorkspaceRouteDirectory`), and every session row of that workspace
- * carries.
- *
- * Publishing under the BARE id addressed the projected `message.part.updated`
- * / `message.part.delta` of an attached session to a scope no pane had
- * registered — `conversationScopeKey` is an exact `directory\0sessionID` match
- * — so every delta was dropped and the turn appeared only at the settlement
- * catch-up refetch, as one finished block. Routing through the one owner of
- * that address makes producer and consumer name a single scope, which the
- * pane's session query keys share too.
- */
-export function eventDirectoryForLiveSession(input: {
-  directory: string
-  sessionId?: string
-  liveSession?: LiveSession
-}): string {
-  if (input.directory === "global") return input.directory
-  const legacyDirectory = input.liveSession?.directory
-  const workspaceId = input.liveSession?.workspaceId
-    ?? (legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined)
-  return sessionRowDirectory({ workspaceId, hostDirectory: input.directory })
-}
 
 /**
  * The workspace a client must be RELAY-ROUTED to, or `undefined` for "talk to

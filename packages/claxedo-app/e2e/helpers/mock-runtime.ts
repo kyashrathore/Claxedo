@@ -1958,6 +1958,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
     return undefined
   }
+  const sessionParentOf = (sessionId: string | undefined) => {
+    if (!sessionId) return undefined
+    return options.childSessions?.find((child) => child.id === sessionId)?.parentId
+      ?? Object.entries(options.subagents ?? {}).find(([, rows]) => rows.some((row) => row.childSessionId === sessionId))?.[0]
+  }
   const workspaceStreamHandler = (bus: EventBus) => async (route: Route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
@@ -1969,7 +1974,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
     const cursor = workspaceStreamCursor(route, bus)
     const batch = await bus.drain(sseIdleTimeoutMs, cursor)
-    const scoped = sessionID ? batch.filter((entry) => frameSessionId(entry) === sessionID) : batch
+    // A subagent child's frames are the parent's, the way the real handler
+    // scopes them (`sessionParents`), so a session-scoped reader of the parent
+    // sees its children's frames on the same stream.
+    const scoped = sessionID
+      ? batch.filter((entry) => {
+        const frameSession = frameSessionId(entry)
+        return frameSession === sessionID || sessionParentOf(frameSession) === sessionID
+      })
+      : batch
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",

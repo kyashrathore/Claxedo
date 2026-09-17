@@ -5,8 +5,8 @@ import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runt
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
-import { realpathSync } from "node:fs"
-import { resolve, sep } from "node:path"
+import { sep } from "node:path"
+import { realDirectoryPath } from "../real-directory"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -133,11 +133,11 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
  * no workspace to check against and passes.
  */
 function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "ptyDirectory">) {
-  const root = realDirectory(options.directory)
+  const root = realDirectoryPath(options.directory)
   const ptys = new Set<string>()
   const under = (directory: string | undefined) => {
     if (!directory) return false
-    const real = realDirectory(directory)
+    const real = realDirectoryPath(directory)
     return real === root || real.startsWith(root + sep)
   }
   const ownsPty = (id: string) => {
@@ -167,20 +167,13 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
         if (event.terminalId) return ownsPty(event.terminalId)
         return true
       case "session.lifecycle":
-        return !event.directory || realDirectory(event.directory) === root
+        return !event.directory || realDirectoryPath(event.directory) === root
       default:
-        return realDirectory(event.directory) === root
+        return realDirectoryPath(event.directory) === root
     }
   }
 }
 
-function realDirectory(directory: string) {
-  try {
-    return realpathSync(directory)
-  } catch {
-    return resolve(directory)
-  }
-}
 
 /**
  * `/api/wr/events` — the one stream a workspace runtime serves.

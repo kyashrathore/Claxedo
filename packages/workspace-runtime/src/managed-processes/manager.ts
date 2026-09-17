@@ -13,7 +13,8 @@ import { Log } from "../log"
 import { parse as parseJsonc } from "jsonc-parser"
 import path from "path"
 import fs from "fs/promises"
-import { realpathSync, watch, type FSWatcher } from "node:fs"
+import { watch, type FSWatcher } from "node:fs"
+import { realDirectoryPath } from "../real-directory"
 import { zodToJsonSchema } from "zod-to-json-schema"
 import { buildSafeEnv } from "../pty/env"
 import { runGit } from "../git"
@@ -54,13 +55,7 @@ function unregisterPort(port: number): void {
   globalPortReservations.delete(port)
 }
 
-function real(dir: string) {
-  try {
-    return path.resolve(realpathSync.native?.(dir) ?? realpathSync(dir))
-  } catch {
-    return path.resolve(dir)
-  }
-}
+const real = realDirectoryPath
 
 // --- Per-directory state -------------------------------------------------------
 

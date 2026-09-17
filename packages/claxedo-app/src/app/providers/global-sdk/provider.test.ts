@@ -5,7 +5,6 @@ import {
   abortSubagentsForParent,
   applySubagentCompatLifecycleEvent,
   compatEventEnvelope,
-  eventDirectoryForLiveSession,
   globalSdkClientPlacement,
   globalSdkClientWorkspaceId,
   liveSessionTransition,
@@ -315,62 +314,6 @@ describe("global sdk stream bridge", () => {
       workspaceId: "ws_user_hosted",
       workspaceKind: "user-hosted",
     })
-  })
-
-  test("event directory routing prefers typed workspaceId over directory shape", () => {
-    // The frame's own `/runtime/repo` is the HOST's path and addresses nothing
-    // here; the workspace's address is what every consumer is keyed by.
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "/repo/alias",
-        workspaceId: "ws_typed",
-      },
-    })).toBe("workspace:ws_typed")
-  })
-
-  test("event directory routing keeps legacy workspace-id directory fallback only when workspaceId is absent", () => {
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "ws_legacy",
-      },
-    })).toBe("workspace:ws_legacy")
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "workspace:ws_legacy",
-      },
-    })).toBe("workspace:ws_legacy")
-    expect(eventDirectoryForLiveSession({
-      directory: "global",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "ws_legacy",
-      },
-    })).toBe("global")
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "/repo/local",
-      },
-    })).toBe("/runtime/repo")
-  })
-
-  test("a live session's events are addressed the same way its pane and its session row are", () => {
-    // One owner for the address: `sessionRowDirectory`. A pane on a
-    // relay-backed workspace registers its conversation under that exact
-    // string (`conversationScopeKey` is an exact match), so an event published
-    // under the bare id reaches no pane at all.
-    const workspaceId = "ws_attached"
-    expect(eventDirectoryForLiveSession({
-      directory: "/host/machine/worktree",
-      liveSession: { sessionID: "run_attached", directory: "/host/machine/worktree", workspaceId },
-    })).toBe(sessionRowDirectory({ workspaceId, hostDirectory: "/host/machine/worktree" }))
   })
 
 
