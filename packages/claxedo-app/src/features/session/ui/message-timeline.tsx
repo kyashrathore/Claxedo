@@ -571,6 +571,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         const isActive = createMemo(() => activeMessageID() === userMessage.id)
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
+          const shownFoldCount = previous?.find((row): row is TimelineRow.TurnFold => row._tag === "TurnFold")?.foldCount
           const rows = Timeline.constructMessageRows(
             userMessage,
             (messageID) => parts[messageID] ?? emptyParts,
@@ -583,7 +584,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             (userMessageID) => turnFold.isFolded(userMessageID),
             lastTurnOutcome(),
             visibleAssistantMessageIDs(),
-            (userMessageID) => cached?.turnFoldableCounts?.[userMessageID],
+            (userMessageID) => Math.max(cached?.turnFoldableCounts?.[userMessageID] ?? 0, shownFoldCount ?? 0) || undefined,
             (partID) => toolOpen[partID] === true || toolRevealed[partID] === true,
             turnSettleRefreshPending(userMessage.id),
             (messageID) => sessionConversation()?.fragmentParts.has(messageID) === true,

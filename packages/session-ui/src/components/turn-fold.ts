@@ -12,7 +12,7 @@ type FoldablePart = { type: string; userOpen?: boolean }
 // A single tool is already one compact, useful row: folding it replaces the only
 // actionable content with an extra click. Grouped runs count as one row because
 // they own their own disclosure.
-const FOLD_MINIMUM = 2
+export const FOLD_MINIMUM = 2
 
 const NO_KEYS: ReadonlySet<string> = new Set()
 
@@ -86,8 +86,8 @@ export type TurnFoldDecision = {
  * A settled turn whose parts are still pending folds on the count it will have,
  * not the one it has: the first paint holds the answer and little else, and a
  * fold decided from that reopened seconds later when the tools arrived, moving
- * everything below it. The full read's count then rules, and only a turn that
- * turns out to hold nothing foldable loses the row.
+ * everything below it. The caller keeps that fold as a floor on the count once
+ * the read lands (see `foldCount` on the row it builds), so the row never leaves.
  *
  * An interrupted or failed turn keeps the control but does not fold on its own:
  * the rows the fold would hide are the ones that explain what happened, so they

@@ -11,6 +11,7 @@ import type {
 // the just-typed turn renders before the runtime echoes it back.
 import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
 import {
+  FOLD_MINIMUM,
   assistantMessageSettled,
   countFoldableGroups,
   foldedGroupKeys,
@@ -252,13 +253,16 @@ export namespace Timeline {
     ).length
 
     // The fold row is the turn's header: it sits above the turn's content, not
-    // wherever the first tool landed.
+    // wherever the first tool landed. A fold decided on pending parts records
+    // the minimum as its count: the caller hands that back as `priorFoldableCount`
+    // on the next build, so a full read that finds less to hide than the fold
+    // promised does not take the row away under the reader.
     if (fold.canFold) {
       rows.push(
         TimelineRow.TurnFold({
           userMessageID: userMessage.id,
           durationMs,
-          foldCount: foldableCount,
+          foldCount: Math.max(foldableCount, FOLD_MINIMUM),
           folded: fold.folded,
           tokens: turnTokens,
           cost: turnCost,

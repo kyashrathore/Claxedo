@@ -151,7 +151,7 @@ describe("timeline row reuse", () => {
   })
 
   describe("a cold switch folds from the first frame", () => {
-    const rows = (parts: Part[], fragment: boolean) =>
+    const rows = (parts: Part[], fragment: boolean, prior?: number) =>
       Timeline.constructMessageRows(
         userMessage("msg_user"),
         (messageID) => (messageID === "msg_assistant" ? parts : []),
@@ -164,7 +164,7 @@ describe("timeline row reuse", () => {
         () => undefined,
         undefined,
         undefined,
-        undefined,
+        () => prior,
         undefined,
         false,
         () => fragment,
@@ -187,6 +187,13 @@ describe("timeline row reuse", () => {
 
     test("the same texts read canonically do not fold: there is nothing to hide", () => {
       expect(fold(rows(surface, false))).toBeUndefined()
+    })
+
+    test("a fold shown on the preview is a floor: the full read cannot take the row away", () => {
+      const shown = fold(rows(surface, true))
+      expect(shown?.foldCount).toBe(2)
+      const landed = rows([textPart("p1", "msg_assistant", "Hi.")], false, shown?.foldCount)
+      expect(fold(landed)?.folded).toBe(true)
     })
   })
 
