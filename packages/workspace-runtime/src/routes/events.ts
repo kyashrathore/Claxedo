@@ -167,7 +167,13 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
         for (const event of presentationEventsFromRuntimeEnvelope(envelope)) fn(event)
       })
-      const unsubscribeControl = bus.subscribe((event) => fn({ directory: options.directory, payload: event }))
+      // The runtime bus is process-global (one daemon hosts several embedded
+      // runtimes), so a frame that names its own directory keeps it; only a
+      // frame that names none is addressed as this runtime's.
+      const unsubscribeControl = bus.subscribe((event) => fn({
+        directory: "directory" in event && typeof event.directory === "string" && event.directory ? event.directory : options.directory,
+        payload: event,
+      }))
       return () => {
         unsubscribeCompat()
         unsubscribeRuntime()
