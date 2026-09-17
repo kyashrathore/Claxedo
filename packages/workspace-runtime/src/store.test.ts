@@ -9,12 +9,6 @@ import path from "path"
 import { createSubagentAdmissionBoundary } from "@claxedo/agent-sdk-runtime"
 import { AgentMessagePageError, AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
-  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-  LATEST_SURFACE_MAX_TEXT_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PARTS,
-} from "@claxedo/agent-sdk-runtime/message-page"
-import {
   messagePartUpdated,
   messageUpdated,
   messageCompleted,
@@ -967,9 +961,6 @@ void describe("RuntimeStore", () => {
       })
     }
 
-    db(store)
-      .prepare("UPDATE message SET info_json = json_set(info_json, '$.system', ?) WHERE id = ?")
-      .run(omittedPayload, "user-2")
     const originalParse = JSON.parse
     JSON.parse = ((text: string, reviver?: (this: unknown, key: string, value: unknown) => unknown) => {
       assert.equal(text.includes(omittedDecodeMarker), false, "latest-surface decoded an omitted JSON payload")
@@ -991,6 +982,9 @@ void describe("RuntimeStore", () => {
       sessionID: "s1",
       role: "user",
       time: surface.messages[0]?.info.time,
+      summary: { body: "deferred summary", diffs: [{ patch: "large diff" }] },
+      system: "deferred system prompt",
+      tools: { read: true },
       agent: "build",
       model: { providerID: "provider", modelID: "model" },
     })
@@ -1033,16 +1027,15 @@ void describe("RuntimeStore", () => {
     store.close()
   })
 
-  void it("bounds oversized user/assistant text, assistant errors, and many small parts while latest-turn stays complete", () => {
+  void it("latest-surface keeps envelopes and every text whole, drops the tools, and latest-turn stays complete", () => {
     const store = new RuntimeStore(tmp())
-    const oversizedUser = "u".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
-    const oversizedAssistant = "a".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
-    const error = { name: "ProviderError", data: { body: "e".repeat(LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES) } }
-    const chunk = "x".repeat(Math.floor(LATEST_SURFACE_MAX_TEXT_BYTES / LATEST_SURFACE_MAX_TEXT_PARTS) - 256)
+    const longUser = "u".repeat(96 * 1024)
+    const longAnswer = "a".repeat(200 * 1024)
+    const error = { name: "ProviderError", data: { body: "e".repeat(16 * 1024) } }
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [
-      { id: "user-budget", role: "user" },
-      { id: "assistant-budget", role: "assistant", parentID: "user-budget", error },
+      { id: "user-long", role: "user", summary: { title: "kept" } },
+      { id: "assistant-long", role: "assistant", parentID: "user-long", error },
     ]) {
       store.appendEvent({
         sessionId: "s1",
@@ -1051,14 +1044,15 @@ void describe("RuntimeStore", () => {
       })
     }
     const parts = [
-      { id: "user-oversized", messageID: "user-budget", type: "text", text: oversizedUser },
-      { id: "assistant-oversized", messageID: "assistant-budget", type: "text", text: oversizedAssistant },
+      { id: "user-text", messageID: "user-long", type: "text", text: longUser },
       ...Array.from({ length: 20 }, (_, index) => ({
-        id: `assistant-small-${index}`,
-        messageID: "assistant-budget",
+        id: `assistant-narration-${index}`,
+        messageID: "assistant-long",
         type: "text",
-        text: chunk,
+        text: `step ${index}`,
       })),
+      { id: "assistant-tool", messageID: "assistant-long", type: "tool", tool: "bash", callID: "c1", state: { status: "completed", input: {}, output: "o".repeat(1024), title: "bash", metadata: {}, time: { start: 1, end: 2 } } },
+      { id: "assistant-answer", messageID: "assistant-long", type: "text", text: longAnswer },
     ]
     for (const value of parts) {
       store.appendEvent({
@@ -1070,25 +1064,25 @@ void describe("RuntimeStore", () => {
 
     const surface = store.getMessagePage("s1", { view: "latest-surface" })
     assert.ok(surface)
+    const surfaceUser = surface.messages[0]
     const surfaceAssistant = surface.messages[1]
+    assert.ok(surfaceUser)
     assert.ok(surfaceAssistant)
-    assert.deepEqual(surface.messages[0]?.parts, [])
-    assert.equal(surfaceAssistant.info.error, undefined)
+    assert.equal((surfaceUser.parts[0] as any).text, longUser)
+    assert.deepEqual((surfaceUser.info as any).summary, { title: "kept" })
+    assert.deepEqual(surfaceAssistant.info.error, error)
     assert.deepEqual(
       surfaceAssistant.parts.map((part) => part.id),
-      Array.from({ length: LATEST_SURFACE_MAX_TEXT_PARTS }, (_, index) => `assistant-small-${index + 4}`),
+      [...Array.from({ length: 20 }, (_, index) => `assistant-narration-${index}`), "assistant-answer"],
     )
+    assert.equal((surfaceAssistant.parts.at(-1) as any).text, longAnswer)
 
     const complete = store.getMessagePage("s1", { view: "latest-turn" })
     assert.ok(complete)
-    const completeUser = complete.messages[0]
     const completeAssistant = complete.messages[1]
-    assert.ok(completeUser)
     assert.ok(completeAssistant)
-    assert.equal((completeUser.parts[0] as any).text, oversizedUser)
-    assert.equal((completeAssistant.parts[0] as any).text, oversizedAssistant)
-    assert.deepEqual(completeAssistant.info.error, error)
-    assert.equal(completeAssistant.parts.length, 21)
+    assert.equal(completeAssistant.parts.length, 22)
+    assert.equal(completeAssistant.parts[20]?.type, "tool")
     store.close()
   })
 

@@ -43,13 +43,6 @@ export const MOCK_MESSAGE_PAGE_MAX_LIMIT = 500
  */
 export const MOCK_MESSAGE_PAGE_DEFAULT_LIMIT = 80
 
-// Mirrors packages/schema/src/session-message-surface.ts.
-const LATEST_SURFACE_MAX_TEXT_PART_BYTES = 48 * 1024
-const LATEST_SURFACE_MAX_PART_BYTES = 56 * 1024
-const LATEST_SURFACE_MAX_TEXT_BYTES = 64 * 1024
-const LATEST_SURFACE_MAX_PARTS_BYTES = 80 * 1024
-const LATEST_SURFACE_MAX_TEXT_PARTS = 16
-
 /** A producer-status rejection, mirroring `AgentMessagePageError`. */
 export class MockMessagePageError extends Error {
   constructor(
@@ -156,53 +149,14 @@ export function selectMockMessagePage(input: {
 }
 
 /**
- * Apply the `latest-surface` projection to an already-selected page: drop
- * every non-text part, drop the user envelope fields the contract omits, and
- * keep a bounded newest-priority set of text parts in canonical order. No
- * selected value is truncated or rewritten. Mirrors
- * `projectLatestSurfaceMessages` in agent-sdk-runtime/src/message-page.ts.
+ * Apply the `latest-surface` projection to an already-selected page: every
+ * text part, whole, and nothing else. Mirrors `projectLatestSurfaceMessages`
+ * in agent-sdk-runtime/src/message-page.ts.
  */
 export function projectMockSurfacePage<
   TRow extends { info: Record<string, unknown>; parts: Array<{ type?: unknown; text?: unknown }> },
 >(rows: readonly TRow[]): TRow[] {
-  type Candidate = { messageIndex: number; partIndex: number; textBytes: number; partBytes: number }
-  const candidates: Candidate[] = []
-  for (let messageIndex = rows.length - 1; messageIndex >= 0; messageIndex--) {
-    const parts = rows[messageIndex].parts
-    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
-      const part = parts[partIndex]
-      if (part.type !== "text" || typeof part.text !== "string") continue
-      const textBytes = utf8Bytes(part.text)
-      if (textBytes > LATEST_SURFACE_MAX_TEXT_PART_BYTES) continue
-      const partBytes = jsonBytes(part)
-      if (partBytes > LATEST_SURFACE_MAX_PART_BYTES) continue
-      candidates.push({ messageIndex, partIndex, textBytes, partBytes })
-    }
-  }
-
-  const budget = { textBytes: 0, partBytes: 0, count: 0 }
-  const selected = new Set<string>()
-  for (const candidate of candidates) {
-    if (budget.count >= LATEST_SURFACE_MAX_TEXT_PARTS) break
-    if (budget.textBytes + candidate.textBytes > LATEST_SURFACE_MAX_TEXT_BYTES) continue
-    if (budget.partBytes + candidate.partBytes > LATEST_SURFACE_MAX_PARTS_BYTES) continue
-    budget.count++
-    budget.textBytes += candidate.textBytes
-    budget.partBytes += candidate.partBytes
-    selected.add(`${candidate.messageIndex}:${candidate.partIndex}`)
-  }
-
-  return rows.map((row, messageIndex) => ({
-    ...row,
-    info: projectSurfaceInfo(row.info),
-    parts: row.parts.filter((_part, partIndex) => selected.has(`${messageIndex}:${partIndex}`)),
-  }))
-}
-
-function projectSurfaceInfo(info: Record<string, unknown>) {
-  if (info.role !== "user") return info
-  const { summary: _summary, system: _system, tools: _tools, ...rest } = info
-  return rest
+  return rows.map((row) => ({ ...row, parts: row.parts.filter((part) => part.type === "text") }))
 }
 
 function cursorIndex(
@@ -221,15 +175,3 @@ function range(from: number, to: number) {
   return Array.from({ length }, (_, offset) => from + offset)
 }
 
-function utf8Bytes(value: string) {
-  return new TextEncoder().encode(value).byteLength
-}
-
-function jsonBytes(value: unknown) {
-  try {
-    const encoded = JSON.stringify(value)
-    return encoded === undefined ? Number.POSITIVE_INFINITY : utf8Bytes(encoded)
-  } catch {
-    return Number.POSITIVE_INFINITY
-  }
-}

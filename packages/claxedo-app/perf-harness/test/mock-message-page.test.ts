@@ -129,7 +129,7 @@ describe("numeric paging", () => {
 })
 
 describe("the surface projection", () => {
-  test("drops non-text parts and the omitted user envelope fields", () => {
+  test("drops non-text parts and keeps the envelope whole", () => {
     const projected = projectMockSurfacePage<
       { info: Record<string, unknown>; parts: Array<{ type: string; text?: string }> }
     >([
@@ -142,27 +142,17 @@ describe("the surface projection", () => {
         parts: [{ type: "tool" }, { type: "text", text: "world" }],
       },
     ])
-    expect(projected[0].info).toEqual({ id: "msg_perf_798", role: "user", agent: "build" })
+    expect(projected[0].info).toEqual({ id: "msg_perf_798", role: "user", summary: "s", system: ["x"], tools: {}, agent: "build" })
     expect(projected[0].parts).toEqual([{ type: "text", text: "hello" }])
     expect(projected[1].parts).toEqual([{ type: "text", text: "world" }])
   })
 
-  test("omits an oversized text part whole rather than truncating it", () => {
-    const projected = projectMockSurfacePage([
-      {
-        info: { id: "msg_perf_799", role: "assistant" },
-        parts: [{ type: "text", text: "x".repeat(49 * 1024) }, { type: "text", text: "kept" }],
-      },
-    ])
-    expect(projected[0].parts).toEqual([{ type: "text", text: "kept" }])
-  })
-
-  test("keeps at most the newest-priority bounded set of text parts", () => {
-    const parts = Array.from({ length: 20 }, (_, index) => ({ type: "text" as const, text: `part ${index}` }))
+  test("keeps every text part whole, whatever its size or count", () => {
+    const parts = [
+      { type: "text" as const, text: "x".repeat(200 * 1024) },
+      ...Array.from({ length: 20 }, (_, index) => ({ type: "text" as const, text: `part ${index}` })),
+    ]
     const projected = projectMockSurfacePage([{ info: { id: "msg_perf_799", role: "assistant" }, parts }])
-    expect(projected[0].parts.length).toBe(16)
-    // Newest-priority selection, restored to canonical order.
-    expect(projected[0].parts.at(-1)).toEqual({ type: "text", text: "part 19" })
-    expect(projected[0].parts.at(0)).toEqual({ type: "text", text: "part 4" })
+    expect(projected[0].parts).toEqual(parts)
   })
 })

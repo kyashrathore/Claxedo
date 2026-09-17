@@ -15,13 +15,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import {
-  AgentMessagePageError,
-  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-  LATEST_SURFACE_MAX_TEXT_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PARTS,
-} from "@claxedo/agent-sdk-runtime/message-page"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { eq } from "drizzle-orm"
 
 const root = path.join(realpathSync(os.tmpdir()), `message-replay-test-${randomUUID().slice(0, 8)}`)
@@ -164,7 +158,7 @@ describe("message replay", () => {
             ...(index === 2
               ? {
                   summary: { body: "deferred summary", diffs: [{ patch: "large diff" }] },
-                  system: omittedPayload,
+                  system: "system prompt",
                   tools: { read: true },
                   agent: "build",
                   model: { providerID: "provider", modelID: "model" },
@@ -209,6 +203,9 @@ describe("message replay", () => {
       sessionID: "sess_latest_surface",
       role: "user",
       time: { created: 3 },
+      summary: { body: "deferred summary", diffs: [{ patch: "large diff" }] },
+      system: "system prompt",
+      tools: { read: true },
       agent: "build",
       model: { providerID: "provider", modelID: "model" },
     })
@@ -247,27 +244,27 @@ describe("message replay", () => {
     ])
   })
 
-  test("bounds oversized user/assistant text, assistant errors, and many small parts while latest-turn stays complete", () => {
-    const sessionID = "sess_surface_budget"
-    const oversizedUser = "u".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
-    const oversizedAssistant = "a".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
-    const error = { name: "ProviderError", data: { body: "e".repeat(LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES) } }
-    const chunk = "x".repeat(Math.floor(LATEST_SURFACE_MAX_TEXT_BYTES / LATEST_SURFACE_MAX_TEXT_PARTS) - 256)
+  test("latest-surface keeps envelopes and every text whole, drops the tools, and latest-turn stays complete", () => {
+    const sessionID = "sess_surface_whole"
+    const longUser = "u".repeat(96 * 1024)
+    const longAnswer = "a".repeat(200 * 1024)
+    const error = { name: "ProviderError", data: { body: "e".repeat(16 * 1024) } }
     for (const info of [
-      { id: "budget-user", sessionID, role: "user", time: { created: 1 } },
-      { id: "budget-assistant", sessionID, role: "assistant", parentID: "budget-user", time: { created: 2 }, error },
+      { id: "whole-user", sessionID, role: "user", time: { created: 1 } },
+      { id: "whole-assistant", sessionID, role: "assistant", parentID: "whole-user", time: { created: 2 }, error },
     ]) {
       persistMessageEvent(sessionID, { type: "message.updated", properties: { info } })
     }
     const parts = [
-      { id: "budget-user-oversized", messageID: "budget-user", type: "text", text: oversizedUser },
-      { id: "budget-assistant-oversized", messageID: "budget-assistant", type: "text", text: oversizedAssistant },
+      { id: "whole-user-text", messageID: "whole-user", type: "text", text: longUser },
       ...Array.from({ length: 20 }, (_, index) => ({
-        id: `budget-small-${index}`,
-        messageID: "budget-assistant",
+        id: `whole-narration-${index}`,
+        messageID: "whole-assistant",
         type: "text",
-        text: chunk,
+        text: `step ${index}`,
       })),
+      { id: "whole-tool", messageID: "whole-assistant", type: "tool", state: { status: "completed", output: "o".repeat(1024) } },
+      { id: "whole-answer", messageID: "whole-assistant", type: "text", text: longAnswer },
     ]
     for (const part of parts) {
       persistMessageEvent(sessionID, {
@@ -277,17 +274,17 @@ describe("message replay", () => {
     }
 
     const surface = readSessionMessagePage(sessionID, { view: "latest-surface" })
-    expect(surface.messages[0]?.parts).toEqual([])
-    expect(surface.messages[1]?.info.error).toBeUndefined()
-    expect(surface.messages[1]?.parts.map((part) => part.id)).toEqual(
-      Array.from({ length: LATEST_SURFACE_MAX_TEXT_PARTS }, (_, index) => `budget-small-${index + 4}`),
-    )
+    expect(surface.messages[0]?.parts[0]?.text).toBe(longUser)
+    expect(surface.messages[1]?.info.error).toEqual(error)
+    expect(surface.messages[1]?.parts.map((part) => part.id)).toEqual([
+      ...Array.from({ length: 20 }, (_, index) => `whole-narration-${index}`),
+      "whole-answer",
+    ])
+    expect(surface.messages[1]?.parts.at(-1)?.text).toBe(longAnswer)
 
     const complete = readSessionMessagePage(sessionID, { view: "latest-turn" })
-    expect(complete.messages[0]?.parts[0]?.text).toBe(oversizedUser)
-    expect(complete.messages[1]?.parts[0]?.text).toBe(oversizedAssistant)
-    expect(complete.messages[1]?.info.error).toEqual(error)
-    expect(complete.messages[1]?.parts).toHaveLength(21)
+    expect(complete.messages[1]?.parts).toHaveLength(22)
+    expect(complete.messages[1]?.parts[20]?.type).toBe("tool")
   })
 
   test("does not invent a surface cursor for an adjacent user and final assistant", () => {

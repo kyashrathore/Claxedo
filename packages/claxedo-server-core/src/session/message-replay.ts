@@ -8,15 +8,7 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import {
-  AgentMessagePageError,
-  LATEST_SURFACE_MAX_INFO_BYTES,
-  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-  LATEST_SURFACE_MAX_PART_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-  selectLatestSurfaceTextCandidateIndexes,
-  type AgentMessagePageInput,
-} from "@claxedo/agent-sdk-runtime/message-page"
+import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
@@ -332,120 +324,48 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       const raw = ClaxedoDB.raw()
       const infoRows = raw
         .prepare(`
-          WITH projected AS (
-            SELECT
-              ordinal,
-              CASE
-                WHEN role = 'user'
-                THEN json_remove(json_extract(data, '$.info'), '$.summary', '$.system', '$.tools')
-                WHEN role = 'assistant'
-                  AND length(CAST(json_extract(data, '$.info.error') AS BLOB)) > ?
-                THEN json_remove(json_extract(data, '$.info'), '$.error')
-                ELSE json_extract(data, '$.info')
-              END AS info_json
-            FROM claxedo_cloud_message
-            WHERE session_id = ? AND ordinal IN (${ordinalPlaceholders})
-          )
-          SELECT ordinal, info_json
-          FROM projected
-          WHERE length(CAST(info_json AS BLOB)) <= ?
+          SELECT ordinal, json_extract(data, '$.info') AS info_json
+          FROM claxedo_cloud_message
+          WHERE session_id = ? AND ordinal IN (${ordinalPlaceholders})
           ORDER BY ordinal ASC
         `)
-        .all(
-          LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-          sessionId,
-          ...selectedOrdinals,
-          LATEST_SURFACE_MAX_INFO_BYTES,
-        )
+        .all(sessionId, ...selectedOrdinals)
         .flatMap((row): Array<{ ordinal: number; info_json: string }> => {
           const item = asRecord(row)
           const ordinal = item && numberColumn(item, "ordinal")
           const info_json = item && textColumn(item, "info_json")
           return ordinal === undefined || info_json === undefined ? [] : [{ ordinal, info_json }]
         })
-
-      const candidates = raw
+      const selectedParts = raw
         .prepare(`
           SELECT
             m.ordinal AS message_ordinal,
-            CAST(part.key AS INTEGER) AS part_ordinal,
-            length(CAST(json_extract(part.value, '$.text') AS BLOB)) AS text_bytes,
-            length(CAST(part.value AS BLOB)) AS part_bytes
+            part.value AS part_json
           FROM claxedo_cloud_message m, json_each(m.data, '$.parts') AS part
           WHERE m.session_id = ?
             AND m.ordinal IN (${ordinalPlaceholders})
             AND json_extract(part.value, '$.type') = 'text'
-            AND typeof(json_extract(part.value, '$.text')) = 'text'
-            AND length(CAST(json_extract(part.value, '$.text') AS BLOB)) <= ?
-            AND length(CAST(part.value AS BLOB)) <= ?
-          ORDER BY m.ordinal DESC, CAST(part.key AS INTEGER) DESC
+          ORDER BY m.ordinal ASC, CAST(part.key AS INTEGER) ASC
         `)
-        .all(
-          sessionId,
-          ...selectedOrdinals,
-          LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-          LATEST_SURFACE_MAX_PART_BYTES,
-        )
-        .flatMap((row): Array<LatestSurfaceCandidate> => {
+        .all(sessionId, ...selectedOrdinals)
+        .flatMap((row): Array<{ message_ordinal: number; part_json: string }> => {
           const item = asRecord(row)
-          if (!item) return []
-          const message_ordinal = numberColumn(item, "message_ordinal")
-          const part_ordinal = numberColumn(item, "part_ordinal")
-          const text_bytes = numberColumn(item, "text_bytes")
-          const part_bytes = numberColumn(item, "part_bytes")
-          if (
-            message_ordinal === undefined ||
-            part_ordinal === undefined ||
-            text_bytes === undefined ||
-            part_bytes === undefined
-          )
-            return []
-          return [{ message_ordinal, part_ordinal, text_bytes, part_bytes }]
+          const message_ordinal = item && numberColumn(item, "message_ordinal")
+          const part_json = item && textColumn(item, "part_json")
+          return message_ordinal === undefined || part_json === undefined
+            ? []
+            : [{ message_ordinal, part_json }]
         })
-      const selectedCandidateIndexes = selectLatestSurfaceTextCandidateIndexes(
-        candidates.map((candidate) => ({ textBytes: candidate.text_bytes, partBytes: candidate.part_bytes })),
-      )
-      const selectedParts = selectedCandidateIndexes.length === 0
-        ? []
-        : raw
-            .prepare(`
-              SELECT
-                m.ordinal AS message_ordinal,
-                CAST(part.key AS INTEGER) AS part_ordinal,
-                part.value AS part_json
-              FROM claxedo_cloud_message m, json_each(m.data, '$.parts') AS part
-              WHERE m.session_id = ? AND (
-                ${selectedCandidateIndexes.map(() => "(m.ordinal = ? AND CAST(part.key AS INTEGER) = ?)").join(" OR ")}
-              )
-              ORDER BY m.ordinal ASC, CAST(part.key AS INTEGER) ASC
-            `)
-            .all(
-              sessionId,
-              ...selectedCandidateIndexes.flatMap((index) => {
-                const candidate = candidates[index]
-                return [candidate.message_ordinal, candidate.part_ordinal]
-              }),
-            )
-            .flatMap((row): Array<{ message_ordinal: number; part_json: string }> => {
-              const item = asRecord(row)
-              const message_ordinal = item && numberColumn(item, "message_ordinal")
-              const part_json = item && textColumn(item, "part_json")
-              return message_ordinal === undefined || part_json === undefined
-                ? []
-                : [{ message_ordinal, part_json }]
-            })
       const partsByOrdinal = new Map<number, Array<Record<string, unknown>>>()
       for (const part of selectedParts) {
         const parsed = asRecord(JSON.parse(part.part_json))
         if (!parsed) continue
         partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), parsed])
       }
-      const messages = infoRows.length === selectedOrdinals.length
-        ? infoRows.flatMap((row) => {
-            const info = asRecord(JSON.parse(row.info_json))
-            return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
-          })
-        : []
+      const messages = infoRows.flatMap((row) => {
+        const info = asRecord(JSON.parse(row.info_json))
+        return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
+      })
       const omittedIntermediate =
         boundary.ordinal === final.ordinal
           ? undefined
@@ -633,14 +553,6 @@ function loadMessage(messageId: string) {
 function existingParts(messageId: string): unknown[] {
   const row = loadMessage(messageId)
   return row ? readStoredMessage(row.data).parts : []
-}
-
-/** One text part considered for the latest-surface projection. */
-type LatestSurfaceCandidate = {
-  message_ordinal: number
-  part_ordinal: number
-  text_bytes: number
-  part_bytes: number
 }
 
 /**

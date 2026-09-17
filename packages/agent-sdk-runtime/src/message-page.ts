@@ -1,20 +1,5 @@
 import type { AgentMessage } from "./index"
 
-// Claxedo owns the latency-bounded presentation contract. Keeping these limits
-// here prevents the runtime's public API from depending on a provider schema.
-export const LATEST_SURFACE_MAX_TEXT_PART_BYTES = 48 * 1024
-export const LATEST_SURFACE_MAX_PART_BYTES = 56 * 1024
-export const LATEST_SURFACE_MAX_TEXT_BYTES = 64 * 1024
-export const LATEST_SURFACE_MAX_PARTS_BYTES = 80 * 1024
-export const LATEST_SURFACE_MAX_TEXT_PARTS = 16
-export const LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES = 8 * 1024
-export const LATEST_SURFACE_MAX_INFO_BYTES = 16 * 1024
-
-export type LatestSurfaceTextBudgetCandidate = Readonly<{
-  textBytes: number
-  partBytes: number
-}>
-
 /**
  * An authoritative transcript-window request. Cursors are opaque to every
  * consumer.
@@ -23,9 +8,9 @@ export type LatestSurfaceTextBudgetCandidate = Readonly<{
  * returns the complete latest turn. `latest-surface` returns at most its owning
  * user and final message; its cursor points at the final message so ordinary
  * paging restores every omitted intermediate without a second cursor protocol.
- * The surface is a first-paint projection: user `summary`, `system`, and
- * `tools` envelope fields and every non-text part are intentionally omitted as
- * whole canonical values. Text parts are never truncated or synthesized.
+ * The surface is a first-paint projection: the two envelopes whole, and their
+ * text parts only, whole. It is what a folded turn draws — the prompt, the fold
+ * row and the answer — so the answer is never the thing a budget trims.
  */
 export type AgentMessagePageInput =
   | {
@@ -47,141 +32,25 @@ export type AgentMessagePage = {
   nextCursor?: string
 }
 
-/**
- * `latest-surface` is a latency-bounded fragment, not a second transcript.
- * These byte limits are measured as UTF-8. 48 KiB preserves the largest text
- * value in the measured real-session corpus (25,115 bytes) with nearly 2x
- * headroom, while the aggregate limits prevent many individually-small parts
- * from rebuilding an unbounded first paint.
- */
-function utf8Bytes(value: string) {
-  return new TextEncoder().encode(value).byteLength
-}
-
-/** The byte measure producers must mirror at the persistence boundary. */
-export function latestSurfaceJSONBytes(value: unknown) {
-  try {
-    const encoded = JSON.stringify(value)
-    return encoded === undefined ? Number.POSITIVE_INFINITY : utf8Bytes(encoded)
-  } catch {
-    return Number.POSITIVE_INFINITY
-  }
-}
-
-function projectLatestSurfaceInfo(input: Record<string, unknown>): Record<string, unknown> | undefined {
-  const info: Record<string, unknown> = { ...input }
-  if (info.role === "user") {
-    delete info.summary
-    delete info.system
-    delete info.tools
-  }
-  if (
-    info.role === "assistant" &&
-    "error" in info &&
-    latestSurfaceJSONBytes(info.error) > LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES
-  ) {
-    delete info.error
-  }
-  if (latestSurfaceJSONBytes(info) > LATEST_SURFACE_MAX_INFO_BYTES) return undefined
-  return info
-}
-
 /** The message shape the latest-surface projection reads. */
 export type LatestSurfaceMessage = { info: Record<string, unknown>; parts: unknown[] }
 
-type SurfaceTextCandidate = {
-  messageIndex: number
-  partIndex: number
-  textBytes: number
-  partBytes: number
+export function isLatestSurfacePart(part: unknown) {
+  return !!part && typeof part === "object" && (part as { type?: unknown }).type === "text"
 }
 
 /**
- * Select indexes from candidates already ordered newest-priority first.
- * Persistence producers use this on byte metadata before fetching/parsing the
- * chosen JSON values, so their SQL and the in-memory contract cannot drift.
+ * Apply the producer-independent `latest-surface` projection: every text part
+ * of the message, in canonical order, and nothing else.
  */
-export function selectLatestSurfaceTextCandidateIndexes(
-  candidates: readonly LatestSurfaceTextBudgetCandidate[],
-) {
-  const selected: number[] = []
-  let textBytes = 0
-  let partBytes = 0
-  for (const [index, candidate] of candidates.entries()) {
-    if (selected.length >= LATEST_SURFACE_MAX_TEXT_PARTS) break
-    if (candidate.textBytes > LATEST_SURFACE_MAX_TEXT_PART_BYTES) continue
-    if (candidate.partBytes > LATEST_SURFACE_MAX_PART_BYTES) continue
-    if (textBytes + candidate.textBytes > LATEST_SURFACE_MAX_TEXT_BYTES) continue
-    if (partBytes + candidate.partBytes > LATEST_SURFACE_MAX_PARTS_BYTES) continue
-    selected.push(index)
-    textBytes += candidate.textBytes
-    partBytes += candidate.partBytes
-  }
-  return selected
+export function projectLatestSurfaceMessage<TMessage extends LatestSurfaceMessage>(message: TMessage): TMessage {
+  return { ...message, parts: message.parts.filter(isLatestSurfacePart) }
 }
 
-function surfaceTextCandidate(part: unknown, messageIndex: number, partIndex: number): SurfaceTextCandidate | undefined {
-  if (!part || typeof part !== "object") return undefined
-  const value = part as { type?: unknown; text?: unknown }
-  if (value.type !== "text" || typeof value.text !== "string") return undefined
-  const textBytes = utf8Bytes(value.text)
-  if (textBytes > LATEST_SURFACE_MAX_TEXT_PART_BYTES) return undefined
-  const partBytes = latestSurfaceJSONBytes(part)
-  if (partBytes > LATEST_SURFACE_MAX_PART_BYTES) return undefined
-  return { messageIndex, partIndex, textBytes, partBytes }
-}
-
-/**
- * Apply the complete, producer-independent `latest-surface` budget.
- *
- * Selection walks the final message before its owning user and the newest text
- * within each message first. It takes a bounded newest-priority set, then
- * restores the producer's canonical message/part order. No selected value is
- * truncated or rewritten. A required envelope that cannot fit causes the whole surface to
- * be omitted; the deferred complete `latest-turn` is the authoritative repair.
- */
 export function projectLatestSurfaceMessages<TMessage extends LatestSurfaceMessage>(
   messages: readonly TMessage[],
-): TMessage[]
-// The projection only DROPS optional info fields and unselected parts, so what
-// comes back still satisfies the caller's message type; the implementation is
-// typed at the shape it actually reads.
-export function projectLatestSurfaceMessages(messages: readonly LatestSurfaceMessage[]): LatestSurfaceMessage[] {
-  const info = messages.map((message) => projectLatestSurfaceInfo(message.info))
-  if (info.some((value) => value === undefined)) return []
-
-  const candidates: SurfaceTextCandidate[] = []
-  for (const [messageIndex, message] of messages.entries()) {
-    for (const [partIndex, part] of message.parts.entries()) {
-      const candidate = surfaceTextCandidate(part, messageIndex, partIndex)
-      if (candidate) candidates.push(candidate)
-    }
-  }
-  candidates.reverse()
-
-  const selected = new Set(
-    selectLatestSurfaceTextCandidateIndexes(candidates)
-      .map((index) => candidates[index])
-      .filter((candidate) => candidate !== undefined)
-      .map((candidate) => `${candidate.messageIndex}:${candidate.partIndex}`),
-  )
-
-  return messages.map((message, messageIndex) => ({
-    ...message,
-    info: info[messageIndex]!,
-    parts: message.parts.filter((_part, partIndex) => selected.has(`${messageIndex}:${partIndex}`)),
-  }))
-}
-
-/**
- * Project an already-selected surface message to the canonical first-paint
- * shape. This is deliberately independent of persistence and cursor policy so
- * every authoritative Claxedo producer applies the same lossless omissions.
- */
-export function projectLatestSurfaceMessage<TMessage extends LatestSurfaceMessage>(
-  message: TMessage,
-): TMessage | undefined {
-  return projectLatestSurfaceMessages([message])[0]
+): TMessage[] {
+  return messages.map(projectLatestSurfaceMessage)
 }
 
 /**

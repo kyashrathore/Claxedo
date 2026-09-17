@@ -11,13 +11,6 @@ import {
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import {
-  LATEST_SURFACE_MAX_INFO_BYTES,
-  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-  LATEST_SURFACE_MAX_PART_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-  selectLatestSurfaceTextCandidateIndexes,
-} from "@claxedo/agent-sdk-runtime/message-page"
-import {
   createMemorySubagentAdmissionStore,
   firstTurnErrorData,
   normalizeHarnessIdentity,
@@ -3679,69 +3672,26 @@ export class RuntimeStore {
   }
 
   /**
-   * Hydrate the canonical first-paint projection directly from persistence.
-   * The callers supply already-projected message envelopes, and the part query
-   * excludes non-text JSON before it crosses the SQLite/JavaScript boundary.
+   * Hydrate the first-paint projection directly from persistence: every text
+   * part of the given messages, filtered before the JSON crosses the
+   * SQLite/JavaScript boundary.
    */
   private hydrateSurfaceMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessage[] {
     if (msgs.length === 0) return []
     const placeholders = msgs.map(() => "?").join(", ")
-    const candidates = this.db
-      .prepare<{
-        part_id: string
-        message_id: string
-        part_ord: number
-        message_ord: number
-        text_bytes: number
-        part_bytes: number
-      }>(
-        `
-        SELECT
-          p.id AS part_id,
-          p.message_id,
-          p.ord AS part_ord,
-          m.ord AS message_ord,
-          length(CAST(json_extract(p.data_json, '$.text') AS BLOB)) AS text_bytes,
-          length(CAST(p.data_json AS BLOB)) AS part_bytes
-        FROM part p
-        INNER JOIN message m ON m.id = p.message_id AND m.session_id = p.session_id
-        WHERE p.session_id = ?
-          AND p.message_id IN (${placeholders})
-          AND json_extract(p.data_json, '$.type') = 'text'
-          AND typeof(json_extract(p.data_json, '$.text')) = 'text'
-          AND length(CAST(json_extract(p.data_json, '$.text') AS BLOB)) <= ?
-          AND length(CAST(p.data_json AS BLOB)) <= ?
-        ORDER BY m.ord DESC, p.ord DESC
-      `,
-      )
-      .all(
-        sessionId,
-        ...msgs.map((message) => message.id),
-        LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-        LATEST_SURFACE_MAX_PART_BYTES,
-      )
-    const selectedIndexes = selectLatestSurfaceTextCandidateIndexes(
-      candidates.map((candidate) => ({ textBytes: candidate.text_bytes, partBytes: candidate.part_bytes })),
-    )
-    const selectedIds = selectedIndexes.map((index) => candidates[index].part_id)
-    if (selectedIds.length === 0) {
-      return msgs.map((msg) => ({
-        info: readColumn.messageInfo(msg.info_json),
-        parts: [],
-      }))
-    }
-    const selectedPlaceholders = selectedIds.map(() => "?").join(", ")
     const parts = this.db
       .prepare<{ message_id: string; data_json: string }>(
         `
         SELECT p.message_id, p.data_json
         FROM part p
         INNER JOIN message m ON m.id = p.message_id AND m.session_id = p.session_id
-        WHERE p.session_id = ? AND p.id IN (${selectedPlaceholders})
+        WHERE p.session_id = ?
+          AND p.message_id IN (${placeholders})
+          AND json_extract(p.data_json, '$.type') = 'text'
         ORDER BY m.ord ASC, p.ord ASC
       `,
       )
-      .all(sessionId, ...selectedIds)
+      .all(sessionId, ...msgs.map((message) => message.id))
     const partsByMessage = new Map<string, AgentMessage["parts"]>()
     for (const part of parts) {
       const current = partsByMessage.get(part.message_id) ?? []
@@ -3849,32 +3799,13 @@ export class RuntimeStore {
         const selected = this.db
           .prepare<MessageProjectionRow>(
             `
-            WITH projected AS (
-            SELECT
-              id,
-              ord,
-              CASE
-                WHEN role = 'user' THEN json_remove(info_json, '$.summary', '$.system', '$.tools')
-                WHEN role = 'assistant'
-                  AND length(CAST(json_extract(info_json, '$.error') AS BLOB)) > ?
-                THEN json_remove(info_json, '$.error')
-                ELSE info_json
-              END AS info_json
+            SELECT id, ord, info_json
             FROM message
             WHERE session_id = ? AND id IN (${placeholders})
-            )
-            SELECT id, ord, info_json
-            FROM projected
-            WHERE length(CAST(info_json AS BLOB)) <= ?
             ORDER BY ord ASC
           `,
           )
-          .all(
-            LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-            sessionId,
-            ...selectedIds,
-            LATEST_SURFACE_MAX_INFO_BYTES,
-          )
+          .all(sessionId, ...selectedIds)
         const older = this.db
           .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
           .get(sessionId, boundary.ord)
@@ -3882,7 +3813,7 @@ export class RuntimeStore {
           .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord > ? AND ord < ? LIMIT 1")
           .get(sessionId, boundary.ord, final.ord)
         return {
-          messages: selected.length === selectedIds.length ? this.hydrateSurfaceMessages(sessionId, selected) : [],
+          messages: this.hydrateSurfaceMessages(sessionId, selected),
           ...(older || intermediate ? { nextCursor: encodeMessagePageCursor(sessionId, final.ord) } : {}),
         }
       }
