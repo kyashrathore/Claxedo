@@ -244,6 +244,21 @@ describe("credential routes", () => {
     })
   })
 
+  test("a discovered login the store took and the engine did not is answered by name", async () => {
+    const registry = Object.assign(credentials(), {
+      saveDiscoveredCredentials: vi.fn(async () => {
+        throw new SdkCredentialSyncError(new Error("OpenCode answered 500 to the integration list"))
+      }),
+    })
+    const response = await CredentialRoutes(registry).request("http://localhost/save-discovered", {
+      method: "POST",
+      body: JSON.stringify({ discovery_id: "fresh", items: [{ provider_id: "claude-sdk", kind: "oauth_token", scope: "local" }] }),
+    })
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "engine_credential_sync_failed" } })
+  })
+
   test("changes credential scope with explicit consent timing", async () => {
     const registry = Object.assign(credentials(), {
       updateCredentialScope: vi.fn(async () => true),
@@ -868,6 +883,37 @@ describe("credential routes", () => {
         message: "Failed to update credential status",
       },
     })
+  })
+
+  test("a key the store took and the engine did not is answered by name, never as a failed store", async () => {
+    const registry = credentials()
+    const engine = new SdkCredentialSyncError(new Error("OpenCode answered 500 to the integration list"))
+    ;(registry.putCredential as ReturnType<typeof vi.fn>).mockRejectedValueOnce(engine)
+    ;(registry.syncLocalCredentials as ReturnType<typeof vi.fn>).mockRejectedValueOnce(engine)
+    const app = CredentialRoutes(registry)
+    const expected = {
+      error: {
+        code: "engine_credential_sync_failed",
+        message: "Stored, but the running engine could not be updated: OpenCode answered 500 to the integration list",
+        details: { detail: { name: "Error", message: "OpenCode answered 500 to the integration list" } },
+      },
+    }
+
+    const put = await app.request("http://localhost/", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor" }),
+    })
+    expect(put.status).toBe(500)
+    await expect(put.json()).resolves.toEqual(expected)
+
+    const sync = await app.request("http://localhost/sync-local", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider_ids: ["openai"] }),
+    })
+    expect(sync.status).toBe(500)
+    await expect(sync.json()).resolves.toEqual(expected)
   })
 })
 

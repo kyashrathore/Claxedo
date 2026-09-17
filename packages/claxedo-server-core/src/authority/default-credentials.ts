@@ -54,10 +54,13 @@ async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string
  * reconciles when the engine actually starts. Lazy-imported like the rest of
  * the fs-touching modules here: Worker hosts have no embedded engine and must
  * keep it off their import graph.
+ *
+ * `providers` is what the mutation touched; the bridge leaves the engine alone
+ * when none of them is one it binds. `undefined` reconciles everything.
  */
-async function syncOpenCodeCredentials(org?: string) {
+async function syncOpenCodeCredentials(org: string | undefined, providers: readonly string[] | undefined) {
   const bridge = await import("@claxedo/server-core/opencode/sdk-credential-bridge")
-  await bridge.syncCredentialsToSdk(org)
+  await bridge.syncCredentialsToSdk(org, providers)
 }
 
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
@@ -71,7 +74,7 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       const result = (await credentialRegistry()).setActiveCredentials(ids, org)
       // The engine resolves auth from a store Claxedo does not otherwise write:
       // without this the next embedded turn runs on the account just replaced.
-      if (result.ok) await syncOpenCodeCredentials(org)
+      if (result.ok) await syncOpenCodeCredentials(org, result.credentials.map((credential) => credential.provider_id))
       return result
     },
     getCredentialByProvider: async (providerId, kind, org) =>
@@ -81,17 +84,19 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
     resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),
     putCredential: async (input, org) => {
       const stored = await (await credentialRegistry()).putCredential(input, org)
-      await syncOpenCodeCredentials(org)
+      await syncOpenCodeCredentials(org, [stored.provider_id])
       return stored
     },
     deleteCredential: async (id, org) => {
-      const deleted = await (await credentialRegistry()).deleteCredential(id, org)
-      if (deleted) await syncOpenCodeCredentials(org)
+      const registry = await credentialRegistry()
+      const provider = registry.credentialById(id, { onOutage: "empty" }, org)?.provider_id
+      const deleted = await registry.deleteCredential(id, org)
+      if (deleted) await syncOpenCodeCredentials(org, provider === undefined ? undefined : [provider])
       return deleted
     },
     deleteCredentialsByProvider: async (providerId, kind, org) => {
       const count = await (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind, org)
-      if (count > 0) await syncOpenCodeCredentials(org)
+      if (count > 0) await syncOpenCodeCredentials(org, [providerId])
       return count
     },
     updateCredentialStatus: async (id, status, error, org) => {
@@ -118,19 +123,20 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       if (stored) {
         await mirrorRenewedLocalTokens(id, secret, org)
         // A renewed token is new auth material: the engine holds the old one.
-        await syncOpenCodeCredentials(org)
+        const provider = registry.credentialById(id, { onOutage: "empty" }, org)?.provider_id
+        await syncOpenCodeCredentials(org, provider === undefined ? undefined : [provider])
       }
       return stored
     },
     updateCredentialLabel: async (id, label, org) => (await credentialRegistry()).updateCredentialLabel(id, label, org),
     saveDiscoveredCredentials: async (input, org) => {
       const saved = await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org)
-      await syncOpenCodeCredentials(org)
+      await syncOpenCodeCredentials(org, input.items.map((item) => item.provider_id))
       return saved
     },
     syncLocalCredentials: async (providerIds, org) => {
       const result = await (await import("@claxedo/server-core/credentials/operations/sync")).syncLocalCredentials(providerIds, org)
-      await syncOpenCodeCredentials(org)
+      await syncOpenCodeCredentials(org, providerIds)
       return result
     },
   }

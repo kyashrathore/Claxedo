@@ -151,16 +151,31 @@ function readLedger(): Ledger {
 
 export type SdkCredentialSyncResult = Readonly<{ bound: readonly string[]; removed: readonly string[] }>
 
+/** Whether a registry provider has a row in the engine's own catalog. */
+export function engineBindsProvider(providerId: string): boolean {
+  return Object.hasOwn(PROVIDER_BY_REGISTRY_ID, providerId)
+}
+
 /**
  * Write-only-when-running. A credential mutation never boots a cold SDK host:
  * when the host is not serving, the registry stays the authority and the boot
  * reconcile (`reconcileCredentialsIntoSdk`, run by the host's boot plugin)
  * carries the current registry across once the SDK actually starts.
+ *
+ * `providers` names what the mutation touched. Activation and replacement are
+ * both scoped to a row's own `provider_id`, so a write to a provider the engine
+ * has no row for (Cursor, Pi, a sandbox driver) cannot change what the engine
+ * would be handed, and the engine is left alone: the reconcile is a full
+ * re-projection plus a read of the engine's credential store, and an engine
+ * that cannot answer it would otherwise fail a store that has nothing to do
+ * with it. A caller that cannot name the providers reconciles everything.
  */
 export async function syncCredentialsToSdk(
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
+  providers?: readonly string[],
 ): Promise<SdkCredentialSyncResult> {
   if (!openCodeSdkRuntimeLoaded()) return { bound: [], removed: [] }
+  if (providers && !providers.some(engineBindsProvider)) return { bound: [], removed: [] }
   try {
     return await reconcileCredentialsIntoSdk(org)
   } catch (error: unknown) {

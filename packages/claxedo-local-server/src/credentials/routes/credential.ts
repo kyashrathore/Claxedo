@@ -356,7 +356,8 @@ export function CredentialRoutes(
           } : {}),
         }, org(c.req.raw))
         return c.json({ credential: redact(cred) })
-      } catch {
+      } catch (error) {
+        if (error instanceof SdkCredentialSyncError) throw error
         return c.json(errorBody("credential_store_failed", "Failed to store credential"), 500)
       }
     })
@@ -381,6 +382,7 @@ export function CredentialRoutes(
       try {
         return c.json(await credentials.saveDiscoveredCredentials(body.data, org(c.req.raw)))
       } catch (error) {
+        if (error instanceof SdkCredentialSyncError) throw error
         if (error instanceof CredentialDiscoveryError) {
           const status = error.code === "discovery_expired" ? 410 : error.code === "discovery_not_found" ? 404 : 400
           return c.json(errorBody(error.code, "The credential discovery can no longer be saved"), status)
@@ -394,7 +396,8 @@ export function CredentialRoutes(
       try {
         const result = await credentials.syncLocalCredentials(body.data.provider_ids, org(c.req.raw))
         return c.json(result)
-      } catch {
+      } catch (error) {
+        if (error instanceof SdkCredentialSyncError) throw error
         return c.json(errorBody("credential_sync_failed", "Failed to sync local credentials"), 500)
       }
     })

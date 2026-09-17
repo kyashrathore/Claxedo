@@ -73,6 +73,38 @@ describe("OpenCode SDK credential bridge", () => {
     }])
   })
 
+  test("a write to a provider the engine has no row for leaves the running engine alone", async () => {
+    const fake = fakeRuntime()
+    loaded.mockReturnValue(true)
+    construct.mockImplementation(() => fake.runtime as never)
+    const projectAuth = vi.fn(async () => ({ "claude-sdk": brokerProjection }))
+    configureAgentConfig({ projectAuth })
+
+    await expect(syncCredentialsToSdk(undefined, ["cursor-sdk"])).resolves.toEqual({ bound: [], removed: [] })
+
+    expect(projectAuth).not.toHaveBeenCalled()
+    expect(fake.bound).toEqual([])
+  })
+
+  test("a write naming one engine provider among others reconciles", async () => {
+    const fake = fakeRuntime()
+    loaded.mockReturnValue(true)
+    construct.mockImplementation(() => fake.runtime as never)
+    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+
+    await expect(syncCredentialsToSdk(undefined, ["cursor-sdk", "claude-sdk"])).resolves.toEqual({ bound: ["anthropic"], removed: [] })
+    expect(fake.bound).toHaveLength(1)
+  })
+
+  test("a write that cannot name its providers reconciles everything", async () => {
+    const fake = fakeRuntime()
+    loaded.mockReturnValue(true)
+    construct.mockImplementation(() => fake.runtime as never)
+    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+
+    await expect(syncCredentialsToSdk(undefined, undefined)).resolves.toEqual({ bound: ["anthropic"], removed: [] })
+  })
+
   test("a bound account becomes provider routing, never a stored credential", async () => {
     const fake = fakeRuntime([{ id: "cred-old", label: "Claxedo managed: anthropic" }])
     construct.mockImplementation(() => fake.runtime as never)

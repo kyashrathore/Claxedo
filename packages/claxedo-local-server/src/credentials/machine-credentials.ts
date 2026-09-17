@@ -23,7 +23,7 @@ export function localControlPlaneCredentials(): ControlPlaneCredentials {
       // The engine resolves auth from a store Claxedo does not otherwise write:
       // without this the next embedded turn still runs on the account just
       // withdrawn.
-      if (result.cleared.length > 0) await syncCredentialsToSdk(org)
+      if (result.cleared.length > 0) await syncCredentialsToSdk(org, providerIds)
       return result
     },
   }
