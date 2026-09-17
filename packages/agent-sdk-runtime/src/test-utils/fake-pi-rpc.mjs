@@ -14,7 +14,7 @@ import path from "node:path"
 import readline from "node:readline"
 import { randomUUID } from "node:crypto"
 const args = process.argv.slice(2)
-if (args.includes("--version")) { console.log("0.85.0"); process.exit(0) }
+if (args.includes("--version")) { console.log("0.85.1"); process.exit(0) }
 if (args.includes("-p")) {
   fs.writeFileSync(path.join(process.cwd(), "evaluating"), "yes")
   if (fs.existsSync(path.join(process.cwd(), "hold-evaluator"))) await new Promise(() => { setInterval(() => {}, 1000) })

@@ -8,7 +8,7 @@ remain open. Plan 005 remains blocked.
 - Branch: `codex/pi-native-no-split`
 - Worktree: `/Users/yashvardhansingh/test/opencode/.worktrees/codex/pi-native-no-split`
 - Baseline: `ca3e488f7a`
-- Protocol and sandbox image pin: `@earendil-works/pi-coding-agent@0.85.0`
+- Protocol and sandbox image pin: `@earendil-works/pi-coding-agent@0.85.1`
 - Scope: [plan 004](../plans/2026-09-05-004-pi-native-harness-remove-central-plan.md)
 - User documentation: [Using Pi in Claxedo](../pi-native-user-guide.md)
 
@@ -184,7 +184,7 @@ The four review findings are fixed:
   default harness and verifies the first prompt fails for missing credentials
   without contacting the provider.
 - `harnesses/pi/executable.ts` resolves npm shims through the installed
-  package's declared `bin.pi`, which is `dist/bundle/cli.js` in Pi 0.85.0.
+  package's declared `bin.pi`, which is `dist/bundle/cli.js` in Pi 0.85.1.
   It no longer launches the unbundled `dist/cli.js`. The shim regression checks
   resolution, version execution and a missing declared binary. This ran on
   macOS; an installed Windows desktop run remains unverified.

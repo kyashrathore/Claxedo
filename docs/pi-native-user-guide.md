@@ -5,7 +5,7 @@ will run. **Local** uses a directory on your computer. **Cloud** uses a sandbox.
 Pi and its tools run together on that machine. A Cloud session needs its sandbox
 to start before Pi can run.
 
-Claxedo starts Pi 0.85.0 in RPC mode. For Local, install that version and make
+Claxedo starts Pi 0.85.1 in RPC mode. For Local, install that version and make
 `pi` available on PATH, or set `PI_EXECUTABLE` to its executable. The sandbox
 images install the same version. The model picker reads the models available to
 that Pi process; connect a provider before selecting its model.
