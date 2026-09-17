@@ -64,30 +64,12 @@ export type CreateAgentRuntimeInput = {
   adapterOwnership?: "runtime" | "caller"
   resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
   subscriberBufferSize?: number
-  /** Per-subscriber authorization gate; requires each subscriber to carry an identity. */
-  eventDelivery?: AgentRuntimeEventDeliveryPolicy
   /**
    * The host's hub, when the host has one. Titles generated after a turn are
    * published here because no turn subscription is open to carry them.
    */
   eventHub?: RuntimeEventHub
 }
-
-export type AgentRuntimeSubscriptionIdentity = {
-  connectionId: string
-  actorId: string
-  actorKind: "human" | "agent"
-  orgId: string
-  workspaceId: string
-  role: "viewer" | "editor" | "admin" | "owner"
-  /** Opaque signed proof forwarded only to the host's authorization policy. */
-  credential?: string
-}
-
-export type AgentRuntimeEventDeliveryPolicy = (input: {
-  identity: AgentRuntimeSubscriptionIdentity
-  event: AgentRuntimeEventEnvelope
-}) => "deliver" | "omit" | "terminate" | Promise<"deliver" | "omit" | "terminate">
 
 export type AgentRuntimeEventEnvelope = {
   sessionId: string
@@ -98,20 +80,6 @@ export type AgentRuntimeEventEnvelope = {
 export type AgentRuntimeSubscribeInput = {
   sessionId?: string
   directory?: RuntimeDirectory
-  identity?: AgentRuntimeSubscriptionIdentity
-  /**
-   * In-process host subscription (e.g. the prompt turn driver reading its own
-   * session's events to project and publish them). Exempt from the
-   * `eventDelivery` identity requirement and from per-event delivery
-   * filtering: the host process owns the store outright, and this flag is
-   * reachable only from code running inside it — every network subscriber
-   * comes through an HTTP route that builds an `identity` from the request
-   * and cannot set this. Without the exemption, composing an
-   * `eventDelivery` policy silently killed every local prompt turn: the
-   * driver's identityless subscription threw at subscribe time and the turn
-   * died before `turn.start`.
-   */
-  hostInternal?: boolean
 }
 
 export type AgentRuntimeSessionCreateInput = {

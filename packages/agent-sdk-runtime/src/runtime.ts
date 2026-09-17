@@ -51,10 +51,8 @@ export {
 export type {
   AgentHarnessFactory,
   AgentRuntimeAbortResult,
-  AgentRuntimeEventDeliveryPolicy,
   AgentRuntimeEventEnvelope,
   AgentRuntimeGoalErrorCode,
-  AgentRuntimeSubscriptionIdentity,
   AgentRuntimeGoalStartInput,
   AgentRuntimeHealth,
   AgentRuntimeInteractionResult,
@@ -697,7 +695,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
-        return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256, input.eventDelivery)
+        return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256)
       },
       ...resource({
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {

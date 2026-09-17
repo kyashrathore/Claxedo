@@ -59,7 +59,6 @@ import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions
 import { firstPartyMcpAdapterConfig, firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import type { WorkspaceEventParents } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
-import { agentRuntimeEventDeliveryPolicy } from "../event-delivery"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessPolicy,
@@ -958,9 +957,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         create: () => nextAdapter,
       }],
       resolveHarness: (target) => ensureSessionAdapter(target, directory),
-      ...(hostOptions.sessionAccessPolicy
-        ? { eventDelivery: agentRuntimeEventDeliveryPolicy(hostOptions.sessionAccessPolicy) }
-        : {}),
     })
     sessionRuntimes.set(key, runtime)
     return runtime

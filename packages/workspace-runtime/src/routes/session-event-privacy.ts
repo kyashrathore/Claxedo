@@ -1,9 +1,7 @@
 import type { Context } from "hono"
 import type { SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord } from "@claxedo/helpers/guards"
 import { eventSessionId, type CompatEnvelope } from "../compat-events"
-import { str } from "../json-value"
 import type { WorkspaceRuntimeEvent } from "../bus"
 import {
   sessionAccessContext,
@@ -56,17 +54,16 @@ export const WORKSPACE_EVENT_STREAM_DENIED = "workspace_event_stream_denied"
 export async function authorizeSessionEventScope(
   c: Context,
   policy: SessionAccessPolicy | undefined,
-  queryName: "sessionID" | "parentSessionId",
 ): Promise<SessionEventScope | Response> {
   if (policy?.sessionAuthority !== "managed-private") return { managed: false }
 
-  const sessionId = c.req.query(queryName)?.trim()
+  const sessionId = c.req.query("sessionID")?.trim()
   if (!sessionId) {
     if (!policy.authorizeHost) {
       return Response.json({
         error: {
           code: "session_event_scope_required",
-          message: `Managed private event streams require ${queryName}`,
+          message: "Managed private event streams require sessionID",
         },
       }, { status: 400 })
     }
@@ -288,24 +285,6 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
   }
 }
 
-/** Extracts only producer-owned session identifiers; it never guesses from directory/tab ids. */
-export function unknownEventSessionId(event: unknown): string | undefined {
-  const row = asRecord(event)
-  if (!row) return undefined
-  const properties = asRecord(row.properties)
-  const info = asRecord(properties?.info)
-  const part = asRecord(properties?.part)
-  const payload = asRecord(row.payload)
-  return text(row.sessionID)
-    ?? text(row.sessionId)
-    ?? text(properties?.sessionID)
-    ?? text(properties?.sessionId)
-    ?? text(info?.sessionID)
-    ?? text(info?.id)
-    ?? text(part?.sessionID)
-    ?? (payload ? unknownEventSessionId(payload) : undefined)
-}
-
 export function scopedReplay<T>(
   replay: SseReplayBuffer<T>,
   allows: (event: T) => boolean,
@@ -319,10 +298,4 @@ export function scopedReplay<T>(
       .filter((event) => allows(event.payload)),
     isTerminal: (event) => replay.isTerminal(event),
   }
-}
-
-/** A non-empty string, or `undefined`. An empty id is no id here. */
-function text(input: unknown) {
-  const value = str(input)
-  return value && value.length > 0 ? value : undefined
 }

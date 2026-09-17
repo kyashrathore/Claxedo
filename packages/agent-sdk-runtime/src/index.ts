@@ -35,7 +35,6 @@ export {
 export type {
   AgentHarnessFactory,
   AgentRuntime,
-  AgentRuntimeEventDeliveryPolicy,
   AgentRuntimeEventEnvelope,
   AgentRuntimeGoalErrorCode,
   AgentRuntimeGoalStartInput,
@@ -45,7 +44,6 @@ export type {
   AgentRuntimePermissionDecision,
   AgentRuntimeSessionCreateInput,
   AgentRuntimeSubscribeInput,
-  AgentRuntimeSubscriptionIdentity,
   AgentRuntimeStore,
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,

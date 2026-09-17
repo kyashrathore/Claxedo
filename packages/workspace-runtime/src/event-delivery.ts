@@ -210,36 +210,6 @@ function eventDecision(decision: Awaited<ReturnType<SessionAccessPolicy["authori
   return decision.status === 401 || decision.status === 503 ? "terminate" : "omit"
 }
 
-type AgentRuntimeEventDeliveryPolicy = (input: {
-  identity: {
-    connectionId: string
-    actorId: string
-    actorKind: "human" | "agent"
-    orgId: string
-    workspaceId: string
-    role: WorkspaceRole
-    credential?: string
-  }
-  event: { sessionId: string }
-}) => "deliver" | "omit" | "terminate" | Promise<"deliver" | "omit" | "terminate">
-
-export function agentRuntimeEventDeliveryPolicy(policy: SessionAccessPolicy): AgentRuntimeEventDeliveryPolicy {
-  return async ({ identity, event }) => (await policy.authorize({
-    actor: { actorId: identity.actorId, actorKind: identity.actorKind },
-    authority: {
-      managed: true,
-      workspaceId: identity.workspaceId,
-      orgId: identity.orgId,
-      role: identity.role,
-    },
-    ...(identity.credential ? { credential: identity.credential } : {}),
-    operation: "session_event_stream",
-    sessionId: event.sessionId,
-  })).allowed
-    ? "deliver"
-    : "terminate"
-}
-
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
   const key = principal.replayKey ?? principal.credential

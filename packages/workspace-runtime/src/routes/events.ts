@@ -250,7 +250,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
 
   const handler = async (c: Context) => {
-    const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy, "sessionID")
+    const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
     const allows = scope.managed
       ? (frame: StreamFrame) => !isGapFrame(frame) && scopeSessionId(frame) === scope.sessionId

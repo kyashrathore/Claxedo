@@ -1,8 +1,4 @@
-import type {
-  AgentRuntimeEventDeliveryPolicy,
-  AgentRuntimeEventEnvelope,
-  AgentRuntimeSubscribeInput,
-} from "../runtime"
+import type { AgentRuntimeEventEnvelope, AgentRuntimeSubscribeInput } from "../runtime"
 
 export type RuntimeSubscriber = {
   input: AgentRuntimeSubscribeInput
@@ -14,17 +10,8 @@ export function createRuntimeSubscription(
   subscribers: Set<RuntimeSubscriber>,
   input: AgentRuntimeSubscribeInput,
   bufferSize: number,
-  eventDelivery?: AgentRuntimeEventDeliveryPolicy,
 ): AsyncIterable<AgentRuntimeEventEnvelope> {
   if (!Number.isInteger(bufferSize) || bufferSize < 1) throw new Error("subscriberBufferSize must be a positive integer")
-  const identity = input.identity
-  // `hostInternal` marks the host process's own subscriptions (see the field's
-  // doc on AgentRuntimeSubscribeInput); they need no identity and skip
-  // delivery filtering. Every other identityless subscription is refused when
-  // a delivery policy is composed — network subscribers must authenticate.
-  if (eventDelivery && !identity && !input.hostInternal) {
-    throw new Error("Subscription identity is required when eventDelivery is configured")
-  }
   const queue: AgentRuntimeEventEnvelope[] = []
   const resolvers: Array<(result: IteratorResult<AgentRuntimeEventEnvelope>) => void> = []
   let closed = false
@@ -73,23 +60,8 @@ export function createRuntimeSubscription(
   return {
     [Symbol.asyncIterator]() {
       return {
-        async next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
-          while (true) {
-            const next = await nextEvent()
-            if (next.done || !eventDelivery || !identity) return next
-            let decision: Awaited<ReturnType<AgentRuntimeEventDeliveryPolicy>>
-            try {
-              decision = await eventDelivery({ identity, event: next.value })
-            } catch (error) {
-              finish()
-              throw error
-            }
-            if (decision === "deliver") return next
-            if (decision === "terminate") {
-              finish()
-              return { done: true, value: undefined }
-            }
-          }
+        next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
+          return nextEvent()
         },
         return(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
           finish()

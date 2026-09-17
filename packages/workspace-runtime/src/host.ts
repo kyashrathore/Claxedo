@@ -2,7 +2,6 @@ export { workspaceRuntimeBus } from "./bus"
 export type { WorkspaceRuntimeEvent, PtyInfo } from "./bus"
 export {
   createIdentityAwareEventSource,
-  agentRuntimeEventDeliveryPolicy,
   defaultEventDeliveryPolicy,
   eventDeliveryPrincipal,
   sessionEventDeliveryPolicy,

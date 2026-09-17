@@ -37,7 +37,7 @@ function verifiedApp(accessPolicy: SessionAccessPolicy, capture?: (scope: Sessio
     await next()
   })
   app.get("/event", async (c) => {
-    const scope = await authorizeSessionEventScope(c, accessPolicy, "sessionID")
+    const scope = await authorizeSessionEventScope(c, accessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
     capture?.(scope)
     return c.text("ok")
