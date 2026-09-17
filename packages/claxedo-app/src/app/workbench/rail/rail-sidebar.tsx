@@ -1722,7 +1722,7 @@ export function RailSidebar(props: RailSidebarProps) {
       })
     })
     // Every relay-backed workspace names its id here, not just a cloud one: it
-    // is what a `session.created` frame off that workspace's stream is matched
+    // is what a session's frames off that workspace's stream are matched
     // against, and a user-hosted row carries the HOST's filesystem directory
     // rather than this section's `workspace:<id>` ref.
     const sessionListWorkspaceId = createMemo(() => isRelayBackedWorkspaceKind(runtime())

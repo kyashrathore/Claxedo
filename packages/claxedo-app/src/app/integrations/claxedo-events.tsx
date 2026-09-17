@@ -1,8 +1,9 @@
 /**
  * ClaxedoEventsProvider — the app's one reader of its two event streams:
- * `cp/events` (the control plane's notices) and one `wr/events` per open
- * workspace (that runtime's session frames and control frames). Every frame
- * enters one emitter; consumers subscribe by type or listen to all.
+ * `cp/events` (a control plane's notices; a signed desktop reads its daemon's
+ * and the hosted control plane's) and the `wr/events` of the workspace the
+ * route names (that runtime's session frames and control frames). Every
+ * frame enters one emitter; consumers subscribe by type or listen to all.
  */
 
 import {
@@ -56,6 +57,7 @@ import {
 } from "../providers/claxedo-events-reconnect"
 import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
 import { errorMessage } from "@/lib/server-errors"
+import { accountStreamAvailable } from "@/platform/account/account-stream-fetch"
 
 // ─── Event Types ──────────────────────────────────────────────────────────
 //
@@ -235,8 +237,7 @@ export function createClaxedoEventEmitter() {
 /**
  * A workspace stream's session frames belong to that workspace: the
  * session-title projection keys by it as well as by directory. A frame that
- * names its own workspace keeps it — the daemon's runtime bus is shared by
- * every embedded runtime, so another workspace's frame can ride this stream.
+ * names its own workspace keeps it.
  */
 function stampWorkspace(event: ClaxedoEvent, target: ClaxedoEventStreamTarget): ClaxedoEvent {
   if (target.kind !== "wr" || !("properties" in event) || !("directory" in event)) return event
@@ -308,8 +309,9 @@ type ClaxedoEventsContextValue = {
    */
   connected: () => boolean
   /**
-   * The control plane's stream is up. It carries `document.changed` and
-   * `session.share.changed`, so its `false → true` edge is the revalidation
+   * A control plane's stream is up. It carries `document.changed`,
+   * `session.share.changed` and `session.inventory.changed`, so its
+   * `false → true` edge is the revalidation
    * trigger for every consumer of those doorbells. Distinct from `connected`
    * on purpose: with a remote workspace open the aggregate never drops to
    * false when only the control plane's stream flaps.
@@ -444,7 +446,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     })
   }
 
-  const connectTarget = (initialTarget: ClaxedoEventStreamTarget, accountState: AccountState): Connection => {
+  const connectTarget = (initialTarget: ClaxedoEventStreamTarget): Connection => {
     let target = initialTarget
     const state = {
       // A `wr` target opens unscoped. A runtime that refuses the reader at
@@ -464,17 +466,19 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
     // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
     // carries that session's events.
-    const streamId: StreamSyncStreamId = target.kind === "cp" ? "cp" : `wr:${target.workspaceId}`
+    const streamId: StreamSyncStreamId = target.kind === "cp"
+      ? (target.transport === "account" ? "cp:account" : "cp")
+      : `wr:${target.workspaceId}`
     // The workspace stream carries a session's live frames, so the scope owner
     // has to know whether it is open and for which session. Opened unscoped it
     // carries every session; opened for a grantee it carries one.
-    const releaseLane = streamId === "cp" ? undefined : registerSessionEventStreamLane(streamId)
+    const releaseLane = target.kind === "cp" ? undefined : registerSessionEventStreamLane(streamId)
     const reportLaneOpen = () => {
-      if (streamId === "cp" || target.kind !== "wr") return
+      if (target.kind !== "wr") return
       reportSessionEventStreamOpen(streamId, state.scope === "session" ? target.sessionID : undefined)
     }
     const reportLaneClosed = () => {
-      if (streamId === "cp") return
+      if (target.kind === "cp") return
       reportSessionEventStreamClosed(streamId)
     }
 
@@ -555,7 +559,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       void eventStreamFetch(target, {
         headers,
         signal: state.abort.signal,
-      }, { accountState, scope: state.scope }).then(async (res) => {
+      }, { scope: state.scope }).then(async (res) => {
         // Only the runtime's own refusal of the unscoped arm narrows the
         // stream: a 403 minted elsewhere on the path (the relay while its
         // host is away, the token mint) is an outage to retry, not a share
@@ -735,8 +739,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       sessionID: sessionEventScopeId(),
       projects: readProjectCatalog(props.serverUrl()),
       accountSigned,
+      accountStream: accountStreamAvailable(accountState),
     })
-    const next = new Map(targets.map((target) => [eventStreamTargetKey(target, { accountSigned }), target]))
+    const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
     for (const [key, connection] of connections) {
       if (next.has(key)) continue
       connection.close()
@@ -748,7 +753,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         existing.retarget(target)
         continue
       }
-      connections.set(key, connectTarget(target, accountState))
+      connections.set(key, connectTarget(target))
     }
   }
 

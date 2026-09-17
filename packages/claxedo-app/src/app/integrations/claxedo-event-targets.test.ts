@@ -45,7 +45,7 @@ describe("claxedoEventStreamTargets", () => {
         accountSigned,
         projects: localProjects,
       })).toEqual([
-        { kind: "cp", url: new URL("http://127.0.0.1:3001/api/cp/events") },
+        { kind: "cp", url: new URL("http://127.0.0.1:3001/api/cp/events"), transport: "server" },
         {
           kind: "wr",
           serverUrl: "http://127.0.0.1:3001",
@@ -89,7 +89,7 @@ describe("claxedoEventStreamTargets", () => {
       }],
     })
     expect(targets).toEqual([
-      { kind: "cp", url: new URL("https://control.example.test/api/cp/events") },
+      { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
       {
         kind: "wr",
         serverUrl: "https://control.example.test",
@@ -105,7 +105,7 @@ describe("claxedoEventStreamTargets", () => {
   test.each(["ws_cloud", "workspace:ws_cloud"])("resolves the workspace from a %s route", (directory) => {
     for (const serverUrl of ["https://control.example.test", "http://127.0.0.1:3001"]) {
       const targets = claxedoEventStreamTargets({ serverUrl, accountSigned: true, directory, sessionID: "session-cloud" })
-      expect(targets[0]).toEqual({ kind: "cp", url: new URL(`${serverUrl}/api/cp/events`) })
+      expect(targets[0]).toEqual({ kind: "cp", url: new URL(`${serverUrl}/api/cp/events`), transport: "server" })
       expect(targets[1]).toMatchObject({ kind: "wr", serverUrl, workspaceId: "ws_cloud", sessionID: "session-cloud" })
     }
   })
@@ -145,7 +145,7 @@ describe("claxedoEventStreamTargets", () => {
       accountSigned: true,
       directory: "ws_user_hosted",
     })).toEqual([
-      { kind: "cp", url: new URL("https://control.example.test/api/cp/events") },
+      { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
       {
         kind: "wr",
         serverUrl: "https://control.example.test",
@@ -176,14 +176,23 @@ describe("claxedoEventStreamTargets", () => {
       .toBe(eventStreamTargetKey({ ...base, directory: "workspace:ws_cloud" }))
   })
 
-  test("replaces the cp stream when account authority changes", () => {
-    const cp = {
-      kind: "cp" as const,
-      url: new URL("http://127.0.0.1:3001/api/cp/events"),
-    }
-
-    expect(eventStreamTargetKey(cp, { accountSigned: false }))
-      .not.toBe(eventStreamTargetKey(cp, { accountSigned: true }))
+  test("a signed desktop reads its daemon's cp stream AND the hosted control plane's through the account bridge", () => {
+    const targets = claxedoEventStreamTargets({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/local",
+      accountSigned: true,
+      accountStream: true,
+      projects: localProjects,
+    })
+    expect(targets.slice(0, 2)).toEqual([
+      { kind: "cp", url: new URL("http://127.0.0.1:3001/api/cp/events"), transport: "server" },
+      { kind: "cp", url: new URL("http://127.0.0.1:3001/api/cp/events"), transport: "account" },
+    ])
+    expect(new Set(targets.map((target) => eventStreamTargetKey(target))).size).toBe(targets.length)
+    // Signed web has one control plane: the server's stream is the hosted one.
+    expect(claxedoEventStreamTargets({ serverUrl: "https://control.example.test", accountSigned: true, accountStream: true })).toEqual([
+      { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
+    ])
   })
 })
 
@@ -239,7 +248,7 @@ describe("eventStreamFetch", () => {
     })
 
     await eventStreamFetch(
-      { kind: "cp", url: new URL("https://control.example.test/api/cp/events") },
+      { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
       {},
       { request },
     )
@@ -366,7 +375,7 @@ describe("eventStreamFrameAddress", () => {
   })
 
   test("leaves the cp stream alone", () => {
-    const address = eventStreamFrameAddress({ kind: "cp", url: new URL("https://control.example/api/cp/events") })
+    const address = eventStreamFrameAddress({ kind: "cp", url: new URL("https://control.example/api/cp/events"), transport: "server" })
     expect(address("/repo/local")).toBe("/repo/local")
     expect(address("global")).toBe("global")
   })

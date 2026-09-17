@@ -19,7 +19,9 @@ test("runtime deletion closes every matching saved surface without closing neigh
   receive({ name: "/workspace", details: { type: "session.updated", properties: { info: { id: "removed" } } } })
   receive({ name: "global", details: { type: "session.deleted", properties: { info: { id: "removed" } } } })
   expect(surfaces).toHaveLength(5)
-  receive({ name: "/workspace", details: { type: "session.deleted", properties: { info: { id: "removed" } } } })
+  // A relay-backed workspace's runtime stamps its own host path on the row;
+  // the surface is registered under the address the frame arrived on.
+  receive({ name: "/workspace", details: { type: "session.deleted", properties: { info: { id: "removed", directory: "/host/machine/worktree" } } } })
   expect(surfaces.map((surface) => surface.id)).toEqual(["other", "isolated", "terminal"])
   receive({ name: "/workspace", details: { type: "session.deleted", properties: { info: { id: "removed" } } } })
   expect(surfaces).toHaveLength(3)

@@ -534,8 +534,8 @@ export type MockRuntimeHandles = {
   emit: (payload: MockWireEvent, directory?: string) => void
   /**
    * Publish one notice on the control plane's `cp/events` — provision steps,
-   * worktree readiness, document doorbells, share grants. Never a session's
-   * frames: those are `emit`.
+   * worktree readiness, document doorbells, share grants, a workspace's
+   * inventory change. Never a session's frames: those are `emit`.
    */
   emitNotice: (payload: MockControlPlaneNotice) => void
   /**
@@ -1753,11 +1753,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     modelID: string
     turn: number
   }) {
-    // Every `emit()` call below passes `CLOUD_WORKSPACE_ID` explicitly as the SSE
-    // envelope's `directory` — `emit()` defaults that param to the LOCAL lane's `DIR`,
-    // which is wrong here and matters: cloud session events carry
-    // `directory: WORKSPACE_ID`, and the client's
-    // `eventDirectoryForLiveSession`/live-session routing keys off this field.
+    // Every `emit()` call below passes `CLOUD_WORKSPACE_ID` explicitly as the
+    // SSE envelope's `directory` — `emit()` defaults that param to the local
+    // workspace's `DIR`, which is wrong here and matters: the reader addresses
+    // a frame by its envelope's `directory` (`eventStreamFrameAddress`).
     await wait(timings.busy)
     emit(
       { type: "session.status", properties: { sessionID: cloudSessionId, status: { type: "busy" } } },

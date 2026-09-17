@@ -2,17 +2,16 @@ import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime
 import { asRecord, readFiniteNumber, readString } from "@/lib/record"
 
 /**
- * `properties.info` on a `session.*` lifecycle event.
+ * `properties.info` on a `session.*` frame.
  *
  * The envelope reaches the app as `{ type: string; properties?: unknown }` — an
- * SSE/bus frame, not a typed value — and the producers do NOT all publish the
- * same `info`. `session.deleted` carries identity only (see
- * `claxedo-local-server/src/session/session-meta-tap.ts`, which publishes
- * `{ id, parentID?, directory? }`), while `session.created`/`session.updated`
- * carry the whole row. Reading the envelope through this module is the one place
- * that difference is stated; every consumer previously re-asserted
- * `properties as { info: Session }`, which was a lie for the identity-only arm
- * and threw a TypeError when `info` was absent altogether.
+ * SSE frame, not a typed value — and the producers do NOT all publish the
+ * same `info`. `session.deleted` carries identity only (the runtime's DELETE
+ * route publishes `{ id, directory, parentID? }`), while `session.updated`
+ * carries the whole row. Reading the envelope through this module is the one
+ * place that difference is stated; a consumer that asserts
+ * `properties as { info: Session }` lies for the identity-only arm and throws
+ * a TypeError when `info` is absent altogether.
  */
 
 function nonEmpty(value: string | undefined) {

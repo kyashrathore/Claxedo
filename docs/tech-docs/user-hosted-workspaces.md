@@ -153,7 +153,10 @@ question asks, todo, diagnostics), the projected `subagent.updated` and
 `workspaceRuntimeBus` — `pty.*`, `process.*`, `agent.lifecycle`,
 `session.lifecycle`. The control plane's own stream, `GET /api/cp/events`,
 carries notices only (provision steps, worktree readiness, document
-doorbells, share grants) and never a session's frames.
+doorbells, share grants, a workspace's `session.inventory.changed` — rung by
+the control plane's own session-meta store, so a hosted control plane with no
+such store rings it for nothing, and the daemon rings it for its local
+workspaces only) and never a session's frames.
 
 **F.1 Scope** — `src/platform/runtime/session-event-scope.ts` is the one owner
 of "which session's frames must be streaming, and are they". The composer

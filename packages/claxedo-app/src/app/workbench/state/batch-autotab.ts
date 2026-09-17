@@ -1,10 +1,10 @@
 /**
  * Batch Auto-Tab Listener.
  *
- * Listens for session.created and pty.created events from sandbox directories
- * and automatically adds tabs without stealing focus. This enables the
- * workspace automation to create worktrees with agents that automatically
- * appear as tabs in the UI.
+ * Listens for a session's `session.lifecycle` "created" and a terminal's
+ * `pty.created` from sandbox directories and automatically adds tabs without
+ * stealing focus. This enables the workspace automation to create worktrees
+ * with agents that automatically appear as tabs in the UI.
  *
  * The function is parameterized: the caller passes simple `addSession`,
  * `addTerminal`, `findSession`, `findTerminal` adapters wired to the new
@@ -27,18 +27,16 @@ type ProjectInfo = {
 }
 
 /**
- * One frame as the global SDK emitter delivers it.
+ * One frame as the caller's emitter delivers it: a presentation frame's
+ * `properties`, or a `session.lifecycle` control frame's own fields.
  *
- * `properties` is `unknown` on purpose. It used to be declared as
- * `{ info?: { id?, title?, directory?, cwd? } }`, which is the shape of only
- * TWO of the emitter's event types — so the caller had to pass `event.listen`
- * through `as any` for the subscription to compile at all, and the cast then
- * hid whether this listener could read anything the emitter actually sends.
- * The fields it wants are read out below instead of declared here.
+ * `properties` is `unknown` on purpose: declaring the two shapes this reads
+ * would force the caller to cast `event.listen` to subscribe at all. The
+ * fields it wants are read out below instead of declared here.
  */
 type ListenEvent = {
   name: string // directory
-  details: { type: string; properties?: unknown }
+  details: { type: string; properties?: unknown; phase?: string; sessionID?: string; info?: unknown }
 }
 
 export type BatchAutoTabDeps = {
@@ -66,8 +64,8 @@ function isSandboxDirectory(directory: string, projects: ProjectInfo[]): boolean
 export function createBatchAutoTabListener(deps: BatchAutoTabDeps): () => void {
   return deps.listen((e) => {
     const event = e.details
-    const info = readField(event?.properties, "info")
-    const id = readString(info, "id")
+    const info = event?.type === "session.lifecycle" ? event.info : readField(event?.properties, "info")
+    const id = event?.type === "session.lifecycle" ? event.sessionID : readString(info, "id")
     const title = readString(info, "title")
     const directory =
       e.name && e.name !== "global"
@@ -81,7 +79,7 @@ export function createBatchAutoTabListener(deps: BatchAutoTabDeps): () => void {
 
     if (!id) return
 
-    if (event.type === "session.created") {
+    if (event.type === "session.lifecycle" && event.phase === "created") {
       // Skip if a content already exists for this session
       if (deps.adapters.findSession(directory, id)) return
       deps.adapters.addSession(directory, id, title || "Session")

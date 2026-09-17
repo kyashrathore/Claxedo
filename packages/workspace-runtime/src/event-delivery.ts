@@ -90,11 +90,17 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
   const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
   const credential = context.req.header("authorization")
-  // The relay mints a fresh one-request host token per connection from the
-  // reader's runtime access token, so the access token — not the host token
-  // the request carries — is what a reader's replay scope is keyed by; keyed
-  // by the host token, every reconnect would be a stranger's.
-  const replayKey = "parent_jti" in claims && claims.parent_jti ? `rat:${claims.parent_jti}` : undefined
+  // What a reader's replay scope is keyed by, beside its actor. Through the
+  // relay, the runtime access token: the relay mints a fresh one-request host
+  // token per connection from it, so keyed by the host token every reconnect
+  // would be a stranger's. Stamped in process (the daemon's own boundary
+  // verified the actor, and the browser's cookie is no header here), the
+  // actor alone: there is no credential to bind a scope to.
+  const replayKey = "parent_jti" in claims && claims.parent_jti
+    ? `rat:${claims.parent_jti}`
+    : "principal_kind" in claims
+      ? "embedded"
+      : undefined
   if (claims.actor_id && claims.actor_kind) {
     return {
       mode: "verified",
@@ -282,10 +288,11 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     event: T,
     decisions: Array<{ connection: Connection<T>; next: EventDeliveryDecision }>,
     replayDecision?: EventDeliveryDecision,
-  ) => {
+    decidedBefore: ReadonlySet<Connection<T>> = new Set(),
+  ): Promise<void> | undefined => {
     const sessionId = input.sessionId(event)
     const deliveries: Connection<T>[] = []
-    const decided = new Set<Connection<T>>()
+    const decided = new Set<Connection<T>>(decidedBefore)
     for (const result of decisions) {
       decided.add(result.connection)
       if (!scope.connections.has(result.connection)) continue
@@ -314,17 +321,27 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     for (const connection of deliveries) void Promise.resolve(connection.push(event)).catch(() => undefined)
     // A connection that attached while this frame was awaiting the policy was
     // not decided for it, and its bootstrap cursor sits before the id the
-    // frame just took: it is decided now, and the frame reaches it once.
-    if ([...scope.connections].some((connection) => !decided.has(connection))) queue(scope, event)
+    // frame just took: it is decided now — before the scope moves on to the
+    // next queued frame, so that connection sees the ring's order — and the
+    // frame reaches it once.
+    const undecided = [...scope.connections].filter((connection) => !decided.has(connection))
     evict(scope)
+    if (undecided.length > 0) return evaluate(scope, event, undecided, decided)
+    return undefined
   }
 
   /**
-   * Decide one event for a scope. Returns `undefined` when every decision was
-   * synchronous (already applied), or the promise the caller must serialize on.
+   * Decide one event for a scope's connections (all of them unless named).
+   * Returns `undefined` when every decision was synchronous (already applied),
+   * or the promise the caller must serialize on.
    */
-  const evaluate = (scope: Scope<T>, event: T): Promise<void> | undefined => {
-    const pending = [...scope.connections].map((connection) => {
+  const evaluate = (
+    scope: Scope<T>,
+    event: T,
+    connections = [...scope.connections],
+    decidedBefore: ReadonlySet<Connection<T>> = new Set(),
+  ): Promise<void> | undefined => {
+    const pending = connections.map((connection) => {
       try {
         return { connection, next: decision(connection.principal, event) }
       } catch {
@@ -348,8 +365,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
       settled.push({ connection: item.connection, next: item.next })
     }
     if (settled.length === pending.length && !(replayNext instanceof Promise)) {
-      apply(scope, event, settled, replayNext)
-      return undefined
+      return apply(scope, event, settled, replayNext, decidedBefore)
     }
     return Promise.all(pending.map(async (item) => ({
       connection: item.connection,
@@ -358,7 +374,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
       const resolvedReplay = replayNext === undefined
         ? undefined
         : await Promise.resolve(replayNext).catch(() => "terminate" as const)
-      apply(scope, event, decisions, resolvedReplay)
+      await apply(scope, event, decisions, resolvedReplay, decidedBefore)
     })
   }
 
@@ -415,13 +431,17 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     // the ring's own hole check would read it as "nothing to replay" and the
     // frames behind it would be lost silently. Until a connection has attached
     // to this scope, every positive cursor is a gap. Once one has, a cursor is
-    // this scope's own numbering, and the ring's hole check decides.
+    // this scope's own numbering, and the ring's hole check decides. A scope
+    // restored from a tombstone continues its numbering only while the
+    // retained ring still holds everything since the tombstone's cursor; once
+    // that ring has rolled past it, the restored ring is contiguous over a
+    // hole and the reader's cursor is a gap all the same.
     const created: Scope<T> = {
       key,
       ...(key === "local" ? { replayPrincipal: principal } : {}),
       replay,
       connections: new Set(),
-      attached: !!tombstone || key === "local" || retained.lastId() === undefined,
+      attached: (!!tombstone && !retained.hasGap(tombstone.retainedCursor)) || key === "local" || retained.lastId() === undefined,
       reservations: 0,
       ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
       tail: Promise.resolve(),

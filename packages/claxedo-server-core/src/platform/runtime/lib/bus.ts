@@ -119,7 +119,7 @@ export type SessionInventoryChangedEvent = {
  * and the reader re-reads. Never a session's content — that is the workspace
  * runtime's stream. One bus, one publisher per event kind: the sandbox
  * provisioner, the worktree routes, the documents backend, the session-share
- * authority.
+ * authority, the session-meta store (`session/meta/index.ts`).
  */
 export type ControlPlaneEvent =
   | {

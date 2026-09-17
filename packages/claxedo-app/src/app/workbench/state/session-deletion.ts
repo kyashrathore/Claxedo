@@ -16,7 +16,10 @@ export function listenForSessionDeletion(input: {
     if (details.type !== "session.deleted") return
     const info = readField(details.properties, "info")
     const sessionId = readString(info, "id")
-    const directory = readString(info, "directory") || name
+    // The frame's address (`name`) is the workspace as this surface registered
+    // it — `workspace:<id>` for a relay-backed workspace; `info.directory` is
+    // the runtime's own path, which names nothing here for one.
+    const directory = (name !== "global" && name) || readString(info, "directory")
     if (!sessionId || !directory || directory === "global") return
     closeDeletedSessionSurfaces({ ...input, identity: { sessionId, directory } })
   })

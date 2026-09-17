@@ -28,6 +28,19 @@ const nonparticipant = (connectionId: string): Extract<EventDeliveryPrincipal, {
   role: "editor",
 })
 
+/** Answers every policy question as it is asked, until none has been asked for a few turns. */
+async function drain(release: Array<() => void>) {
+  for (let idle = 0; idle < 5;) {
+    if (release.length > 0) {
+      while (release.length > 0) release.shift()!()
+      idle = 0
+    } else {
+      idle += 1
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
 describe("createIdentityAwareEventSource", () => {
   test("bounds replay authorization concurrency while preserving event order", async () => {
     const bus = createBus<Event>()
@@ -174,10 +187,7 @@ describe("createIdentityAwareEventSource", () => {
     second.subscribe((event) => { seenBySecond.push(event.value) })
     // Each decision the scope queues asks the policy afresh; answer them as
     // they are asked until the scope drains.
-    for (let round = 0; round < 8; round += 1) {
-      while (release.length > 0) release.shift()!()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
+    await drain(release)
     await source.flush()
 
     expect(seenByFirst).toEqual(["before", "during"])
@@ -206,15 +216,61 @@ describe("createIdentityAwareEventSource", () => {
     const second = source.open({ ...participant("connection_2"), credential })
     const seenBySecond: string[] = []
     second.subscribe((event) => { seenBySecond.push(event.value) })
-    for (let round = 0; round < 8; round += 1) {
-      while (release.length > 0) release.shift()!()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
+    await drain(release)
     await source.flush()
 
     expect(seenByFirst).toEqual(["pending"])
     expect(seenBySecond).toEqual(["pending"])
     expect(second.replay.replayAfter(undefined).map((entry) => `${entry.id}:${entry.payload.value}`)).toEqual(["1:pending"])
+    source.close()
+  })
+
+  test("a connection that attaches behind two pending frames receives them in ring order", async () => {
+    const bus = createBus<Event>()
+    const release: Array<() => void> = []
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => new Promise<"deliver">((resolve) => { release.push(() => resolve("deliver")) }),
+      sessionId: (event) => event.sessionId,
+    })
+    const credential = "Bearer rat_shared"
+    const first = source.open({ ...participant("connection_1"), credential })
+    const seenByFirst: string[] = []
+    first.subscribe((event) => { seenByFirst.push(event.value) })
+    bus.publish({ sessionId: "ses_a", value: "1" })
+    bus.publish({ sessionId: "ses_a", value: "2" })
+    const second = source.open({ ...participant("connection_2"), credential })
+    const seenBySecond: string[] = []
+    second.subscribe((event) => { seenBySecond.push(event.value) })
+    await drain(release)
+    await source.flush()
+
+    expect(seenByFirst).toEqual(["1", "2"])
+    expect(seenBySecond).toEqual(["1", "2"])
+    expect(second.replay.replayAfter(undefined).map((entry) => `${entry.id}:${entry.payload.value}`)).toEqual(["1:1", "2:2"])
+    source.close()
+  })
+
+  test("a scope restored from its tombstone after the retained ring rolled reports a gap instead of a contiguous hole", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => "deliver",
+      sessionId: (event) => event.sessionId,
+    })
+    const credential = "Bearer rat_shared"
+    const first = source.open({ ...participant("connection_1"), credential })
+    const unsubscribe = first.subscribe(() => undefined)
+    bus.publish({ sessionId: "ses_a", value: "1" })
+    bus.publish({ sessionId: "ses_a", value: "2" })
+    await source.flush()
+    const cursor = first.replay.lastId()!
+    unsubscribe()
+    // More non-terminal frames than the retained ring keeps, while nobody is attached.
+    for (let index = 0; index < 300; index += 1) bus.publish({ sessionId: "ses_a", value: `burst-${index}` })
+    const restored = source.open({ ...participant("connection_2"), credential })
+    await restored.ready
+    expect(restored.replay.hasGap(cursor, restored.replay.lastId())).toBe(true)
     source.close()
   })
 

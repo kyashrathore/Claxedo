@@ -1087,14 +1087,18 @@ test.describe("real harness journeys @core @tier-real", () => {
       if (!socket.url().includes("/api/cp/events")) return
       socket.on("framereceived", (frame) => { notices.push(String(frame.payload)) })
     })
+    const workspaceOpens: string[] = []
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname === "/api/wr/events") workspaceOpens.push(response.url())
+    })
     await page.goto("/")
-    await expect(page.locator('[data-testid="rail-sidebar"], [data-slot="rail-sidebar"]').first()).toBeVisible({ timeout: 30_000 }).catch(() => undefined)
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"heartbeat"')), { message: "cp/events is open on the home route", timeout: 30_000 }).toBe(true)
     // No workspace is routed on `/`, so no wr/events stream is open; the only
     // way the rail learns of this session is the control plane's own notice.
     const created = await createHarnessSession(dir, { title: "Created from the CLI", harness: "claude", providerID: "anthropic", modelID: "claude-sonnet-4-5" })
     await expectRailRowVisible({ page, sessionId: created.id, timeout: 30_000 })
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"session.inventory.changed"')), { timeout: 15_000 }).toBe(true)
+    expect(workspaceOpens, "no workspace stream is open on the home route").toEqual([])
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {
@@ -2024,7 +2028,7 @@ setTimeout(() => process.exit(2), 60000).unref();
       await expect(status).toBeVisible()
       await expect(status).toContainText("Running")
       const connected = sockets.filter(socket => !socket.closed)
-      expect(connected.length, "the browser has an active central event WebSocket").toBeGreaterThan(0)
+      expect(connected.length, "the browser has an open cp/events WebSocket").toBeGreaterThan(0)
       await page.screenshot({ path: testInfo.outputPath("tool-running-before-disconnect.png") })
       network.disconnect()
       await expect.poll(() => connected.every(socket => socket.closed), { message: "the outage closes the existing event connection" }).toBe(true)

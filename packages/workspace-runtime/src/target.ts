@@ -77,6 +77,11 @@ export function registeredWorkspaceDirectory(sessionId: string, env: NodeJS.Proc
   return registered.get(workspaceId(env))?.get(sessionId)
 }
 
+/** The per-session worktrees a workspace's runtime serves besides its own directory. */
+export function registeredWorkspaceDirectories(workspaceId: string): string[] {
+  return [...(registered.get(workspaceId)?.values() ?? [])]
+}
+
 export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T {
   return targetStorage.run({
     workspaceId: target.workspaceId,

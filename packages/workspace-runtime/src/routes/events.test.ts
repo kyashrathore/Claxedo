@@ -3,11 +3,13 @@ import { Hono } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler } from "./events"
+import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
 import { messagePartUpdated, withDir, type CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
 
 const DIRECTORY = "/workspace"
+const WORKSPACE_ID = "ws-events-test"
 
 function part(sessionID: string, id: string, state: { status: "running" } | { status: "completed" }): CompatEnvelope {
   const tool = {
@@ -43,6 +45,7 @@ function harness(input: {
   }
   app.get("/api/wr/events", workspaceEventsHandler({
     directory: DIRECTORY,
+    workspaceId: WORKSPACE_ID,
     eventHub: hub,
     bus,
     ptyDirectory: (id) => ptys.get(id),
@@ -145,15 +148,24 @@ describe("wr/events — one stream per workspace runtime", () => {
     ptys.delete("pty-here")
     bus.publish({ type: "pty.deleted", id: "pty-here" })
     bus.publish({ type: "process.started", directory: DIRECTORY, configId: "cfg-here", ptyId: "pty-new-here" })
+    // A per-session worktree lives under the storage root, not the workspace
+    // directory; it is this runtime's because the workspace registered it.
+    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses-wt", directory: "/storage/worktrees/ses-wt" })
+    bus.publish({ type: "session.lifecycle", phase: "created", directory: "/storage/worktrees/ses-wt", sessionID: "ses-wt", ts: 2 })
+    bus.publish({ type: "pty.created", info: { id: "pty-wt", title: "t", command: "sh", args: [], cwd: "/storage/worktrees/ses-wt/sub", status: "running", pid: 3 } })
+    bus.publish({ type: "agent.lifecycle", tabId: "tab", workspaceId: WORKSPACE_ID, eventType: "Busy" })
     hub.publishGlobal(part("ses-1", "prt-last", { status: "running" }))
     const text = await readUntil(response, "prt-last")
     controller.abort()
+    unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses-wt" })
 
     const frames = dataFrames(text)
     const payloads = frames.map((f) => f.payload).filter(Boolean)
     expect(payloads.map((p) => p.type)).toEqual([
-      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted", "process.started", "message.part.updated",
+      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted", "process.started",
+      "session.lifecycle", "pty.created", "agent.lifecycle", "message.part.updated",
     ])
+    expect(frames.find((f) => f.payload?.type === "session.lifecycle")?.directory).toBe("/storage/worktrees/ses-wt")
     expect(payloads.find((p) => p.type === "pty.created")?.info?.id).toBe("pty-new-here")
     expect(frames.find((f) => f.payload?.type === "pty.exited")?.directory).toBe(DIRECTORY)
     expect(text).not.toContain("elsewhere")
@@ -303,6 +315,23 @@ describe("wr/events — one stream per workspace runtime", () => {
     const text = await readUntil(await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": "0" }, signal: second.signal }), "prt-during-gap")
     second.abort()
     expect(frameId(text, "prt-during-gap")).toBe("1")
+  })
+
+  test("an actor stamped in process (cookie auth, no bearer) resumes its own scope by cursor across reconnects", async () => {
+    const embeddedAuth = { principal_kind: "user", actor_id: "actor_embedded", actor_kind: "human", actor_public_id: "p", actor_name: "n", org_id: "org_1", workspace_id: "ws_1", role: "owner" }
+    const { app, hub } = harness({ policy: managedPolicy({ workspace: "allow" }), relayAuth: embeddedAuth })
+    const first = new AbortController()
+    const firstResponse = await app.request("http://localhost/api/wr/events", { signal: first.signal })
+    hub.publishGlobal(part("ses-1", "prt-seen", { status: "completed" }))
+    const seen = await readUntil(firstResponse, "prt-seen")
+    first.abort()
+    const cursor = frameId(seen, "prt-seen")
+    hub.publishGlobal(part("ses-1", "prt-missed", { status: "completed" }))
+    const second = new AbortController()
+    const text = await readUntil(await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": cursor! }, signal: second.signal }), "prt-missed")
+    second.abort()
+    expect(text).not.toContain("stream.replay-gap")
+    expect(text).not.toContain("prt-seen")
   })
 
   test("resuming from a mid-log cursor replays only what follows it", async () => {

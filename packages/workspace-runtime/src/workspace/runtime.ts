@@ -1439,6 +1439,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (options.core) {
         closeEvents = mountWorkspaceCore(app, options.core.upgradeWebSocket, {
           directory: hostOptions.target?.directory ?? workspaceDir(),
+          workspaceId: hostOptions.target?.workspaceId ?? workspaceId(),
           eventHub,
           exposure: options.exposure,
           sessionAccessPolicy,
@@ -1450,6 +1451,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // A host that serves sessions serves their stream, whatever else it mounts.
         closeEvents = mountWorkspaceEvents(app, {
           directory: hostOptions.target?.directory ?? workspaceDir(),
+          workspaceId: hostOptions.target?.workspaceId ?? workspaceId(),
           eventHub,
           sessionAccessPolicy,
           sessionParents: hostOptions.sessionParents ?? sessionParents,

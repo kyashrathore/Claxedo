@@ -747,7 +747,7 @@ async function installUserHostedRuntimeMock(
           })
           // A runtime stamps every frame with its OWN filesystem path — see
           // `HOST_DIR`. Addressing the frame as the workspace is the CLIENT's
-          // job (`eventStreamFrameAddress` / `eventDirectoryForLiveSession`),
+          // job (`eventStreamFrameAddress`),
           // so emitting the workspace id here would hide that translation and
           // let a change in it pass unnoticed.
           for (const event of persistCompat(payload)) workspaceBus.emit({ directory: HOST_DIR, payload: event })

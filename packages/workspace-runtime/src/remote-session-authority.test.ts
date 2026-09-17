@@ -38,6 +38,19 @@ describe("remote workspace session authority", () => {
     expect(bodies).toEqual([{ action: "host_read" }, { action: "host_admin" }])
   })
 
+  test("a host-authority answer that is not a refusal is the authority being unavailable, not a denial", async () => {
+    const answers = [403, 500, 404, 429]
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async () => Response.json({ error: { code: "host_authority_denied", message: "no" } }, { status: answers.shift() }),
+    })
+    const host = () => policy.authorizeHost!({ ...input, operation: "session_event_stream", minimumRole: "viewer" })
+    expect(await host()).toMatchObject({ allowed: false, status: 403, code: "host_authority_denied" })
+    expect(await host()).toMatchObject({ allowed: false, status: 503 })
+    expect(await host()).toMatchObject({ allowed: false, status: 503 })
+    expect(await host()).toMatchObject({ allowed: false, status: 503 })
+  })
+
   test("forwards only the opaque proof, session id, and read/write action", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const policy = remoteWorkspaceSessionAccessPolicy({

@@ -66,8 +66,9 @@ export function signedControlPlaneEventVisibleTo(frame: ControlPlaneFrame, princ
  * to its own surface.
  *
  * It carries notices only — provision steps, worktree readiness, document
- * doorbells, share grants — never a session's content; a session's frames
- * are its workspace runtime's `wr/events`. Every notice settles something
+ * doorbells, share grants, a workspace's inventory change — never a
+ * session's content; a session's frames are its workspace runtime's
+ * `wr/events`. Every notice settles something
  * nothing re-states, so all of them sit in the terminal reserve and the
  * main ring never has to be sized for chatter.
  *
@@ -134,9 +135,10 @@ export function createControlPlaneEventsHandler(
     scope: Scope,
     frame: ControlPlaneFrame,
     decisions: Array<{ connection: Connection; visible: boolean }>,
-  ) => {
+    decidedBefore: ReadonlySet<Connection> = new Set(),
+  ): Promise<void> | undefined => {
     let visible = false
-    const decided = new Set<Connection>()
+    const decided = new Set<Connection>(decidedBefore)
     const deliveries: Connection[] = []
     for (const decision of decisions) {
       decided.add(decision.connection)
@@ -155,12 +157,21 @@ export function createControlPlaneEventsHandler(
     for (const connection of deliveries) void Promise.resolve(connection.push(frame)).catch(() => undefined)
     // A connection that attached while this frame's visibility was pending
     // was not decided for it, and its bootstrap cursor sits before the id the
-    // frame just took: it is decided now, and the frame reaches it once.
-    if ([...scope.connections].some((connection) => !decided.has(connection))) queue(scope, frame)
+    // frame just took: it is decided now — before the scope moves on to the
+    // next queued frame, so that connection sees the ring's order — and the
+    // frame reaches it once.
+    const undecided = [...scope.connections].filter((connection) => !decided.has(connection))
     evict(scope)
+    if (undecided.length > 0) return evaluate(scope, frame, undecided, decided)
+    return undefined
   }
-  const evaluate = (scope: Scope, frame: ControlPlaneFrame): Promise<void> | undefined => {
-    const pending = [...scope.connections].map((connection) => {
+  const evaluate = (
+    scope: Scope,
+    frame: ControlPlaneFrame,
+    connections = [...scope.connections],
+    decidedBefore: ReadonlySet<Connection> = new Set(),
+  ): Promise<void> | undefined => {
+    const pending = connections.map((connection) => {
       try {
         return { connection, visible: connection.subscription.visible(frame) }
       } catch {
@@ -173,13 +184,12 @@ export function createControlPlaneEventsHandler(
       typeof item.visible === "boolean" ? [{ connection: item.connection, visible: item.visible }] : [],
     )
     if (settled.length === pending.length) {
-      deliver(scope, frame, settled)
-      return undefined
+      return deliver(scope, frame, settled, decidedBefore)
     }
     return Promise.all(pending.map(async (item) => ({
       connection: item.connection,
       visible: await Promise.resolve(item.visible).catch(() => false),
-    }))).then((decisions) => deliver(scope, frame, decisions))
+    }))).then((decisions) => deliver(scope, frame, decisions, decidedBefore))
   }
   // A frame this scope's own ring already holds was delivered to every
   // connection attached at the time and is what a later connection's replay
@@ -229,7 +239,10 @@ export function createControlPlaneEventsHandler(
       ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
       tail: Promise.resolve(),
       pending: false,
-      unknownSequence: !sharedRetained && !tombstone && retained.lastId() !== undefined,
+      // Restored from a tombstone, the scope continues its numbering only
+      // while the retained ring still holds everything since the tombstone's
+      // cursor; past that the restored ring is contiguous over a hole.
+      unknownSequence: !sharedRetained && (!tombstone || retained.hasGap(tombstone.retainedCursor)) && retained.lastId() !== undefined,
       sharedRetained,
     }
     scopes.set(key, scope)

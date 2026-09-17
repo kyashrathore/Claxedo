@@ -121,8 +121,13 @@ export function remoteWorkspaceSessionAccessPolicy(
       })
       if (response.ok) return { allowed: true }
       const error = rec((await jsonBody(response))?.error)
-      const status = response.status === 401 ? 401 : response.status === 503 ? 503 : 403
-      return denied(status, str(error?.code) ?? "host_authority_denied", str(error?.message))
+      // Only the authority's own refusal is a refusal; anything else it
+      // answered — a fault, a missing route, a throttle — is the authority
+      // being unavailable, and is not what sends a reader to the session arm.
+      if (response.status === 401 || response.status === 403) {
+        return denied(response.status, str(error?.code) ?? "host_authority_denied", str(error?.message))
+      }
+      return denied(503, str(error?.code) ?? "session_authority_unavailable", str(error?.message))
     } catch {
       return denied(503, "session_authority_unavailable")
     }

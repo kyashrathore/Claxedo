@@ -176,21 +176,6 @@ function hostProject(workspace: { id: string; kind: string }) {
   }
 }
 
-function createdFrame(sessionId: string, workspaceId: string) {
-  return {
-    type: "session.created",
-    properties: {
-      info: {
-        id: sessionId,
-        title: "created on the host",
-        directory: HOST_DIR,
-        workspaceID: workspaceId,
-        time: { created: 10, updated: 20 },
-      },
-    },
-  } satisfies RoutableEvent
-}
-
 function lifecycleFrame(sessionId: string, workspaceId: string) {
   return {
     type: "session.lifecycle",
@@ -404,20 +389,23 @@ describe("global sync event ingress", () => {
       sessionCacheLimit: (_directory, fallback) => fallback,
     })
 
-    globalEvents.emit({
-      name: "/repo",
-      details: {
-        type: "session.created",
-        properties: {
-          info: {
-            id: "ses_title",
-            directory: "/repo",
-            workspaceID: "ws_1",
-            title: "Provisional canonical",
-            time: { created: 10, updated: 10 },
-          },
-        },
+    claxedoEvents.emit({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      sessionID: "ses_title",
+      info: {
+        id: "ses_title",
+        slug: "ses-title",
+        projectID: "proj_repo",
+        version: "1",
+        directory: "/repo",
+        workspaceID: "ws_1",
+        title: "Provisional canonical",
+        time: { created: 10, updated: 10 },
       },
+      ts: 10,
     })
     globalEvents.emit({
       name: "/repo",
@@ -551,13 +539,14 @@ describe("global sync event ingress", () => {
   })
 
   /**
-   * The workspace's own stream is the authority for its list, so a created
+   * The workspace's own stream is the authority for its list, so its created
    * frame is APPLIED, not used as a doorbell: the row appears with no list
    * request at all, and the cached entry is never invalidated.
    */
-  test("adds a session.created row to the paginated list without invalidating it", () => {
+  test("adds a created session's row to the paginated list without invalidating it", () => {
     queryClient.clear()
     const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
     const query = {
       scope: "workspace",
       directory: "/repo",
@@ -578,7 +567,7 @@ describe("global sync event ingress", () => {
     const dispose = createGlobalSyncEventIngress({
       ...revocationDefaults,
       globalEvents: globalEvents.source,
-      claxedoEvents: undefined,
+      claxedoEvents: claxedoEvents.source,
       projects: () => [],
       projectFor: () => undefined,
       children: {
@@ -598,19 +587,21 @@ describe("global sync event ingress", () => {
       sessionCacheLimit: (_directory, fallback) => fallback,
     })
 
-    globalEvents.emit({
-      name: "/repo",
-      details: {
-        type: "session.created",
-        properties: {
-          info: {
-            id: "ses_created",
-            title: "created on the host",
-            directory: "/repo",
-            time: { created: 10, updated: 20 },
-          },
-        },
+    claxedoEvents.emit({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/repo",
+      sessionID: "ses_created",
+      info: {
+        id: "ses_created",
+        slug: "ses-created",
+        projectID: "proj_repo",
+        version: "1",
+        title: "created on the host",
+        directory: "/repo",
+        time: { created: 10, updated: 20 },
       },
+      ts: 10,
     })
 
     expect(
@@ -655,29 +646,26 @@ describe("global sync event ingress", () => {
       }),
     )
 
-    globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", "ws_1") })
     claxedoEvents.emit(lifecycleFrame("ses_lifecycle", "ws_1"))
+    claxedoEvents.emit(lifecycleFrame("ses_second", "ws_1"))
 
-    const childCreated = createdFrame("ses_child_stream", "ws_1")
-    Object.assign(childCreated.properties.info, { parentID: "ses_stream" })
-    globalEvents.emit({ name: HOST_DIR, details: childCreated })
     const childLifecycle = lifecycleFrame("ses_child_lifecycle", "ws_1")
     Object.assign(childLifecycle.info, { parentID: "ses_lifecycle" })
     claxedoEvents.emit(childLifecycle)
 
     // Parent linkage can arrive after a session was initially projected as a root.
-    const linkedLater = createdFrame("ses_linked_later", "ws_1")
-    globalEvents.emit({ name: HOST_DIR, details: linkedLater })
+    const linkedLater = lifecycleFrame("ses_linked_later", "ws_1")
+    claxedoEvents.emit(linkedLater)
     globalEvents.emit({
       name: HOST_DIR,
       details: {
         type: "session.updated",
-        properties: { info: { ...linkedLater.properties.info, parentID: "ses_stream" } },
+        properties: { info: { ...linkedLater.info, parentID: "ses_lifecycle" } },
       },
     })
 
     const items = queryClient.getQueryData<SessionListResponse>(key)?.items
-    expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_second", "ses_lifecycle"])
     expect(items?.map((item) => item.directory)).toEqual(["workspace:ws_1", "workspace:ws_1"])
     dispose()
   })
@@ -718,16 +706,16 @@ describe("global sync event ingress", () => {
       }),
     )
 
-    globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", USER_HOSTED_UUID) })
     claxedoEvents.emit(lifecycleFrame("ses_lifecycle", USER_HOSTED_UUID))
+    claxedoEvents.emit(lifecycleFrame("ses_second", USER_HOSTED_UUID))
 
     const items = queryClient.getQueryData<SessionListResponse>(key)?.items
-    expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_second", "ses_lifecycle"])
     expect(items?.map((item) => item.directory))
       .toEqual([`workspace:${USER_HOSTED_UUID}`, `workspace:${USER_HOSTED_UUID}`])
     expect(items?.map((item) => item.sessionRef)).toEqual([
+      `workspace:${USER_HOSTED_UUID}:session:ses_second`,
       `workspace:${USER_HOSTED_UUID}:session:ses_lifecycle`,
-      `workspace:${USER_HOSTED_UUID}:session:ses_stream`,
     ])
     dispose()
   })
@@ -766,15 +754,15 @@ describe("global sync event ingress", () => {
       }),
     )
 
-    globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", LOCAL_ASSOCIATION_UUID) })
     claxedoEvents.emit(lifecycleFrame("ses_lifecycle", LOCAL_ASSOCIATION_UUID))
+    claxedoEvents.emit(lifecycleFrame("ses_second", LOCAL_ASSOCIATION_UUID))
 
     const items = queryClient.getQueryData<SessionListResponse>(key)?.items
-    expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_second", "ses_lifecycle"])
     expect(items?.map((item) => item.directory)).toEqual([HOST_DIR, HOST_DIR])
     expect(items?.map((item) => item.sessionRef)).toEqual([
+      `local:${HOST_DIR}:session:ses_second`,
       `local:${HOST_DIR}:session:ses_lifecycle`,
-      `local:${HOST_DIR}:session:ses_stream`,
     ])
     expect(items?.some((item) => item.workspaceId)).toBe(false)
     dispose()

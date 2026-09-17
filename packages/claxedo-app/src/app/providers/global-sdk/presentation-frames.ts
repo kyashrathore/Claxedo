@@ -28,7 +28,6 @@ const CLAXEDO_WORKSPACE_EVENT_TYPES = {
   "project.updated": true,
   "vcs.branch.updated": true,
   "global.disposed": true,
-  "session.created": true,
   "session.deleted": true,
   "session.share.changed": true,
   "pty.created": true,
@@ -116,7 +115,8 @@ export function resetStreamGapState(input: {
  * `cp/events` reported a hole. Every notice the control plane could have sent
  * in it is a doorbell for something read from the control plane, so the reads
  * those doorbells nudge are invalidated: the project catalog (a worktree
- * landing) and the session list and inventory (a share granted or revoked).
+ * landing) and the session lists (a share granted or revoked, a workspace's
+ * inventory changed).
  * The documents index revalidates off the same gap frame on its own port,
  * and provision steps are re-read by the connection authority's own resolve.
  */

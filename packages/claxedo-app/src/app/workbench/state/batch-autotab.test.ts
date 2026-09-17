@@ -47,10 +47,7 @@ describe("batch auto-tab listener", () => {
 
     harness.emit({
       name: "/repo/sandbox",
-      details: {
-        type: "session.created",
-        properties: { info: { id: "ses_1", title: "Fix tests" } },
-      },
+      details: { type: "session.lifecycle", phase: "created", sessionID: "ses_1", info: { id: "ses_1", title: "Fix tests" } },
     })
 
     expect(harness.calls.sessions).toEqual([
@@ -64,10 +61,7 @@ describe("batch auto-tab listener", () => {
 
     harness.emit({
       name: "/repo/main",
-      details: {
-        type: "session.created",
-        properties: { info: { id: "ses_1", title: "Main" } },
-      },
+      details: { type: "session.lifecycle", phase: "created", sessionID: "ses_1", info: { id: "ses_1", title: "Main" } },
     })
 
     expect(harness.calls.sessions).toEqual([])

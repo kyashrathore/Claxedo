@@ -167,7 +167,7 @@ compatibility boundary.
 
 Two event streams exist. The control plane's `GET /api/cp/events` carries
 notices only (provision, worktree readiness, document and session-share
-doorbells), never a session's content; hosted, `eventVisibleTo` filters each
+doorbells, a workspace's inventory change), never a session's content; hosted, `eventVisibleTo` filters each
 notice per subscriber by the authority-internal org id and, for share
 doorbells, the recipient. A workspace runtime's `GET /api/wr/events` carries
 that runtime's session frames: a principal the workspace authority admits reads

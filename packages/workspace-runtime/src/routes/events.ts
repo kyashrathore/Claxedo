@@ -7,6 +7,7 @@ import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
 import { sep } from "node:path"
 import { realDirectoryPath } from "../real-directory"
+import { registeredWorkspaceDirectories } from "../target"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -114,6 +115,8 @@ export type WorkspaceEventParents = {
 export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
   /** The runtime's own directory: what its control frames are addressed as, and what admits a bus frame as its own. */
   directory: string
+  /** The workspace whose per-session worktrees (`registerWorkspaceDirectory`) this runtime also serves. */
+  workspaceId?: string
   eventHub: RuntimeEventHub
   bus?: Pick<typeof workspaceRuntimeBus, "subscribe">
   /** The cwd a live pty was created under; a pty's later frames name only its id. */
@@ -125,21 +128,26 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
 /**
  * The runtime bus is process-global — one daemon hosts an embedded runtime
  * per open workspace — so a handler admits a bus frame only when it names
- * this runtime's workspace: by directory, or for a pty (and the terminal a
- * lifecycle frame names) by the cwd it was created under. A pty is remembered
- * from its creation frame because its exit and deletion name only the id, by
- * which time the pty service may have forgotten it. A lifecycle frame that
- * names neither a directory nor a terminal (an agent hook's own report) has
- * no workspace to check against and passes.
+ * this runtime's workspace: by its workspace id, by a directory the runtime
+ * serves (its own, or a per-session worktree registered to the workspace —
+ * those live under the storage root, never under the workspace directory),
+ * or for a pty (and the terminal a lifecycle frame names) by the cwd it was
+ * created under. A pty is remembered from its creation frame because its
+ * exit and deletion name only the id, by which time the pty service may have
+ * forgotten it. A lifecycle frame that names neither a directory nor a
+ * terminal (an agent hook's own report) has no workspace to check against
+ * and passes.
  */
-function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "ptyDirectory">) {
+function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "workspaceId" | "ptyDirectory">) {
   const root = realDirectoryPath(options.directory)
   const ptys = new Set<string>()
+  const roots = () => [root, ...(options.workspaceId ? registeredWorkspaceDirectories(options.workspaceId).map(realDirectoryPath) : [])]
   const under = (directory: string | undefined) => {
     if (!directory) return false
     const real = realDirectoryPath(directory)
-    return real === root || real.startsWith(root + sep)
+    return roots().some((base) => real === base || real.startsWith(base + sep))
   }
+  const served = (directory: string | undefined) => !!directory && roots().includes(realDirectoryPath(directory))
   const ownsPty = (id: string) => {
     if (ptys.has(id)) return true
     if (!under(options.ptyDirectory?.(id))) return false
@@ -163,13 +171,15 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
       case "pty.stream":
         return ownsPty(event.id)
       case "agent.lifecycle":
+        if (event.workspaceId && event.workspaceId === options.workspaceId) return true
         if (event.directory) return under(event.directory)
         if (event.terminalId) return ownsPty(event.terminalId)
         return true
       case "session.lifecycle":
-        return !event.directory || realDirectoryPath(event.directory) === root
+        if (event.workspaceId && event.workspaceId === options.workspaceId) return true
+        return !event.directory || served(event.directory)
       default:
-        return realDirectoryPath(event.directory) === root
+        return served(event.directory)
     }
   }
 }

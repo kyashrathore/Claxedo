@@ -27,7 +27,7 @@ import { createStore, produce } from "solid-js/store"
 import type { StreamSyncLifecycleState } from "@/app/connection/stream-sync-lifecycle"
 
 /** One entry per `ClaxedoEventStreamTarget`: the shared control-plane stream, or a signed workspace's own stream. */
-export type StreamSyncStreamId = "cp" | `wr:${string}`
+export type StreamSyncStreamId = "cp" | "cp:account" | `wr:${string}`
 
 export type StreamSyncSnapshot = {
   state: StreamSyncLifecycleState

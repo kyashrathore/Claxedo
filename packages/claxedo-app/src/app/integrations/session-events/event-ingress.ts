@@ -221,12 +221,11 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
         directory,
         workspaceId: asString(readField(event, "workspaceId")),
       })
-      // Central runtime events share the OpenCode compatibility stream for
-      // transcript/title projection, but their `directory` is the runtime's
-      // internal session key rather than a workspace directory. Their signed
-      // control-plane inventory remains authoritative; inserting this frame
-      // into workspace inventory invents a workspace keyed by the session id
-      // and can replace the already-open central surface on a cold route.
+      // A `central:`-ref'd session's frames carry the runtime's internal
+      // session key as `directory`, not a workspace directory. Its signed
+      // control-plane inventory stays authoritative; inserting this frame
+      // into the workspace inventory would invent a workspace keyed by the
+      // session id and could replace the already-open surface on a cold route.
       if (row && input.sessionInventoryLoaded() && !isCentralSessionRow(row)) {
         const info = { ...row }
         if (!info.projectID && info.directory) {
@@ -522,8 +521,8 @@ function addressedWorkspaceId(value: string | undefined, projects: GlobalProject
 }
 
 /**
- * A workspace stream's `session.created/updated/deleted` frame, applied to the
- * rendered list.
+ * A workspace stream's `session.updated`/`session.deleted` frame — or the row a
+ * `session.lifecycle` "created" carries — applied to the rendered list.
  *
  * The frame carries the whole row, so nothing here needs the server: created
  * prepends it, updated reconciles title and `time.updated` (and re-sorts a
@@ -666,7 +665,6 @@ function sessionProjectionEvent(input: unknown) {
 }
 
 function globalSessionEventType(event: RoutableEvent): SessionEventType | undefined {
-  if (event.type === "session.created") return "created"
   if (event.type === "session.updated") return "updated"
   if (event.type === "session.deleted") return "deleted"
   return undefined

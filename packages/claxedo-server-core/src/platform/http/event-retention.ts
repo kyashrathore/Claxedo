@@ -18,6 +18,7 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
     case "worktree.failed":
     case "document.changed":
     case "session.share.changed":
+    case "session.inventory.changed":
       return true
     case "provision":
       return event.step === "ready" || event.step === "error"

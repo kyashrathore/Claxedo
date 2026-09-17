@@ -35,6 +35,7 @@ export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: Sessio
 /** Mounts the workspace's stream; the returned disposer releases its bus subscription. */
 export function mountWorkspaceEvents(app: Hono, options: {
   directory: string
+  workspaceId?: string
   eventHub: RuntimeEventHub
   sessionParents?: WorkspaceEventParents
   sessionAccessPolicy?: SessionAccessPolicy
@@ -42,6 +43,7 @@ export function mountWorkspaceEvents(app: Hono, options: {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
   const handler = workspaceEventsHandler({
     directory: options.directory,
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
     eventHub: options.eventHub,
     ptyDirectory: (id) => Pty.get(id)?.cwd,
     policy,
@@ -89,6 +91,7 @@ export function mountWorkspaceCore(
   upgradeWebSocket: Socket,
   options: {
     directory: string
+    workspaceId?: string
     eventHub: RuntimeEventHub
     exposure: WorkspaceRuntimeExposure
     processObserver?: ProcessObserver

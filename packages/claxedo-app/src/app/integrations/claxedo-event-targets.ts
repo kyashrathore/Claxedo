@@ -15,10 +15,8 @@ import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-wor
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, hasApiCredentials } from "@/platform/api/api"
 import {
-  accountStreamAvailable,
   openAccountStreamResponse,
 } from "@/platform/account/account-stream-fetch"
-import type { AccountState } from "@/platform/account/account-port"
 import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
@@ -28,12 +26,16 @@ import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-contro
 type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
 
 /**
- * The two streams a client reads. `cp` is the control plane's notice stream,
- * fetched directly under control-plane auth. `wr` is one workspace runtime's
- * stream: a runtime-owned long-lived GET behind the workspace's relay
- * connection, reached with the Runtime Access Token exactly like provider,
- * file and PTY reads — or, for a local workspace, through the daemon's
- * loopback proxy to its embedded runtime.
+ * The two streams a client reads. `cp` is a control plane's notice stream:
+ * the server's own (`transport: "server"` — the daemon's over loopback, the
+ * hosted one over control-plane auth on signed web), and, on a signed
+ * desktop, ALSO the hosted control plane's through the Electron account
+ * bridge (`transport: "account"`) — a signed desktop has two control planes,
+ * and the daemon's is the only one that rings for its local workspaces. `wr`
+ * is one workspace runtime's stream: a runtime-owned long-lived GET behind
+ * the workspace's relay connection, reached with the Runtime Access Token
+ * exactly like provider, file and PTY reads — or, for a local workspace,
+ * through the daemon's loopback proxy to its embedded runtime.
  *
  * A `wr` target opens the stream unscoped: a principal the workspace admits
  * reads every session-less frame and every session the session authority
@@ -45,7 +47,7 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  * that refusal.
  */
 export type ClaxedoEventStreamTarget =
-  | { kind: "cp"; url: URL }
+  | { kind: "cp"; url: URL; transport: "server" | "account" }
   | {
       kind: "wr"
       serverUrl: string
@@ -87,11 +89,14 @@ export function claxedoEventStreamTargets(input: {
   sessionID?: string
   /** Whether the account is signed in; only the signed-web deployment needs it. */
   accountSigned?: boolean
+  /** A signed desktop with the Electron account bridge: the hosted control plane is reachable through it. */
+  accountStream?: boolean
 }): ClaxedoEventStreamTarget[] {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
   const cp: ClaxedoEventStreamTarget = {
     kind: "cp",
     url: controlPlaneEventsUrl({ baseUrl: serverUrl }),
+    transport: "server",
   }
   const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
   const workspace = routeWorkspace
@@ -100,14 +105,19 @@ export function claxedoEventStreamTargets(input: {
       // signed desktop can still read their events alongside the account feed.
       ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
-  // Which deployment this is decides whether the control-plane stream exists
-  // at all — the same fact the boot reads. On LOOPBACK it is the local daemon's
-  // own and is always read. On signed-web it is the hosted control plane's, a
-  // route only a signed document can reach; an unsigned page that opens it
-  // holds a permanently 404ing retry loop, so account state gates it there.
-  const base = centralTransportForServer(serverUrl) === "loopback" || input.accountSigned === true
-    ? [cp]
-    : []
+  // Which deployment this is decides which control-plane streams exist — the
+  // same fact the boot reads. On LOOPBACK the daemon's own is always read,
+  // and a signed desktop reads the hosted control plane's too, through the
+  // account bridge. On signed-web the server's stream IS the hosted control
+  // plane's, a route only a signed document can reach; an unsigned page that
+  // opens it holds a permanently 404ing retry loop, so account state gates
+  // it there.
+  const loopback = centralTransportForServer(serverUrl) === "loopback"
+  const base: ClaxedoEventStreamTarget[] = loopback
+    ? [cp, ...(input.accountStream ? [{ ...cp, transport: "account" as const }] : [])]
+    : input.accountSigned === true
+      ? [cp]
+      : []
   if (!workspace) return base
   const sessionID = input.sessionID?.trim()
   return [
@@ -141,18 +151,10 @@ export function claxedoEventRouteSessionID(pathname: string) {
 export async function eventStreamFetch(
   target: ClaxedoEventStreamTarget,
   init: RequestInit,
-  options?: { request?: typeof fetch; relayRequest?: typeof fetch; accountState?: AccountState; scope?: "workspace" | "session" },
+  options?: { request?: typeof fetch; relayRequest?: typeof fetch; scope?: "workspace" | "session" },
 ) {
   if (target.kind === "cp") {
-    // Signed accounts stream the hosted control plane through the account
-    // bridge; every other account state (unsigned, unconfigured build,
-    // pending, revoked) keeps `authFetch` against the local daemon's own
-    // route — see `accountStreamAvailable` for why bridge presence alone
-    // must not route here.
-    if (
-      !options?.request &&
-      accountStreamAvailable(options?.accountState ?? { status: "unsigned" })
-    ) {
+    if (target.transport === "account") {
       const lastEventId = new Headers(init.headers).get("Last-Event-ID") ?? undefined
       return openAccountStreamResponse({
         operation: "controlPlane.events",
@@ -225,12 +227,9 @@ export function routeDirectory(pathname: string) {
   return shellRouteDirectoryFromPathname(pathname)
 }
 
-export function eventStreamTargetKey(
-  target: ClaxedoEventStreamTarget,
-  options: { accountSigned?: boolean } = {},
-) {
+export function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
   if (target.kind === "cp") {
-    return `cp:${target.url.href}:${options.accountSigned === true ? "signed" : "unsigned"}`
+    return `cp:${target.url.href}:${target.transport}`
   }
   // The routed session is the stream's fallback scope, not its identity, and
   // the directory a route names is one of several spellings of the same

@@ -4,7 +4,7 @@
  * Every later read of that session — messages, config, agents, the transcript —
  * is scoped by this value, so it has to be an address THIS app can resolve, and
  * one answer has to hold whichever producer stamped the row (a fetched list, or
- * a `session.created`/`session.updated` frame applied by `event-ingress`).
+ * a `session.lifecycle`/`session.updated` frame applied by `event-ingress`).
  *
  * - `local`: the host IS this machine, so its path is the row's directory.
  * - `cloud` and `user-hosted`: the workspace is addressed by its signed id —
