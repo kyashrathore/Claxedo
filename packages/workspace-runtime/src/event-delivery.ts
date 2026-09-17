@@ -1,6 +1,7 @@
 import { createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { createHash, randomUUID } from "node:crypto"
 import type { Context } from "hono"
+import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import type { SessionAccessPolicy } from "./session-access-policy"
 
 export type WorkspaceRole = "viewer" | "editor" | "admin" | "owner"
@@ -236,7 +237,7 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
       if (!decision.allowed) return eventDecision(decision)
       if (decision.lease && decision.expiresAt !== undefined) {
         held.lease = decision.lease
-        held.expiresAt = decision.expiresAt
+        held.expiresAt = Math.min(decision.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS)
       }
       return "deliver" as const
     })().catch(() => "terminate" as const).finally(() => {
@@ -244,8 +245,13 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     })
     return await held.renewing
   }
+  // Renewal re-asks the sessions this connection was DELIVERED: one of them
+  // now refused is a revocation, and ends the stream. A session it was never
+  // delivered is not the stream's to lose — on the unscoped arm every other
+  // member's private session is one — and is re-asked only when its hold
+  // lapses and it next frames.
   eventPolicy.renew = async (principal) => {
-    const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId)
+    const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId && !grant.denied)
     const decisions = await Promise.all([
       renewHost(principal),
       ...current.map((grant) => authorizeGrant(principal, grant.sessionId, true)),
@@ -258,8 +264,10 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
       if (grant.principal.connectionId === principal.connectionId) grants.delete(key)
     }
   }
+  // The lease's expiry is clamped to this clock: the plane's may lead it,
+  // and a lease presented after the plane's expiry ends the stream.
   eventPolicy.holdHost = (principal, lease) => {
-    hosts.set(principal.connectionId, lease)
+    hosts.set(principal.connectionId, { lease: lease.lease, expiresAt: Math.min(lease.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS) })
   }
   return eventPolicy
 }
@@ -561,10 +569,11 @@ export function createIdentityAwareEventSource<T extends object>(input: {
         created.pending = false
       })
     }
-    if (!created.attached) {
-      created.replay = { ...replay, hasGap: (lastEventId?: string, throughId?: string) =>
-        (!created.attached && Number(lastEventId ?? "0") > 0) || replay.hasGap(lastEventId, throughId) }
-    }
+    // Consulted at every open, not only for a scope created unattached: a
+    // `terminate` decision later takes `attached` down again (a frame the
+    // ring never rang), and the next reconnect must read that as a gap.
+    created.replay = { ...replay, hasGap: (lastEventId?: string, throughId?: string) =>
+      (!created.attached && Number(lastEventId ?? "0") > 0) || replay.hasGap(lastEventId, throughId) }
     return created
   }
 

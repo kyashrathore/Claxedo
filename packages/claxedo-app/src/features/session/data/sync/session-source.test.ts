@@ -79,7 +79,7 @@ describe("sessionSourceForWorkspace", () => {
     expect(sessionSourceForWorkspace({ kind: undefined, workspaceId: "/repo" })).toEqual({ kind: "local" })
   })
 
-  test("Global Chat and the central server share one source", () => {
+  test("Global Chat and the daemon's own sessions share one source", () => {
     expect(centralSessionSource({ local: true })).toEqual({ kind: "local" })
     expect(centralSessionSource({ local: false })).toEqual({ kind: "cloud" })
   })

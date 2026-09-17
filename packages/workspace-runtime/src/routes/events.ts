@@ -198,6 +198,13 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
  * no workspace access) is answered 403 and re-opens with `?sessionID=`,
  * reading that session and its subagent children under a lease.
  *
+ * The unscoped arm is admitted on a workspace lease the control plane mints
+ * for the read: the request's own relay host token expires within a minute,
+ * so a session first framing after that is authorized under the lease, and
+ * the delivery policy's renewal cadence rolls the lease and re-asks the
+ * sessions this connection was delivered. A signed runtime whose plane mints
+ * no leases reads on the host token alone.
+ *
  * `close()` releases the bus subscription when the runtime is disposed.
  *
  * Resumable by SSE `Last-Event-ID`. Two rules about NOT re-applying frames a

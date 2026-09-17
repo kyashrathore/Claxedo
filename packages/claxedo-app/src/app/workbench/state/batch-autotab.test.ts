@@ -68,6 +68,20 @@ describe("batch auto-tab listener", () => {
     harness.cleanup()
   })
 
+  test("a pty is filed under its own cwd, not the runtime root the stream named", () => {
+    const harness = createHarness([{ worktree: "/repo/main", sandboxes: ["/repo/sandbox"] }])
+
+    harness.emit({
+      name: "/repo/main",
+      details: { type: "pty.created", info: { id: "pty_2", title: "Codex", cwd: "/repo/sandbox" } },
+    })
+
+    expect(harness.calls.terminals).toEqual([
+      { dir: "/repo/sandbox", terminalId: "pty_2", title: "Codex" },
+    ])
+    harness.cleanup()
+  })
+
   test("uses event info directory when stream name is global", () => {
     const harness = createHarness([{ worktree: "/repo/main", sandboxes: ["/repo/sandbox"] }])
 

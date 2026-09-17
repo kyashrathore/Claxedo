@@ -1,7 +1,9 @@
 # Two event streams: `cp/events` for the control plane, `wr/events` per workspace runtime
 
 Status: proposed 2026-09-17, reviewed adversarially the same day (findings
-folded in below), not started. Supersedes the lane-specific repairs in
+folded in below); landed the same day on `refactor/two-event-streams`
+(worktree `~/test/opencode-streams`, from `dev` `98d2930eef`); the review
+rounds are recorded under "Execution". Supersedes the lane-specific repairs in
 `2026-09-17-001-fix-lost-part-frames-strand-running-rows.md` (its hydrator
 fix and history-resync request stay; its per-lane gap hooks, terminal sets
 and heartbeat patch collapse into one of each here).
@@ -110,8 +112,9 @@ Two streams, each with one contract and one reader:
 workspace runtimes in-process. It serves `cp/events` for the shell and
 `wr/events` per embedded runtime under the same route ownership the proxy
 already applies (`/api/wr/*` → runtime). The desktop opens `cp/events`
-once and `wr/events` once per open local workspace — the same two
-connections a signed web client opens, minus the relay hop. Session
+(the daemon's; a signed desktop the hosted control plane's too, through the
+account bridge) and `wr/events` for the workspace the route names — the
+same connections a signed web client opens, minus the relay hop. Session
 lifecycle stops riding the runtime bus into the central stream (today
 `claxedoBus` is the runtime bus under another name, `server-core bus.ts:141`,
 which is the double delivery `claxedo-event-targets.ts:122` dodges); the
@@ -173,11 +176,15 @@ Two properties the plan is not done without:
   and it rides that workspace's `wr/events` as a control frame. A control
   plane could only ever re-announce `created` after its projection pull,
   without the draft or the failure. The stream a frame rides is decided by
-  who produces it. Known consequence: on a route with no workspace (the
-  home route) no `wr/events` is open, so a session created elsewhere (a
-  second window, an MCP- or Telegram-driven create) reaches the rail on
-  the next inventory read rather than live; the old central stream
-  forwarded the daemon's process-global runtime bus and covered this.
+  who produces it. On a route with no workspace (Tasks, Marketplace, a home
+  route with nothing to reopen) no `wr/events` is open, so the control
+  plane's own inventory rings instead:
+  `session.inventory.changed` (workspace-scoped, no session named) is
+  published by the session-meta store's writers when a workspace's
+  projection gains or loses a row — a create from a second window, the
+  CLI, an MCP- or Telegram-driven client, or a delete — and the reader
+  refetches the list and inventory, which apply access. A retitle rings
+  nothing; that is the runtime's `session.updated` on `wr/events`.
 - `wr/events`: the compat presentation envelope the runtime already
   publishes on its hub channel (`createOpencodeCompatProjection` /
   `createClientPresentationProjection`, `service.ts:404`) plus the
@@ -188,15 +195,23 @@ Two properties the plan is not done without:
   same projection, so what the client sees is what the store holds.
 - Scope on `wr/events` (`authorizeSessionEventScope`): try workspace
   authority first (`authorizeHost`, role ≥ viewer) → the stream opens
-  unscoped; else require `sessionID` and the session stream lease
+  unscoped, on a WORKSPACE stream lease (session `"*"`) the control plane
+  mints for the read, which the runtime holds per connection, presents for
+  every session first seen on it (the request's own relay host token
+  expires within a minute) and rolls on the delivery policy's renewal
+  cadence; else require `sessionID` and the session stream lease
   (`authorizeStream`) → session-scoped; else 400 as today. On an unscoped
-  stream the workspace's OWNER (the RAT role `owner`) is served every
-  session without a per-session grant; any other admitted principal — a
-  workspace share, a team member — is served the workspace's session-less
-  frames and, through the per-session delivery policy, only the sessions
-  the authority grants it. Workspace access alone unlocks no session
+  stream every admitted principal — the workspace's owner included — is
+  served the workspace's session-less frames and, through the per-session
+  delivery policy, only the sessions the session authority grants it (an
+  org owner or admin sees everything only because `hasPrivateAccess`
+  grants it, per session). Workspace access alone unlocks no session
   (decided while landing: `host_read` admits every workspace share, so an
-  admitted-means-everything arm leaked private sessions to a viewer). The
+  admitted-means-everything arm leaked private sessions to a viewer; a
+  round-1 owner bypass leaked them the same way and was removed). The
+  refusal of the unscoped arm is named — 403 `workspace_event_stream_denied`
+  — and the reader narrows to `?sessionID=` on that code alone, never on a
+  relay's or the token mint's 403. The
   policy marker `managed-private` keeps meaning "ask the control plane"; it
   stops meaning "every stream is a session".
 
@@ -238,8 +253,8 @@ Two properties the plan is not done without:
 - One reader implementation (`claxedo-events.tsx`'s loop, which already
   reads `id:`, resumes with `Last-Event-ID`, resets its watchdog on any
   frame, and raises `session-history-resync` on `stream.replay-gap`),
-  instantiated per target: the `cp` target and one `wr` target per open
-  workspace. `claxedo-event-targets.ts` loses the `local`-kind exclusion
+  instantiated per target: the `cp` target(s) and the `wr` target of the
+  routed workspace. `claxedo-event-targets.ts` loses the `local`-kind exclusion
   (local workspaces now have a `wr/events` of their own) and the
   `sessionAuthority` branch for the owner: an owner opens the workspace
   stream without a session id everywhere; the session-scoped form stays
@@ -269,9 +284,10 @@ Two properties the plan is not done without:
 2. `wr/events` = hub channel + control bus, with the two-arm scope; client
    `wr` reader applies it; P5 deleted from the wire; R2 deleted. Verified
    by the Phase 0 capture repeated: transcript streams, no polls needed.
-3. `cp/events` route introduced as notices; session lifecycle moved to a
-   notice; old spellings answered by the new handler for one release, then
-   removed with their ownership entries.
+3. `cp/events` route introduced as notices; the inventory change became a
+   notice while the create protocol stayed on `wr/events` (§1); the old
+   spellings were removed outright with their ownership entries (landed:
+   nothing answered them for a release).
 4. P6/P7 deleted (the OpenCode engine's native passthrough, if still
    wanted, stays inside the harness adapter — memory
    `project_opencode_native_events` — never as an HTTP stream).
@@ -316,40 +332,82 @@ diagnosis; Phase 0 either confirms it or records "no wire".
 - [ ] Phase 0 capture recorded here: per deployment (desktop local, signed
       web + cloud workspace, user-hosted), the routes opened during one
       turn, the frame-type counts on each, and — with mid-turn history
-      polls disabled — whether the transcript advanced. Progress:
-- [ ] Desktop local: exactly two stream connections per open workspace in
+      polls disabled — whether the transcript advanced. Progress: NOT
+      captured on the installed desktop. Its role is taken by the Tier R
+      spec "a turn's frames ride wr/events; cp/events carries no session
+      frame" (real local stack, scripted Claude): `wr/events` opened
+      unscoped, resumed by cursor; `message.updated`, `message.part.updated`,
+      `message.part.delta` (the reply's text), `session.idle` on it;
+      `cp/events` carried heartbeats and one `session.inventory.changed`.
+      Signed web + cloud and user-hosted were not captured on a wire.
+- [ ] Desktop local: exactly two stream connections on a workspace route in
       DevTools (`/api/cp/events`, `/api/wr/events?…`); with polls
       disabled, a turn's parts, tool states, todo, permissions,
       diagnostics, subagent and goal frames all observed on `wr/events`
       (counts > 0 per type exercised); nothing session-shaped on
       `cp/events`; a new session appears in the sidebar from a
-      `cp/events` notice. Progress:
+      `cp/events` notice. Progress: the two connections and the frame
+      types are the Tier R spec above (polls were not disabled; the
+      assertions are on the wire, not on the transcript's source); the
+      sidebar row from a `cp/events` notice is the Tier R spec "a session
+      created elsewhere reaches the rail of a route with no workspace from a
+      cp/events notice" (session created over HTTP while the browser sits on
+      `/tasks`; `/` itself reopens the seeded project's route).
+      Not checked in DevTools on the installed desktop build.
 - [ ] Signed web with a cloud workspace: the owner opens ONE `wr/events`
       through the relay with no session id and sees every session and the
       pty frames; a share grantee in another account opens
       `wr/events?sessionID=…` for the shared session and nothing else,
-      and an unscoped attempt by the grantee is refused. Progress:
+      and an unscoped attempt by the grantee is refused. Progress: proven
+      against the real relay-host-token policy in
+      `two-user-runtime-transport.acceptance.test.ts` (owner and
+      participant read the workspace arm and see the private session; a
+      workspace-only share sees the session-less frames only; the grantee
+      reads `?sessionID=` under a lease and resumes by cursor across a
+      re-minted host token; revocation ends the stream). Not exercised
+      through a browser on signed web; `web-signed-org-team-multiplayer`
+      asserts workspace-admitted members only.
 - [ ] Repository: no route named `/global/event`, `/event`,
       `/api/claxedo/events` or `/api/wr/runtime-events` in any package,
       ownership table, guard, throttle, proxy list, e2e mock or comment;
       `provider.tsx` has no stream loop; `agent-runtime-client` has no
       `subscribeTo*`; `claxedo-event-targets.ts` has no `local`-kind
-      exclusion. Progress:
+      exclusion. Progress: DONE — the round-2 sweep (`bcdf50329e`) and the
+      round-3/4 reviewers' greps; the remaining `/global/event` hits are the
+      upstream OpenCode engine's own SSE spoken by its harness adapter. The
+      app's `ClaxedoWorkspaceEvent` SDK-event union (`claxedo-api-types.ts`)
+      still declares `pty.*` arms with `properties` that no producer emits;
+      the terminal provider's SDK-mode fallback and its fixture depend on
+      them, so retiring that union is a separate change.
 - [ ] The 2026-09-17-001 scenario (daemon `kill -STOP` ≤ 36 s across a
       tool's completion) re-run on the installed build with polls
       disabled: one gap notice on `wr/events`, one resync, the row reads
-      "Ran …" within it. Progress:
+      "Ran …" within it. Progress: the Tier R spec "Claude tool completion
+      reconciles after the browser reconnects and reloads" cuts the browser's
+      network across a real tool's completion; the stream reopens by cursor
+      and the settlement or the gap notice arrives on it (polls not
+      disabled; not re-run on the installed build).
 - [ ] A cursor-less FIRST open during a stall (plan 001's non-goal): the
       reader's bootstrap heartbeat carries the cursor and the reader's
       first `session-history-resync` fires after the stream opens, so the
-      reply's `message.updated` is read rather than lost. Progress:
+      reply's `message.updated` is read rather than lost. Progress: unit-
+      proven — `claxedo-events-cursor.vitest.tsx` (a cursor-less open
+      requests `stream-open` before the bootstrap cursor is adopted; a
+      resumed open does not) and `routes/events.test.ts` (cursor-less
+      connection served nothing from the ring, bootstrap heartbeat carries
+      the cursor). Not re-run as the stall scenario on the installed build.
 - [ ] E2E, real handlers (Tier R harness, not `mock-runtime.ts`): one spec
       per claimed flow — desktop-local turn streams on `wr/events`;
       owner workspace-wide + grantee session-scoped through the relay
       (grantee's unscoped attempt refused); `cp/events` notice → sidebar
       row; stall → gap notice → resync → row settles; cursor-less first
       open → resync reads the reply. All green in CI on the merge commit.
-      Progress:
+      Progress: three Tier R specs on the real local stack are green
+      locally (`8c34ab1ddb`): desktop-local turn on `wr/events`;
+      `cp/events` notice → sidebar row; outage → reopen by cursor →
+      settlement/gap on the reopened stream. Owner/grantee through the
+      relay is the acceptance test above, not a browser spec. Not run in
+      CI yet — the branch is unpushed.
 - [ ] Nothing else left (floor): a grep over the retired names —
       `/global/event`, `/event`, `/api/claxedo/events`,
       `/api/wr/runtime-events`, `runtimeEventsHandler`,
@@ -362,7 +420,9 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       central stream, "compat loop", "compat stream", "three spellings" —
       returns zero hits across `packages/*/src`, `packages/*/e2e`,
       `packages/*/scripts`, `script/`, `docs/` (outside this plan and plan
-      001) and the memory index. Progress:
+      001) and the memory index. Progress: DONE for the listed names (the
+      round-3 and round-4 reviewers' greps); `runtime-events` survives only
+      in `e2e/e2e-decisions.md` as a dated decision record.
 - [ ] System coherent (proof): consistency reviews of the landed tree, each
       by a reviewer who did not write the code, each covering the full
       producer → bus → handler → transport → reader → store path on desktop
@@ -370,18 +430,31 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       brief above. Round 1 findings fixed; round 2 on the fixed tree;
       further rounds until a round returns zero findings. Each round's
       findings, fixes and the zero-finding report are recorded here with
-      the commit they reviewed. Progress:
+      the commit they reviewed. Progress: rounds 1–4 recorded under
+      "Execution → Review rounds" with their commits; no round has yet
+      returned zero findings — round 5 runs on the round-4 fixes.
 - [ ] One written account of the system exists and matches the code: the
       module comments on the two handlers, the two reader targets and
       `session-event-scope.ts` describe the same two streams, the same
       owner/grantee arms and the same notice/frame split, in present tense,
       with no history narration; the review rounds above confirm no other
-      description of the event system survives anywhere. Progress:
+      description of the event system survives anywhere. Progress: the
+      handler headers (`routes/events.ts`, `shell/events.ts`), the reader
+      header (`claxedo-events.tsx`), `claxedo-event-targets.ts`,
+      `session-event-scope.ts`, `user-hosted-workspaces.md` §F and the
+      runtime README were aligned in `bcdf50329e` and re-aligned after
+      rounds 3 and 4 (two control planes on a signed desktop; the routed
+      workspace's stream, not one per open workspace).
 - [ ] Tests: one handler suite per stream (replay, gap, terminal reserve,
       overflow notice, owner vs grantee scope); one reader suite (cursor,
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
       `bun run test:architecture-ratchets` with the closure ceilings
-      LOWERED to the measured values. Progress:
+      LOWERED to the measured values. Progress: `routes/events.test.ts`
+      (17), `event-delivery.test.ts` (18), local `shell/events.test.ts` (10)
+      + `event-stream-response.test.ts`; reader suite
+      `claxedo-events-cursor.vitest.tsx` (12) + `claxedo-event-targets.test.ts`;
+      ceilings lowered in `2c10b5aaa4` (app-local 1077, renderer 1120,
+      self-hosted 124, desktop main 90) and unchanged since.
 
 ## Non-goals
 
@@ -425,3 +498,175 @@ Landing notes (2026-09-17, worktree `~/test/opencode-streams`):
   `createClientPresentationProjection` on the mock's side, as a host does,
   and publishes the result on `wr/events`; raw runtime frames never reach
   the mocked wire either.
+
+### Review rounds
+
+Reviewers wrote none of the code they reviewed (Opus; Fable was
+rate-limited). Each round covered producer → bus → handler → transport →
+reader → store on desktop local, signed web + cloud, and user-hosted.
+
+**Round 1** (tree `cec5802f66`, three reviewers: server, client, traces).
+Findings, all fixed in `bb19ca222e`: pty/subagent/goal frames reached the
+unscoped arm unscoped; `session.updated`/`session.deleted` twice on
+`wr/events` (a bus bridge beside the hub); a frame published while a
+second connection was opening delivered twice; the events source never
+closed; `sessionParents` absent on the CLI runtime; `parentID` lost on
+delete; the owner bypass served a workspace share every private session
+(`host_read` admits shares); a cp gap resynced sessions (gaps are per
+stream now); the multiplayer Tier R taps were vacuous; `/api/cp/events`
+reachable over the host tunnel; a dozen stale comments.
+
+**Round 2** (tree `bb19ca222e`, three reviewers). Findings and fixes:
+
+- Server (`3288a1d97d`, `99abf9288f`, `9bdf6e5c2d`): the round-1 dedupe held
+  only for a synchronous policy — every managed policy is async, so a frame
+  in flight when a connection attached was decided twice and delivered
+  twice (now: per-connection delivered set, one ring id, and a connection
+  that attached mid-decision is decided for the frame); the same double
+  delivery on the local `cp/events` handler; `process.status: streaming`
+  per delta named a private session to every workspace reader (removed; no
+  consumer); `wr/events` forwarded the whole process-global bus, so a
+  daemon with several open workspaces cross-delivered pty/process frames
+  (filtered to the runtime's own directory and its ptys' cwd — round 3
+  widened this to the workspace's registered worktrees); the
+  signed self-hosted node's embedded policy had no `authorizeHost` and
+  answered 400 (now grants by the stamped role); the replay scope was keyed
+  by the per-request relay host token, so any reconnect after the relay's
+  30 s mint cache was a stranger's (now keyed by the runtime access token
+  `parent_jti`; the acceptance test reconnects on a fresh mint); a cursor
+  past a ring's head was "nothing to replay" (now a gap); the deleted lane's
+  per-subscriber delivery contract, `queryName`, `unknownEventSessionId`
+  and the bus `heartbeat` member survived (removed).
+- Control plane (`99abf9288f`, `9cafe58ea7`): `machine-dispatch.ts` still
+  read `/event?sessionID=` — a live consumer masked by its unit fake; now
+  `wr/events?sessionID=`, proven by a test that drives dispatch through the
+  embedded runtime app (the old path 404s in it).
+- Client (`99abf9288f`, `b3e6364833`, `5a9fc39272`): the `wr` key carried
+  the route's spelling of the workspace, so `/w/<id>` → `/s/<id>` reopened
+  the stream cursor-less (keyed by workspace now); the 403 fallback narrowed
+  on any 403 (now only on the runtime's `workspace_event_stream_denied`);
+  the home route learned of no session created elsewhere (the inventory
+  notice above); a stream-open resync fired for every later pane mount;
+  `eventDirectoryForLiveSession`, `EVENT_STREAM_STALL_MS` and a window
+  global had no production reader; two listeners closed a deleted session's
+  surfaces; the mock's session arm did not scope subagent children.
+- Traces and docs (`bcdf50329e`): public docs, the perf harness, the hosted
+  drill scripts, a Tier R fixture option, product-boundary policy notes,
+  the Vite proxy, README, the MCP inventory, and every "central stream"
+  comment; the owner-arm account now agrees across the handler header, the
+  runtime README, the tech docs and the reader.
+
+Also fixed on the way: the e2e mounts test read a binding the round-1
+commit had rewritten (CI-red at `bb19ca222e`); `persist_message_event`
+(the hosted replay log's writer) lost its producer with the deleted lane
+and keeps its readers — the log is the hosted session-pull store, not an
+event stream, and retiring it is a separate change.
+
+**Round 3** (tree `8c34ab1ddb`, two reviewers). Findings and fixes
+(`15cd0927b6`):
+
+- The round-2 bus filter admitted only the workspace directory, so every
+  cloud session's lifecycle and pty frames (per-session worktrees live under
+  the storage root) were dropped from its own stream — now a runtime admits
+  the worktrees registered to its workspace and frames naming its workspace
+  id.
+- A connection attaching behind two pending frames received them out of ring
+  order (its cursor then replayed a duplicate) — now decided inline before
+  the next queued frame, in both handlers.
+- A scope restored from its tombstone after the retained ring rolled past
+  the tombstone's cursor was contiguous over a hole — now a gap.
+- The self-hosted node's cookie-authenticated readers carried no bearer and
+  were keyed per connection, so no cursor ever resumed there — embedded
+  identities are keyed by actor.
+- A control-plane fault (500/404/429) reached the runtime as a 403 and
+  narrowed the reader to the session arm — now the authority is unavailable
+  (503).
+- A signed desktop read only the hosted control plane, so the daemon's
+  notices for local workspaces (the inventory change, a worktree landing)
+  never reached it — the reader opens both, the daemon's over loopback and
+  the hosted one through the account bridge, keyed by transport.
+- A deleted session's surfaces were matched by the runtime's host path —
+  now by the frame's address; the producer-less `session.created` wire arm
+  went, and the sandbox auto-tab reads `session.lifecycle` created; the
+  inventory notice appears in every account of the cp notices; a dozen
+  stale comments.
+
+**Round 4** (tree `15cd0927b6`, two reviewers). Findings and fixes (the
+commit after this one):
+
+- BLOCKER: the unscoped arm authorized every session first seen on a
+  connection with the connection's own relay host token, which expires in
+  60 s; from then on every new session's first frame ended the stream and
+  was lost. Now `host_read` mints a WORKSPACE stream lease (session `"*"`)
+  the runtime holds per connection, presents for every first-seen session
+  and rolls on the renewal cadence; the acceptance test opens the owner arm
+  on a one-second host token and the session's first frame lands after it
+  expired. A `terminate` decision now marks the scope holed, so the
+  reconnect resyncs instead of resuming over the missing frame.
+- Every frame of a session the reader may not read was one authority round
+  trip; a busy private session filled the scope's queue and tore every
+  connection down — refusals are cached for the renewal cadence.
+- Ring numbering starts from the clock (a runtime restart's fresh ring no
+  longer looks resumable to a second reader carrying the old numbering);
+  the local cp scope clears its "unknown numbering" flag on attach; an
+  `agent.lifecycle` naming another workspace is dropped.
+- With two control planes, `centralConnected` is the level (any control
+  plane up) and `controlPlaneReconnects` the edge the level cannot show (a
+  control-plane stream returning while the other held the level), so the
+  documents index revalidates on either flap and never twice for one; a
+  closed target releases its tracker and never reconnects; the sandbox
+  auto-tab's terminal arm, dead since the coalescer dropped control frames,
+  reads `pty.created` off the emitter; a gap or failure names its control
+  plane. (`5b8ce3b9db` split the level from the edge after `0f837193d8`
+  had made the level demand both planes.)
+
+**Round 5** (tree `5b8ce3b9db`, two reviewers). Findings and fixes (the
+commit after this one):
+
+- BLOCKER (server): renewal re-asked every session in the connection's
+  grants map, refused ones included, so on the unscoped arm one private
+  session of another member's — cached as a refusal — ended the whole
+  stream at the next 5 s cadence. Renewal now re-asks only the sessions
+  the connection was DELIVERED (a refusal there is a revocation); a
+  refused session is re-asked only when its hold lapses and it next
+  frames. Tested directly against `sessionEventDeliveryPolicy`.
+- MAJOR (server): the workspace lease's expiry was the plane's clock; the
+  runtime now clamps it to its own clock at hold and roll
+  (`SESSION_STREAM_LEASE_TTL_MS`), so a lease is never presented after the
+  plane's expiry.
+- MINOR (server): a `terminate` decision on a scope created attached never
+  marked it holed; the hole is now unconditional on any scope's next
+  cursor-carrying reopen. The authority test's "an editor's `*` lease
+  passes `host_admin`" held only because the fake ignored `minimumRole`;
+  it now asserts the access-token check carried `admin` and that a
+  downgraded token is refused there.
+- MAJOR (client): the sandbox auto-tab's pty arm filed a terminal under the
+  runtime root the stream stamped on the frame, not the pty's cwd, so a
+  sandbox terminal never opened a tab; a pty frame is now addressed by its
+  `info.cwd`. Scope: the arm reads the routed workspace's stream only, so a
+  sandbox terminal of a workspace not routed opens no tab — recorded, not
+  fixed (the pre-refactor coalescer had the same reach).
+- MINOR (client): a single-control-plane reconnect fired the documents'
+  revalidation twice (the level's own edge and the counter); the counter
+  now counts only returns the level never showed, and the consumer path is
+  tested (`document-index.vitest.tsx`). The reader's failure path skips a
+  closed target (its transport may reject the aborted body with something
+  other than `AbortError`). `SessionConnectionLine` no longer reads the
+  `cp` stream's health for a session whose workspace is unresolved — no
+  session frame rides `cp`; it renders nothing until the workspace is
+  known.
+- Docs and comments: the `cp/events` header names the self-hosted node;
+  the `wr/events` header, the runtime README and this plan carry the
+  workspace lease; the refusal-code constant no longer splits
+  `authorizeSessionEventScope` from its docblock; `claxedo-event-targets.ts`
+  names both control planes; the unused `PtyInfo` re-export through
+  server-core and claxedo-server is gone; the connectivity test tracks
+  `"wr"`; test titles and a spec variable renamed.
+- Recorded follow-ups (not fixed): a signed self-hosted node whose plane has
+  no lease signing key reads on the host token alone and a session first
+  seen after that token's expiry ends the stream with a 503 terminate — the
+  same shape round 4 fixed for the hosted plane; `host_read` mints a lease
+  on every call, renewal included. The hosted worker publishes no
+  `session.inventory.changed`.
+
+**Round 6**: see below.

@@ -65,10 +65,12 @@ export function createBatchAutoTabListener(deps: BatchAutoTabDeps): () => void {
     const info = event?.info
     const id = event?.type === "session.lifecycle" ? event.sessionID : readString(info, "id")
     const title = readString(info, "title")
-    const directory =
-      e.name && e.name !== "global"
-        ? e.name
-        : readString(info, "directory") || readString(info, "cwd") || e.name
+    // A pty frame's `name` is the runtime root the stream stamped on it; the
+    // pty's own cwd is the sandbox that decides whether a tab opens.
+    const named = e.name && e.name !== "global" ? e.name : ""
+    const directory = event?.type === "pty.created"
+      ? readString(info, "cwd") || named
+      : named || readString(info, "directory") || readString(info, "cwd") || e.name
 
     if (!directory || !event?.type) return
 

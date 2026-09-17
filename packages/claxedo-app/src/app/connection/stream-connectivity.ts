@@ -15,10 +15,12 @@ export type StreamKind = "cp" | "wr"
  * planes not even a level over `cp` does, while a level that demands both up
  * would report the daemon's doorbells as down whenever the hosted plane is
  * away. So the level and the edge are separate: `centralConnected()` is
- * "some control plane is up", and `controlPlaneReconnects()` counts every
- * control-plane stream's return after a drop, whichever one it was.
- * `connected()` keeps the any-stream meaning for consumers that want it
- * (`workbench/state/agent-status-listener.ts`).
+ * "some control plane is up", and `controlPlaneReconnects()` counts the
+ * returns the level cannot show — a control-plane stream coming back while
+ * another held the level up. A return that takes the level from down to up
+ * is the level's own edge and is not counted, so a consumer revalidating on
+ * both sees each outage once. `connected()` keeps the any-stream meaning for
+ * consumers that want it (`workbench/state/agent-status-listener.ts`).
  */
 export function createStreamConnectivity() {
   const [connected, setConnected] = createSignal(false)
@@ -32,7 +34,7 @@ export function createStreamConnectivity() {
     connected,
     /** A control-plane stream (`cp`) is up — one of the doorbell-bearing ones. */
     centralConnected,
-    /** Incremented each time a control-plane stream comes back after a drop: the revalidation edge for its doorbells. */
+    /** Incremented when a control-plane stream comes back after a drop the level never showed. */
     controlPlaneReconnects,
     /**
      * One tracker per stream target, owning that stream's up/down bit. Repeated
@@ -54,7 +56,7 @@ export function createStreamConnectivity() {
         if (kind !== "cp") return
         cpUp += delta
         setCentralConnected(cpUp > 0)
-        if (value && wasUp) setControlPlaneReconnects((count) => count + 1)
+        if (value && wasUp && cpUp > 1) setControlPlaneReconnects((count) => count + 1)
         if (value) wasUp = true
       }
       return Object.assign(set, {

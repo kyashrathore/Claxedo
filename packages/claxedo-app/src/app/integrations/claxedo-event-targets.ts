@@ -6,7 +6,8 @@
  * target list for a route + scope + project catalog, the stable key that makes
  * a retarget a teardown-and-reopen, and the fetch seam that resolves a target
  * to a `Response` (relay for a signed workspace, loopback proxy for a local
- * one, account bridge for the central control-plane stream).
+ * one, the server's own `cp/events` for the daemon's control plane, the
+ * account bridge for the hosted one).
  */
 
 import { openLocalEventWebSocket } from "@/platform/sync/local-event-websocket"

@@ -278,6 +278,52 @@ describe("PageIndex", () => {
   })
 })
 
+describe("PageIndex revalidation on the control-plane stream", () => {
+  beforeEach(() => {
+    api.list.mockReset().mockResolvedValue([])
+    api.listStatuses.mockReset().mockResolvedValue([])
+    events.on.mockReset().mockImplementation(() => () => undefined)
+  })
+
+  test("a control-plane return the level never showed, and a cp replay gap, each refetch the list once", async () => {
+    const [centralConnected, setCentralConnected] = createSignal(true)
+    const [controlPlaneReconnects, setControlPlaneReconnects] = createSignal(0)
+    let gap: ((frame: { type: string; stream?: string }) => void) | undefined
+    events.centralConnected.mockImplementation(centralConnected)
+    events.controlPlaneReconnects.mockImplementation(controlPlaneReconnects)
+    events.listen.mockImplementation((handler: (frame: { type: string; stream?: string }) => void) => {
+      gap = handler
+      return () => undefined
+    })
+    render(() => (
+      <PageIndex
+        scope="project"
+        directory="/repo/one"
+        projects={[{ id: "project_1", worktree: "/repo/one", workspaceId: "workspace_1" }]}
+        onOpenPage={() => undefined}
+      />
+    ))
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(1))
+
+    // Two control planes: the hosted one flapped while the daemon's held the
+    // level up. The level shows nothing; the counter is the only edge.
+    setControlPlaneReconnects(1)
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2))
+
+    // The level's own edge is a refetch and is not also counted.
+    setCentralConnected(false)
+    setCentralConnected(true)
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(3))
+
+    gap?.({ type: "stream.replay-gap", stream: "cp" })
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(4))
+    // A hole in a workspace stream carries no doorbell.
+    gap?.({ type: "stream.replay-gap", stream: "wr" })
+    await Promise.resolve()
+    expect(api.list).toHaveBeenCalledTimes(4)
+  })
+})
+
 // "all" scope fans out one query per project rather than a single query for
 // `projects[0]` presented as if it covered every project.
 describe("PageIndex project grouping", () => {

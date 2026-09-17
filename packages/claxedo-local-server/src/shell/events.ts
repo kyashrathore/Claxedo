@@ -65,7 +65,7 @@ export function signedControlPlaneEventVisibleTo(frame: ControlPlaneFrame, princ
 
 /**
  * `/api/cp/events` — the control plane's stream, served by the local daemon
- * to its own surface.
+ * to its own surface and by a self-hosted node to its signed subscribers.
  *
  * It carries notices only — provision steps, worktree readiness, document
  * doorbells, share grants, a workspace's inventory change — never a

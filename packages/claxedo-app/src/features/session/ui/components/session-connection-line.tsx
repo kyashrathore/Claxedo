@@ -38,12 +38,17 @@ export function shouldShowConnectionLine(snapshot: StreamSyncSnapshot | undefine
  * in the caller's synchronous body.
  */
 export function SessionConnectionLine(props: { workspaceId: Accessor<string | undefined> }) {
-  const streamId = createMemo<StreamSyncStreamId>(() => {
+  // A session's frames ride its workspace's `wr` stream only; until the
+  // workspace is resolved there is no stream whose health is this session's.
+  const streamId = createMemo<StreamSyncStreamId | undefined>(() => {
     const workspaceId = props.workspaceId()
-    return workspaceId ? (`wr:${workspaceId}` as const) : "cp"
+    return workspaceId ? (`wr:${workspaceId}` as const) : undefined
   })
 
-  const visible = createMemo(() => shouldShowConnectionLine(streamSyncLifecycleSnapshot(streamId())))
+  const visible = createMemo(() => {
+    const id = streamId()
+    return id !== undefined && shouldShowConnectionLine(streamSyncLifecycleSnapshot(id))
+  })
 
   // STABLE ROOT, VISIBILITY BY CSS — deliberately not a `<Show>`. This line
   // flaps with stream health (live ↔ reconnect-scheduled), and it renders in

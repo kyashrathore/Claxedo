@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { createBus } from "./bus"
 import {
   createIdentityAwareEventSource,
+  sessionEventDeliveryPolicy,
   type EventDeliveryPrincipal,
   type EventDeliveryPolicy,
 } from "./event-delivery"
+import type { SessionAccessPolicy } from "./session-access-policy"
 
 type Event = { sessionId: string; value: string }
 
@@ -493,5 +495,66 @@ describe("createIdentityAwareEventSource", () => {
     expect(reconnect.replay.replayAfter("1").map((entry) => entry.payload.value)).toEqual(["during_gap"])
     expect(decisions.length).toBeGreaterThan(callsBeforeGap)
     source.close()
+  })
+})
+
+describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
+  const sessionPolicy = (input: {
+    granted: (sessionId: string) => boolean
+    hostActive?: () => boolean
+    calls: string[]
+  }): SessionAccessPolicy => ({
+    sessionAuthority: "managed-private",
+    authorize: () => ({ allowed: true }),
+    filterSessions: ({ sessionIds }) => sessionIds,
+    authorizePrefix: () => ({ allowed: true }),
+    authorizeHost: (host) => {
+      input.calls.push(`host lease=${host.lease ?? "-"}`)
+      if (input.hostActive && !input.hostActive()) return { allowed: false, status: 401, code: "runtime_access_token_revoked", message: "revoked" }
+      return { allowed: true, lease: `ws_${input.calls.length}`, expiresAt: Date.now() + 15_000 }
+    },
+    authorizeStream: async ({ sessionId }, lease) => {
+      input.calls.push(`stream ${sessionId} lease=${lease ?? "-"}`)
+      return input.granted(sessionId ?? "")
+        ? { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 15_000 }
+        : { allowed: false, status: 403, code: "denied", message: "denied" }
+    },
+  })
+
+  test("a session the reader is refused does not end its stream at renewal; a delivered one now refused does", async () => {
+    const calls: string[] = []
+    let mineGranted = true
+    const policy = sessionEventDeliveryPolicy<Event>(sessionPolicy({ granted: (id) => id === "ses_mine" && mineGranted, calls }))
+    const reader = participant("connection_1")
+    policy.holdHost?.(reader, { lease: "ws_lease", expiresAt: Date.now() + 8_000 })
+    expect(await policy({ principal: reader, event: { sessionId: "ses_private", value: "x" }, sessionId: "ses_private", sensitive: false })).toBe("omit")
+    expect(await policy({ principal: reader, event: { sessionId: "ses_mine", value: "y" }, sessionId: "ses_mine", sensitive: false })).toBe("deliver")
+    // Both first grants presented the workspace lease, not the request's token.
+    expect(calls).toEqual(["stream ses_private lease=ws_lease", "stream ses_mine lease=ws_lease"])
+    // A refused session frames again inside its hold without a round trip.
+    expect(await policy({ principal: reader, event: { sessionId: "ses_private", value: "x2" }, sessionId: "ses_private", sensitive: false })).toBe("omit")
+    expect(calls).toHaveLength(2)
+
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(calls.slice(2)).toEqual(["host lease=ws_lease", "stream ses_mine lease=lease_ses_mine"])
+
+    mineGranted = false
+    expect(await policy.renew!(reader)).toBe("terminate")
+  })
+
+  test("the workspace lease rolls at renewal and its access token's revocation ends the stream", async () => {
+    const calls: string[] = []
+    let active = true
+    const policy = sessionEventDeliveryPolicy<Event>(sessionPolicy({ granted: () => true, hostActive: () => active, calls }))
+    const reader = participant("connection_2")
+    policy.holdHost?.(reader, { lease: "ws_first", expiresAt: Date.now() + 8_000 })
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(await policy({ principal: reader, event: { sessionId: "ses_a", value: "a" }, sessionId: "ses_a", sensitive: false })).toBe("deliver")
+    expect(calls).toEqual(["host lease=ws_first", "stream ses_a lease=ws_1"])
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(calls.slice(2)).toEqual(["stream ses_a lease=lease_ses_a"])
+    active = false
+    policy.holdHost?.(reader, { lease: "ws_short", expiresAt: Date.now() + 8_000 })
+    expect(await policy.renew!(reader)).toBe("terminate")
   })
 })

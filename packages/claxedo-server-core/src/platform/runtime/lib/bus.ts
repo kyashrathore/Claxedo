@@ -1,4 +1,3 @@
-import type { PtyInfo } from "@claxedo/workspace-runtime/host"
 import { jsonRecord } from "./json"
 
 type Subscriber<T> = (event: T) => unknown
@@ -41,8 +40,6 @@ export function createBus<T>(options: BusOptions<T> = {}) {
     },
   }
 }
-
-export type { PtyInfo }
 
 // Doorbell nudge for Documents live sync: the one live-sync mechanism a
 // document has. It carries no content, so an open editor is not refreshed by

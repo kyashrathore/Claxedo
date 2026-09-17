@@ -598,7 +598,12 @@ describe("the owner grant as a session proof", () => {
     const renewed = await request(target, undefined, { action: "host_read", lease })
     expect(renewed.status).toBe(200)
     expect((await renewed.json() as { lease: string }).lease).not.toBe(lease)
+    // The lease carries no role: administration under it is the access
+    // token's current role, asked for at admin.
     expect((await request(target, undefined, { action: "host_admin", lease })).status).toBe(200)
+    expect(authority.runtimeAccessTokenActive).toHaveBeenLastCalledWith(expect.objectContaining({ jti: "rat_parent_1", minimumRole: "admin" }))
+    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "Workspace role was downgraded" })
+    expect((await request(target, undefined, { action: "host_admin", lease })).status).toBe(401)
 
     authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "revoked" })
     const ended = await request(target, undefined, { action: "host_read", lease })

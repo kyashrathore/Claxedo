@@ -486,9 +486,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       reportSessionEventStreamClosed(streamId)
     }
 
-    // Per-kind accounting: this stream's bit feeds BOTH the aggregate
-    // `connected()` and, for the `cp` target, `centralConnected()` — the edge
-    // the doorbell consumers revalidate on.
+    // Per-kind accounting: this stream's bit feeds the aggregate `connected()`
+    // and, for a `cp` target, `centralConnected()` and `controlPlaneReconnects()`.
     const setStreamConnected = connectivity.track(target.kind)
 
     const stepLifecycle = (event: StreamSyncLifecycleEvent) => {
@@ -638,7 +637,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         }
         throw new Error("events stream closed")
       }).catch((error) => {
-        if (stopped) return
+        if (stopped || closed) return
         if (error instanceof DOMException && error.name === "AbortError") return
         // Diagnostic: the per-workspace event stream silently failing is the #1
         // thing that makes the app look dead (no live updates / no streamed

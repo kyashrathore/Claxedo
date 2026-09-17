@@ -7,7 +7,7 @@ describe("createStreamConnectivity", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
       const central = connectivity.track("cp")
-      const workspace = connectivity.track("workspace")
+      const workspace = connectivity.track("wr")
 
       expect(connectivity.connected()).toBe(false)
       central(true)
@@ -24,17 +24,16 @@ describe("createStreamConnectivity", () => {
   })
 
   /**
-   * THE BUG. `document.changed`
-   * ride the CENTRAL stream only. When it flaps while a remote workspace relay
-   * stream stays up, the aggregate count goes 2 → 1 → 2 and never reaches 0, so
-   * consumers watching the aggregate never see a `false → true` edge and never
-   * recover the nudges dropped during the gap.
+   * `document.changed` rides `cp` only. When `cp` flaps while a workspace
+   * stream stays up, the aggregate count goes 2 → 1 → 2 and never reaches 0,
+   * so a consumer watching the aggregate never sees a `false → true` edge and
+   * never recovers the doorbells dropped during the gap.
    */
   test("central drop/recover is visible even while a workspace stream stays up", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
       const central = connectivity.track("cp")
-      const workspace = connectivity.track("workspace")
+      const workspace = connectivity.track("wr")
 
       central(true)
       workspace(true)
@@ -46,11 +45,13 @@ describe("createStreamConnectivity", () => {
 
       central(true)
       expect(connectivity.centralConnected()).toBe(true)
+      // The level's own edge is the revalidation; the counter does not repeat it.
+      expect(connectivity.controlPlaneReconnects()).toBe(0)
       dispose()
     })
   })
 
-  test("two control planes: the level holds while either is up, and each return after a drop is a reconnect", () => {
+  test("two control planes: the level holds while either is up, and a return the level never showed counts", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
       const daemon = connectivity.track("cp")
@@ -68,12 +69,22 @@ describe("createStreamConnectivity", () => {
       daemon(false)
       daemon(true)
       expect(connectivity.controlPlaneReconnects()).toBe(2)
+      // Both down: the daemon's return is the level's edge, not a count; the
+      // account's later return, under a level the daemon already holds, is.
+      daemon(false)
+      account(false)
+      expect(connectivity.centralConnected()).toBe(false)
+      daemon(true)
+      expect(connectivity.centralConnected()).toBe(true)
+      expect(connectivity.controlPlaneReconnects()).toBe(2)
+      account(true)
+      expect(connectivity.controlPlaneReconnects()).toBe(3)
       // Signed out: the account stream is torn down for good; a later report
       // from it counts for nothing.
       account.release()
       account(true)
       expect(connectivity.centralConnected()).toBe(true)
-      expect(connectivity.controlPlaneReconnects()).toBe(2)
+      expect(connectivity.controlPlaneReconnects()).toBe(3)
       dispose()
     })
   })
@@ -81,7 +92,7 @@ describe("createStreamConnectivity", () => {
   test("a workspace stream never moves the central bit", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
-      const workspace = connectivity.track("workspace")
+      const workspace = connectivity.track("wr")
       workspace(true)
       expect(connectivity.connected()).toBe(true)
       expect(connectivity.centralConnected()).toBe(false)

@@ -1094,7 +1094,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     // `/` opens the seeded project's own route, which has a workspace stream;
     // the Tasks route names no workspace, so the rail there holds none, and
     // only what opens once that route is the document counts.
-    const homeAt = Date.now()
+    const tasksRouteAt = Date.now()
     await page.goto("/tasks")
     await expect(page).toHaveURL(/\/tasks$/)
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"heartbeat"')), { message: "cp/events is open on the Tasks route", timeout: 30_000 }).toBe(true)
@@ -1103,7 +1103,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     const created = await createHarnessSession(dir, { title: "Created from the CLI", harness: "claude", providerID: "anthropic", modelID: "claude-sonnet-4-5" })
     await expectRailRowVisible({ page, sessionId: created.id, timeout: 30_000 })
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"session.inventory.changed"')), { timeout: 15_000 }).toBe(true)
-    expect(workspaceOpens.filter((open) => open.at >= homeAt), "no workspace stream is open on the Tasks route").toEqual([])
+    expect(workspaceOpens.filter((open) => open.at >= tasksRouteAt), "no workspace stream is open on the Tasks route").toEqual([])
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {

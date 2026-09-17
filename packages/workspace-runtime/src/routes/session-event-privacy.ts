@@ -29,6 +29,9 @@ export function isSessionEventScopeResponse(
   return !("managed" in value)
 }
 
+/** The refusal code of the unscoped `wr/events` arm; the reader reopens `?sessionID=` on it and on nothing else. */
+export const WORKSPACE_EVENT_STREAM_DENIED = "workspace_event_stream_denied"
+
 type LeaseWatchOptions = {
   now?: () => number
   jitter?: () => number
@@ -48,9 +51,6 @@ type LeaseWatchOptions = {
  * the REST session routes, under a renewable lease. Unmanaged/local runtimes
  * serve the broad stream to whoever reached them.
  */
-/** The refusal code of the unscoped `wr/events` arm; the reader reopens `?sessionID=` on it and on nothing else. */
-export const WORKSPACE_EVENT_STREAM_DENIED = "workspace_event_stream_denied"
-
 export async function authorizeSessionEventScope(
   c: Context,
   policy: SessionAccessPolicy | undefined,

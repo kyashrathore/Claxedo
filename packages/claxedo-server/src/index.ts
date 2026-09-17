@@ -152,7 +152,7 @@ export {
 } from "./user-hosted-tunnel"
 export { initPostHog, shutdownPostHog, capture, getPostHog } from "./platform/telemetry/errors/posthog"
 export { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
-export type { ControlPlaneEvent, PtyInfo } from "@claxedo/server-core/platform/runtime/lib/bus"
+export type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"
 export { ClaxedoDB } from "./platform/db"
 export { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
