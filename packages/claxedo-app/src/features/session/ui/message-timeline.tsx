@@ -674,6 +674,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   let virtualContent: HTMLDivElement | undefined
   const resizeAnchor = createTimelineResizeAnchor()
+  // Opening at the end and staying at the end are different promises. The
+  // first is `shouldAnchorBottom`: a session opens on its latest turn. The
+  // second holds only while a turn streams: for a settled transcript, a size
+  // change is the reader opening a fold or a tool row, and re-pinning the
+  // viewport to the new end — by the row's estimated height, before it is
+  // measured — takes them from what they clicked to the bottom of the page.
+  const followsEnd = () => props.shouldAnchorBottom() && working()
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return timelineRows().length
@@ -698,10 +705,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
       return (index: number) => keys[index] ?? `removed:${index}`
     },
     get anchorTo() {
-      return props.shouldAnchorBottom() ? "end" : "start"
+      return followsEnd() ? "end" : "start"
     },
     get followOnAppend() {
-      return props.active() && props.shouldAnchorBottom() && !resizeAnchor.held()
+      return props.active() && followsEnd() && !resizeAnchor.held()
     },
     // In-view insert holds and gesture windows mean the reader owns the viewport.
     get scrollEndThreshold() {
@@ -738,7 +745,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     virtualizer,
     root: listRoot,
     displayed: props.active,
-    shouldAnchorBottom: props.shouldAnchorBottom,
+    shouldAnchorBottom: followsEnd,
     hasScrollGesture: props.hasScrollGesture,
     onInViewInsert: () => props.onMarkScrollGesture(),
   })

@@ -907,8 +907,11 @@ export default function SessionPage(props: {
     capabilities: sessionController.capabilities,
   })
 
+  // Follow the bottom only while a turn streams: content that grows because
+  // the reader opened a fold or a tool row is theirs to look at where it is,
+  // and on a page too short to scroll `userScrolled` cannot protect them.
   const autoScroll = createAutoScroll({
-    working: () => true,
+    working: () => sessionController.activeTurn() || sessionController.status().type !== "idle",
     enabled: paneActive,
     overflowAnchor: "none",
     mayFollow: () => !scrollGesture.active(),
