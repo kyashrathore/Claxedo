@@ -75,6 +75,13 @@
   overflow-y: auto;
 }
 
+/* An open member (a diff, a file, an output) is read in place: the cap and its
+   fades are for the one-line overview, not for a document. */
+.ui-work-group-list[data-member-open="true"] {
+  max-height: none;
+  overflow-y: visible;
+}
+
 /* Edge fades only when the body actually overflows (data-overflowing). */
 .ui-work-group-list[data-overflowing="true"] {
   mask-image: linear-gradient(

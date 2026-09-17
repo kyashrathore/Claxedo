@@ -1040,6 +1040,8 @@ export function ContextToolGroup(props: {
 export function WorkGroup(props: {
   parts: AgentToolPart[]
   busy?: boolean
+  /** A member row is open: the list grows to fit it instead of scrolling a diff through a 224px window. */
+  memberOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   onSizeChange?: () => void
@@ -1099,7 +1101,8 @@ export function WorkGroup(props: {
           ref={listRef}
           data-component="work-group-list" class="ui-work-group-list"
           data-scrollable
-          data-overflowing={overflowing() ? "true" : undefined}
+          data-overflowing={overflowing() && !props.memberOpen ? "true" : undefined}
+          data-member-open={props.memberOpen ? "true" : undefined}
         >
           {props.children}
         </div>
@@ -2312,11 +2315,11 @@ ToolRegistry.register({
                   <span data-slot="message-part-title-text">
                     <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
                   </span>
-                  <Show when={!pending()}>
+                  <Show when={filename()}>
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
                     <span data-slot="message-part-directory">{getDirectory(props.input.filePath)}</span>
                   </div>
@@ -2388,11 +2391,11 @@ ToolRegistry.register({
                   <span data-slot="message-part-title-text">
                     <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
                   </span>
-                  <Show when={!pending()}>
+                  <Show when={filename()}>
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
                     <span data-slot="message-part-directory">{getDirectory(props.input.filePath)}</span>
                   </div>

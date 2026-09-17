@@ -1329,6 +1329,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
           .filter((member): member is { message: MessageType; part: ToolPart } => !!member)
       })
 
+      const memberDefaultOpen = (part: ToolPart) =>
+        partDefaultOpen(part, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())
+      const memberOpen = createMemo(() =>
+        members().some(
+          (member) => (toolOpen[member.part.id] ?? memberDefaultOpen(member.part)) || toolRevealed[member.part.id] === true,
+        ),
+      )
+
       return (
         <WorkGroup
           parts={members().map((member) => member.part)}
@@ -1337,17 +1345,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
           busy={
             workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
+          memberOpen={memberOpen()}
           onSizeChange={onSizeChange}
         >
           <For each={members()}>
             {(member) => {
-              const defaultOpen = createMemo(() =>
-                partDefaultOpen(
-                  member.part,
-                  settings.general.shellToolPartsExpanded(),
-                  settings.general.editToolPartsExpanded(),
-                ),
-              )
+              const defaultOpen = createMemo(() => memberDefaultOpen(member.part))
               return (
                 <MessagePart
                   part={member.part}
@@ -1431,8 +1434,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
           "min-w-0 w-full max-w-full": true,
           "md:max-w-[var(--transcript-measure,48rem)] 2xl:max-w-[var(--transcript-measure,880px)]": props.centered,
           "md:mx-auto": props.centered,
-          "pt-3": previousAssistantPart(),
         }}
+        style={{ "padding-top": previousAssistantPart() ? "var(--transcript-part-gap, 12px)" : undefined }}
       >
         <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
           {input.children}
@@ -1459,7 +1462,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
 
       case "TurnGap":
-        return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
+        return <div data-timeline-row="TurnGap" aria-hidden="true" style={{ height: "var(--transcript-turn-gap, 24px)" }} />
       case "CommentStrip": {
         const commentStripRow = rowOfTag(row, "CommentStrip", current)
         const comments = createMemo(() =>
