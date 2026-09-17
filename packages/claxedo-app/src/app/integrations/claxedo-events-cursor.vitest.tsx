@@ -127,7 +127,8 @@ describe("ClaxedoEventsProvider reconnects", () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(transport.request).toHaveBeenCalledTimes(1)
 
-    for (const delay of [2_000, 2_000, 4_000, 8_000]) {
+    // Jitter pinned to the bottom of each window: 250, then 250, 500, 1000.
+    for (const delay of [250, 250, 500, 1_000]) {
       const attempts = transport.request.mock.calls.length
       await vi.advanceTimersByTimeAsync(delay - 1)
       expect(transport.request).toHaveBeenCalledTimes(attempts)
@@ -138,11 +139,11 @@ describe("ClaxedoEventsProvider reconnects", () => {
 
     const recovered = openStream()
     transport.request.mockResolvedValueOnce(recovered.response)
-    await vi.advanceTimersByTimeAsync(16_000)
+    await vi.advanceTimersByTimeAsync(4_000)
     expect(screen.getByText("connected")).toBeInTheDocument()
     recovered.close()
     await vi.advanceTimersByTimeAsync(0)
-    for (const delay of [2_000, 2_000, 4_000]) await vi.advanceTimersByTimeAsync(delay)
+    for (const delay of [250, 250, 500]) await vi.advanceTimersByTimeAsync(delay)
     expect(errors).toHaveBeenCalledTimes(2)
   })
 })

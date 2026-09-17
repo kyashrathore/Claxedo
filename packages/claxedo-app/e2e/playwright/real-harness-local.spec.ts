@@ -997,6 +997,73 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
+  // The two streams, on the real daemon: a turn's frames ride the workspace's
+  // `/api/wr/events` and nothing session-shaped rides the control plane's
+  // `/api/cp/events`. The reply's parts are asserted on the wire itself, not
+  // inferred from the screen, so a transcript that only advanced through a
+  // history refetch cannot pass.
+  test("a turn's frames ride wr/events; cp/events carries no session frame", async ({ page }, testInfo) => {
+    scripted?.resetCounts()
+    const dir = await makeWorkspace("two-streams")
+    await seedOneProject(page, dir)
+
+    const workspaceFrames: string[] = []
+    const workspaceOpens: Array<{ cursor: string | null; scope: string | null }> = []
+    page.on("response", (response) => {
+      const url = new URL(response.url())
+      if (url.pathname !== "/api/wr/events") return
+      workspaceOpens.push({
+        cursor: response.request().headers()["last-event-id"] ?? null,
+        scope: url.searchParams.get("sessionID"),
+      })
+      void response.text().then((text) => { workspaceFrames.push(text) }).catch(() => undefined)
+    })
+    const controlPlaneFrames: string[] = []
+    const controlPlaneSockets: string[] = []
+    page.on("websocket", (socket) => {
+      if (!socket.url().includes("/api/cp/events")) return
+      controlPlaneSockets.push(socket.url())
+      socket.on("framereceived", (frame) => { controlPlaneFrames.push(String(frame.payload)) })
+    })
+
+    const input = await openDraftPrompt(page, dir)
+    await selectScriptedModel(page)
+    const marker = `TWO-STREAMS-${Date.now().toString().slice(-6)}`
+    await composePrompt(page, input, `Reply with exactly this one token and nothing else: ${marker}`)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, marker)
+    expectScriptedTraffic("responses", 1)
+
+    const frameTypes = (frames: string[]) =>
+      frames.flatMap((text) => [...text.matchAll(/"type":"([a-z.-]+)"/g)].map((match) => match[1]))
+    const counts = (types: string[]) =>
+      types.reduce<Record<string, number>>((acc, type) => ({ ...acc, [type]: (acc[type] ?? 0) + 1 }), {})
+
+    // The workspace stream is the owner's, opened unscoped, and the reader
+    // resumes it by cursor rather than re-reading it.
+    expect(workspaceOpens.length).toBeGreaterThan(0)
+    expect(workspaceOpens.every((open) => open.scope === null)).toBe(true)
+    // The frames of the turn, on the wire: the row, its parts and the settlement.
+    await expect.poll(() => counts(frameTypes(workspaceFrames))["session.idle"] ?? 0, { timeout: 15_000 }).toBeGreaterThan(0)
+    const workspaceCounts = counts(frameTypes(workspaceFrames))
+    expect(workspaceCounts["message.updated"] ?? 0).toBeGreaterThan(0)
+    expect(workspaceCounts["message.part.updated"] ?? 0).toBeGreaterThan(0)
+    expect(workspaceFrames.join("")).toContain(marker)
+
+    // The control plane's stream is open, and carries nothing of the session.
+    expect(controlPlaneSockets.length).toBeGreaterThan(0)
+    const controlPlaneCounts = counts(frameTypes(controlPlaneFrames))
+    for (const type of Object.keys(controlPlaneCounts)) {
+      expect(type, `a session frame on cp/events: ${type}`).not.toMatch(/^(message|session|permission|question|todo|subagent|goal)\./)
+    }
+
+    await testInfo.attach("stream-frame-counts.json", {
+      body: JSON.stringify({ workspaceOpens, workspace: workspaceCounts, controlPlane: controlPlaneCounts }, null, 2),
+      contentType: "application/json",
+    })
+  })
+
   test("local new-worktree session receives its first reply", async ({ page }) => {
     scripted?.resetCounts()
     const dir = await makeWorkspace("new-local-worktree")
@@ -1879,6 +1946,17 @@ setTimeout(() => process.exit(2), 60000).unref();
       sockets.push(entry)
       socket.on("close", () => { entry.closed = true })
     })
+    // The workspace stream is what carries the tool's settlement: every open
+    // with its resume cursor, and the frames each connection delivered.
+    const workspaceOpens: Array<{ at: number; cursor: string | null; frames: string[] }> = []
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname !== "/api/wr/events") return
+      const open = { at: Date.now(), cursor: response.request().headers()["last-event-id"] ?? null, frames: [] as string[] }
+      workspaceOpens.push(open)
+      void response.text().then((text) => {
+        open.frames.push(...[...text.matchAll(/"type":"([a-z.-]+)"/g)].map((match) => match[1]))
+      }).catch(() => undefined)
+    })
     try {
       await seedOneProject(page, dir)
       await page.goto(`/${slug(dir)}/session`)
@@ -1922,11 +2000,22 @@ setTimeout(() => process.exit(2), 60000).unref();
       await expect.poll(async () => (await readTools())[0]?.state?.status, { timeout: 30_000 }).toBe("completed")
       await fs.writeFile(testInfo.outputPath("canonical-tools-while-offline.json"), JSON.stringify(await readTools(), null, 2))
       await page.screenshot({ path: testInfo.outputPath("tool-after-completion-while-offline.png") })
+      const opensBeforeReconnect = workspaceOpens.length
       network.reconnect()
       await expect.poll(() => sockets.some(socket => !socket.closed && !connected.includes(socket)), { message: "the browser opens a new event connection", timeout: 30_000 }).toBe(true)
       await expectAssistantReplyVisible(page, marker)
       await expect(status).not.toContainText("Running")
       await expect(status).toContainText("Ran")
+      // The workspace stream reopened WITH its cursor, and what settled the row
+      // came down it: the retained settlement replayed behind that cursor, or —
+      // when the ring had rolled — the gap notice that made the reader re-read.
+      const reopened = workspaceOpens.slice(opensBeforeReconnect)
+      expect(reopened.length, "the workspace stream reopened after the outage").toBeGreaterThan(0)
+      expect(reopened[0]!.cursor, "the reopened workspace stream resumed by cursor").not.toBeNull()
+      await expect.poll(
+        () => reopened.some((open) => open.frames.includes("message.part.updated") || open.frames.includes("stream.replay-gap")),
+        { message: "the settlement or a gap notice arrived on the reopened workspace stream", timeout: 15_000 },
+      ).toBe(true)
       await page.screenshot({ path: testInfo.outputPath("tool-settled-after-reconnect.png") })
       await page.reload({ waitUntil: "domcontentloaded" })
       await expectAssistantReplyVisible(page, marker)
@@ -1935,7 +2024,7 @@ setTimeout(() => process.exit(2), 60000).unref();
     } finally {
       network.reconnect()
       await fs.writeFile(releaseFile, "release")
-      await fs.writeFile(testInfo.outputPath("event-connections.json"), JSON.stringify(sockets, null, 2))
+      await fs.writeFile(testInfo.outputPath("event-connections.json"), JSON.stringify({ controlPlane: sockets, workspace: workspaceOpens }, null, 2))
     }
   })
 

@@ -10,7 +10,7 @@ import { useServer } from "@/app/connection/server"
 import { authFetch } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { sessionEventScopeId, whenSessionEventStreamsOpen } from "@/platform/runtime/session-event-scope"
+import { sessionEventScopeId, setSessionEventLiveWorkspace, whenSessionEventStreamsOpen } from "@/platform/runtime/session-event-scope"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentPresentationEvent } from "@/features/session/subagents/subagent-ingress"
@@ -227,6 +227,9 @@ const globalSDKContextInput = {
       const transition = liveSessionTransition(liveSession, sessionID, opts)
       liveSession = transition.next
       if (transition.workspaceScopeChanged) subagents.workspaceChanged()
+      if (liveSession.directory && liveSession.sessionID !== "route") {
+        setSessionEventLiveWorkspace(liveSession.sessionID, liveSession.directory)
+      }
     }
 
     return {

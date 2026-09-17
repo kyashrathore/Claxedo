@@ -434,6 +434,11 @@ async function installUserHostedRuntimeMock(
     },
   })
 
+  // An unsigned loopback surface reads the control plane's notices over a
+  // WebSocket; nothing this mock drives rides it, so it is held open quietly.
+  await page.routeWebSocket("**/api/cp/events**", (socket) => {
+    socket.send('id: 0\ndata: {"type":"heartbeat"}\n\n')
+  })
   await page.route("**/*", async (route) => {
     if (!api(route)) return route.continue()
     const request = route.request()

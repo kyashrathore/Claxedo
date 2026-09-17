@@ -5,8 +5,10 @@
  * SSE connection — the provider's `connectTarget` closure consumes these and
  * keeps only the actual timer arming and fetch loop.
  */
-export const RECONNECT_DELAY_MS = 2000
-export const MAX_RECONNECT_DELAY_MS = 30000
+// The workspace stream carries a turn's parts, so a drop mid-turn is a hole
+// in the transcript for as long as the first retry waits.
+export const RECONNECT_DELAY_MS = 250
+export const MAX_RECONNECT_DELAY_MS = 15000
 export const HEARTBEAT_TIMEOUT_MS = 45000
 
 // Only once failures are SUSTAINED (this many consecutive) do we escalate a
@@ -15,7 +17,7 @@ export const SUSTAINED_FAILURE_THRESHOLD = 3
 
 /**
  * Delay before re-opening a failed event stream. The first retry uses the base
- * delay; subsequent consecutive failures grow exponentially up to a 30s
+ * delay; subsequent consecutive failures grow exponentially up to a 15s
  * ceiling, then jitter within the top half so panes don't reconnect in
  * lockstep. `failures` is the count of PRIOR consecutive failures (0 on the
  * first retry). `random` is injectable so jitter is deterministic in tests.

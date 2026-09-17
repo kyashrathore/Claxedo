@@ -163,7 +163,7 @@ describe("claxedoEventStreamTargets", () => {
     expect(claxedoEventRouteSessionID("/w/ws_cloud")).toBeUndefined()
   })
 
-  test("the fallback session is part of a wr stream's identity", () => {
+  test("the fallback session is not part of a wr stream's identity", () => {
     const base = {
       kind: "wr" as const,
       serverUrl: "https://control.example.test",
@@ -171,7 +171,7 @@ describe("claxedoEventStreamTargets", () => {
       workspaceKind: "cloud" as const,
     }
     expect(eventStreamTargetKey({ ...base, sessionID: "session-a" }))
-      .not.toBe(eventStreamTargetKey({ ...base, sessionID: "session-b" }))
+      .toBe(eventStreamTargetKey({ ...base, sessionID: "session-b" }))
   })
 
   test("replaces the cp stream when account authority changes", () => {

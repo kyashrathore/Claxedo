@@ -28,6 +28,7 @@ import {
   type ClaxedoEventStreamTarget,
 } from "./claxedo-event-targets"
 import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
+import { sessionInventoryDirectory } from "../../features/session/data/sync/queries"
 import { requestSessionHistoryResync } from "../../features/session/store/session-history-resync"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
@@ -41,6 +42,7 @@ import {
   registerSessionEventStreamLane,
   reportSessionEventStreamClosed,
   reportSessionEventStreamOpen,
+  sessionEventScopeDirectory,
   sessionEventScopeId,
   setSessionEventRouteScope,
 } from "@/platform/runtime/session-event-scope"
@@ -369,7 +371,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const emitter = createClaxedoEventEmitter()
   const connectivity = createStreamConnectivity()
 
-  const connections = new Map<string, () => void>()
+  type Connection = { retarget: (target: ClaxedoEventStreamTarget) => void; close: () => void }
+  const connections = new Map<string, Connection>()
   let stopped = false
 
   const emitEvent = (input: string, target: ClaxedoEventStreamTarget) => {
@@ -409,7 +412,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     })
   }
 
-  const connectTarget = (target: ClaxedoEventStreamTarget, accountState: AccountState) => {
+  const connectTarget = (initialTarget: ClaxedoEventStreamTarget, accountState: AccountState): Connection => {
+    let target = initialTarget
     const state = {
       // A `wr` target opens unscoped. A runtime that refuses the reader at
       // workspace level (a share grantee) is asked again for the routed
@@ -629,7 +633,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
     connect()
 
-    return () => {
+    const close = () => {
       state.abort?.abort()
       state.abort = null
       setStreamConnected(false)
@@ -647,14 +651,49 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       if (state.heartbeatTimer) clearTimeout(state.heartbeatTimer)
       if (state.reconnectTimer) clearTimeout(state.reconnectTimer)
     }
+
+    // The routed session is the stream's FALLBACK scope, not its identity: a
+    // workspace-wide stream carries every session and survives a navigation
+    // with its cursor. Only a stream the runtime narrowed to one session has
+    // to be reopened when that session changes — cursor-less, since the new
+    // session's scope is a different ring.
+    const retarget = (next: ClaxedoEventStreamTarget) => {
+      const previous = target
+      target = next
+      if (next.kind !== "wr" || previous.kind !== "wr") return
+      if (state.scope !== "session" || previous.sessionID === next.sessionID) return
+      state.abort?.abort()
+      state.abort = null
+      state.lastEventId = null
+      state.scope = "workspace"
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer)
+        state.reconnectTimer = null
+      }
+      if (state.heartbeatTimer) {
+        clearTimeout(state.heartbeatTimer)
+        state.heartbeatTimer = null
+      }
+      setStreamConnected(false)
+      reportLaneClosed()
+      if (state.lifecycle === "connecting" || state.lifecycle === "live") stepLifecycle("error")
+      connect()
+    }
+
+    return { retarget, close }
   }
 
   const reconcileTargets = () => {
     const accountState = props.accountState()
     const accountSigned = accountState.status === "signed"
+    const routedSession = claxedoEventRouteSessionID(props.pathname())
     const targets = claxedoEventStreamTargets({
       serverUrl: props.serverUrl(),
-      directory: routeDirectory(props.pathname()),
+      // A bare `/s/<id>` route names no workspace; the pane that opened the
+      // session says which, and until it has, the session's inventory row does.
+      directory: routeDirectory(props.pathname())
+        ?? sessionEventScopeDirectory(routedSession)
+        ?? (routedSession ? sessionInventoryDirectory(props.serverUrl(), routedSession) : undefined),
       // `session-event-scope` owns which session the scoped stream must carry;
       // the route is its standing input, not a second decider.
       sessionID: sessionEventScopeId(),
@@ -662,13 +701,17 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       accountSigned,
     })
     const next = new Map(targets.map((target) => [eventStreamTargetKey(target, { accountSigned }), target]))
-    for (const [key, cleanup] of connections) {
+    for (const [key, connection] of connections) {
       if (next.has(key)) continue
-      cleanup()
+      connection.close()
       connections.delete(key)
     }
     for (const [key, target] of next) {
-      if (connections.has(key)) continue
+      const existing = connections.get(key)
+      if (existing) {
+        existing.retarget(target)
+        continue
+      }
       connections.set(key, connectTarget(target, accountState))
     }
   }
@@ -688,18 +731,16 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   reconcileTargets()
   createEffect(reconcileTargets)
   const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
-    const expected = queryKeys.controlPlane.projects(props.serverUrl())
-    if (event.query.queryKey.length !== expected.length) return
-    if (event.query.queryKey[0] !== expected[0]) return
-    if (event.query.queryKey[1] !== expected[1]) return
-    if (event.query.queryKey[2] !== expected[2]) return
+    const key = event.query.queryKey
+    const watched = [queryKeys.controlPlane.projects(props.serverUrl()), queryKeys.shell.sessionInventory(props.serverUrl())]
+    if (!watched.some((expected) => key.length === expected.length && expected.every((part, index) => key[index] === part))) return
     reconcileTargets()
   })
 
   onCleanup(() => {
     stopped = true
     unsubscribeQueryCache()
-    connections.forEach((cleanup) => cleanup())
+    connections.forEach((connection) => connection.close())
     connections.clear()
   })
 

@@ -183,6 +183,28 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
     let caseyVideoPath: string | undefined
     let sessionId = ""
 
+    // The workspace stream, per reader: every open of the relay's
+    // `/api/wr/events` with its scope, and the session ids named in the frames
+    // each connection delivered. What the two arms promise is asserted on the
+    // wire, not inferred from the rail.
+    type StreamOpen = { scope: string | null; status: number; sessions: string[] }
+    const tapWorkspaceStream = (page: Page) => {
+      const opens: StreamOpen[] = []
+      page.on("response", (response) => {
+        const url = new URL(response.url())
+        if (!url.pathname.endsWith("/api/wr/events")) return
+        const open: StreamOpen = { scope: url.searchParams.get("sessionID"), status: response.status(), sessions: [] }
+        opens.push(open)
+        void response.text().then((text) => {
+          open.sessions.push(...[...text.matchAll(/"sessionID":"([^"]+)"/g)].map((match) => match[1]))
+        }).catch(() => undefined)
+      })
+      return opens
+    }
+    const aliceStreams = tapWorkspaceStream(aliceCtx.page)
+    const bobStreams = tapWorkspaceStream(bobCtx.page)
+    const caseyStreams = tapWorkspaceStream(caseyCtx.page)
+
     try {
       await openAs(
         aliceCtx.page,
@@ -208,6 +230,10 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       })
       await expectAuthorVisible(aliceCtx.page, ALICE_NAME)
       await expectNoSessionOwnerAvatar(aliceCtx.page, sessionId)
+      // The owner reads the workspace stream unscoped, and her own turn rode it.
+      expect(aliceStreams.length).toBeGreaterThan(0)
+      expect(aliceStreams.every((open) => open.scope === null && open.status === 200)).toBe(true)
+      await expect.poll(() => aliceStreams.some((open) => open.sessions.includes(sessionId)), { timeout: 15_000 }).toBe(true)
       await aliceCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "alice-private-session.png"), fullPage: true })
 
       // Bob is already on the workspace before share so fanout (not navigation)
@@ -304,6 +330,11 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       await expect.poll(async () =>
         (await conversationPersistenceKeys(bobCtx.page)).some((key) => key.endsWith(`\0${sessionId}`)),
       { timeout: 20_000, message: "Bob's shared transcript must be durable before revoke" }).toBe(true)
+      // A team member is admitted to the workspace stream unscoped; the frames
+      // of the shared session reached him through it once the share existed.
+      expect(bobStreams.length).toBeGreaterThan(0)
+      expect(bobStreams.every((open) => open.scope === null && open.status === 200)).toBe(true)
+      await expect.poll(() => bobStreams.some((open) => open.sessions.includes(sessionId)), { timeout: 15_000 }).toBe(true)
       await bobCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "bob-drive.png"), fullPage: true })
 
       await aliceCtx.page.reload({ waitUntil: "domcontentloaded" })
@@ -318,6 +349,11 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       }, "editor")
       expect.soft(await sessionIdsOnRail(caseyCtx.page)).not.toContain(sessionId)
       await caseyCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "casey-denied-after.png"), fullPage: true })
+      // Workspace access alone unlocks no session: Casey's unscoped stream is
+      // admitted, and nothing of Alice's session has come down it.
+      await expect.poll(() => caseyStreams.length, { timeout: 15_000 }).toBeGreaterThan(0)
+      expect(caseyStreams.every((open) => open.scope === null && open.status === 200)).toBe(true)
+      expect(caseyStreams.flatMap((open) => open.sessions)).not.toContain(sessionId)
 
       bobCtx.page.on("pageerror", (error) => bobRevokePageErrors.push(error.message))
       bobCtx.page.on("console", (message) => {

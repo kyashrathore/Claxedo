@@ -575,7 +575,7 @@ test.describe("core busy / abort / errors @core", () => {
     // emit issued immediately after the Thinking row appears leaves the banner absent for
     // ~2.5s, while a re-emit ~2s later applies within 500ms and sticks. Nothing drops the
     // frame: the mock's `EventBus` is an append-only log and `ClaxedoEventsProvider`
-    // reconnects with its own `Last-Event-ID`. What the poll absorbs is claxedo-app's ~2s
+    // reconnects with its own `Last-Event-ID`. What the poll absorbs is claxedo-app's
     // reconnect floor (`app/providers/claxedo-events-reconnect.ts`) plus the 2s
     // session-switch quiet window the draft→session navigation arms
     // (`platform/runtime/session-switch.ts`) — a latency property of the consumer's

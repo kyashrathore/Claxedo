@@ -15,16 +15,16 @@ describe("reconnectBackoffMs", () => {
   })
 
   it("grows exponentially, jittering within the top half of the window", () => {
-    // failures=1 → ceiling 4000 → [2000, 4000]
-    expect(reconnectBackoffMs(1, () => 0)).toBe(2000)
-    expect(reconnectBackoffMs(1, () => 1)).toBe(4000)
-    expect(reconnectBackoffMs(1, () => 0.5)).toBe(3000)
-    // failures=2 → ceiling 8000 → [4000, 8000]
-    expect(reconnectBackoffMs(2, () => 0)).toBe(4000)
-    expect(reconnectBackoffMs(2, () => 1)).toBe(8000)
+    // failures=1 → ceiling 500 → [250, 500]
+    expect(reconnectBackoffMs(1, () => 0)).toBe(250)
+    expect(reconnectBackoffMs(1, () => 1)).toBe(500)
+    expect(reconnectBackoffMs(1, () => 0.5)).toBe(375)
+    // failures=2 → ceiling 1000 → [500, 1000]
+    expect(reconnectBackoffMs(2, () => 0)).toBe(500)
+    expect(reconnectBackoffMs(2, () => 1)).toBe(1000)
   })
 
-  it("never exceeds the 30s ceiling regardless of failure count", () => {
+  it("never exceeds the 15s ceiling regardless of failure count", () => {
     expect(reconnectBackoffMs(100, () => 1)).toBe(MAX_RECONNECT_DELAY_MS)
     expect(reconnectBackoffMs(100, () => 0)).toBe(MAX_RECONNECT_DELAY_MS / 2)
   })
@@ -32,7 +32,7 @@ describe("reconnectBackoffMs", () => {
 
 describe("reconnectDelayMs", () => {
   it("floors the backoff by the fast-session-switch quiet window", () => {
-    // backoff for failures=0 is 2000; a 5000ms quiet window wins.
+    // backoff for failures=0 is 250; a 5000ms quiet window wins.
     expect(reconnectDelayMs(0, 5000, () => 0.5)).toBe(5000)
     // no quiet window → plain backoff.
     expect(reconnectDelayMs(0, 0, () => 0.5)).toBe(RECONNECT_DELAY_MS)

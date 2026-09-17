@@ -59,6 +59,12 @@ type SessionEventScopeState = {
   held?: string
   /** The shell route's own session identity, published by the route's reader. */
   route?: string
+  /**
+   * The workspace a mounted session pane resolved its session to. A bare
+   * `/s/<id>` route names no workspace, so the reader learns which stream the
+   * routed session needs from the pane that opened it.
+   */
+  live?: { sessionId: string; directory: string }
   lanes: Partial<Record<SessionEventStreamLane, LaneState>>
 }
 
@@ -108,6 +114,17 @@ export function setSessionEventRouteScope(routeSessionId?: string): void {
  */
 export function sessionEventScopeId(): string | undefined {
   return scopeId()
+}
+
+/** Published by the session pane once it has resolved the session it shows. */
+export function setSessionEventLiveWorkspace(sessionId: string, directory: string): void {
+  setScopeState("live", { sessionId, directory })
+}
+
+/** The workspace address the pane resolved for `sessionId`, if it has. */
+export function sessionEventScopeDirectory(sessionId: string | undefined): string | undefined {
+  const live = scopeState.live
+  return live && sessionId && live.sessionId === sessionId ? live.directory : undefined
 }
 
 /** Declares that the reader drives this stream, so readiness waits for it. */
@@ -171,5 +188,5 @@ export function whenSessionEventStreamsOpen(
 
 /** Test seam: drops every stream registration, open report and published scope. */
 export function resetSessionEventScope(): void {
-  setScopeState({ held: undefined, route: undefined, lanes: {} })
+  setScopeState({ held: undefined, route: undefined, live: undefined, lanes: {} })
 }

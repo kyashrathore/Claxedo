@@ -6,6 +6,7 @@ import type {
   AgentTodo as Todo,
 } from "@claxedo/agent-runtime-contract"
 import { queryKeys } from "@/platform/query/keys"
+import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { ClaxedoSession } from "../session-types"
 import type { SessionInventoryRow } from "../query/types"
@@ -346,6 +347,15 @@ export function emptySessionInventoryStore(): SessionInventoryStoredValue {
 
 export function emptySessionInventory(): SessionInventoryValue {
   return normalizeSessionInventory(emptySessionInventoryStore())
+}
+
+/**
+ * The address the inventory holds a session under, read off the cache: what a
+ * bare `/s/<id>` route, which names no workspace, resolves its workspace from.
+ */
+export function sessionInventoryDirectory(baseUrl: string | undefined, sessionId: string): string | undefined {
+  const inventory = queryClient.getQueryData<SessionInventoryStoredValue>(queryKeys.shell.sessionInventory(baseUrl))
+  return inventory?.sessions.find((row) => row.id === sessionId)?.directory
 }
 
 export function sessionInventoryQueryOptions(input: {
