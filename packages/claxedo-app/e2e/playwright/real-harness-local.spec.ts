@@ -1003,11 +1003,14 @@ test.describe("real harness journeys @core @tier-real", () => {
   // inferred from the screen, so a transcript that only advanced through a
   // history refetch cannot pass.
   test("a turn's frames ride wr/events; cp/events carries no session frame", async ({ page }, testInfo) => {
-    scripted?.resetCounts()
-    const dir = await makeWorkspace("two-streams")
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install Claude to exercise a native turn over the two streams.")
+    const dir = await makeWorkspace("two-streams", "claude")
     await seedOneProject(page, dir)
 
-    const workspaceFrames: string[] = []
+    // A live SSE body never resolves for Playwright's `response.text()`; the
+    // in-page reader records each chunk as it lands.
+    const traffic = await observeRuntimeTextTraffic(page)
     const workspaceOpens: Array<{ cursor: string | null; scope: string | null }> = []
     page.on("response", (response) => {
       const url = new URL(response.url())
@@ -1016,7 +1019,6 @@ test.describe("real harness journeys @core @tier-real", () => {
         cursor: response.request().headers()["last-event-id"] ?? null,
         scope: url.searchParams.get("sessionID"),
       })
-      void response.text().then((text) => { workspaceFrames.push(text) }).catch(() => undefined)
     })
     const controlPlaneFrames: string[] = []
     const controlPlaneSockets: string[] = []
@@ -1026,14 +1028,15 @@ test.describe("real harness journeys @core @tier-real", () => {
       socket.on("framereceived", (frame) => { controlPlaneFrames.push(String(frame.payload)) })
     })
 
-    const input = await openDraftPrompt(page, dir)
-    await selectScriptedModel(page)
-    const marker = `TWO-STREAMS-${Date.now().toString().slice(-6)}`
-    await composePrompt(page, input, `Reply with exactly this one token and nothing else: ${marker}`)
+    await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, "claude")
+    await waitForHarnessReady(page)
+    const marker = `TWO_STREAMS_${Date.now()}`
+    scripted!.scriptText({ marker, text: marker })
+    await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token and nothing else: ${marker}`)
     await page.locator(SELECTORS.submitControl).last().click()
     await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
     await expectAssistantReplyVisible(page, marker)
-    expectScriptedTraffic("responses", 1)
 
     const frameTypes = (frames: string[]) =>
       frames.flatMap((text) => [...text.matchAll(/"type":"([a-z.-]+)"/g)].map((match) => match[1]))
@@ -1045,11 +1048,17 @@ test.describe("real harness journeys @core @tier-real", () => {
     expect(workspaceOpens.length).toBeGreaterThan(0)
     expect(workspaceOpens.every((open) => open.scope === null)).toBe(true)
     // The frames of the turn, on the wire: the row, its parts and the settlement.
-    await expect.poll(() => counts(frameTypes(workspaceFrames))["session.idle"] ?? 0, { timeout: 15_000 }).toBeGreaterThan(0)
-    const workspaceCounts = counts(frameTypes(workspaceFrames))
+    const workspaceFrames = async () => (await traffic()).map((chunk) => chunk.data)
+    await expect.poll(async () => counts(frameTypes(await workspaceFrames()))["session.idle"] ?? 0, { timeout: 15_000 }).toBeGreaterThan(0)
+    const workspaceCounts = counts(frameTypes(await workspaceFrames()))
     expect(workspaceCounts["message.updated"] ?? 0).toBeGreaterThan(0)
     expect(workspaceCounts["message.part.updated"] ?? 0).toBeGreaterThan(0)
-    expect(workspaceFrames.join("")).toContain(marker)
+    const streamedText = (await workspaceFrames()).join("").split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice(6)) as { payload?: { type: string; properties?: { field?: string; delta?: string } } })
+      .filter((frame) => frame.payload?.type === "message.part.delta" && frame.payload.properties?.field === "text")
+      .map((frame) => frame.payload!.properties!.delta).join("")
+    expect(streamedText, "the reply's text reaches the browser as text deltas on the workspace stream").toContain(marker)
 
     // The control plane's stream is open, and carries nothing of the session.
     expect(controlPlaneSockets.length).toBeGreaterThan(0)
@@ -1884,7 +1893,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       try {
         await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Return the requested streamed paragraphs for ${marker}`)
         await page.locator(SELECTORS.submitControl).last().click()
-        await expect.poll(async () => (await traffic()).some(chunk => chunk.data.includes('"type":"text-delta"')), {
+        await expect.poll(async () => (await traffic()).some(chunk => chunk.data.includes('"type":"message.part.delta"')), {
           message: "native runtime text reaches the browser before completion", timeout: 30_000,
         }).toBe(true)
         const during = await traffic()
@@ -1901,10 +1910,10 @@ test.describe("real harness journeys @core @tier-real", () => {
       }
       const received = (await traffic()).map(chunk => chunk.data).join("").split("\n")
         .filter(line => line.startsWith("data: "))
-        .map(line => JSON.parse(line.slice(6)) as { payload?: { type: string; delta?: string } })
-        .filter(frame => frame.payload?.type === "text-delta")
-        .map(frame => frame.payload!.delta).join("")
-      expect(received, "the native runtime delivers the full scripted reply as actual text deltas").toContain(reply)
+        .map(line => JSON.parse(line.slice(6)) as { payload?: { type: string; properties?: { field?: string; delta?: string } } })
+        .filter(frame => frame.payload?.type === "message.part.delta" && frame.payload.properties?.field === "text")
+        .map(frame => frame.payload!.properties!.delta).join("")
+      expect(received, "the workspace stream delivers the full scripted reply as text deltas").toContain(reply)
       expectStreamingSegmentsOnce(samples, segments)
     })
   }
@@ -1947,15 +1956,18 @@ setTimeout(() => process.exit(2), 60000).unref();
       socket.on("close", () => { entry.closed = true })
     })
     // The workspace stream is what carries the tool's settlement: every open
-    // with its resume cursor, and the frames each connection delivered.
-    const workspaceOpens: Array<{ at: number; cursor: string | null; frames: string[] }> = []
+    // with its resume cursor, and (through the in-page reader, since a live
+    // SSE body never resolves for `response.text()`) the frames it delivered.
+    const traffic = await observeRuntimeTextTraffic(page)
+    // The outage would also cut Vite's HMR socket, and its client reloads the
+    // page once a `vite-ping` socket opens again — a reload that drops the
+    // cursor this test watches. A mocked HMR socket never disconnects.
+    await page.routeWebSocket((url) => url.pathname === "/", () => undefined)
+    const workspaceOpens: Array<{ at: number; cursor: string | null; scope: string | null; status: number }> = []
     page.on("response", (response) => {
-      if (new URL(response.url()).pathname !== "/api/wr/events") return
-      const open = { at: Date.now(), cursor: response.request().headers()["last-event-id"] ?? null, frames: [] as string[] }
-      workspaceOpens.push(open)
-      void response.text().then((text) => {
-        open.frames.push(...[...text.matchAll(/"type":"([a-z.-]+)"/g)].map((match) => match[1]))
-      }).catch(() => undefined)
+      const url = new URL(response.url())
+      if (url.pathname !== "/api/wr/events") return
+      workspaceOpens.push({ at: Date.now(), cursor: response.request().headers()["last-event-id"] ?? null, scope: url.searchParams.get("sessionID"), status: response.status() })
     })
     try {
       await seedOneProject(page, dir)
@@ -2001,6 +2013,7 @@ setTimeout(() => process.exit(2), 60000).unref();
       await fs.writeFile(testInfo.outputPath("canonical-tools-while-offline.json"), JSON.stringify(await readTools(), null, 2))
       await page.screenshot({ path: testInfo.outputPath("tool-after-completion-while-offline.png") })
       const opensBeforeReconnect = workspaceOpens.length
+      const reconnectedAt = Date.now()
       network.reconnect()
       await expect.poll(() => sockets.some(socket => !socket.closed && !connected.includes(socket)), { message: "the browser opens a new event connection", timeout: 30_000 }).toBe(true)
       await expectAssistantReplyVisible(page, marker)
@@ -2013,9 +2026,11 @@ setTimeout(() => process.exit(2), 60000).unref();
       expect(reopened.length, "the workspace stream reopened after the outage").toBeGreaterThan(0)
       expect(reopened[0]?.cursor, "the reopened workspace stream resumed by cursor").not.toBeNull()
       await expect.poll(
-        () => reopened.some((open) => open.frames.includes("message.part.updated") || open.frames.includes("stream.replay-gap")),
+        async () => (await traffic()).some((chunk) => chunk.at >= reconnectedAt
+          && (chunk.data.includes('"type":"message.part.updated"') || chunk.data.includes('"type":"stream.replay-gap"'))),
         { message: "the settlement or a gap notice arrived on the reopened workspace stream", timeout: 15_000 },
       ).toBe(true)
+      await fs.writeFile(testInfo.outputPath("workspace-stream-traffic.json"), JSON.stringify(await traffic(), null, 2))
       await page.screenshot({ path: testInfo.outputPath("tool-settled-after-reconnect.png") })
       await page.reload({ waitUntil: "domcontentloaded" })
       await expectAssistantReplyVisible(page, marker)
