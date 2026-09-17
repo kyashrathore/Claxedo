@@ -6,10 +6,13 @@
  * frame enters one emitter; consumers subscribe by type or listen to all.
  *
  * One workspace stream, the routed one: a pane of another local workspace
- * left open on the desktop gets that workspace's `pty.*` and
- * `agent.lifecycle` only when the route returns to it (the reconnect
- * reconciles) or from the rail's periodic status read — the daemon's
- * control-plane stream no longer carries every local workspace's frames.
+ * left open on the desktop gets no live `pty.*` or `agent.lifecycle` while
+ * it is not routed — the daemon's control-plane stream no longer carries
+ * every local workspace's frames. Its terminals' indicators are re-read
+ * from the runtime (`reconcileAgentStatuses`: the pty list and the recorded
+ * lifecycle) each time a workspace stream comes up, a workspace switch
+ * included; a completion there plays no sound, and a pty exit or creation
+ * there opens or closes no tab until then.
  */
 
 import {
@@ -396,9 +399,10 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
 
 
 
-async function workspaceStreamDenied(res: Response) {
+/** The runtime's own refusal of one `wr/events` arm; a 403 minted elsewhere on the path (the relay, the token mint) is an outage to retry. */
+async function streamDenied(res: Response, arm: "workspace" | "session") {
   const body: unknown = await res.clone().json().catch(() => undefined)
-  return readString(readField(body, "error"), "code") === "workspace_event_stream_denied"
+  return readString(readField(body, "error"), "code") === (arm === "workspace" ? "workspace_event_stream_denied" : "session_event_stream_denied")
 }
 
 export function ClaxedoEventsProvider(props: ParentProps<{
@@ -462,8 +466,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // A `wr` target opens unscoped. A runtime that refuses the reader at
       // workspace level (a share grantee) is asked again for the routed
       // session, and the target stays session-scoped from then on. Refused
-      // on a route that names no session, the target waits for one.
+      // on a route that names no session, or refused the session itself, the
+      // target waits for the route to name a session it may read.
       scope: "workspace" as "workspace" | "session" | "refused",
+      /** The session the runtime refused, while `scope` is `refused`; the route naming another reopens. */
+      refusedSession: undefined as string | undefined,
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
       reconnectTimer: null as ReturnType<typeof setTimeout> | null,
@@ -544,6 +551,20 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       }, HEARTBEAT_TIMEOUT_MS)
     }
 
+    // Refused by the runtime with nothing to reopen for: no retry, no
+    // escalation, no "Reconnecting…"; the next navigation that names a
+    // session the runtime may serve reopens.
+    const park = (session: string | undefined) => {
+      state.scope = "refused"
+      state.refusedSession = session
+      state.lastEventId = null
+      stepLifecycle("stop")
+      clearStreamSyncLifecycle(streamId)
+      state.lifecycle = "idle"
+      setStreamConnected(false)
+      reportLaneClosed()
+    }
+
     const connect = () => {
       if (stopped || closed || state.scope === "refused") return
       beginConnect()
@@ -571,11 +592,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         headers,
         signal: state.abort.signal,
       }, { scope: state.scope === "session" ? "session" : "workspace" }).then(async (res) => {
-        // Only the runtime's own refusal of the unscoped arm narrows the
-        // stream: a 403 minted elsewhere on the path (the relay while its
-        // host is away, the token mint) is an outage to retry, not a share
-        // grantee's cue to read one session.
-        if (res.status === 403 && target.kind === "wr" && state.scope === "workspace" && await workspaceStreamDenied(res)) {
+        // Only the runtime's own refusal narrows or parks the stream.
+        if (res.status === 403 && target.kind === "wr" && state.scope === "workspace" && await streamDenied(res, "workspace")) {
           state.abort = null
           if (target.sessionID) {
             state.scope = "session"
@@ -585,16 +603,15 @@ export function ClaxedoEventsProvider(props: ParentProps<{
             connect()
             return
           }
-          // A grantee on a route with no session — the workspace's draft
-          // route — has nothing the runtime will serve. Not an outage: no
-          // retry, no escalation, no "Reconnecting…"; the next navigation
-          // that names a session reopens.
-          state.scope = "refused"
-          stepLifecycle("stop")
-          clearStreamSyncLifecycle(streamId)
-          state.lifecycle = "idle"
-          setStreamConnected(false)
-          reportLaneClosed()
+          park(undefined)
+          return
+        }
+        // The session itself refused — its share revoked, or it deleted — is
+        // not an outage either: nothing the runtime will serve until the
+        // route names another session.
+        if (res.status === 403 && target.kind === "wr" && state.scope === "session" && await streamDenied(res, "session")) {
+          state.abort = null
+          park(target.sessionID)
           return
         }
         if (!res.ok || !res.body) {
@@ -729,8 +746,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       target = next
       if (next.kind !== "wr" || previous.kind !== "wr") return
       if (state.scope === "refused") {
-        if (!next.sessionID) return
+        if (!next.sessionID || next.sessionID === state.refusedSession) return
         state.scope = "session"
+        state.refusedSession = undefined
         state.lastEventId = null
         connect()
         return

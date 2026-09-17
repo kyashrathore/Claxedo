@@ -483,20 +483,29 @@ async function resolveWorkspaceRuntime(directory: string, request: typeof fetch)
   return await res.json()
 }
 
-async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fetch) {
+/**
+ * Re-reads, from the runtime, what the workspace stream would have told us
+ * had it been open: which tracked terminals still exist, and for those that
+ * do, the last lifecycle the runtime recorded (`/hook/terminal-session`).
+ * Only the routed workspace's stream is open, so a terminal in another
+ * workspace whose agent finished meanwhile is healed here, on the next
+ * return of a workspace stream. Each directory is read on its own: a
+ * workspace whose host is away keeps its indicators as they were rather than
+ * clearing every other workspace's.
+ */
+export async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fetch) {
   const targets = terminalReconnectTargets(state)
   if (targets.size === 0) return
+  const outcomes = new Map<string, TerminalAgentStatus>()
 
-  let livePtyIds: Set<string>
-  try {
-    livePtyIds = new Set()
-    for (const [directory] of targets) {
+  for (const [directory, ids] of targets) {
+    try {
       const workspace = await resolveWorkspaceRuntime(directory, request)
       const workspaceId = workspace?.workspaceId
       const relayWorkspaceId = workspaceId && centralTransportForServer(getClaxedoServerUrl()) !== "loopback"
         ? workspaceId
         : undefined
-      const ptys = await createTransport({
+      const transport = createTransport({
         placement: {
           ...(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : {}),
           hosting: "workspace",
@@ -506,48 +515,48 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
         directory: relayWorkspaceId ? undefined : directory,
         request,
         resolveWorkspaceRuntime: ({ directory }) => resolveWorkspaceRuntime(directory, request),
-      }).json(
-        // A local workspace can still have a stable workspaceId. That identity
-        // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`
-        // exists at the relay edge, while the local runtime is addressed by
-        // `?directory=...`. Using workspaceId here made every reconnect PTY
-        // reconcile 404, whose failure policy correctly cleared all indicators.
-        terminalPtyApiPath(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }),
-        { headers: { Accept: "application/json" } },
-      )
-      // Only the ids matter here: this reconcile answers "which PTYs does the
-      // runtime still have", and a row without one cannot clear or keep an
-      // indicator either way.
+      })
+      // A local workspace can still have a stable workspaceId. That identity
+      // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`
+      // exists at the relay edge, while the local runtime is addressed by
+      // `?directory=...`.
+      const address = relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }
+      const ptys = await transport.json(terminalPtyApiPath(address), { headers: { Accept: "application/json" } })
+      const live = new Set<string>()
       for (const pty of Array.isArray(ptys) ? ptys : []) {
         const id = readString(pty, "id")
-        if (id) livePtyIds.add(id)
+        if (id) live.add(id)
       }
+      for (const id of ids) {
+        if (!live.has(id)) {
+          outcomes.set(id, "idle")
+          continue
+        }
+        const recorded = await transport.json(terminalSessionHookPath(id, address), { headers: { Accept: "application/json" } }).catch(() => undefined)
+        const status = terminalAgentStatusFromEventType(readField(readField(recorded, "session"), "eventType"))
+        if (status) outcomes.set(id, status)
+      }
+    } catch {
+      continue
     }
-  } catch {
-    clearAllAgentIndicators(state)
-    return
   }
 
   untrack(() => {
     batch(() => {
-      for (const ids of targets.values()) {
-        for (const id of ids) {
-          if (!livePtyIds.has(id)) {
-            state.terminal.setAgentStatus(id, "idle")
-            state.terminal.clearSeen(id)
-          }
-        }
+      for (const [id, status] of outcomes) {
+        if (state.terminal.agentStatus(id) === status) continue
+        state.terminal.setAgentStatus(id, status)
+        if (status === "idle") state.terminal.clearSeen(id)
       }
     })
   })
 }
 
-function clearAllAgentIndicators(state: ClaxedoStateApi) {
-  untrack(() => {
-    batch(() => {
-      state.terminal.resetAllAgentStatuses()
-    })
-  })
+function terminalSessionHookPath(terminalId: string, address: { workspaceId?: string; directory?: string }) {
+  const url = new URL("/api/wr/hook/terminal-session", "http://claxedo.local")
+  url.searchParams.set("terminalId", terminalId)
+  if (address.directory) url.searchParams.set("directory", address.directory)
+  return `${url.pathname}${url.search}`
 }
 
 export function useAgentHooks() {

@@ -323,7 +323,7 @@ describe("createIdentityAwareEventSource", () => {
     // The relay re-minted the credential — the daemon's proxy mints a runtime
     // token per request — for the same actor at the same role: the same
     // scope, the same numbering, the cursor resumes.
-    const reminted = source.open({ ...participant("connection_2"), credential: "Bearer rat_2", replayKey: "rat:2" })
+    const reminted = source.open({ ...participant("connection_2"), credential: "Bearer rat_2" })
     await reminted.ready
     expect(reminted.replay.hasGap("2", reminted.replay.lastId())).toBe(false)
     expect(reminted.replay.replayAfter("2").map((entry) => entry.payload.value)).toEqual(["c"])

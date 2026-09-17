@@ -12,8 +12,9 @@ describe("eventSessionId", () => {
   it("returns undefined for partial/malformed frames instead of throwing", () => {
     // The global event stream carries untrusted upstream frames. A partial
     // session.updated (no `info`) must NOT crash the transform — that would tear
-    // down the SSE connection for every subscriber.
-    expect(eventSessionId({ type: "session.updated", properties: { sessionID: "x" } } as never)).toBeUndefined()
+    // down the SSE connection for every subscriber — and is still the
+    // session's when its properties name one.
+    expect(eventSessionId({ type: "session.updated", properties: { sessionID: "x" } } as never)).toBe("x")
     expect(eventSessionId({ type: "session.updated", properties: {} } as never)).toBeUndefined()
     expect(eventSessionId({ type: "session.updated" } as never)).toBeUndefined()
     expect(eventSessionId({ type: "message.updated", properties: {} } as never)).toBeUndefined()

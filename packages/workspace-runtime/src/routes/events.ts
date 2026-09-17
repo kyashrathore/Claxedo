@@ -1,6 +1,6 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
-import { isRetainedCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import { isRetainedCompatEvent, type CompatEnvelope, type EventSessionDeleted } from "@claxedo/agent-sdk-runtime/compat-events"
 import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
@@ -98,8 +98,18 @@ export function isRetainedWorkspaceEventFrame(frame: StreamFrame) {
   return isRetainedCompatEvent(frame.payload as CompatEnvelope["payload"])
 }
 
+function sessionDeletion(frame: StreamFrame): EventSessionDeleted | undefined {
+  if (isGapFrame(frame) || isControlFrame(frame)) return undefined
+  const payload = frame.payload as CompatEnvelope["payload"]
+  return payload.type === "session.deleted" ? payload : undefined
+}
+
 function isSessionDeletion(frame: StreamFrame) {
-  return !isGapFrame(frame) && !isControlFrame(frame) && frame.payload.type === "session.deleted"
+  return sessionDeletion(frame) !== undefined
+}
+
+function deletedSessionParent(frame: StreamFrame): string | undefined {
+  return sessionDeletion(frame)?.properties.info.parentID
 }
 
 export function workspaceEventFrameSessionId(frame: StreamFrame): string | undefined {
@@ -210,6 +220,15 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
  * and a refusal there ends the stream. A session-scoped connection reads in
  * a scope of its own, whose ring numbers only that session's frames.
  *
+ * Two bounds on that: a lease's renewal is refused once the runtime access
+ * token behind it expires, so a connection lives at most one token lifetime
+ * (ten minutes through the daemon's proxy, which mints one per request) and
+ * then reconnects by cursor into the same actor-keyed scope; and a
+ * self-hosted node's embedded policy admits the unscoped arm by the stamped
+ * role with no lease, so a member removed from the workspace keeps that
+ * arm's session-less frames until the connection closes — only its session
+ * grants are re-asked. The relay path ends the stream at the next renewal.
+ *
  * `close()` releases the bus subscription when the runtime is disposed.
  *
  * Resumable by SSE `Last-Event-ID`. Two rules about NOT re-applying frames a
@@ -232,11 +251,13 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
  */
 export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   const bus = options.bus ?? workspaceRuntimeBus
-  // A subagent child's frames are authorized and scoped as its parent's.
+  // A subagent child's frames are authorized and scoped as its parent's. The
+  // child's deletion frame names its parent itself: by the time it is
+  // decided the child's row is gone and the registry no longer knows it.
   const scopeSessionId = (frame: StreamFrame) => {
     const sessionId = workspaceEventFrameSessionId(frame)
     if (!sessionId) return undefined
-    return options.sessionParents?.parentSessionIdFor(sessionId) ?? sessionId
+    return options.sessionParents?.parentSessionIdFor(sessionId) ?? deletedSessionParent(frame) ?? sessionId
   }
   const delivery: EventDeliveryPolicy<StreamFrame> = options.policy ?? defaultEventDeliveryPolicy
   // A session-scoped connection reads one session, in a scope of its own
@@ -253,8 +274,9 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       // Forgotten once THIS connection has decided the deletion, never before:
       // decided after its grant was gone, the deletion itself would read as a
       // refusal of a session the connection held.
+      // A child's deletion is scoped to its parent, whose grant stays.
       const sessionId = input.sessionId
-      if (!sessionId || !isSessionDeletion(input.event)) return decision
+      if (!sessionId || !isSessionDeletion(input.event) || workspaceEventFrameSessionId(input.event) !== sessionId) return decision
       const forget = () => delivery.forgetSession?.(input.principal, sessionId)
       if (decision instanceof Promise) return decision.then((next) => { forget(); return next })
       forget()

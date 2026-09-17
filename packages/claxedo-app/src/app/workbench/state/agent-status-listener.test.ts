@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
-import { agentLifecycleTitle, reconcilePtyExit, terminalLifecycleSound, useReconnectReconciliation } from "./agent-status-listener"
+import { agentLifecycleTitle, reconcileAgentStatuses, reconcilePtyExit, terminalLifecycleSound, useReconnectReconciliation } from "./agent-status-listener"
+import type { ClaxedoStateApi, ContentMeta } from "./provider"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -65,6 +66,48 @@ async function settleEffects() {
   await Promise.resolve()
   await Promise.resolve()
 }
+
+describe("reconcileAgentStatuses", () => {
+  test("reads each workspace on its own: a live terminal takes the lifecycle the runtime recorded, a gone one idles, an unreachable workspace keeps its indicators", async () => {
+    const terminal = terminalSlice()
+    terminal.setAgentStatus("pty_done", "working")
+    terminal.setAgentStatus("pty_still", "working")
+    terminal.setAgentStatus("pty_gone", "working")
+    terminal.setAgentStatus("pty_away", "working")
+    terminal.own("tab_done", "pty_done")
+    terminal.own("tab_still", "pty_still")
+    terminal.own("tab_gone", "pty_gone")
+    terminal.own("tab_away", "pty_away")
+    const contents: ContentMeta[] = [
+      { id: "tab_done", type: "terminal", directory: "/repo/a", terminalId: "pty_done" },
+      { id: "tab_still", type: "terminal", directory: "/repo/a", terminalId: "pty_still" },
+      { id: "tab_gone", type: "terminal", directory: "/repo/a", terminalId: "pty_gone" },
+      { id: "tab_away", type: "terminal", directory: "/repo/b", terminalId: "pty_away" },
+    ] as ContentMeta[]
+    const state = {
+      terminal,
+      meta: { all: () => contents, get: (id: string) => contents.find((content) => content.id === id) },
+    } as unknown as ClaxedoStateApi
+    const recorded: Record<string, string> = { pty_done: "Idle", pty_still: "Busy" }
+    const request: typeof fetch = async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      const directory = url.searchParams.get("scope") ?? url.searchParams.get("directory")
+      if (directory === "/repo/b") return new Response("host away", { status: 502 })
+      if (url.pathname.endsWith("/workspace/resolve")) return Response.json({ kind: "local" })
+      if (url.pathname.endsWith("/api/wr/pty")) return Response.json([{ id: "pty_done" }, { id: "pty_still" }])
+      if (url.pathname.endsWith("/hook/terminal-session")) {
+        const id = url.searchParams.get("terminalId") ?? ""
+        return Response.json({ success: true, source: "runtime", terminalId: id, session: { terminalId: id, eventType: recorded[id] } })
+      }
+      return new Response("unexpected", { status: 404 })
+    }
+    await reconcileAgentStatuses(state, request)
+    expect(terminal.agentStatus("pty_done")).toBe("idle")
+    expect(terminal.agentStatus("pty_still")).toBe("working")
+    expect(terminal.agentStatus("pty_gone")).toBe("idle")
+    expect(terminal.agentStatus("pty_away")).toBe("working")
+  })
+})
 
 describe("terminalLifecycleSound", () => {
   const sounds = (enabled: { agent?: boolean; permissions?: boolean } = {}) => ({

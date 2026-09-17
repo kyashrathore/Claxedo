@@ -1968,7 +1968,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const sessionID = url.searchParams.get("sessionID") ?? undefined
     if (options.workspaceStreamAuthorize && !options.workspaceStreamAuthorize({ sessionID })) {
       return json(route, sessionID
-        ? { error: { code: "session_access_denied", message: "Forbidden" } }
+        ? { error: { code: "session_event_stream_denied", message: "Forbidden", cause: "session_private" } }
         : { error: { code: "workspace_event_stream_denied", message: "Forbidden", cause: "host_authority_denied" } }, 403)
     }
     const cursor = workspaceStreamCursor(route, bus)
@@ -1978,7 +1978,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // sees its children's frames on the same stream. Unlike the real handler,
     // the session arm here is a filter over the workspace log — one numbering
     // for both arms — so a cursor carried across the narrowing is not a gap
-    // on this mock; the reader drops it regardless (Tier R proves that side).
+    // on this mock; that the reader drops it is proven by its own suite
+    // (`claxedo-events-cursor.vitest.tsx`), and that the real handler's
+    // session ring is another numbering by `routes/events.test.ts`.
     const scoped = sessionID
       ? batch.filter((entry) => {
         const frameSession = frameSessionId(entry)

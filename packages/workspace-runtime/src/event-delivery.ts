@@ -1,5 +1,5 @@
 import { createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import type { Context } from "hono"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import type { SessionAccessPolicy } from "./session-access-policy"
@@ -17,19 +17,7 @@ export type EventDeliveryPrincipal =
       workspaceId: string
       role: WorkspaceRole
       credential?: string
-      replayKey?: string
       /** The one session a session-scoped connection reads; its scope's ring numbers only that session's frames. */
-      sessionScope?: string
-    }
-  | {
-      mode: "signed-unattributed"
-      connectionId: string
-      orgId: string
-      workspaceId: string
-      role: WorkspaceRole
-      credential?: string
-      /** What the replay scope is keyed by when it is not the credential itself. */
-      replayKey?: string
       sessionScope?: string
     }
 
@@ -109,37 +97,15 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
   const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
   const credential = context.req.header("authorization")
-  // What a reader WITHOUT an actor is keyed by. Through the relay, the
-  // runtime access token: the relay mints a fresh one-request host token per
-  // connection from it, so keyed by the host token every reconnect would be
-  // a stranger's. Stamped in process, nothing: there is no credential to bind
-  // a scope to. (A verified actor is keyed by the actor, see `scopeKey`.)
-  const replayKey = "parent_jti" in claims && claims.parent_jti
-    ? `rat:${claims.parent_jti}`
-    : "principal_kind" in claims
-      ? "embedded"
-      : undefined
-  if (claims.actor_id && claims.actor_kind) {
-    return {
-      mode: "verified",
-      connectionId,
-      actorId: claims.actor_id,
-      actorKind: claims.actor_kind,
-      orgId: claims.org_id,
-      workspaceId: claims.workspace_id,
-      role: claims.role,
-      ...(credential ? { credential } : {}),
-      ...(replayKey ? { replayKey } : {}),
-    }
-  }
   return {
-    mode: "signed-unattributed",
+    mode: "verified",
     connectionId,
+    actorId: claims.actor_id,
+    actorKind: claims.actor_kind,
     orgId: claims.org_id,
     workspaceId: claims.workspace_id,
     role: claims.role,
     ...(credential ? { credential } : {}),
-    ...(replayKey ? { replayKey } : {}),
   }
 }
 
@@ -152,7 +118,7 @@ export function defaultEventDeliveryPolicy({
   if (principal.mode === "unmanaged-local") return "deliver"
   if (!sessionId && actorId) return forActor(principal, actorId)
   if (!sessionId && !sensitive) return "deliver"
-  return principal.mode === "signed-unattributed" ? "terminate" : "omit"
+  return "omit"
 }
 
 const forActor = (principal: EventDeliveryPrincipal, actorId: string): EventDeliveryDecision =>
@@ -341,16 +307,12 @@ function isAuthorityAway(decision: { allowed: false; status: number } | undefine
 // or a reconnect whose relay host token and runtime access token were both
 // re-minted (the daemon's proxy mints a runtime token per request) — share
 // one ring and resume each other's cursors, and a role change opens a ring
-// of its own rather than replaying the old role's frames. A principal
-// without an actor has only its credential to be known by.
+// of its own rather than replaying the old role's frames. What one of those
+// connections was granted and pushed reaches the other's replay unasked, for
+// as long as a grant is held: a revocation is seen at the next renewal.
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
   const session = principal.sessionScope ? `:session:${principal.sessionScope}` : ""
-  if (principal.mode === "signed-unattributed") {
-    const key = principal.replayKey ?? principal.credential
-    const credential = key ? createHash("sha256").update(key).digest("base64url") : `connection:${principal.connectionId}`
-    return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}:${credential}${session}`
-  }
   return `actor:${principal.orgId}:${principal.workspaceId}:${principal.actorKind}:${principal.actorId}:${principal.role}${session}`
 }
 
@@ -363,9 +325,8 @@ function scopeKey(principal: EventDeliveryPrincipal) {
  * event to a principal, so filtered traffic cannot punch holes in that
  * principal's cursor. Empty scopes are evicted; a reconnect reconstructs its
  * replay from the bounded retained ring using the reconnecting principal.
- * A scope is keyed by the reader's durable identity (the runtime access
- * token behind the relay's per-request host tokens, or the in-process
- * actor), while live authorization presents what the connection was
+ * A scope is keyed by the reader's actor at its role (`scopeKey`), while
+ * live authorization presents what the connection was
  * admitted with — the workspace lease its admission minted, and the session
  * leases the authority hands back — so a revoked reader is ended at the
  * next renewal whichever connection it holds.
@@ -622,6 +583,11 @@ export function createIdentityAwareEventSource<T extends object>(input: {
             results[index] = await decideBeforeDeadline(retainedEvents[index].payload)
           }
         }))
+        // A frame the authority could not decide — away, or past the startup
+        // deadline — is not in this ring and not known to be nobody's: the
+        // ring is holed, so a cursor presented to it reads as a gap and the
+        // reader re-reads, rather than resuming over a frame it never saw.
+        if (results.some((result) => result === "terminate")) created.attached = false
         for (let index = 0; index < retainedEvents.length; index += 1) {
           if (results[index] !== "deliver") continue
           replay.push(retainedEvents[index].payload)
@@ -658,16 +624,6 @@ export function createIdentityAwareEventSource<T extends object>(input: {
         replay: scope.replay,
         ready: scope.tail,
         subscribe(listener, terminate = () => undefined) {
-          // Replay is already filtered into this principal-scoped buffer. Mark
-          // its session ids as delivered for the new connection as well, so a
-          // later live denial is treated as revocation and tears the stream
-          // down. Without this, reconnecting participants could retain a live
-          // stream after their access was removed because only live delivery
-          // populated `authorizedSessions`.
-          for (const retainedEvent of scope.replay.replayAfter(undefined)) {
-            const sessionId = input.sessionId(retainedEvent.payload)
-            if (sessionId) authorizedSessions.add(sessionId)
-          }
           const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions, delivered: new WeakSet() }
           scope.connections.add(connection)
           scope.attached = true

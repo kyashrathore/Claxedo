@@ -609,12 +609,10 @@ export function retryWorkspaceConnection(workspaceId: string | undefined) {
   driveConnection(workspaceId, runtime)
 }
 
-// ─── Event-stream → authority bridge (Step 6 wiring seam) ─────────────────────
-
 // A sustained workspace event-stream failure nudges ready → reconnecting
 // (queries park, NO teardown); recovery flips reconnecting → ready. Exposed so
-// `context/claxedo-events.tsx` can feed its per-target reconnect outcome to
-// the authority instead of inferring readiness independently.
+// `app/integrations/claxedo-events.tsx` can feed its per-target reconnect
+// outcome to the authority instead of inferring readiness independently.
 export function markWorkspaceReconnecting(workspaceId: string | undefined) {
   if (!workspaceId) return
   const state = connections[workspaceId]

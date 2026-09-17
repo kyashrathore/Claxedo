@@ -33,7 +33,6 @@ export type TerminalSliceApi = {
   clearAgentStatus(terminalId: string): void
   seen(terminalId: string): boolean
   clearSeen(terminalId: string): void
-  resetAllAgentStatuses(): void
 
   owner(terminalId: string): string | undefined
   /** Reactive PTY ids owned by one content id; unrelated owners do not invalidate this accessor. */
@@ -181,14 +180,6 @@ export function createTerminalSlice(input: {
     },
     clearSeen(terminalId) {
       setState("terminal", "agentSeen", terminalId, undefined)
-    },
-    resetAllAgentStatuses() {
-      for (const id of Object.keys(state.terminal.agentStatus)) {
-        setState("terminal", "agentStatus", id, undefined)
-      }
-      for (const id of Object.keys(state.terminal.agentSeen)) {
-        setState("terminal", "agentSeen", id, undefined)
-      }
     },
 
     owner(terminalId) {

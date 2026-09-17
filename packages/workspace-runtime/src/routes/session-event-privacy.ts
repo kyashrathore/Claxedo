@@ -24,6 +24,8 @@ export function isSessionEventScopeResponse(
 
 /** The refusal code of the unscoped `wr/events` arm; the reader reopens `?sessionID=` on it and on nothing else. */
 export const WORKSPACE_EVENT_STREAM_DENIED = "workspace_event_stream_denied"
+/** The refusal code of the session-scoped arm (the runtime's own 403); the reader holds the target until the route names another session. */
+export const SESSION_EVENT_STREAM_DENIED = "session_event_stream_denied"
 
 
 /**
@@ -98,7 +100,14 @@ export async function authorizeSessionEventScope(
     signal: c.req.raw.signal,
   } satisfies SessionAccessPolicyInput & { sessionId: string }
   const decision = await policy.authorizeStream(input)
-  if (!decision.allowed) return sessionAccessDenied(decision)
+  if (!decision.allowed) {
+    // Named like the unscoped arm's refusal: a 403 minted elsewhere on the
+    // path is an outage the reader retries, this one it acts on.
+    if (decision.status === 403) {
+      return Response.json({ error: { code: SESSION_EVENT_STREAM_DENIED, message: decision.message, cause: decision.code } }, { status: 403 })
+    }
+    return sessionAccessDenied(decision)
+  }
   const now = Date.now()
   if (!decision.lease.trim() || !Number.isFinite(decision.expiresAt) || decision.expiresAt <= now) {
     return Response.json({

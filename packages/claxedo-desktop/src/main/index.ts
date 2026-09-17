@@ -780,9 +780,10 @@ hostConnector = setupElectronHostConnector({
   // The daemon composed this machine's workspace runtimes, so the daemon is
   // the only process that knows how they admit sessions. Read it from the
   // same loopback surface the serving credential is pushed to, and let the
-  // connector declare it on every heartbeat: a client learns from the
-  // declaration whether a session it creates here must be registered with
-  // the control plane first, and never infers it.
+  // connector declare it on every heartbeat: a client of this machine learns
+  // from the declaration whether a session it creates here must be
+  // registered with the control plane first (a client on the hosted plane
+  // registers regardless of it).
   sessionAuthority: async () => {
     const server = await serverReady.promise
     const response = await fetch(new URL("/api/claxedo/host-serving", server.url))

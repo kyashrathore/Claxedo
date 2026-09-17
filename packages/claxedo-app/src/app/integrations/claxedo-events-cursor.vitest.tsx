@@ -239,6 +239,29 @@ describe("the workspace stream's two arms", () => {
     expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_shared"])
   })
 
+  test("a session the runtime itself refuses is parked, not retried as an outage; another session named reopens", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    const refusedSession = () => Response.json({ error: { code: "session_event_stream_denied", message: "revoked", cause: "session_private" } }, { status: 403 })
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      const session = url.searchParams.get("sessionID")
+      if (!session) return refusedAtWorkspaceLevel()
+      return session === "ses_revoked" ? refusedSession() : quiet()
+    })
+    const [pathname, setPathname] = createSignal("/w/ws_shared/session/ses_revoked")
+    mountRoute(pathname)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(MAX_RECONNECT_DELAY_MS * 2)
+    expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_revoked"])
+    expect(errors).not.toHaveBeenCalled()
+    setPathname("/w/ws_shared/session/ses_other")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_revoked", "ses_other"])
+  })
+
   test("a 403 minted elsewhere on the path is retried unscoped, not narrowed to the session", async () => {
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)

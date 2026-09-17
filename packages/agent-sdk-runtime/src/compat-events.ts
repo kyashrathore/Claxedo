@@ -132,41 +132,16 @@ export function eventSessionId(event: CompatEvent): string | undefined {
   }
   switch (event.type) {
     case "message.updated":
-      return properties.info?.sessionID
+      return properties.info?.sessionID ?? properties.sessionID
     case "session.updated":
     case "session.deleted":
-      return properties.info?.id
-    case "message.part.updated":
-      return properties.sessionID ?? properties.part?.sessionID
-    case "message.part.delta":
-      return properties.sessionID
-    case "message.completed":
-    case "permission.asked":
-    case "permission.replied":
-    case "question.asked":
-    case "question.replied":
-    case "question.rejected":
-    case "todo.updated":
-    case "session.status":
-    case "session.diff":
-    case "session.compacted":
-    case "session.idle":
-    case "session.agent":
-    case "session.config":
-    case "session.usage":
-    case "runtime.diagnostic":
-    case "subagent.updated":
-    case "goal.updated":
-    case "goal.cleared":
-      return properties.sessionID
-    case "session.error":
-      return properties.sessionID
+      return properties.info?.id ?? properties.sessionID
     default:
-      // A type this list does not name is still the session's when its
-      // properties say so: the stream delivers a session-less frame to every
-      // admitted principal, so failing open here would ship a new event kind
-      // workspace-wide until someone added its case.
-      return properties.sessionID ?? properties.info?.sessionID ?? properties.part?.sessionID
+      // Every other kind names its session on `properties` (a part frame on
+      // the part too). The stream delivers a session-less frame to every
+      // admitted principal, so a kind this does not name is still read for
+      // one rather than shipped workspace-wide by omission.
+      return properties.sessionID ?? properties.part?.sessionID ?? properties.info?.sessionID
   }
 }
 

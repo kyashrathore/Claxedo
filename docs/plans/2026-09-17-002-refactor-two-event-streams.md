@@ -438,9 +438,11 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       brief above. Round 1 findings fixed; round 2 on the fixed tree;
       further rounds until a round returns zero findings. Each round's
       findings, fixes and the zero-finding report are recorded here with
-      the commit they reviewed. Progress: rounds 1–4 recorded under
-      "Execution → Review rounds" with their commits; no round has yet
-      returned zero findings — round 5 runs on the round-4 fixes.
+      the commit they reviewed. Progress: rounds 1–8 recorded under
+      "Execution → Review rounds" with their commits (each round's full
+      reports from round 7 on are kept under `docs/plans/reviews/`); no
+      round has yet returned zero findings — round 9 runs on the round-8
+      fixes.
 - [ ] One written account of the system exists and matches the code: the
       module comments on the two handlers, the two reader targets and
       `session-event-scope.ts` describe the same two streams, the same
@@ -458,9 +460,9 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
       `bun run test:architecture-ratchets` with the closure ceilings
       LOWERED to the measured values. Progress: `routes/events.test.ts`
-      (21), `event-delivery.test.ts` (25), local `shell/events.test.ts` (11)
+      (22), `event-delivery.test.ts` (25), local `shell/events.test.ts` (11)
       + `event-stream-response.test.ts`; reader suite
-      `claxedo-events-cursor.vitest.tsx` (14) + `claxedo-event-targets.test.ts`;
+      `claxedo-events-cursor.vitest.tsx` (15) + `claxedo-event-targets.test.ts`;
       ceilings lowered in `2c10b5aaa4` (app-local 1077, renderer 1120,
       self-hosted 124, desktop main 90) and unchanged since.
 
@@ -813,4 +815,59 @@ commit after this one):
   switch reconcile or the rail batch); the account bridge no longer returns
   a Response over a body an abort tore down during the handshake.
 
-**Round 8**: see below.
+**Round 8** (tree `856d7a8a81`, two reviewers; reports in
+`docs/plans/reviews/2026-09-17-002-round8-{server,client}.md`). Findings
+and fixes (the commit after this one):
+
+- MAJOR (server): the tombstone rebuild turned every retained frame the
+  authority could not decide (503, thrown, the startup deadline) into a
+  silent skip and left the ring contiguous, so a cursor reconnect while the
+  plane was still away resumed over the frame with no gap — round 7's
+  "reconnect reads the hole" held only when the plane was back (a replay).
+  The rebuilt ring is now holed on any such frame: the cursor reads as a
+  gap and the reader re-reads. Route test with the plane away across the
+  reconnect.
+- MINOR (server): two connections of one actor share a ring; seeding a new
+  connection's `authorizedSessions` from that ring turned a later 403 into
+  a disconnect → reconnect → seeded → disconnect churn. The seeding is gone
+  (renewal is what ends a revoked reader); the ≤ one-cadence replay of the
+  other connection's granted frames to a revoked one is stated on
+  `scopeKey`.
+- MINOR (server): the `signed-unattributed` principal arm was unreachable
+  (every relay host token and embedded identity carries an actor) and
+  `replayKey` read only there — both removed with the `unattributed:` scope
+  branch and the default policy's arm.
+- MINOR (server): a subagent child's `session.deleted` was scoped to the
+  child (its row is gone before publish, so the parent registry no longer
+  knew it): the cascade now publishes the parent id on the frame, the
+  handler reads it, and a child's deletion never drops the parent's grant.
+- MINOR (server, docs): the handler header, the README and the target
+  module state the two bounds — a connection lives at most one runtime
+  access token lifetime (the daemon's proxy mints ten-minute ones) and
+  reconnects by cursor into the actor-keyed scope; a self-hosted node's
+  embedded policy admits the unscoped arm by stamped role with no lease and
+  re-checks only session grants. The source docblock and the acceptance
+  test no longer say the scope is the access token's.
+- NIT (server): `eventSessionId`'s enumerated `session.*`/`message.updated`
+  cases fall through to `properties.sessionID`; the round-7 scratch tests
+  (unrunnable outside their scratchpad) are dropped from the repo.
+- MAJOR (client): the reader header's claim that a non-routed local
+  workspace's terminals were healed by the switch reconcile or the rail
+  batch was false — the reconcile only idled terminals absent from `/pty`.
+  `reconcileAgentStatuses` now reads, per workspace, the pty list and each
+  live terminal's recorded lifecycle (`/api/wr/hook/terminal-session`) and
+  applies it; a workspace whose host is away keeps its indicators instead
+  of every workspace's being cleared. What is still lost while not routed
+  — the completion sound, auto tab open/close — is stated on the header.
+- MINOR (client): the session-scoped arm's refusal is now named by the
+  runtime (`session_event_stream_denied`, cause carried) and the reader
+  parks the target on it — no backoff, no escalation, no "Reconnecting…" —
+  until the route names another session; the e2e mock speaks the same
+  code.
+- NIT (client): the mock's narrowing note names the suites that prove the
+  cursor drop; stale `context/claxedo-events.tsx` paths and line-number
+  history in `stream-sync-lifecycle.ts` and `workspace-connection.ts`
+  rewritten; the desktop's `sessionAuthority` comments say a hosted-plane
+  client registers regardless.
+
+**Round 9**: see below.

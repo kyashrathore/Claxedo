@@ -256,10 +256,12 @@ describe("wr/events — one stream per workspace runtime", () => {
   })
 
   test("a share grantee's session-scoped stream carries that session and its subagent children only", async () => {
+    const parents: Record<string, string> = { "child-of-shared": "shared" }
     const { app, hub, bus, ptys } = harness({
       policy: managedPolicy({ workspace: "deny", session: (id) => id === "shared" }),
-      parents: { "child-of-shared": "shared" },
+      parents,
       relayAuth,
+      renewalIntervalMs: 20,
     })
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events?sessionID=shared", { signal: controller.signal })
@@ -273,20 +275,29 @@ describe("wr/events — one stream per workspace runtime", () => {
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
-    controller.abort()
     expect(text).toContain("prt-child")
     expect(text).toContain("pty-shared")
     expect(text).toContain("shared-child")
     expect(text).toContain("prt-shared")
     expect(text).not.toContain("prt-other")
     expect(text).not.toContain("pty-x")
+    // The child's deletion is published after its row is gone, so the frame
+    // names its parent itself; it reaches the parent's grantee, and the
+    // parent's grant survives it — the next parent frame still arrives.
+    delete parents["child-of-shared"]
+    hub.publishGlobal(withDir(DIRECTORY, sessionDeleted("child-of-shared", DIRECTORY, "shared")))
+    expect(await readUntil(response, "session.deleted")).toContain("child-of-shared")
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    hub.publishGlobal(part("shared", "prt-shared-2", { status: "running" }))
+    expect(await readUntil(response, "prt-shared-2")).toContain("prt-shared-2")
+    controller.abort()
   })
 
-  test("a grantee is refused a session the authority does not grant, and is not told to reopen", async () => {
+  test("a grantee is refused a session the authority does not grant, by the runtime's own named refusal", async () => {
     const { app } = harness({ policy: managedPolicy({ workspace: "deny", session: () => false }), relayAuth })
     const response = await app.request("http://localhost/api/wr/events?sessionID=not-mine")
     expect(response.status).toBe(403)
-    expect(((await response.json()) as { error: { code: string } }).error.code).not.toBe("workspace_event_stream_denied")
+    expect(await response.json()).toMatchObject({ error: { code: "session_event_stream_denied", cause: "denied" } })
   })
 
   test("opens with a heartbeat carrying the cursor the connection resumes from; a cursor-less connection is served nothing from the ring", async () => {
@@ -414,6 +425,36 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(seen).not.toContain("draft_1")
     creator.abort()
     other.abort()
+  })
+
+  test("a reconnect while the authority is still away reads a gap, never a contiguous ring over the frame it could not decide", async () => {
+    let away = false
+    const policy = managedPolicy({ workspace: "allow" })
+    policy.authorizeHost = () => ({ allowed: true, lease: "ws", expiresAt: Date.now() + 60_000 })
+    policy.authorizeStream = async ({ sessionId }) =>
+      away && sessionId === "ses_b"
+        ? { allowed: false, status: 503, code: "authority_unavailable", message: "away" }
+        : { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 60_000 }
+    const { app, hub } = harness({ policy, relayAuth })
+    const first = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: first.signal })
+    hub.publishGlobal(part("ses_a", "prt-a", { status: "running" }))
+    const seen = await readUntil(response, "prt-a")
+    const cursor = frameId(seen, "prt-a")
+    expect(cursor).toBeTruthy()
+    // The plane goes away; a session first seen now cannot be decided, and
+    // its frame settles a state (a retained kind), so the stream ends.
+    away = true
+    hub.publishGlobal(part("ses_b", "prt-b", { status: "completed" }))
+    expect((await readers.get(response)!.read()).done).toBe(true)
+    first.abort()
+    // Still away: the reconnect's rebuilt ring cannot hold the frame either.
+    const second = new AbortController()
+    const reconnect = await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": cursor! }, signal: second.signal })
+    const replayed = await readUntil(reconnect, "runtime.sse_replay_gap")
+    second.abort()
+    expect(replayed).toContain("runtime.sse_replay_gap")
+    expect(replayed).not.toContain("prt-b")
   })
 
   test("deleting a session the reader held does not end the workspace arm at the next renewal", async () => {

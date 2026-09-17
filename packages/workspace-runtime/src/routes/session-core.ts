@@ -292,7 +292,7 @@ async function cascadeToChildren(
       await disposeRuntimeSessionDocuments(childSessionId)
       await childAdapter.deleteSession(binding)
       await after(opts.afterDeleteSession?.(c, directory, childSessionId))
-      opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "")))
+      opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
       continue
     }
     await childAdapter.abort?.(binding).catch(() => undefined)

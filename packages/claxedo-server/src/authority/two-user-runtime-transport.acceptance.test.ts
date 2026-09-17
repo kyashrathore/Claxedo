@@ -652,7 +652,7 @@ describe("two-user signed runtime transport acceptance", () => {
       ts: 2,
     })
     // Reconnecting through the relay presents a host token minted afresh for
-    // this request; the cursor resumes because the scope is the access token's.
+    // this request; the cursor resumes because the scope is the actor's.
     const bobReconnectRht = await remint(bobAuth, "jti_runtime_bob")
     expect(bobReconnectRht).not.toBe(bobRht)
     const bobReconnect = await connect(runtimeApp, bobReconnectRht, bobCursor)

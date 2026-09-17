@@ -39,8 +39,10 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  * desktop, a local page), through the daemon's proxy: to its embedded
  * runtime for a local workspace, and for a cloud or user-hosted workspace
  * through `localWorkspaceRelayProxy` (`/workspaces/<id>/api/wr/events`),
- * where the daemon mints the owner's runtime token itself and forwards the
- * cursor. The desktop's cloud wire is that proxy, not the browser relay.
+ * where the daemon mints the owner's runtime token itself, per request, and
+ * forwards the cursor. The desktop's cloud wire is that proxy, not the
+ * browser relay; its stream ends at each token's expiry (ten minutes) and
+ * the reconnect resumes by cursor, the runtime keying its ring by the actor.
  *
  * A `wr` target opens the stream unscoped: a principal the workspace admits
  * reads every session-less frame and every session the session authority
