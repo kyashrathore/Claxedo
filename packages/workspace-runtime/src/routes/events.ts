@@ -18,9 +18,19 @@ import {
 } from "../event-delivery"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 
+/**
+ * Frames that settle a state machine the client renders and that nothing
+ * later re-states: a lost one pins a turn to busy, a subagent to running, or
+ * a tool row to "Running" with the elapsed clock still ticking. The fanout
+ * sheds these last under a slow consumer and the replay buffer keeps them
+ * in its reserve.
+ */
 export function isTerminalRuntimeEvent(event: RuntimeEventEnvelope) {
   return event.payload.type === "finish" ||
     event.payload.type === "error" ||
+    event.payload.type === "tool-output" ||
+    event.payload.type === "tool-error" ||
+    (event.payload.type === "tool-status" && (event.payload.status === "completed" || event.payload.status === "failed")) ||
     (event.payload.type === "session-status" && (event.payload.status === "idle" || event.payload.status === "error")) ||
     (event.payload.type === "subagent-updated" && (
       event.payload.status === "completed" ||

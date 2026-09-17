@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "./sse"
 
-type TestEvent = { type: "delta" | "idle"; value: string }
+type TestEvent = { type: "delta" | "idle" | "tool-output" | "gap"; value: string }
 
 /** A heartbeat clock that schedules nothing and hands back a recognisable handle. */
 function fakeHeartbeatClock(onSchedule?: (fn: () => void) => void) {
@@ -149,6 +149,63 @@ describe("attachSseFanout", () => {
     expect(written).toEqual([{ type: "delta", value: "1" }, { type: "idle", value: "done" }, { type: "delta", value: "3" }])
 
     resolvers.shift()?.()
+    cleanup()
+  })
+
+  test("a shed frame raises one gap notice at the head of the queue, and a fresh one after it is written", async () => {
+    const clock = fakeHeartbeatClock()
+    let subscriber: ((event: TestEvent) => void) | undefined
+    const written: TestEvent[] = []
+    const resolvers: Array<() => void> = []
+    let notices = 0
+
+    const cleanup = attachSseFanout<TestEvent>({
+      subscribe(fn) {
+        subscriber = fn
+        return () => {
+          subscriber = undefined
+        }
+      },
+      write(event) {
+        written.push(event as TestEvent)
+        return new Promise<void>((resolve) => {
+          resolvers.push(resolve)
+        })
+      },
+      heartbeat: { type: "heartbeat" },
+      heartbeatMs: 1000,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      maxPending: 2,
+      isTerminal: (event) => event.type === "tool-output",
+      replayGap: () => ({ type: "gap", value: String(++notices) }),
+    })
+
+    subscriber?.({ type: "delta", value: "1" })
+    subscriber?.({ type: "delta", value: "2" })
+    subscriber?.({ type: "tool-output", value: "done" })
+    // Overflow: "2" is shed (never "done"), and the notice takes the head.
+    subscriber?.({ type: "delta", value: "3" })
+    // A second overflow while the notice is still queued raises no second one.
+    subscriber?.({ type: "delta", value: "4" })
+
+    expect(written).toEqual([{ type: "delta", value: "1" }])
+    expect(notices).toBe(1)
+
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written.at(-1)).toEqual({ type: "gap", value: "1" })
+
+    resolvers.shift()?.()
+    await Promise.resolve()
+    expect(written.at(-1)).toEqual({ type: "tool-output", value: "done" })
+
+    // The notice is out; the next shed frame is a new hole and gets its own notice.
+    subscriber?.({ type: "delta", value: "5" })
+    subscriber?.({ type: "delta", value: "6" })
+    expect(notices).toBe(2)
+
+    while (resolvers.length) resolvers.shift()?.()
     cleanup()
   })
 

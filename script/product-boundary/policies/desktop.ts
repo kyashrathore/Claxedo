@@ -462,8 +462,11 @@ export const desktopRendererUnsigned: Policy = {
   //
   // +1 module (2026-09-16): `features/tasks/ui/shared/title-field.tsx` — see
   // the app-local ledger. Re-measured, no headroom.
-  // Measured 1121 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1121, packages: 58 },
+  //
+  // +1 module (2026-09-17): `features/session/store/session-history-resync.ts`
+  // — see the app-local ledger. Re-measured, no headroom.
+  // Measured 1122 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1122, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -2,6 +2,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { applyRegisteredConversationEvent } from "../../../features/session/conversation/conversation-registry"
 import { isConversationEventType, type ConversationEventFrame } from "../../../features/session/conversation/conversation-event"
 import { applySessionStatusSseEvent } from "../../../features/session/store/session-status-dispatcher"
+import { requestSessionHistoryResync } from "../../../features/session/store/session-history-resync"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
 import { applyDirectorySessionCacheEvent } from "../../../features/session/data/sync/session-list-events"
@@ -83,6 +84,8 @@ export function routeDirectoryEvent(input: {
   applyDirectoryEventToShellQueries({ event: input.event, directory: input.directory })
   input.sinks.mark?.()
   applySessionStatusSseEvent({ event: input.event, directory: input.directory })
+  const gapSessionId = streamGapSessionId(input.event)
+  if (gapSessionId) requestSessionHistoryResync({ directory: input.directory, sessionID: gapSessionId, reason: "sse-gap" })
 
   const next = applyDirectorySessionCacheEvent({
     event: input.event,
@@ -136,6 +139,18 @@ function targetedQueryKeys(event: RoutableEvent) {
   }
 
   return []
+}
+
+/**
+ * The runtime stream's own notice that frames were lost between what the
+ * client holds and what it is now receiving (`runtime.sse_replay_gap`, raised
+ * for a rolled replay ring and for a shed frame alike).
+ */
+function streamGapSessionId(event: RoutableEvent) {
+  if (event.type !== "runtime.diagnostic") return undefined
+  const props = asRecord(event.properties)
+  if (props?.code !== "runtime.sse_replay_gap") return undefined
+  return sessionIdFromEvent(event)
 }
 
 function sessionIdFromEvent(event: RoutableEvent) {

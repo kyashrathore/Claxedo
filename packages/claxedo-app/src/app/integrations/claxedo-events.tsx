@@ -28,6 +28,7 @@ import {
   type ClaxedoEventStreamTarget,
 } from "./claxedo-event-targets"
 import { markWorkspaceReconnected, markWorkspaceReconnecting, workspaceSessionAuthority } from "../../features/workspaces/data/workspace-connection"
+import { requestSessionHistoryResync } from "../../features/session/store/session-history-resync"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
   streamSyncArmedTimer,
@@ -201,6 +202,10 @@ export function createClaxedoEventEmitter() {
   }
 }
 
+export function isStreamReplayGap(input: unknown) {
+  return asRecord(input)?.type === "stream.replay-gap"
+}
+
 function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartbeat" } {
   return !!input && typeof input === "object" && "type" in input && typeof input.type === "string"
 }
@@ -350,7 +355,17 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
   const emitEvent = (input: string, address: StreamFrameAddress, source: "central" | "workspace") => {
     try {
-      const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown, address)
+      const frame = JSON.parse(input) as unknown
+      // The producer's own notice that frames between this reader's cursor and
+      // the live position are gone — a rolled replay ring, or frames shed under
+      // a slow consumer. It is per-connection, not a bus event, so it has no
+      // handler; what it means is that every session this stream feeds has to
+      // be read again, and the stream stays open.
+      if (isStreamReplayGap(frame)) {
+        requestSessionHistoryResync({ reason: "sse-gap" })
+        return
+      }
+      const event = normalizeClaxedoStreamEvent(frame, address)
       if (!event || event.type === "heartbeat") return
       emitter.emit(event, source)
     } catch {

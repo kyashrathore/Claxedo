@@ -83,9 +83,61 @@ describe("conversation hydrator", () => {
     expect(snapshot.parts[final.id]?.map((item) => item.id)).toEqual(["part_final"])
   })
 
-  test("merges parts by id so streamed parts survive stale snapshots", () => {
-    expect(resolveStoredParts([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }], [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }]))
-      .toEqual([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }, { id: "part_3", text: "snapshot" }])
+  test("a non-canonical page keeps client-only parts, appends server-only ones, and hands the server row on for shared ids", () => {
+    expect(resolveStoredParts([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }], [{ id: "part_2", text: "server" }, { id: "part_3", text: "snapshot" }]))
+      .toEqual([{ id: "part_2", text: "server" }, { id: "part_1", text: "local" }, { id: "part_3", text: "snapshot" }])
+  })
+
+  test("a mid-turn page advances a running tool part the stream left behind", () => {
+    // The stuck-"Running" row: the client applied tool-start (running, empty
+    // input) and the stream lost tool-output. The unsettled message is not
+    // canonical for parts, so the page must still advance the part it holds.
+    registerSessionConversationChat(scope("ses_1"))
+    hydrateConversationPage({ directory: "/repo",
+      ...fragmentPage,
+      sessionID: "ses_1",
+      messages: [message("msg_1")],
+      parts: [{ id: "msg_1", parts: [toolPart("prt_tool", "msg_1", { status: "running", input: {}, time: { start: 1 } })] }],
+    })
+
+    hydrateConversationPage({ directory: "/repo",
+      ...canonicalPage,
+      sessionID: "ses_1",
+      rows: [{ info: message("msg_1"), parts: [toolPart("prt_tool", "msg_1", {
+        status: "completed", input: { command: "ls" }, output: "a\nb", title: "bash", metadata: {}, time: { start: 1, end: 2 },
+      })] }],
+    })
+
+    const stored = registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.[0]
+    expect(stored?.type === "tool" ? stored.state : undefined).toMatchObject({ status: "completed", input: { command: "ls" }, output: "a\nb" })
+  })
+
+  test("a mid-turn page never regresses a part the client has ahead of the server", () => {
+    registerSessionConversationChat(scope("ses_1"))
+    hydrateConversationPage({ directory: "/repo",
+      ...fragmentPage,
+      sessionID: "ses_1",
+      messages: [message("msg_1")],
+      parts: [{ id: "msg_1", parts: [
+        toolPart("prt_tool", "msg_1", { status: "completed", input: { command: "ls" }, output: "done", title: "bash", metadata: {}, time: { start: 1, end: 2 } }),
+        { ...part("prt_text", "msg_1"), text: "hello world" } as Part,
+      ] }],
+    })
+
+    hydrateConversationPage({ directory: "/repo",
+      ...canonicalPage,
+      sessionID: "ses_1",
+      rows: [{ info: message("msg_1"), parts: [
+        toolPart("prt_tool", "msg_1", { status: "running", input: { command: "ls" }, time: { start: 1 } }),
+        { ...part("prt_text", "msg_1"), text: "hello" } as Part,
+      ] }],
+    })
+
+    const parts = registeredConversationSnapshot("/repo", "ses_1").parts.msg_1 ?? []
+    const tool = parts.find((item) => item.id === "prt_tool")
+    const text = parts.find((item) => item.id === "prt_text")
+    expect(tool?.type === "tool" ? tool.state.status : undefined).toBe("completed")
+    expect(text?.type === "text" ? text.text : undefined).toBe("hello world")
   })
 
   test("hydrates fetched rows into the conversation registry", () => {
@@ -349,4 +401,8 @@ function message(id: string): Message {
 
 function part(id: string, messageID: string): Part {
   return { id, type: "text", sessionID: "ses_1", messageID, text: "hello" } as Part
+}
+
+function toolPart(id: string, messageID: string, state: Extract<Part, { type: "tool" }>["state"]): Part {
+  return { id, type: "tool", sessionID: "ses_1", messageID, callID: `call_${id}`, tool: "bash", state } as Part
 }

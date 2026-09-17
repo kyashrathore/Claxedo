@@ -117,6 +117,22 @@ describe("runtime event parent authorization", () => {
     }
   })
 
+  test("a tool's settlement is terminal; its start, input and progress are not", () => {
+    const envelope = (payload: RuntimeEventEnvelope["payload"]): RuntimeEventEnvelope => ({
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+      directory: "/workspace",
+      sessionId: "parent",
+      payload,
+    })
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-output", toolCallId: "call_1", output: "ok" }))).toBe(true)
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-error", toolCallId: "call_1", error: "boom" }))).toBe(true)
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-status", toolCallId: "call_1", status: "completed" }))).toBe(true)
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-status", toolCallId: "call_1", status: "failed" }))).toBe(true)
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-start", toolCallId: "call_1", toolName: "bash" }))).toBe(false)
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-input", toolCallId: "call_1", input: { command: "ls" } }))).toBe(false)
+    expect(isTerminalRuntimeEvent(envelope({ type: "tool-status", toolCallId: "call_1", status: "running" }))).toBe(false)
+  })
+
   test("filters replayed child events to the authorized parent", async () => {
     const { app, hub } = mount({})
     hub.publishRuntime(event("child-parent-a", "allowed-replay"))

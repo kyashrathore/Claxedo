@@ -551,6 +551,25 @@ describe("createGlobalEventsHandler — central /api/wr/events replay", () => {
     expect(text).toContain("ses_settled")
   })
 
+  test("a tool's settling part survives a burst of deltas; its start snapshot does not", async () => {
+    const { global, app } = buses()
+    global.publish({
+      directory: "/tmp/central",
+      payload: { type: "message.part.updated", properties: { part: { id: "prt_tool_start", type: "tool", state: { status: "running", input: {} } } } },
+    })
+    global.publish({
+      directory: "/tmp/central",
+      payload: { type: "message.part.updated", properties: { part: { id: "prt_tool_done", type: "tool", state: { status: "completed", input: { command: "ls" }, output: "ok" } } } },
+    })
+    for (let i = 1; i <= 300; i += 1) global.publish(part(`prt_${i}`))
+
+    const stream = await connect(app, "0")
+    const text = await stream.until((seen) => seen.includes("prt_tool_done"), "tool settlement was evicted")
+    stream.close()
+
+    expect(text).not.toContain("prt_tool_start")
+  })
+
   test("a harness session's session.lifecycle survives a burst of engine deltas", async () => {
     // The reason the terminal ring, not a bigger main ring, is the answer to
     // this bus's traffic profile. `session.lifecycle` "created" is the ONLY

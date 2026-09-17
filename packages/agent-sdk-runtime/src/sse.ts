@@ -153,17 +153,35 @@ export function attachSseFanout<T>(input: {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
   }
   const isHeartbeat = (event: Payload) => event === input.heartbeat
+  let gapNotice: Pending | undefined
   const dropIndex = () => {
     const heartbeatIndex = pending.findIndex((event) => isHeartbeat(event.payload))
     if (heartbeatIndex !== -1) return heartbeatIndex
     const nonTerminalIndex = pending.findIndex((event) => event.terminal !== true)
-    return nonTerminalIndex === -1 ? 0 : nonTerminalIndex
+    if (nonTerminalIndex !== -1) return nonTerminalIndex
+    return pending[0] === gapNotice && pending.length > 1 ? 1 : 0
+  }
+  // A shed frame is a hole in the reader's view that nothing downstream can
+  // detect: the ids it does receive stay monotonic. The hole is reported the
+  // same way a rolled replay ring is, so the reader repairs through one path.
+  // One notice stands at the head of the queue until it is written; every
+  // drop meanwhile is covered by it, and the next drop after it goes out
+  // raises a fresh one. The notice is not counted against the cap: shedding
+  // it to make room would hide the very loss it reports.
+  const noteDrop = (dropped: Pending) => {
+    input.onDrop?.(dropped.payload)
+    if (isHeartbeat(dropped.payload) || gapNotice || !input.replayGap) return
+    gapNotice = {
+      payload: input.replayGap({ lastEventId: dropped.id, throughId: input.replay?.lastId() }),
+      terminal: true,
+    }
+    pending.unshift(gapNotice)
   }
   const enqueue = (event: Pending) => {
     if (closed) return
-    if (pending.length >= maxPending) {
+    if (pending.length - (gapNotice ? 1 : 0) >= maxPending) {
       const dropped = pending.splice(dropIndex(), 1)[0]
-      if (dropped) input.onDrop?.(dropped.payload)
+      if (dropped) noteDrop(dropped)
     }
     pending.push(event)
     void flush()
@@ -175,6 +193,7 @@ export function attachSseFanout<T>(input: {
     try {
       while (!isClosed() && pending.length > 0) {
         const event = pending.shift()!
+        if (event === gapNotice) gapNotice = undefined
         await input.write(event.payload, { id: event.id })
       }
     } catch {

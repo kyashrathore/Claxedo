@@ -6,6 +6,7 @@ import {
 } from "@claxedo/agent-event-runtime/client-presentation"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { shellDataKeys } from "@/platform/sync/keys"
 import type { SubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import type { LiveSession } from "../global-sdk-event-fetch"
 import { type RuntimeEventEnvelope } from "./runtime-envelope"
@@ -118,11 +119,12 @@ export function resetRuntimeReplayGapState(input: {
     sessionId: input.envelope.sessionId,
     liveSession: input.liveSession,
   })
+  // History and todo are not query-observed reads: the session controller
+  // answers the `runtime.sse_replay_gap` diagnostic with `syncSessionHistory`
+  // and `syncSessionTodo` (`session-history-resync.ts`).
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.session.row(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.messages(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.todo(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.diff(input.baseUrl, directory, input.envelope.sessionId) }),
+    queryClient.invalidateQueries({ queryKey: shellDataKeys.sessionId(input.envelope.sessionId, "diff") }),
     queryClient.invalidateQueries({ queryKey: queryKeys.shell.sessionInventory(input.baseUrl) }),
     ...(input.goalScope ? [invalidateSessionGoalData(input.goalScope)] : []),
   ]).then(() => {})

@@ -20,6 +20,7 @@ import {
   readAcceptedPromptStatus,
   releaseAcceptedPromptRefresh,
 } from "./accepted-prompt-refresh"
+import { sessionHistoryResyncMatches, sessionHistoryResyncRequest } from "./session-history-resync"
 import {
   DEFAULT_SESSION_TRANSPORT_CAPABILITIES,
   fetchSessionByTransport,
@@ -810,6 +811,25 @@ export function createSessionController(input: {
       return true
     })
   }
+
+  // An event stream reported a hole: the frames behind it are gone and the
+  // stream is already live again, so the turn's state is repaired by reading
+  // it — the latest-turn window, where the hole is, and the todo list, which
+  // has no stream-independent read of its own. Each mounted controller answers
+  // once per request for its own session.
+  let handledHistoryResync = 0
+  createEffect(
+    on(
+      () => [sessionHistoryResyncRequest(), input.sessionID(), input.directory(), paneActive()] as const,
+      ([request, sessionID, directory, active]) => {
+        if (!active || !request || !sessionID || request.sequence <= handledHistoryResync) return
+        if (!sessionHistoryResyncMatches({ request, sessionID, directory })) return
+        handledHistoryResync = request.sequence
+        void syncSessionHistory(sessionID, { force: true, view: "latest-turn", mode: "replace-window", bypassQuiet: true, silent: true }).catch(() => undefined)
+        void syncSessionTodo(sessionID, { force: true }).catch(() => undefined)
+      },
+    ),
+  )
 
   const syncSessionCapabilities = async (sessionID: string, opts?: { force?: boolean; signal?: AbortSignal }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false

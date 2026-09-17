@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { normalizeClaxedoStreamEvent } from "./claxedo-events"
+import { isStreamReplayGap, normalizeClaxedoStreamEvent } from "./claxedo-events"
 
 
 describe("normalizeClaxedoStreamEvent", () => {
@@ -59,5 +59,14 @@ describe("normalizeClaxedoStreamEvent", () => {
       { type: "process.started", directory: "/Users/owner/repo", configId: "dev", ptyId: "pty_1" },
       asWorkspace,
     )).toEqual({ type: "process.started", directory: "workspace:ws_1", configId: "dev", ptyId: "pty_1" })
+  })
+})
+
+describe("isStreamReplayGap", () => {
+  test("recognises the producer's per-connection gap notice and nothing else", () => {
+    expect(isStreamReplayGap({ type: "stream.replay-gap", code: "runtime.sse_replay_gap", lastEventId: "12", throughId: "300" })).toBe(true)
+    expect(isStreamReplayGap({ type: "heartbeat" })).toBe(false)
+    expect(isStreamReplayGap({ directory: "/w", payload: { type: "message.part.updated", properties: {} } })).toBe(false)
+    expect(isStreamReplayGap("stream.replay-gap")).toBe(false)
   })
 })

@@ -3,7 +3,7 @@ import type {
   AgentContentPart as Part,
   AgentPresentationMessage as Message,
 } from "@claxedo/agent-runtime-contract"
-import { mergeStoredItems, normalizeMessageRows, reconcileStoredParts } from "../store/message-page"
+import { normalizeMessageRows, reconcileStoredParts } from "../store/message-page"
 import { hydrateRegisteredConversationSnapshot, registeredConversationSnapshot } from "./conversation-registry"
 import { isRuntimeAgentMessage } from "./agent-conversation-codec"
 import type { ConversationDirectory } from "./conversation-chat-client"
@@ -89,8 +89,25 @@ function reuseUnchanged<T extends { id: string }>(existing: T[] | undefined, nex
   return unchanged ? existing : resolved
 }
 
+/**
+ * A non-canonical page (an unsettled message, a `latest-surface` fragment)
+ * cannot prune, so membership is the union: client-only ids stay in place,
+ * server-only ids are appended. For an id both sides carry the SERVER row is
+ * handed on. Freshness is not decided here — `mergeChatPart` compares the row
+ * against what the client streamed (tool-call rank, text length) and keeps
+ * the client's when it is ahead. Keeping the client's row at this layer
+ * instead meant a `completed` the stream lost could never land: the stale
+ * `running` was the only version the merge ever saw.
+ */
 export function resolveStoredParts<T extends { id: string }>(existing: T[] | undefined, next: T[]) {
-  return mergeStoredItems(existing, next)
+  if (!existing) return [...next]
+  const incoming = new Map(next.map((item) => [item.id, item] as const))
+  const resolved = existing.map((item) => incoming.get(item.id) ?? item)
+  const held = new Set(existing.map((item) => item.id))
+  for (const item of next) {
+    if (!held.has(item.id)) resolved.push(item)
+  }
+  return resolved
 }
 
 /**
@@ -110,15 +127,15 @@ export function resolveStoredParts<T extends { id: string }>(existing: T[] | und
  * That last condition is the same boundary `agent-conversation.ts`'s
  * `settledAssistantMessage` draws for `mergeChatMessage`. This is deliberately
  * the same rule applied one layer earlier: `mergeChatMessage` can only judge
- * the part list it is handed, and by then the union below has already folded
- * the stale id into it, so its prune has nothing left to drop.
+ * the part list it is handed, and by then `resolveStoredParts` has already
+ * folded the stale id into it, so its prune has nothing left to drop.
  *
  * The settled condition is defense in depth rather than the last line of
- * defense — `mergeChatParts` would currently re-add a live part this layer
- * dropped, so relaxing it does not visibly lose text TODAY. It is kept, and
- * tested directly here, because "don't prune against a payload that cannot
- * see the whole message yet" is correct independent of whether a downstream
- * layer happens to compensate.
+ * defense — `mergeChatParts` re-adds a live part this layer dropped, so
+ * relaxing it does not visibly lose text TODAY. It is kept, and tested
+ * directly here, because "don't prune against a payload that cannot see the
+ * whole message yet" is correct independent of whether a downstream layer
+ * happens to compensate.
  */
 export function canonicalPartMessageIds(input: { rows?: unknown; partCompleteness: ConversationPageCompleteness }, messages: Message[]) {
   if (input.rows === undefined || input.partCompleteness === "fragment") return undefined

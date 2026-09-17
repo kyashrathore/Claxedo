@@ -21,6 +21,7 @@ import {
   runtimeReplayGap,
   workspaceEventTransport,
   sseJsonStream,
+  isRuntimeStreamHeartbeat,
 } from "@/app/providers/global-sdk/provider"
 import {
   runtimeContractMismatch,
@@ -29,6 +30,7 @@ import {
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionGoalKey, type SessionGoalData } from "@/features/session/store/session-goal-query"
 import { requestUrl } from "@/lib/url"
 
@@ -37,6 +39,11 @@ afterEach(() => {
 })
 
 describe("global sdk event fetch", () => {
+  test("the producer's heartbeat frame is recognised apart from envelopes", () => {
+    expect(isRuntimeStreamHeartbeat({ type: "heartbeat" })).toBe(true)
+    expect(isRuntimeStreamHeartbeat({ contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION, directory: "/w", sessionId: "s", payload: { type: "text-delta", delta: "x" } })).toBe(false)
+  })
+
   test("aborting a retargeted stream discards buffered frames and their cursors", async () => {
     const controller = new AbortController()
     const cursors: string[] = []
@@ -338,7 +345,7 @@ describe("global sdk event fetch", () => {
       status: "running",
     })
     const rowKey = queryKeys.session.row("http://claxedo.test", "/repo/main", "runtime-session-1")
-    const messagesKey = queryKeys.session.messages("http://claxedo.test", "/repo/main", "runtime-session-1")
+    const diffKey = shellDataKeys.sessionId("runtime-session-1", "diff")
     const goalScope = {
       sessionID: "runtime-session-1",
       directory: "/repo/main",
@@ -346,7 +353,7 @@ describe("global sdk event fetch", () => {
     }
     const goalKey = sessionGoalKey(goalScope)
     queryClient.setQueryData(rowKey, { id: "runtime-session-1" })
-    queryClient.setQueryData(messagesKey, [{ info: { id: "assistant-1" } }])
+    queryClient.setQueryData(diffKey, [])
     queryClient.setQueryData<SessionGoalData>(goalKey, {
       capabilities: { implemented: true, available: true, actions: [], recovery: "reconcile", optionalFields: [] },
       goal: null,
@@ -370,7 +377,7 @@ describe("global sdk event fetch", () => {
 
     expect(subagents.list()).toEqual([])
     expect(queryClient.getQueryState(rowKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(messagesKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(diffKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(goalKey)?.isInvalidated).toBe(true)
   })
 

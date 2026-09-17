@@ -69,9 +69,23 @@ export function connectedFrame(): ConnectedFrame {
  */
 function isTerminalCentralFrame(frame: CentralFrame) {
   if (!("type" in frame)) {
-    return frame.payload.type === "session.idle" || frame.payload.type === "session.error"
+    return frame.payload.type === "session.idle" || frame.payload.type === "session.error" || settlesToolPart(frame.payload)
   }
   return frame.type === "stream.replay-gap" ? false : isTerminalClaxedoEvent(frame)
+}
+
+/**
+ * A `message.part.updated` that closes a tool. Nothing re-states it before the
+ * turn settles: a client that misses it keeps rendering the tool as running,
+ * with its clock ticking, for the rest of the turn. The part's earlier
+ * snapshots (start, input) are chatty and stay evictable.
+ */
+function settlesToolPart(payload: NormalizedGlobalEvent["payload"]) {
+  if (payload.type !== "message.part.updated") return false
+  const part = record(payload.properties.part)
+  if (part?.type !== "tool") return false
+  const status = record(part.state)?.status
+  return status === "completed" || status === "error"
 }
 
 function normalizeGlobalEvent(event: GlobalEvent): NormalizedGlobalEvent {

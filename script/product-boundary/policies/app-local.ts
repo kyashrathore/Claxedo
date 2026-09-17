@@ -443,8 +443,13 @@ export const appLocal: Policy = {
   // +1 module (2026-09-16): `features/tasks/ui/shared/title-field.tsx` — the
   // Tasks title textarea that wraps a long title and refuses line breaks,
   // reached from the task detail page and the create form. No new package edge.
-  // Measured 1078 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1078, packages: 58 },
+  //
+  // +1 module (2026-09-17): `features/session/store/session-history-resync.ts`
+  // — the request an event stream's gap notice raises so the session
+  // controller re-reads history and todo; raised by `claxedo-events.tsx` and
+  // `session-events/event-router.ts`. No new package edge.
+  // Measured 1079 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1079, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

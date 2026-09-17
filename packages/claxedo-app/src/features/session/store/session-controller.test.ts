@@ -14,7 +14,6 @@ import {
   firstFoldSessionPrefetch,
   removeDirectorySessionCacheRow,
   resolveStoredMessages,
-  resolveStoredParts,
   sessionHistoryKey,
   shouldStartActiveSessionStatusPolling,
   shouldHydrateSession,
@@ -1457,20 +1456,6 @@ describe("session controller helpers", () => {
 
     expect(order).toEqual(["messages"])
     expect(result.session).toBeUndefined()
-  })
-
-  test("resolveStoredParts keeps existing part ids when snapshots are stale", () => {
-    type TestPart = Pick<Part, "id"> & { text: string }
-    expect(
-      resolveStoredParts<TestPart>(
-        [{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }],
-        [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }],
-      ),
-    ).toEqual([
-      { id: "part_2", text: "streamed" },
-      { id: "part_1", text: "local" },
-      { id: "part_3", text: "snapshot" },
-    ])
   })
 
   test("normalizeMessageRows filters control parts before controller and sync storage", () => {

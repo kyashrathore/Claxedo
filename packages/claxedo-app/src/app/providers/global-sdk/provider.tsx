@@ -24,6 +24,7 @@ import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-
 import { openWorkspaceRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
+import { asRecord } from "@/lib/record"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
@@ -67,6 +68,10 @@ export {
   type GlobalSdkEvent,
 } from "./runtime-event-projection"
 type Event = GlobalSdkEvent
+
+export function isRuntimeStreamHeartbeat(frame: unknown) {
+  return asRecord(frame)?.type === "heartbeat"
+}
 
 export async function* sseJsonStream(response: Response, signal: AbortSignal, onEventId?: (id: string) => void): AsyncGenerator {
   if (!response.ok) throw new Error(`runtime event stream failed: ${response.status}`)
@@ -319,6 +324,14 @@ const globalSDKContextInput = {
             for await (const item of sseJsonStream(response, runtimeAttempt.signal, (id) => {
               lastRuntimeEventId = id
             })) {
+              // The producer's heartbeat is what keeps a quiet stream alive under
+              // the stall budget; a tool that runs longer than the budget emits no
+              // envelope of its own, so without this the watchdog reconnects in
+              // the middle of every long tool.
+              if (isRuntimeStreamHeartbeat(item)) {
+                heartbeat.reset()
+                continue
+              }
               const envelope = runtimeEnvelope(item)
               if (!envelope) {
                 reportedContractVersion = reportRuntimeContractMismatch({
@@ -345,6 +358,13 @@ const globalSDKContextInput = {
               heartbeat.reset()
               becameReady = true
               streamErrorLogged = false
+              // The route writes the notice and keeps this connection live from
+              // its `throughId`; every later frame carries a fresh id. The hole
+              // is behind the notice, so it is closed by re-reading state — the
+              // diagnostic below is what the session's owner answers with a
+              // history read — not by reconnecting: an abort here would open a
+              // second hole between it and the next attempt, and a cursor-less
+              // attempt is served nothing retained.
               if (runtimeReplayGap(envelope)) {
                 if (session?.sessionID && session.sessionID !== "route") {
                   enqueue(envelope.directory, {
@@ -368,9 +388,7 @@ const globalSDKContextInput = {
                     signedControlPlane: signedEventAccess(),
                   }),
                 })
-                lastRuntimeEventId = undefined
-                runtimeAttempt.abort()
-                break
+                continue
               }
               if (envelope.payload.type === "goal-updated" || envelope.payload.type === "goal-cleared") {
                 applyLiveSessionGoalEvent({
