@@ -17,6 +17,7 @@ import {
   type CredentialCheckOutcome,
 } from "@claxedo/server-core/credentials/operations/check"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
+import { SdkCredentialSyncError } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
@@ -279,6 +280,21 @@ export function CredentialRoutes(
     }
     await next()
     return undefined
+  })
+  // Every mutation here ends by carrying the registry into the running engine.
+  // A store write that went through and an engine that did not take it is one
+  // named answer, whichever route it was: as a bare 500 it reads as the write
+  // having failed, and the caller retries a change the store already holds.
+  app.use(async (c, next) => {
+    await next()
+    if (c.error instanceof SdkCredentialSyncError) {
+      const detail = credentialFailureDetail(c.error.cause)
+      log.error("Credential change stored; the running engine did not take it", { path: c.req.path, ...detail })
+      c.res = c.json(
+        errorBody("engine_credential_sync_failed", `Stored, but the running engine could not be updated: ${detail.message}`, { detail }),
+        500,
+      )
+    }
   })
   return app
     .get("/", async (c) => {

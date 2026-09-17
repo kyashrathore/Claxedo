@@ -10,6 +10,7 @@ import { localControlPlaneCredentials } from "../machine-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
+import { SdkCredentialSyncError } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 
@@ -1208,6 +1209,35 @@ describe("choosing which account a provider runs on", () => {
     expect(ineligible.status).toBe(409)
     await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
     expect(registry.credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
+  })
+
+  test("a switch the engine did not take is answered by name, with the store already moved", async () => {
+    const first = await account("engine-sync", "acc_first")
+    const second = await account("engine-sync", "acc_second")
+    const failing = CredentialRoutes({
+      ...localControlPlaneCredentials(),
+      setActiveCredentials: async (ids, org) => {
+        registry.setActiveCredentials(ids, org)
+        throw new SdkCredentialSyncError(new Error("OpenCode returned an invalid integration list"))
+      },
+    }, {})
+
+    const response = await failing.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [second.id] }),
+    })
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "engine_credential_sync_failed",
+        message: "Stored, but the running engine could not be updated: OpenCode returned an invalid integration list",
+        details: { detail: { name: "Error", message: "OpenCode returned an invalid integration list" } },
+      },
+    })
+    expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
+    expect(registry.credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("choosing this computer's login leaves the provider with no marked account", async () => {

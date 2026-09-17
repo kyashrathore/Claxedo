@@ -161,7 +161,31 @@ export async function syncCredentialsToSdk(
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<SdkCredentialSyncResult> {
   if (!openCodeSdkRuntimeLoaded()) return { bound: [], removed: [] }
-  return reconcileCredentialsIntoSdk(org)
+  try {
+    return await reconcileCredentialsIntoSdk(org)
+  } catch (error: unknown) {
+    log.error("OpenCode SDK credential sync failed", {
+      org,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
+    })
+    throw new SdkCredentialSyncError(error)
+  }
+}
+
+/**
+ * The registry write went through and the running engine did not take it, so
+ * the next embedded turn runs on the account just replaced. A caller answers
+ * this by name: folded into a bare 500 it reads as the switch having failed,
+ * which the store says it did not.
+ */
+export class SdkCredentialSyncError extends Error {
+  override readonly cause: unknown
+  constructor(cause: unknown) {
+    super(cause instanceof Error && cause.message ? cause.message : String(cause))
+    this.name = "SdkCredentialSyncError"
+    this.cause = cause
+  }
 }
 
 /**
