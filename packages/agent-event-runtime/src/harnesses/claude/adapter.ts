@@ -20,6 +20,7 @@ import { toolDisplayFromInput } from "../tool-display"
 import { imageAttachment } from "../tool-attachments"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, pathFields, text } from "../../value"
+import { parseJsonRecord, readPartialJsonRecord } from "./partial-json"
 import { isClaudeQuestionDecline } from "./question-decline"
 import { applyClaudeTaskResult, type ClaudeTrackedTask } from "./task-tracking"
 import type { ClaudeTaskLedger, ClaudeTaskRecord } from "./task-ledger"
@@ -32,6 +33,8 @@ type ClaudeBlockState = {
   toolName?: string
   input?: Record<string, unknown>
   partialInputJson?: string
+  /** The last streamed-input event's payload, so an unchanged read is not re-sent. */
+  streamedInputJson?: string
 }
 
 export type ClaudeRequestUsage = {
@@ -152,14 +155,6 @@ function toolInput(value: unknown) {
 
 function isTaskTool(toolName: string) {
   return isSubagentSpawnToolName(toolName) || isHostSubagentTool(toolName)
-}
-
-function parseJsonRecord(value: string) {
-  try {
-    return asRecord(JSON.parse(value))
-  } catch {
-    return undefined
-  }
 }
 
 function toolKind(toolName: string) {
@@ -979,17 +974,27 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                   if (!block || block.type !== "tool" || !partial) return []
                   const partialInputJson = `${block.partialInputJson ?? ""}${partial}`
                   const parsedInput = parseJsonRecord(partialInputJson)
+                  // Only a complete parse becomes the block's input: the result
+                  // handlers read it back for display and task tracking. What the
+                  // partial document already says still streams to the transcript,
+                  // so a command reads as it is typed instead of "Running command".
+                  const streamedInput = parsedInput ?? readPartialJsonRecord(partialInputJson)
+                  const streamedInputJson = streamedInput && Object.keys(streamedInput).length > 0
+                    ? JSON.stringify(streamedInput)
+                    : undefined
+                  const emit = streamedInput && streamedInputJson && streamedInputJson !== block.streamedInputJson
                   const nextBlock = {
                     ...block,
                     partialInputJson,
                     ...(parsedInput ? { input: parsedInput } : {}),
+                    ...(emit ? { streamedInputJson } : {}),
                   }
                   return {
                     state: {
                       ...state,
                       blocksByIndex: { ...state.blocksByIndex, [String(stream.index)]: nextBlock },
                     },
-                    events: parsedInput ? toolInputEvents(nextBlock, parsedInput) : [],
+                    events: emit ? toolInputEvents(nextBlock, streamedInput) : [],
                   }
                 }
                 case "citations_delta":

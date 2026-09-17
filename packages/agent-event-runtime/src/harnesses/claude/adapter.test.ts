@@ -321,6 +321,26 @@ describe("claudeSdkAdapter", () => {
     }])
   })
 
+  test("a command streams to the transcript as it is typed, and the complete input replaces it", () => {
+    const agent = runtime()
+    const delta = (partial_json: string) =>
+      agent.ingest({
+        source: "claude.sdk.message",
+        payload: { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json } } },
+      }).events
+    agent.ingest({
+      source: "claude.sdk.message",
+      payload: { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tool-bash-1", name: "Bash", input: {} } } },
+    })
+
+    expect(delta('{"comm')).toEqual([])
+    expect(delta('and":"git sta')).toMatchObject([{ type: "tool-input", toolCallId: "tool-bash-1", input: { command: "git sta" } }])
+    expect(delta('tus --short"')).toMatchObject([{ type: "tool-input", input: { command: "git status --short" } }])
+    expect(delta(',"descr')).toEqual([])
+    expect(delta('iption":"Show ')).toMatchObject([{ type: "tool-input", input: { command: "git status --short", description: "Show " } }])
+    expect(delta('changes"}')).toMatchObject([{ type: "tool-input", input: { command: "git status --short", description: "Show changes" } }])
+  })
+
   test("projects native task results and preserves IDs across runtime restoration", () => {
     let agent = runtime()
     const call = (id: string, name: string, input: unknown, result: unknown, isError = false) => {
