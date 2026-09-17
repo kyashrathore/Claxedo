@@ -226,10 +226,11 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("private-terminal-bytes")
   })
 
-  test("a principal without workspace access is refused the unscoped stream", async () => {
+  test("a principal without workspace access is refused the unscoped stream, by a code only that refusal carries", async () => {
     const { app } = harness({ policy: managedPolicy({ workspace: "deny" }), relayAuth })
     const response = await app.request("http://localhost/api/wr/events")
     expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: { code: "workspace_event_stream_denied", message: "denied", cause: "denied" } })
   })
 
   test("a runtime whose authority cannot answer for the workspace still requires a session", async () => {
@@ -266,10 +267,11 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("pty-x")
   })
 
-  test("a grantee is refused a session the authority does not grant", async () => {
+  test("a grantee is refused a session the authority does not grant, and is not told to reopen", async () => {
     const { app } = harness({ policy: managedPolicy({ workspace: "deny", session: () => false }), relayAuth })
     const response = await app.request("http://localhost/api/wr/events?sessionID=not-mine")
     expect(response.status).toBe(403)
+    expect(((await response.json()) as { error: { code: string } }).error.code).not.toBe("workspace_event_stream_denied")
   })
 
   test("opens with a heartbeat carrying the cursor the connection resumes from; a cursor-less connection is served nothing from the ring", async () => {

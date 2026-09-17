@@ -368,6 +368,11 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
 
 
 
+async function workspaceStreamDenied(res: Response) {
+  const body = await res.clone().json().catch(() => undefined) as { error?: { code?: string } } | undefined
+  return body?.error?.code === "workspace_event_stream_denied"
+}
+
 export function ClaxedoEventsProvider(props: ParentProps<{
   pathname: () => string
   serverUrl: () => string
@@ -536,9 +541,13 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         headers,
         signal: state.abort.signal,
       }, { accountState, scope: state.scope }).then(async (res) => {
-        if (res.status === 403 && target.kind === "wr" && target.sessionID && state.scope === "workspace") {
+        // Only the runtime's own refusal of the unscoped arm narrows the
+        // stream: a 403 minted elsewhere on the path (the relay while its
+        // host is away, the token mint) is an outage to retry, not a share
+        // grantee's cue to read one session.
+        if (res.status === 403 && target.kind === "wr" && target.sessionID && state.scope === "workspace"
+          && await workspaceStreamDenied(res)) {
           state.scope = "session"
-          await res.body?.cancel().catch(() => undefined)
           state.abort = null
           connect()
           return

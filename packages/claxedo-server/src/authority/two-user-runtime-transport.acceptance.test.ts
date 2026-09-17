@@ -371,17 +371,10 @@ describe("two-user signed runtime transport acceptance", () => {
       },
     }))
     const profile = async (auth: SignedAuth) => await authority.usersMe(auth) as Identity
-    const rht = async (auth: SignedAuth, jti: string, role: "editor" | "owner" = "editor") => {
+    // The relay mints a fresh host token per request from one recorded
+    // access token; `remint` is that per-request mint.
+    const remint = async (auth: SignedAuth, jti: string, role: "editor" | "owner" = "editor") => {
       const identity = await profile(auth)
-      await authority.recordRuntimeAccessToken(auth, {
-        jti,
-        workspaceId: "ws_runtime_private",
-        hostId: "host_runtime_private",
-        actorId: identity.actor_id,
-        actorKind: identity.actor_kind,
-        role,
-        expiresAt: Date.now() + 60_000,
-      })
       return await mintRelayHostToken({
         principalKind: "user",
         parentJti: jti,
@@ -397,6 +390,19 @@ describe("two-user signed runtime transport acceptance", () => {
         access: "cloud",
         backing: "cloud-vm",
       }, key.privateKey, "EdDSA")
+    }
+    const rht = async (auth: SignedAuth, jti: string, role: "editor" | "owner" = "editor") => {
+      const identity = await profile(auth)
+      await authority.recordRuntimeAccessToken(auth, {
+        jti,
+        workspaceId: "ws_runtime_private",
+        hostId: "host_runtime_private",
+        actorId: identity.actor_id,
+        actorKind: identity.actor_kind,
+        role,
+        expiresAt: Date.now() + 60_000,
+      })
+      return await remint(auth, jti, role)
     }
     const [aliceRht, bobRht, caseyRht] = await Promise.all([
       rht(aliceAuth, "jti_runtime_alice", "owner"),
@@ -637,7 +643,11 @@ describe("two-user signed runtime transport acceptance", () => {
       info: { id: "ses_runtime_private", title: "during-reconnect-gap" },
       ts: 2,
     })
-    const bobReconnect = await connect(runtimeApp, bobRht, bobCursor)
+    // Reconnecting through the relay presents a host token minted afresh for
+    // this request; the cursor resumes because the scope is the access token's.
+    const bobReconnectRht = await remint(bobAuth, "jti_runtime_bob")
+    expect(bobReconnectRht).not.toBe(bobRht)
+    const bobReconnect = await connect(runtimeApp, bobReconnectRht, bobCursor)
     const replay = await bobReconnect.until((frames) => frames.some((frame) => control(frame)?.info?.title === "during-reconnect-gap"))
     expect(replay.some((frame) => control(frame)?.sessionID === "ses_runtime_private")).toBe(true)
 

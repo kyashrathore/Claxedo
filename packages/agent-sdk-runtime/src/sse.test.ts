@@ -365,6 +365,15 @@ describe("createSseReplayBuffer", () => {
     expect(replay.hasGap(undefined)).toBe(false)
   })
 
+  test("a cursor past the ring's head is a gap: it was issued by a ring this process never held", () => {
+    const replay = createSseReplayBuffer<TestEvent>()
+    expect(replay.hasGap("57")).toBe(true)
+    replay.push({ type: "delta", value: "1" })
+    expect(replay.hasGap("1")).toBe(false)
+    expect(replay.hasGap("2")).toBe(true)
+    expect(replay.replayAfter("57")).toEqual([])
+  })
+
   test("continues a reconstructed principal sequence after its last issued cursor", () => {
     const replay = createSseReplayBuffer<TestEvent>({ initialSequence: 7 })
     replay.push({ type: "delta", value: "after reconnect" })

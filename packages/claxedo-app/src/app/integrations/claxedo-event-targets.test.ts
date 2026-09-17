@@ -172,6 +172,8 @@ describe("claxedoEventStreamTargets", () => {
     }
     expect(eventStreamTargetKey({ ...base, sessionID: "session-a" }))
       .toBe(eventStreamTargetKey({ ...base, sessionID: "session-b" }))
+    expect(eventStreamTargetKey({ ...base, directory: "ws_cloud" }))
+      .toBe(eventStreamTargetKey({ ...base, directory: "workspace:ws_cloud" }))
   })
 
   test("replaces the cp stream when account authority changes", () => {

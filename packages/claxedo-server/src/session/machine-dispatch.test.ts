@@ -154,16 +154,21 @@ describe("machine channel event ordering", () => {
     const admitted = new Promise<void>((resolve) => {
       admit = resolve
     })
+    let seq = 0
     mock.request.mockImplementation(async (url: string) => {
-      if (url.startsWith("/event")) return new Response(stream)
+      if (url.startsWith("/api/wr/events?sessionID=")) {
+        controller.enqueue(new TextEncoder().encode(`id: 0\r\ndata: {"type":"heartbeat"}\r\n\r\n`))
+        return new Response(stream)
+      }
       admit()
       return Response.json({ ok: true })
     })
     return {
       admitted,
       close: () => controller.close(),
+      // The wire shape of `wr/events`: a bootstrap heartbeat, then `{directory, payload}` frames with ids.
       emit: (event: unknown) =>
-        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ payload: event })}\r\n\r\n`)),
+        controller.enqueue(new TextEncoder().encode(`id: ${++seq}\r\ndata: ${JSON.stringify({ directory: "/workspace", payload: event })}\r\n\r\n`)),
     }
   }
   const event = (type: string, properties: Record<string, unknown> = {}) => ({

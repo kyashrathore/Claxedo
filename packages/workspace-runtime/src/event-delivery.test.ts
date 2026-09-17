@@ -187,6 +187,37 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
+  test("a connection that attaches after a frame was published, while its decision is pending, is decided for it", async () => {
+    const bus = createBus<Event>()
+    const release: Array<() => void> = []
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => new Promise<"deliver">((resolve) => { release.push(() => resolve("deliver")) }),
+      sessionId: (event) => event.sessionId,
+    })
+    const credential = "Bearer rat_shared"
+    const first = source.open({ ...participant("connection_1"), credential })
+    const seenByFirst: string[] = []
+    first.subscribe((event) => { seenByFirst.push(event.value) })
+    // Published before the second connection even opens, so its catch-up over
+    // the retained ring does not carry the frame; only the pending decision
+    // can bring it to the second connection.
+    bus.publish({ sessionId: "ses_a", value: "pending" })
+    const second = source.open({ ...participant("connection_2"), credential })
+    const seenBySecond: string[] = []
+    second.subscribe((event) => { seenBySecond.push(event.value) })
+    for (let round = 0; round < 8; round += 1) {
+      while (release.length > 0) release.shift()!()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    await source.flush()
+
+    expect(seenByFirst).toEqual(["pending"])
+    expect(seenBySecond).toEqual(["pending"])
+    expect(second.replay.replayAfter(undefined).map((entry) => `${entry.id}:${entry.payload.value}`)).toEqual(["1:pending"])
+    source.close()
+  })
+
   test("a cursor from a scope this process never held is a gap; a live scope's own cursor resumes", async () => {
     const bus = createBus<Event>()
     const source = createIdentityAwareEventSource<Event>({

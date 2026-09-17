@@ -173,6 +173,40 @@ describe("cp/events — the control plane's notice stream", () => {
     expect(text).toContain('"name":"kept"')
   })
 
+  test("a frame whose visibility is pending when a second connection attaches reaches both once, under one id", async () => {
+    const bus = createBus<ControlPlaneEvent>()
+    const release: Array<() => void> = []
+    const handler = createControlPlaneEventsHandler(bus, {
+      resolveSubscription: () => ({
+        identity: { mode: "verified", connectionId: crypto.randomUUID(), actorId: "user_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", role: "editor" },
+        visible: () => new Promise<boolean>((resolve) => { release.push(() => resolve(true)) }),
+      }),
+    })
+    const app = mount(handler)
+    const a = await connect(app)
+    await a.until(opened, "a did not open")
+    bus.publish(worktree("pending"))
+    const b = await connect(app)
+    await b.until(opened, "b did not open")
+    for (let round = 0; round < 8; round += 1) {
+      while (release.length > 0) release.shift()!()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    bus.publish(worktree("after"))
+    while (release.length > 0) release.shift()!()
+    const aText = await a.until((seen) => seen.includes('"name":"after"'), "a missed the later frame")
+    const bText = await b.until((seen) => seen.includes('"name":"after"'), "b missed the later frame")
+    a.close()
+    b.close()
+
+    const names = (text: string) => frames(text).flatMap((frame) => {
+      const match = /"name":"([a-z]+)"/.exec(frame.data ?? "")
+      return match ? [`${frame.id}:${match[1]}`] : []
+    })
+    expect(names(aText)).toEqual(["1:pending", "2:after"])
+    expect(names(bText)).toEqual(["1:pending", "2:after"])
+  })
+
   test("a signed subscriber is delivered only the frames visible to it", async () => {
     const bus = createBus<ControlPlaneEvent>()
     const handler = createControlPlaneEventsHandler(bus, {

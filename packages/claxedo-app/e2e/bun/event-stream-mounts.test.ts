@@ -28,7 +28,10 @@ function workspaceStreamPaths() {
   const mounts = repoFile("../../../workspace-runtime/src/workspace/core.ts")
   const manifest = repoFile("../../../workspace-runtime/src/routes/manifest.ts")
   const prefix = manifest.match(/WorkspaceRuntimeApiPrefix = "([^"]+)"/)?.[1]
-  const keys = [...mounts.matchAll(/app\.get\(WorkspaceRuntimeRoutes\.(\w+),\s*workspaceEventsHandler\(/g)].map((match) => match[1])
+  const handlers = [...mounts.matchAll(/const (\w+) = workspaceEventsHandler\(/g)].map((match) => match[1])
+  const keys = [...mounts.matchAll(/app\.get\(WorkspaceRuntimeRoutes\.(\w+),\s*(\w+)\)/g)]
+    .filter((match) => handlers.includes(match[2]!))
+    .map((match) => match[1])
   return keys.map((key) => {
     const suffix = manifest.match(new RegExp(`\\b${key}: \`\\$\\{WorkspaceRuntimeApiPrefix\\}([^\`]*)\``))?.[1]
     return `${prefix}${suffix}`

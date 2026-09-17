@@ -92,6 +92,8 @@ export function createControlPlaneEventsHandler(
     subscription: ControlPlaneEventSubscription
     push: (frame: ControlPlaneFrame) => unknown
     close: () => void
+    /** Frames this connection was pushed; a frame decided twice for the scope is pushed once. */
+    delivered: WeakSet<ControlPlaneFrame>
   }
   type Scope = {
     key: string
@@ -134,15 +136,27 @@ export function createControlPlaneEventsHandler(
     decisions: Array<{ connection: Connection; visible: boolean }>,
   ) => {
     let visible = false
+    const decided = new Set<Connection>()
+    const deliveries: Connection[] = []
     for (const decision of decisions) {
+      decided.add(decision.connection)
       if (!scope.connections.has(decision.connection) || !decision.visible) continue
       visible = true
-      void Promise.resolve(decision.connection.push(frame)).catch(() => undefined)
+      if (decision.connection.delivered.has(frame)) continue
+      decision.connection.delivered.add(frame)
+      deliveries.push(decision.connection)
     }
-    if (visible && !scope.sharedRetained) {
+    // Rung before it is pushed: the fanout reads a live frame's id from this
+    // ring as it writes it.
+    if (visible && !scope.sharedRetained && scope.replay.idFor(frame) === undefined) {
       scope.replay.push(frame)
       scope.retainedCursor = retained.idFor(frame) ?? scope.retainedCursor
     }
+    for (const connection of deliveries) void Promise.resolve(connection.push(frame)).catch(() => undefined)
+    // A connection that attached while this frame's visibility was pending
+    // was not decided for it, and its bootstrap cursor sits before the id the
+    // frame just took: it is decided now, and the frame reaches it once.
+    if ([...scope.connections].some((connection) => !decided.has(connection))) queue(scope, frame)
     evict(scope)
   }
   const evaluate = (scope: Scope, frame: ControlPlaneFrame): Promise<void> | undefined => {
@@ -167,7 +181,16 @@ export function createControlPlaneEventsHandler(
       visible: await Promise.resolve(item.visible).catch(() => false),
     }))).then((decisions) => deliver(scope, frame, decisions))
   }
+  // A frame this scope's ring already holds was delivered to every
+  // connection attached at the time and is what a later connection's replay
+  // recovers; the local scope's ring is the retained ring itself, so its
+  // catch-up never re-decides. A frame still being decided is queued again so
+  // the connection that attached meanwhile is decided for it.
   const enqueue = (scope: Scope, frame: ControlPlaneFrame) => {
+    if (scope.replay.idFor(frame) !== undefined) return
+    queue(scope, frame)
+  }
+  const queue = (scope: Scope, frame: ControlPlaneFrame) => {
     if (!scope.pending) {
       const result = evaluate(scope, frame)
       if (!result) return
@@ -262,7 +285,7 @@ export function createControlPlaneEventsHandler(
       const cleanup = attachSseFanout<ControlPlaneFrame>({
         subscribe: (listener) => {
           const close = () => stream.abort()
-          const connection = { subscription, push: listener, close }
+          const connection: Connection = { subscription, push: listener, close, delivered: new WeakSet() }
           scope.connections.add(connection)
           scope.reservations -= 1
           for (const retainedFrame of retained.replayAfter(retainedCursor)) enqueue(scope, retainedFrame.payload)

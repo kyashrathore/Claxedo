@@ -50,6 +50,9 @@ type LeaseWatchOptions = {
  * the REST session routes, under a renewable lease. Unmanaged/local runtimes
  * serve the broad stream to whoever reached them.
  */
+/** The refusal code of the unscoped `wr/events` arm; the reader reopens `?sessionID=` on it and on nothing else. */
+export const WORKSPACE_EVENT_STREAM_DENIED = "workspace_event_stream_denied"
+
 export async function authorizeSessionEventScope(
   c: Context,
   policy: SessionAccessPolicy | undefined,
@@ -75,6 +78,14 @@ export async function authorizeSessionEventScope(
       path: c.req.path,
     })
     if (workspace.allowed) return { managed: false, grant: "workspace" }
+    // A refusal at workspace level is the reader's cue to reopen for one
+    // session under a lease; it is named as such so a 403 minted elsewhere on
+    // the path (the relay, the token mint) is not mistaken for it.
+    if (workspace.status === 403) {
+      return Response.json({
+        error: { code: WORKSPACE_EVENT_STREAM_DENIED, message: workspace.message, cause: workspace.code },
+      }, { status: 403 })
+    }
     return sessionAccessDenied(workspace)
   }
 

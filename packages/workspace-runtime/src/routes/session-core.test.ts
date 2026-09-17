@@ -1323,10 +1323,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       permissionMode: "winner-mode",
     }])
     expect(events.map((event) => event.payload.type)).toEqual(["message.updated", "session.idle"])
-    expect(busEvents).toEqual([
-      { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
-      { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
-    ])
+    expect(busEvents).toEqual([])
   })
 
   test("preserves the cause instead of flattening a failed turn to 'Stream error'", async () => {

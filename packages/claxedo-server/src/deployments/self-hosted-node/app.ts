@@ -408,7 +408,24 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       },
     },
   })
+  // The in-process boundary verified the actor and stamped the workspace role
+  // on the request; the workspace-level read the unscoped `wr/events` arm
+  // asks for is that role's to grant, with no relay authority to consult.
+  policy.authorizeHost = (input) => {
+    const role = input.authority?.role
+    if (role && roleRank(role) >= roleRank(input.minimumRole)) return { allowed: true }
+    return {
+      allowed: false,
+      status: 403,
+      code: "host_authority_denied",
+      message: `Workspace ${input.minimumRole} authority is required`,
+    }
+  }
   return policy
+}
+
+function roleRank(role: "viewer" | "editor" | "admin" | "owner") {
+  return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
 }
 
 export function localDocumentsBackend() {

@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
-import { resetSessionEventScope } from "@/platform/runtime/session-event-scope"
+import { resetSessionEventScope, setSessionEventLiveWorkspace } from "@/platform/runtime/session-event-scope"
 import { resetSessionHistoryResyncForTest, sessionHistoryResyncRequest } from "@/features/session/store/session-history-resync"
 import { HEARTBEAT_TIMEOUT_MS, RECONNECT_DELAY_MS } from "../providers/claxedo-events-reconnect"
 
@@ -166,17 +166,37 @@ describe("the workspace stream's two arms", () => {
     ))
   }
 
+  const refusedAtWorkspaceLevel = () => Response.json(
+    { error: { code: "workspace_event_stream_denied", message: "denied", cause: "host_authority_denied" } },
+    { status: 403 },
+  )
+
   test("opens unscoped; a runtime that refuses the workspace is asked again for the routed session", async () => {
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
       if (!url.pathname.endsWith("/api/wr/events")) return quiet()
-      return url.searchParams.has("sessionID") ? quiet() : new Response("forbidden", { status: 403 })
+      return url.searchParams.has("sessionID") ? quiet() : refusedAtWorkspaceLevel()
     })
     mountRoute(() => "/w/ws_shared/session/ses_shared")
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(0)
     const opens = workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))
     expect(opens).toEqual([null, "ses_shared"])
+  })
+
+  test("a 403 minted elsewhere on the path is retried unscoped, not narrowed to the session", async () => {
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      return Response.json({ error: { code: "relay_target_unavailable", message: "host away" } }, { status: 403 })
+    })
+    mountRoute(() => "/w/ws_shared/session/ses_shared")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAY_MS * 4)
+    const opens = workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))
+    expect(opens.length).toBeGreaterThan(1)
+    expect(opens.every((scope) => scope === null)).toBe(true)
   })
 
   test("a workspace-wide stream keeps its connection and cursor across a session navigation", async () => {
@@ -194,11 +214,24 @@ describe("the workspace stream's two arms", () => {
     expect(new Headers(second?.init?.headers).get("Last-Event-ID")).toBe("3")
   })
 
+  test("a navigation to the bare session route of the same workspace keeps the stream", async () => {
+    transport.request.mockImplementation(async () => quiet())
+    const [pathname, setPathname] = createSignal("/w/ws_owned/session/ses_a")
+    mountRoute(pathname)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests()).toHaveLength(1)
+    setSessionEventLiveWorkspace("ses_b", "workspace:ws_owned")
+    setPathname("/s/ses_b")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests()).toHaveLength(1)
+  })
+
   test("a session-scoped stream is reopened, cursor-less, for the session a navigation names", async () => {
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
       if (!url.pathname.endsWith("/api/wr/events")) return quiet()
-      return url.searchParams.has("sessionID") ? quiet() : new Response("forbidden", { status: 403 })
+      return url.searchParams.has("sessionID") ? quiet() : refusedAtWorkspaceLevel()
     })
     const [pathname, setPathname] = createSignal("/w/ws_shared/session/ses_a")
     mountRoute(pathname)

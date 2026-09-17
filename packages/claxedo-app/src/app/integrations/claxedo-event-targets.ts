@@ -235,6 +235,9 @@ export function eventStreamTargetKey(
   if (target.kind === "cp") {
     return `cp:${target.url.href}:${options.accountSigned === true ? "signed" : "unsigned"}`
   }
-  // The routed session is the stream's fallback scope, not its identity.
-  return `wr:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}`
+  // The routed session is the stream's fallback scope, not its identity, and
+  // the directory a route names is one of several spellings of the same
+  // workspace (`/w/<id>`, `/s/<id>` through its inventory row, a host path):
+  // a stream is the workspace's, so a navigation between them keeps it.
+  return `wr:${target.serverUrl}:${target.workspaceId}`
 }

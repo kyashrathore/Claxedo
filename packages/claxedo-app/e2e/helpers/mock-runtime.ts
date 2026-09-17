@@ -1963,7 +1963,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const url = new URL(route.request().url())
     const sessionID = url.searchParams.get("sessionID") ?? undefined
     if (options.workspaceStreamAuthorize && !options.workspaceStreamAuthorize({ sessionID })) {
-      return json(route, { error: "Forbidden" }, 403)
+      return json(route, sessionID
+        ? { error: { code: "session_access_denied", message: "Forbidden" } }
+        : { error: { code: "workspace_event_stream_denied", message: "Forbidden", cause: "host_authority_denied" } }, 403)
     }
     const cursor = workspaceStreamCursor(route, bus)
     const batch = await bus.drain(sseIdleTimeoutMs, cursor)

@@ -16,6 +16,8 @@ export type EventDeliveryPrincipal =
       workspaceId: string
       role: WorkspaceRole
       credential?: string
+      /** What the reader's replay scope is keyed by when it is not the credential itself. */
+      replayKey?: string
     }
   | {
       mode: "signed-unattributed"
@@ -24,6 +26,7 @@ export type EventDeliveryPrincipal =
       workspaceId: string
       role: WorkspaceRole
       credential?: string
+      replayKey?: string
     }
 
 export type EventDeliveryDecision = "deliver" | "omit" | "terminate"
@@ -86,6 +89,12 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
   const connectionId = randomUUID()
   const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
+  const credential = context.req.header("authorization")
+  // The relay mints a fresh one-request host token per connection from the
+  // reader's runtime access token, so the access token — not the host token
+  // the request carries — is what a reader's replay scope is keyed by; keyed
+  // by the host token, every reconnect would be a stranger's.
+  const replayKey = "parent_jti" in claims && claims.parent_jti ? `rat:${claims.parent_jti}` : undefined
   if (claims.actor_id && claims.actor_kind) {
     return {
       mode: "verified",
@@ -95,7 +104,8 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
       orgId: claims.org_id,
       workspaceId: claims.workspace_id,
       role: claims.role,
-      ...(context.req.header("authorization") ? { credential: context.req.header("authorization") } : {}),
+      ...(credential ? { credential } : {}),
+      ...(replayKey ? { replayKey } : {}),
     }
   }
   return {
@@ -104,7 +114,8 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
     orgId: claims.org_id,
     workspaceId: claims.workspace_id,
     role: claims.role,
-    ...(context.req.header("authorization") ? { credential: context.req.header("authorization") } : {}),
+    ...(credential ? { credential } : {}),
+    ...(replayKey ? { replayKey } : {}),
   }
 }
 
@@ -231,8 +242,9 @@ export function agentRuntimeEventDeliveryPolicy(policy: SessionAccessPolicy): Ag
 
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
-  const credential = principal.credential
-    ? createHash("sha256").update(principal.credential).digest("base64url")
+  const key = principal.replayKey ?? principal.credential
+  const credential = key
+    ? createHash("sha256").update(key).digest("base64url")
     : `connection:${principal.connectionId}`
   if (principal.mode === "signed-unattributed") {
     return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}:${credential}`
@@ -303,7 +315,9 @@ export function createIdentityAwareEventSource<T>(input: {
   ) => {
     const sessionId = input.sessionId(event)
     const deliveries: Connection<T>[] = []
+    const decided = new Set<Connection<T>>()
     for (const result of decisions) {
+      decided.add(result.connection)
       if (!scope.connections.has(result.connection)) continue
       if (result.next === "terminate") {
         disconnect(scope, result.connection)
@@ -328,6 +342,10 @@ export function createIdentityAwareEventSource<T>(input: {
       scope.retainedCursor = retained.idFor(event) ?? scope.retainedCursor
     }
     for (const connection of deliveries) void Promise.resolve(connection.push(event)).catch(() => undefined)
+    // A connection that attached while this frame was awaiting the policy was
+    // not decided for it, and its bootstrap cursor sits before the id the
+    // frame just took: it is decided now, and the frame reaches it once.
+    if ([...scope.connections].some((connection) => !decided.has(connection))) queue(scope, event)
     evict(scope)
   }
 
@@ -374,13 +392,17 @@ export function createIdentityAwareEventSource<T>(input: {
     })
   }
 
+  // A frame this scope's ring already holds was delivered to every
+  // connection attached at the time and is what a later connection's replay
+  // recovers. A frame still being decided is enqueued again so the
+  // connection that attached meanwhile is decided for it; `apply` pushes it
+  // to no connection twice and rings it once.
   const enqueue = (scope: Scope<T>, event: T): void => {
-    // A frame this scope's ring already holds was delivered to every
-    // connection attached at the time and is what a later connection's replay
-    // recovers. A frame still being decided is enqueued again so the
-    // connection that attached meanwhile is decided for it; `apply` pushes it
-    // to no connection twice and rings it once.
     if (scope.replay.idFor(event) !== undefined) return
+    queue(scope, event)
+  }
+
+  const queue = (scope: Scope<T>, event: T): void => {
     if (!scope.pending) {
       const result = evaluate(scope, event)
       if (!result) return

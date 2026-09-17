@@ -70,6 +70,10 @@ export function createSseReplayBuffer<T>(input?: {
     hasGap(lastEventId, throughId) {
       const after = numericId(lastEventId)
       if (after <= 0) return false
+      // A cursor past this ring's head came from another numbering — the
+      // process that held the reader's previous ring is gone — and what that
+      // process published after it is not here to replay.
+      if (after > seq) return true
       const through = numericId(throughId) || seq
       if (after >= through) return false
       const seen = new Set<number>()

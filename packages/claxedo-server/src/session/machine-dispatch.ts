@@ -197,7 +197,7 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       const messageID =
         typeof prompt.messageID === "string" && prompt.messageID ? prompt.messageID : `msg_${randomUUID()}`
       const abort = new AbortController()
-      const stream = await client.request(`/event?sessionID=${encodeURIComponent(sessionId)}`, { signal: abort.signal })
+      const stream = await client.request(`/api/wr/events?sessionID=${encodeURIComponent(sessionId)}`, { signal: abort.signal })
       if (!stream.ok || !stream.body) throw await workspaceRuntimeRequestError("session event subscription", stream)
       const reader = stream.body.pipeThrough(new TextDecoderStream()).getReader()
       const queue: unknown[] = []
