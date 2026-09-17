@@ -332,8 +332,7 @@ describe("embedded workspace runtime config hydration", () => {
     for (const path of [
       "/api/wr/health",
       "/api/wr/capabilities",
-      "/event",
-      "/api/wr/runtime-events",
+      "/api/wr/events",
       "/file/content",
       "/find/file",
       "/api/wr/pty/abc123/connect",

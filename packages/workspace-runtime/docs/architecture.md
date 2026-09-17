@@ -36,21 +36,21 @@ for the full auth/env matrix.
 they are not two views onto the same stream:
 
 - **`RuntimeEventHub`** ([`src/runtime-event-hub.ts`](../src/runtime-event-hub.ts))
-  is the primary hub for session/runtime events. Session routes publish
-  Claxedo client-presentation `CompatEnvelope` events to its internal observer
-  channel for metadata projection. UI conversation delivery uses only
-  `GET /api/wr/runtime-events` (SSE, raw `AgentRuntimeEvent` payloads via
-  `mountWorkspaceCore()`). Workspace Runtime does not expose `/global/event`.
+  is the hub for session/runtime events. Session routes publish Claxedo
+  client-presentation `CompatEnvelope` events to its global channel and
+  runtime-channel events (subagent revisions, goal changes) to its runtime
+  channel. `GET /api/wr/events` (SSE, `mountWorkspaceCore()`) serves the
+  first and projects the second onto the wire as `subagent.updated` /
+  `goal.*` presentation events; raw `AgentRuntimeEvent` payloads never leave
+  the runtime.
 - **`workspaceRuntimeBus`** ([`src/bus.ts`](../src/bus.ts)) is intentionally
   process-global runtime state, used by PTY, process, and agent-hook code
-  that already lives inside the workspace-runtime process. `GET /event` and
-  `GET /api/wr/events` (both SSE) serve `WorkspaceRuntimeEvent` values from
-  this bus: PTY lifecycle, PTY stream summaries, process status/config
-  events, agent lifecycle, session lifecycle, and heartbeats. Bus
+  that already lives inside the workspace-runtime process. The same
+  `GET /api/wr/events` serves its `WorkspaceRuntimeEvent` values, wrapped
+  `{ directory, payload }`: PTY lifecycle, PTY stream summaries, process
+  status/config events, agent lifecycle and session lifecycle. Bus
   subscribers are isolated — a throwing subscriber is reported but cannot
-  block later subscribers from receiving the same event. The product-branded
-  `claxedoBus` / `ClaxedoEvent` names are deprecated aliases for the same bus,
-  exported from `@claxedo/workspace-runtime/host`.
+  block later subscribers from receiving the same event.
 
 `RuntimeEventHub` bridges only terminal lifecycle states into
 `workspaceRuntimeBus` as `agent.lifecycle` compatibility events (busy →

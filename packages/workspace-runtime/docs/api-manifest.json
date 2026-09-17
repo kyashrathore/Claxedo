@@ -70,7 +70,6 @@
     "/api/wr/pty",
     "/api/wr/process",
     "/api/wr/events",
-    "/api/wr/runtime-events",
     "/api/wr/subagent-transcripts",
     "/api/wr/file",
     "/api/wr/find/file",

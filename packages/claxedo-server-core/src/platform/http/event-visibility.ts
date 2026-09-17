@@ -6,7 +6,7 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
 // (`src/deployments/hosted-workerd/live-sync-room.cf.ts`) import this ONE function so the central event
 // stream applies identical scoping in both deployments. The imports here are
 // TYPE-ONLY (both `ControlPlaneEvent` and `ControlPlaneAuthContext` erase at build),
-// so nothing runtime (e.g. the process-local `claxedoBus`) is pulled — this
+// so nothing runtime (e.g. the process-local `controlBus`) is pulled — this
 // module is safe to reach from the Cloudflare Worker bundle.
 
 /**

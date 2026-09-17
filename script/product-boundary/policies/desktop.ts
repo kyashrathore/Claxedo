@@ -100,7 +100,10 @@ export const desktopMainComposition: Policy = {
   // That is why the second module counts here and did not before. The package
   // count is unchanged: `@claxedo/app` remains a package edge through
   // `process-diagnostics-contract`. 92/24.
-  ceilings: { modules: 92, packages: 24 },
+  //
+  // Re-measured 2026-09-17 at 90 modules / 24 packages; the two modules of
+  // headroom had accrued unrecorded. Pinned with none.
+  ceilings: { modules: 90, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -327,10 +330,9 @@ export const desktopRendererUnsigned: Policy = {
   // `app/providers/global-sdk/route-event-scope.ts` reaches this renderer
   // through the same global-sdk provider; one module, no package edge; the
   // measured closure is 1051.
-  // `app/providers/global-sdk/runtime-event-projection.ts` reaches it the same
-  // way — the meaning half of the global-sdk provider, split from the half that
-  // owns the connections. Reviewed owner: the global-sdk provider; one module,
-  // no package edge; the measured closure is 1052.
+  // `app/providers/global-sdk/presentation-frames.ts` reaches it the same
+  // way — the meaning half of the global-sdk provider. Reviewed owner: the
+  // global-sdk provider; one module, no package edge; the measured closure is 1052.
   // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` reaches this
   // renderer through the same session feature modules as the app entry: it is
   // the one owner of the runtime's turn message-id convention, which the
@@ -471,8 +473,10 @@ export const desktopRendererUnsigned: Policy = {
   //
   // +1 module (2026-09-17): `features/session/store/session-history-resync.ts`
   // — see the app-local ledger. Re-measured, no headroom.
-  // Measured 1124 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1124, packages: 58 },
+  //
+  // -4 modules (2026-09-17): the second stream reader — see the app-local
+  // ledger. Measured 1120 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1120, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

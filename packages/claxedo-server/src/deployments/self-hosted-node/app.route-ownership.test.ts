@@ -196,18 +196,19 @@ describe("the guard on the composed app", () => {
   })
 })
 
-describe("the central events stream", () => {
+describe("the control plane's notice stream", () => {
   // `withRouteOwnership` above catches a second COMPOSITION claiming a prefix
   // another one owns; it does not see two handlers for one exact path inside
-  // a single composition. `ShellRoutes` owns `/api/claxedo/events`, and Hono
+  // a single composition. `ShellRoutes` owns `/api/cp/events`, and Hono
   // resolves the first-registered handler for an exact path, so this
-  // composition must register no other handler for it.
-  test("exactly one handler is registered for GET /api/claxedo/events", () => {
+  // composition must register no other handler for it — and no other
+  // stream route at all: a session's frames are its workspace runtime's.
+  test("exactly one stream handler is registered, for GET /api/cp/events", () => {
     const built = selfHosted()
 
-    const matches = built.app.routes.filter(
-      (route) => route.method === "GET" && route.path === "/api/claxedo/events",
+    const streams = built.app.routes.filter(
+      (route) => route.method === "GET" && /event/.test(route.path),
     )
-    expect(matches).toHaveLength(1)
+    expect(streams.map((route) => route.path)).toEqual(["/api/cp/events"])
   })
 })

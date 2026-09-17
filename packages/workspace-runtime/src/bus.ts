@@ -129,9 +129,3 @@ const pinnedBus = globalBusStore[globalBusKey]
 export const workspaceRuntimeBus: RuntimeBus = isRuntimeBus(pinnedBus)
   ? pinnedBus
   : (globalBusStore[globalBusKey] = createBus<WorkspaceRuntimeEvent>())
-
-/** @deprecated Use {@link WorkspaceRuntimeEvent}; product-branded alias kept for compatibility. */
-export type ClaxedoEvent = WorkspaceRuntimeEvent
-
-/** @deprecated Use {@link workspaceRuntimeBus}; product-branded alias kept for compatibility. */
-export const claxedoBus = workspaceRuntimeBus

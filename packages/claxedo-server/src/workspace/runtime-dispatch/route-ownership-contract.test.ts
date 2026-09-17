@@ -148,7 +148,6 @@ describe("route ownership", () => {
       "/permission/abc123",
       "/question",
       "/question/abc123",
-      "/event",
       "/experimental/session",
     ]
 
@@ -183,7 +182,6 @@ describe("route ownership", () => {
       "/api/wr/diff",
       "/api/wr/diff/targets",
       "/api/wr/events",
-      "/api/wr/runtime-events",
       "/api/wr/hook",
       "/api/wr/hook/agent-lifecycle",
       "/vcs",
@@ -197,8 +195,8 @@ describe("route ownership", () => {
     }
   })
 
-  test("global event stream is owned by the central control plane", () => {
-    expect(classify("/global/event")).toMatchObject({
+  test("the control plane's notice stream is owned by the central server", () => {
+    expect(classify("/api/cp/events")).toMatchObject({
       domain: RouteDomain.ClaxedoControlPlane,
       handler: RouteHandler.CentralServer,
     })

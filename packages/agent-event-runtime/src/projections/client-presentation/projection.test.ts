@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createClientPresentationProjection } from "./projection"
 
-// The client-side composition: a consumer reading a workspace's runtime-events
-// stream, where this projection is the turn's whole OpenCode-shaped producer.
+// The composition where this projection is the turn's whole OpenCode-shaped
+// producer, as the runtime's prompt projection is.
 function makeProjection() {
   return createClientPresentationProjection({
     sessionId: "session-1",
@@ -95,15 +95,14 @@ describe("createClientPresentationProjection", () => {
     })).toEqual([])
   })
 
-  // A turn a VIEWER observes has no client-side origin: nothing on this
-  // machine created its assistant message, and the runtime-events lane names
-  // that message without ever carrying a row for it. The OpenCode consumers
-  // file a part against an EXISTING message (`upsertPart` / `appendPartDelta`
-  // in claxedo-app's `opencode-conversation.ts` return false for an unknown
-  // message id), and the runtime's own compat producer opens every turn with
-  // that row before any part (`sdk-runtime-adapter`'s `start`: busy, the user
-  // row, then the assistant row). This projection stands in for that producer
-  // on the runtime-events lane, so it owes its consumers the same row.
+  // A raw `AgentRuntimeEvent` names the turn's assistant message without ever
+  // carrying a row for it. The OpenCode consumers file a part against an
+  // EXISTING message (`upsertPart` / `appendPartDelta` in claxedo-app's
+  // `opencode-conversation.ts` return false for an unknown message id), and
+  // the runtime's own compat producer opens every turn with that row before
+  // any part (`sdk-runtime-adapter`'s `start`: busy, the user row, then the
+  // assistant row). A projection that is the turn's whole producer stands in
+  // for it, so it owes its consumers the same row.
   test("announces the assistant message row before the first part of a turn", () => {
     const projection = createClientPresentationProjection({
       sessionId: "session-1",

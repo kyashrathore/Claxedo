@@ -271,8 +271,10 @@ export function createControlPlaneEventsHandler(
             evict(scope)
           }
         },
-        write: async (frame, meta) => {
-          if (frame !== heartbeat && !await Promise.resolve(subscription.visible(frame as ControlPlaneFrame)).catch(() => false)) return
+        // Visibility is decided before a frame reaches a connection: live
+        // frames in `deliver`, replayed frames when the scope's own ring was
+        // filled. Nothing invisible can arrive here.
+        write: (frame, meta) => {
           return stream.writeSSE({
             ...(meta?.id ? { id: meta.id } : {}),
             data: JSON.stringify(frame),

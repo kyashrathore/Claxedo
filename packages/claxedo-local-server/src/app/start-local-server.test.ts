@@ -235,7 +235,7 @@ describe("startLocalServer", () => {
     // passes unsigned callers only under the real local-only configuration.
     const local = server = startLocalServer({ port, services: services({ auth: localOnlyAuthAdapter() }) })
     await local.ready
-    const socket = new WebSocket(`ws://127.0.0.1:${local.port}/api/claxedo/events`)
+    const socket = new WebSocket(`ws://127.0.0.1:${local.port}/api/cp/events`)
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true })
       socket.addEventListener("error", () => reject(new Error("event WebSocket did not open")), { once: true })

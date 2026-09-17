@@ -44,7 +44,7 @@ const DENY = [
   // Families `health` (partly — `/global/health` is re-admitted below as the
   // runtime's workspace-surface identity probe), `bootstrap`, `telemetry`,
   // `agent-config`, `credentials` (registry half), `runtime-transport`'s
-  // `/api/claxedo/events`, `session-meta`, `local-workspace-resolve`,
+  // `/api/cp/events`, `session-meta`, `local-workspace-resolve`,
   // `network-policy`, `usage`, plus this daemon's own host-serving
   // (`/api/claxedo/host-serving`) and remote-access-machine routes. All of
   // them live under this one prefix.

@@ -1,5 +1,5 @@
-export { workspaceRuntimeBus, claxedoBus } from "./bus"
-export type { WorkspaceRuntimeEvent, ClaxedoEvent, PtyInfo } from "./bus"
+export { workspaceRuntimeBus } from "./bus"
+export type { WorkspaceRuntimeEvent, PtyInfo } from "./bus"
 export {
   createIdentityAwareEventSource,
   agentRuntimeEventDeliveryPolicy,

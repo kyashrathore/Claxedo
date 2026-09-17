@@ -25,7 +25,7 @@ import {
  * typechecks and builds, and surfaces only as a dead terminal in a packaged
  * desktop build.
  *
- * Runtime-owned paths such as `/api/wr/runtime-events` are dispatched by the
+ * Runtime-owned paths such as `/api/wr/events` are dispatched by the
  * `workspaceRuntimeProxy` middleware, which registers no route, so they are
  * absent from the inventory by design rather than missing from the product.
  */
@@ -132,7 +132,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/credentials/provider/:providerId",
       "/api/claxedo/credentials/save-discovered",
       "/api/claxedo/credentials/sync-local",
-      "/api/claxedo/events",
       "/api/claxedo/health",
       "/api/claxedo/network-policy",
       "/api/claxedo/network-policy/:id",
@@ -166,7 +165,7 @@ describe("desktop-local product contract", () => {
       "/api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint",
       "/api/control/workspaces/:workspaceId/sessions/:sessionId/register",
       "/api/control/workspaces/:workspaceId/sessions/:sessionId/repair",
-      "/api/wr/events",
+      "/api/cp/events",
       "/api/wr/pty/:ptyID/connect",
       "/command",
       "/experimental/worktree",
@@ -177,7 +176,6 @@ describe("desktop-local product contract", () => {
       "/file/status",
       "/find",
       "/find/file",
-      "/global/event",
       "/global/health",
       "/path",
       "/project",

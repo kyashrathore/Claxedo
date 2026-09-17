@@ -529,7 +529,7 @@ describe("control-plane services", () => {
     // In an unsigned-local deployment a remote caller is denied by the
     // global unsigned-local guard before the per-route bearer gate; the
     // per-route gate remains as defense-in-depth behind it.
-    const missing = await built.app.request("https://control.example.test/api/wr/runtime-events")
+    const missing = await built.app.request("https://control.example.test/api/wr/events")
 
     expect(missing.status).toBe(403)
     await expect(missing.json()).resolves.toMatchObject({

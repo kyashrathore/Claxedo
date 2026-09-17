@@ -143,7 +143,6 @@ describe("workspace module wiring", () => {
     expect(has(seen, "/api/wr/pty")).toBe(true)
     expect(has(seen, "/api/wr/hook")).toBe(true)
     expect(has(seen, "/api/wr/events")).toBe(true)
-    expect(has(seen, "/api/wr/runtime-events")).toBe(false)
     expect(has(seen, "/api/wr/process")).toBe(true)
     expect(has(seen, "/api/wr/file")).toBe(true)
     expect(has(seen, "/api/wr/find/file")).toBe(true)
@@ -180,8 +179,7 @@ describe("workspace module wiring", () => {
     expect(seen).toContain("/api/wr/harness-config-options")
     expect(seen).not.toContain("/api/wr/provider-config")
     expect(seen).toContain("/api/wr/events")
-    expect(seen).not.toContain("/global/event")
-    expect(seen).not.toContain("/event")
+    expect(seen.filter((path) => /event/.test(path))).toEqual(["/api/wr/events"])
     expect(seen).toContain("/session/status")
 
     const res = await app.request("http://localhost/api/wr/harness-config-options")
@@ -253,10 +251,9 @@ describe("workspace module wiring", () => {
       workspaceId: "ws_1",
       eventType: "Busy",
     })
-    // `/api/wr/events` opens with a cursor-bootstrap heartbeat (see
-    // `routes/runtime-events.ts`), so the bus frame is not the first chunk.
-    // Per-frame delivery is covered in `routes/runtime-events.test.ts`; this
-    // test only proves the route is wired to the bus.
+    // `/api/wr/events` opens with a cursor-bootstrap heartbeat, so the bus
+    // frame is not the first chunk. Per-frame delivery is covered in
+    // `routes/events.test.ts`; this test only proves the route is wired to the bus.
     const decoder = new TextDecoder()
     let seen = ""
     for (let reads = 0; reads < 8 && !seen.includes("agent.lifecycle"); reads += 1) {

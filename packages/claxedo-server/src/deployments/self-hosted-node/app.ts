@@ -1053,8 +1053,8 @@ export function createSelfHostedApp(
   // call. Shared with the desktop-local composition rather than duplicated.
   app.use(sessionMetaProjectionTap(services.projectionStore))
 
-  // Route execution traffic to the workspace runtime. `/api/wr/runtime-events`
-  // is workspace-owned; `/api/claxedo/events` and `/global/event` stay central.
+  // Route execution traffic to the workspace runtime. `/api/wr/events` is
+  // workspace-owned; `/api/cp/events` stays central.
   app.use(workspaceRuntimeProxy)
 
   if (services.localExecution.enabled) {
@@ -1616,8 +1616,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
-    // async auto-title is published only over that workspace's
-    // own `/global/event` SSE stream, never an HTTP `PATCH /session/:id` the
+    // async auto-title is published only as a `session.updated` frame on that
+    // workspace runtime's own stream, never an HTTP `PATCH /session/:id` the
     // response-sniffing tap below would observe. Without this, titles revert
     // to "Untitled" after a restart.
     onSessionMetaEvent: (event) => {

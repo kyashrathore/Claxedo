@@ -28,7 +28,7 @@ describe("routeOwnership", () => {
 
   test("classifies central-server routes", () => {
     expect(routeOwnership("/api/claxedo/health").handler).toBe(RouteHandler.CentralServer)
-    expect(routeOwnership("/api/claxedo/events").handler).toBe(RouteHandler.CentralServer)
+    expect(routeOwnership("/api/cp/events").handler).toBe(RouteHandler.CentralServer)
     expect(routeOwnership("/provider/auth").handler).toBe(RouteHandler.CentralServer)
   })
 })

@@ -149,8 +149,8 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     })
     // NOTE: the document-scoped `/events` SSE (external-change watch lease + change
     // stream) was REMOVED. External-change detection is
-    // retired; CAS-at-write (`if-match`) is the correctness floor, and the central
-    // `document.changed` doorbell on the claxedoBus carries save notifications.
+    // retired; CAS-at-write (`if-match`) is the correctness floor, and the
+    // `document.changed` doorbell on the control bus carries save notifications.
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),

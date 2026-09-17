@@ -193,7 +193,7 @@ describe("resource-closed hosted core app", () => {
       "/api/claxedo/auth/bootstrap-owner",
       "/api/claxedo/auth/profile",
       "/api/claxedo/services",
-      "/api/claxedo/events",
+      "/api/cp/events",
       "/api/control/sessions",
       "/api/control/session-list",
       "/api/control/orgs",

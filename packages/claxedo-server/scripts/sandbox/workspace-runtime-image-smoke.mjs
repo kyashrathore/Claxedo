@@ -92,10 +92,10 @@ try {
   const inventory = await json("/session")
   assert.equal(inventory.find((session) => session.id === id)?.title, "Updated image smoke")
   assert.deepEqual(await json(`/session/${id}/message`), [])
-  const events = await fetch(`http://127.0.0.1:${port}/api/wr/runtime-events`, {
+  const events = await fetch(`http://127.0.0.1:${port}/api/wr/events`, {
     signal: AbortSignal.timeout(20_000),
   })
-  assert(events.ok && events.body, `runtime event stream did not open: ${events.status}${events.ok ? "" : ` ${await events.text()}`}`)
+  assert(events.ok && events.body, `workspace event stream did not open: ${events.status}${events.ok ? "" : ` ${await events.text()}`}`)
   const reader = events.body.getReader()
   try {
     await json(`/session/${id}/message`, mutation("POST", {
@@ -103,9 +103,10 @@ try {
     }))
     const decoder = new TextDecoder()
     let received = ""
-    while (!received.includes('"type":"finish"')) {
+    // The runtime projects the harness's `finish` to `session.idle` on its stream.
+    while (!received.includes('"type":"session.idle"')) {
       const item = await reader.read()
-      assert(!item.done, "runtime event stream ended before the turn finished")
+      assert(!item.done, "workspace event stream ended before the turn finished")
       received += decoder.decode(item.value, { stream: true })
     }
     assert(received.includes(id), "runtime events omitted the canonical session identity")

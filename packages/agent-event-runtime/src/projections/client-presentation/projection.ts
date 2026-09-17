@@ -50,13 +50,13 @@ export type ClientPresentationProjectionOptions = {
    * from.
    *
    * The OpenCode consumers file a part against an EXISTING message, so a turn's
-   * row has to precede its first part. On the host, the runtime composes this
-   * projection with its own compat producer, which already opens every turn
-   * with that row and knows the agent and model this lane never carries — so
-   * announcing here would only overwrite a complete row with a thinner one, and
-   * those callers leave this off. A consumer reading a workspace's
-   * runtime-events stream has the lane and nothing else: it is the whole
-   * producer for that turn, and turns this on.
+   * row has to precede its first part. A projection composed beside a compat
+   * producer that already opens every turn with that row — one that knows the
+   * agent and model this lane never carries — leaves this off, or it would
+   * overwrite a complete row with a thinner one. The projection that is the
+   * turn's whole producer of OpenCode-shaped events (the runtime's prompt
+   * projection, whose adapter lanes yield stream events and never the row)
+   * turns it on.
    */
   announcesAssistantMessage?: boolean
   /**
@@ -230,8 +230,8 @@ function messageUpdated(info: EventMessageUpdated["properties"]["info"]): EventM
  * transcript store's `upsertPart` / `appendPartDelta` drop a part whose message
  * row it has never seen. The runtime's own compat producer opens every turn
  * with this row (`sdk-runtime-adapter`'s `start`: busy, the user row, then the
- * assistant row) before a single part, and this projection stands in for that
- * producer on the runtime-events lane, so it owes its consumers the same row.
+ * assistant row) before a single part, and a projection that is the turn's
+ * whole producer stands in for it, so it owes its consumers the same row.
  *
  * `parentID` is the turn's user message, recovered from the reply id by the
  * runtime's own convention (`userMessageIdForAssistantReply`): an

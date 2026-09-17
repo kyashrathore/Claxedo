@@ -519,10 +519,6 @@ describe("embedded workspace runtime", () => {
 
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({ state: "unavailable", reason: "invalid-handle" })
-      const unauthorized = await runtime.app.request(
-        "http://localhost/api/wr/runtime-events?parentSessionId=missing-parent",
-      )
-      expect(unauthorized.status).toBe(403)
     } finally {
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)

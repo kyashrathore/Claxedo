@@ -8,7 +8,7 @@
  *
  * The convention is what makes the reply id self-describing: a carrier that
  * names only the reply can still recover the message it answers. The
- * runtime-events envelope is exactly that carrier — it names the session and
+ * runtime event envelope is exactly that carrier — it names the session and
  * the reply and nothing else — so its consumers resolve the parent here rather
  * than each re-deriving the suffix.
  *

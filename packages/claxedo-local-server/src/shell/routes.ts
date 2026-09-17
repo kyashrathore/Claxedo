@@ -55,9 +55,20 @@ function shellRoutes(options: ShellRouteOptions) {
       const authority = options.services?.authority
       const input = workspaceInput(c)
       if (!authority) {
+        // A signed subscriber must never share the daemon's own ring: the
+        // handler keys its per-principal replay on the identity, and a shared
+        // ring replays every tenant's notices.
         const principal = eventScopePrincipal(auth)
         return {
-          identity: { mode: "unmanaged-local" as const, connectionId: randomUUID() },
+          identity: {
+            mode: "verified" as const,
+            connectionId: randomUUID(),
+            actorId: auth.user.subject,
+            actorKind: "human" as const,
+            orgId: auth.user.orgId ?? "",
+            workspaceId: "",
+            role: "viewer",
+          },
           visible: (frame: Parameters<typeof signedControlPlaneEventVisibleTo>[0]) =>
             signedControlPlaneEventVisibleTo(frame, principal),
         }

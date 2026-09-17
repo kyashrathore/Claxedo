@@ -162,7 +162,7 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
 | `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth |
-| `GET  /api/wr/events`, `GET /api/wr/runtime-events` | [`routes/runtime-events.ts`](src/routes/runtime-events.ts), [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth |
+| `GET  /api/wr/events` | [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth; owner reads the workspace whole, a share grantee reads one session |
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/diff/*`, `* /api/wr/git/*` | [`routes/diff.ts`](src/routes/diff.ts), [`routes/git-source.ts`](src/routes/git-source.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
@@ -185,15 +185,15 @@ capability; the runtime HTTP surface remains the workspace execution boundary.
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /api/wr/runtime-events` | SSE | `RuntimeEventEnvelope` values wrapping raw `AgentRuntimeEvent` payloads | The sole conversation runtime-event stream. This route is mounted by `mountWorkspaceCore()` and supports authorization and replay. |
-| `GET /api/wr/events` | SSE | `WorkspaceRuntimeEvent` values from `workspaceRuntimeBus` | Neutral runtime path for the compatibility/internal process-global stream. |
-| `GET /event` | SSE | `WorkspaceRuntimeEvent` values from `workspaceRuntimeBus` | Compatibility/internal process-global stream for PTY lifecycle, PTY stream summaries, process status/config events, agent lifecycle, session lifecycle, and heartbeats. It is not the primary session/message event stream. |
-| `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/event`, but terminal bytes are delivered over this WebSocket. |
-| `GET /api/wr/process/logs` | HTTP snapshot | Text log tail | Process output is poll/snapshot based through PTY log snapshots. There is no separate supported process-output event stream. Process status summaries appear on `/event`. |
+| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, process status/config, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. The workspace's owner reads it unscoped; a share grantee is refused at workspace level and reads `?sessionID=` under a lease. |
+| `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/api/wr/events`, but terminal bytes are delivered over this WebSocket. |
+| `GET /api/wr/process/logs` | HTTP snapshot | Text log tail | Process output is poll/snapshot based through PTY log snapshots. There is no separate supported process-output event stream. Process status summaries appear on `/api/wr/events`. |
 
-`RuntimeEventHub` is the primary hub for session/runtime events. Session
-routes publish client-presentation events to its internal observer channel and bridge only
-terminal lifecycle states into `workspaceRuntimeBus` as `agent.lifecycle`
+`RuntimeEventHub` is the hub for session/runtime events: session routes
+publish client-presentation events to its global channel, which `/api/wr/events`
+serves, and runtime-channel events (subagent revisions, goal changes) to its
+runtime channel, which `/api/wr/events` projects onto the wire. The hub bridges
+only terminal lifecycle states into `workspaceRuntimeBus` as `agent.lifecycle`
 compatibility events. That bridge maps `session.status` with busy status to
 `Busy`, permission/question asks to `UserActionRequired`, `session.idle` to
 `Idle`, and `session.error` to `Error`.
@@ -202,8 +202,7 @@ compatibility events. That bridge maps `session.status` with busy status to
 by PTY, process, and agent-hook code that already lives inside the
 workspace-runtime process. Subscribers are isolated: a throwing or rejecting
 subscriber is reported and cannot prevent later subscribers from receiving the
-same event. The product-branded `claxedoBus` / `ClaxedoEvent` names remain as
-deprecated aliases on the `/host` subpath.
+same event.
 
 ## Supported runtime shapes
 

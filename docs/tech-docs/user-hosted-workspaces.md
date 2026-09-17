@@ -138,60 +138,65 @@ reserves a private session id at the control plane
 `POST /api/control/session-registrations/reserve`,
 `packages/claxedo-server/src/routes/private-session-registration.ts`), creates
 the session under that id on the runtime, publishes the id to the stream owner
-(F), waits for the session-scoped lanes to report open, and only then dispatches
+(F), waits for the workspace stream to report open, and only then dispatches
 the prompt. The runtime creates the session under the reserved id
 (`packages/workspace-runtime/src/routes/session-core.ts`).
 
-## F. Live streams: two lanes, one scope owner
+## F. Live streams: one workspace stream, one scope owner
 
-The workspace runtime publishes two streams:
-
-- the **workspace bus**, `GET /api/wr/events` (`packages/workspace-runtime/src/routes/events.ts`):
-  workspace-scoped lifecycle — `pty.*`, `process.*`, `agent.lifecycle`,
-  `session.lifecycle`;
-- the **runtime-events lane**, `GET /api/wr/runtime-events?parentSessionId=<id>`
-  (`routes/runtime-events.ts`, contract v7 in
-  `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`): a
-  turn's message parts and deltas.
+The workspace runtime serves one stream, `GET /api/wr/events`
+(`packages/workspace-runtime/src/routes/events.ts`). Every frame is
+`{ directory, payload }`: the runtime's projected client-presentation events
+(a turn's message parts and deltas, tool state, status, permission and
+question asks, todo, diagnostics), the projected `subagent.updated` and
+`goal.*` runtime-channel events, and the workspace's control frames from
+`workspaceRuntimeBus` — `pty.*`, `process.*`, `agent.lifecycle`,
+`session.lifecycle`. The control plane's own stream, `GET /api/cp/events`,
+carries notices only (provision steps, worktree readiness, document
+doorbells, share grants) and never a session's frames.
 
 **F.1 Scope** — `src/platform/runtime/session-event-scope.ts` is the one owner
-of "which session's streams must be open, and are they open". The composer
+of "which session's frames must be streaming, and are they". The composer
 publishes a created session's id (`holdSessionEventScope`); the route publishes
 the session it names (`setSessionEventRouteScope`, from
 `src/app/integrations/claxedo-events.tsx`); `sessionEventScopeId()` settles by
-value, so a change of writer with the same session does not retarget the lanes.
-Both lanes register with it and report open with the session they are scoped
-to; a workspace-wide stream satisfies any session.
+value, so a change of writer with the same session does not retarget a stream.
+The reader registers each workspace's stream with it and reports it open with
+the session it is scoped to; a workspace-wide stream satisfies any session.
 
-**F.2 Targets** — `claxedoEventStreamTargets` in
-`src/app/integrations/claxedo-event-targets.ts` derives the bus stream from
-the connection's declared `sessionAuthority`: a `local`-authority host serves
-the workspace-wide bus, so a terminal or process route with no session opens
-it; a `managed-private` runtime serves session-scoped streams only, which the
-runtime enforces with `authorizeSessionEventScope`
-(`packages/workspace-runtime/src/routes/session-event-privacy.ts`). An
-undeclared authority opens no workspace stream and says why. The central
-stream (`/api/claxedo/events`, one handler on three spellings) is read on a
-loopback central always and on a signed-web central only with an account.
+**F.2 Targets and arms** — `claxedoEventStreamTargets` in
+`src/app/integrations/claxedo-event-targets.ts` opens one `wr` target per
+resolved workspace, unscoped, carrying the route's session only as a fallback.
+The runtime decides the arm (`authorizeSessionEventScope`,
+`packages/workspace-runtime/src/routes/session-event-privacy.ts`): the
+workspace's owner — a `local`-authority host, or a principal the authority
+admits to the workspace — reads it workspace-wide, so a terminal or process
+route with no session opens it; a reader refused at workspace level (a share
+grantee) is answered 403, and the reader re-opens `?sessionID=` for its
+session under a lease, receiving that session and its subagent children only.
+The control plane's stream is read on a loopback central always and on a
+signed-web central only with an account.
 
 **F.3 Frame address** — every frame from a user-hosted host names the host's
 own filesystem directory, because the producer knows only its own path.
 `eventStreamFrameAddress` addresses frames received on a relay-backed
-workspace's streams by that workspace (`sessionRowDirectory`) at the stream
-boundary, once, before they reach the bus or the ingress; local and central
-streams pass through unchanged.
+workspace's stream by that workspace (`sessionRowDirectory`) at the stream
+boundary, once, before they reach the bus or the ingress; local and
+control-plane frames pass through unchanged.
 
-**F.4 Projection** — the runtime-events lane is projected by
-`src/app/providers/global-sdk/runtime-event-projection.ts` through
-`createClientPresentationProjection` (`packages/agent-event-runtime/src/client-presentation.ts`).
-For a viewer attached to a turn another client drives, the projection announces
-the assistant row before its first part, parented on the user message the turn
-message-id convention names (`packages/agent-event-runtime/src/contracts/turn-message-ids.ts`,
+**F.4 Projection** — the host projects a turn's raw harness frames into
+presentation events through `createClientPresentationProjection`
+(`packages/agent-event-runtime/src/projections/client-presentation`) before
+they reach the wire; the client projects nothing. For a turn nobody on the
+client started, the runtime's prompt projection
+(`packages/workspace-runtime/src/session/service.ts`) announces the assistant
+row before its first part, parented on the user message the turn message-id
+convention names (`packages/agent-event-runtime/src/contracts/turn-message-ids.ts`,
 the one owner of `${userMessageId}_r`, used by every minter and resolver). The
 OpenCode event pump (`packages/workspace-runtime/src/opencode/event-pump.ts`)
 stamps every frame with the turn's stable reply id, carries the prompt as a
-user-message delta, and closes the turn it opened. A retarget restarts only the
-session-scoped lane; the workspace-wide cursor survives.
+user-message delta, and closes the turn it opened. A retarget restarts only a
+session-scoped stream; a workspace-wide cursor survives.
 
 The result: a turn started on the desktop renders in an attached web pane delta
 by delta, and a turn started from the web streams its own reply from the moment
@@ -231,7 +236,7 @@ refused by the runtime.
   whole server, with every route bound to the real contract in
   `e2e/helpers/contracts/*` (row types taken from the D1 authority, the
   reservation route's own validation, provider config driven through the real
-  router, the central stream on the three spellings the servers mount). Its
+  router, the two streams on the paths the servers mount). Its
   user-hosted frames carry a host filesystem directory, as the real daemon's do.
 - **Tier L** (`e2e/playwright/live-user-hosted-relay.spec.ts` with
   `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`) runs a real

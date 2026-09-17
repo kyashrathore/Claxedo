@@ -167,12 +167,11 @@ export const appLocal: Policy = {
   // `app/providers/global-sdk/route-event-scope.ts` is the runtime-events
   // lane's route-derived scope input, split out of the global-sdk provider;
   // one module, no package edge; the measured closure is 965.
-  // `app/providers/global-sdk/runtime-event-projection.ts` is what a frame off
-  // the runtime-events stream MEANS — the compat envelope, the OpenCode-shaped
-  // events it projects into, which lane may project them, and what a replay gap
-  // invalidates — split out of the global-sdk provider, which keeps the
-  // connections. Reviewed owner: the global-sdk provider itself, whose module
-  // this already was; one module, no package edge; the measured closure is 966.
+  // `app/providers/global-sdk/presentation-frames.ts` is what a frame off a
+  // stream MEANS — which presentation events are admitted, and what a replay
+  // gap invalidates — split out of the global-sdk provider. Reviewed owner:
+  // the global-sdk provider itself, whose module this already was; one
+  // module, no package edge; the measured closure is 966.
   // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` is the one
   // owner of the runtime's turn message-id convention — the app reads a reply's
   // parent from it in `features/session/data/session-types` and
@@ -458,8 +457,14 @@ export const appLocal: Policy = {
   // — the request an event stream's gap notice raises so the session
   // controller re-reads history and todo; raised by `claxedo-events.tsx` and
   // `session-events/event-router.ts`. No new package edge.
-  // Measured 1081 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1081, packages: 58 },
+  //
+  // -4 modules (2026-09-17): the app reads two streams and no more —
+  // `app/providers/global-sdk/runtime-envelope.ts`,
+  // `app/providers/global-sdk-event-fetch.ts`,
+  // `platform/sync/global-sdk/heartbeat-watchdog.ts` and
+  // `platform/sync/global-sdk/reconnect-backoff.ts` were the second reader.
+  // Measured 1077 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1077, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -821,7 +821,7 @@ describe("workspace relay server", () => {
     }))) as unknown as typeof fetch
 
     try {
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/claxedo/events", {
+      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/events", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,
         },

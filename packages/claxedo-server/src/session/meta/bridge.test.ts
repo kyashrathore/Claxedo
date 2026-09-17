@@ -19,7 +19,7 @@ import { randomUUID } from "crypto"
 // file proves the write path in isolation, against the real SQLite-backed
 // projection store, including that it survives a simulated server restart
 // (closing and reopening the SQLite connection). Conversation delivery remains
-// on `/api/wr/runtime-events`; this projection is an internal metadata tap.
+// on the workspace runtime's `/api/wr/events`; this projection is an internal metadata tap.
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-bridge-test-${randomUUID().slice(0, 8)}`)
 const prev = {

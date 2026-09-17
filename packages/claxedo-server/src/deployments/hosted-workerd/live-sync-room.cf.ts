@@ -28,9 +28,9 @@
  * ## Last-Event-ID replay
  *
  * The room also holds this deployment's SSE retention ring, so the hosted
- * stream is resumable on the same terms as the three local ones
- * (`routes/events.ts`, `routes/client-presentation-events.ts`,
- * `workspace-runtime/src/routes/runtime-events.ts`). Before this, hosted
+ * `cp/events` is resumable on the same terms as the local daemon's
+ * (`claxedo-local-server/src/shell/events.ts`) and a workspace runtime's
+ * `wr/events` (`workspace-runtime/src/routes/events.ts`). Before this, hosted
  * clients had the resume machinery on the client and nothing to talk to: the
  * bridge wrote no `id:` lines, so claxedo-app's cursor stayed null forever, it
  * never sent `Last-Event-ID`, and every reconnect gap lost whatever was
