@@ -34,16 +34,28 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
     editorRef: (el: HTMLDivElement) => void
     scrollRef: (el: HTMLDivElement) => void
     fileInputRef: (el: HTMLInputElement) => void
+    collapsed: () => boolean
+    onEditorFocus: () => void
+    onEditorBlur: () => void
   }) => (
     <div
       data-testid="prompt-input-frame-probe"
+      data-composer-collapsed={props.collapsed() || undefined}
       ref={(el) => {
         props.rootRef(el)
         props.scrollRef(el)
       }}
     >
       <input type="file" ref={(el) => props.fileInputRef(el)} />
-      <div data-component="prompt-input" role="textbox" aria-multiline="true" contenteditable="true" ref={(el) => props.editorRef(el)} />
+      <div
+        data-component="prompt-input"
+        role="textbox"
+        aria-multiline="true"
+        contenteditable="true"
+        ref={(el) => props.editorRef(el)}
+        onFocus={() => props.onEditorFocus()}
+        onBlur={() => props.onEditorBlur()}
+      />
     </div>
   ),
 }))
@@ -134,14 +146,21 @@ vi.mock("@/features/session/providers/session-selection", () => ({
   }),
 }))
 
-vi.mock("@/features/session/providers/prompt", () => ({
+const draft = vi.hoisted(() => ({ text: () => "", setText: (_text: string) => {} }))
+
+vi.mock("@/features/session/providers/prompt", async () => {
+  const { createSignal } = await import("solid-js")
+  const [text, setText] = createSignal("")
+  draft.text = text
+  draft.setText = setText
+  return {
   DEFAULT_PROMPT: [{ type: "text", content: "", start: 0, end: 0 }],
   isPromptEqual: (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right),
   usePrompt: () => ({
     ready: () => true,
-    current: () => [{ type: "text", content: "", start: 0, end: 0 }],
+    current: () => [{ type: "text", content: text(), start: 0, end: text().length }],
     cursor: () => 0,
-    dirty: () => false,
+    dirty: () => text().length > 0,
     set: vi.fn(),
     reset: vi.fn(),
     goal: { armed: () => false, setArmed: vi.fn() },
@@ -154,7 +173,8 @@ vi.mock("@/features/session/providers/prompt", () => ({
       replaceComments: vi.fn(),
     },
   }),
-}))
+  }
+})
 
 vi.mock("@/platform/comments/provider", () => ({
   useComments: () => ({ active: () => undefined, remove: vi.fn() }),
@@ -198,7 +218,10 @@ vi.mock("@/features/session/providers/session-params", () => ({
   }),
 }))
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  draft.setText("")
+})
 
 const composerState: SessionComposerState = {
   blocked: () => false,
@@ -234,6 +257,7 @@ function mountRegion(presentation: () => PanePresentation, extra?: { revert?: { 
 
 const editor = () => document.querySelector<HTMLElement>('[data-component="prompt-input"]')
 const dock = () => document.querySelector<HTMLElement>('[data-component="session-prompt-dock"]')
+const collapsed = () => document.querySelector('[data-testid="prompt-input-frame-probe"]')!.hasAttribute("data-composer-collapsed")
 
 describe("session presentation — the composer region", () => {
   test("keeps the same editor node across docked → floating → docked and only swaps the dock surface", () => {
@@ -269,6 +293,36 @@ describe("session presentation — the composer region", () => {
     expect(document.activeElement).toBe(node)
     expect(focusComposerSurface(document)).toBe(true)
     expect(document.activeElement).toBe(node)
+  })
+
+  test("floating folds the idle composer to one row; editor focus unfolds it, blur folds it again", () => {
+    const [presentation, setPresentation] = createSignal<PanePresentation>("docked")
+    mountRegion(presentation)
+    expect(collapsed()).toBe(false)
+
+    setPresentation("floating")
+    expect(collapsed()).toBe(true)
+
+    editor()!.focus()
+    expect(document.activeElement).toBe(editor())
+    expect(collapsed()).toBe(false)
+
+    editor()!.blur()
+    expect(collapsed()).toBe(true)
+
+    setPresentation("docked")
+    expect(collapsed()).toBe(false)
+  })
+
+  test("a draft keeps the floating composer unfolded without focus", () => {
+    mountRegion(() => "floating")
+    expect(collapsed()).toBe(true)
+
+    draft.setText("half a thought")
+    expect(collapsed()).toBe(false)
+
+    draft.setText("")
+    expect(collapsed()).toBe(true)
   })
 
   test("floating drops the lift docked mode uses to tuck the composer under the revert dock", () => {

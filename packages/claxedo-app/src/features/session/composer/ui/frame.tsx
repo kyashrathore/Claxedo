@@ -42,6 +42,8 @@ export const PromptInputFrame: Component<{
   newSession: Accessor<boolean>
   mode: Accessor<PromptInputMode>
   dirty: Accessor<boolean>
+  /** One-row layout; the geometry lives under `[data-composer-collapsed]` in index.css. */
+  collapsed: Accessor<boolean>
   draggingType: Accessor<PromptDraggingType>
   designPlaceholder: Accessor<string>
   handleRootFocusIn: VoidFunction
@@ -224,6 +226,7 @@ export const PromptInputFrame: Component<{
       // surfaces (see dock-surface.css).
       data-surface="composer"
       data-dock-border-underlay="v2"
+      data-composer-collapsed={props.collapsed() || undefined}
       onSubmit={props.handleSubmit}
       classList={{
         // Deliberately no `shadow-[var(--v2-elevation-raised)]` here. Tailwind
@@ -257,6 +260,7 @@ export const PromptInputFrame: Component<{
         removeLabel={props.t("prompt.attachment.remove")}
       />
       <div
+        data-slot="composer-editor"
         class="relative min-h-[52px]"
         onMouseDown={(e) => {
           const target = e.target

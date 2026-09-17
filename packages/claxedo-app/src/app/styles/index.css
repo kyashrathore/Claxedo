@@ -361,6 +361,68 @@
   }
 }
 
+/* Collapsed composer (`PromptInputFrame` stamps `data-composer-collapsed`
+   while `composerCollapsed` holds): the editor row and the toolbar row fold
+   into one — `+`, permissions, the placeholder, model, send. The toolbar and
+   its control cluster become `display: contents` so their buttons join the
+   form's flex row, and `order` seats the editor between the two clusters; the
+   DOM (and so the tab order) stays editor-first, as in the two-row layout.
+   Attribute stamping beats `:focus-within` because the menus these buttons open
+   are portaled, and focus moving into one would fold the card under it. */
+[data-composer-collapsed] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 6px 8px;
+}
+
+[data-composer-collapsed] [data-slot="composer-toolbar"],
+[data-composer-collapsed] [data-slot="composer-controls"] {
+  display: contents;
+}
+
+[data-composer-collapsed] [data-slot="composer-editor"] {
+  order: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+[data-composer-collapsed] [data-slot="composer-selection-controls"] {
+  order: 2;
+}
+
+[data-composer-collapsed] [data-slot="composer-toolbar"] > :has([data-action="prompt-submit"]) {
+  order: 3;
+}
+
+[data-composer-collapsed] [data-component="prompt-input"],
+[data-composer-collapsed] [data-component="session-composer-text"] {
+  min-height: 0;
+  padding: 4px 8px;
+}
+
+/* Icon-only chips: 28px squares like the narrow-container collapse above, but
+   here the model chip folds too — the row is idle, and the full label comes
+   back with focus. */
+[data-composer-collapsed] [data-action="prompt-permission-mode"],
+[data-composer-collapsed] [data-action="prompt-harness-model"] {
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  flex: 0 0 28px;
+  justify-content: center;
+  padding-inline: 6px;
+  gap: 0;
+}
+
+[data-composer-collapsed] [data-action="prompt-permission-mode"] [data-slot="composer-control-label"],
+[data-composer-collapsed] [data-action="prompt-harness-model"] > :not(:first-child) {
+  display: none;
+}
+
 /* Row spec, applied to whichever primitive's row is inside. */
 .claxedo-composer-menu.claxedo-composer-menu [data-component="menu-v2-item"],
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="select-select-item"],

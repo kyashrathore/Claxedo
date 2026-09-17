@@ -1,5 +1,6 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
 import { createEffect, Component, createMemo, createSignal, onCleanup } from "solid-js"
+import { composerCollapsed } from "@/features/session/composer/collapsed-state"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
@@ -357,6 +358,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return items.filter((item) => !item.comment?.trim())
   })
 
+  const [editorFocused, setEditorFocused] = createSignal(false)
+  const collapsed = createMemo(() =>
+    composerCollapsed({
+      collapsible: props.collapsible ?? false,
+      editorFocused: editorFocused(),
+      blank: blank(),
+      contextItemCount: contextItems().length,
+      popoverOpen: engine.popover() !== null,
+      documentPickerOpen: engine.documentPicker.open(),
+    }),
+  )
+
   const hasUserPrompt = createMemo(() => {
     const sessionID = resolvedSessionId()
     return registeredConversationHasUserMessage(sdk.directory, sessionID)
@@ -627,17 +640,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       newSession={newSession}
       mode={engine.mode}
       dirty={prompt.dirty}
+      collapsed={collapsed}
       draggingType={engine.draggingType}
       designPlaceholder={designPlaceholder}
       handleRootFocusIn={handleRootFocusIn}
       handleSubmit={handleSubmit}
       harnessPending={harnessPending}
-      onEditorFocus={engine.handleFocus}
+      onEditorFocus={() => {
+        setEditorFocused(true)
+        engine.handleFocus()
+      }}
       onEditorInput={engine.handleInput}
       onEditorPaste={handlePaste}
       onCompositionStart={engine.handleCompositionStart}
       onCompositionEnd={engine.handleCompositionEnd}
-      onEditorBlur={engine.handleBlur}
+      onEditorBlur={() => {
+        setEditorFocused(false)
+        engine.handleBlur()
+      }}
       onEditorKeyDown={(event) => {
         // Escape gives an edited queued message back before anything else
         // Escape means here — the next handler down would stop the turn.

@@ -64,7 +64,8 @@ export function SessionComposerRegion(props: {
    * Floating: the dock is the bottom of an overlay stack rather than a flex
    * sibling under a bottom-anchored transcript, so nothing here needs to hold
    * the transcript still — no lift, no resting-height bookkeeping, and the
-   * surface comes from session-presentation.css.
+   * surface comes from session-presentation.css. The composer folds to one
+   * row while idle so the card covers as little of the panel as it can.
    */
   presentation?: PanePresentation
   inputRef: (el: HTMLDivElement) => void
@@ -380,6 +381,7 @@ export function SessionComposerRegion(props: {
                       harnessSubmitController={promptHarnessControllers.submit}
                       harnessSelectionController={promptHarnessControllers.selection}
                       variant={props.placement === "inline" ? "new-session" : undefined}
+                      collapsible={floating()}
                       ref={props.inputRef}
                       newSessionWorktree={props.newSessionWorktree}
                       onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}

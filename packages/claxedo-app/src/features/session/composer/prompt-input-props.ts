@@ -91,6 +91,6 @@ export interface PromptInputProps {
   /** Review diff files supplied by the session owner for comment routing. */
   diffFiles?: () => readonly string[]
   signedControlPlane?: () => boolean
-  /** When true, the input collapses to a single line when unfocused and expands on focus. Default: false. */
+  /** Fold the idle composer to one row (`+`, permissions, editor, model, send); editor focus or any draft content expands it. See `composerCollapsed`. */
   collapsible?: boolean
 }

@@ -91,21 +91,11 @@
   visibility: hidden;
 }
 
-/* The composer card sits in front of the tab and shrinks to one line until the
-   user types more. */
+/* The composer card sits in front of the tab. Its idle one-row fold is the
+   composer's own (`data-composer-collapsed`, index.css); focused, it is the
+   docked composer at full size. */
 [data-session-presentation="floating"] .session-floating-dock {
   position: relative;
   z-index: 1;
   padding-bottom: 0;
-}
-
-[data-session-presentation="floating"] .session-floating-dock .group\/prompt-input,
-[data-session-presentation="floating"] .session-floating-dock .group\/prompt-input > div {
-  min-height: auto;
-}
-
-[data-session-presentation="floating"] .session-floating-dock [data-component="prompt-input"] {
-  min-height: 2.25rem;
-  padding-top: 0.625rem;
-  padding-bottom: 0.25rem;
 }
