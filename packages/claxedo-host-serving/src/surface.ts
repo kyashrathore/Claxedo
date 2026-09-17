@@ -43,12 +43,15 @@ export type UserHostedSurfaceTarget =
 const DENY = [
   // Families `health` (partly — `/global/health` is re-admitted below as the
   // runtime's workspace-surface identity probe), `bootstrap`, `telemetry`,
-  // `agent-config`, `credentials` (registry half), `runtime-transport`'s
-  // `/api/cp/events`, `session-meta`, `local-workspace-resolve`,
-  // `network-policy`, `usage`, plus this daemon's own host-serving
-  // (`/api/claxedo/host-serving`) and remote-access-machine routes. All of
-  // them live under this one prefix.
+  // `agent-config`, `credentials` (registry half), `session-meta`,
+  // `local-workspace-resolve`, `network-policy`, `usage`, plus this daemon's
+  // own host-serving (`/api/claxedo/host-serving`) and remote-access-machine
+  // routes. All of them live under this one prefix.
   "/api/claxedo",
+  // This daemon's own control-plane stream (`runtime-transport`'s
+  // `/api/cp/events`): notices about the machine's own worktrees and
+  // documents, for the machine's own surface, never a workspace's data.
+  "/api/cp",
   // Family `session-meta`'s `/api/control` half.
   "/api/control",
   // Family `workspace-authority` (hosted `server`) and this daemon's SECOND

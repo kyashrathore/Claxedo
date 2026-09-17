@@ -8,6 +8,7 @@ import type { SubagentRegistry } from "@/features/session/subagents/subagent-reg
 import { asRecord, readString } from "@/lib/record"
 import { invalidateSessionGoalData } from "./goal-events"
 import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from "@/platform/runtime/agent/session-projection"
+import { invalidateSessionShareQueries } from "@/features/session/data/query/session-list"
 
 export type GlobalSdkEvent = AgentPresentationEvent | ClaxedoWorkspaceEvent
 type Event = GlobalSdkEvent
@@ -105,6 +106,21 @@ export function resetStreamGapState(input: {
     queryClient.invalidateQueries({ queryKey: shellDataKeys.sessionId(input.sessionId, "diff") }),
     queryClient.invalidateQueries({ queryKey: queryKeys.shell.sessionInventory(input.baseUrl) }),
     ...(input.goalScope ? [invalidateSessionGoalData(input.goalScope)] : []),
+  ]).then(() => {})
+}
+
+/**
+ * `cp/events` reported a hole. Every notice the control plane could have sent
+ * in it is a doorbell for something read from the control plane, so the reads
+ * those doorbells nudge are invalidated: the project catalog (a worktree
+ * landing) and the session list and inventory (a share granted or revoked).
+ * The documents index revalidates off the same gap frame on its own port,
+ * and provision steps are re-read by the connection authority's own resolve.
+ */
+export function resetControlPlaneGapState(baseUrl?: string) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.controlPlane.projects(baseUrl) }),
+    invalidateSessionShareQueries({ baseUrl }),
   ]).then(() => {})
 }
 

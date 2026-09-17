@@ -3,6 +3,7 @@ import { createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
 import { resetSessionEventScope } from "@/platform/runtime/session-event-scope"
+import { resetSessionHistoryResyncForTest, sessionHistoryResyncRequest } from "@/features/session/store/session-history-resync"
 import { HEARTBEAT_TIMEOUT_MS, RECONNECT_DELAY_MS } from "../providers/claxedo-events-reconnect"
 
 const transport = vi.hoisted(() => ({ request: vi.fn<typeof fetch>() }))
@@ -47,6 +48,7 @@ beforeEach(() => {
   transport.request.mockReset()
   queryClient.clear()
   resetSessionEventScope()
+  resetSessionHistoryResyncForTest()
 })
 
 afterEach(() => {
@@ -209,5 +211,49 @@ describe("the workspace stream's two arms", () => {
     const opens = workspaceRequests()
     expect(opens.map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_a", null, "ses_b"])
     expect(new Headers(opens.at(-1)?.init?.headers).get("Last-Event-ID")).toBeNull()
+  })
+})
+
+describe("what a stream's open and its gap ask the store to re-read", () => {
+  const gap = () => new Response('data: {"type":"stream.replay-gap","code":"x","message":"","severity":"warn"}\n\n')
+
+  function mountRoute(pathname: () => string) {
+    return render(() => (
+      <ClaxedoEventsProvider pathname={pathname} serverUrl={() => "http://127.0.0.1:3001"} accountState={() => ({ status: "unsigned" })}>
+        <ConnectionState />
+      </ClaxedoEventsProvider>
+    ))
+  }
+
+  test("a cursor-less workspace stream open asks that workspace's controllers to re-read; a resumed open does not", async () => {
+    transport.request.mockImplementation(async () => new Response('id: 3\ndata: {"type":"heartbeat"}\n\n'))
+    mountRoute(() => "/w/ws_owned/session/ses_a")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessionHistoryResyncRequest()).toMatchObject({ reason: "stream-open", directory: "workspace:ws_owned" })
+    const first = sessionHistoryResyncRequest()?.sequence
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAY_MS)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessionHistoryResyncRequest()?.sequence).toBe(first)
+  })
+
+  test("a workspace stream's gap re-reads that workspace; the control plane's gap re-reads no session", async () => {
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      return url.pathname.endsWith("/api/wr/events") ? gap() : gap()
+    })
+    const gaps: unknown[] = []
+    function Consumer() {
+      const events = useClaxedoEvents()
+      events.listen((event) => { if (event.type === "stream.replay-gap") gaps.push(event) })
+      return null
+    }
+    render(() => <ClaxedoEventsProvider pathname={() => "/w/ws_owned/session/ses_a"} serverUrl={() => "http://127.0.0.1:3001"} accountState={() => ({ status: "unsigned" })}><Consumer /></ClaxedoEventsProvider>)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gaps).toEqual(expect.arrayContaining([
+      { type: "stream.replay-gap", stream: "cp" },
+      { type: "stream.replay-gap", stream: "wr", workspaceId: "ws_owned", directory: "workspace:ws_owned" },
+    ]))
+    expect(sessionHistoryResyncRequest()).toMatchObject({ reason: "sse-gap", directory: "workspace:ws_owned" })
   })
 })

@@ -115,6 +115,70 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
+  test("a frame published while a connection is opening is delivered once, under one id", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => "deliver",
+      sessionId: (event) => event.sessionId,
+    })
+    // One credential, one scope. The scope is live: an attached connection
+    // means every frame is decided and pushed into the scope's ring as it is
+    // published.
+    const credential = "Bearer rat_shared"
+    const first = source.open({ ...participant("connection_1"), credential })
+    const seenByFirst: string[] = []
+    first.subscribe((event) => { seenByFirst.push(event.value) })
+    bus.publish({ sessionId: "ses_a", value: "before" })
+    await source.flush()
+
+    // A second connection opens; a frame lands between its open and its
+    // subscribe. Its catch-up over the retained ring must not decide that
+    // frame a second time.
+    const second = source.open({ ...participant("connection_2"), credential })
+    bus.publish({ sessionId: "ses_a", value: "during-open" })
+    await source.flush()
+    const seenBySecond: string[] = []
+    second.subscribe((event) => { seenBySecond.push(event.value) })
+    await source.flush()
+
+    expect(seenByFirst).toEqual(["before", "during-open"])
+    expect(seenBySecond).toEqual([])
+    const ring = second.replay.replayAfter(undefined).map((entry) => `${entry.id}:${entry.payload.value}`)
+    expect(ring).toEqual(["1:before", "2:during-open"])
+    source.close()
+  })
+
+  test("a cursor from a scope this process never held is a gap; a live scope's own cursor resumes", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => "deliver",
+      sessionId: (event) => event.sessionId,
+    })
+    const first = source.open({ ...participant("connection_1"), credential: "Bearer rat_1" })
+    first.subscribe(() => undefined)
+    for (const value of ["a", "b", "c"]) bus.publish({ sessionId: "ses", value })
+    await source.flush()
+    // The same scope, still attached: its own numbering resumes.
+    expect(first.replay.hasGap("2", first.replay.lastId())).toBe(false)
+    expect(first.replay.replayAfter("2").map((entry) => entry.payload.value)).toEqual(["c"])
+
+    // The relay re-minted the credential: a new scope, rebuilt from the retained
+    // ring and numbered from 1. The reader's cursor "2" names a frame in the OLD
+    // numbering, so it is a gap — not "replay c".
+    const reminted = source.open({ ...participant("connection_2"), credential: "Bearer rat_2" })
+    await reminted.ready
+    expect(reminted.replay.hasGap("2", reminted.replay.lastId())).toBe(true)
+    reminted.subscribe(() => undefined)
+    bus.publish({ sessionId: "ses", value: "d" })
+    await source.flush()
+    // Once attached, the new scope's own numbering resumes.
+    expect(reminted.replay.hasGap("3", reminted.replay.lastId())).toBe(false)
+    expect(reminted.replay.replayAfter("3").map((entry) => entry.payload.value)).toEqual(["d"])
+    source.close()
+  })
+
   test("retains authorized events while disconnected and rechecks visibility on reconnect", async () => {
     const bus = createBus<Event>()
     const revoked = new Set<string>()

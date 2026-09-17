@@ -132,9 +132,9 @@ type Stream = {
   close: () => void
 }
 
-async function connect(app: Hono, token: string, lastEventId?: string): Promise<Stream> {
+async function connect(app: Hono, token: string, lastEventId?: string, scope: "session" | "workspace" = "session"): Promise<Stream> {
   const controller = new AbortController()
-  const response = await app.request("http://runtime.test/api/wr/events?sessionID=ses_runtime_private", {
+  const response = await app.request(`http://runtime.test/api/wr/events${scope === "session" ? "?sessionID=ses_runtime_private" : ""}`, {
     headers: {
       authorization: `Bearer ${token}`,
       accept: "text/event-stream",
@@ -575,6 +575,34 @@ describe("two-user signed runtime transport acceptance", () => {
     await expect(caseyCheckpoints.json()).resolves.toMatchObject({
       worktrees: [{ directory: "/workspace/shared" }],
     })
+
+    // The unscoped arm, on the real authority: everyone the workspace admits
+    // opens it; the session authority decides per session what each receives.
+    // Alice owns the session, Bob is a participant, Casey holds only the
+    // workspace share.
+    const aliceWide = await connect(runtimeApp, aliceRht, undefined, "workspace")
+    const bobWide = await connect(runtimeApp, bobRht, undefined, "workspace")
+    const caseyWide = await connect(runtimeApp, caseyRht, undefined, "workspace")
+    sessionBus.publish({ type: "process.status", directory: "/workspace", configId: "workspace-process", status: "running" })
+    sessionBus.publish({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/workspace",
+      sessionID: "ses_runtime_private",
+      info: { id: "ses_runtime_private", title: "wide-private" },
+      ts: 1,
+    })
+    const widePayload = (frame: { data: Record<string, unknown> }) => frame.data.payload as { type?: string; configId?: string; info?: { title?: string } } | undefined
+    const aliceWideFrames = await aliceWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.title === "wide-private"))
+    expect(aliceWideFrames.some((frame) => widePayload(frame)?.configId === "workspace-process")).toBe(true)
+    const bobWideFrames = await bobWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.title === "wide-private"))
+    expect(bobWideFrames.some((frame) => widePayload(frame)?.configId === "workspace-process")).toBe(true)
+    const caseyWideFrames = await caseyWide.until((frames) => frames.some((frame) => widePayload(frame)?.configId === "workspace-process"))
+    const caseyLater = await caseyWide.observe(300)
+    expect([...caseyWideFrames, ...caseyLater].some((frame) => widePayload(frame)?.info?.title === "wide-private")).toBe(false)
+    aliceWide.close()
+    bobWide.close()
+    caseyWide.close()
 
     const bobLive = await connect(runtimeApp, bobRht)
     const caseyLive = await runtimeApp.request("http://runtime.test/api/wr/events?sessionID=ses_runtime_private", {

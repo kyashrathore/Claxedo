@@ -571,9 +571,9 @@ const HEARTBEAT_MS = 30_000
 // The app's event bus (`providers/claxedo-events.tsx`) reads this stream with
 // fetch+ReadableStream and arms a 45s watchdog that is only reset by `data:`
 // lines — SSE comments do NOT reset it. So keepalives must be data heartbeats
-// in the local bus envelope (`{"type":"heartbeat"}`), matching
-// `routes/events.ts`. This fallback carries heartbeats only; hosted Worker
-// composition supplies `LiveSyncRoom` for mutation nudges.
+// (`{"type":"heartbeat"}`), the frame the local daemon's `cp/events` writes
+// too. This fallback carries heartbeats only; hosted Worker composition
+// supplies `LiveSyncRoom` for mutation nudges.
 //
 // Replay is deliberately not implemented here because there is nothing to
 // replay: this fallback has no publisher. Nothing writes events to it — not the
@@ -681,9 +681,8 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       }
       return c.json(options.authentication.descriptor)
     })
-    // Mirrors routes/events.ts: every bus subscriber passes the
-    // same control-plane auth gate as the other claxedo routes. There is no
-    // loopback bypass on a hosted central.
+    // Every subscriber passes the same control-plane auth gate as the other
+    // claxedo routes. There is no loopback bypass on a hosted central.
     .get("/api/cp/events", events)
     // The first-party service catalog for this principal. The app reads it on
     // its own rather than as one field of a boot aggregate: every other field

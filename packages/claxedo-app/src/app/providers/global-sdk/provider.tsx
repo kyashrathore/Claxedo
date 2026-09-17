@@ -36,12 +36,14 @@ export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClient
 import {
   compatEventEnvelope,
   partUpdateSupersedesDeltas,
+  resetControlPlaneGapState,
   resetStreamGapState,
   type GlobalSdkEvent,
 } from "./presentation-frames"
 export {
   compatEventEnvelope,
   partUpdateSupersedesDeltas,
+  resetControlPlaneGapState,
   resetStreamGapState,
   type GlobalSdkEvent,
 } from "./presentation-frames"
@@ -135,8 +137,15 @@ const globalSDKContextInput = {
     const releaseStreams = streams.listen((frame) => {
       if (!started) return
       if (frame.type === "stream.replay-gap") {
+        if (frame.stream === "cp") {
+          void resetControlPlaneGapState(currentServer.http.url)
+          return
+        }
         const live = eventLiveSession()
-        if (!live || live.sessionID === "route") {
+        // Only a gap on the live session's own workspace stream can have
+        // dropped its frames; the workspace's mounted controllers re-read
+        // their sessions from the reader's resync either way.
+        if (!live || live.sessionID === "route" || (live.workspaceId && live.workspaceId !== frame.workspaceId)) {
           subagents.replayGap()
           return
         }

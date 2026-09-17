@@ -55,6 +55,8 @@ type Scope<T> = {
   replayPrincipal?: EventDeliveryPrincipal
   replay: SseReplayBuffer<T>
   connections: Set<Connection<T>>
+  /** A connection has attached since this scope was created without a tombstone. */
+  attached: boolean
   reservations: number
   retainedCursor?: string
   tail: Promise<void>
@@ -365,6 +367,13 @@ export function createIdentityAwareEventSource<T>(input: {
   }
 
   const enqueue = (scope: Scope<T>, event: T): void => {
+    // A frame this scope's ring already holds was delivered to every
+    // connection attached at the time and is what a later connection's replay
+    // recovers; deciding it again would push it under a second id. Reaches
+    // here from a connection's catch-up over the retained ring when the scope
+    // was live during that connection's open, and from two connections catching
+    // up over overlapping ranges.
+    if (scope.replay.idFor(event) !== undefined) return
     if (!scope.pending) {
       const result = evaluate(scope, event)
       if (!result) return
@@ -400,19 +409,20 @@ export function createIdentityAwareEventSource<T>(input: {
       ...(input.isTerminal ? { isTerminal: input.isTerminal } : {}),
       ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
     })
-    // A cursor beyond anything this scope has assigned came from a scope this
-    // process no longer holds (or never held): it cannot be resumed, and the
-    // ring's own hole check would read it as "nothing to replay". Once the
-    // scope has assigned ids past the cursor, the cursor is its own numbering.
-    const connectionReplay = !tombstone && key !== "local" && retained.lastId() !== undefined
-      ? { ...replay, hasGap: (lastEventId?: string, throughId?: string) =>
-          Number(lastEventId ?? "0") > Number(replay.lastId() ?? "0") || replay.hasGap(lastEventId, throughId) }
-      : replay
+    // A scope created without a tombstone numbers its ring from 1 (from the
+    // retained ring), so a cursor a reader presents to it came from some other
+    // numbering — a scope this process evicted long ago, or one keyed by a
+    // credential the relay has since re-minted — and only LOOKS resumable:
+    // the ring's own hole check would read it as "nothing to replay" and the
+    // frames behind it would be lost silently. Until a connection has attached
+    // to this scope, every positive cursor is a gap. Once one has, a cursor is
+    // this scope's own numbering, and the ring's hole check decides.
     const created: Scope<T> = {
       key,
       ...(key === "local" ? { replayPrincipal: principal } : {}),
-      replay: connectionReplay,
+      replay,
       connections: new Set(),
+      attached: !!tombstone || key === "local" || retained.lastId() === undefined,
       reservations: 0,
       ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
       tail: Promise.resolve(),
@@ -460,6 +470,10 @@ export function createIdentityAwareEventSource<T>(input: {
         created.pending = false
       })
     }
+    if (!created.attached) {
+      created.replay = { ...replay, hasGap: (lastEventId?: string, throughId?: string) =>
+        (!created.attached && Number(lastEventId ?? "0") > 0) || replay.hasGap(lastEventId, throughId) }
+    }
     return created
   }
 
@@ -493,6 +507,7 @@ export function createIdentityAwareEventSource<T>(input: {
           }
           const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions }
           scope.connections.add(connection)
+          scope.attached = true
           if (input.policy.renew) {
             connection.renewalTimer = setInterval(() => {
               void Promise.resolve(input.policy.renew!(principal)).then((next) => {

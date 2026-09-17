@@ -122,11 +122,15 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
  * `/api/wr/events` — the one stream a workspace runtime serves.
  *
  * Two arms, decided by the workspace authority: a principal it admits to the
- * workspace reads the stream unscoped — the owner sees every session, a
- * workspace share sees the workspace's session-less frames and the sessions
- * the authority grants it; a principal it refuses (a share grantee with no
- * workspace access) is answered 403 and re-opens with `?sessionID=`, reading
- * that session and its subagent children under a lease.
+ * workspace reads the stream unscoped, and the session authority decides per
+ * session what reaches it — the workspace's session-less frames, and every
+ * session it may read (its own, a share it holds; the workspace's owner is
+ * no exception: a session another member created in the workspace is not
+ * theirs to read unless shared); a principal it refuses (a share grantee with
+ * no workspace access) is answered 403 and re-opens with `?sessionID=`,
+ * reading that session and its subagent children under a lease.
+ *
+ * `close()` releases the bus subscription when the runtime is disposed.
  *
  * Resumable by SSE `Last-Event-ID`. Two rules about NOT re-applying frames a
  * consumer has already applied:
@@ -154,12 +158,6 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     if (!sessionId) return undefined
     return options.sessionParents?.parentSessionIdFor(sessionId) ?? sessionId
   }
-  // Connections the workspace's OWNER holds: every session is theirs, so the
-  // per-session grant the delivery policy negotiates for everyone else is
-  // skipped. A workspace share (viewer, editor, admin) is admitted to the
-  // unscoped stream too, but sees a session's frames only when the authority
-  // grants that session — workspace access alone unlocks no session.
-  const workspaceGrants = new Set<string>()
   const delivery = options.policy ?? defaultEventDeliveryPolicy
   const source = createIdentityAwareEventSource<StreamFrame>({
     subscribe: (fn) => {
@@ -180,7 +178,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         unsubscribeControl()
       }
     },
-    policy: (input) => workspaceGrants.has(input.principal.connectionId) ? "deliver" : delivery(input),
+    policy: delivery,
     sessionId: scopeSessionId,
     sensitive: (frame) =>
       !isGapFrame(frame) && isControlFrame(frame) && frame.payload.type === "agent.lifecycle" &&
@@ -189,26 +187,29 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   })
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
 
-  return async (c: Context) => {
+  const handler = async (c: Context) => {
     const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy, "sessionID")
     if (isSessionEventScopeResponse(scope)) return scope
     const allows = scope.managed
       ? (frame: StreamFrame) => !isGapFrame(frame) && scopeSessionId(frame) === scope.sessionId
       : (_frame: StreamFrame) => true
     const principal = await (options.principal?.(c) ?? eventDeliveryPrincipal(c))
-    if (!scope.managed && scope.grant === "workspace" && principal.mode === "verified" && principal.role === "owner") {
-      workspaceGrants.add(principal.connectionId)
-    }
     const opened = source.open(principal)
     await opened.ready
     const replayForScope = scope.managed ? scopedReplay(opened.replay, allows) : opened.replay
     return streamSSE(c, async (stream) => {
       const heartbeat = { type: "heartbeat" } as const
+      const resumeFrom = c.req.header("last-event-id")
       // The cursor a cursor-less connection resumes from is the ring's own id,
       // read before the bootstrap heartbeat is written: the frames that land
       // between it and the fanout attaching are exactly what replaying after
-      // it recovers.
-      const cursor = c.req.header("last-event-id") ?? opened.replay.lastId() ?? "0"
+      // it recovers, and nothing is missing behind it.
+      const cursor = resumeFrom ?? opened.replay.lastId() ?? "0"
+      // Decided BEFORE the fanout attaches: attaching is what marks a scope as
+      // one whose numbering this reader has seen, and a cursor from another
+      // numbering must be judged before that.
+      const gap = resumeFrom !== undefined && replayForScope.hasGap(resumeFrom, opened.replay.lastId())
+      const replay = { ...replayForScope, hasGap: () => gap }
       await stream
         .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
         .catch(() => {})
@@ -230,7 +231,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         heartbeat,
         heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
         lastEventId: cursor,
-        replay: replayForScope,
+        replay,
         replayLive: false,
         replayGap: ({ lastEventId, throughId }) => ({
           type: "stream.replay-gap",
@@ -242,10 +243,9 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         }),
       })
 
-      await waitForSessionEventStream(stream, scope, options.sessionAccessPolicy, () => {
-        workspaceGrants.delete(principal.connectionId)
-        cleanup()
-      })
+      await waitForSessionEventStream(stream, scope, options.sessionAccessPolicy, cleanup)
     })
   }
+  handler.close = () => source.close()
+  return handler
 }

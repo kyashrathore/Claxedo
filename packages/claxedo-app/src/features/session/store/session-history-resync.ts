@@ -4,21 +4,24 @@ import { createSignal } from "solid-js"
  * A request to re-read session history and todo through the session
  * controllers that have the sessions mounted.
  *
- * Raised when a stream reports a hole (its `stream.replay-gap` frame). The
- * frames the client never received are behind the notice and the stream is
- * already live again, so the store's view of a turn — part status, streamed
- * text, todo — is only repaired by reading it. The notice is per connection
- * and names no session, so a request may leave `sessionID` (and `directory`)
- * unset: every mounted controller then answers for its own session. The reads
- * belong to the controller (`syncSessionHistory`, `syncSessionTodo`); a
- * request no controller matches is dropped, because a later mount loads
- * history on activation anyway.
+ * Raised when a workspace stream reports a hole (its `stream.replay-gap`
+ * frame) or opens without a cursor. In both cases what a session did is
+ * behind the stream rather than on it — the frames the reader never received,
+ * or everything between a pane's history read and the open — and the stream
+ * is live from here on, so the store's view of a turn — part status, streamed
+ * text, todo — is only repaired by reading it. The request names the
+ * workspace the stream serves and no session: every controller mounted for
+ * that workspace answers for its own session. The reads belong to the
+ * controller (`syncSessionHistory`, `syncSessionTodo`); a request no
+ * controller matches is dropped, because a later mount loads history on
+ * activation anyway.
  */
 export type SessionHistoryResync = {
   sequence: number
   directory?: string
   sessionID?: string
-  reason: "sse-gap"
+  /** A stream reported a hole, or a workspace stream opened without a cursor. */
+  reason: "sse-gap" | "stream-open"
 }
 
 let sequence = 0

@@ -84,21 +84,6 @@ export type WorkspaceRuntimeEvent =
       eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
       outcome?: "done" | "error" | "cancelled"
     }
-  /**
-   * A compat `session.updated` forwarded verbatim to the workspace stream.
-   *
-   * The auto-title (agent-sdk-runtime `runtime.ts`, `method:"auto-title"`)
-   * renames a session from the "New Session" placeholder to one derived from
-   * the first prompt, and publishes exactly this event so the rail picks up
-   * the rename and the row's new sort position.
-   *
-   * `properties` is the compat payload shape (`{ info: Session }`) the app's
-   * `directory-event-projector` already reads — it is passed through untouched
-   * rather than remapped, because the client half of this path was already
-   * complete (`claxedoDirectoryEventTypes` subscribes, the projector reconciles).
-   */
-  | { type: "session.updated"; directory?: string; workspaceId?: string; properties?: unknown }
-  | { type: "session.deleted"; directory?: string; workspaceId?: string; properties?: unknown }
   | { type: "heartbeat" }
   | { type: "process.started"; directory: string; configId: string; ptyId: string }
   | { type: "process.stopped"; directory: string; configId: string; exitCode: number }

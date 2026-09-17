@@ -314,6 +314,15 @@ export function PageIndex(props: PageIndexProps) {
     const connected = events?.centralConnected()
     if (connected !== undefined) connectionHandler?.(connected)
   })
+  // A hole in the control plane's stream may have swallowed a doorbell: the
+  // same revalidation a reconnect performs, driven as one.
+  if (events) {
+    onCleanup(events.listen((frame) => {
+      if (frame.type !== "stream.replay-gap" || frame.stream !== "cp") return
+      connectionHandler?.(false)
+      connectionHandler?.(true)
+    }))
+  }
   const [state, setState] = createSignal<IndexState>({
     groups: [],
     loading: true,

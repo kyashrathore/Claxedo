@@ -50,11 +50,12 @@ export type EventServerHeartbeat = {
 
 export type EventSessionDeleted = {
   type: "session.deleted"
-  properties: { info: { id: string; directory: string } }
+  /** `parentID` names a subsession, whose deletion leaves the visible session count alone. */
+  properties: { info: { id: string; directory: string; parentID?: string } }
 }
 
-export function sessionDeleted(id: string, directory: string): EventSessionDeleted {
-  return { type: "session.deleted", properties: { info: { id, directory } } }
+export function sessionDeleted(id: string, directory: string, parentID?: string): EventSessionDeleted {
+  return { type: "session.deleted", properties: { info: { id, directory, ...(parentID ? { parentID } : {}) } } }
 }
 
 type SdkRuntimeOnlyEvent = EventServerHeartbeat | EventSessionDeleted
@@ -124,6 +125,7 @@ export function eventSessionId(event: CompatEvent): string | undefined {
     case "message.updated":
       return properties.info?.sessionID
     case "session.updated":
+    case "session.deleted":
       return properties.info?.id
     case "message.part.updated":
       return properties.sessionID ?? properties.part?.sessionID
@@ -144,6 +146,9 @@ export function eventSessionId(event: CompatEvent): string | undefined {
     case "session.config":
     case "session.usage":
     case "runtime.diagnostic":
+    case "subagent.updated":
+    case "goal.updated":
+    case "goal.cleared":
       return properties.sessionID
     case "session.error":
       return properties.sessionID

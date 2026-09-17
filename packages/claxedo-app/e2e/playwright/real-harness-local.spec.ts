@@ -2011,7 +2011,7 @@ setTimeout(() => process.exit(2), 60000).unref();
       // when the ring had rolled — the gap notice that made the reader re-read.
       const reopened = workspaceOpens.slice(opensBeforeReconnect)
       expect(reopened.length, "the workspace stream reopened after the outage").toBeGreaterThan(0)
-      expect(reopened[0]!.cursor, "the reopened workspace stream resumed by cursor").not.toBeNull()
+      expect(reopened[0]?.cursor, "the reopened workspace stream resumed by cursor").not.toBeNull()
       await expect.poll(
         () => reopened.some((open) => open.frames.includes("message.part.updated") || open.frames.includes("stream.replay-gap")),
         { message: "the settlement or a gap notice arrived on the reopened workspace stream", timeout: 15_000 },

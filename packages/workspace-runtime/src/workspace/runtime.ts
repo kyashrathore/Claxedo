@@ -152,7 +152,7 @@ export type WorkspaceHostOptions = {
    * it here rather than off the SSE stream.
    */
   onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
-  /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
+  /** Parent lookup for scoping a subagent child's frames as its parent's; defaults to this host's own store. */
   sessionParents?: WorkspaceEventParents
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
   transcripts?: WorkspaceTranscriptRoutesOptions
@@ -624,6 +624,14 @@ function runtimeSnapshotSignature(snapshot: AppliedRuntimeSnapshot) {
 export function createWorkspaceHost(options: WorkspaceHostOptions = {}): WorkspaceHost {
   const eventHub = options.eventHub ?? createRuntimeEventHub()
   // The hub is the canonical producer shared by every adapter.
+  // The workspace's stream subscribes to the process-global runtime bus; a
+  // disposed runtime must let that subscription go.
+  let closeEvents: () => void = () => {}
+  // A subagent child's frames are scoped as its parent's on the workspace
+  // stream; the store that filed the child knows the parent.
+  const sessionParents: WorkspaceEventParents = {
+    parentSessionIdFor: (sessionId) => (store().getSession(sessionId) as { parentID?: string | null } | null)?.parentID ?? undefined,
+  }
   const cleanupCompatObserver = options.onCompatEvent
     ? eventHub.subscribeGlobal(options.onCompatEvent)
     : () => undefined
@@ -1433,22 +1441,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         throw new Error("Managed workspace session routes require authority-backed SessionAccessPolicy")
       }
       if (options.core) {
-        mountWorkspaceCore(app, options.core.upgradeWebSocket, {
+        closeEvents = mountWorkspaceCore(app, options.core.upgradeWebSocket, {
           directory: hostOptions.target?.directory ?? workspaceDir(),
           eventHub,
           exposure: options.exposure,
           sessionAccessPolicy,
           processObserver: hostOptions.processObserver,
-          sessionParents: hostOptions.sessionParents,
+          sessionParents: hostOptions.sessionParents ?? sessionParents,
           transcripts: hostOptions.transcripts,
         })
       } else {
         // A host that serves sessions serves their stream, whatever else it mounts.
-        mountWorkspaceEvents(app, {
+        closeEvents = mountWorkspaceEvents(app, {
           directory: hostOptions.target?.directory ?? workspaceDir(),
           eventHub,
           sessionAccessPolicy,
-          ...(hostOptions.sessionParents ? { sessionParents: hostOptions.sessionParents } : {}),
+          sessionParents: hostOptions.sessionParents ?? sessionParents,
         })
         if (options.pty) {
           mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy)
@@ -1874,6 +1882,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         adapter = undefined
         cleanupCompatObserver()
         cleanupRuntimeObserver()
+        closeEvents()
         sessionToolPrompts.clear()
         opencodeToolSessions.clear()
         sessionConfigStore?.close?.()

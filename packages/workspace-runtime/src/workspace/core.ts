@@ -31,20 +31,23 @@ export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: Sessio
   app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes({ sessionAccessPolicy }))
 }
 
+/** Mounts the workspace's stream; the returned disposer releases its bus subscription. */
 export function mountWorkspaceEvents(app: Hono, options: {
   directory: string
   eventHub: RuntimeEventHub
   sessionParents?: WorkspaceEventParents
   sessionAccessPolicy?: SessionAccessPolicy
-}) {
+}): () => void {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
-  app.get(WorkspaceRuntimeRoutes.events, workspaceEventsHandler({
+  const handler = workspaceEventsHandler({
     directory: options.directory,
     eventHub: options.eventHub,
     policy,
     sessionAccessPolicy: options.sessionAccessPolicy,
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
-  }))
+  })
+  app.get(WorkspaceRuntimeRoutes.events, handler)
+  return handler.close
 }
 
 export type WorkspaceTranscriptRoutesOptions = {
@@ -95,8 +98,9 @@ export function mountWorkspaceCore(
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
   mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy)
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
-  mountWorkspaceEvents(app, options)
+  const closeEvents = mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
   mountWorkspaceProcess(app, options.sessionAccessPolicy)
   mountWorkspaceFiles(app)
+  return closeEvents
 }

@@ -1,8 +1,8 @@
 /**
- * ClaxedoEventsProvider
- *
- * Subscribes to the Claxedo SSE stream from claxedo-server.
- * Provides an event bus for frontend components to receive PTY and agent lifecycle events.
+ * ClaxedoEventsProvider — the app's one reader of its two event streams:
+ * `cp/events` (the control plane's notices) and one `wr/events` per open
+ * workspace (that runtime's session frames and control frames). Every frame
+ * enters one emitter; consumers subscribe by type or listen to all.
  */
 
 import {
@@ -127,10 +127,13 @@ export type ClaxedoEvent =
   /**
    * A stream's own notice that frames between the reader's cursor and the
    * live position are gone. Raised for a rolled replay ring and for frames
-   * shed under a slow consumer alike; the reader has already asked the
-   * session controller to re-read history when this reaches a listener.
+   * shed under a slow consumer alike. A `wr` gap names the workspace whose
+   * sessions have to be re-read; a `cp` gap means every notice the control
+   * plane could have sent — a worktree landing, a share, a document save —
+   * has to be re-read from its source.
    */
-  | { type: "stream.replay-gap" }
+  | { type: "stream.replay-gap"; stream: "cp" }
+  | { type: "stream.replay-gap"; stream: "wr"; workspaceId: string; directory?: string }
   | { type: "subagent.updated"; directory?: string; workspaceId?: string; properties: unknown }
   | { type: "goal.updated"; directory?: string; workspaceId?: string; properties: unknown }
   | { type: "goal.cleared"; directory?: string; workspaceId?: string; properties: unknown }
@@ -216,10 +219,13 @@ export function createClaxedoEventEmitter() {
 
 /**
  * A workspace stream's session frames belong to that workspace: the
- * session-title projection keys by it as well as by directory.
+ * session-title projection keys by it as well as by directory. A frame that
+ * names its own workspace keeps it — the daemon's runtime bus is shared by
+ * every embedded runtime, so another workspace's frame can ride this stream.
  */
 function stampWorkspace(event: ClaxedoEvent, target: ClaxedoEventStreamTarget): ClaxedoEvent {
   if (target.kind !== "wr" || !("properties" in event) || !("directory" in event)) return event
+  if ("workspaceId" in event && typeof event.workspaceId === "string" && event.workspaceId) return event
   return { ...event, workspaceId: target.workspaceId }
 }
 
@@ -276,7 +282,7 @@ function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
 // ─── Context ──────────────────────────────────────────────────────────────
 
 type ClaxedoEventsContextValue = {
-  /** The central feed, shared with SDK event consumers without a second connection. */
+  /** Every frame from every open stream, in arrival order; the GlobalSDK bridge reads this. */
   listen(listener: (event: ClaxedoEvent) => void): () => void
   on<T extends ClaxedoEventType>(type: T, handler: Handler<T>): () => void
   /**
@@ -287,12 +293,11 @@ type ClaxedoEventsContextValue = {
    */
   connected: () => boolean
   /**
-   * The CENTRAL control-plane stream is up. This is the stream that carries
-   * `document.changed` / `session.lifecycle` /
-   * `session.share.changed`, so its
-   * `false → true` edge is the revalidation trigger for every consumer of those
-   * doorbells. Distinct from `connected` on purpose: with a remote workspace
-   * open the aggregate never drops to false when only the central stream flaps.
+   * The control plane's stream is up. It carries `document.changed` and
+   * `session.share.changed`, so its `false → true` edge is the revalidation
+   * trigger for every consumer of those doorbells. Distinct from `connected`
+   * on purpose: with a remote workspace open the aggregate never drops to
+   * false when only the control plane's stream flaps.
    */
   centralConnected: () => boolean
 }
@@ -383,11 +388,18 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // The producer's own notice that frames between this reader's cursor and
       // the live position are gone — a rolled replay ring, or frames shed under
       // a slow consumer. It is per-connection, not a bus event, so it has no
-      // handler; what it means is that every session this stream feeds has to
-      // be read again, and the stream stays open.
+      // handler; what it means is that everything this stream feeds has to be
+      // read again, and the stream stays open.
       if (isStreamReplayGap(frame)) {
-        requestSessionHistoryResync({ reason: "sse-gap" })
-        emitter.emit({ type: "stream.replay-gap" }, source)
+        if (target.kind === "wr") {
+          // Addressed the way the panes registered this workspace's sessions:
+          // a relay-backed workspace's host path names nothing here.
+          const directory = target.directory ? address(target.directory) : undefined
+          requestSessionHistoryResync({ reason: "sse-gap", ...(directory ? { directory } : {}) })
+          emitter.emit({ type: "stream.replay-gap", stream: "wr", workspaceId: target.workspaceId, ...(directory ? { directory } : {}) }, source)
+          return
+        }
+        emitter.emit({ type: "stream.replay-gap", stream: "cp" }, source)
         return
       }
       const event = normalizeClaxedoStreamEvent(frame, address)
@@ -519,9 +531,6 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // every workspace event stream in the browser and flapped the
       // connection authority ready→reconnecting.
       const headers = new Headers({ Accept: "text/event-stream" })
-      // Resume from this target's cursor instead of re-reading its log from the
-      // start. Matches the two global-sdk stream loops, which already resume
-      // (`provider.tsx` — `sseJsonStream`'s `onEventId` + `Last-Event-ID`).
       if (state.lastEventId) headers.set("Last-Event-ID", state.lastEventId)
       void eventStreamFetch(target, {
         headers,
@@ -545,6 +554,15 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         stepLifecycle("open")
         setStreamConnected(true)
         reportLaneOpen()
+        // A cursor-less open is served nothing from the ring: whatever a
+        // session did between a pane's history read and this moment is behind
+        // the stream, not on it. The workspace's controllers re-read once, now
+        // that the stream is live, so a reply that landed in that window is
+        // read rather than lost. A resumed open recovers by cursor instead.
+        if (target.kind === "wr" && !state.lastEventId) {
+          const directory = target.directory ? eventStreamFrameAddress(target)(target.directory) : undefined
+          requestSessionHistoryResync({ reason: "stream-open", ...(directory ? { directory } : {}) })
+        }
         state.failures = 0
         // Bridge stream health → the single WorkspaceConnection authority: a
         // recovered workspace stream nudges `reconnecting → ready` (no-op unless
@@ -565,18 +583,12 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           buffer = chunks.pop() ?? ""
           for (const chunk of chunks) {
             const lines = chunk.split("\n").map((line) => line.trim())
-            // Advance this stream's `Last-Event-ID` cursor. This is a
-            // CORRECTNESS requirement, not an optimization: `emitEvent` →
-            // `normalizeClaxedoStreamEvent` unwraps `{directory, payload}`
-            // frames, so this reader applies directory events (permission /
-            // question / message) to the shell caches. Both the workspace
-            // runtime (`workspace-runtime/src/routes/events.ts`) and the e2e
-            // mock serve a CURSOR-LESS connection the full retained log, so
-            // without a cursor every reconnect re-applied the entire backlog —
-            // re-upserting `question.asked`/`permission.asked` for requests the
-            // user had already answered and resurrecting their docks.
-            // Short-window replay frames intentionally carry no `id:`, so they
-            // do not advance the cursor and keep being redelivered.
+            // Advance this stream's `Last-Event-ID` cursor. A cursor means
+            // "the last frame I applied": a reconnect resumes behind it, and
+            // a cursor-less reconnect is resumed at the ring's head instead,
+            // so nothing already applied — an answered `question.asked`, a
+            // settled `permission.asked` — comes down a second time. Periodic
+            // heartbeats carry no `id:` and never move it.
             const id = lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim()
             if (id) state.lastEventId = id
             const data = lines

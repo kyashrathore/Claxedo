@@ -1919,10 +1919,8 @@ describe("session prompt route", () => {
     }
   })
 
-  it("forwards session.updated to workspaceRuntimeBus exactly once", async () => {
+  it("publishes session.updated on the hub only — the workspace stream carries it once", async () => {
     const directory = process.cwd()
-    const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
-    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_title_updates"
     const update = sessionUpdated(buildSession({
       id: "s1",
       directory,
@@ -1930,19 +1928,18 @@ describe("session prompt route", () => {
       created: 10,
       updated: 20,
     }))
-    const events: Extract<WorkspaceRuntimeEvent, { type: "session.updated" }>[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
-      if (event.type === "session.updated" && (event.properties as { info?: { id?: string } } | undefined)?.info?.id === "s1") {
-        events.push(event)
-      }
-    })
+    const bus: string[] = []
+    const unsubscribe = workspaceRuntimeBus.subscribe((event) => { bus.push(event.type) })
+    const hub = createRuntimeEventHub()
+    const hubEvents: unknown[] = []
+    hub.subscribeGlobal((event) => { hubEvents.push(event.payload) })
 
     try {
       const app = SessionRoutes(() => adapter({
         async *sendMessage() {
           yield update
         },
-      }))
+      }), { eventHub: hub })
       const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1950,15 +1947,10 @@ describe("session prompt route", () => {
       })
 
       expect(res.status).toBe(200)
-      expect(events).toEqual([{
-        type: "session.updated",
-        directory,
-        workspaceId: "ws_title_updates",
-        properties: update.properties,
-      }])
+      expect(hubEvents.filter((event) => (event as { type?: string }).type === "session.updated")).toHaveLength(1)
+      expect(bus.filter((type) => type.startsWith("session."))).toEqual([])
     } finally {
       unsubscribe()
-      process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = previousWorkspaceId
     }
   })
 
@@ -2419,17 +2411,22 @@ describe("session prompt route", () => {
   })
 })
 
-it("forwards successful session deletion onto the workspace stream", async () => {
+it("publishes a successful session deletion once, on the hub the workspace stream serves, naming a subsession's parent", async () => {
   const directory = process.cwd()
-  const events: Extract<WorkspaceRuntimeEvent, { type: "session.deleted" }>[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
-    if (event.type === "session.deleted") events.push(event)
-  })
+  const hub = createRuntimeEventHub()
+  const events: unknown[] = []
+  hub.subscribeGlobal((event) => { if ((event.payload as { type?: string }).type === "session.deleted") events.push(event) })
+  const bus: string[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => { bus.push(event.type) })
   try {
-    const app = SessionRoutes(() => adapter({}))
+    const app = SessionRoutes(() => adapter({}), {
+      eventHub: hub,
+      getSession: async () => ({ ...buildSession({ id: "s1", directory, title: "child" }), parentID: "parent-1" }),
+    })
     const response = await app.request(`http://localhost/session/s1?directory=${encodeURIComponent(directory)}`, { method: "DELETE" })
     expect(response.status).toBe(200)
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: "session.deleted", directory, properties: { info: { id: "s1", directory } } })
+    expect(events[0]).toMatchObject({ directory, payload: { type: "session.deleted", properties: { info: { id: "s1", directory, parentID: "parent-1" } } } })
+    expect(bus.filter((type) => type.startsWith("session."))).toEqual([])
   } finally { unsubscribe() }
 })

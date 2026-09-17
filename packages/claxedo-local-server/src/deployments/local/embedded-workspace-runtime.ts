@@ -215,8 +215,8 @@ function options(
         }
       : {}),
     // The observer persists control-plane session metadata. Conversation
-    // delivery stays exclusively on WorkspaceRuntime's canonical runtime-event
-    // stream and is never republished onto the control-plane bus.
+    // delivery stays on the workspace's own `wr/events` and is never
+    // republished onto the control-plane bus.
     onCompatEvent: (event) => configuredOnSessionMetaEvent?.(event),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),

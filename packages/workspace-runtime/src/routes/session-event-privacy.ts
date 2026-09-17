@@ -41,14 +41,14 @@ type LeaseWatchOptions = {
 /**
  * Who is asking decides the scope of a managed runtime's event stream.
  *
- * The workspace's owner — any principal the authority grants the workspace
- * itself — opens it unscoped and receives every session and every
- * session-less frame (pty, process, worktree). A share grantee holds no
- * workspace access, only a grant on one session, so the stream is a session
- * resource for them: the session id is supplied by the caller and admitted
- * through the same verified relay identity and authority oracle as the REST
- * session routes, under a renewable lease. Unmanaged/local runtimes serve the
- * broad stream to whoever reached them.
+ * A principal the authority admits to the workspace opens it unscoped; the
+ * stream then carries every session-less frame (pty, process) and, session by
+ * session, what the session authority grants that principal. A share grantee
+ * holds no workspace access, only a grant on one session, so the stream is a
+ * session resource for them: the session id is supplied by the caller and
+ * admitted through the same verified relay identity and authority oracle as
+ * the REST session routes, under a renewable lease. Unmanaged/local runtimes
+ * serve the broad stream to whoever reached them.
  */
 export async function authorizeSessionEventScope(
   c: Context,
@@ -253,17 +253,25 @@ export function compatEnvelopeSessionId(event: CompatEnvelope) {
   return eventSessionId(event.payload)
 }
 
+/**
+ * The session a control frame belongs to. A pty bound to a session (its
+ * bytes, its exit) is that session's: a reader without a grant on the session
+ * must not see the terminal the agent drove. A pty bound to none is the
+ * workspace's.
+ */
 export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): string | undefined {
   switch (event.type) {
     case "agent.lifecycle":
       return event.sessionId
     case "session.lifecycle":
       return event.sessionID
-    case "session.updated": {
-      const properties = asRecord(event.properties)
-      const info = asRecord(properties?.info)
-      return text(properties?.sessionID) ?? text(properties?.sessionId) ?? text(info?.sessionID) ?? text(info?.id)
-    }
+    case "pty.created":
+    case "pty.updated":
+      return event.info.sessionId
+    case "pty.exited":
+    case "pty.deleted":
+    case "pty.stream":
+      return event.sessionId
     default:
       return undefined
   }

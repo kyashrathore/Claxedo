@@ -351,6 +351,7 @@ function subagentTaskEnvelope(input: {
   assistantId: string
   toolCallId: string
   description: string
+  partId?: string
 }) {
   return {
     directory: "",
@@ -360,7 +361,7 @@ function subagentTaskEnvelope(input: {
       properties: {
         sessionID: input.sessionId,
         part: {
-          id: input.toolCallId,
+          id: input.partId ?? input.toolCallId,
           sessionID: input.sessionId,
           messageID: input.assistantId,
           type: "tool",
@@ -875,9 +876,9 @@ test.describe("core harness rendering matrix @core", () => {
     const assistantId = `${userId}_r`
     const callId = "exec-interrupted-replay"
     const captured = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interrupted-command.json"), "utf8"))
-    // The stored part id is the client projection's `seqId` mint (`000000_<callID>`);
-    // a replayed start for the same callID regenerates that id, which is how a
-    // stale frame reaches the already-settled part.
+    // The stored part id is the runtime projection's `seqId` mint (`000000_<callID>`);
+    // a projection restarted for the turn regenerates that id, which is how a
+    // stale start frame reaches the already-settled part.
     const part = {
       ...captured,
       id: `000000_${callId}`,
@@ -934,8 +935,8 @@ test.describe("core harness rendering matrix @core", () => {
     await refetched
     await expect(row).toBeVisible()
     await expect(row).toContainText(/Failed|Interrupted/)
-    // The runtime stream replays the turn's start frames on reattach: the
-    // terminal frame is what the stored part already carries, and a fresh
+    // A projection restarted for the turn re-emits its start frames: the
+    // terminal state is what the stored part already carries, and the fresh
     // projection has no memory of it.
     for (const payload of [
       {
@@ -947,7 +948,7 @@ test.describe("core harness rendering matrix @core", () => {
     ]) {
       mock.emitRuntime({ directory: dir, sessionId, agentSessionId: sessionId, assistantMessageId: assistantId, payload: payload as never })
     }
-    // Child status uses the same raw lane and acknowledges the preceding frames.
+    // Child status rides the same stream and acknowledges the preceding frames.
     completeSubagent(mock, dir, sessionId, scenario.subagentKey)
     await expect(page.locator(`[data-component="subagent-chip"][data-subagent-key="${scenario.subagentKey}"]`)).toHaveAttribute("data-status", "completed")
     await page.screenshot({ path: testInfo.outputPath("interrupted-after-replay.png") })
@@ -959,16 +960,21 @@ test.describe("core harness rendering matrix @core", () => {
     expect(sawRunning, "the stored interrupted command returned to Running after its start frames replayed").toBe(false)
   })
 
-  test("a live reply keeps canonical text and tool identity when raw frames replay", async ({ page }) => {
+  test("a live reply's stored parts carry the runtime's projected ids, so its frames land on them instead of duplicating", async ({ page }) => {
     const dir = "/tmp/e2e-dup-replay"
     const sessionId = "ses_dup_replay"
     const otherId = "ses_dup_replay_other"
     const userId = "msg_dup_replay"
     const assistantId = `${userId}_r`
     const text = "QA_LIVE_REPLAY the two-item exit list renders once"
-    // The stored part carries the server's own part id (`prt_…`), not the
-    // client projection's `000000_<msg>-text` mint — a replayed delta cannot
-    // find it, so the projected part is appended as a SECOND copy.
+    const scenario = subagentScenario(subagentHarnessCases.find(item => item.name === "Codex native")!)
+    // The runtime persists the parts its own projection minted: the first text
+    // part of a turn is `000000_<msg>-text`, the tool call that follows it
+    // `000001_<callID>`. A projection restarted for the same turn (a resumed
+    // harness replays its events) regenerates those ids, so its frames must
+    // reach the stored parts rather than sit beside them.
+    const textPartId = `000000_${assistantId}-text`
+    const taskPartId = `000001_${scenario.toolCallId}`
     const messages = [
       {
         info: {
@@ -986,11 +992,10 @@ test.describe("core harness rendering matrix @core", () => {
           path: { cwd: dir, root: dir }, cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
         },
-        parts: [{ id: "prt_dup_stored", sessionID: sessionId, messageID: assistantId, type: "text", text }],
+        parts: [{ id: textPartId, sessionID: sessionId, messageID: assistantId, type: "text", text }],
       },
     ] as unknown as MockMessageRow[]
-    const scenario = subagentScenario(subagentHarnessCases.find(item => item.name === "Codex native")!)
-    const task = subagentTaskEnvelope({ sessionId, assistantId, toolCallId: scenario.toolCallId, description: scenario.description })
+    const task = subagentTaskEnvelope({ sessionId, assistantId, toolCallId: scenario.toolCallId, description: scenario.description, partId: taskPartId })
     messages[1]!.parts.push(task.payload.properties.part as never)
     const mock = await installMockRuntime(page, {
       dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
@@ -1014,15 +1019,14 @@ test.describe("core harness rendering matrix @core", () => {
     const chip = page.locator(`[data-component="subagent-chip"][data-subagent-key="${scenario.subagentKey}"]`)
     await expect(chip).toHaveCount(1)
     mock.emitRuntime({ directory: dir, sessionId, assistantMessageId: assistantId, payload: { type: "tool-start", toolCallId: scenario.toolCallId, toolName: "task" } })
-    // The child completion is on the same raw stream after the replay, making
-    // its visible status an acknowledgement that the earlier frames arrived.
+    // The child completion rides the same stream after the restart's frames,
+    // so its visible status is the acknowledgement that they arrived.
     completeSubagent(mock, dir, sessionId, scenario.subagentKey)
     await expect(chip).toHaveCount(1)
     await expect(chip).toHaveAttribute("data-status", "completed")
     await expect(textRows).toHaveCount(1)
-    await expect(page.locator('[data-timeline-part-id="prt_dup_stored"]')).toHaveCount(1)
-    await expect(page.locator(`[data-timeline-part-id="000000_${assistantId}-text"]`)).toHaveCount(0)
-    mock.emit({ type: "message.part.delta", properties: { sessionID: sessionId, messageID: assistantId, partID: "prt_dup_stored", field: "text", delta: " Canonical continuation." } } as never, dir)
+    await expect(page.locator(`[data-timeline-part-id="${textPartId}"]`)).toHaveCount(1)
+    mock.emit({ type: "message.part.delta", properties: { sessionID: sessionId, messageID: assistantId, partID: textPartId, field: "text", delta: " Canonical continuation." } } as never, dir)
     await expect(textRows).toContainText(`${text} Canonical continuation.`)
     await expect(textRows).toHaveCount(1)
   })
@@ -1034,9 +1038,9 @@ test.describe("core harness rendering matrix @core", () => {
     const userId = "msg_dup_replay"
     const assistantId = `${userId}_r`
     const text = "QA_DUP_REPLAY the two-item exit list renders once"
-    // The stored part carries the server's own part id (`prt_…`), not the
-    // client projection's `000000_<msg>-text` mint — a replayed delta cannot
-    // find it, so the projected part is appended as a SECOND copy.
+    // The stored part carries an id (`prt_…`) no projection mints, so a
+    // re-emitted delta cannot find it and the fresh `000000_<msg>-text` part
+    // would be appended as a SECOND copy.
     const messages = [
       {
         info: {
@@ -1068,14 +1072,13 @@ test.describe("core harness rendering matrix @core", () => {
     await (await expectRailRowVisible({ page, sessionId: otherId })).click()
     await expectAssistantReplyVisible(page, "Other reply", { spec: "core-harness-rendering-matrix", scenario: `dup-away-${testInfo.repeatEachIndex}` })
     await (await expectRailRowVisible({ page, sessionId })).click()
-    // The runtime stream replays the finished turn's deltas on reattach while
-    // the canonical messages fetch is still in flight: the projection cache was
-    // evicted at finish, so each frame is fresh state — the first announces
-    // message.updated (dropping time.completed off the stored envelope) and
-    // mints a fresh text part (`000000_<msg>-text`) that the REST merge then
-    // keeps alongside the stored part (`prt_…`). Emitting before reload lands
-    // the frames in the bus log; the delayed fetch keeps the store empty while
-    // the reattaching consumer drains them.
+    // A projection restarted for the finished turn re-emits its deltas while
+    // the canonical messages fetch is still in flight: each frame is fresh
+    // state — the first announces message.updated (dropping time.completed off
+    // the stored envelope) and mints a fresh text part (`000000_<msg>-text`)
+    // that the REST merge then keeps alongside the stored part (`prt_…`).
+    // Emitting before reload lands the frames in the stream log; the delayed
+    // fetch keeps the store empty while the reopened stream drains them.
     await page.route("**/session/*/message**", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 800))
       await route.fallback()

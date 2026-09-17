@@ -33,24 +33,6 @@ import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 
-/**
- * A `session.updated` / `session.deleted` is a row change (title,
- * `time.updated`, archived-at) the rail reconciles, forwarded verbatim to the
- * workspace stream. Subscribed on the hub rather than called from the turn
- * driver's publisher: a title generated after the turn, and every frame from
- * a host-started turn, reach the hub without passing through that publisher.
- */
-function bridgeRowChange(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
-  const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
-  if (payload.type !== "session.updated" && payload.type !== "session.deleted") return
-  workspaceRuntimeBus.publish({
-    type: payload.type,
-    ...(event.directory ? { directory: event.directory } : {}),
-    workspaceId: workspaceId(),
-    properties: payload.properties,
-  })
-}
-
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
   const sessionID = str(payload.properties?.sessionID) ?? str(payload.properties?.sessionId)
@@ -207,7 +189,6 @@ export function SessionRoutes(
   },
 ) {
   const eventHub = options?.eventHub ?? createRuntimeEventHub()
-  eventHub.subscribeGlobal(bridgeRowChange)
   /**
    * The harness a request names, or undefined when it names none.
    *

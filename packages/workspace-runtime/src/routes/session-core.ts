@@ -1698,12 +1698,15 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      // Read before deleting: once the row is gone nothing can say whether it
+      // was a subsession, and the rail's visible count depends on that.
+      const parentID = (await readSession(opts, c, directory, sessionId, adapter).catch(() => undefined) as { parentID?: string } | undefined)?.parentID
       await cascadeToChildren(opts, c, directory, sessionId, "delete")
       await opts.beforeDeleteSession?.(c, directory, sessionId)
       await disposeRuntimeSessionDocuments(sessionId)
       await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
       await after(opts.afterDeleteSession?.(c, directory, sessionId))
-      opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "")))
+      opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
       return c.json({ ok: true })
     })
     .post("/session/:id/message", async (c) => {

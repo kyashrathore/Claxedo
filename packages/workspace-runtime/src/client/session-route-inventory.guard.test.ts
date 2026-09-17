@@ -70,9 +70,7 @@ describe("runtime client against the session-core route inventory", () => {
       }
     })
 
-    const inventory = Object.entries(SESSION_CORE_ROUTE_ACCESS)
-      .filter(([, decision]) => decision.kind !== "stream")
-      .map(([route]) => route)
+    const inventory = Object.keys(SESSION_CORE_ROUTE_ACCESS)
 
     expect(calls.filter((call) => inventory.includes(call.route) && !inSessionCore(call.member))).toEqual([])
 

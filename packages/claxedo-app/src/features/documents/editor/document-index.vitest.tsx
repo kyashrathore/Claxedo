@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
 // central stream, so that is the signal the index bridges to its controller.
 const events = vi.hoisted(() => ({
   on: vi.fn(),
+  listen: vi.fn(() => () => undefined),
   centralConnected: vi.fn(() => true),
   unsubscribes: [] as Array<{ calls: number }>,
 }))
@@ -62,6 +63,7 @@ describe("PageIndex", () => {
     api.list.mockReset().mockResolvedValue([])
     api.listStatuses.mockReset().mockResolvedValue([])
     events.unsubscribes = []
+    events.listen.mockReset().mockReturnValue(() => undefined)
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => {
       const record = { calls: 0 }
@@ -295,6 +297,7 @@ describe("PageIndex project grouping", () => {
     )
     api.listStatuses.mockReset().mockResolvedValue([])
     events.unsubscribes = []
+    events.listen.mockReset().mockReturnValue(() => undefined)
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => () => undefined)
   })

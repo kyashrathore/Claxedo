@@ -62,7 +62,7 @@ export type { PtyInfo }
 // `orgId`/`projectId` are required so a consumer can filter to its own project.
 // `orgId` is the AUTHORITY-INTERNAL org id (`authority.resolveOrgId` at the
 // documents routes — the authority's internal org id (SQLite `org_id`), NEVER the issuer org
-// claim) and is enforced server-side (`routes/event-visibility.ts`: signed
+// claim) and is enforced server-side (`platform/http/event-visibility.ts`: signed
 // subscribers resolve the same internal id at connect and only see their own
 // org's events); `projectId` remains a client-side routing hint.
 export type DocumentChangedEvent = {

@@ -4,10 +4,11 @@
  *
  * A session's live frames — its parts, deltas, tool state, lifecycle — ride
  * its workspace runtime's `wr/events`, opened by `ClaxedoEventsProvider`
- * (`app/integrations/claxedo-events.tsx`) once per open workspace. The
- * workspace's owner reads it unscoped and sees every session; a share grantee
- * is refused at workspace level and re-opens it for one session, so the
- * stream then carries exactly one session and something has to say which.
+ * (`app/integrations/claxedo-events.tsx`) for the routed workspace. A
+ * principal admitted to the workspace reads it unscoped and sees every
+ * session the authority grants; a share grantee is refused at workspace
+ * level and re-opens it for one session, so the stream then carries exactly
+ * one session and something has to say which.
  *
  * Deriving that session from the shell route alone means the stream can only
  * exist once the route names a real session — after a first turn's session

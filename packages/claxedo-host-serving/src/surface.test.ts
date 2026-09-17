@@ -15,6 +15,7 @@ describe("deny — the daemon's own families never cross the tunnel", () => {
     // The exact 403 verified live: relayed host-serving administration.
     "/api/claxedo/host-serving",
     "/api/claxedo/health",
+    "/api/cp/events",
     "/api/claxedo/remote-access/enable",
     "/api/control",
     "/api/control/foo",

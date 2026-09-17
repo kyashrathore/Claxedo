@@ -1,10 +1,12 @@
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
-// Worker-safe home of the per-event visibility predicate. Both the local Node
-// bus SSE (`routes/events.ts`) and the hosted `LiveSyncRoom` Durable Object
-// (`src/deployments/hosted-workerd/live-sync-room.cf.ts`) import this ONE function so the central event
-// stream applies identical scoping in both deployments. The imports here are
+// Worker-safe home of the per-event visibility predicate. Both the local
+// daemon's `cp/events` handler (`claxedo-local-server/src/shell/events.ts`)
+// and the hosted `LiveSyncRoom` Durable Object
+// (`src/deployments/hosted-workerd/live-sync-room.cf.ts`) import this ONE
+// function so the control plane's stream applies identical scoping in both
+// deployments. The imports here are
 // TYPE-ONLY (both `ControlPlaneEvent` and `ControlPlaneAuthContext` erase at build),
 // so nothing runtime (e.g. the process-local `controlBus`) is pulled — this
 // module is safe to reach from the Cloudflare Worker bundle.

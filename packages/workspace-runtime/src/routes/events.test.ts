@@ -83,6 +83,12 @@ async function readUntil(response: Response, value: string, reads = 20) {
   return text
 }
 
+/** Field-order-independent: Hono writes `data:` before `id:`. */
+function frameId(text: string, marker: string) {
+  const frame = text.split("\n\n").find((block) => block.includes(marker))
+  return frame?.split("\n").find((line) => line.startsWith("id:"))?.slice(3).trim()
+}
+
 function dataFrames(text: string) {
   return text.split("\n\n").flatMap((frame) => {
     const line = frame.split("\n").find((l) => l.startsWith("data:"))
@@ -143,7 +149,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).toContain("prt-done")
   })
 
-  test("the workspace's owner opens the stream unscoped on a managed runtime and sees every session", async () => {
+  test("a principal admitted to the workspace opens the stream unscoped and sees every session the authority grants", async () => {
     const { app, hub } = harness({ policy: managedPolicy({ workspace: "allow" }), relayAuth })
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
@@ -156,22 +162,30 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).toContain("prt-b")
   })
 
-  test("a workspace share reads the unscoped stream, but only the sessions the authority grants", async () => {
+  test.each([relayAuth, viewerAuth])("the unscoped stream carries a session's frames — parts, subagents, goals, its pty — only to a principal the authority grants it (role %#)", async (auth) => {
     const { app, hub, bus } = harness({
       policy: managedPolicy({ workspace: "allow", session: (id) => id === "shared" }),
-      relayAuth: viewerAuth,
+      relayAuth: auth,
     })
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
     expect(response.status).toBe(200)
     hub.publishGlobal(part("private", "prt-private", { status: "running" }))
-    bus.publish({ type: "pty.exited", id: "pty-x", exitCode: 0 })
+    hub.publishRuntime({ directory: DIRECTORY, sessionId: "private", payload: { type: "subagent-updated", subagentKey: "private-child", revision: 1, status: "running" } })
+    hub.publishRuntime({ directory: DIRECTORY, sessionId: "private", payload: { type: "goal-updated", sessionId: "private", goal: { id: "g", status: "active", text: "private-goal" } as never } })
+    bus.publish({ type: "pty.exited", id: "pty-private", sessionId: "private", exitCode: 0, tail: "private-terminal-bytes" })
+    bus.publish({ type: "pty.exited", id: "pty-workspace", exitCode: 0 })
+    hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
     controller.abort()
-    expect(text).toContain("pty-x")
+    expect(text).toContain("pty-workspace")
+    expect(text).toContain("shared-child")
     expect(text).toContain("prt-shared")
     expect(text).not.toContain("prt-private")
+    expect(text).not.toContain("private-child")
+    expect(text).not.toContain("private-goal")
+    expect(text).not.toContain("private-terminal-bytes")
   })
 
   test("a principal without workspace access is refused the unscoped stream", async () => {
@@ -199,10 +213,14 @@ describe("wr/events — one stream per workspace runtime", () => {
     hub.publishGlobal(part("other", "prt-other", { status: "running" }))
     hub.publishGlobal(part("child-of-shared", "prt-child", { status: "running" }))
     bus.publish({ type: "pty.exited", id: "pty-x", exitCode: 0 })
+    bus.publish({ type: "pty.exited", id: "pty-shared", sessionId: "shared", exitCode: 0 })
+    hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
     controller.abort()
     expect(text).toContain("prt-child")
+    expect(text).toContain("pty-shared")
+    expect(text).toContain("shared-child")
     expect(text).toContain("prt-shared")
     expect(text).not.toContain("prt-other")
     expect(text).not.toContain("pty-x")
@@ -212,6 +230,73 @@ describe("wr/events — one stream per workspace runtime", () => {
     const { app } = harness({ policy: managedPolicy({ workspace: "deny", session: () => false }), relayAuth })
     const response = await app.request("http://localhost/api/wr/events?sessionID=not-mine")
     expect(response.status).toBe(403)
+  })
+
+  test("opens with a heartbeat carrying the cursor the connection resumes from; a cursor-less connection is served nothing from the ring", async () => {
+    // The regression this guards: the reader unwraps `{directory, payload}`
+    // frames and applies them, so a full re-read on every fresh connection
+    // re-upserts already-answered permission and question requests.
+    const { app, hub } = harness({})
+    hub.publishGlobal(part("ses-1", "prt-before", { status: "running" }))
+    hub.publishGlobal(part("ses-1", "prt-before-2", { status: "running" }))
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    const opened = await readUntil(response, "heartbeat", 1)
+    expect(frameId(opened, "heartbeat")).toBe("2")
+    hub.publishGlobal(part("ses-1", "prt-after", { status: "running" }))
+    const text = await readUntil(response, "prt-after")
+    controller.abort()
+    expect(text).not.toContain("prt-before")
+    expect(frameId(text, "prt-after")).toBe("3")
+  })
+
+  test("a frame published while disconnected is delivered on the next Last-Event-ID reconnect", async () => {
+    const { app, hub } = harness({})
+    const first = new AbortController()
+    const opened = await readUntil(await app.request("http://localhost/api/wr/events", { signal: first.signal }), "heartbeat", 1)
+    expect(frameId(opened, "heartbeat")).toBe("0")
+    first.abort()
+    hub.publishGlobal(part("ses-1", "prt-during-gap", { status: "running" }))
+    const second = new AbortController()
+    const text = await readUntil(await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": "0" }, signal: second.signal }), "prt-during-gap")
+    second.abort()
+    expect(frameId(text, "prt-during-gap")).toBe("1")
+  })
+
+  test("resuming from a mid-log cursor replays only what follows it", async () => {
+    const { app, hub } = harness({})
+    hub.publishGlobal(part("ses-1", "prt-old", { status: "running" }))
+    hub.publishGlobal(part("ses-1", "prt-new", { status: "running" }))
+    const controller = new AbortController()
+    const text = await readUntil(await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": "1" }, signal: controller.signal }), "prt-new")
+    controller.abort()
+    expect(text).not.toContain("prt-old")
+  })
+
+  test("a revoked session lease ends the reader and no later frame of that session reaches it", async () => {
+    let authorityCalls = 0
+    const policy = managedPolicy({ workspace: "deny" })
+    policy.authorizeStream = async () => {
+      authorityCalls += 1
+      return authorityCalls === 1
+        ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+        : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+    }
+    const { app, hub } = harness({ policy, relayAuth })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events?sessionID=shared", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    readers.set(response, reader)
+    expect((await reader.read()).done).toBe(false)
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000)),
+    ])
+    hub.publishGlobal(part("shared", "prt-after-revoke", { status: "running" }))
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
+    controller.abort()
   })
 
   test("a rolled cursor is answered with one gap notice and the stream stays live", async () => {
