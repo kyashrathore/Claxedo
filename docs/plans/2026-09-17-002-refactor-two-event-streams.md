@@ -1,9 +1,10 @@
 # Two event streams: `cp/events` for the control plane, `wr/events` per workspace runtime
 
-Status: proposed 2026-09-17, not started. Supersedes the lane-specific
-repairs in `2026-09-17-001-fix-lost-part-frames-strand-running-rows.md`
-(its hydrator fix and history-resync request stay; its per-lane gap hooks,
-terminal sets and heartbeat patch collapse into one of each here).
+Status: proposed 2026-09-17, reviewed adversarially the same day (findings
+folded in below), not started. Supersedes the lane-specific repairs in
+`2026-09-17-001-fix-lost-part-frames-strand-running-rows.md` (its hydrator
+fix and history-resync request stay; its per-lane gap hooks, terminal sets
+and heartbeat patch collapse into one of each here).
 
 ## The flow today, observed
 
@@ -61,94 +62,137 @@ same stream there: `/api/wr/events` is P4 in disguise.
   (those ride the runtime event hub on `/api/wr/runtime-events`)".
 
 Static reading therefore cannot name the stream that streams a desktop
-transcript; only a wire capture can (Phase 0). The 2026-09-17 incident
-sat exactly in this ambiguity: the repair was wired to the lane the
-comments named, and the stall proof found parts arriving elsewhere.
+transcript, and the live runs of 2026-09-17 saw none do it: against the
+standalone local-server the client sat at 3,847 chars while the server held
+17 KB; against the desktop daemon every text jump coincided with a REST read
+(the seven accepted-prompt polls, then the plan-001 resync). The proven
+defect behind the "Running" rows is therefore plan 001's D.2 — a history
+read could not advance a part the client already held — and the transport
+repairs in that plan rest on an unproven premise. Phase 0 (a wire capture
+on the installed desktop) decides whether `wr/events` has to GAIN parts or
+merely become reachable.
+
+What already exists and the first draft of this plan missed: the runtime
+runs `createClientPresentationProjection` itself, per turn
+(`workspace-runtime/src/session/service.ts:404`), and publishes the result
+on the hub's compat channel — that channel IS the presentation stream this
+plan wants on `wr/events`, and today it is served only by P6 and P7, which
+route ownership shadows on the local daemon. §2 is a re-route, not a new
+projection.
 
 ## Goal
 
 Two streams, each with one contract and one reader:
 
-- **`cp/events`** — the control plane's stream. Carries what only the
-  control plane knows: session inventory and lifecycle, workspace/worktree/
-  provision state, document doorbells, account and access changes. One
-  route (`/api/cp/events`), one handler shared by the local daemon and the
-  hosted shell, one frame shape. Signed clients read it through the account
-  bridge; the local daemon serves it to its own surface over the local
-  WebSocket.
-- **`wr/events`** — one per workspace runtime. Carries everything a
-  runtime produces for its sessions: the turn's presentation frames
-  (message/part/delta, tool state, todo, permission/question, session
-  status/idle/error), diagnostics, subagent and goal frames, pty/process
-  frames. One route (`/api/wr/events`), one handler, one frame shape; the
-  runtime is the single projector from `AgentRuntimeEvent` to presentation
-  frames (it already is, for the store and journal). Reached through the
-  relay for `cloud`/`user-hosted` workspaces.
+- **`cp/events`** — the control plane's stream. Carries NOTICES: something
+  in the session inventory, a workspace, a worktree, a provision, a
+  document, a share grant, or the account changed; the reader re-reads.
+  Never a session's content. One route (`/api/cp/events`), one handler
+  shared by the local daemon and the hosted shell, one frame shape. Signed
+  clients read it through the account bridge; the local daemon serves it
+  over the local WebSocket. This is what hosted does today
+  (`LiveSyncRoom` nudges); local converges on it.
+- **`wr/events`** — one per workspace runtime, reached through the relay
+  for `cloud`/`user-hosted`. Carries everything a runtime produces for its
+  sessions: presentation frames (message/part/delta, tool state, todo,
+  permission/question, status/idle/error), diagnostics, subagent and goal
+  frames, pty/process frames. The runtime is the single projector from
+  `AgentRuntimeEvent` (it already is, for the store). Two arms, decided by
+  WHO is asking, not by deployment:
+  - the workspace's owner (workspace access) → one workspace-wide
+    connection: every session and every session-less frame;
+  - a share grantee (session share, no workspace access) →
+    `wr/events?sessionID=…`, that session only, under the session lease
+    the runtime already mints. Sharing keeps streaming live from the
+    runtime; nothing about it changes.
 
 **Local machine:** the local daemon is the control plane AND hosts its
 workspace runtimes in-process. It serves `cp/events` for the shell and
 `wr/events` per embedded runtime under the same route ownership the proxy
-already applies (`/api/wr/*` → runtime). The desktop therefore opens
-`cp/events` once and `wr/events` once per open local workspace — the same
-two connections a signed web client opens, just without the relay hop. A
-single "cp only" stream on local would require the daemon to re-multiplex
-every runtime's turn frames onto the control bus, which is the bridge the
-comments describe and nobody built; two streams keep the local daemon
-structurally identical to hosted.
+already applies (`/api/wr/*` → runtime). The desktop opens `cp/events`
+once and `wr/events` once per open local workspace — the same two
+connections a signed web client opens, minus the relay hop. Session
+lifecycle stops riding the runtime bus into the central stream (today
+`claxedoBus` is the runtime bus under another name, `server-core bus.ts:141`,
+which is the double delivery `claxedo-event-targets.ts:122` dodges); the
+local sidebar learns of a new session the way hosted does, by a notice and
+a read.
 
-Everything else is deleted: no aliases, no compat streams (P6, P7), no raw
-`AgentRuntimeEvent` lane on the wire (P5 folds into `wr/events` as
-projected frames), no client-side projection, no URL rewrite, no
-test-only URL builders. One replay ring, one terminal policy, one gap
-notice, one watchdog implementation, one resync request.
+Everything else is deleted: no aliases, no raw `AgentRuntimeEvent` lane on
+the wire (P5 folds into `wr/events`), no client-side projection, no URL
+rewrite, no test-only URL builders. One replay ring per runtime scope, one
+terminal policy, one gap notice, one watchdog implementation, one resync
+request.
 
 ## Design
 
 ### 1. Frame contracts
 
-- `cp/events`: `ClaxedoEvent` (`server-core/platform/runtime/lib/bus.ts`)
-  minus anything session-content-shaped. `isTerminalClaxedoEvent` is its
-  terminal policy. The `globalBus` envelope form (`{directory, payload}`)
-  is retired from this stream; session lifecycle stays a flat frame.
+- `cp/events`: notices only — `session.lifecycle` (created/deleted/
+  updated, the id and workspace, no content), `workspace.*`, `worktree.*`,
+  `provision`, `document.changed`, `session.share.changed`, account/access
+  changes. Terminal policy: all of them (each is a settlement nothing
+  re-states). The `globalBus` envelope form (`{directory, payload}`) is
+  retired from this stream.
 - `wr/events`: the compat presentation envelope the runtime already
-  produces for its store (`createOpencodeCompatProjection`), plus the
-  `WorkspaceRuntimeEvent` control frames, plus diagnostics/subagent/goal
-  projected server-side (`createClientPresentationProjection` moves from
-  the client to the runtime; it is the same function). Terminal policy:
+  publishes on its hub channel (`createOpencodeCompatProjection` /
+  `createClientPresentationProjection`, `service.ts:404`) plus the
+  `WorkspaceRuntimeEvent` control frames (P4's bus) plus diagnostics,
+  subagent and goal frames projected the same way. Terminal policy:
   `isTerminalCompatEvent` ∪ tool settlement (`settlesToolPart`) ∪ pty/
   process settlements ∪ subagent settlements. The store's journal is the
   same projection, so what the client sees is what the store holds.
+- Scope on `wr/events` (`authorizeSessionEventScope`): try workspace
+  authority first (`authorizeHost`, role ≥ viewer) → workspace-wide; else
+  require `sessionID` and the session stream lease (`authorizeStream`) →
+  session-scoped; else 400 as today. The policy marker `managed-private`
+  keeps meaning "ask the control plane"; it stops meaning "every stream is
+  a session".
 
 ### 2. Server
 
 - `workspace-runtime/routes/events.ts` becomes the one `wr/events` handler
-  over one bus (`WorkspaceRuntimeEvent | CompatEnvelope`); `runtime-events.ts`
-  (P4), the inline `/global/event` (P6) and `/event` (P7) are deleted. The
-  runtime hub keeps `publishRuntime` for in-process consumers (adapters,
-  transcripts, subagent admission) — it is no longer a wire format.
+  over one source: the hub's compat channel (`eventHub.subscribeGlobal`,
+  today P6's source at `workspace/runtime.ts:646`) merged with the control
+  bus (`workspaceRuntimeBus`, today P4's). `runtime-events.ts` (P4's
+  handler), the inline `/global/event` (P6) and `/event` (P7) are deleted;
+  `runtimeEventsHandler` (P5) leaves the wire — the hub keeps
+  `publishRuntime` for in-process consumers (adapters, transcripts,
+  subagent admission), it is no longer a wire format. Diagnostics, subagent
+  and goal envelopes are projected where the turn driver already projects
+  everything else, so the hub's compat channel carries them.
+- Retention is per runtime scope (`createIdentityAwareEventSource` already
+  keeps one ring per principal scope), sized for whole-part payloads with
+  the terminal reserve for settlements — one setting, recorded once, not
+  shared with `cp/events`. This keeps `shell/events.ts:226`'s warning (a
+  central ring pinning a long turn's parts for the process lifetime) true
+  by construction: the central ring holds notices only.
 - `claxedo-local-server/shell/events.ts` becomes the `cp/events` handler,
-  mounted once at `/api/cp/events`; `hosted/shell.ts` mounts the same
-  handler. The `globalBus` subscription goes; `process-events.ts:43` and
-  `subscribe_message_replay(globalBus)` are re-pointed at the runtime's
-  bus for the sessions they belong to (self-hosted node hosts its runtimes
-  in-process like the local daemon).
+  mounted once at `/api/cp/events`; the hosted shell mounts the same
+  handler over `LiveSyncRoom`. Its `globalBus` subscription goes;
+  `process-events.ts:43` and `subscribe_message_replay(globalBus)` are
+  re-pointed at the runtime's channel for the sessions they belong to.
+  `publishSessionLifecycle` publishes a notice to the control-plane bus,
+  not a frame to the runtime bus.
 - `route-ownership.ts` / `product-route-families.ts`: `/api/cp/events` →
   control plane; `/api/wr/events` → runtime. The four old spellings are
   removed from ownership, the request guard, and the relay proxy's
   `streaming()` list.
 - `attachSseFanout` and `createSseReplayBuffer` stay as the one transport
   implementation for both handlers (with the overflow gap notice from plan
-  001). One heartbeat interval, one ring size, recorded once.
+  001).
 
 ### 3. Client
 
 - One reader implementation (`claxedo-events.tsx`'s loop, which already
   reads `id:`, resumes with `Last-Event-ID`, resets its watchdog on any
-  frame, and now raises `session-history-resync` on `stream.replay-gap`),
+  frame, and raises `session-history-resync` on `stream.replay-gap`),
   instantiated per target: the `cp` target and one `wr` target per open
-  workspace (`claxedo-event-targets.ts` already computes these; the
-  `local`-kind special case that suppressed the workspace target goes,
-  because local workspaces now have a `wr/events` of their own).
+  workspace. `claxedo-event-targets.ts` loses the `local`-kind exclusion
+  (local workspaces now have a `wr/events` of their own) and the
+  `sessionAuthority` branch for the owner: an owner opens the workspace
+  stream without a session id everywhere; the session-scoped form stays
+  for a grantee reading a shared session.
 - `provider.tsx`'s stream loop, `global-sdk-event-fetch.ts`,
   `runtime-event-projection.ts`, `runtime-envelope.ts`, the heartbeat
   watchdog module and `reconnect-backoff.ts` are deleted; subagent and goal
@@ -164,17 +208,21 @@ notice, one watchdog implementation, one resync request.
 ### 4. Migration order
 
 1. Phase 0 — wire capture on the installed desktop and on staging: one
-   turn per deployment with every open stream logged (frame type counts per
-   route). Records which route carried parts, which carried nothing, and
-   the reconnect count. Written into this plan before Lane A starts.
-2. `wr/events` gains the projected turn frames (server-side projection of
-   diagnostics/subagents/goals added; presentation envelopes already
-   there). Client `wr` reader applies them; R2 deleted. Verified by the
-   Phase 0 capture repeated: P5 idle, transcript streams.
-3. `cp/events` route introduced, old spellings answered by the new handler
-   for one release, then removed with their ownership entries.
-4. P6/P7 deleted once Phase 0 shows no reader (the OpenCode engine's native
-   passthrough, if still wanted, stays inside the harness adapter — memory
+   turn per deployment with every open stream logged (route, frame-type
+   counts, reconnect count) and the mid-turn history polls disabled for
+   the run, so a transcript that advances proves a stream did it. Written
+   into this plan before Lane A starts. If the desktop shows no stream
+   carrying parts, the first cut is simply un-shadowing the hub channel
+   on `/api/wr/events` (§2) — and plan 001's "frames lost on the wire"
+   narrative is corrected to "no wire".
+2. `wr/events` = hub channel + control bus, with the two-arm scope; client
+   `wr` reader applies it; P5 deleted from the wire; R2 deleted. Verified
+   by the Phase 0 capture repeated: transcript streams, no polls needed.
+3. `cp/events` route introduced as notices; session lifecycle moved to a
+   notice; old spellings answered by the new handler for one release, then
+   removed with their ownership entries.
+4. P6/P7 deleted (the OpenCode engine's native passthrough, if still
+   wanted, stays inside the harness adapter — memory
    `project_opencode_native_events` — never as an HTTP stream).
 
 ## Change points
@@ -200,32 +248,46 @@ notice, one watchdog implementation, one resync request.
 
 - [ ] Phase 0 capture recorded here: per deployment (desktop local, signed
       web + cloud workspace, user-hosted), the routes opened during one
-      turn and the frame-type counts on each. Progress:
+      turn, the frame-type counts on each, and — with mid-turn history
+      polls disabled — whether the transcript advanced. Progress:
 - [ ] Desktop local: exactly two stream connections per open workspace in
-      DevTools (`/api/cp/events`, `/api/wr/events?…`); a turn's parts,
-      tool states, todo, permissions, diagnostics, subagent and goal frames
-      all observed on `wr/events`; nothing session-shaped on `cp/events`.
-      Progress:
-- [ ] Signed web with a cloud workspace: the same two, `wr/events` through
-      the relay; the sidebar's session rows come from `cp/events`.
-      Progress:
+      DevTools (`/api/cp/events`, `/api/wr/events?…`); with polls
+      disabled, a turn's parts, tool states, todo, permissions,
+      diagnostics, subagent and goal frames all observed on `wr/events`
+      (counts > 0 per type exercised); nothing session-shaped on
+      `cp/events`; a new session appears in the sidebar from a
+      `cp/events` notice. Progress:
+- [ ] Signed web with a cloud workspace: the owner opens ONE `wr/events`
+      through the relay with no session id and sees every session and the
+      pty frames; a share grantee in another account opens
+      `wr/events?sessionID=…` for the shared session and nothing else,
+      and an unscoped attempt by the grantee is refused. Progress:
 - [ ] Repository: no route named `/global/event`, `/event`,
       `/api/claxedo/events` or `/api/wr/runtime-events` in any package,
       ownership table, guard, throttle, proxy list, e2e mock or comment;
       `provider.tsx` has no stream loop; `agent-runtime-client` has no
-      `subscribeTo*`. Progress:
+      `subscribeTo*`; `claxedo-event-targets.ts` has no `local`-kind
+      exclusion. Progress:
 - [ ] The 2026-09-17-001 scenario (daemon `kill -STOP` ≤ 36 s across a
-      tool's completion) re-run on the installed build: one gap notice on
-      `wr/events`, one resync, the row reads "Ran …" within it. Progress:
+      tool's completion) re-run on the installed build with polls
+      disabled: one gap notice on `wr/events`, one resync, the row reads
+      "Ran …" within it. Progress:
+- [ ] A cursor-less FIRST open during a stall (plan 001's non-goal): the
+      reader's bootstrap heartbeat carries the cursor and the reader's
+      first `session-history-resync` fires after the stream opens, so the
+      reply's `message.updated` is read rather than lost. Progress:
 - [ ] Tests: one handler suite per stream (replay, gap, terminal reserve,
-      overflow notice, session scoping); one reader suite (cursor, watchdog
-      on heartbeat, gap → resync); the projection's server-side tests;
-      route-ownership snapshot; `bun run test:architecture-ratchets` with
-      the closure ceilings LOWERED to the measured values. Progress:
+      overflow notice, owner vs grantee scope); one reader suite (cursor,
+      watchdog on heartbeat, gap → resync); route-ownership snapshot;
+      `bun run test:architecture-ratchets` with the closure ceilings
+      LOWERED to the measured values. Progress:
 
 ## Non-goals
 
 - Changing the harness adapters or the store's journal projection.
+- Changing how a share is granted or who may read a shared session: the
+  control plane's `session_share_grants` and the runtime's session lease
+  stay as they are. Only the owner's stream stops being session-scoped.
 - The relay itself.
 - Daemon stall causes (plans 2026-09-16-001/002).
 

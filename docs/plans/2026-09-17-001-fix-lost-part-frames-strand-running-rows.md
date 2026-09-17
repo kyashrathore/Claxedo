@@ -1,7 +1,15 @@
 # A lost part frame is repaired by the next read, not by the end of the turn
 
-Status: implemented 2026-09-17 on `dev` (unpushed); one DoD row open, see
-the list.
+Status: implemented 2026-09-17 on `dev` (unpushed, `71504ab131`); one DoD
+row open, see the list. Corrected the same day by the review of
+`2026-09-17-002-refactor-two-event-streams.md`: static reading finds no
+stream that carries a turn's parts to the desktop client (the runtime's
+compat channel is served only by `/global/event` and `/event` on the
+runtime app, which route ownership shadows on the local daemon), and the
+live runs saw every transcript advance coincide with a REST read. The
+proven defect is D.2; §1 is the fix that healed the rows. §2 and §3 stand
+as transport hardening whose triggering scenario (C.1/C.2 on the parts
+lane) is unproven until that plan's Phase 0.
 Companion to `2026-09-16-001-fix-daemon-resource-waste.md` and
 `2026-09-16-002-fix-opencode-engine-lifecycle.md`: those remove the daemon
 stalls that lose frames; this plan makes a lost frame survivable. Neither
