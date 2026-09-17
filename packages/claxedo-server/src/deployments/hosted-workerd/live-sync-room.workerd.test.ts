@@ -254,7 +254,7 @@ describe("LiveSyncRoom workerd integration", () => {
     const frames = await stream.until(2, "no replay-gap notice for a stale cursor")
     expect(frames[0]).toEqual({ id: "57", data: { type: "heartbeat" } })
     expect(frames[1]).toMatchObject({
-      data: { type: "stream.replay-gap", code: "claxedo.sse_replay_gap", lastEventId: "57" },
+      data: { type: "stream.replay-gap", code: "cp.sse_replay_gap", lastEventId: "57" },
     })
     // The notice is per-connection: it carries only cursor ids, so it never
     // takes an id of its own and cannot advance a reader past real frames.

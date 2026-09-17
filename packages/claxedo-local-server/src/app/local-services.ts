@@ -36,7 +36,6 @@ import {
   persistMessageEvent,
   readSessionMessages,
   readSessionMaxEventOrdinal,
-  subscribeMessageReplay,
 } from "@claxedo/server-core/session/message-replay"
 import { syncCloudMessages } from "@claxedo/server-core/session/sync"
 
@@ -64,15 +63,7 @@ export function localSessionProjectionStore(): SessionProjectionStore {
 }
 
 export function localDurableSessionLog(): DurableSessionLog {
-  // The backend is the port: `persist_message_event` + `subscribe_message_replay`.
-  // The object here previously listed four differently-named projection-store
-  // functions and was silenced with `as never`, so both port members resolved
-  // to `undefined` and this log was inert. Same wiring as the SQLite central
-  // store's `durableSessionLog`.
-  return createDurableSessionLog({
-    persist_message_event: persistMessageEvent,
-    subscribe_message_replay: subscribeMessageReplay,
-  })
+  return createDurableSessionLog({ persist_message_event: persistMessageEvent })
 }
 
 export type LocalControlPlaneServicesOptions = {

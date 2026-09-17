@@ -6,7 +6,7 @@ import { setDocumentChangedSink } from "@claxedo/server-core/documents/backend"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { ControlPlaneAuthConfig, ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 
@@ -26,6 +26,6 @@ export function localDocumentsRoutes(auth: { authConfig?: ControlPlaneAuthConfig
       ...(options?.maxBufferBytes ? { maxBuffer: options.maxBufferBytes } : {}),
     })).stdout.trim(),
   })
-  setDocumentChangedSink((event) => claxedoBus.publish(event))
+  setDocumentChangedSink((event) => controlBus.publish(event))
   return DocumentsRoutes({ backend, ...auth })
 }

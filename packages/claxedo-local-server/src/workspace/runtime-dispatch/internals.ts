@@ -145,7 +145,7 @@ export function noWr(c: Context, err?: unknown) {
 }
 
 function streaming(pathname: string, headers: Headers) {
-  if (pathname === "/global/event" || pathname === "/event") return true
+  if (pathname === "/api/wr/events") return true
   const type = headers.get("content-type") || ""
   return type.includes("text/event-stream")
 }
@@ -338,9 +338,7 @@ export function embeddedConfigModeForPath(
   if (
     pathname === "/api/wr/health"
     || pathname === "/api/wr/capabilities"
-    || pathname === "/event"
     || pathname === "/api/wr/events"
-    || pathname === "/api/wr/runtime-events"
     || pathname === "/vcs"
     || pathname === "/file"
     || pathname.startsWith("/file/")

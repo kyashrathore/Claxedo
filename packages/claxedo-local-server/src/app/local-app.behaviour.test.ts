@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { Hono, type Context, type Next } from "hono"
 import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -222,7 +222,7 @@ describe("local composition — sandbox driver settings", () => {
 describe("local composition — health and telemetry", () => {
   test("serves the dedicated control-plane event stream", async () => {
     const controller = new AbortController()
-    const response = await app().request("http://127.0.0.1/api/claxedo/events", {
+    const response = await app().request("http://127.0.0.1/api/cp/events", {
       signal: controller.signal,
     })
 
@@ -237,7 +237,7 @@ describe("local composition — health and telemetry", () => {
       if (next.done) break
       received += decoder.decode(next.value, { stream: true })
       if (!received.includes("local-event-stream-probe")) {
-        claxedoBus.publish({
+        controlBus.publish({
           type: "document.changed",
           documentId: "local-event-stream-probe",
           orgId: "local-test-org",

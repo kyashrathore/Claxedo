@@ -565,10 +565,10 @@ describe("embedded workspace runtime", () => {
   test("projects canonical runtime title events without publishing conversation events to the control plane", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    const { globalBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
+    const { controlBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
     const events: import("@claxedo/agent-sdk-runtime").CompatEnvelope[] = []
     const controlPlaneEvents: unknown[] = []
-    const unsubscribe = globalBus.subscribe((event) => controlPlaneEvents.push(event))
+    const unsubscribe = controlBus.subscribe((event) => controlPlaneEvents.push(event))
     configureEmbeddedWorkspaceRuntime({ onSessionMetaEvent: (event) => events.push(event) })
     try {
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
@@ -590,9 +590,7 @@ describe("embedded workspace runtime", () => {
           properties: expect.objectContaining({ info: expect.objectContaining({ id: session.id, title: "Canonical title" }) }),
         }),
       }))
-      expect(controlPlaneEvents).not.toContainEqual(expect.objectContaining({
-        payload: expect.objectContaining({ type: "session.updated" }),
-      }))
+      expect(controlPlaneEvents).toEqual([])
     } finally {
       unsubscribe()
       configureEmbeddedWorkspaceRuntime({})

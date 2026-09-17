@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
-import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { gitRun } from "./git"
 
@@ -33,17 +33,7 @@ export async function nextWorktreeInfo(dir: string, project_id: string, name?: s
 }
 
 export function publishWorktreeReady(info: { name: string; branch: string; directory: string }) {
-  globalBus.publish({
-    directory: info.directory,
-    payload: {
-      type: "worktree.ready",
-      properties: {
-        name: info.name,
-        branch: info.branch,
-      },
-    },
-  })
-  claxedoBus.publish({
+  controlBus.publish({
     type: "worktree.ready",
     directory: info.directory,
     name: info.name,
@@ -52,16 +42,7 @@ export function publishWorktreeReady(info: { name: string; branch: string; direc
 }
 
 export function publishWorktreeFailed(directory: string, message: string) {
-  globalBus.publish({
-    directory,
-    payload: {
-      type: "worktree.failed",
-      properties: {
-        message,
-      },
-    },
-  })
-  claxedoBus.publish({
+  controlBus.publish({
     type: "worktree.failed",
     directory,
     message,

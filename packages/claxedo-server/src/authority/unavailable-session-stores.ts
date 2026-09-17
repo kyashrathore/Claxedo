@@ -41,5 +41,4 @@ export const UNUSED_PROJECTION_STORE: ProjectionStore = {
 
 export const UNUSED_DURABLE_SESSION_LOG: DurableSessionLog = {
   persist_message_event: () => unavailable("Durable session log"),
-  subscribe_message_replay: () => unavailable("Durable session log"),
 }

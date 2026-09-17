@@ -1,16 +1,7 @@
-import { describe, expect, test, vi } from "vitest"
-import { createBus, type ClaxedoEvent } from "./bus"
+import { describe, expect, test } from "vitest"
+import { createBus, type ControlPlaneEvent } from "./bus"
 
-vi.mock("@claxedo/workspace-runtime", () => ({
-  claxedoBus: {
-    publish() {},
-    subscribe() {
-      return () => {}
-    },
-  },
-}))
-
-describe("claxedo bus event contract", () => {
+describe("control plane bus", () => {
   test("delivers to later subscribers when an earlier subscriber throws", () => {
     const errors: unknown[] = []
     const events: string[] = []
@@ -43,35 +34,15 @@ describe("claxedo bus event contract", () => {
     expect((errors[0] as Error).message).toBe("async subscriber failed")
   })
 
-  test("publishes session lifecycle events", () => {
-    const bus = createBus<ClaxedoEvent>()
-    const events: ClaxedoEvent[] = []
+  test("publishes control-plane notices to subscribers", () => {
+    const bus = createBus<ControlPlaneEvent>()
+    const events: ControlPlaneEvent[] = []
     const unsubscribe = bus.subscribe((event) => events.push(event))
 
-    bus.publish({
-      type: "session.lifecycle",
-      phase: "created",
-      directory: "/workspace",
-      workspaceId: "ws_1",
-      draftId: "draft_1",
-      sessionID: "ses_1",
-      info: { id: "ses_1" },
-      ts: 1,
-    })
-
+    bus.publish({ type: "worktree.ready", directory: "/workspace/.worktrees/a", name: "a", branch: "feat/a" })
     unsubscribe()
+    bus.publish({ type: "worktree.failed", directory: "/workspace", message: "later" })
 
-    expect(events).toEqual([
-      {
-        type: "session.lifecycle",
-        phase: "created",
-        directory: "/workspace",
-        workspaceId: "ws_1",
-        draftId: "draft_1",
-        sessionID: "ses_1",
-        info: { id: "ses_1" },
-        ts: 1,
-      },
-    ])
+    expect(events).toEqual([{ type: "worktree.ready", directory: "/workspace/.worktrees/a", name: "a", branch: "feat/a" }])
   })
 })

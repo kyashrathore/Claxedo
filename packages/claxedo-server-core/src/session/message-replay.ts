@@ -506,39 +506,6 @@ export function readSessionMaxEventOrdinal(sessionId: string): number {
   return ClaxedoDB.use((db) => maxStoredEventOrdinal(db, sessionId))
 }
 
-// ── Bus subscriber ──────────────────────────────────────────────────────────
-
-/**
- * Subscribe to a globalBus and persist message events for all sources that
- * publish client-presentation events into this process. This is the
- * convergence point for events already on the central bus; workspace-runtime
- * canonical events remain per-workspace unless an explicit publisher bridges
- * them here.
- *
- * Returns an unsubscribe function.
- */
-export function subscribeMessageReplay(bus: {
-  subscribe: (
-    fn: (event: { directory?: string; payload: { type: string; properties?: Record<string, unknown> } }) => void,
-  ) => () => void
-}) {
-  return bus.subscribe((event) => {
-    const { type, properties } = event.payload
-    if (type !== "message.updated" && type !== "message.part.updated" && type !== "message.part.delta") return
-
-    const props = asRecord(properties)
-    const sessionId =
-      type === "message.updated"
-        ? asString((asRecord(props?.info))?.sessionID)
-        : type === "message.part.updated"
-          ? (asString(props?.sessionID) ?? asString((asRecord(props?.part))?.sessionID))
-          : asString(props?.sessionID)
-    if (!sessionId) return
-
-    persistMessageEvent(sessionId, { type, properties }, event.directory)
-  })
-}
-
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {

@@ -49,7 +49,6 @@ import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mc
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -61,7 +60,7 @@ import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server
 import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
-import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
@@ -862,7 +861,7 @@ export function createSelfHostedApp(
     ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
     mountPublicUsageRoute: !options.usageRevisionStore,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
-    sessionShareChangedSink: (event) => claxedoBus.publish(event),
+    sessionShareChangedSink: (event) => controlBus.publish(event),
   })
   const wakeStore = process.env.CLAXEDO_WAKES === "1" ? new SqliteWakeStore({ path: process.env.CLAXEDO_WAKE_DB_PATH ?? path.join(dataDir(), "machine-wakes.sqlite") }) : undefined
   const machineWakes = wakeStore ? createMachineWakes({ services, runtime: machineSessions, store: wakeStore }) : undefined
@@ -1088,7 +1087,7 @@ export function createSelfHostedApp(
   // documents at present; a hosted composition that did would inject a
   // LiveSyncRoom nudge sink through the DocumentsRoutes option instead of
   // this process-global one.
-  setDocumentChangedSink((event) => claxedoBus.publish(event))
+  setDocumentChangedSink((event) => controlBus.publish(event))
   app.route(
     "/documents",
     DocumentsRoutes({
@@ -1600,7 +1599,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
   // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
-  mirrorProcessEvents()
   // One process-owned public embedded-SDK runtime: the native `opencode` harness.
   const opencodeRuntime = openCodeSdkRuntime()
   // One reader for both halves: the runtime decides whether a session gets the
@@ -1677,10 +1675,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     console.error("[claxedo-server] WARN  credential migration failed:", err)
   })
 
-  // Persist control-plane worktree/provision messages that still intentionally
-  // converge on the central bus. Workspace-runtime host events stream directly
-  // from each sandbox.
-  services.durableSessionLog.subscribe_message_replay(globalBus)
   captureControlPlaneStartupTelemetry(services, { port })
 
   let localSessionProjectionReady: Promise<void> | undefined

@@ -105,7 +105,6 @@ function services(input: {
     },
     durableSessionLog: {
       persist_message_event: vi.fn(),
-      subscribe_message_replay: vi.fn(() => () => {}),
     },
     auth: input.signed
       ? { config: signedAuthConfig, verifier: vi.fn() }

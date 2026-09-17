@@ -28,7 +28,6 @@ import {
   readSessionMessagePage,
   readSessionMessages,
   readSessionMaxEventOrdinal,
-  subscribeMessageReplay,
 } from "@claxedo/server-core/session/message-replay"
 import { syncCloudMessages } from "@claxedo/server-core/session/sync"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
@@ -79,7 +78,6 @@ function createBackend(input: SqliteCentralStoreOptions): SqliteCentralStoreBack
     read_session_messages: readSessionMessages,
     read_session_message_page: readSessionMessagePage,
     read_session_max_event_ordinal: readSessionMaxEventOrdinal,
-    subscribe_message_replay: subscribeMessageReplay,
   }
 }
 

@@ -5,7 +5,7 @@
  * contract, so the Durable Object can park without a client migration.
  *
  * Why a Durable Object: on a single Node box, live-sync works via the
- * in-memory `claxedoBus` → SSE (`routes/events.ts`). On Cloudflare Workers
+ * in-memory `controlBus` → SSE (the local daemon's `shell/events.ts`). On Cloudflare Workers
  * there is no shared memory across isolates, so a mutation handled by isolate
  * A cannot reach a client whose SSE stream is held by isolate B. A Durable
  * Object is a single-instance, name-addressable actor: every isolate routes
@@ -48,7 +48,7 @@
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
-import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
@@ -117,22 +117,23 @@ const HEADER_CURSOR = "x-livesync-cursor"
  * Synthetic frame written in place of a replay when the requested cursor has
  * already fallen out of the room's retention window (or belongs to a sequence
  * this room no longer has — see `cursorAhead`). Deliberately the same shape and
- * `code` as `ClaxedoStreamGapEvent` in `routes/events.ts`: hosted and local
- * serve the same route to the same claxedo-app bundle, so a consumer that grows
- * a handler must not have to learn two spellings. Declared here rather than
- * imported because `routes/events.ts` pulls the process-local `claxedoBus` and
- * `hono/streaming`, neither of which may enter the Worker bundle.
+ * `code` as `ControlPlaneStreamGapEvent` in the local daemon's `shell/events.ts`:
+ * hosted and local serve the same route to the same claxedo-app bundle, so a
+ * consumer that grows a handler must not have to learn two spellings. Declared
+ * here rather than imported because that module pulls the process-local
+ * `controlBus` and `hono/streaming`, neither of which may enter the Worker
+ * bundle.
  */
 export type LiveSyncStreamGapEvent = {
   type: "stream.replay-gap"
-  code: "claxedo.sse_replay_gap"
+  code: "cp.sse_replay_gap"
   message: string
   severity: "warn"
   lastEventId?: string
   throughId?: string
 }
 
-type LiveSyncFrame = ClaxedoEvent | LiveSyncStreamGapEvent
+type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
 
 /**
  * Internal DO→bridge wire envelope. The room holds the ring, so the room is the
@@ -146,8 +147,8 @@ type LiveSyncWireFrame = { id: string; frame: LiveSyncFrame }
 function replayGapEvent(lastEventId?: string, throughId?: string): LiveSyncStreamGapEvent {
   return {
     type: "stream.replay-gap",
-    code: "claxedo.sse_replay_gap",
-    message: "Claxedo event replay cursor is no longer available; refetch control-plane state.",
+    code: "cp.sse_replay_gap",
+    message: "Control plane event replay cursor is no longer available; refetch project and workspace state.",
     severity: "warn",
     ...(lastEventId ? { lastEventId } : {}),
     ...(throughId ? { throughId } : {}),
@@ -330,11 +331,11 @@ const PROVISION_STEPS = [
  * by field.
  *
  * Each branch already checked every field it needed and then returned the raw
- * row `as ClaxedoEvent`, which also carried whatever ELSE the sender put in the
+ * row `as ControlPlaneEvent`, which also carried whatever ELSE the sender put in the
  * object straight through to every subscriber. Constructing the event means the
  * room forwards exactly the fields it verified.
  */
-function liveSyncEvent(input: unknown): ClaxedoEvent | undefined {
+function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   const row = asRecord(input)
   const ts = row?.ts
   if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
@@ -431,7 +432,7 @@ export class LiveSyncRoom {
    * reason replay can exist on the hosted path at all.
    *
    * On a single Node box the equivalent ring is a module singleton fed by the
-   * process-global `claxedoBus` (`routes/events.ts`). That shape is not
+   * process-global `controlBus` (the local daemon's `shell/events.ts`). That shape is not
    * available here: a Cloudflare Worker isolate is ephemeral and there are many
    * of them, so a ring in isolate memory would be filled by whichever isolate
    * happened to handle a mutation and read by a different one — empty exactly
@@ -474,9 +475,9 @@ export class LiveSyncRoom {
    * (post-reset frames still deliver, and a stale cursor gets the gap notice
    * on its next reconnect) — see scripts/drill/live-sync-post-reset-resume-probe.ts.
    */
-  private readonly retained = createSseReplayBuffer<ClaxedoEvent>({ isTerminal: isTerminalClaxedoEvent })
+  private readonly retained = createSseReplayBuffer<ControlPlaneEvent>({ isTerminal: isTerminalClaxedoEvent })
   private readonly replays = new Map<string, {
-    replay: ReturnType<typeof createSseReplayBuffer<ClaxedoEvent>>
+    replay: ReturnType<typeof createSseReplayBuffer<ControlPlaneEvent>>
     principal: EventScopePrincipal
   }>()
   private readonly replayTombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
@@ -500,7 +501,7 @@ export class LiveSyncRoom {
     if (existing) return existing.replay
     const tombstone = this.replayTombstones.get(key)
     this.replayTombstones.delete(key)
-    const replay = createSseReplayBuffer<ClaxedoEvent>({
+    const replay = createSseReplayBuffer<ControlPlaneEvent>({
       isTerminal: isTerminalClaxedoEvent,
       ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
     })
@@ -649,7 +650,7 @@ export class LiveSyncRoom {
   }
 
   /**
-   * Fan a nudge (a `ClaxedoEvent`, typically `{type:"document.changed",...}`)
+   * Fan a nudge (a `ControlPlaneEvent`, typically `{type:"document.changed",...}`)
    * to every held connection the event is visible to. Returns
    * `{ delivered, held }` for the caller's diagnostics.
    */

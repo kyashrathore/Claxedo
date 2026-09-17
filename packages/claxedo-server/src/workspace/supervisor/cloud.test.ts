@@ -15,7 +15,7 @@
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
-import { claxedoBus, type ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { controlBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -27,8 +27,8 @@ let runtimePublicKeyPem = ""
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function captureProvisionEvents() {
-  const events: ClaxedoEvent[] = []
-  const unsub = claxedoBus.subscribe((e) => {
+  const events: ControlPlaneEvent[] = []
+  const unsub = controlBus.subscribe((e) => {
     if (e.type === "provision") events.push(e)
   })
   return { events, cleanup: unsub }
@@ -1770,7 +1770,7 @@ describe("workspace-supervisor", () => {
 
       const steps = tracker.events
         .filter(
-          (e): e is Extract<ClaxedoEvent, { type: "provision" }> =>
+          (e): e is Extract<ControlPlaneEvent, { type: "provision" }> =>
             e.type === "provision" && (e as any).workspaceId === "ws-events-1",
         )
         .map((e) => e.step)
@@ -1786,7 +1786,7 @@ describe("workspace-supervisor", () => {
 
       const steps = tracker.events
         .filter(
-          (e): e is Extract<ClaxedoEvent, { type: "provision" }> =>
+          (e): e is Extract<ControlPlaneEvent, { type: "provision" }> =>
             e.type === "provision" && (e as any).workspaceId === "ws-full-1",
         )
         .map((e) => e.step)
@@ -1806,7 +1806,7 @@ describe("workspace-supervisor", () => {
 
       const steps = tracker.events
         .filter(
-          (e): e is Extract<ClaxedoEvent, { type: "provision" }> =>
+          (e): e is Extract<ControlPlaneEvent, { type: "provision" }> =>
             e.type === "provision" && (e as any).workspaceId === "ws-warm-1",
         )
         .map((e) => e.step)
@@ -1908,7 +1908,7 @@ describe("workspace-supervisor", () => {
 
       const steps = tracker.events
         .filter(
-          (e): e is Extract<ClaxedoEvent, { type: "provision" }> =>
+          (e): e is Extract<ControlPlaneEvent, { type: "provision" }> =>
             e.type === "provision" && (e as any).workspaceId === "ws-wake-3",
         )
         .map((e) => e.step)
@@ -1989,7 +1989,7 @@ describe("workspace-supervisor", () => {
       await expect(supervisor.ensureSupervisorSandbox("ws-err-1")).rejects.toThrow("driver exhausted")
 
       const errorEvents = tracker.events.filter(
-        (e): e is Extract<ClaxedoEvent, { type: "provision" }> => e.type === "provision" && (e as any).step === "error",
+        (e): e is Extract<ControlPlaneEvent, { type: "provision" }> => e.type === "provision" && (e as any).step === "error",
       )
       expect(errorEvents.length).toBeGreaterThanOrEqual(1)
 
@@ -2004,7 +2004,7 @@ describe("workspace-supervisor", () => {
       await expect(supervisor.ensureSupervisorSandbox("ws-err-msg")).rejects.toThrow()
 
       const errorEvent = tracker.events.find(
-        (e): e is Extract<ClaxedoEvent, { type: "provision" }> => e.type === "provision" && (e as any).step === "error",
+        (e): e is Extract<ControlPlaneEvent, { type: "provision" }> => e.type === "provision" && (e as any).step === "error",
       ) as any
       expect(errorEvent).toBeTruthy()
       expect(errorEvent.message).toContain("no sandboxes available")
@@ -2236,7 +2236,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
 
     const steps = tracker.events
       .filter(
-        (e): e is Extract<ClaxedoEvent, { type: "provision" }> =>
+        (e): e is Extract<ControlPlaneEvent, { type: "provision" }> =>
           e.type === "provision" && (e as any).workspaceId === "ws-wake-warm-1",
       )
       .map((e) => e.step)

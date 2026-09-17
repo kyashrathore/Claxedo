@@ -306,8 +306,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
   if (options.usage) app.route("/api/claxedo/usage", LocalUsageRoutes(options.usage))
 
-  // Route execution traffic to the workspace runtime. `/api/wr/runtime-events`
-  // is workspace-owned; `/api/claxedo/events` and `/global/event` stay central.
+  // Route execution traffic to the workspace runtime. `/api/wr/*` is
+  // workspace-owned; `/api/cp/events` stays with the control plane.
   app.use(createWorkspaceRuntimeProxy(runtimeProxyOptions))
 
   app.route("/", ShellRoutes({

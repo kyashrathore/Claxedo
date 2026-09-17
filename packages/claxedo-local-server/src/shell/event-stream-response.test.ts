@@ -2,8 +2,8 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { defineWebSocketHelper, WSContext } from "hono/ws"
 import { expect, test, vi } from "vitest"
-import { createBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { createGlobalEventsHandler } from "./events"
+import { createBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { createControlPlaneEventsHandler } from "./events"
 import { eventStreamResponse, type UpgradeWebSocket } from "./event-stream-response"
 
 function transport() {
@@ -25,11 +25,10 @@ function transport() {
 }
 
 test("WebSocket uses the authorized central producer, retains cursors, and detaches on close", async () => {
-  const globalBus = createBus<GlobalEvent>()
-  const claxedoBus = createBus<ClaxedoEvent>()
+  const bus = createBus<ControlPlaneEvent>()
   const wire = transport()
   let visible = true
-  const app = new Hono().get("/events", createGlobalEventsHandler({ globalBus, claxedoBus }, {
+  const app = new Hono().get("/events", createControlPlaneEventsHandler(bus, {
     upgradeWebSocket: wire.upgrade,
     resolveSubscription: () => ({ identity: { mode: "unmanaged-local", connectionId: "test" }, visible: () => visible }),
   }))
@@ -37,21 +36,21 @@ test("WebSocket uses the authorized central producer, retains cursors, and detac
   const first = wire.connections[0]
   try {
     await expect.poll(() => first.frames.length).toBe(1)
-    globalBus.publish({ directory: "/repo", payload: { type: "session.idle", properties: { sessionID: "owner" } } })
+    bus.publish({ type: "worktree.ready", directory: "/repo/.worktrees/owner", name: "owner", branch: "owner" })
     await expect.poll(() => first.frames.length).toBe(2)
-    expect(first.frames[1]).toContain('"sessionID":"owner"')
+    expect(first.frames[1]).toContain('"name":"owner"')
     const cursor = /\nid: ([^\n]+)/.exec(first.frames[1])![1]
     first.disconnect()
     const closedLength = first.frames.length
-    globalBus.publish({ directory: "/repo", payload: { type: "session.idle", properties: { sessionID: "after-close" } } })
+    bus.publish({ type: "worktree.ready", directory: "/repo/.worktrees/after-close", name: "after-close", branch: "after-close" })
     await app.request(`http://localhost/events?lastEventId=${cursor}`, { headers: { upgrade: "websocket" } })
     const resumed = wire.connections[1]
-    await expect.poll(() => resumed.frames.some((frame) => frame.includes('"sessionID":"after-close"'))).toBe(true)
+    await expect.poll(() => resumed.frames.some((frame) => frame.includes('"name":"after-close"'))).toBe(true)
     expect(first.frames).toHaveLength(closedLength)
     visible = false
-    globalBus.publish({ directory: "/repo", payload: { type: "session.idle", properties: { sessionID: "hidden" } } })
+    bus.publish({ type: "worktree.ready", directory: "/repo/.worktrees/hidden", name: "hidden", branch: "hidden" })
     await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(resumed.frames.join("")).not.toContain('"sessionID":"hidden"')
+    expect(resumed.frames.join("")).not.toContain('"name":"hidden"')
   } finally {
     for (const connection of wire.connections) connection.disconnect()
   }

@@ -12,7 +12,7 @@ import {
   type LiveSyncSocket,
   type LiveSyncSubscriber,
 } from "./live-sync-room.cf"
-import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // A faithful in-memory emulation of the Cloudflare DO namespace contract:
@@ -143,7 +143,7 @@ const subscriber = (subject: string, internalOrgId?: string): LiveSyncSubscriber
   ...(internalOrgId ? { orgId: internalOrgId } : {}),
 })
 
-const sessionShareChanged = (ownerUserId: string): ClaxedoEvent => ({
+const sessionShareChanged = (ownerUserId: string): ControlPlaneEvent => ({
   type: "session.share.changed",
   phase: "granted",
   ownerUserId,
@@ -152,7 +152,7 @@ const sessionShareChanged = (ownerUserId: string): ClaxedoEvent => ({
   ts: Date.now(),
 })
 
-const documentChanged = (orgId: string): ClaxedoEvent => ({
+const documentChanged = (orgId: string): ControlPlaneEvent => ({
   type: "document.changed",
   documentId: "doc_1",
   orgId,
@@ -234,7 +234,7 @@ async function openRoom(room: LiveSyncRoom, init: { subject?: string; org?: stri
   }
 }
 
-async function pushEvent(room: LiveSyncRoom, event: ClaxedoEvent) {
+async function pushEvent(room: LiveSyncRoom, event: ControlPlaneEvent) {
   const response = await room.fetch(new Request("https://live-sync-room.internal/nudge", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -243,7 +243,7 @@ async function pushEvent(room: LiveSyncRoom, event: ClaxedoEvent) {
   expect(response.status).toBe(200)
 }
 
-const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ClaxedoEvent => ({
+const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ControlPlaneEvent => ({
   type: "provision",
   workspaceId,
   orgId: "acme",
@@ -614,7 +614,7 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     expect(opened.frames[1]).toMatchObject({
       data: {
         type: "stream.replay-gap",
-        code: "claxedo.sse_replay_gap",
+        code: "cp.sse_replay_gap",
         severity: "warn",
         lastEventId: "1",
         throughId: "256",

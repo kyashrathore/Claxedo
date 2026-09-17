@@ -164,7 +164,6 @@ describe("host primitives package surface", () => {
       persist_message_event: vi.fn(),
       read_session_messages: vi.fn(() => []),
       read_session_max_event_ordinal: vi.fn(() => 0),
-      subscribe_message_replay: vi.fn(() => () => {}),
     }
     const services = createHostedControlPlaneServices(
       {

@@ -67,7 +67,6 @@ function services(): ControlPlaneServices {
     },
     durableSessionLog: {
       persist_message_event: vi.fn(),
-      subscribe_message_replay: vi.fn(() => () => {}),
     },
     auth: localOnlyAuthAdapter(),
     credentials: {} as never,

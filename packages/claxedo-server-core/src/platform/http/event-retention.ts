@@ -1,62 +1,24 @@
-import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 /**
- * SSE replay-retention policy for the CENTRAL event streams
- * (`routes/events.ts` and `routes/client-presentation-events.ts`).
+ * Retention policy for `cp/events`, shared by the local daemon's handler and
+ * the hosted `LiveSyncRoom` so the two never disagree about what a
+ * reconnecting reader can recover.
  *
- * Both read the same process-global `claxedoBus`, so a frame that one of them
- * protects from eviction and the other does not is a bug waiting to happen —
- * hence one predicate rather than a copy per handler. The compat stream wraps
- * this with its own case for `{directory, payload}` envelopes, which only IT
- * carries.
- *
- * The type-only import keeps this module free of runtime dependencies.
+ * Every notice on this stream settles something nothing re-states — a
+ * provision reaching ready or error, a worktree landing, a document doorbell
+ * (the client only re-reads when nudged, so a lost one stalls live sync until
+ * the next unrelated mutation), a share grant. `createSseReplayBuffer` keeps
+ * these in its second, independent ring; a provision's intermediate steps are
+ * the only frames it lets the main ring evict.
  */
-
-/**
- * Frames whose loss is not self-healing.
- *
- * `createSseReplayBuffer` keeps a second, independent 64-frame ring of these, so
- * a burst of chatty frames cannot evict the one frame that settles a state
- * machine; `attachSseFanout` additionally sheds them LAST when a slow consumer
- * overflows its pending queue.
- *
- * Superset of `isTerminalBusEvent` in
- * `packages/workspace-runtime/src/routes/runtime-events.ts` (which sees the
- * narrower `WorkspaceRuntimeEvent` union), adding the frames only a central
- * stream carries:
- *
- *  - `worktree.*` and a `provision` reaching `ready`/`error` — control-plane
- *    settlements with the same "stuck spinner forever" failure mode as a lost
- *    pty exit.
- *  - `session.lifecycle` at `created`/`failed` — the ONLY notification a
- *    connection-backed session's `POST /session` emits, and the
- *    central stream is the only channel local/unsigned workspaces have for it.
- *    Losing it means the session never reaches the sidebar's inventory. The
- *    workspace stream does not need it in its terminal ring because nothing
- *    chatty competes there; on the compat central stream it competes with the
- *    native engine's token-level deltas, which is exactly what the second ring
- *    is for.
- *  - `document.changed` — a coalesced doorbell. A lost
- *    doorbell is not self-healing by construction: the client only re-reads
- *    when nudged, so live sync stalls until the next unrelated mutation.
- */
-export function isTerminalClaxedoEvent(event: ClaxedoEvent): boolean {
+export function isTerminalClaxedoEvent(event: ControlPlaneEvent): boolean {
   switch (event.type) {
-    case "pty.exited":
-    case "pty.deleted":
-    case "process.stopped":
-    case "process.crashed":
     case "worktree.ready":
     case "worktree.failed":
     case "document.changed":
+    case "session.share.changed":
       return true
-    case "pty.stream":
-      return event.kind === "exit" || event.kind === "command-exit"
-    case "agent.lifecycle":
-      return event.eventType === "Idle" || event.eventType === "Error"
-    case "session.lifecycle":
-      return event.phase === "created" || event.phase === "failed"
     case "provision":
       return event.step === "ready" || event.step === "error"
     default:

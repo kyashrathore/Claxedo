@@ -84,8 +84,8 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "runtime-transport",
     owner: "local-server",
-    serves: "Workspace Runtime HTTP/SSE/PTY adaptation and the shell event stream — the local execution data path.",
-    paths: ["/api/wr/", "/api/claxedo/events", "/workspaces/:workspaceId", "/workspaces/:workspaceId/"],
+    serves: "Workspace Runtime HTTP/SSE/PTY adaptation and the control plane's own event stream — the local execution data path.",
+    paths: ["/api/wr/", "/api/cp/events", "/workspaces/:workspaceId", "/workspaces/:workspaceId/"],
   },
   {
     id: "project-files",
@@ -108,7 +108,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
       "/mcp/",
       "/experimental/worktree",
       "/experimental/worktree/",
-      "/global/event",
     ],
   },
   {

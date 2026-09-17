@@ -91,7 +91,7 @@ const ROUTE_RULES = [
     RouteDomain.ClaxedoControlPlane,
     central,
   ),
-  exact(["/global/event", "/api/claxedo/events"], RouteDomain.ClaxedoControlPlane, central),
+  exact(["/api/cp/events"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/claxedo/remote-access"], RouteDomain.ClaxedoControlPlane, central),
   prefix(
     ["/config", "/provider", "/auth", "/api/claxedo/agent-config", "/api/claxedo/credentials"],
@@ -129,7 +129,7 @@ const ROUTE_RULES = [
   exact(["/experimental/session"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(["/experimental"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/wr/hook"], RouteDomain.SandboxRuntime, runtime),
-  exact(["/api/wr/events", "/api/wr/runtime-events"], RouteDomain.SandboxRuntime, runtime),
+  exact(["/api/wr/events"], RouteDomain.SandboxRuntime, runtime),
   exact(["/api/wr/health", "/api/wr/capabilities"], RouteDomain.SandboxRuntime, runtime),
   exact(
     ["/api/wr/config", "/api/wr/harness-config-options"],
@@ -146,7 +146,7 @@ const ROUTE_RULES = [
     runtime,
   ),
   exact(["/vcs"], RouteDomain.SandboxRuntime, runtime),
-  prefix(["/session", "/permission", "/question", "/event"], RouteDomain.AgentSessionRuntime, runtime),
+  prefix(["/session", "/permission", "/question"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(
     ["/mcp"],
     RouteDomain.AgentConfigRegistry,

@@ -40,7 +40,6 @@ function fakeSync() {
     // The central-store backend requires `read_session_max_event_ordinal` for
     // message-replay sequencing; mocks were missing it.
     read_session_max_event_ordinal: vi.fn(() => 0),
-    subscribe_message_replay: vi.fn(() => () => {}),
   }
 }
 
@@ -129,7 +128,6 @@ describe("control-plane services", () => {
 
     expect(services.projectionStore.put_session_meta).toBe(sync.put_session_meta)
     expect(services.projectionStore.read_session_messages).toBe(sync.read_session_messages)
-    expect(services.durableSessionLog.subscribe_message_replay).toBe(sync.subscribe_message_replay)
   })
 
   test("central-store ports are accepted as the composition input and delegate to the backend", () => {
@@ -156,7 +154,6 @@ describe("control-plane services", () => {
 
     // Durable-session-log ports delegate to the backend replay methods.
     expect(services.durableSessionLog.persist_message_event).toBe(sync.persist_message_event)
-    expect(services.durableSessionLog.subscribe_message_replay).toBe(sync.subscribe_message_replay)
 
     // Behavioral delegation: invoking a port method actually calls the stub.
     void services.projectionStore.sync_session_meta(undefined, { id: "s1" })
@@ -256,7 +253,6 @@ describe("control-plane services", () => {
     expect(services.localExecution).toEqual({ enabled: false })
     expect(services.authority).toBe(options.authority)
     expect(services.projectionStore.put_session_meta).toBe(sync.put_session_meta)
-    expect(services.durableSessionLog.subscribe_message_replay).toBe(sync.subscribe_message_replay)
   })
 
   test("hosted stack rejects missing required hosted dependencies with clear errors", () => {

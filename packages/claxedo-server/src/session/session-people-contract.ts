@@ -15,7 +15,7 @@ import { asRecord } from "@claxedo/server-core/platform/json/index"
 /**
  * Injected sink for `session.share.changed` doorbells.
  *
- * Composition roots inject local `claxedoBus.publish` or hosted
+ * Composition roots inject local `controlBus.publish` or hosted
  * `nudgeLiveSyncRoom` — this module stays Worker-safe (no bus / DO imports).
  */
 export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unknown

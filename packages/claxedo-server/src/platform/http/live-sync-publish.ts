@@ -1,4 +1,4 @@
-import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
@@ -61,7 +61,7 @@ function assertLiveSyncRoomName(roomName: string): void {
 export async function nudgeLiveSyncRoom(
   namespace: LiveSyncRoomNamespace,
   roomName: string,
-  event: ClaxedoEvent,
+  event: ControlPlaneEvent,
 ): Promise<{ delivered: number; held: number }> {
   assertLiveSyncRoomName(roomName)
   const response = await namespace

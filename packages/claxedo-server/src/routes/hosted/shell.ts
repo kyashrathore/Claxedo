@@ -8,7 +8,7 @@
  * embedded runtime, and no central runner, so these routes answer with the
  * minimal synthetic payloads the app actually reads:
  *
- *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream,
+ *   GET /api/cp/events          — auth-gated hosted live-sync SSE stream,
  *                                 resumable by `Last-Event-ID` when a
  *                                 LiveSyncRoom is bound (see deployments/hosted-workerd/live-sync-room.cf.ts)
  *   GET /api/claxedo/services   — { authenticated, services } first-party catalog
@@ -577,7 +577,7 @@ const HEARTBEAT_MS = 30_000
 //
 // Replay is deliberately not implemented here because there is nothing to
 // replay: this fallback has no publisher. Nothing writes events to it — not the
-// process-global `claxedoBus` (unreachable from a module that must stay in the
+// process-global `controlBus` (unreachable from a module that must stay in the
 // Worker bundle) and not the Durable Object (whose absence selects this
 // branch). A retention ring here would buffer the empty set forever.
 //
@@ -684,9 +684,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Mirrors routes/events.ts: every bus subscriber passes the
     // same control-plane auth gate as the other claxedo routes. There is no
     // loopback bypass on a hosted central.
-    .get("/api/claxedo/events", events)
-    .get("/api/wr/events", events)
-    .get("/global/event", events)
+    .get("/api/cp/events", events)
     // The first-party service catalog for this principal. The app reads it on
     // its own rather than as one field of a boot aggregate: every other field
     // that aggregate carried is per-workspace, per-harness, or a stub, and the

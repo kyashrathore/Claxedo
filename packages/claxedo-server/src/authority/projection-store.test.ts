@@ -19,7 +19,6 @@ function fakeSync() {
     read_session_messages: vi.fn(() => []),
     read_session_message_page: vi.fn(() => ({ messages: [], nextCursor: "next" })),
     read_session_max_event_ordinal: vi.fn(() => 0),
-    subscribe_message_replay: vi.fn(() => () => {}),
   } satisfies ProjectionStoreBackend & { mode: () => "central_canonical"; [key: string]: unknown }
 }
 

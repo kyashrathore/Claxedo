@@ -1,4 +1,4 @@
-import { workspaceRuntimeBus as runtimeBus, type WorkspaceRuntimeEvent as RuntimeClaxedoEvent, type PtyInfo } from "@claxedo/workspace-runtime/host"
+import type { PtyInfo } from "@claxedo/workspace-runtime/host"
 import { jsonRecord } from "./json"
 
 type Subscriber<T> = (event: T) => unknown
@@ -20,7 +20,7 @@ export function createBus<T>(options: BusOptions<T> = {}) {
         options.onSubscriberError(error, event)
         return
       }
-      console.error("claxedoBus subscriber failed", error)
+      console.error("bus subscriber failed", error)
     } catch {}
   }
 
@@ -43,21 +43,6 @@ export function createBus<T>(options: BusOptions<T> = {}) {
 }
 
 export type { PtyInfo }
-
-// Canonical session.lifecycle envelope. The frontend re-exports
-// this from `shared/claxedo-client` so consumers (event reducer, the create
-// wrapper, the ClaxedoEvents provider) share one type definition.
-export type SessionLifecycleEvent = {
-  type: "session.lifecycle"
-  phase: "creating" | "created" | "failed"
-  directory: string
-  sessionID?: string
-  workspaceId?: string
-  draftId?: string
-  info?: unknown
-  message?: string
-  ts: number
-}
 
 // Doorbell nudge for Documents live sync.
 //
@@ -113,7 +98,14 @@ export type SessionShareChangedEvent = {
   ts: number
 }
 
-type ControlEvent =
+/**
+ * What the control plane tells its clients on `cp/events`: something changed
+ * and the reader re-reads. Never a session's content — that is the workspace
+ * runtime's stream. One bus, one publisher per event kind: the sandbox
+ * provisioner, the worktree routes, the documents backend, the session-share
+ * authority.
+ */
+export type ControlPlaneEvent =
   | {
       type: "provision"
       workspaceId: string
@@ -132,25 +124,7 @@ type ControlEvent =
     }
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
-  | SessionLifecycleEvent
   | DocumentChangedEvent
   | SessionShareChangedEvent
 
-export type ClaxedoEvent = RuntimeClaxedoEvent | ControlEvent
-
-export const claxedoBus = runtimeBus as {
-  publish(event: ClaxedoEvent): void
-  subscribe(fn: Subscriber<ClaxedoEvent>): () => void
-}
-
-export type ClientPresentationEvent = {
-  type: string
-  properties?: Record<string, unknown>
-}
-
-export type GlobalEvent = {
-  directory?: string
-  payload: ClientPresentationEvent
-}
-
-export const globalBus = createBus<GlobalEvent>()
+export const controlBus = createBus<ControlPlaneEvent>()

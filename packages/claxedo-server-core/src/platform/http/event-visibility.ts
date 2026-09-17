@@ -1,11 +1,11 @@
-import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // Worker-safe home of the per-event visibility predicate. Both the local Node
 // bus SSE (`routes/events.ts`) and the hosted `LiveSyncRoom` Durable Object
 // (`src/deployments/hosted-workerd/live-sync-room.cf.ts`) import this ONE function so the central event
 // stream applies identical scoping in both deployments. The imports here are
-// TYPE-ONLY (both `ClaxedoEvent` and `ControlPlaneAuthContext` erase at build),
+// TYPE-ONLY (both `ControlPlaneEvent` and `ControlPlaneAuthContext` erase at build),
 // so nothing runtime (e.g. the process-local `claxedoBus`) is pulled — this
 // module is safe to reach from the Cloudflare Worker bundle.
 
@@ -55,10 +55,10 @@ export function eventScopePrincipal(
 // bearer (any user, any org) would observe every other tenant's events.
 // Allowlist with default-deny: an event type is only delivered to a signed
 // subscriber if it has an explicit scope rule matching the caller's identity.
-// New event types added to the ClaxedoEvent union are therefore invisible to
+// New event types added to the ControlPlaneEvent union are therefore invisible to
 // signed subscribers until they carry a scope and gain a rule here — they can
 // leak by omission of delivery, never by omission of authorization.
-export function eventVisibleTo(principal: EventScopePrincipal, event: ClaxedoEvent): boolean {
+export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPlaneEvent): boolean {
   // Single-user modes: the whole bus belongs to this caller.
   if (principal.mode === "unsigned-local") return true
 
@@ -78,11 +78,9 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ClaxedoEve
       // (local) workspaces stay invisible to signed subscribers.
       return !!principal.orgId && event.orgId === principal.orgId
     default:
-      // pty.*, agent.lifecycle, process.*, session.lifecycle, worktree.* carry
-      // no owner identity: they are local-execution events whose hosted
-      // equivalents flow on per-workspace runtime streams (routed off by
-      // workspaceRuntimeProxy before this handler), so a signed subscriber to
-      // the central stream is never their legitimate consumer.
+      // worktree.* carries no owner identity: it is a local daemon's notice
+      // about its own checkout, and a signed subscriber to a shared control
+      // plane is never its legitimate consumer.
       return false
   }
 }

@@ -6,7 +6,6 @@
  * 2. message.part.updated events persist parts
  * 3. readSessionMessages returns accumulated {info, parts} from DB
  * 4. Works for both local and cloud workspaces (no cloud guard)
- * 5. subscribeMessageReplay wires a bus so both local and cloud events persist
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
@@ -34,17 +33,14 @@ const [
     readSessionMaxEventOrdinal,
     readSessionMessagePage,
     readSessionMessages,
-    subscribeMessageReplay,
     terminalizeReplayMessages,
   },
   { ClaxedoDB },
-  { createBus },
   { ClaxedoCloudMessageTable, ClaxedoCloudSessionTable },
   { ClaxedoSessionMetaTable },
 ] = await Promise.all([
   import("./message-replay"),
   import("../platform/db"),
-  import("@claxedo/server-core/platform/runtime/lib/bus"),
   import("./cloud.sql"),
   import("@claxedo/server-core/session/meta.sql"),
 ])
@@ -966,168 +962,5 @@ describe("message replay", () => {
     const messages = readSessionMessages("local_sess")
     expect(messages).toHaveLength(1)
     expect(messages[0].info.id).toBe("msg_local")
-  })
-})
-
-describe("subscribeMessageReplay", () => {
-  test("persists message.updated events published on the bus", () => {
-    const bus = createBus<{ directory?: string; payload: { type: string; properties?: Record<string, unknown> } }>()
-    const unsub = subscribeMessageReplay(bus)
-
-    bus.publish({
-      directory: "/some/local/dir",
-      payload: {
-        type: "message.updated",
-        properties: {
-          info: { id: "msg_bus_1", sessionID: "bus_sess", role: "user", created: 100, updated: 100 },
-        },
-      },
-    })
-
-    const messages = readSessionMessages("bus_sess")
-    expect(messages).toHaveLength(1)
-    expect(messages[0].info.id).toBe("msg_bus_1")
-    unsub()
-  })
-
-  test("persists message.part.updated events published on the bus", () => {
-    const bus = createBus<{ directory?: string; payload: { type: string; properties?: Record<string, unknown> } }>()
-    const unsub = subscribeMessageReplay(bus)
-
-    // First create the message
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.updated",
-        properties: {
-          info: { id: "msg_bus_2", sessionID: "bus_sess_2", role: "assistant", created: 100, updated: 100 },
-        },
-      },
-    })
-
-    // Then add a part
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.part.updated",
-        properties: {
-          part: { id: "p_1", sessionID: "bus_sess_2", messageID: "msg_bus_2", type: "text", text: "hello" },
-        },
-      },
-    })
-
-    const messages = readSessionMessages("bus_sess_2")
-    expect(messages).toHaveLength(1)
-    expect(messages[0].parts).toHaveLength(1)
-    expect(messages[0].parts[0].text).toBe("hello")
-    unsub()
-  })
-
-  test("persists message.part.delta events published on the bus", () => {
-    const bus = createBus<{ directory?: string; payload: { type: string; properties?: Record<string, unknown> } }>()
-    const unsub = subscribeMessageReplay(bus)
-
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.updated",
-        properties: {
-          info: { id: "msg_bus_3", sessionID: "bus_sess_3", role: "assistant", created: 100, updated: 100 },
-        },
-      },
-    })
-
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.part.updated",
-        properties: {
-          part: { id: "p_1", sessionID: "bus_sess_3", messageID: "msg_bus_3", type: "text", text: "" },
-        },
-      },
-    })
-
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.part.delta",
-        properties: {
-          sessionID: "bus_sess_3",
-          messageID: "msg_bus_3",
-          partID: "p_1",
-          field: "text",
-          delta: "hello",
-        },
-      },
-    })
-
-    const messages = readSessionMessages("bus_sess_3")
-    expect(messages[0].parts[0].text).toBe("hello")
-    unsub()
-  })
-
-  test("ignores non-message events on the bus", () => {
-    const bus = createBus<{ directory?: string; payload: { type: string; properties?: Record<string, unknown> } }>()
-    const unsub = subscribeMessageReplay(bus)
-
-    bus.publish({
-      directory: "/dir",
-      payload: { type: "session.idle", properties: { sessionID: "bus_sess_3" } },
-    })
-
-    expect(readSessionMessages("bus_sess_3")).toHaveLength(0)
-    unsub()
-  })
-
-  test("works for cloud workspace events (same bus, different origin)", () => {
-    const bus = createBus<{ directory?: string; payload: { type: string; properties?: Record<string, unknown> } }>()
-    const unsub = subscribeMessageReplay(bus)
-
-    // Simulate a cloud workspace compatibility event after it has entered this process' bus.
-    bus.publish({
-      directory: "/remote/sandbox/dir",
-      payload: {
-        type: "message.updated",
-        properties: {
-          info: { id: "msg_cloud", sessionID: "cloud_sess", role: "assistant", created: 200, updated: 200 },
-        },
-      },
-    })
-
-    const messages = readSessionMessages("cloud_sess")
-    expect(messages).toHaveLength(1)
-    expect(messages[0].info.id).toBe("msg_cloud")
-    unsub()
-  })
-
-  test("returns unsubscribe function that stops persistence", () => {
-    const bus = createBus<{ directory?: string; payload: { type: string; properties?: Record<string, unknown> } }>()
-    const unsub = subscribeMessageReplay(bus)
-
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.updated",
-        properties: {
-          info: { id: "msg_before", sessionID: "unsub_sess", role: "user", created: 100, updated: 100 },
-        },
-      },
-    })
-
-    unsub()
-
-    bus.publish({
-      directory: "/dir",
-      payload: {
-        type: "message.updated",
-        properties: {
-          info: { id: "msg_after", sessionID: "unsub_sess", role: "assistant", created: 200, updated: 200 },
-        },
-      },
-    })
-
-    const messages = readSessionMessages("unsub_sess")
-    expect(messages).toHaveLength(1)
-    expect(messages[0].info.id).toBe("msg_before")
   })
 })

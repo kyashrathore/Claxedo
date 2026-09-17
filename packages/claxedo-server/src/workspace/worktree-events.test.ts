@@ -2,7 +2,7 @@
  * Worktree Event Publishing Tests
  *
  * RED test: verifies that POST /experimental/worktree publishes
- * a worktree.ready event on globalBus after the background
+ * a worktree.ready event on the control bus after the background
  * git reset --hard completes.
  *
  * Bug: frontend WorktreeState.wait() never resolves because
@@ -15,7 +15,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { controlBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 const root = path.join(realpathSync(os.tmpdir()), `wt-events-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
@@ -55,59 +55,7 @@ describe("worktree event publishing", () => {
     process.env.CLAXEDO_DATA_DIR = prev
   })
 
-  test("POST /experimental/worktree publishes worktree.ready on globalBus", async () => {
-    const repoDir = await createGitRepo("event-test")
-
-    // Register the project workspace so resolveWorkspace can find it
-    await ensureWorkspace({
-      workspaceId: "proj_evt",
-      project_id: "proj_evt",
-      directory: repoDir,
-    })
-
-    // Subscribe to globalBus BEFORE making the request
-    const events: GlobalEvent[] = []
-    const unsub = globalBus.subscribe((event) => {
-      events.push(event)
-    })
-
-    // Call the worktree create endpoint
-    const res = await app.request("/experimental/worktree?directory=" + encodeURIComponent(repoDir), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "test-wt" }),
-    })
-
-    expect(res.status).toBe(200)
-    const body = await res.json() as { name: string; branch: string; directory: string }
-    expect(body.directory).toBeTruthy()
-
-    // The background task (git reset --hard + wtready) runs via setTimeout(0).
-    // Wait for worktree.ready event instead of fixed sleep.
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("worktree.ready event not received within 10s")), 10_000)
-      const check = globalBus.subscribe((event) => {
-        if (event.payload.type === "worktree.ready") {
-          clearTimeout(timeout)
-          check()
-          resolve()
-        }
-      })
-    })
-
-    unsub()
-
-    // The worktree.ready event MUST have been published
-    const readyEvents = events.filter(
-      (e) => e.payload.type === "worktree.ready",
-    )
-
-    expect(readyEvents.length).toBe(1)
-    expect(readyEvents[0].directory).toBe(body.directory)
-    expect(readyEvents[0].payload.properties?.name).toBe(body.name)
-  })
-
-  test("POST /experimental/worktree publishes worktree.ready on claxedoBus", async () => {
+  test("POST /experimental/worktree publishes worktree.ready on the control bus", async () => {
     const repoDir = await createGitRepo("claxedo-bus")
 
     await ensureWorkspace({
@@ -116,8 +64,8 @@ describe("worktree event publishing", () => {
       directory: repoDir,
     })
 
-    const events: ClaxedoEvent[] = []
-    const unsub = claxedoBus.subscribe((event) => {
+    const events: ControlPlaneEvent[] = []
+    const unsub = controlBus.subscribe((event) => {
       events.push(event)
     })
 
@@ -133,7 +81,7 @@ describe("worktree event publishing", () => {
     // Wait for worktree.ready event instead of fixed sleep
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("worktree.ready event not received within 10s")), 10_000)
-      const check = claxedoBus.subscribe((event) => {
+      const check = controlBus.subscribe((event) => {
         if (event.type === "worktree.ready") {
           clearTimeout(timeout)
           check()
@@ -163,8 +111,8 @@ describe("worktree event publishing", () => {
     })
 
     let readyDir: string | undefined
-    const unsub = globalBus.subscribe((event) => {
-      if (event.payload.type === "worktree.ready") {
+    const unsub = controlBus.subscribe((event) => {
+      if (event.type === "worktree.ready") {
         readyDir = event.directory
       }
     })
@@ -181,8 +129,8 @@ describe("worktree event publishing", () => {
     // Wait for worktree.ready event instead of fixed sleep
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("worktree.ready event not received within 10s")), 10_000)
-      const check = globalBus.subscribe((event) => {
-        if (event.payload.type === "worktree.ready") {
+      const check = controlBus.subscribe((event) => {
+        if (event.type === "worktree.ready") {
           clearTimeout(timeout)
           check()
           resolve()

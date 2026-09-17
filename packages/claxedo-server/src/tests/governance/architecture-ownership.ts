@@ -367,15 +367,6 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "../../claxedo-server-core/src/platform/http/events.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "local control-plane events SSE route (Claxedo local adapter)",
-    reason:
-      "Imports claxedoBus, built on the process-local @claxedo/workspace-runtime/host, so it stays local.",
-    tests: ["../../claxedo-server-core/src/platform/http/events.test.ts"],
-  },
-  {
-    area: "route",
     module: "../../claxedo-local-server/src/deployments/shared-routes/bootstrap.ts",
     status: OwnershipStatus.Canonical,
     owner: "local bootstrap route (Claxedo local adapter)",

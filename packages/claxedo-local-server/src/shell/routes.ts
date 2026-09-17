@@ -13,7 +13,7 @@ import {
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { controlPlaneRouteAuth } from "../platform/http/control-plane-route-auth"
-import { createGlobalEventsHandler, signedGlobalEventVisibleTo } from "./events"
+import { createControlPlaneEventsHandler, signedControlPlaneEventVisibleTo } from "./events"
 import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./file-browser"
 import { bootPath, workspaceInput } from "./request-context"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
@@ -38,7 +38,7 @@ export function ShellRoutes(options: ShellRouteOptions = {}) {
 }
 
 function shellRoutes(options: ShellRouteOptions) {
-  const stream = createGlobalEventsHandler(undefined, {
+  const stream = createControlPlaneEventsHandler(undefined, {
     upgradeWebSocket: options.upgradeWebSocket,
     resolveSubscription: async (c) => {
       const auth = await controlPlaneAuthContext(c.req.raw, {
@@ -58,8 +58,8 @@ function shellRoutes(options: ShellRouteOptions) {
         const principal = eventScopePrincipal(auth)
         return {
           identity: { mode: "unmanaged-local" as const, connectionId: randomUUID() },
-          visible: (frame: Parameters<typeof signedGlobalEventVisibleTo>[0]) =>
-            signedGlobalEventVisibleTo(frame, principal),
+          visible: (frame: Parameters<typeof signedControlPlaneEventVisibleTo>[0]) =>
+            signedControlPlaneEventVisibleTo(frame, principal),
         }
       }
 
@@ -80,8 +80,8 @@ function shellRoutes(options: ShellRouteOptions) {
             workspaceId: "",
             role: "viewer",
           },
-          visible: (frame: Parameters<typeof signedGlobalEventVisibleTo>[0]) =>
-            signedGlobalEventVisibleTo(frame, principal),
+          visible: (frame: Parameters<typeof signedControlPlaneEventVisibleTo>[0]) =>
+            signedControlPlaneEventVisibleTo(frame, principal),
         }
       }
 
@@ -102,23 +102,14 @@ function shellRoutes(options: ShellRouteOptions) {
           workspaceId,
           role: relayRole(typeof workspace.role === "string" ? workspace.role : undefined),
         },
-        visible: (frame: Parameters<typeof signedGlobalEventVisibleTo>[0]) =>
-          signedGlobalEventVisibleTo(frame, principal, async (sessionId) => {
-            try {
-              await authority.authorizeSessionRead(auth, { sessionId, workspaceId })
-              return true
-            } catch {
-              return false
-            }
-          }),
+        visible: (frame: Parameters<typeof signedControlPlaneEventVisibleTo>[0]) =>
+          signedControlPlaneEventVisibleTo(frame, principal),
       }
     },
   })
   return new Hono()
     .get("/global/health", (c) => c.json({ healthy: true, version: options.env?.npm_package_version || "1.0.0" }))
-    .get("/global/event", (c) => stream(c))
-    .get("/api/claxedo/events", (c) => stream(c))
-    .get("/api/wr/events", (c) => stream(c))
+    .get("/api/cp/events", (c) => stream(c))
     .get("/path", async (c) => {
       const input = workspaceInput(c)
       const ws = await resolveWorkspace({ workspaceId: input.workspaceId, directory: input.directory })
