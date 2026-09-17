@@ -3,7 +3,6 @@ export function createPromptDockResizeHandler(input: {
   userScrolled: () => boolean
   scrollToEnd: () => void
   scheduleScrollState: (scroller: HTMLDivElement) => void
-  scheduleHistoryFill: () => void
   requestFrame?: (callback: FrameRequestCallback) => number
   cancelFrame?: (frame: number) => void
 }) {
@@ -33,7 +32,6 @@ export function createPromptDockResizeHandler(input: {
         })
       }
       if (scroller) input.scheduleScrollState(scroller)
-      input.scheduleHistoryFill()
     },
     dispose() {
       active = false

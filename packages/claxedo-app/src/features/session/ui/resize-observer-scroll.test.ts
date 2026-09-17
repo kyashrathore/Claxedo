@@ -5,7 +5,6 @@ describe("createPromptDockResizeHandler", () => {
   test("defers and coalesces scroll work outside ResizeObserver delivery", () => {
     const callbacks: FrameRequestCallback[] = []
     const scrollStates: HTMLDivElement[] = []
-    let historyFills = 0
     let scrolls = 0
     const scroller = { scrollHeight: 1_000, clientHeight: 500, scrollTop: 500 } as HTMLDivElement
     const handler = createPromptDockResizeHandler({
@@ -13,7 +12,6 @@ describe("createPromptDockResizeHandler", () => {
       userScrolled: () => false,
       scrollToEnd: () => scrolls++,
       scheduleScrollState: (element) => scrollStates.push(element),
-      scheduleHistoryFill: () => historyFills++,
       requestFrame: (callback) => {
         callbacks.push(callback)
         return callbacks.length
@@ -27,7 +25,6 @@ describe("createPromptDockResizeHandler", () => {
     expect(scrolls).toBe(0)
     expect(callbacks).toHaveLength(1)
     expect(scrollStates).toEqual([scroller, scroller])
-    expect(historyFills).toBe(2)
 
     callbacks[0](0)
 
@@ -45,7 +42,6 @@ describe("createPromptDockResizeHandler", () => {
       userScrolled: () => false,
       scrollToEnd: () => scrolls++,
       scheduleScrollState: () => {},
-      scheduleHistoryFill: () => {},
       requestFrame: () => 42,
       cancelFrame: (frame) => cancelled.push(frame),
     })
@@ -65,7 +61,6 @@ describe("createPromptDockResizeHandler", () => {
       userScrolled: () => true,
       scrollToEnd: () => {},
       scheduleScrollState: () => {},
-      scheduleHistoryFill: () => {},
       requestFrame: () => ++frames,
       cancelFrame: () => {},
     })

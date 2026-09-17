@@ -48,7 +48,6 @@ import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/feature
 import { same } from "@/lib/same"
 import { isRuntimeAgentMessage } from "@/features/session/conversation/agent-conversation-codec"
 import { createSessionHistoryWindow, emptyUserMessages, type HistoryWindowSnapshot } from "@/features/session/ui/history-window"
-import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { transcriptPeekStep, type TranscriptPeekState } from "@/features/session/ui/transcript-peek"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff } from "@/features/session/ui/prompt-preview-handoff"
@@ -1006,7 +1005,6 @@ export default function SessionPage(props: {
     autoScroll.scrollRef(el)
     if (!el) return
     scheduleScrollState(el)
-    scheduleHistoryFill()
   }
 
   const markUserScroll = () => {
@@ -1018,7 +1016,6 @@ export default function SessionPage(props: {
     () => {
       const el = scroller
       if (el) scheduleScrollState(el)
-      scheduleHistoryFill()
     },
   )
 
@@ -1085,35 +1082,6 @@ export default function SessionPage(props: {
   )
 
 
-  // See `createHistoryFill` for why the decision is confirmed across two frames.
-  const historyFill = createHistoryFill({
-    eligible: () => {
-      if (!sessionID() || !messagesReady()) return false
-      if (autoScroll.userScrolled() || historyLoading()) return false
-
-      const el = scroller
-      if (!el) return false
-      if (el.scrollHeight > el.clientHeight + 1) return false
-      if (historyWindow.turnStart() <= 0 && !historyMore()) return false
-
-      return true
-    },
-    reveal: () => void historyWindow.loadAndReveal(),
-    autoFill: () => !floating(),
-  })
-
-  const scheduleHistoryFill = () => historyFill.schedule()
-
-  createEffect(
-    on(
-      () => [sessionKey(), paneActive()] as const,
-      ([key, active]) => {
-        historyFill.activate(active ? key : undefined)
-        if (active) scheduleHistoryFill()
-      },
-    ),
-  )
-
   createEffect(
     on(
       sessionKey,
@@ -1128,28 +1096,6 @@ export default function SessionPage(props: {
         scrollToEnd()
         const el = scroller
         if (el) scheduleScrollState(el)
-        scheduleHistoryFill()
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
-      () =>
-        [
-          sessionID(),
-          messagesReady(),
-          historyWindow.turnStart(),
-          historyMore(),
-          historyLoading(),
-          autoScroll.userScrolled(),
-          visibleUserMessages().length,
-        ] as const,
-      ([id, ready, start, more, loading, scrolled]) => {
-        if (!id || !ready || loading || scrolled) return
-        if (start <= 0 && !more) return
-        scheduleHistoryFill()
       },
       { defer: true },
     ),
@@ -1160,7 +1106,6 @@ export default function SessionPage(props: {
     userScrolled: autoScroll.userScrolled,
     scrollToEnd: () => scrollToEnd(),
     scheduleScrollState,
-    scheduleHistoryFill,
   })
   createResizeObserver(() => promptDock, ({ height }) => promptDockResize.resize(height))
 
@@ -1230,7 +1175,6 @@ export default function SessionPage(props: {
 
   onCleanup(() => {
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
-    historyFill.cancel()
     promptDockResize.dispose()
   })
 
