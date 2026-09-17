@@ -11,9 +11,6 @@ import type { DirectorySessionCacheValue } from "./queries"
 import { isConcreteSessionTitle } from "../../lib/session-title-sync"
 import { sessionEventRow, sessionEventSummary, sessionRow } from "./session-event-info"
 
-// Canonical envelope lives in `shared/data/session-lifecycle` (rubric D4). This module
-// re-exports under the historical alias so existing imports keep working while
-// lifecycle projection moves out of the generic event reducer.
 export type ClaxedoSessionLifecycleEvent = SessionLifecycleEvent
 
 export function mergeCanonicalSessionUpdate(

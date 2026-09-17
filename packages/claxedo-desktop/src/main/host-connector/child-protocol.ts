@@ -49,10 +49,11 @@ export type HostConnectorParentMessage =
        *
        * The child signs and sends every heartbeat, but it is not the process
        * that composed the runtimes it beats for — the daemon is — so the
-       * answer travels here with the rest of the bootstrap. The control plane
-       * mints a client's event-stream scope from this declaration and refuses
-       * to infer one, so a bootstrap that omits it publishes a machine whose
-       * clients open no workspace stream.
+       * answer travels here with the rest of the bootstrap. A client reads
+       * from this declaration whether a session it creates on this machine
+       * must be registered with the control plane first, and never infers
+       * it; a bootstrap that omits it publishes a machine whose clients
+       * create sessions unregistered.
        */
       sessionAuthority?: "local" | "managed-private"
       /** Shares to re-establish after enrollment (registration is an upsert). */

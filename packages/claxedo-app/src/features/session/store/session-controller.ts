@@ -631,11 +631,9 @@ export function createSessionController(input: {
           messageCompleteness: pageRequest.view === "latest-surface" ? "fragment" : "canonical",
           partCompleteness: pageRequest.view === "latest-surface" ? "fragment" : "canonical",
         })
-        // Thread the scope's stable workspaceId so the runtime event stream can
-        // route through the relay even when `directory` is the runtime
-        // filesystem path (which the hosted inventory can't map back to a
-        // workspace). Without it the stream falls through to the central control
-        // plane and 404s for relay-backed (user-hosted) workspaces.
+        // `workspaceId` is the live session's scope for the subagent registry
+        // (a change of workspace resets it); the stream reads the address the
+        // pane published, not this.
         if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host, sessionRef: input.sessionRef?.() })
         const cursor = result.messages.response.headers.get("x-next-cursor") ?? undefined
         if (!opts?.silent) {

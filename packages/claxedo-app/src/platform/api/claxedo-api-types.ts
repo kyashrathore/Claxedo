@@ -124,15 +124,15 @@ export type ClaxedoProviderAuthMethod = {
 
 export type ClaxedoProviderAuth = Record<string, ClaxedoProviderAuthMethod[]>
 
-/** Workspace-operational events consumed by browser surfaces. */
+/**
+ * Presentation-shaped (`properties`) workspace events the SDK bridge admits
+ * beside the runtime's presentation contract. Pty, process, agent and
+ * session lifecycle control frames and the control plane's notices are flat
+ * and are applied by `ClaxedoEventsProvider`'s emitter, never here.
+ */
 export type ClaxedoWorkspaceEvent =
   | { id?: string; type: "file.watcher.updated"; properties: { file: string; event?: string } }
   | { id?: string; type: "project.updated"; properties: { info: ClaxedoProject } }
   | { id?: string; type: "vcs.branch.updated"; properties: { branch?: string } }
   | { id?: string; type: "global.disposed"; properties: Record<string, unknown> }
   | { id?: string; type: "session.deleted"; properties: { info: AgentPresentationSession } }
-  | { id?: string; type: "session.share.changed"; properties: { sessionID: string; share?: { url: string } } }
-  | { id?: string; type: "pty.created"; properties: { info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string } } }
-  | { id?: string; type: "pty.updated"; properties: { info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string } } }
-  | { id?: string; type: "pty.exited"; properties: { id: string; exitCode?: number } }
-  | { id?: string; type: "pty.deleted"; properties: { id: string } }

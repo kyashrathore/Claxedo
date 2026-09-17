@@ -320,18 +320,26 @@ describe("createIdentityAwareEventSource", () => {
     expect(first.replay.hasGap("2", first.replay.lastId())).toBe(false)
     expect(first.replay.replayAfter("2").map((entry) => entry.payload.value)).toEqual(["c"])
 
-    // The relay re-minted the credential: a new scope, rebuilt from the retained
-    // ring and numbered from 1. The reader's cursor "2" names a frame in the OLD
-    // numbering, so it is a gap — not "replay c".
-    const reminted = source.open({ ...participant("connection_2"), credential: "Bearer rat_2" })
+    // The relay re-minted the credential — the daemon's proxy mints a runtime
+    // token per request — for the same actor at the same role: the same
+    // scope, the same numbering, the cursor resumes.
+    const reminted = source.open({ ...participant("connection_2"), credential: "Bearer rat_2", replayKey: "rat:2" })
     await reminted.ready
-    expect(reminted.replay.hasGap("2", reminted.replay.lastId())).toBe(true)
-    reminted.subscribe(() => undefined)
+    expect(reminted.replay.hasGap("2", reminted.replay.lastId())).toBe(false)
+    expect(reminted.replay.replayAfter("2").map((entry) => entry.payload.value)).toEqual(["c"])
+
+    // Another actor's cursor names a frame in a numbering this scope never
+    // had: a new scope, rebuilt from the retained ring and numbered from 1,
+    // so "2" is a gap — not "replay c".
+    const stranger = source.open({ ...participant("connection_3"), actorId: "actor_other" })
+    await stranger.ready
+    expect(stranger.replay.hasGap("2", stranger.replay.lastId())).toBe(true)
+    stranger.subscribe(() => undefined)
     bus.publish({ sessionId: "ses", value: "d" })
     await source.flush()
     // Once attached, the new scope's own numbering resumes.
-    expect(reminted.replay.hasGap("3", reminted.replay.lastId())).toBe(false)
-    expect(reminted.replay.replayAfter("3").map((entry) => entry.payload.value)).toEqual(["d"])
+    expect(stranger.replay.hasGap("3", stranger.replay.lastId())).toBe(false)
+    expect(stranger.replay.replayAfter("3").map((entry) => entry.payload.value)).toEqual(["d"])
     source.close()
   })
 
@@ -363,11 +371,15 @@ describe("createIdentityAwareEventSource", () => {
     const reconnect = source.open(participant("connection_2"))
     await reconnect.ready
     expect(reconnect.replay.replayAfter("0").map((entry) => entry.payload.value)).toEqual(["during_disconnect"])
-    expect(await reconnect.decide({ sessionId: "ses_private", value: "during_disconnect" })).toBe("deliver")
-
-    revoked.add("actor_participant")
-    expect(await reconnect.decide({ sessionId: "ses_private", value: "during_disconnect" })).toBe("terminate")
     expect(decisions.some((decision) => decision.connectionId === "connection_2")).toBe(true)
+
+    // Revoked while attached: the next frame of a session it held ends it.
+    let ended = 0
+    reconnect.subscribe(() => undefined, () => { ended += 1 })
+    revoked.add("actor_participant")
+    bus.publish({ sessionId: "ses_private", value: "after_revocation" })
+    await source.flush()
+    expect(ended).toBe(1)
     source.close()
   })
 
@@ -440,29 +452,23 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
-  test("does not expose another credential's replay to a revoked connection for the same actor", async () => {
+  test("a role change opens a scope of its own: the old role's ring is not replayed to it", async () => {
     const bus = createBus<Event>()
-    const revoked = new Set(["Bearer revoked"])
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
       sequenceOrigin: () => 0,
-      policy: ({ principal }) => {
-        if (principal.mode !== "verified" || !principal.credential) return "terminate"
-        return revoked.has(principal.credential) ? "terminate" : "deliver"
-      },
+      policy: ({ principal }) => (principal.mode === "verified" && principal.role === "admin" ? "deliver" : "omit"),
       sessionId: (event) => event.sessionId,
     })
-    const valid = source.open({ ...participant("connection_valid"), credential: "Bearer valid" })
-    valid.subscribe(() => undefined)
-
-    bus.publish({ sessionId: "ses_private", value: "valid-credential-only" })
+    const admin = source.open({ ...participant("connection_admin"), role: "admin" })
+    admin.subscribe(() => undefined)
+    bus.publish({ sessionId: "ses_private", value: "admin-only" })
     await source.flush()
+    expect(admin.replay.replayAfter("0").map((entry) => entry.payload.value)).toEqual(["admin-only"])
 
-    const denied = source.open({ ...participant("connection_revoked"), credential: "Bearer revoked" })
-    await denied.ready
-
-    expect(denied.replay.replayAfter("0")).toEqual([])
-    expect(await denied.decide({ sessionId: "ses_private", value: "valid-credential-only" })).toBe("terminate")
+    const viewer = source.open({ ...participant("connection_viewer"), role: "viewer" })
+    await viewer.ready
+    expect(viewer.replay.replayAfter("0")).toEqual([])
     source.close()
   })
 
@@ -564,7 +570,7 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     expect(calls).toEqual(["stream ses_private"])
   })
 
-  test("the authority being away for a session the reader was never granted omits the frame; for a granted one it ends the stream", async () => {
+  test("the authority being away: a granted session's lease stands until it expires; a session never granted ends the stream", async () => {
     const calls: string[] = []
     let away = false
     const policy = sessionEventDeliveryPolicy<Event>({
@@ -578,10 +584,41 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     const reader = participant("connection_4")
     expect(await policy({ principal: reader, event: { sessionId: "ses_a", value: "a" }, sessionId: "ses_a", sensitive: false })).toBe("deliver")
     away = true
-    expect(await policy({ principal: reader, event: { sessionId: "ses_b", value: "b" }, sessionId: "ses_b", sensitive: false })).toBe("omit")
-    // Held as refused for one cadence: the next frame is not another round trip.
-    expect(await policy({ principal: reader, event: { sessionId: "ses_b", value: "b2" }, sessionId: "ses_b", sensitive: false })).toBe("omit")
-    expect(calls).toEqual(["stream ses_a", "stream ses_b"])
+    // Renewal cannot roll the lease, and does not need to yet: the stream stays.
+    expect(await policy.renew!(reader)).toBe("deliver")
+    expect(await policy({ principal: reader, event: { sessionId: "ses_a", value: "a2" }, sessionId: "ses_a", sensitive: false })).toBe("deliver")
+    // A frame of a session the reader was never granted cannot be delivered,
+    // and omitting it would leave the cursor contiguous over it.
+    expect(await policy({ principal: reader, event: { sessionId: "ses_b", value: "b" }, sessionId: "ses_b", sensitive: false })).toBe("terminate")
+    expect(calls).toEqual(["stream ses_a", "stream ses_a", "stream ses_b"])
+  })
+
+  test("the authority being away past a granted session's lease expiry ends the stream", async () => {
+    const calls: string[] = []
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...sessionPolicy({ granted: () => true, calls }),
+      authorizeStream: async () => ({ allowed: false, status: 503, code: "authority_unavailable", message: "away" }),
+    })
+    const reader = participant("connection_4b")
+    policy.holdSession?.(reader, "ses_a", { lease: "l", expiresAt: Date.now() + 30 })
+    expect(await policy.renew!(reader)).toBe("deliver")
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(await policy.renew!(reader)).toBe("terminate")
+  })
+
+  test("the authority being away at the workspace lease's renewal keeps the stream until that lease expires", async () => {
+    const calls: string[] = []
+    let away = false
+    const base = sessionPolicy({ granted: () => true, calls })
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...base,
+      authorizeHost: (host) => (away ? { allowed: false, status: 503, code: "authority_unavailable", message: "away" } : base.authorizeHost!(host)),
+    })
+    const reader = participant("connection_4c")
+    policy.holdHost?.(reader, { lease: "ws", expiresAt: Date.now() + 60 })
+    away = true
+    expect(await policy.renew!(reader)).toBe("deliver")
+    await new Promise((resolve) => setTimeout(resolve, 70))
     expect(await policy.renew!(reader)).toBe("terminate")
   })
 
@@ -621,9 +658,16 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     policy.holdHost?.(reader, { lease: "ws", expiresAt: Date.now() + 15_000 })
     expect(await policy({ principal: reader, event: { sessionId: "ses_gone", value: "g" }, sessionId: "ses_gone", sensitive: false })).toBe("deliver")
     alive.delete("ses_gone")
-    policy.forgetSession?.("ses_gone")
+    policy.forgetSession?.(reader, "ses_gone")
     expect(await policy.renew!(reader)).toBe("deliver")
     expect(calls).toEqual(["stream ses_gone lease=ws"])
+    // A session-scoped connection has nothing left to read once its session is gone.
+    alive.add("ses_shared")
+    const scoped = { ...participant("connection_8"), sessionScope: "ses_shared" }
+    policy.holdSession?.(scoped, "ses_shared", { lease: "s", expiresAt: Date.now() + 15_000 })
+    expect(await policy.renew!(scoped)).toBe("deliver")
+    policy.forgetSession?.(scoped, "ses_shared")
+    expect(await policy.renew!(scoped)).toBe("terminate")
   })
 
   test("the workspace lease rolls at renewal and its access token's revocation ends the stream", async () => {

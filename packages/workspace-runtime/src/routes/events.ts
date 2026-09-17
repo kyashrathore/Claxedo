@@ -98,6 +98,10 @@ export function isRetainedWorkspaceEventFrame(frame: StreamFrame) {
   return isRetainedCompatEvent(frame.payload as CompatEnvelope["payload"])
 }
 
+function isSessionDeletion(frame: StreamFrame) {
+  return !isGapFrame(frame) && !isControlFrame(frame) && frame.payload.type === "session.deleted"
+}
+
 export function workspaceEventFrameSessionId(frame: StreamFrame): string | undefined {
   if (isGapFrame(frame)) return undefined
   if (isControlFrame(frame)) return workspaceRuntimeEventSessionId(frame.payload)
@@ -239,24 +243,29 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   // whose ring numbers only that session's frames — so its cursor is
   // contiguous in that ring, and a scope rebuilt after it was away has no
   // hole where a frame its wire never carried was numbered.
+  // Kept synchronous when the policy is: a synchronous decision is applied
+  // before the fanout attaches, and the source orders on that.
   const policy: EventDeliveryPolicy<StreamFrame> = Object.assign(
     (input: Parameters<EventDeliveryPolicy<StreamFrame>>[0]) => {
       const sessionScope = input.principal.mode === "unmanaged-local" ? undefined : input.principal.sessionScope
       if (sessionScope && input.sessionId !== sessionScope) return "omit" as const
-      return delivery(input)
+      const decision = delivery(input)
+      // Forgotten once THIS connection has decided the deletion, never before:
+      // decided after its grant was gone, the deletion itself would read as a
+      // refusal of a session the connection held.
+      const sessionId = input.sessionId
+      if (!sessionId || !isSessionDeletion(input.event)) return decision
+      const forget = () => delivery.forgetSession?.(input.principal, sessionId)
+      if (decision instanceof Promise) return decision.then((next) => { forget(); return next })
+      forget()
+      return decision
     },
     delivery,
   )
   const owns = ownsControlFrames(options)
   const source = createIdentityAwareEventSource<StreamFrame>({
     subscribe: (fn) => {
-      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => {
-        fn(event)
-        if (event.payload.type === "session.deleted") {
-          const sessionId = compatEnvelopeSessionId(event)
-          if (sessionId) delivery.forgetSession?.(sessionId)
-        }
-      })
+      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => fn(event))
       const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
         for (const event of presentationEventsFromRuntimeEnvelope(envelope)) fn(event)
       })

@@ -84,15 +84,16 @@ describe("sessionEventScopeId retargets", () => {
   })
 
   test("a user-hosted session route retargets once, and again only when the session changes", () => {
-    // Same two writes on a relay-backed workspace, where the lanes really are
-    // session-scoped and a needless reopen costs a whole replayed log.
+    // Same two writes on a relay-backed workspace: a stream the runtime
+    // narrowed to one session reopens for another, and a needless reopen
+    // costs a whole replayed log.
     const lane = countRetargets()
     holdSessionEventScope("ses_hosted")
     setSessionEventRouteScope("ses_hosted")
     expect(lane.seen).toEqual(["ses_hosted"])
 
     // A navigation to a different session IS the user moving on, and must
-    // retarget both lanes.
+    // retarget the stream.
     setSessionEventRouteScope("ses_next")
     expect(lane.seen).toEqual(["ses_hosted", "ses_next"])
 

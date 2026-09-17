@@ -143,7 +143,6 @@ import {
 import { draftDefaultStorageKey } from "../../src/features/session/harness/draft-defaults"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
 import { eventStream, lastEventId } from "../helpers/sse-route"
-import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
@@ -165,14 +164,6 @@ const WORKSPACE_REF = `workspace:${WORKSPACE_ID}`
 // still awaits the actual state transition — this only outlasts host lag, it never
 // weakens what is asserted.
 const CONTENTION_TIMEOUT = 45_000
-// The AgentRuntimeEvent contract version the consumer requires verbatim: a
-// frame with any other value is dropped by `runtimeEnvelope`
-// (`src/app/providers/global-sdk/runtime-envelope.ts`), which reads the same
-// constant. Imported rather than spelled out, because a literal here silently
-// goes stale the next time the contract is revised: the frames still reach the
-// reader (its SSE cursor still advances), the consumer just decodes none of
-// them and reports a contract mismatch instead.
-const RUNTIME_EVENT_CONTRACT_VERSION = AGENT_RUNTIME_EVENT_CONTRACT_VERSION
 // Real, versioned, servable house-model id — NOT the bare "big-pickle", which
 // the app reserves as the non-selectable pre-provisioning placeholder
 // (`signed-workspace-model.ts`); serving that exact id as the only model leaves
@@ -739,7 +730,6 @@ async function installUserHostedRuntimeMock(
         }
         const emitFrame = (payload: Record<string, unknown>) => {
           requests.runtimeFramesEmitted.push({
-            contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
             directory: HOST_DIR,
             sessionId: SESSION_ID,
             assistantMessageId: assistantID,
@@ -860,7 +850,6 @@ async function installUserHostedRuntimeMock(
      */
     emitRuntimeFrame(payload: Record<string, unknown>, input: { assistantMessageId: string }) {
       requests.runtimeFramesEmitted.push({
-        contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
         directory: HOST_DIR,
         sessionId: SESSION_ID,
         assistantMessageId: input.assistantMessageId,
@@ -999,7 +988,6 @@ test.describe("core user-hosted workspace @core", () => {
       "finish",
     ])
     for (const frame of mock.requests.runtimeFramesEmitted) {
-      expect(frame.contractVersion).toBe(RUNTIME_EVENT_CONTRACT_VERSION)
       expect(frame.sessionId).toBe(SESSION_ID)
       // The runtime names an assistant reply `${userMessageId}_r`.
       expect(String(frame.assistantMessageId).endsWith("_r")).toBe(true)

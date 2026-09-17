@@ -29,11 +29,6 @@ const CLAXEDO_WORKSPACE_EVENT_TYPES = {
   "vcs.branch.updated": true,
   "global.disposed": true,
   "session.deleted": true,
-  "session.share.changed": true,
-  "pty.created": true,
-  "pty.updated": true,
-  "pty.exited": true,
-  "pty.deleted": true,
 } satisfies Record<ClaxedoWorkspaceEvent["type"], true>
 
 /**

@@ -141,9 +141,9 @@ export function setupHostConnectorChild(input: {
    * Injected rather than known here because Electron main did not compose
    * those runtimes either; the daemon reports it on its own serving surface.
    * Answering `undefined` (the daemon was unreachable) publishes an UNDECLARED
-   * machine: the control plane records the absence and mints no event-stream
-   * scope, which is the honest outcome — a guess here would put every client
-   * of this machine on the wrong stream.
+   * machine: the control plane records the absence, which is the honest
+   * outcome — a guess here would have every client of this machine register
+   * its sessions wrongly, or not at all.
    */
   sessionAuthority?: () => Promise<"local" | "managed-private" | undefined>
   displayName?: string

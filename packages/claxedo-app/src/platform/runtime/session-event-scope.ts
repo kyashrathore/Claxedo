@@ -61,11 +61,11 @@ type SessionEventScopeState = {
   /** The shell route's own session identity, published by the route's reader. */
   route?: string
   /**
-   * The workspace a mounted session pane resolved its session to. A bare
-   * `/s/<id>` route names no workspace, so the reader learns which stream the
-   * routed session needs from the pane that opened it.
+   * The workspace a mounted session pane resolved its session to, as the
+   * address the pane registered it under (a local path, or `workspace:<id>`).
+   * A bare `/s/<id>` route names no workspace, so the reader learns which
+   * stream the routed session needs from the pane that opened it.
    */
-  /** The address the pane registered the session's workspace under: a local path, or `workspace:<id>`. */
   live?: { sessionId: string; workspaceAddress: string }
   lanes: Partial<Record<SessionEventStreamLane, LaneState>>
 }

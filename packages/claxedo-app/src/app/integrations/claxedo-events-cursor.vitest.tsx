@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
 import { resetSessionEventScope, setSessionEventLiveWorkspace } from "@/platform/runtime/session-event-scope"
 import { resetSessionHistoryResyncForTest, sessionHistoryResyncRequest } from "@/features/session/store/session-history-resync"
-import { HEARTBEAT_TIMEOUT_MS, RECONNECT_DELAY_MS } from "../providers/claxedo-events-reconnect"
+import { HEARTBEAT_TIMEOUT_MS, MAX_RECONNECT_DELAY_MS, RECONNECT_DELAY_MS } from "../providers/claxedo-events-reconnect"
 
 const transport = vi.hoisted(() => ({ request: vi.fn<typeof fetch>() }))
 
@@ -195,6 +195,48 @@ describe("the workspace stream's two arms", () => {
     await vi.advanceTimersByTimeAsync(0)
     const opens = workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))
     expect(opens).toEqual([null, "ses_shared"])
+  })
+
+  test("narrowing to the session drops the workspace ring's cursor: the session's ring is another numbering", async () => {
+    let unscopedOpens = 0
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      if (url.searchParams.has("sessionID")) return quiet()
+      // The first unscoped open is admitted and issues a cursor, then ends;
+      // the reopen is refused: the reader's workspace access went away while
+      // its session share stayed.
+      unscopedOpens += 1
+      return unscopedOpens === 1 ? new Response('id: 42\ndata: {"type":"heartbeat"}\n\n') : refusedAtWorkspaceLevel()
+    })
+    mountRoute(() => "/w/ws_shared/session/ses_shared")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAY_MS)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const opens = workspaceRequests().map(({ url, init }) => [url.searchParams.get("sessionID"), new Headers(init?.headers).get("Last-Event-ID")])
+    expect(opens).toEqual([[null, null], [null, "42"], ["ses_shared", null]])
+  })
+
+  test("refused on a route that names no session, the target waits for one instead of retrying as an outage", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    transport.request.mockImplementation(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      return url.searchParams.has("sessionID") ? quiet() : refusedAtWorkspaceLevel()
+    })
+    const [pathname, setPathname] = createSignal("/w/ws_shared/session")
+    mountRoute(pathname)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(MAX_RECONNECT_DELAY_MS * 2)
+    expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null])
+    expect(errors).not.toHaveBeenCalled()
+    // A session named later reopens at once, session-scoped.
+    setPathname("/w/ws_shared/session/ses_shared")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_shared"])
   })
 
   test("a 403 minted elsewhere on the path is retried unscoped, not narrowed to the session", async () => {

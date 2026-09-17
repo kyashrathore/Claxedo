@@ -162,7 +162,11 @@ export function eventSessionId(event: CompatEvent): string | undefined {
     case "session.error":
       return properties.sessionID
     default:
-      return undefined
+      // A type this list does not name is still the session's when its
+      // properties say so: the stream delivers a session-less frame to every
+      // admitted principal, so failing open here would ship a new event kind
+      // workspace-wide until someone added its case.
+      return properties.sessionID ?? properties.info?.sessionID ?? properties.part?.sessionID
   }
 }
 

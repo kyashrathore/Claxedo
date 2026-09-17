@@ -4,6 +4,12 @@
  * and the hosted control plane's) and the `wr/events` of the workspace the
  * route names (that runtime's session frames and control frames). Every
  * frame enters one emitter; consumers subscribe by type or listen to all.
+ *
+ * One workspace stream, the routed one: a pane of another local workspace
+ * left open on the desktop gets that workspace's `pty.*` and
+ * `agent.lifecycle` only when the route returns to it (the reconnect
+ * reconciles) or from the rail's periodic status read — the daemon's
+ * control-plane stream no longer carries every local workspace's frames.
  */
 
 import {
@@ -44,6 +50,7 @@ import {
   reportSessionEventStreamClosed,
   reportSessionEventStreamOpen,
   sessionEventScopeWorkspaceAddress,
+  type SessionEventStreamLane,
   sessionEventScopeId,
   setSessionEventRouteScope,
 } from "@/platform/runtime/session-event-scope"
@@ -319,10 +326,8 @@ type ClaxedoEventsContextValue = {
    * revalidation edge for the doorbells above, each outage once.
    */
   controlPlaneReconnects: () => number
-  /** The routed workspace's stream (`wr`) is up: the one carrying `agent.lifecycle` and `pty.*`. */
+  /** The routed workspace's stream (`wr`) is up: the one carrying `agent.lifecycle` and `pty.*`; its edge is the agent-status reconciliation's. */
   workspaceConnected: () => boolean
-  /** Counts a workspace stream's return after a drop the level never showed; with `workspaceConnected`, the agent-status reconciliation edge. */
-  workspaceReconnects: () => number
 }
 
 const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue>()
@@ -456,8 +461,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     const state = {
       // A `wr` target opens unscoped. A runtime that refuses the reader at
       // workspace level (a share grantee) is asked again for the routed
-      // session, and the target stays session-scoped from then on.
-      scope: "workspace" as "workspace" | "session",
+      // session, and the target stays session-scoped from then on. Refused
+      // on a route that names no session, the target waits for one.
+      scope: "workspace" as "workspace" | "session" | "refused",
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
       reconnectTimer: null as ReturnType<typeof setTimeout> | null,
@@ -471,20 +477,18 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
     // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
     // carries that session's events.
-    const streamId: StreamSyncStreamId = target.kind === "cp"
-      ? (target.transport === "account" ? "cp:account" : "cp")
-      : `wr:${target.workspaceId}`
+    const lane: SessionEventStreamLane | undefined = target.kind === "wr" ? `wr:${target.workspaceId}` : undefined
+    const streamId: StreamSyncStreamId = lane ?? (target.kind === "cp" && target.transport === "account" ? "cp:account" : "cp")
     // The workspace stream carries a session's live frames, so the scope owner
     // has to know whether it is open and for which session. Opened unscoped it
     // carries every session; opened for a grantee it carries one.
-    const releaseLane = target.kind === "cp" ? undefined : registerSessionEventStreamLane(streamId)
+    const releaseLane = lane ? registerSessionEventStreamLane(lane) : undefined
     const reportLaneOpen = () => {
-      if (target.kind !== "wr") return
-      reportSessionEventStreamOpen(streamId, state.scope === "session" ? target.sessionID : undefined)
+      if (!lane || target.kind !== "wr") return
+      reportSessionEventStreamOpen(lane, state.scope === "session" ? target.sessionID : undefined)
     }
     const reportLaneClosed = () => {
-      if (target.kind === "cp") return
-      reportSessionEventStreamClosed(streamId)
+      if (lane) reportSessionEventStreamClosed(lane)
     }
 
     // Per-kind accounting: this stream's bit feeds the aggregate `connected()`
@@ -541,7 +545,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
 
     const connect = () => {
-      if (stopped || closed) return
+      if (stopped || closed || state.scope === "refused") return
       beginConnect()
       const quietDelay = fastSessionSwitchAnyQuietDelay()
       if (quietDelay > 0) {
@@ -566,16 +570,31 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       void eventStreamFetch(target, {
         headers,
         signal: state.abort.signal,
-      }, { scope: state.scope }).then(async (res) => {
+      }, { scope: state.scope === "session" ? "session" : "workspace" }).then(async (res) => {
         // Only the runtime's own refusal of the unscoped arm narrows the
         // stream: a 403 minted elsewhere on the path (the relay while its
         // host is away, the token mint) is an outage to retry, not a share
         // grantee's cue to read one session.
-        if (res.status === 403 && target.kind === "wr" && target.sessionID && state.scope === "workspace"
-          && await workspaceStreamDenied(res)) {
-          state.scope = "session"
+        if (res.status === 403 && target.kind === "wr" && state.scope === "workspace" && await workspaceStreamDenied(res)) {
           state.abort = null
-          connect()
+          if (target.sessionID) {
+            state.scope = "session"
+            // The session's ring is its own numbering; the workspace ring's
+            // cursor names nothing in it and would read as a gap.
+            state.lastEventId = null
+            connect()
+            return
+          }
+          // A grantee on a route with no session — the workspace's draft
+          // route — has nothing the runtime will serve. Not an outage: no
+          // retry, no escalation, no "Reconnecting…"; the next navigation
+          // that names a session reopens.
+          state.scope = "refused"
+          stepLifecycle("stop")
+          clearStreamSyncLifecycle(streamId)
+          state.lifecycle = "idle"
+          setStreamConnected(false)
+          reportLaneClosed()
           return
         }
         if (!res.ok || !res.body) {
@@ -709,6 +728,13 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       const previous = target
       target = next
       if (next.kind !== "wr" || previous.kind !== "wr") return
+      if (state.scope === "refused") {
+        if (!next.sessionID) return
+        state.scope = "session"
+        state.lastEventId = null
+        connect()
+        return
+      }
       if (state.scope !== "session" || previous.sessionID === next.sessionID) return
       state.abort?.abort()
       state.abort = null
@@ -800,7 +826,6 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     centralConnected: connectivity.centralConnected,
     controlPlaneReconnects: connectivity.controlPlaneReconnects,
     workspaceConnected: connectivity.workspaceConnected,
-    workspaceReconnects: connectivity.workspaceReconnects,
   }
 
   return (

@@ -378,9 +378,12 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       round-3/4 reviewers' greps; the remaining `/global/event` hits are the
       upstream OpenCode engine's own SSE spoken by its harness adapter. The
       app's `ClaxedoWorkspaceEvent` SDK-event union (`claxedo-api-types.ts`)
-      still declares `pty.*` arms with `properties` that no producer emits;
-      the terminal provider's SDK-mode fallback and its fixture depend on
-      them, so retiring that union is a separate change.
+      lost its `properties`-shaped `pty.*` and `session.share.changed` arms
+      in round 7 (no producer, and no consumer once the terminal provider's
+      SDK-mode fallback went in round 6); its four engine-named arms
+      (`file.watcher.updated`, `project.updated`, `vcs.branch.updated`,
+      `global.disposed`) stay, with consumers and no producer — the
+      recorded file-watcher follow-up.
 - [ ] The 2026-09-17-001 scenario (daemon `kill -STOP` ≤ 36 s across a
       tool's completion) re-run on the installed build with polls
       disabled: one gap notice on `wr/events`, one resync, the row reads
@@ -421,10 +424,13 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       `CLAXEDO_EVENTS_RELAY_PATH`, the `globalBus` envelope form on the
       central stream, "compat loop", "compat stream", "three spellings" —
       returns zero hits across `packages/*/src`, `packages/*/e2e`,
-      `packages/*/scripts`, `script/`, `docs/` (outside this plan and plan
-      001) and the memory index. Progress: DONE for the listed names (the
-      round-3 and round-4 reviewers' greps); `runtime-events` survives only
-      in `e2e/e2e-decisions.md` as a dated decision record.
+      `packages/*/scripts`, `script/`, `docs/` (outside this plan, plan 001
+      and dated verification records) and the memory index. Progress: DONE
+      for the listed names in code (the round-3, -4 and -7 reviewers'
+      greps); the retired spellings survive in `e2e/e2e-decisions.md`,
+      `docs/plans/2026-09-09-003-session-transcript-defect-log.md` and two
+      `docs/verification/session-rendering/` reports, all dated records of
+      what was true when written.
 - [ ] System coherent (proof): consistency reviews of the landed tree, each
       by a reviewer who did not write the code, each covering the full
       producer → bus → handler → transport → reader → store path on desktop
@@ -452,9 +458,9 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
       `bun run test:architecture-ratchets` with the closure ceilings
       LOWERED to the measured values. Progress: `routes/events.test.ts`
-      (21), `event-delivery.test.ts` (23), local `shell/events.test.ts` (11)
+      (21), `event-delivery.test.ts` (25), local `shell/events.test.ts` (11)
       + `event-stream-response.test.ts`; reader suite
-      `claxedo-events-cursor.vitest.tsx` (12) + `claxedo-event-targets.test.ts`;
+      `claxedo-events-cursor.vitest.tsx` (14) + `claxedo-event-targets.test.ts`;
       ceilings lowered in `2c10b5aaa4` (app-local 1077, renderer 1120,
       self-hosted 124, desktop main 90) and unchanged since.
 
@@ -724,7 +730,8 @@ commit after this one):
   the `wr` pair.
 - MINOR (client): the desktop's cloud wire — the daemon's
   `localWorkspaceRelayProxy` at `/workspaces/<id>/api/wr/events`, owner
-  token minted by the daemon, cursor forwarded — is documented on the target
+  token minted by the daemon, cursor forwarded (round 7: and resumed, once
+  the scope was keyed by the actor) — is documented on the target
   module and tested at the fetch seam. The retired `origin` parameter of
   the emitter's handlers (whose only meaning was the two-lane overlap) is
   removed; the terminal provider's "vanilla mode" `sdk.event` fallback,
@@ -743,4 +750,67 @@ commit after this one):
   rail's background-row status policy discards live `session.status` it now
   holds for the routed workspace's sessions.
 
-**Round 7**: see below.
+**Round 7** (tree `daeb9114c0`, two reviewers). Findings and fixes (the
+commit after this one):
+
+- MAJOR (server): round 6's held omit for a transient authority fault on a
+  never-granted session dropped the frame in silence — every session is
+  "never granted" again on a reconnect's fresh grants map, so a plane blip
+  on a first frame after reconnect lost the frame with no gap. Now: a 403
+  of THIS session is the held omit; the authority being away (503, a thrown
+  call) leaves a GRANTED session's lease standing until it expires (the
+  round-6 hard-expiry clock bounds a stall) and, on a session never
+  granted, ends the stream so the reconnect reads the hole as a gap; a 401
+  ends it. The workspace lease's renewal follows the same rule.
+- MAJOR (server): the same fault at renewal on a granted session
+  terminated every stream in every workspace within one cadence — a
+  resync storm against the plane that just faulted. Covered by the rule
+  above; tested at both leases.
+- MAJOR (server): the desktop's and a self-hosted node's proxy path mints a
+  runtime access token per request, and the replay scope was keyed by that
+  token, so every `wr/events` reconnect through the proxy landed in a fresh
+  scope (any cursor a gap) and every token expiry (≤15 min) tore the stream
+  down. A verified actor's scope is now the actor's at its role
+  (`scopeKey`): re-minted tokens, two tabs and the proxy's per-request
+  token share one ring and resume each other's cursors; a role change opens
+  a ring of its own. Only a principal without an actor is still keyed by
+  its credential.
+- MINOR (server): the `session.deleted` forget ran at publish time, so a
+  deletion queued behind another session's in-flight first-frame round trip
+  was decided after its grant was gone; it is now forgotten per connection
+  once that connection has decided the frame, and a session-scoped
+  connection whose session is gone ends at its next renewal.
+- MINOR (server): `remote-session-authority.ts` mapped 429/5xx to a 403
+  `session_private` on every non-host call; only 401/403/409 are the
+  authority's answers, the rest are 503.
+- MINOR (server): `eventSessionId` failed open for an unenumerated
+  presentation type (workspace-wide delivery by omission); the default now
+  reads the session off `properties`.
+- NIT (server): the source's unused `open().decide` is gone; the docs-floor
+  row names the dated records that still carry retired spellings.
+- MINOR (client): narrowing to `?sessionID=` kept the workspace ring's
+  cursor, which the session's own ring (round 6) reads as a gap → needless
+  repair pull; the cursor is dropped on narrowing. The Tier M mock's
+  one-numbering divergence is stated on the mock.
+- MINOR (client): a share grantee on the workspace's draft route reopened
+  unscoped into a 403 loop with backoff, escalation and "Reconnecting…";
+  refused with no session to narrow to, the target now waits and reopens
+  session-scoped when a navigation names one.
+- MINOR (client): `workspaceReconnects` could never increment — the
+  provider closes a stale workspace stream before opening the next, so the
+  `wr` level shows every return; the counter and its comments are removed,
+  and the agent-status reconciliation reads the level (one reconcile per
+  workspace switch, which is what heals a non-routed workspace's pane).
+- MINOR (client): the `properties`-shaped `pty.*` / `session.share.changed`
+  union arms are retired; comments contradicting the landed code are
+  rewritten (session-event-scope's stacked docblocks, session-controller's
+  workspaceId, the user-hosted spec's deleted `runtime-envelope` and its
+  tautological contract-version assertion, the scope test's "both lanes",
+  the desktop/host-connector "clients open no workspace stream", the cloud
+  connection's "unscoped answers 400", session-list-events' history,
+  workspace-connection's "provision SSE stream"); the reader header names
+  what the desktop lost (a non-routed local workspace's pane settles on the
+  switch reconcile or the rail batch); the account bridge no longer returns
+  a Response over a body an abort tore down during the handshake.
+
+**Round 8**: see below.

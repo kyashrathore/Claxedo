@@ -17,7 +17,6 @@ export type EventDeliveryPrincipal =
       workspaceId: string
       role: WorkspaceRole
       credential?: string
-      /** What the reader's replay scope is keyed by when it is not the credential itself. */
       replayKey?: string
       /** The one session a session-scoped connection reads; its scope's ring numbers only that session's frames. */
       sessionScope?: string
@@ -29,6 +28,7 @@ export type EventDeliveryPrincipal =
       workspaceId: string
       role: WorkspaceRole
       credential?: string
+      /** What the replay scope is keyed by when it is not the credential itself. */
       replayKey?: string
       sessionScope?: string
     }
@@ -49,8 +49,8 @@ export type EventDeliveryPolicy<T> = ((input: {
   holdHost?: (principal: EventDeliveryPrincipal, lease: { lease: string; expiresAt: number }) => void
   /** The session lease a session-scoped connection was admitted with: that session is granted, and renewed on it. */
   holdSession?: (principal: EventDeliveryPrincipal, sessionId: string, lease: { lease: string; expiresAt: number }) => void
-  /** A deleted session is no reader's to keep: its grants are dropped so renewal does not read the deletion as a revocation. */
-  forgetSession?: (sessionId: string) => void
+  /** A deleted session is no reader's to keep: the connection's grant on it is dropped so renewal does not read the deletion as a revocation. */
+  forgetSession?: (principal: EventDeliveryPrincipal, sessionId: string) => void
 }
 
 type Source<T> = {
@@ -86,7 +86,6 @@ export type IdentityAwareEventSource<T extends object> = {
     replay: SseReplayBuffer<T>
     ready: Promise<void>
     subscribe(listener: (event: T) => unknown, terminate?: () => unknown): () => void
-    decide(event: T): Promise<EventDeliveryDecision>
   }
   flush(): Promise<void>
   close(): void
@@ -110,12 +109,11 @@ export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal
   const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
   const credential = context.req.header("authorization")
-  // What a reader's replay scope is keyed by, beside its actor. Through the
-  // relay, the runtime access token: the relay mints a fresh one-request host
-  // token per connection from it, so keyed by the host token every reconnect
-  // would be a stranger's. Stamped in process (the daemon's own boundary
-  // verified the actor, and the browser's cookie is no header here), the
-  // actor alone: there is no credential to bind a scope to.
+  // What a reader WITHOUT an actor is keyed by. Through the relay, the
+  // runtime access token: the relay mints a fresh one-request host token per
+  // connection from it, so keyed by the host token every reconnect would be
+  // a stranger's. Stamped in process, nothing: there is no credential to bind
+  // a scope to. (A verified actor is keyed by the actor, see `scopeKey`.)
   const replayKey = "parent_jti" in claims && claims.parent_jti
     ? `rat:${claims.parent_jti}`
     : "principal_kind" in claims
@@ -213,7 +211,7 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
       const decision = policy.authorizeStream
         ? await policy.authorizeStream(accessInput(principal, sessionId), existing.lease ?? hosts.get(principal.connectionId)?.lease)
         : await policy.authorize(accessInput(principal, sessionId))
-      if (!decision.allowed) return refusal(existing, eventDecision(decision))
+      if (!decision.allowed) return refusal(existing, decision)
       existing.granted = true
       existing.denied = false
       existing.lease = "lease" in decision && typeof decision.lease === "string" ? decision.lease : undefined
@@ -221,23 +219,35 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
         ? Math.min(decision.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS)
         : Date.now() + 5_000
       return "deliver" as const
-    })().catch(() => refusal(existing, "terminate")).finally(() => {
+    })().catch(() => refusal(existing, undefined)).finally(() => {
       existing.inflight = undefined
     })
     existing.inflight = pending
     return await pending
   }
-  // A refusal of a session the reader was never granted is not the stream's
-  // to end, whatever its shape: the authority being away for one frame of
-  // another member's private session must not tear every admitted reader
-  // down. Its every delta would be one authority round trip, so the refusal
-  // is held for as long as a grant would be. A granted session refused is a
-  // revocation.
-  const refusal = (grant: { granted: boolean; denied?: boolean; expiresAt: number }, decision: EventDeliveryDecision): EventDeliveryDecision => {
-    if (grant.granted && decision === "terminate") return "terminate"
-    grant.denied = true
-    grant.expiresAt = Date.now() + DENIED_GRANT_TTL_MS
-    return "omit"
+  // What the authority's answer means for the stream:
+  //  - a refusal of THIS session (403) is an omit, held for one cadence so a
+  //    busy private session of another member's is not one round trip per
+  //    delta; on a granted session it is a revocation, and renewal ends the
+  //    stream on it;
+  //  - the authority being away (503, a thrown call) is not an answer. On a
+  //    session the reader holds a valid lease for, the lease stands until it
+  //    expires. On a session the reader was never granted the frame cannot
+  //    be delivered and must not be dropped in silence either — omitting it
+  //    would leave the cursor contiguous over a frame the reader never saw —
+  //    so the stream ends and the reconnect reads the hole as a gap;
+  //  - the reader's own credential gone (401) ends the stream.
+  const refusal = (
+    grant: { granted: boolean; denied?: boolean; expiresAt: number },
+    decision: Extract<Awaited<ReturnType<SessionAccessPolicy["authorize"]>>, { allowed: false }> | undefined,
+  ): EventDeliveryDecision => {
+    if (decision && eventDecision(decision) === "omit") {
+      grant.denied = true
+      grant.expiresAt = Date.now() + DENIED_GRANT_TTL_MS
+      return "omit"
+    }
+    if (isAuthorityAway(decision) && grant.granted && grant.expiresAt > Date.now()) return "deliver"
+    return "terminate"
   }
   const eventPolicy: EventDeliveryPolicy<T> = ({ principal, sessionId, actorId, sensitive }) => {
     if (principal.mode === "unmanaged-local") return "deliver"
@@ -258,13 +268,15 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     held.renewing = (async () => {
       const { sessionId: _session, ...input } = accessInput(principal, "")
       const decision = await policy.authorizeHost!({ ...input, minimumRole: "viewer", lease: held.lease })
-      if (!decision.allowed) return eventDecision(decision)
+      if (!decision.allowed) {
+        return isAuthorityAway(decision) && held.expiresAt > Date.now() ? "deliver" : eventDecision(decision)
+      }
       if (decision.lease && decision.expiresAt !== undefined) {
         held.lease = decision.lease
         held.expiresAt = Math.min(decision.expiresAt, Date.now() + SESSION_STREAM_LEASE_TTL_MS)
       }
       return "deliver" as const
-    })().catch(() => "terminate" as const).finally(() => {
+    })().catch(() => (held.expiresAt > Date.now() ? "deliver" as const : "terminate" as const)).finally(() => {
       held.renewing = undefined
     })
     return await held.renewing
@@ -274,6 +286,8 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
   // granted — refused, or still being asked about — is not the stream's to
   // lose: on the unscoped arm every other member's private session is one.
   eventPolicy.renew = async (principal) => {
+    // A session-scoped connection whose session is gone has nothing left to read.
+    if (principal.mode !== "unmanaged-local" && principal.sessionScope && !grants.has(grantKey(principal, principal.sessionScope))) return "terminate"
     const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId && grant.granted)
     const decisions = await Promise.all([
       renewHost(principal),
@@ -301,10 +315,8 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
       granted: true,
     })
   }
-  eventPolicy.forgetSession = (sessionId) => {
-    for (const [key, grant] of grants) {
-      if (grant.sessionId === sessionId) grants.delete(key)
-    }
+  eventPolicy.forgetSession = (principal, sessionId) => {
+    grants.delete(grantKey(principal, sessionId))
   }
   return eventPolicy
 }
@@ -319,16 +331,27 @@ function eventDecision(decision: Awaited<ReturnType<SessionAccessPolicy["authori
   return decision.status === 401 || decision.status === 503 ? "terminate" : "omit"
 }
 
+/** The authority did not answer: a 503 from it, or a call that threw. */
+function isAuthorityAway(decision: { allowed: false; status: number } | undefined) {
+  return decision === undefined || decision.status === 503
+}
+
+// A verified actor's scope is the actor's, at its role: what it may read is
+// decided per session on every frame, so two of its connections — two tabs,
+// or a reconnect whose relay host token and runtime access token were both
+// re-minted (the daemon's proxy mints a runtime token per request) — share
+// one ring and resume each other's cursors, and a role change opens a ring
+// of its own rather than replaying the old role's frames. A principal
+// without an actor has only its credential to be known by.
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
-  const key = principal.replayKey ?? principal.credential
-  const credential = (key
-    ? createHash("sha256").update(key).digest("base64url")
-    : `connection:${principal.connectionId}`) + (principal.sessionScope ? `:session:${principal.sessionScope}` : "")
+  const session = principal.sessionScope ? `:session:${principal.sessionScope}` : ""
   if (principal.mode === "signed-unattributed") {
-    return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}:${credential}`
+    const key = principal.replayKey ?? principal.credential
+    const credential = key ? createHash("sha256").update(key).digest("base64url") : `connection:${principal.connectionId}`
+    return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}:${credential}${session}`
   }
-  return `actor:${principal.orgId}:${principal.workspaceId}:${principal.actorKind}:${principal.actorId}:${credential}`
+  return `actor:${principal.orgId}:${principal.workspaceId}:${principal.actorKind}:${principal.actorId}:${principal.role}${session}`
 }
 
 /**
@@ -665,13 +688,6 @@ export function createIdentityAwareEventSource<T extends object>(input: {
             input.policy.release?.(principal)
             evict(scope)
           }
-        },
-        async decide(event) {
-          const next = await decide(principal, event)
-          const sessionId = input.sessionId(event)
-          if (next === "deliver" && sessionId) authorizedSessions.add(sessionId)
-          if (next === "omit" && sessionId && authorizedSessions.has(sessionId)) return "terminate"
-          return next
         },
       }
     },

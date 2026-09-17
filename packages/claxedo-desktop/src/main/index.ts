@@ -778,10 +778,11 @@ hostConnector = setupElectronHostConnector({
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
   onServing: (tunnel) => void pushServing(tunnel),
   // The daemon composed this machine's workspace runtimes, so the daemon is
-  // the only process that knows how they answer session streams. Read it from
-  // the same loopback surface the serving credential is pushed to, and let the
-  // connector declare it on every heartbeat: the control plane mints each
-  // client's event-stream scope from that declaration and never infers one.
+  // the only process that knows how they admit sessions. Read it from the
+  // same loopback surface the serving credential is pushed to, and let the
+  // connector declare it on every heartbeat: a client learns from the
+  // declaration whether a session it creates here must be registered with
+  // the control plane first, and never infers it.
   sessionAuthority: async () => {
     const server = await serverReady.promise
     const response = await fetch(new URL("/api/claxedo/host-serving", server.url))

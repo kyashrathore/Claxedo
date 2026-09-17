@@ -143,6 +143,9 @@ export async function openAccountStreamResponse(input: {
     terminate(() => streamController.error(error))
     throw error
   }
+  // An abort that landed during the handshake already tore the body down; a
+  // Response over it would read as an open stream to the caller.
+  if (input.signal?.aborted) throw input.signal.reason ?? new DOMException("Aborted", "AbortError")
 
   return new Response(body, {
     status: 200,

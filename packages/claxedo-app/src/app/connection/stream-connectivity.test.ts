@@ -118,14 +118,6 @@ describe("createStreamConnectivity", () => {
       expect(connectivity.workspaceConnected()).toBe(false)
       workspace(true)
       expect(connectivity.workspaceConnected()).toBe(true)
-      expect(connectivity.workspaceReconnects()).toBe(0)
-      // A retarget overlaps the old and new workspace streams: the new one's
-      // return while the old still holds the level is what the counter shows.
-      const next = connectivity.track("wr")
-      next(true)
-      next(false)
-      next(true)
-      expect(connectivity.workspaceReconnects()).toBe(1)
       dispose()
     })
   })

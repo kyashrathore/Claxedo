@@ -19,4 +19,11 @@ describe("eventSessionId", () => {
     expect(eventSessionId({ type: "message.updated", properties: {} } as never)).toBeUndefined()
     expect(eventSessionId({ type: "message.part.updated", properties: {} } as never)).toBeUndefined()
   })
+
+  it("reads the session off a type it does not name, so a new kind is never workspace-wide by omission", () => {
+    expect(eventSessionId({ type: "message.removed", properties: { sessionID: "ses_5", messageID: "msg" } } as never)).toBe("ses_5")
+    expect(eventSessionId({ type: "message.part.removed", properties: { sessionID: "ses_6" } } as never)).toBe("ses_6")
+    expect(eventSessionId({ type: "something.new", properties: { info: { sessionID: "ses_7" } } } as never)).toBe("ses_7")
+    expect(eventSessionId({ type: "something.new", properties: {} } as never)).toBeUndefined()
+  })
 })

@@ -1975,7 +1975,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const batch = await bus.drain(sseIdleTimeoutMs, cursor)
     // A subagent child's frames are the parent's, the way the real handler
     // scopes them (`sessionParents`), so a session-scoped reader of the parent
-    // sees its children's frames on the same stream.
+    // sees its children's frames on the same stream. Unlike the real handler,
+    // the session arm here is a filter over the workspace log — one numbering
+    // for both arms — so a cursor carried across the narrowing is not a gap
+    // on this mock; the reader drops it regardless (Tier R proves that side).
     const scoped = sessionID
       ? batch.filter((entry) => {
         const frameSession = frameSessionId(entry)

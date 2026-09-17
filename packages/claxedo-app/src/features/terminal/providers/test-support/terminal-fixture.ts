@@ -78,7 +78,6 @@ export function createMockSDK() {
       centralConnected: () => true,
       controlPlaneReconnects: () => 0,
       workspaceConnected: () => true,
-      workspaceReconnects: () => 0,
     },
     client: {
       pty: {

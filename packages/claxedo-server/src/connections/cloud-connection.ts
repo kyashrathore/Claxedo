@@ -121,9 +121,10 @@ export async function cloudConnectionInfo(
       backing: "cloud-vm",
       // A provisioned sandbox is a non-loopback workspace-runtime exposure, so
       // `createWorkspaceRuntimeApp` composes `remoteWorkspaceSessionAccessPolicyFromEnv()`
-      // and reports `sessionAuthority: "managed-private"`: its event streams
-      // exist per session and an unscoped one answers 400
-      // `session_event_scope_required`.
+      // and reports `sessionAuthority: "managed-private"`: sessions are
+      // registered with the control plane, and its `wr/events` asks the
+      // control plane who may read what — an admitted principal unscoped, a
+      // share grantee for one session.
       sessionAuthority: "managed-private",
       workspaceId: ws.id,
       hostId,

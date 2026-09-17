@@ -220,10 +220,15 @@ function decodeTurnRelease(body: Record<string, unknown> | undefined): { release
   return released === undefined ? denied(503, "session_authority_invalid_response") : { released }
 }
 
-/** Map a non-2xx authority response onto the refusal the caller should see. */
+/**
+ * Map a non-2xx authority response onto the refusal the caller should see.
+ * Only the authority's own answers (401, 403, 409) are refusals; anything
+ * else — a fault, a throttle, a missing route — is the authority being away,
+ * which a lease outlives and a reader retries, never a refusal it acts on.
+ */
 function deniedFromResponse(response: Response, body: Record<string, unknown> | undefined): AuthorityDenial {
   const error = rec(body?.error)
-  const status = response.status === 401 ? 401 : response.status === 409 ? 409 : response.status === 503 ? 503 : 403
+  const status = response.status === 401 ? 401 : response.status === 403 ? 403 : response.status === 409 ? 409 : 503
   return denied(
     status,
     str(error?.code)

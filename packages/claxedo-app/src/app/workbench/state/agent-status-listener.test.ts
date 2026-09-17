@@ -59,28 +59,6 @@ describe("useReconnectReconciliation", () => {
       dispose?.()
     }
   })
-
-  test("a workspace stream's return the level never showed reconciles once", async () => {
-    let dispose: (() => void) | undefined
-    let setReconnects!: (count: number) => void
-    let fetches = 0
-    createRoot((rootDispose) => {
-      dispose = rootDispose
-      const [connected] = createSignal(true)
-      const [reconnects, updateReconnects] = createSignal(0)
-      setReconnects = updateReconnects
-      useReconnectReconciliation({ connected, reconnects, reconcile: () => { fetches += 1 } })
-    })
-    try {
-      await settleEffects()
-      expect(fetches).toBe(0)
-      setReconnects(1)
-      await settleEffects()
-      expect(fetches).toBe(1)
-    } finally {
-      dispose?.()
-    }
-  })
 })
 
 async function settleEffects() {

@@ -131,6 +131,19 @@ describe("remote workspace session authority", () => {
     }).authorize({ ...input, operation: "message_read" })).allowed).toBe(false)
   })
 
+  test("a session-authority answer that is not a refusal is the authority being unavailable, on the stream arm too", async () => {
+    const answers = [403, 500, 429, 502]
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async () => Response.json({ error: { code: "session_private", message: "no" } }, { status: answers.shift() }),
+    })
+    const stream = () => policy.authorizeStream!({ ...input, operation: "session_event_stream", sessionId: "ses_1" })
+    expect(await stream()).toMatchObject({ allowed: false, status: 403, code: "session_private" })
+    expect(await stream()).toMatchObject({ allowed: false, status: 503 })
+    expect(await stream()).toMatchObject({ allowed: false, status: 503 })
+    expect(await stream()).toMatchObject({ allowed: false, status: 503 })
+  })
+
   test("preserves retryable 503 authority responses", async () => {
     const decision = await remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/authorize",
