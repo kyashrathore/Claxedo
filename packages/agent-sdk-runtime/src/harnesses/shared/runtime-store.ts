@@ -66,7 +66,7 @@ export type AgentRuntimeTurnStartInput = {
   assistantMessageId: string
   agent: string
   model: { providerID: string; modelID: string }
-  parts: unknown[]
+  parts: PromptInput["parts"]
   tools?: Record<string, boolean>
   format?: CompatPromptFormat
   system?: string

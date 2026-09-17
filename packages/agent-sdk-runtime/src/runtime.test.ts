@@ -2523,7 +2523,7 @@ describe("createAgentRuntime", () => {
       assistantMessageId: "msg_once_r",
       agent: "build",
       model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
-      parts: [{ type: "text", text: "hello" }],
+      parts: [{ type: "text" as const, text: "hello" }],
     }
 
     const first = store.startTurn(input)

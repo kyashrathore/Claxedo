@@ -4,6 +4,7 @@ import type {
   AgentMessageInfo,
   AgentPermission,
   AgentPresentationEvent,
+  PromptInput,
   AgentQuestion,
   AgentPresentationSession,
   AgentSessionTitleSource,
@@ -248,23 +249,23 @@ export function messageUpdated(info: EventMessageUpdated["properties"]["info"]):
   }
 }
 
-export function buildUserPromptParts(sessionID: string, messageID: string, parts: unknown[]): CompatPart[] {
+/**
+ * The user message's parts as the transcript records them. The route admits
+ * only these three shapes (`isPromptPart`), so there is nothing left over to
+ * fall back on — a file part recorded as a serialized string once, which
+ * nothing on the client read back and every history read then carried.
+ */
+export function buildUserPromptParts(sessionID: string, messageID: string, parts: PromptInput["parts"]): CompatPart[] {
   return parts.map((part, index): CompatPart => {
-    const row = asRecord(part) ?? {}
-    const id = typeof row.id === "string" ? row.id : `${messageID}-part-${index}`
-    if (row.type === "text") {
-      return { id, sessionID, messageID, type: "text", text: typeof row.text === "string" ? row.text : "" }
+    const id = part.id ?? `${messageID}-part-${index}`
+    switch (part.type) {
+      case "text":
+        return { ...part, id, sessionID, messageID }
+      case "agent":
+        return { ...part, id, sessionID, messageID }
+      case "file":
+        return { ...part, id, sessionID, messageID }
     }
-    if (row.type === "agent") {
-      return {
-        id,
-        sessionID,
-        messageID,
-        type: "agent",
-        name: typeof row.name === "string" ? row.name : typeof row.agent === "string" ? row.agent : "agent",
-      }
-    }
-    return { id, sessionID, messageID, type: "text", text: JSON.stringify(part), synthetic: true }
   })
 }
 

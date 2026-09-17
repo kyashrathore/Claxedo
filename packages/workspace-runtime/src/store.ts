@@ -79,7 +79,7 @@ type Turn = {
   assistantMessageId: string
   agent: string
   model: Model
-  parts: unknown[]
+  parts: PromptInput["parts"]
   tools?: Record<string, boolean>
   format?: PromptFormat
   system?: string
@@ -2873,7 +2873,7 @@ export class RuntimeStore {
     assistantMessageId: string
     agent: string
     model: Model
-    parts: unknown[]
+    parts: PromptInput["parts"]
     tools?: Record<string, boolean>
     format?: PromptFormat
     system?: string
