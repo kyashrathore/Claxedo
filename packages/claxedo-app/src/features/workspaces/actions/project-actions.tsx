@@ -102,7 +102,7 @@ export type ProjectActionProps = Pick<
     }
   }
   layout: {
-    projects: Pick<ActionProps["layout"]["projects"], "open" | "close" | "remove" | "requestCreate">
+    projects: Pick<ActionProps["layout"]["projects"], "open" | "close" | "remove" | "requestCreate" | "hasCreateSurface">
   }
   platform: Pick<ActionProps["platform"], "platform" | "fetch" | "openLink">
 }
@@ -159,10 +159,20 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   /**
    * "New Project" is not a dialog: creation lives in the composer's Project
-   * chip, so this only raises the intent and the mounted composer (a draft's,
-   * or the empty canvas's) opens its create panel.
+   * chip, so this raises the intent and the mounted composer (a draft's, or the
+   * empty canvas's) opens its create panel. A route with no composer — Tasks,
+   * the home list — has nothing to answer, so a draft is opened on the active
+   * project first; the intent stays pending until that composer mounts.
    */
-  const handleNewProject = () => props.layout.projects.requestCreate()
+  const handleNewProject = async () => {
+    props.layout.projects.requestCreate()
+    if (props.layout.projects.hasCreateSurface()) return
+    const dir = props.activeDirectory() ?? props.projects()[0]?.worktree
+    if (!dir) return
+    const routeId = await ensureLocalWorkspaceRouteId(dir)
+    if (!routeId) return
+    openProjectSessionSurface(dir, routeId)
+  }
 
   /** Create a local worktree directly — no dialog */
   const handleNewLocalWorkspace = async (

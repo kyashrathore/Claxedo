@@ -14,7 +14,7 @@
 // controller here would fork a solved problem, so the only piece of upstream's
 // controller we vendor is `handleDocumentSearchKeydown` -- see the comment on
 // the document listener below for what it buys.
-import { createEffect, Index, Show, onCleanup, type JSX, createSignal } from "solid-js"
+import { createEffect, createMemo, Index, Show, onCleanup, untrack, type JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { createStore } from "solid-js/store"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -78,11 +78,13 @@ export type ContextChip = {
     render: (input: { close: () => void; back: () => void; hold: (active: boolean) => void }) => JSX.Element
   }
   /**
-   * A counter; each new value opens the popover straight onto `panel`. The
-   * Project chip listens to the app-wide "create a project" intent this way,
-   * so the rail's "New Project" lands in the composer instead of a dialog.
+   * An app-wide request to open straight onto `panel`, owned by whoever raises
+   * it: `pending` says one is outstanding, `answer` marks it handled once the
+   * user closes or backs out. The Project chip carries the "create a project"
+   * intent this way, so the rail's "New Project" lands in the composer instead
+   * of a dialog — including a request raised before this composer mounted.
    */
-  openPanelRequest?: () => number
+  openPanel?: { pending: () => boolean; answer: () => void }
   /** Explicitly unavailable state; an empty option list alone never disables a chip. */
   disabled?: boolean
 }
@@ -105,11 +107,10 @@ function ContextChipPicker(props: { chip: ContextChip }) {
   const [store, setStore] = createStore({ open: false, panel: false, hold: false })
   const chip = () => props.chip
   // An open-panel request counts as "open on the panel" until the user closes
-  // or backs out of it; `consumed` remembers the last request answered, so the
-  // state is derived from the counter rather than written by an effect.
-  const [consumed, setConsumed] = createSignal(chip().openPanelRequest?.() ?? 0)
-  const requested = () => !!chip().panel && (chip().openPanelRequest?.() ?? 0) > consumed()
-  const consume = () => setConsumed(chip().openPanelRequest?.() ?? 0)
+  // or backs out of it; the state is derived from the request's owner rather
+  // than written by an effect.
+  const requested = () => !!chip().panel && (chip().openPanel?.pending() ?? false)
+  const consume = () => chip().openPanel?.answer()
   const isOpen = () => store.open || requested()
   const panelShown = () => store.panel || requested()
   const options = () => chip().options
@@ -125,6 +126,18 @@ function ContextChipPicker(props: { chip: ContextChip }) {
     consume()
     setStore({ open: true, panel: false })
   }
+  // Rendered once per showing, not once per descriptor. The chips are rebuilt
+  // as a memo whenever any input of theirs moves, which hands this picker a
+  // fresh `panel` object; re-running `render` for it would replace the form and
+  // drop what the user had typed or picked into it. The element's own props
+  // stay live — they read their signals when rendered, not when built here.
+  // Both gates are boolean memos so a rebuilt descriptor, which changes the
+  // objects they read but not their answers, does not reach the render below.
+  const showPanel = createMemo(() => panelShown() && !!chip().panel)
+  const panelContent = createMemo(() => {
+    if (!showPanel()) return undefined
+    return untrack(() => chip().panel?.render({ close, back, hold: (active) => setStore("hold", active) }))
+  })
 
   const searchInput = () =>
     contentRef?.querySelector<HTMLInputElement>('[data-slot="list-search"] input') ?? undefined
@@ -232,10 +245,10 @@ function ContextChipPicker(props: { chip: ContextChip }) {
           onFocusOutside={(event) => (store.hold ? event.preventDefault() : close())}
         >
           <Kobalte.Title class="sr-only">{chip().ariaLabel}</Kobalte.Title>
-          <Show when={panelShown() && chip().panel}>
-            {(panel) => (
+          <Show when={panelContent()}>
+            {(content) => (
               <div data-slot="context-chip-panel" class="flex min-h-0 flex-col p-2">
-                {panel().render({ close, back, hold: (active) => setStore("hold", active) })}
+                {content()}
               </div>
             )}
           </Show>

@@ -286,10 +286,11 @@ export type LayoutProjectsServer = Pick<ReturnType<typeof useServer>, "projects"
 /**
  * The layout's `projects` API: the sidebar list, the open/close/expand
  * operations the rail delegates to the server, and the "create a project"
- * intent. Creation itself lives in the composer's Project chip; the rail's
- * "New Project" and the empty canvas only raise `requestCreate`, and whichever
- * composer is mounted opens its chip's create panel on the next
- * `createRequests` value (a counter, so two requests in a row both register).
+ * intent. Creation itself lives in the composer's Project chip and, with no
+ * project, the first-project canvas; "New Project" only raises the intent.
+ * A request stays pending until a surface answers it, so one raised while no
+ * surface is mounted is answered by the next one to mount rather than lost.
+ * `hasCreateSurface` is how a caller knows whether to mount one first.
  */
 export function createLayoutProjectsApi<List extends Accessor<unknown>>(deps: {
   list: List
@@ -300,12 +301,23 @@ export function createLayoutProjectsApi<List extends Accessor<unknown>>(deps: {
   sidebarProjects: () => readonly { worktree: string; expanded?: boolean }[]
 }) {
   const [createRequests, setCreateRequests] = createSignal(0)
+  const [createAnswered, setCreateAnswered] = createSignal(0)
+  const [createSurfaces, setCreateSurfaces] = createSignal(0)
   const { server } = deps
   return {
     list: deps.list,
     createRequests,
     requestCreate: () => {
       setCreateRequests((count) => count + 1)
+    },
+    createPending: () => createRequests() > createAnswered(),
+    answerCreate: () => {
+      setCreateAnswered(createRequests())
+    },
+    hasCreateSurface: () => createSurfaces() > 0,
+    registerCreateSurface: () => {
+      setCreateSurfaces((count) => count + 1)
+      return () => setCreateSurfaces((count) => count - 1)
     },
     open: (directory: string) => {
       const root = deps.rootFor(directory)

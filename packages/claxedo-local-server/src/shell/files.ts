@@ -23,6 +23,7 @@ export async function globSearch(
   if (limit < 1) return []
 
   const root = path.resolve(searchDir)
+  if (type === "directory") return directorySearch(root, q, limit)
   const cached = fileSearchCache.get(root)
   const index = cached && cached.expires > Date.now()
     ? cached.index
@@ -35,8 +36,52 @@ export async function globSearch(
         return next
       })()
   const found = await index
-  const paths = type === "file" ? found.files : type === "directory" ? found.directories : found.all
+  const paths = type === "file" ? found.files : found.all
   return paths.filter((item) => !q || item.toLowerCase().includes(q)).slice(0, limit)
+}
+
+const DIRECTORY_SEARCH_DEPTH = 3
+const DIRECTORY_SEARCH_BUDGET = 400
+
+/**
+ * A folder picker's search, answered from the directory tree alone and within
+ * a fixed budget of directory reads. The file index this module builds for
+ * name search walks every file under the root, and a home directory holds
+ * hundreds of thousands under caches and app data — even `find -maxdepth 3`
+ * takes minutes there. Folders are read breadth-first, nearest the root first,
+ * hidden and dependency directories skipped the way `directoryEntriesBody`
+ * already marks them ignored, and the walk stops after 400 directories: what a
+ * picker can show is the shallow part of the tree, and the budget is what
+ * keeps a name that matches nothing from reading the rest of it. An empty
+ * query is the root's own children, no deeper. Matches are on the folder's own
+ * name — a picker offers folders called "test", not everything under one —
+ * and stay in walk order, so `test/opencode` is listed before the same name
+ * three levels down in application caches.
+ */
+async function directorySearch(root: string, q: string, limit: number) {
+  const out: string[] = []
+  const queue: Array<{ rel: string; depth: number }> = [{ rel: "", depth: 0 }]
+  const depthLimit = q ? DIRECTORY_SEARCH_DEPTH : 1
+  for (let head = 0; head < queue.length && head < DIRECTORY_SEARCH_BUDGET && out.length < limit; head += 1) {
+    const { rel, depth } = queue[head]
+    let rows: fs.Dirent[]
+    try {
+      rows = await fs.promises.readdir(rel ? path.join(root, rel) : root, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name))
+    for (const row of rows) {
+      if (!row.isDirectory() || row.name.startsWith(".") || ALL_IGNORE.has(row.name)) continue
+      const next = rel ? `${rel}/${row.name}` : row.name
+      if (!q || row.name.toLowerCase().includes(q)) {
+        out.push(next)
+        if (out.length >= limit) break
+      }
+      if (depth + 1 < depthLimit) queue.push({ rel: next, depth: depth + 1 })
+    }
+  }
+  return out
 }
 
 async function buildFileSearchIndex(root: string) {

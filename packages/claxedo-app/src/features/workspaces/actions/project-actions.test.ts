@@ -294,16 +294,30 @@ function make(dir: string) {
 }
 
 describe("createProjectActions New Project", () => {
-  test("raises the create-project intent on the layout instead of showing a dialog", () => {
+  test("raises the create-project intent on the layout instead of showing a dialog", async () => {
     const fixture = make("/repo/one")
     let requests = 0
     const props = {
       ...fixture.props,
-      layout: { ...fixture.props.layout, projects: { ...fixture.props.layout.projects, requestCreate: () => { requests += 1 } } },
+      layout: { ...fixture.props.layout, projects: { ...fixture.props.layout.projects, requestCreate: () => { requests += 1 }, hasCreateSurface: () => true } },
     }
-    createProjectActions(props as never, fixture.nav).handleNewProject()
+    await createProjectActions(props as never, fixture.nav).handleNewProject()
     expect(requests).toBe(1)
     expect(fixture.shows).toEqual([])
+    expect(fixture.adds).toEqual([])
+  })
+
+  test("with no composer mounted to answer, opens a draft on the active project so one is", async () => {
+    const fixture = make("/repo/one")
+    let requests = 0
+    const props = {
+      ...fixture.props,
+      layout: { ...fixture.props.layout, projects: { ...fixture.props.layout.projects, requestCreate: () => { requests += 1 }, hasCreateSurface: () => false } },
+    }
+    await createProjectActions(props as never, fixture.nav).handleNewProject()
+    expect(requests).toBe(1)
+    expect(fixture.shows).toEqual([])
+    expect(fixture.adds).toEqual([{ directory: "/workspace/main", sessionId: "new", title: "New Session", workspaceRouteId: "p1" }])
   })
 })
 

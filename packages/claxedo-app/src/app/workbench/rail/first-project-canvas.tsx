@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, on } from "solid-js"
+import { Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -57,16 +57,12 @@ export function FirstProjectCanvas(props: {
   // "New Project" in the rail and the desktop menu raise an intent rather than
   // opening anything; with no project this screen is the only surface that can
   // answer it, and the name field is where the answer starts.
-  const focusName = () => nameField?.focus()
-  createEffect(
-    on(
-      () => layout.projects.createRequests(),
-      (requests, previous) => {
-        if (previous === undefined || requests === previous) return
-        focusName()
-      },
-    ),
-  )
+  onCleanup(layout.projects.registerCreateSurface())
+  createEffect(() => {
+    if (!layout.projects.createPending()) return
+    nameField?.focus()
+    layout.projects.answerCreate()
+  })
 
   return (
     <div class="first-project" data-testid="first-project-canvas">

@@ -3,7 +3,7 @@
 // dropdown chips (see session-context-row.tsx) rather than below it as
 // segmented controls.
 import type { JSX } from "solid-js"
-import { Show, createMemo } from "solid-js"
+import { Show, createMemo, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
 import { getFilename } from "@opencode-ai/ui/utils/path"
@@ -109,6 +109,7 @@ export function NewSessionDesignView(props: {
   const server = useServer()
   const platform = usePlatform()
   const projectsQuery = useQuery(() => queryOptions.projects())
+  onCleanup(layout.projects.registerCreateSurface())
 
   const inventoryProjects = createMemo(() => (projectsQuery.data ?? []) as ProjectInventoryItem[])
   // The inventory arrives in two shapes that key `workspaces` differently (by
@@ -293,7 +294,7 @@ export function NewSessionDesignView(props: {
         groupLabel: "Projects",
         emptyMessage: "No projects yet",
         current: projectRoot(),
-        openPanelRequest: layout.projects.createRequests,
+        openPanel: { pending: layout.projects.createPending, answer: layout.projects.answerCreate },
         options: projects().map<ContextChipOption>((value) => ({
           value,
           label: projectLabel(value),

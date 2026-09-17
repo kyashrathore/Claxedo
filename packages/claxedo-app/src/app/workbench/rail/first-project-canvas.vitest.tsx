@@ -6,7 +6,7 @@ import type { NewSessionProjectSelection } from "@/features/session/ui/component
 import { FirstProjectCanvas } from "./first-project-canvas"
 
 const health = vi.hoisted(() => ({ localExecution: true as boolean | undefined }))
-const createIntent = vi.hoisted(() => ({ requests: 0, bump: () => {} }))
+const createIntent = vi.hoisted(() => ({ pending: false, bump: () => {}, answer: () => {} }))
 const created = vi.hoisted(() => ({
   calls: [] as { baseUrl?: string; name: string; source: unknown }[],
   checkoutDirectory: "/home/me/demo" as string | null,
@@ -28,7 +28,13 @@ vi.mock("@/app/providers/config", () => ({
 }))
 
 vi.mock("@/app/providers/layout", () => ({
-  useLayout: () => ({ projects: { createRequests: () => createIntent.requests } }),
+  useLayout: () => ({
+    projects: {
+      createPending: () => createIntent.pending,
+      answerCreate: () => createIntent.answer(),
+      registerCreateSurface: () => () => {},
+    },
+  }),
 }))
 
 vi.mock("@/app/integrations/sync/query-options", () => ({
@@ -69,11 +75,12 @@ vi.mock("@/features/workspaces/data/project-api", () => ({
   projectRequestMessage: (cause: unknown) => String(cause),
 }))
 
-// `createRequests` is a counter the mounted surface answers; the signal makes
-// the component re-read it the way the real layout store does.
-const [requests, setRequests] = createSignal(0)
-createIntent.bump = () => setRequests(requests() + 1)
-Object.defineProperty(createIntent, "requests", { get: () => requests() })
+// A create request stays pending until the mounted surface answers it; the
+// signal makes the component re-read it the way the real layout store does.
+const [pending, setPending] = createSignal(false)
+createIntent.bump = () => setPending(true)
+createIntent.answer = () => setPending(false)
+Object.defineProperty(createIntent, "pending", { get: () => pending() })
 
 const renderCanvas = (props: Parameters<typeof FirstProjectCanvas>[0] = {}) =>
   render(() => (
@@ -148,6 +155,15 @@ describe("FirstProjectCanvas", () => {
 
     createIntent.bump()
     await waitFor(() => expect(document.activeElement).toBe(name))
+    expect(pending()).toBe(false)
+  })
+
+  test("a request raised before this canvas mounted is answered on mount", async () => {
+    createIntent.bump()
+    renderCanvas()
+    const name = await screen.findByRole("textbox", { name: "Project name" })
+    await waitFor(() => expect(document.activeElement).toBe(name))
+    expect(pending()).toBe(false)
   })
 
   test("Diagnostics appears only when the shell supplies it", async () => {

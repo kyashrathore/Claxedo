@@ -610,12 +610,21 @@ describe("createLayoutProjectsApi", () => {
     return { projects, calls }
   }
 
-  test("requestCreate is a counter the mounted composer can answer", () => {
+  test("a create request stays pending until a surface answers it, and surfaces count while mounted", () => {
     const { projects } = api()
-    expect(projects.createRequests()).toBe(0)
+    expect(projects.createPending()).toBe(false)
+    expect(projects.hasCreateSurface()).toBe(false)
     projects.requestCreate()
     projects.requestCreate()
-    expect(projects.createRequests()).toBe(2)
+    expect(projects.createPending()).toBe(true)
+    const unregister = projects.registerCreateSurface()
+    expect(projects.hasCreateSurface()).toBe(true)
+    projects.answerCreate()
+    expect(projects.createPending()).toBe(false)
+    projects.requestCreate()
+    expect(projects.createPending()).toBe(true)
+    unregister()
+    expect(projects.hasCreateSurface()).toBe(false)
   })
 
   test("open resolves the root, warms its cache, and stores the project preference", () => {

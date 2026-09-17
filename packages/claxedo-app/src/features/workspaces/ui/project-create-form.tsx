@@ -130,19 +130,6 @@ export function ProjectCreateForm(props: {
         </div>
       </Show>
 
-      <label class="flex flex-col gap-1">
-        <span class={label()}>Name</span>
-        <input
-          type="text"
-          value={name()}
-          onInput={(event) => setName(event.currentTarget.value)}
-          placeholder={suggestedName() || "My project"}
-          aria-label="Project name"
-          class={field()}
-          autofocus
-          ref={(element: HTMLInputElement) => props.nameField?.(element)}
-        />
-      </label>
 
       <Show
         when={mode() === "folder"}
@@ -198,6 +185,20 @@ export function ProjectCreateForm(props: {
           </span>
         </div>
       </Show>
+
+      <label class="flex flex-col gap-1">
+        <span class={label()}>Name</span>
+        <input
+          type="text"
+          value={name()}
+          onInput={(event) => setName(event.currentTarget.value)}
+          placeholder={suggestedName() || (mode() === "folder" ? "The folder's name" : "The repository's name")}
+          aria-label="Project name"
+          class={field()}
+          ref={(element: HTMLInputElement) => props.nameField?.(element)}
+        />
+        <span class={hint()}>Optional; the {mode() === "folder" ? "folder" : "repository"} name is used unless you give one.</span>
+      </label>
 
       <Show when={error()}>
         <p class="text-12-regular text-icon-warning-base" role="alert">

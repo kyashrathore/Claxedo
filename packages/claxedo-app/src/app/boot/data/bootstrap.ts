@@ -76,7 +76,12 @@ function toPath(input: unknown): Path | undefined {
   const config = readString(input, "config")
   const worktree = readString(input, "worktree")
   const directory = readString(input, "directory")
-  if (!home || !state || !config || !worktree || !directory) return undefined
+  // Presence, not truth: the global payload carries `worktree` and `directory`
+  // as "" by contract (no project is scoped yet), and treating "" as missing
+  // throws away `home` with it — the folder picker then has nowhere to start.
+  if (home === undefined || state === undefined || config === undefined || worktree === undefined || directory === undefined) {
+    return undefined
+  }
   return { home, state, config, worktree, directory }
 }
 
