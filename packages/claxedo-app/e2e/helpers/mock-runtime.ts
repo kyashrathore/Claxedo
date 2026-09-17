@@ -14,13 +14,14 @@ import type { SessionHarness } from "../../../agent-sdk-runtime/src"
 import type { SessionMeta } from "../../../claxedo-server-core/src/session/meta/types"
 import {
   runtimeEventEnvelope,
-  type RuntimeEventEnvelope,
   type RuntimeEventEnvelopeInput,
 } from "../../../agent-sdk-runtime/src/runtime-event-hub"
-import type {
-  ClaxedoEvent,
-  ClientPresentationEvent,
-} from "../../../claxedo-server-core/src/platform/runtime/lib/bus"
+import {
+  createClientPresentationProjection,
+  presentationEventsFromRuntimeEnvelope,
+  type ClientPresentationProjection,
+} from "../../../agent-event-runtime/src/projections/client-presentation"
+import type { ControlPlaneEvent } from "../../../claxedo-server-core/src/platform/runtime/lib/bus"
 import {
   assistantIdForUserMessage,
   parseSessionPromptRequest,
@@ -84,12 +85,7 @@ import {
 import { driveEmptyRuntimeDiffRoute } from "./contracts/runtime-diff"
 
 import { contractRoute } from "./contracts/contract-route"
-import {
-  centralStreamHeartbeat,
-  runtimeStreamHeartbeat,
-  sseFrame,
-  workspaceStreamHeartbeat,
-} from "./contracts/sse"
+import { controlPlaneStreamHeartbeat, sseFrame, workspaceStreamHeartbeat } from "./contracts/sse"
 
 /**
  * The harness vocabulary the APP speaks — the `type` string it posts to
@@ -158,18 +154,15 @@ export type MockEvent =
   | { type: "todo.updated"; properties: Record<string, unknown> }
   | { type: "server.connected"; properties: Record<string, unknown> }
   // Catch-all: covers both `{type, properties}`-wrapped OpenCode-shaped events
-  // AND flat unwrapped ClaxedoEvent payloads (e.g. `session.lifecycle`) that
-  // carry their fields at the top level instead of nested under `properties`
-  // — see emitFlat()/ClaxedoEventsProvider's flat-event parsing.
+  // AND the workspace's control frames (`session.lifecycle`, `agent.lifecycle`,
+  // `pty.*`), whose fields sit at the top level instead of under `properties`.
   | ({ type: string; properties?: Record<string, unknown> } & Record<string, unknown>)
 
-type MockWireEvent = MockEvent | ClaxedoEvent | RuntimeEventEnvelope
+/** A frame on `wr/events`: always written as `{ directory, payload }`. */
+type MockWireEvent = MockEvent
 
-// Compile-time tripwire: every wrapped frame emitted by the mock must remain a
-// real Claxedo client-presentation event. Flat Claxedo events and contract-v4 runtime
-// envelopes use their own typed emitters below.
-const _mockEventContract: MockEvent extends ClientPresentationEvent ? true : never = true
-void _mockEventContract
+/** A notice on `cp/events`: written flat, exactly as the control bus publishes it. */
+export type MockControlPlaneNotice = ControlPlaneEvent
 
 export type MockMessageInfo = {
   id: string
@@ -422,8 +415,14 @@ export type MockRuntimeOptions = {
   childSessions?: MockRuntimeChildSession[]
   /** Other completed root sessions available for navigation. */
   otherSessions?: Omit<MockRuntimeChildSession, "parentId">[]
-  /** Parent-scope authorization used by the canonical runtime-event SSE route. */
-  runtimeEventAuthorizeParent?: (parentSessionId: string) => boolean
+  /**
+   * Which session scopes `wr/events` grants. A managed-private runtime refuses
+   * an unscoped reader without workspace access with 403, and refuses a
+   * session the authority does not grant the same way; the client then
+   * re-opens for its route's session. Absent: every scope is granted, as on
+   * an owner's own runtime.
+   */
+  workspaceStreamAuthorize?: (scope: { sessionID?: string }) => boolean
   /** Per-harness model catalog for the composer's model popover. */
   harnessModels?: Partial<Record<Harness, HarnessModelOption[]>>
   /** Readiness state the harness config endpoint reports. */
@@ -524,23 +523,26 @@ export type MockRuntimeHandles = {
   requests: MockRuntimeRequests
   /** Updates the server snapshot after another client's answer, without delivering a resolution to this client. */
   clearPendingQuestion: (requestID: string) => void
-  /** Manually inject an event onto the global SSE stream (permission/question/todo/etc). */
-  emit: (payload: MockEvent, directory?: string) => void
   /**
-   * Manually inject an event onto the global SSE stream WITHOUT the
-   * `{directory, payload}` envelope `emit()` always wraps events in. Real
-   * `claxedoBus`-originated events (e.g. `session.lifecycle`) are written to the
-   * wire flat/unwrapped — `ClaxedoEventsProvider`'s `isClaxedoEvent` guard
-   * (`packages/claxedo-app/src/app/integrations/claxedo-events.tsx`) requires a
-   * top-level `.type` and silently drops anything wrapped in
-   * `{directory, payload}`. Use this for events consumed
-   * via `useClaxedoEvents()`; use `emit()` for opencode-SDK-shaped events
-   * consumed via `globalSDK.event`.
+   * Publish one frame on the workspace runtime's `wr/events`: a session's
+   * presentation event (parts, deltas, status, permission, question, todo) or
+   * one of the workspace's control frames (`session.lifecycle`,
+   * `agent.lifecycle`, `pty.*`). Wrapped `{ directory, payload }` on the wire,
+   * as the real route writes every frame; `directory` defaults to the frame's
+   * own, then to the mock workspace.
    */
-  emitFlat: (payload: ClaxedoEvent) => void
+  emit: (payload: MockWireEvent, directory?: string) => void
   /**
-   * Publish one canonical contract-v4 frame on `/api/wr/runtime-events`.
-   * The real route does not carry OpenCode `{directory,payload}` envelopes.
+   * Publish one notice on the control plane's `cp/events` — provision steps,
+   * worktree readiness, document doorbells, share grants. Never a session's
+   * frames: those are `emit`.
+   */
+  emitNotice: (payload: MockControlPlaneNotice) => void
+  /**
+   * Feed one raw runtime frame to the mock runtime, which projects it the way
+   * a real workspace runtime does — through `createClientPresentationProjection`
+   * per turn — and publishes the resulting presentation frames on `wr/events`.
+   * Raw runtime frames never reach the wire.
    */
   emitRuntime: (payload: RuntimeEventEnvelopeInput) => void
   /**
@@ -569,82 +571,38 @@ export type MockRuntimeHandles = {
 // ---------------------------------------------------------------------------
 //
 // Playwright's `route.fulfill()` cannot drip a body over time — the full response body
-// must be known at the moment `fulfill()` is called. The app's global-event consumer
-// (`src/app/providers/global-sdk/provider.tsx`) reads `/global/event` via `fetch` + a streaming
-// `ReadableStream` reader, and — critically — RECONNECTS on stream end with a fixed
-// ~250ms backoff (`RECONNECT_DELAY_MS`) that resets to the floor whenever the previous
-// connection delivered at least one event (`failures = becameReady ? 0 : failures + 1`).
+// must be known at the moment `fulfill()` is called. The app's stream reader
+// (`src/app/integrations/claxedo-events.tsx`) reads each stream via `fetch` + a
+// streaming `ReadableStream` reader and RECONNECTS on stream end with a backoff that
+// resets to the floor whenever the previous connection delivered at least one event.
 //
 // So: each SSE "connection" here BLOCKS (does not call route.fulfill) until at least one
 // event is pending, then fulfills with the queued batch and ends the stream — which
-// causes the app to reconnect ~250ms later for the next batch. Staging `emit()` calls a
-// beat apart (see `stage()` below) yields genuinely separate SSE deliveries without
-// requiring a true persistent connection, which Playwright does not support.
+// causes the app to reconnect for the next batch. Staging `emit()` calls a beat apart
+// (see `stage()` below) yields genuinely separate SSE deliveries without requiring a
+// true persistent connection, which Playwright does not support.
+//
+// Each stream is an append-only EVENT LOG with monotonic sequence ids written as SSE
+// `id:` lines and resumed per connection from the client's own `Last-Event-ID`,
+// the way the real handlers implement resume: no loss, no duplication, no
+// reordering, per reader.
+//
+// A reader's FIRST connection is cursor-less and is served the full log once.
+// That is a deliberate divergence from the real handlers, which serve a
+// cursor-less connection NOTHING from their replay ring — they resume it at
+// "now" and bootstrap its cursor with an opening heartbeat frame. The mock keeps
+// full-log-on-first-connect because specs emit before the app has finished
+// booting and rely on catching up. `workspaceStreamCursor` models the real
+// behaviour for a session-scoped stream, where a spec needs to tell a stream
+// opened before a turn from one opened after it.
 
 function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-type PendingEvent = { directory: string; payload: MockWireEvent; flat?: boolean }
+type PendingEvent = { directory: string; payload: MockWireEvent | MockControlPlaneNotice; flat?: boolean }
 
-// BROADCAST semantics, not a drain-once work queue. A route this bus backs
-// (e.g. `/api/wr/events`) can be polled by SEVERAL independent, concurrently
-// reconnecting readers at once — `ClaxedoEventsProvider`'s central stream AND
-// global-sdk's `sseJsonStream` (its `/global/event` request gets rewritten to
-// `/api/wr/events` for workspace routes by `signedRuntimeEventInput`,
-// src/platform/api/api.ts). A single shared queue makes delivery a lottery:
-// whichever reader's blocked `drain()` call happens to be waiting when `emit()`
-// fires steals the WHOLE batch, so the other reader's next reconnect finds
-// nothing pending and silently misses the event.
-//
-// Fix: real multi-client SSE broadcast semantics, implemented the way an
-// actual SSE server implements them — an append-only per-channel EVENT LOG
-// with monotonic sequence ids written as SSE `id:` lines, resumed
-// per-connection from the client's own `Last-Event-ID` header. This follows
-// the INTENT of the reference `ClaxedoEventBus` in
-// `e2e/playwright/core-terminal.spec.ts` (each independent reader
-// gets its own copy of every event, and a reader's backlog survives its own
-// reconnect gap) but keys reader continuity on the client's own cursor
-// instead of the reference's heuristic idle-slot claiming. The slot port was
-// tried first and empirically still flaked in core-docks: with readers on
-// very different reconnect cadences (global-sdk's compat loop ~250ms vs
-// ClaxedoEventsProvider ~2s) their connections rarely overlap, so both
-// readers ping-pong on one slot while a copy broadcast into the other slot
-// strands past the assertion window (observed as the Deny test's
-// permission.replied never clearing the dock); claiming backlogged slots
-// first un-strands but REORDERS (a stale permission.asked redelivered after
-// its permission.replied re-opens the dock). Cursor resume has neither
-// failure mode: no loss, no duplication, no reordering, per reader.
-//
-// Reader inventory for the cursor split:
-// - global-sdk's compat loop AND its runtime-events loop
-//   (`src/app/providers/global-sdk/provider.tsx`) both parse
-//   `id:` lines via `sseJsonStream` and send `Last-Event-ID` on every
-//   reconnect — they get exact per-reader resume (`seq > cursor`). The compat
-//   loop reaches THIS route because `authFetch` rewrites `/global/event` to
-//   `/api/wr/events` (`signedRuntimeEventInput`, src/platform/api/api.ts).
-// - `ClaxedoEventsProvider` (`src/app/integrations/claxedo-events.tsx`, its
-//   inline reader loop) resumes the same way: it reads `id:` lines (:508-509)
-//   and sends `Last-Event-ID` (:461). Its CENTRAL target is
-//   `controlPlaneEventsUrl` -> `/api/claxedo/events`, a path
-//   `signedRuntimeEventInput` does not touch. That spelling is registered on the SAME handler below, because
-//   both real servers mount one handler on all three central spellings — so
-//   the two readers still share this channel's log, which is what the cursor
-//   split is for. It is NOT a reader that wrapped frames
-//   pass through harmlessly — `normalizeClaxedoStreamEvent` (:158-169) unwraps
-//   `{directory, payload}` and applies the payload, so directory events
-//   (permission / question / message) DO reach the shell caches through it.
-//   Serving it a full log re-upserts requests the user already answered and
-//   resurrects their docks; its own cursor is what prevents that.
-// - A reader's FIRST connection is cursor-less and is served the full log
-//   once. Harmless here: a spec's page has applied nothing at that point.
-//   NOTE this is a deliberate divergence from the real handler
-//   (`packages/workspace-runtime/src/routes/runtime-events.ts`), which serves
-//   a cursor-less connection NOTHING from its replay buffer — it resumes such
-//   a connection at "now" and bootstraps its cursor with an opening heartbeat
-//   frame. The mock keeps full-log-on-first-connect because specs emit before
-//   the app has finished booting and rely on catching up.
-type LoggedEvent = { seq: number; directory: string; payload: MockWireEvent; flat?: boolean }
+type LoggedEvent = { seq: number; directory: string; payload: MockWireEvent | MockControlPlaneNotice; flat?: boolean }
 
 class EventBus {
   private log: LoggedEvent[] = []
@@ -666,8 +624,8 @@ class EventBus {
     this.append({ directory, payload })
   }
 
-  /** See `MockRuntimeHandles.emitFlat` — appends an unwrapped SSE frame. */
-  emitFlat(payload: MockWireEvent) {
+  /** Appends a frame written flat, the way `cp/events` writes every notice. */
+  emitFlat(payload: MockControlPlaneNotice) {
     this.append({ directory: "", payload, flat: true })
   }
 
@@ -698,17 +656,11 @@ class EventBus {
   }
 }
 
-// The app can hold several SSE consumers at once (/global/event for the global
-// store, /api/wr/events for workspace-routed sessions, the relay origin for
-// cloud). Each ROUTE GROUP gets its own `EventBus` channel here (so, e.g.,
-// events meant for `/api/wr/events` never leak into `/global/event`, and a
-// `Last-Event-ID` cursor from one route is only ever resumed against that
-// same route's log), and emit()/emitFlat() fan out to every channel. Within a
-// single channel/route, the cursor-resume semantics on `EventBus` itself (see
-// above) handle the case where that ONE route is polled by several
-// independent concurrent readers at once (e.g. `/api/wr/events` is read by
-// both `ClaxedoEventsProvider` and global-sdk's compat stream) — each reader
-// resumes from its own cursor instead of racing to steal a shared queue.
+// `wr/events` is served on the primary origin (a local workspace, through the
+// daemon's loopback proxy) and on the relay origin (a cloud workspace, through
+// the workspace's relay connection). Each mount gets its own `EventBus` log so
+// a `Last-Event-ID` cursor from one is only ever resumed against that same
+// mount's log; `emit()` fans out to both.
 class FanoutBus {
   private channels: EventBus[] = []
 
@@ -722,9 +674,6 @@ class FanoutBus {
     for (const channel of this.channels) channel.emit(directory, payload)
   }
 
-  emitFlat(payload: MockWireEvent) {
-    for (const channel of this.channels) channel.emitFlat(payload)
-  }
 }
 
 /** The connection's own cursor, from its SSE `Last-Event-ID` request header (Playwright lowercases header names). */
@@ -738,16 +687,15 @@ function lastEventIdOf(route: Route): number | undefined {
 /**
  * The cursor a `/api/wr/events` connection actually resumes from.
  *
- * A `?sessionID=` request is a MANAGED-PRIVATE stream — a relay-backed runtime
- * serves no other kind (`authorizeSessionEventScope` answers an unscoped
- * request with 400 `session_event_scope_required`). The real handler
- * (`workspace-runtime/src/routes/runtime-events.ts`) serves such a cursor-less
- * connection NOTHING from its replay buffer: it resumes at "now" and bootstraps
+ * A `?sessionID=` request is a session-scoped stream: the reader was refused
+ * at workspace level and re-opened for one session. The real handler
+ * (`workspace-runtime/src/routes/events.ts`) serves such a cursor-less
+ * connection NOTHING from its replay ring: it resumes at "now" and bootstraps
  * the reader's cursor with an opening heartbeat. Modelling that is what makes a
  * consumer that opens LATE genuinely miss the frames it missed, so a spec can
  * tell the difference between a stream opened before a turn and one opened
- * after it. The unscoped (local) stream keeps the mock's full-log-on-first-
- * connect, which specs rely on to catch up while the app is still booting.
+ * after it. The unscoped stream keeps the mock's full-log-on-first-connect,
+ * which specs rely on to catch up while the app is still booting.
  */
 function workspaceStreamCursor(route: Route, bus: EventBus) {
   const cursor = lastEventIdOf(route)
@@ -755,8 +703,8 @@ function workspaceStreamCursor(route: Route, bus: EventBus) {
   return new URL(route.request().url()).searchParams.has("sessionID") ? bus.lastId() : undefined
 }
 
-// Every event frame carries its sequence as an SSE `id:` line so id-tracking
-// readers (global-sdk's sseJsonStream) build the cursor they resume with.
+// Every frame carries its sequence as an SSE `id:` line so the reader builds
+// the cursor it resumes with.
 function sseBody(batch: LoggedEvent[], emptyFrame: () => string) {
   if (batch.length === 0) return emptyFrame()
   return batch
@@ -1054,20 +1002,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       })
     : undefined
 
-  // The two real SSE families carry different contracts and therefore have
-  // different producers. Compat/OpenCode events (plus flat Claxedo bus events)
-  // use `/global/event`, `/event`, and `/api/wr/events`. Contract-v4
-  // `RuntimeEventEnvelope`s use `/api/wr/runtime-events` only. Putting every event on
-  // both families would let a spec pass against a frame shape the real runtime-events
-  // route can never emit.
-  const compatFanout = new FanoutBus()
-  const runtimeFanout = new FanoutBus()
-  const busClaxedoEvents = compatFanout.channel() // Local central events include the workspace runtime bus.
-  const busGlobal = compatFanout.channel() // /global/event + /event
-  const busWrEvents = compatFanout.channel() // /api/wr/events (primary origin)
-  const busRelayEvents = compatFanout.channel() // cloud relay compat/event mounts
-  const busWrRuntime = runtimeFanout.channel() // /api/wr/runtime-events (primary origin)
-  const busRelayRuntime = runtimeFanout.channel() // cloud relay runtime-events mount
+  // The two streams. `cp/events` carries the control plane's notices, flat.
+  // `wr/events` carries a workspace runtime's frames, `{ directory, payload }`,
+  // on the primary origin (loopback) and on the relay origin (cloud).
+  const controlPlaneBus = new EventBus()
+  const workspaceFanout = new FanoutBus()
+  const busWrEvents = workspaceFanout.channel()
+  const busRelayEvents = workspaceFanout.channel()
   let messages: MockMessageRow[] = []
   let lastTurn: AgentTurnOutcome | undefined
   // The user message id of the turn the mock is driving, which is what a scoped
@@ -1176,7 +1117,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       )
     }
   }
-  const emit = (payload: MockEvent, directory: string = sessionDirectory) => {
+  /** The directory a control frame names for itself, if any. */
+  const frameDirectory = (payload: MockWireEvent) =>
+    "directory" in payload && typeof payload.directory === "string" && payload.directory ? payload.directory : undefined
+  const emit = (payload: MockWireEvent, directory: string = frameDirectory(payload) ?? sessionDirectory) => {
     persistEmittedPart(payload)
     const type = (payload as { type?: string }).type
     const properties = (payload as { properties?: Record<string, unknown> }).properties ?? {}
@@ -1217,31 +1161,38 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
       if (sessionID) setSessionStatus(sessionID)
     }
-    compatFanout.emit(directory, payload)
+    workspaceFanout.emit(directory, payload)
   }
-  // See `wrEventsHandler` below for why flat frames additionally enter a
-  // replay list: /api/wr/events is polled by two different app consumers and
-  // must broadcast flat frames to all of them, not queue them to one.
-  const FLAT_WR_REPLAY_WINDOW_MS = 6_000
-  const flatWrReplay: Array<{ payload: ClaxedoEvent; until: number }> = []
-  const emitFlat = (payload: ClaxedoEvent) => {
-    flatWrReplay.push({ payload, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
-    compatFanout.emitFlat(payload)
+  const emitNotice = (payload: MockControlPlaneNotice) => {
+    controlPlaneBus.emitFlat(payload)
   }
-  const emitRuntime = (payload: RuntimeEventEnvelopeInput) => {
-    runtimeFanout.emitFlat(runtimeEventEnvelope(payload))
+  // One projection per turn, keyed the way the real runtime keys its turn
+  // projector: the session and the assistant message the parts hang from.
+  // `announcesAssistantMessage` because this projection is the turn's only
+  // producer here; on a real host the runtime's own compat producer opens the
+  // row.
+  const turnProjections = new Map<string, ClientPresentationProjection>()
+  const emitRuntime = (input: RuntimeEventEnvelopeInput) => {
+    const envelope = runtimeEventEnvelope(input)
+    for (const event of presentationEventsFromRuntimeEnvelope(envelope)) {
+      workspaceFanout.emit(event.directory, event.payload)
+    }
+    const assistantMessageId = envelope.assistantMessageId ?? envelope.sessionId
+    const key = `${envelope.sessionId}\0${assistantMessageId}`
+    let projection = turnProjections.get(key)
+    if (!projection) {
+      projection = createClientPresentationProjection({
+        sessionId: envelope.sessionId,
+        directory: envelope.directory,
+        assistantMessageId,
+        announcesAssistantMessage: true,
+      })
+      turnProjections.set(key, projection)
+    }
+    for (const event of projection.ingest(envelope.payload)) {
+      workspaceFanout.emit(event.directory, event.payload)
+    }
   }
-
-  // Wrapped frames deliberately get no replay list of their own: `EventBus` is an
-  // append-only log and a reconnect resumes at the reader's own `Last-Event-ID`, so a
-  // frame emitted while the `/api/wr/events` consumer sits between connections is
-  // delivered late (by the reader's reconnect delay), never lost. A spec that needs
-  // one applied promptly should wait for the consumer, not duplicate the frame.
-
-  // Seed the "connected" handshake so the first compat and central connections
-  // resolve immediately instead of idling until their heartbeat deadline.
-  emit({ type: "server.connected", properties: {} }, "global")
-  busClaxedoEvents.emitFlat({ type: "server.connected", properties: {} })
 
   function harnessModel() {
     return harnessModels[harness]?.[0] ?? BIG_PICKLE
@@ -1494,7 +1445,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // scenario's own terms, still running.
     setSessionStatus(SESSION_ID, { type: "busy" })
     if (options.messageRefreshOnly) {
-      emitFlat({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Busy" })
+      emit({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Busy" })
     } else {
       emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
     }
@@ -1522,7 +1473,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         : row)
       runningTurn = undefined
       setSessionStatus(SESSION_ID)
-      emitFlat({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
+      emit({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
       return
     }
     if (options.errorMidTurn) {
@@ -1792,8 +1743,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // `driveTurn`, over the same real ticks, but for the cloud lane's session/messages.
   // Reply text convention (`cloud ack <n>: <text>`) matches
   // `core-cloud-provisioning.spec.ts`'s `installCloudRuntimeMock`, so specs asserting
-  // on it share one vocabulary. Delivered via the compat event family; contract-v4 runtime events use
-  // the separate `emitRuntime()` producer and `/api/wr/runtime-events` channel.
+  // on it share one vocabulary.
   async function driveCloudTurn(input: {
     userID: string
     assistantID: string
@@ -1963,11 +1913,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   })
 
   const sseIdleTimeoutMs = 4000
-  await page.routeWebSocket("**/api/claxedo/events**", socket => {
+
+  // `cp/events`. An unsigned loopback surface reads it over a WebSocket
+  // (`openLocalEventWebSocket`), so the same log answers both transports.
+  await page.routeWebSocket("**/api/cp/events**", socket => {
     requests.eventWebSocketConnections += 1
     const cursor = Number(new URL(socket.url()).searchParams.get("lastEventId") ?? 0)
-    const unsubscribe = busClaxedoEvents.subscribe(cursor, batch => {
-      socket.send(sseBody(batch, () => centralStreamHeartbeat(cursor)))
+    const unsubscribe = controlPlaneBus.subscribe(cursor, batch => {
+      socket.send(sseBody(batch, () => controlPlaneStreamHeartbeat(cursor)))
     })
     const cleanup = () => {
       unsubscribe()
@@ -1976,119 +1929,54 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     socket.onClose(cleanup)
     page.once("close", cleanup)
   })
-  const eventStreamHandler = async (route: Route) => {
+  await contractRoute(page, "**/api/cp/events**", async (route) => {
     if (!api(route)) return route.continue()
-    const url = new URL(route.request().url())
-    if (url.pathname !== "/global/event" && url.pathname !== "/event") return route.fallback()
-    const batch = await busGlobal.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+    if (new URL(route.request().url()).pathname !== "/api/cp/events") return route.fallback()
     const cursor = lastEventIdOf(route)
+    const batch = await controlPlaneBus.drain(sseIdleTimeoutMs, cursor)
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: sseBody(batch, () => centralStreamHeartbeat(cursor)),
+      body: sseBody(batch, () => controlPlaneStreamHeartbeat(cursor)),
     }).catch(() => {})
-  }
-  // Broadest first: `**/event?**` also matches `.../global/event?…`, so registering it
-  // LAST (Playwright matches most-recently-registered-first) would have left the
-  // `/global/event` line permanently unreachable. Inert here — both point at the same
-  // handler, which dispatches on pathname itself — but the ordering is written the
-  // right way round so the shadowing guard has nothing to allowlist.
-  await contractRoute(page, "**/event?**", eventStreamHandler)
-  await contractRoute(page, "**/global/event?**", eventStreamHandler)
+  })
 
-  const claxedoEventsHandler = async (route: Route) => {
+  /**
+   * The session a `wr/events` frame belongs to, for the session-scoped arm:
+   * a presentation frame names it under `properties`, a control frame at its
+   * top level. Frames naming no session (`pty.*`) belong to the workspace and
+   * are withheld from a session-scoped reader, as the real handler withholds
+   * them.
+   */
+  const frameSessionId = (entry: LoggedEvent) => {
+    const payload = entry.payload as Record<string, unknown>
+    const properties = payload.properties as Record<string, unknown> | undefined
+    const info = properties?.info as Record<string, unknown> | undefined
+    const part = properties?.part as Record<string, unknown> | undefined
+    for (const candidate of [properties?.sessionID, info?.id, part?.sessionID, payload.sessionId, payload.sessionID]) {
+      if (typeof candidate === "string" && candidate) return candidate
+    }
+    return undefined
+  }
+  const workspaceStreamHandler = (bus: EventBus) => async (route: Route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
-    if (url.pathname !== "/api/claxedo/events") return route.fallback()
-    const cursor = lastEventIdOf(route)
-    const batch = await busClaxedoEvents.drain(sseIdleTimeoutMs, cursor)
-    await route.fulfill({
-      status: 200,
-      contentType: "text/event-stream",
-      body: sseBody(batch, () => centralStreamHeartbeat(cursor)),
-    }).catch(() => {})
-  }
-  await contractRoute(page, "**/api/claxedo/events**", claxedoEventsHandler)
-
-  // Sessions on the /w/<workspaceId>/session/<id> route shape consume live events from
-  // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), not
-  // /global/event. Without these mounts on the primary origin, emit() is a silent
-  // no-op for local sessions and specs only pass via the REST reconciliation
-  // fallback. Same bus and wire envelope as /global/event, so cloud()
-  // re-registration on the relay origin remains behavior-identical.
-  //
-  // Flat frames get an extra short replay window on top of the log. `EventBus` is an
-  // append-only log with per-reader cursor resume, but flat frames are stripped from
-  // the log delivery and served instead from `flatWrReplay`
-  // (`FLAT_WR_REPLAY_WINDOW_MS`, declared next to `emitFlat`), so they carry no `id:`
-  // and cannot advance a reader's cursor.
-  //
-  // Two app consumers poll this route concurrently: ClaxedoEventsProvider's central
-  // stream (the only consumer that understands flat frames) and global-sdk's compat
-  // stream, since `authFetch` rewrites `/global/event` to `/api/wr/events`
-  // (`signedRuntimeEventInput`, src/platform/api/api.ts), which parses flat
-  // frames into a directory:"global" envelope where `session.lifecycle` matches
-  // no reducer (verified: this is where behavior-15's event was disappearing;
-  // the compat loop's ~250ms reconnect cadence out-polls ClaxedoEventsProvider's
-  // ~2s cadence, so it won the queue race nearly every time). `EventBus` is now
-  // an append-only log with per-reader cursor resume, which fixes the race for
-  // every frame — but flat frames are still stripped from the log delivery and
-  // served from `flatWrReplay` (`FLAT_WR_REPLAY_WINDOW_MS`, declared next to
-  // `emitFlat`) so they carry no `id:` and cannot advance a reader's cursor.
-  // Duplicate delivery to ClaxedoEventsProvider is safe for every flat event
-  // this mock carries — `session.lifecycle` created applies idempotently
-  // (cache/inventory upserts by id) and the compat consumer drops flat frames
-  // entirely.
-  const wrEventsHandler = async (route: Route) => {
-    if (!api(route)) return route.continue()
-    const request = route.request()
-    const url = new URL(request.url())
-    const workspaceScoped = url.pathname.startsWith("/workspaces/") ||
-      url.searchParams.has("directory") ||
-      
-      request.headers()["x-claxedo-directory"]?.startsWith("workspace:")
-    const cursor = workspaceStreamCursor(route, busWrEvents)
-    const batch = await busWrEvents.drain(sseIdleTimeoutMs, cursor)
-    const now = Date.now()
-    // Most flat lifecycle frames originate on a workspace runtime stream. Worktree
-    // provisioning is the exception: its ready/failed signal is central because a
-    // workspace-scoped stream cannot exist until that signal registers the new
-    // directory. Keep those two events on the bare stream and all flat events on
-    // scoped streams, matching the real producer's ordering contract.
-    const replays = flatWrReplay.filter((entry) =>
-      entry.until > now && (
-        workspaceScoped ||
-        entry.payload.type === "worktree.ready" ||
-        entry.payload.type === "worktree.failed"
-      )
-    )
-    // Log-delivered flat copies are dropped in favor of the replay list so a
-    // reader does not see the same frame twice in one body. Replay frames
-    // deliberately carry NO `id:` line — they must not advance an
-    // id-tracking reader's cursor.
-    const body =
-      sseBody(batch.filter((entry) => !entry.flat), () => workspaceStreamHeartbeat(cursor)) +
-      replays.map((entry) => sseFrame(entry.payload)).join("")
-    await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
-  }
-  const wrRuntimeEventsHandler = async (route: Route) => {
-    if (!api(route)) return route.continue()
-    const parentSessionId = new URL(route.request().url()).searchParams.get("parentSessionId")
-    if (parentSessionId && options.runtimeEventAuthorizeParent && !options.runtimeEventAuthorizeParent(parentSessionId)) {
+    const sessionID = url.searchParams.get("sessionID") ?? undefined
+    if (options.workspaceStreamAuthorize && !options.workspaceStreamAuthorize({ sessionID })) {
       return json(route, { error: "Forbidden" }, 403)
     }
-    const batch = await busWrRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
-    const scoped = batch.filter(entry => !parentSessionId ||
-      ("sessionId" in entry.payload && entry.payload.sessionId === parentSessionId))
+    const cursor = workspaceStreamCursor(route, bus)
+    const batch = await bus.drain(sseIdleTimeoutMs, cursor)
+    const scoped = sessionID ? batch.filter((entry) => frameSessionId(entry) === sessionID) : batch
     await route.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: sseBody(scoped, runtimeStreamHeartbeat),
+      body: sseBody(scoped, () => workspaceStreamHeartbeat(cursor)),
     }).catch(() => {})
   }
-  await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
-
-  await contractRoute(page, "**/api/wr/runtime-events**", wrRuntimeEventsHandler)
+  // `wr/events` on the primary origin: a local workspace's stream, reached
+  // through the daemon's loopback proxy (`?directory=`).
+  await contractRoute(page, "**/api/wr/events**", workspaceStreamHandler(busWrEvents))
 
   // ProcessPane reconciles once when a workspace shell mounts. The shared
   // runtime has no process fixtures, so its canonical answer is an empty list;
@@ -2491,7 +2379,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       directory: `${url.searchParams.get("directory") ?? DIR}/${name}`,
     }
     createdLocalWorktrees.push(created)
-    void wait(timings.pending).then(() => emitFlat({
+    void wait(timings.pending).then(() => emitNotice({
       type: "worktree.ready",
       directory: created.directory,
       name: created.name,
@@ -2979,7 +2867,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: completedAt } } }
         : row)
       setSessionStatus(SESSION_ID)
-      emitFlat({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
+      emit({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
     } else if (options.holdTurn) {
       setSessionStatus(SESSION_ID)
       emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
@@ -3274,31 +3162,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     })
     await contractRoute(page, `${base}/api/wr/diff/**`, runtimeDiffHandler)
 
-    const relayEventHandler = async (route: Route) => {
-      const cursor = workspaceStreamCursor(route, busRelayEvents)
-      const batch = await busRelayEvents.drain(sseIdleTimeoutMs, cursor)
-      await route.fulfill({
-        status: 200,
-        contentType: "text/event-stream",
-        body: sseBody(batch, () => workspaceStreamHeartbeat(cursor)),
-      }).catch(() => {})
-    }
-    const relayRuntimeEventHandler = async (route: Route) => {
-      const batch = await busRelayRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
-      await route.fulfill({
-        status: 200,
-        contentType: "text/event-stream",
-        body: sseBody(batch, runtimeStreamHeartbeat),
-      }).catch(() => {})
-    }
-    // `/api/wr/events` is the flat/compat workspace bus; `/global/event` + `/event`
-    // are defensive aliases for the classic loop. `/api/wr/runtime-events` is a
-    // distinct contract-v4 channel, matching the real runtime rather than receiving
-    // duplicate compat frames.
-    await contractRoute(page, `${base}/api/wr/events**`, relayEventHandler)
-    await contractRoute(page, `${base}/api/wr/runtime-events**`, relayRuntimeEventHandler)
-    await contractRoute(page, `${base}/global/event**`, relayEventHandler)
-    await contractRoute(page, `${base}/event**`, relayEventHandler)
+    // `wr/events` behind the workspace's relay connection.
+    await contractRoute(page, `${base}/api/wr/events**`, workspaceStreamHandler(busRelayEvents))
 
     // Same live-map contract as the local lane (`./contracts/session-status.ts`) and the
     // same `liveSessionStatuses` state, so `handles.setSessionStatus` drives whichever
@@ -3440,14 +3305,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(harness, model)))
     })
     await contractRoute(page, `${relayOrigin}/api/wr/diff/**`, runtimeDiffHandler)
-    await contractRoute(page, `${relayOrigin}/api/wr/events`, relayEventHandler)
-    await contractRoute(page, `${relayOrigin}/api/wr/runtime-events`, relayRuntimeEventHandler)
+    await contractRoute(page, `${relayOrigin}/api/wr/events**`, workspaceStreamHandler(busRelayEvents))
   }
 
   return {
     requests,
     emit,
-    emitFlat,
+    emitNotice,
     emitRuntime,
     clearPendingQuestion: requestID => {
       pendingQuestions = pendingQuestions.filter(question => question.id !== requestID)

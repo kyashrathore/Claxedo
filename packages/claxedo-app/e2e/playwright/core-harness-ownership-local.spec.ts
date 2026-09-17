@@ -557,7 +557,7 @@ test.describe("core harness ownership (local) @core", () => {
     })
 
     const now = Date.now()
-    mock.emitFlat({
+    mock.emit({
       type: "session.updated",
       directory: DIR,
       workspaceId,

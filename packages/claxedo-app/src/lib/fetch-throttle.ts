@@ -41,9 +41,7 @@ function requestPathname(input?: string | URL | Request): string | undefined {
 export function isEventStreamPath(input?: string | URL | Request): boolean {
   const pathname = requestPathname(input)
   if (!pathname) return false
-  if (pathname === "/event" || pathname === "/global/event") return true
-  if (pathname.endsWith("/api/wr/events") || pathname.endsWith("/api/wr/runtime-events")) return true
-  return /^\/workspaces\/[^/]+\/(global\/)?event$/.test(pathname)
+  return pathname === "/api/cp/events" || pathname.endsWith("/api/wr/events")
 }
 
 function isEventStreamRequest(init?: RequestInit  , input?: string | URL | Request): boolean {

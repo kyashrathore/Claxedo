@@ -1,5 +1,5 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
-import type { LiveSession } from "../global-sdk-event-fetch"
+import type { LiveSession } from "./live-session"
 import {
   applySessionGoalRuntimeEvent,
   invalidateSessionGoalData,

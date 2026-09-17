@@ -26,7 +26,7 @@ import {
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
 import { eventDirectoryForLiveSession } from "@/app/providers/global-sdk/live-session"
-import { compatEventEnvelope } from "@/app/providers/global-sdk/runtime-event-projection"
+import { compatEventEnvelope } from "@/app/providers/global-sdk/presentation-frames"
 import {
   flushQueryPersistence,
   installQueryPersister,
@@ -134,8 +134,20 @@ function claxedoEventSource() {
   const emitter = createClaxedoEventEmitter()
   return {
     source: emitter,
-    emit: (event: ClaxedoEvent) => emitter.emit(event, "workspace"),
+    emit: (event: ClaxedoEvent) => emitter.emit(event, "wr"),
   }
+}
+
+/**
+ * The GlobalSDK provider's bridge: every session presentation frame a stream
+ * reader receives is unwrapped and enqueued for the coalescer, and the
+ * ingress applies it from there.
+ */
+function bridged(streams: ReturnType<typeof claxedoEventSource>, globalEvents: ReturnType<typeof eventSource>) {
+  return streams.source.listen((frame) => {
+    const event = compatEventEnvelope(frame)
+    if (event) globalEvents.emit({ name: event.directory!, details: event.payload })
+  })
 }
 
 /**
@@ -461,10 +473,11 @@ describe("global sync event ingress", () => {
     dispose()
   })
 
-  test("projects claxedo session.updated titles through the same narrow writer", () => {
+  test("projects a streamed session.updated title through the same narrow writer", () => {
     queryClient.clear()
     const globalEvents = eventSource()
     const claxedoEvents = claxedoEventSource()
+    const detach = bridged(claxedoEvents, globalEvents)
     const sessionTitles = titleWriter()
     const dispose = createGlobalSyncEventIngress({
       ...revocationDefaults,
@@ -533,6 +546,7 @@ describe("global sync event ingress", () => {
       updatedAt: 50,
     })
 
+    detach()
     dispose()
   })
 
@@ -809,10 +823,11 @@ describe("global sync event ingress", () => {
     dispose()
   })
 
-  test("projects claxedo stream todo envelopes into shell queries", () => {
+  test("projects a streamed todo frame into shell queries", () => {
     queryClient.clear()
     const globalEvents = eventSource()
     const claxedoEvents = claxedoEventSource()
+    const detach = bridged(claxedoEvents, globalEvents)
     const dispose = createGlobalSyncEventIngress({
       ...revocationDefaults,
       globalEvents: globalEvents.source,
@@ -848,6 +863,7 @@ describe("global sync event ingress", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_claxedo_todo", "todo"))).toEqual([
       { id: "todo_1", content: "Wire", status: "pending" },
     ])
+    detach()
     dispose()
   })
 
@@ -1252,8 +1268,8 @@ describe("global sync event ingress", () => {
 describe("live session events reach the pane that registered the session", () => {
   // One workspace, two clients. The host is running a turn; this client merely
   // navigated to the session, so nothing it did created the reply — the turn's
-  // canonical presentation frames arrive on the workspace event bus. The raw
-  // runtime lane does not create transcript rows or part identities.
+  // canonical presentation frames arrive on the workspace's stream, projected
+  // by the host; nothing here creates transcript rows or part identities.
   //
   // Producer and consumer have to name ONE scope for that to land:
   // `eventDirectoryForLiveSession` decides the address the projected events are
@@ -1303,7 +1319,7 @@ describe("live session events reach the pane that registered the session", () =>
       .join("")
   }
 
-  test("central deltas enter once through SDK routing and workspace deltas enter once directly", () => {
+  test("every delta enters once, through the one bridge from the stream reader into the coalescer", () => {
     hydrateRegisteredConversationSnapshot({
       directory: paneDirectory, sessionID: SESSION_ID,
       messages: [{
@@ -1315,24 +1331,18 @@ describe("live session events reach the pane that registered the session", () =>
       parts: { [ASSISTANT_ID]: [{ id: "p1", sessionID: SESSION_ID, messageID: ASSISTANT_ID, type: "text", text: "" }] },
     })
     const globalEvents = eventSource()
-    const central = createClaxedoEventEmitter()
-    // The real GlobalSDK central subscription unwraps and enqueues this frame.
-    const detach = central.listenCentral((frame) => {
-      const event = compatEventEnvelope(frame)
-      if (event) globalEvents.emit({ name: event.directory!, details: event.payload })
-    })
-    const dispose = attachedPaneIngress(globalEvents, central)
+    const streams = claxedoEventSource()
+    const detach = bridged(streams, globalEvents)
+    const dispose = attachedPaneIngress(globalEvents, streams.source)
     const event: ClaxedoEvent = {
       type: "message.part.delta", directory: paneDirectory,
       properties: { sessionID: SESSION_ID, messageID: ASSISTANT_ID, partID: "p1", field: "text", delta: "row\n" },
     }
-    central.emit(event, "central")
+    streams.emit(event)
     expect(assistantText(paneDirectory)).toBe("row\n")
     // Identical legitimate deltas are distinct deliveries, never text-deduped.
-    central.emit(event, "central")
+    streams.emit(event)
     expect(assistantText(paneDirectory)).toBe("row\nrow\n")
-    central.emit(event, "workspace")
-    expect(assistantText(paneDirectory)).toBe("row\nrow\nrow\n")
     detach()
     dispose()
   })

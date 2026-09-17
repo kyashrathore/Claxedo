@@ -3,61 +3,64 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 /**
- * Contract binding for the central event stream's route spellings.
+ * Contract binding for the two event streams' route spellings.
  *
- * `claxedo-local-server` mounts one handler (`streamGlobalEvents`) on several paths
- * because different readers open the same bus under different names: global-sdk's compat
- * loop opens `/global/event` (`/api/wr/events` for a signed document) and
- * `ClaxedoEventsProvider`'s central target opens `/api/claxedo/events`.
- *
- * A spec that hand-rolls its boot mock and routes only some of those spellings loses its
- * bus reader silently: the connection escapes to the real port and every emitted frame is
- * dropped with nothing failing at the seam. This test reads the mounts off the server
- * source so adding, renaming or removing a spelling fails here.
+ * The local daemon serves the control plane's notices on exactly one path
+ * (`/api/cp/events`, `shell/routes.ts`) and a workspace runtime serves its
+ * frames on exactly one (`/api/wr/events`, `workspace-runtime/src/workspace/core.ts`
+ * through its route manifest).
+ * A spec that hand-rolls its boot mock and routes a different spelling loses
+ * its reader silently: the connection escapes to the real port and every
+ * emitted frame is dropped with nothing failing at the seam. This test reads
+ * the mounts off the server sources so a rename fails here.
  */
 const repoFile = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
 
-/** Every path `claxedo-local-server` answers the central bus on (`shell/routes.ts`). */
-function centralStreamPaths() {
+/** Every path `claxedo-local-server` streams on (`shell/routes.ts`). */
+function controlPlaneStreamPaths() {
   const source = repoFile("../../../claxedo-local-server/src/shell/routes.ts")
-  const paths = [...source.matchAll(/\.get\("([^"]+)",\s*\(c\)\s*=>\s*stream\(c\)\)/g)]
-    .map((match) => match[1])
-  return [...new Set(paths)]
+  return [...new Set([...source.matchAll(/\.get\("([^"]+)",\s*\(c\)\s*=>\s*stream\(c\)\)/g)].map((match) => match[1]))]
 }
 
-/** Every path a spec registers a Playwright route glob for. */
+/** The one path a workspace runtime mounts its events handler on (`workspace/core.ts`, from the route manifest). */
+function workspaceStreamPaths() {
+  const mounts = repoFile("../../../workspace-runtime/src/workspace/core.ts")
+  const manifest = repoFile("../../../workspace-runtime/src/routes/manifest.ts")
+  const prefix = manifest.match(/WorkspaceRuntimeApiPrefix = "([^"]+)"/)?.[1]
+  const keys = [...mounts.matchAll(/app\.get\(WorkspaceRuntimeRoutes\.(\w+),\s*workspaceEventsHandler\(/g)].map((match) => match[1])
+  return keys.map((key) => {
+    const suffix = manifest.match(new RegExp(`\\b${key}: \`\\$\\{WorkspaceRuntimeApiPrefix\\}([^\`]*)\``))?.[1]
+    return `${prefix}${suffix}`
+  })
+}
+
+/** Every path a spec registers a Playwright route or WebSocket route glob for. */
 function routedPaths(specSource: string) {
-  return [...specSource.matchAll(/page\.route\(\s*"\*\*([^"]+?)\*?\*?"/g)].map((match) => match[1])
+  return [...specSource.matchAll(/page\.route(?:WebSocket)?\(\s*"\*\*([^"]+?)\*?\*?"/g)].map((match) => match[1])
 }
 
 function routes(specSource: string, path: string) {
   return routedPaths(specSource).some((routed) => routed.replace(/\?$/, "") === path)
 }
 
-describe("central event stream mounts", () => {
-  test("the local server really does answer one bus under several names", () => {
-    const paths = centralStreamPaths()
-    // If this shrinks to one spelling the whole aliasing problem is gone and
-    // the spec assertions below become trivially true — so pin the shape.
-    expect(paths).toContain("/api/claxedo/events")
-    expect(paths).toContain("/api/wr/events")
-    expect(paths).toContain("/global/event")
+describe("event stream mounts", () => {
+  test("each server streams on exactly one path", () => {
+    expect(controlPlaneStreamPaths()).toEqual(["/api/cp/events"])
+    expect(workspaceStreamPaths()).toEqual(["/api/wr/events"])
   })
 
-  test("core-terminal's hand-rolled boot mock serves every one of them", () => {
+  test("core-terminal's hand-rolled boot mock serves both", () => {
     const spec = repoFile("../playwright/core-terminal.spec.ts")
-    for (const path of centralStreamPaths()) {
+    for (const path of [...controlPlaneStreamPaths(), ...workspaceStreamPaths()]) {
       expect({ path, routed: routes(spec, path) }).toEqual({ path, routed: true })
     }
   })
 
-  test("core-processes' crash injection reaches the provider's central target", () => {
-    // `process.crashed` is delivered by intercepting the app's first event-stream
-    // connection, and `ProcessPaneProvider` reads it off `useClaxedoEvents`; if only
-    // `/api/wr/events` is routed, global-sdk's compat loop claims that interception.
+  test("core-processes' crash injection reaches the workspace stream the provider reads", () => {
+    // `process.crashed` is a workspace control frame, delivered by intercepting
+    // the app's first `wr/events` connection.
     const spec = repoFile("../playwright/core-processes.spec.ts")
-    expect(routes(spec, "/api/claxedo/events")).toBe(true)
     expect(routes(spec, "/api/wr/events")).toBe(true)
   })
 })

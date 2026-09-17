@@ -1874,7 +1874,7 @@ setTimeout(() => process.exit(2), 60000).unref();
 `)
     const sockets: Array<{ url: string; closed: boolean }> = []
     page.on("websocket", socket => {
-      if (!socket.url().includes("/api/claxedo/events")) return
+      if (!socket.url().includes("/api/cp/events")) return
       const entry = { url: socket.url(), closed: false }
       sockets.push(entry)
       socket.on("close", () => { entry.closed = true })

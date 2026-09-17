@@ -96,16 +96,11 @@
  *       becomes visible once its `session.lifecycle` "created" event reaches
  *       the client, where an opencode-native session rides the native
  *       `session.created` SSE event instead. Harness/ACP session creation only
- *       ever publishes `session.lifecycle` on `claxedoBus` (aka
- *       `workspaceRuntimeBus`); `streamGlobalEvents`
- *       (`packages/claxedo-local-server/src/shell/events.ts`) — the handler
- *       behind both `/global/event` and the local-mode `/api/wr/events`
- *       fallback, the ONLY stream a local/unsigned workspace ever opens —
- *       must therefore forward `claxedoBus` as well as `globalBus`, written
- *       flat/unwrapped to match the shape `ClaxedoEventsProvider`'s
- *       `isClaxedoEvent` guard requires. Tier M mocks bypass the real server,
- *       so this spec can only pin the frontend half: given a flat
- *       `session.lifecycle` "created" frame, `applySessionInventoryLifecycle`
+ *       ever publishes `session.lifecycle` on `workspaceRuntimeBus`, which the
+ *       workspace's `/api/wr/events` (`workspace-runtime/src/routes/events.ts`)
+ *       serves as a `{ directory, payload }` control frame. Tier M mocks
+ *       bypass the real server, so this spec can only pin the frontend half:
+ *       given a `session.lifecycle` "created" frame, `applySessionInventoryLifecycle`
  *       surfaces the row. The transport itself is pinned by
  *       `packages/claxedo-local-server/src/shell/events.test.ts`.
  *   16. The account footer (`rail-account-trigger`) is keyboard-operable and
@@ -887,10 +882,9 @@ test.describe("core sidebar tree @core", () => {
     ])
 
     // The one notification a non-opencode/harness session's `POST /session`
-    // ever publishes: a `session.lifecycle` "created" event on `claxedoBus`
-    // — see BEHAVIORS #15. Injected flat/unwrapped via `emitFlat`, matching
-    // the real wire shape `ClaxedoEventsProvider` requires.
-    mock.emitFlat({
+    // ever publishes: a `session.lifecycle` "created" control frame on the
+    // workspace's stream — see BEHAVIORS #15.
+    mock.emit({
       type: "session.lifecycle",
       phase: "created",
       directory: DIR,

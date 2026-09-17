@@ -207,7 +207,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
 
   const eventFrames: string[] = []
   const eventSockets = new Set<import("@playwright/test").WebSocketRoute>()
-  await page.routeWebSocket(/\/(?:api\/claxedo\/events|api\/wr\/events|global\/event)(?:\?|$)/, (socket) => {
+  await page.routeWebSocket("**/api/cp/events**", (socket) => {
     eventSockets.add(socket)
     socket.onClose(() => eventSockets.delete(socket))
     socket.send(Buffer.from(": heartbeat\n\n" + eventFrames.join("")))
@@ -221,14 +221,9 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
     if (!api(route.request())) return route.continue()
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" + eventFrames.join("") }).catch(() => {})
   }
-  // One stream, three spellings. Both real servers mount a single handler on
-  // `/global/event`, `/api/wr/events` and `/api/claxedo/events`, so every spelling the app
-  // might connect on has to answer here or the central stream falls through to the
-  // unreachable real origin.
-  await page.route("**/global/event?**", eventStreamHandler)
-  await page.route("**/event?**", eventStreamHandler)
+  // The workspace's own stream; the worktree notices this spec injects ride the
+  // control plane's, over the WebSocket below.
   await page.route("**/api/wr/events**", eventStreamHandler)
-  await page.route("**/api/claxedo/events**", eventStreamHandler)
   // The rail's org/team switcher mounts alongside the header actions this spec drives, and
   // its read otherwise leaks onto the unreachable backend. `[]` is the authority's own
   // answer for a principal in no organization.

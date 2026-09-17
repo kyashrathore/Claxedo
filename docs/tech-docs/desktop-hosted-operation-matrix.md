@@ -48,8 +48,8 @@ Two consequences worth stating plainly:
 Also excluded from AccountPort (intentional non-rows):
 
 - **Workspace-scoped** `GET /api/wr/events` after connection mint — RAT data
-  plane (same as other post-mint runtime traffic). The **central** control-plane
-  bus is `session.events` below.
+  plane (same as other post-mint runtime traffic). The control plane's own
+  notice stream is `controlPlane.events` below.
 - **Sandbox driver** routes (`GET|PUT /api/workspace/drivers*`) — local sidecar
   only; signed hosted sessions may view them through the local proxy but do not
   spend the Hosted Server bearer on them.
@@ -58,8 +58,8 @@ Also excluded from AccountPort (intentional non-rows):
   enrollment handshake itself is the `host.enroll*` rows below, and
   request / enroll / heartbeat are Host-Connector-child rows in the machine
   remote access section.
-- **Retired** `GET /documents/events` — editors now use the central
-  `session.events` doorbell.
+- **Retired** `GET /documents/events` — editors now use the
+  `document.changed` doorbell on `controlPlane.events`.
 - **Machine-signed and invitation routes** — a `claxedo connect` host has no
   account on the box, so nothing below is an AccountPort operation. Listed here
   so the closed set stays complete; `hosted-operation-inventory.test.ts`
@@ -188,8 +188,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `session.projection.register` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/register` | unary | unsafe | Sync-back into the control plane; body carries `idempotencyKey`. |
 | `session.projection.checkpoint` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint` | unary | unsafe | |
 | `session.projection.repair` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/repair` | unary | unsafe | |
-| `session.events` | `app/integrations/claxedo-events.tsx` | `GET /api/wr/events` | stream | safe | Central control-plane SSE (not workspace-scoped RAT traffic). Resumes via declared `Last-Event-ID` header param. Provisioning progress filters this same bus. |
-| `session.runtimeEvents` | `app/providers/global-sdk/provider.tsx` | `GET /api/control/session/:sessionId/runtime-events` | stream | safe | Central per-session runtime SSE; `parentSessionId` is a required declared query key. Workspace-scoped `/api/wr/runtime-events` after mint stays on the RAT data plane. |
+| `controlPlane.events` | `app/integrations/claxedo-events.tsx` | `GET /api/cp/events` | stream | safe | The control plane's notice stream (provision steps, worktree readiness, document doorbells, share grants) — never a session's frames, which are the workspace runtime's `/api/wr/events` on the RAT data plane. Resumes via declared `Last-Event-ID` header param. |
 | `session.shares.list` | `features/session/data/session-share-api.ts` | `GET /api/control/sessions/:sessionId/shares` | unary | safe | `workspaceId` is a declared query parameter (not a free-form `:name` in the path). |
 | `session.shares.grant` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants private-session visibility to a person, team, or org. |
 | `session.shares.revoke` | `features/session/data/session-share-api.ts` | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
@@ -249,7 +248,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 
 Sandbox driver configuration (`/api/workspace/drivers*`) is local-sidecar-only —
 see "What is deliberately NOT an account operation". Cloud create listens for
-`provision` frames on `session.events` rather than opening a second stream.
+`provision` frames on `controlPlane.events` rather than opening a second stream.
 
 ### Billing
 

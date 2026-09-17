@@ -282,10 +282,8 @@ export const HOSTED_OPERATIONS = {
   "session.projection.register": { safe: false, decode: object },
   "session.projection.checkpoint": { safe: false, decode: object },
   "session.projection.repair": { safe: false, decode: object },
-  // Central control-plane SSE (`GET /api/wr/events`). Stream IPC, not unary `run`.
-  "session.events": { safe: true, decode: object },
-  // Per-session central runtime SSE. Stream IPC.
-  "session.runtimeEvents": { safe: true, decode: object },
+  // `GET /api/cp/events`. Stream IPC, not unary `run`.
+  "controlPlane.events": { safe: true, decode: object },
   // Private-session People capability, grants, participants, and session-org teams.
   "session.shares.list": { safe: true, decode: sessionPeople },
   "session.shares.grant": { safe: false, decode: object },

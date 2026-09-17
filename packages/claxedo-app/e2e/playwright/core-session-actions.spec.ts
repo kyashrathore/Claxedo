@@ -607,7 +607,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     // of event-ingress's `children.has(directory)` check, and keys the permission-request
     // cache by `permission.sessionID` — the CHILD's id — not by directory. The mock emits a
     // production-shaped `permission.asked` over the real `/api/wr/events` +
-    // `/api/wr/runtime-events` SSE channels; the `replied.sessionID === CHILD_ID` assertion
+    // `/api/wr/events` streams; the `replied.sessionID === CHILD_ID` assertion
     // below can only hold if the dock rendered the CHILD's permission and the Allow-once
     // POST routed to `/session/CHILD_ID/permissions/...`.
 
@@ -718,22 +718,13 @@ test.describe("core session actions: subagent (child session) @core", () => {
     // exactly the fallback path in `applySessionInventoryLifecycle`
     // (src/features/session/data/sync/inventory-writers.ts).
     //
-    // DELIVERY: direct route-fulfill, not `mock.emit()`. TWO app consumers poll
-    // `/api/wr/events` at once — global-sdk's compat stream, the only one that parses the
-    // `{directory, payload}` envelope and feeds `event-ingress.ts`, and
-    // ClaxedoEventsProvider's central stream, which silently DROPS envelope frames (its
-    // `isClaxedoEvent` guard needs a top-level `.type`). The shared mock's queue hands each
-    // emitted batch to exactly ONE of them, so `mock.emit()` is a coin flip that loses
-    // whenever the central stream drains first.
-    //
-    // A `times`-capped route loses the same way: under the prebuilt production build,
-    // code-splitting shifts when each stream's chunk mounts and reconnects, so the central
-    // stream's rapid reconnects can swallow every slot before the compat stream reconnects,
-    // starving the only consumer that patches the inventory. Fulfilling EVERY subsequent
-    // GET with the same envelope removes the timing dependency: whichever poll the compat
-    // stream lands on next carries the frame. The frame is an idempotent same-payload
-    // upsert, so re-delivery to either consumer is a no-op, and the route is torn down with
-    // the page context.
+    // DELIVERY: direct route-fulfill of EVERY subsequent `/api/wr/events` GET
+    // with the same envelope, rather than one `mock.emit()`: under the prebuilt
+    // production build, code-splitting shifts when the reader's chunk mounts and
+    // reconnects, and a `times`-capped route can be consumed by a connection the
+    // reader tears down before parsing. The frame is an idempotent same-payload
+    // upsert, so re-delivery is a no-op, and the route is torn down with the
+    // page context.
     const titleEnvelope = {
       directory: DIR,
       payload: {

@@ -23,39 +23,35 @@ import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/ide
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
-import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
 import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 
 type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
 
-// The central GLOBAL event stream is fetched directly (signed control-plane
-// auth). The per-workspace stream is a runtime-owned long-lived GET that lives
-// behind the workspace's relay connection and is reached with the Runtime
-// Access Token — exactly like provider/file/PTY reads. Targets are therefore
-// discriminated so the events provider can pick the right transport: the
-// central stream uses `authFetch`, the workspace stream uses the transport
-// seam so loopback workspace streams stay on the local proxy while remote
-// workspace streams open through the relay.
+/**
+ * The two streams a client reads. `cp` is the control plane's notice stream,
+ * fetched directly under control-plane auth. `wr` is one workspace runtime's
+ * stream: a runtime-owned long-lived GET behind the workspace's relay
+ * connection, reached with the Runtime Access Token exactly like provider,
+ * file and PTY reads — or, for a local workspace, through the daemon's
+ * loopback proxy to its embedded runtime.
+ *
+ * A `wr` target opens the stream unscoped: the workspace's owner sees every
+ * session and every session-less frame. `sessionID` is the fallback for a
+ * reader the runtime refuses at workspace level — a share grantee, who holds
+ * a grant on one session and no workspace access — and is used only after
+ * that refusal.
+ */
 export type ClaxedoEventStreamTarget =
-  | { kind: "central"; url: URL }
+  | { kind: "cp"; url: URL }
   | {
-      kind: "workspace"
+      kind: "wr"
       serverUrl: string
       workspaceId: string
       workspaceKind?: "local" | "cloud" | "user-hosted"
       directory?: string
-      /** Canonical managed-private session admitted by the runtime policy. */
       sessionID?: string
     }
 
-/**
- * The workspace id for a LOCAL workspace at `directory`.
- *
- * `signedWorkspaceFromProjects` deliberately skips anything that is not
- * `cloud` / `user-hosted`, because signed identity is what the relay needs.
- * Event streams need an id for a different reason — to name which workspace's
- * events to receive — and a local workspace has one in the projects cache.
- */
 function localWorkspaceForDirectory(projects: ProjectCache, directoryOrId: string | undefined) {
   if (!directoryOrId) return undefined
   for (const project of projects) {
@@ -84,21 +80,14 @@ export function claxedoEventStreamTargets(input: {
   serverUrl?: string
   directory?: string
   projects?: ProjectCache
+  /** The routed session, kept as the fallback scope for a reader refused at workspace level. */
   sessionID?: string
-  /**
-   * Which stream scopes the resolved workspace's runtime serves, read from the
-   * connection the control plane minted (`workspaceSessionAuthority`). Asked
-   * for the workspace THIS function resolved, so the workspace is identified
-   * once. Answering `undefined` (the mint has not landed) opens no workspace
-   * stream, because either guess is wrong for one of the two compositions.
-   */
-  sessionAuthority?: (workspaceId: string) => WorkspaceSessionAuthority | undefined
   /** Whether the account is signed in; only the signed-web deployment needs it. */
   accountSigned?: boolean
 }): ClaxedoEventStreamTarget[] {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
-  const central: ClaxedoEventStreamTarget = {
-    kind: "central",
+  const cp: ClaxedoEventStreamTarget = {
+    kind: "cp",
     url: controlPlaneEventsUrl({ baseUrl: serverUrl }),
   }
   const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
@@ -108,65 +97,24 @@ export function claxedoEventStreamTargets(input: {
       // signed desktop can still read their events alongside the account feed.
       ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
-  // Which deployment this is decides whether the central stream exists at all —
-  // the same fact the boot reads. On LOOPBACK the "central" stream is the local
-  // daemon's own global event stream: it carries this surface's whole event
-  // feed and the surface has no account by contract, so it is always read. On
-  // signed-web it is the hosted control plane's `/api/claxedo/events`, a route
-  // only a signed document can reach; an unsigned page that opens it holds a
-  // permanently 404ing retry loop, so account state gates it there and only
-  // there.
+  // Which deployment this is decides whether the control-plane stream exists
+  // at all — the same fact the boot reads. On LOOPBACK it is the local daemon's
+  // own and is always read. On signed-web it is the hosted control plane's, a
+  // route only a signed document can reach; an unsigned page that opens it
+  // holds a permanently 404ing retry loop, so account state gates it there.
   const base = centralTransportForServer(serverUrl) === "loopback" || input.accountSigned === true
-    ? [central]
+    ? [cp]
     : []
   if (!workspace) return base
-  // The local central handler subscribes to the same workspaceRuntimeBus as
-  // /api/wr/events, plus the global bus. Opening both delivers every terminal
-  // lifecycle twice and plays completion sounds twice. When signed in, the
-  // central target uses the hosted account bridge instead, so local workspace
-  // events still need their own stream.
-  if (workspace.kind === "local" && centralTransportForServer(serverUrl) === "loopback" && input.accountSigned !== true) {
-    return base
-  }
   const sessionID = input.sessionID?.trim()
-  // Only a MANAGED-PRIVATE runtime serves session-scoped streams and nothing
-  // else: `authorizeSessionEventScope` (workspace-runtime
-  // routes/session-event-privacy.ts:50-60) answers an unscoped request on such a
-  // runtime with a permanent 400 `session_event_scope_required`. Which session
-  // that is comes from `session-event-scope.ts`, not from the route alone — see
-  // its module comment for why the composer has to be able to publish a
-  // just-created session before the route navigates to it.
-  //
-  // Every other runtime — this machine's embedded one, and the owner's daemon
-  // behind a user-hosted workspace — composes the unbound local policy and
-  // serves the broad workspace stream, which is where `pty.*` (a terminal's
-  // bytes), `process.*`, `agent.lifecycle` and `worktree.*` are published. Those
-  // frames belong to no session, so a session-scoped stream is not a narrower
-  // way to get them: it is the wrong stream, and a route with no session (a
-  // terminal, the workspace overview) could not open one at all.
-  //
-  // The workspace KIND cannot decide WHICH scopes a relay-backed runtime
-  // serves — it names who owns the machine, not how that machine's runtime
-  // composed its session authority, and the connection the control plane
-  // minted carries the answer. It does decide whether there is a connection to
-  // ask at all: a LOCAL workspace is served by this surface's own embedded
-  // runtime over loopback, which composes the unbound local policy by
-  // construction and mints nothing. Signed desktop reads those local events
-  // here while its central target reads hosted account events.
-  const sessionAuthority = workspace.kind === "local"
-    ? ("local" as const)
-    : input.sessionAuthority?.(workspace.workspaceId)
-  if (!sessionAuthority) return base
-  const managedPrivate = sessionAuthority === "managed-private"
-  if (managedPrivate && (!sessionID || sessionID === "new")) return base
   return [
     ...base,
     {
-      kind: "workspace",
+      kind: "wr",
       serverUrl,
       workspaceId: workspace.workspaceId,
       workspaceKind: workspace.kind,
-      ...(managedPrivate && sessionID ? { sessionID } : {}),
+      ...(sessionID && sessionID !== "new" ? { sessionID } : {}),
       ...("directory" in workspace && workspace.directory
         ? { directory: workspace.directory }
         : input.directory
@@ -176,12 +124,7 @@ export function claxedoEventStreamTargets(input: {
   ]
 }
 
-// Resolves the fetch + request URL for a target. The workspace stream streams
-// from the relay (`relayUrl/workspaces/:id/api/wr/events`) with the RAT in
-// `Authorization: Bearer`; the central stream is fetched directly. Both return a
-// `Response` whose body the provider reads incrementally (the relay seam does
-// NOT buffer GET responses).
-export const CLAXEDO_EVENTS_RELAY_PATH = "/api/wr/events"
+export const WORKSPACE_EVENTS_PATH = "/api/wr/events"
 
 /** Returns only a real session identity owned by the canonical shell route. */
 export function claxedoEventRouteSessionID(pathname: string) {
@@ -195,21 +138,21 @@ export function claxedoEventRouteSessionID(pathname: string) {
 export async function eventStreamFetch(
   target: ClaxedoEventStreamTarget,
   init: RequestInit,
-  options?: { request?: typeof fetch; relayRequest?: typeof fetch; accountState?: AccountState },
+  options?: { request?: typeof fetch; relayRequest?: typeof fetch; accountState?: AccountState; scope?: "workspace" | "session" },
 ) {
-  if (target.kind === "central") {
-    // Signed accounts stream the hosted central bus through the account
+  if (target.kind === "cp") {
+    // Signed accounts stream the hosted control plane through the account
     // bridge; every other account state (unsigned, unconfigured build,
-    // pending, revoked) keeps `authFetch` against the local server's own
-    // `/api/claxedo/events` — see `accountStreamAvailable` for why bridge
-    // presence alone must not route here.
+    // pending, revoked) keeps `authFetch` against the local daemon's own
+    // route — see `accountStreamAvailable` for why bridge presence alone
+    // must not route here.
     if (
       !options?.request &&
       accountStreamAvailable(options?.accountState ?? { status: "unsigned" })
     ) {
       const lastEventId = new Headers(init.headers).get("Last-Event-ID") ?? undefined
       return openAccountStreamResponse({
-        operation: "session.events",
+        operation: "controlPlane.events",
         params: lastEventId ? { lastEventId } : {},
         signal: init.signal ?? undefined,
       })
@@ -226,12 +169,9 @@ export async function eventStreamFetch(
   }
   const serverTransport = centralTransportForServer(target.serverUrl)
   const request = options?.request ?? authFetch
-  const runtimeUrl = new URL(CLAXEDO_EVENTS_RELAY_PATH, "http://workspace-runtime.local")
-  if (target.workspaceKind === "local" && target.directory) {
-    runtimeUrl.searchParams.set("directory", target.directory)
-  } else if (target.sessionID) {
-    runtimeUrl.searchParams.set("sessionID", target.sessionID)
-  }
+  const runtimeUrl = new URL(WORKSPACE_EVENTS_PATH, "http://workspace-runtime.local")
+  if (target.directory) runtimeUrl.searchParams.set("directory", target.directory)
+  if (options?.scope === "session" && target.sessionID) runtimeUrl.searchParams.set("sessionID", target.sessionID)
   const runtimePath = `${runtimeUrl.pathname}${runtimeUrl.search}`
   return createTransport({
     placement: {
@@ -272,7 +212,7 @@ export type StreamFrameAddress = (hostDirectory: string) => string
  * rule `sessionRowDirectory` applies to a row.
  */
 export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget): StreamFrameAddress {
-  const relayBacked = target.kind === "workspace" && isRelayBackedWorkspaceKind(workspaceKind(target.workspaceKind))
+  const relayBacked = target.kind === "wr" && isRelayBackedWorkspaceKind(workspaceKind(target.workspaceKind))
   if (!relayBacked) return (hostDirectory) => hostDirectory
   return (hostDirectory) => sessionRowDirectory({ workspaceId: target.workspaceId, hostDirectory })
 }
@@ -292,8 +232,8 @@ export function eventStreamTargetKey(
   target: ClaxedoEventStreamTarget,
   options: { accountSigned?: boolean } = {},
 ) {
-  if (target.kind === "central") {
-    return `central:${target.url.href}:${options.accountSigned === true ? "signed" : "unsigned"}`
+  if (target.kind === "cp") {
+    return `cp:${target.url.href}:${options.accountSigned === true ? "signed" : "unsigned"}`
   }
-  return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}:${target.sessionID ?? ""}`
+  return `wr:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}:${target.sessionID ?? ""}`
 }

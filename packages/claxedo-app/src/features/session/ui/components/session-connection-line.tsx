@@ -40,7 +40,7 @@ export function shouldShowConnectionLine(snapshot: StreamSyncSnapshot | undefine
 export function SessionConnectionLine(props: { workspaceId: Accessor<string | undefined> }) {
   const streamId = createMemo<StreamSyncStreamId>(() => {
     const workspaceId = props.workspaceId()
-    return workspaceId ? (`workspace:${workspaceId}` as const) : "central"
+    return workspaceId ? (`wr:${workspaceId}` as const) : "cp"
   })
 
   const visible = createMemo(() => shouldShowConnectionLine(streamSyncLifecycleSnapshot(streamId())))

@@ -27,7 +27,7 @@ import {
   routeDirectory,
   type ClaxedoEventStreamTarget,
 } from "./claxedo-event-targets"
-import { markWorkspaceReconnected, markWorkspaceReconnecting, workspaceSessionAuthority } from "../../features/workspaces/data/workspace-connection"
+import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
 import { requestSessionHistoryResync } from "../../features/session/store/session-history-resync"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
@@ -122,6 +122,16 @@ export type ClaxedoEvent =
       totalMs?: number
       ts: number
     }
+  /**
+   * A stream's own notice that frames between the reader's cursor and the
+   * live position are gone. Raised for a rolled replay ring and for frames
+   * shed under a slow consumer alike; the reader has already asked the
+   * session controller to re-read history when this reaches a listener.
+   */
+  | { type: "stream.replay-gap" }
+  | { type: "subagent.updated"; directory?: string; workspaceId?: string; properties: unknown }
+  | { type: "goal.updated"; directory?: string; workspaceId?: string; properties: unknown }
+  | { type: "goal.cleared"; directory?: string; workspaceId?: string; properties: unknown }
 
 type ClaxedoDirectoryEventType =
     | "message.updated"
@@ -162,7 +172,7 @@ export type ClaxedoDirectoryEvent = { [Type in ClaxedoDirectoryEventType]: {
 type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventOf<T extends ClaxedoEventType> = Extract<ClaxedoEvent, { type: T }>
 
-export type ClaxedoEventOrigin = "central" | "workspace"
+export type ClaxedoEventOrigin = "cp" | "wr"
 type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>, origin: ClaxedoEventOrigin) => void
 
 // ─── Event Emitter ────────────────────────────────────────────────────────
@@ -172,7 +182,7 @@ export function createClaxedoEventEmitter() {
   const listeners = new Set<(event: ClaxedoEvent) => void>()
 
   return {
-    listenCentral: (listener: (event: ClaxedoEvent) => void) => {
+    listen: (listener: (event: ClaxedoEvent) => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
@@ -185,9 +195,9 @@ export function createClaxedoEventEmitter() {
         handlers.get(type)?.delete(handler as unknown as Handler<ClaxedoEventType>)
       }
     },
-    emit(event: ClaxedoEvent, source: "central" | "workspace") {
+    emit(event: ClaxedoEvent, source: ClaxedoEventOrigin) {
       applyWorktreeLifecycleEvent(event)
-      if (source === "central") for (const listener of listeners) {
+      for (const listener of listeners) {
         try { listener(event) } catch {}
       }
       const set = handlers.get(event.type)
@@ -200,6 +210,15 @@ export function createClaxedoEventEmitter() {
       }
     },
   }
+}
+
+/**
+ * A workspace stream's session frames belong to that workspace: the
+ * session-title projection keys by it as well as by directory.
+ */
+function stampWorkspace(event: ClaxedoEvent, target: ClaxedoEventStreamTarget): ClaxedoEvent {
+  if (target.kind !== "wr" || !("properties" in event) || !("directory" in event)) return event
+  return { ...event, workspaceId: target.workspaceId }
 }
 
 export function isStreamReplayGap(input: unknown) {
@@ -256,7 +275,7 @@ function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
 
 type ClaxedoEventsContextValue = {
   /** The central feed, shared with SDK event consumers without a second connection. */
-  listenCentral(listener: (event: ClaxedoEvent) => void): () => void
+  listen(listener: (event: ClaxedoEvent) => void): () => void
   on<T extends ClaxedoEventType>(type: T, handler: Handler<T>): () => void
   /**
    * ANY stream target is up (central OR any workspace relay stream). Correct for
@@ -297,10 +316,10 @@ export function useClaxedoEventsOptional() {
 function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTarget) {
   const message = errorMessage(error)
   const name = error instanceof Error ? error.name : typeof error
-  const ctx = target.kind === "central"
-    ? { stream: "central" as const, url: target.url }
+  const ctx = target.kind === "cp"
+    ? { stream: "cp" as const, url: target.url }
     : {
-        stream: "workspace" as const,
+        stream: "wr" as const,
         workspaceId: target.workspaceId,
         ...(target.directory ? { directory: target.directory } : {}),
       }
@@ -353,7 +372,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const connections = new Map<string, () => void>()
   let stopped = false
 
-  const emitEvent = (input: string, address: StreamFrameAddress, source: "central" | "workspace") => {
+  const emitEvent = (input: string, target: ClaxedoEventStreamTarget) => {
+    const address = eventStreamFrameAddress(target)
+    const source: ClaxedoEventOrigin = target.kind
     try {
       const frame = JSON.parse(input) as unknown
       // The producer's own notice that frames between this reader's cursor and
@@ -363,11 +384,12 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // be read again, and the stream stays open.
       if (isStreamReplayGap(frame)) {
         requestSessionHistoryResync({ reason: "sse-gap" })
+        emitter.emit({ type: "stream.replay-gap" }, source)
         return
       }
       const event = normalizeClaxedoStreamEvent(frame, address)
       if (!event || event.type === "heartbeat") return
-      emitter.emit(event, source)
+      emitter.emit(stampWorkspace(event, target), source)
     } catch {
       // ignore parse errors
     }
@@ -379,7 +401,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
     const emitTestEvent = (event: ClaxedoEvent | { type: "heartbeat" }) => {
       if (!isClaxedoEvent(event) || event.type === "heartbeat") return
-      emitter.emit(event, "central")
+      emitter.emit(event, "cp")
     }
     target.__claxedoEmitTestEvent = emitTestEvent
     onCleanup(() => {
@@ -388,8 +410,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   }
 
   const connectTarget = (target: ClaxedoEventStreamTarget, accountState: AccountState) => {
-    const frameAddress = eventStreamFrameAddress(target)
     const state = {
+      // A `wr` target opens unscoped. A runtime that refuses the reader at
+      // workspace level (a share grantee) is asked again for the routed
+      // session, and the target stays session-scoped from then on.
+      scope: "workspace" as "workspace" | "session",
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
       reconnectTimer: null as ReturnType<typeof setTimeout> | null,
@@ -401,30 +426,26 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       lastEventId: null as string | null,
     }
 
-    // The workspace stream is one of the two lanes that carry a session's live
-    // frames, so the scope owner has to know whether it is open and for which
-    // session. A LOCAL workspace's stream is workspace-wide (`target.sessionID`
-    // is absent), which the owner reads as "carries every session".
-    const releaseLane = target.kind === "workspace"
-      ? registerSessionEventStreamLane("workspace-bus")
-      : undefined
+    // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
+    // carries that session's events.
+    const streamId: StreamSyncStreamId = target.kind === "cp" ? "cp" : `wr:${target.workspaceId}`
+    // The workspace stream carries a session's live frames, so the scope owner
+    // has to know whether it is open and for which session. Opened unscoped it
+    // carries every session; opened for a grantee it carries one.
+    const releaseLane = streamId === "cp" ? undefined : registerSessionEventStreamLane(streamId)
     const reportLaneOpen = () => {
-      if (target.kind !== "workspace") return
-      reportSessionEventStreamOpen("workspace-bus", target.sessionID)
+      if (streamId === "cp" || target.kind !== "wr") return
+      reportSessionEventStreamOpen(streamId, state.scope === "session" ? target.sessionID : undefined)
     }
     const reportLaneClosed = () => {
-      if (target.kind !== "workspace") return
-      reportSessionEventStreamClosed("workspace-bus")
+      if (streamId === "cp") return
+      reportSessionEventStreamClosed(streamId)
     }
 
     // Per-kind accounting: this stream's bit feeds BOTH the aggregate
     // `connected()` and, for the central target, `centralConnected()` — the edge
     // the doorbell consumers revalidate on.
     const setStreamConnected = connectivity.track(target.kind)
-
-    // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
-    // carries that session's events.
-    const streamId: StreamSyncStreamId = target.kind === "central" ? "central" : `workspace:${target.workspaceId}`
 
     const stepLifecycle = (event: StreamSyncLifecycleEvent) => {
       state.lifecycle = transitionStreamSyncLifecycle(state.lifecycle, event) ?? state.lifecycle
@@ -501,7 +522,14 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       void eventStreamFetch(target, {
         headers,
         signal: state.abort.signal,
-      }, { accountState }).then(async (res) => {
+      }, { accountState, scope: state.scope }).then(async (res) => {
+        if (res.status === 403 && target.kind === "wr" && target.sessionID && state.scope === "workspace") {
+          state.scope = "session"
+          await res.body?.cancel().catch(() => undefined)
+          state.abort = null
+          connect()
+          return
+        }
         if (!res.ok || !res.body) {
           // The relay seam maps a failed relay connection to a synthetic 502
           // whose BODY carries the underlying error (e.g. the real
@@ -518,7 +546,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // recovered workspace stream nudges `reconnecting → ready` (no-op unless
         // the authority had flipped to reconnecting). Readiness is owned by the
         // authority; this stream does not infer it.
-        if (target.kind === "workspace") markWorkspaceReconnected(target.workspaceId)
+        if (target.kind === "wr") markWorkspaceReconnected(target.workspaceId)
         resetHeartbeat()
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
@@ -554,7 +582,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
             if (!data) continue
             stepLifecycle("heartbeat")
             resetHeartbeat()
-            emitEvent(data, frameAddress, target.kind)
+            emitEvent(data, target)
           }
         }
         throw new Error("events stream closed")
@@ -586,7 +614,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           // A SUSTAINED workspace-stream outage nudges the authority
           // `ready → reconnecting` (queries park, NO teardown) — the first-N
           // transient failures stay quiet (BUG-8) and do NOT flip readiness.
-          if (target.kind === "workspace") markWorkspaceReconnecting(target.workspaceId)
+          if (target.kind === "wr") markWorkspaceReconnecting(target.workspaceId)
         } else if (escalation === "quiet") {
           console.debug("[claxedo-events] stream failed (transient, retrying)", diagnostic)
         }
@@ -630,9 +658,6 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // `session-event-scope` owns which session the scoped stream must carry;
       // the route is its standing input, not a second decider.
       sessionID: sessionEventScopeId(),
-      // …and the minted connection owns whether a scoped stream is the only
-      // kind this workspace's runtime serves.
-      sessionAuthority: workspaceSessionAuthority,
       projects: readProjectCatalog(props.serverUrl()),
       accountSigned,
     })
@@ -649,10 +674,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   }
 
   // This provider is the app's reader of the shell route for event purposes, so
-  // it is what publishes the route's session to `session-event-scope`. Both
-  // lanes then read one answer: this provider's workspace bus below, and the
-  // global-sdk provider's runtime-events stream, which mounts underneath and
-  // cannot see this one's closures.
+  // it is what publishes the route's session to `session-event-scope`; the
+  // composer, which mounts underneath and cannot see this one's closures, reads
+  // the same answer to know which stream must be open before its first prompt.
   const publishRouteScope = () => setSessionEventRouteScope(claxedoEventRouteSessionID(props.pathname()))
   publishRouteScope()
   createEffect(publishRouteScope)
@@ -681,7 +705,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
   const value: ClaxedoEventsContextValue = {
     on: emitter.on.bind(emitter),
-    listenCentral: emitter.listenCentral,
+    listen: emitter.listen,
     connected: connectivity.connected,
     centralConnected: connectivity.centralConnected,
   }

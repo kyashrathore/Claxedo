@@ -247,17 +247,10 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/workspaces/:workspaceId/sessions/:sessionId/repair",
     body: ["idempotencyKey", "reason", "expectedEventOrdinal"],
   },
-  // Central control-plane event bus. Consumed via stream IPC (`openStream`), not unary `run`.
-  "session.events": {
+  // Consumed via stream IPC (`openStream`), not unary `run`.
+  "controlPlane.events": {
     method: "GET",
-    path: "/api/wr/events",
-    headers: { lastEventId: "Last-Event-ID" },
-  },
-  // Per-session central runtime event bus (control plane, not post-mint RAT).
-  "session.runtimeEvents": {
-    method: "GET",
-    path: "/api/control/session/:sessionId/runtime-events",
-    query: ["parentSessionId"],
+    path: "/api/cp/events",
     headers: { lastEventId: "Last-Event-ID" },
   },
   // MAIN-ONLY. `publicKey` and `signature` are the machine identity, and the
@@ -513,8 +506,7 @@ export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
  * channels own the Response lifetime.
  */
 export const STREAM_HOSTED_OPERATIONS = [
-  "session.events",
-  "session.runtimeEvents",
+  "controlPlane.events",
 ] as const satisfies readonly HostedOperationName[]
 
 export function isStreamHostedOperation(name: string): name is (typeof STREAM_HOSTED_OPERATIONS)[number] {

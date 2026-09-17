@@ -7,7 +7,6 @@ import { conversationEventTypes } from "../../../features/session/conversation/c
 import { shellDataKeys } from "@/platform/sync/keys"
 import { classifyStreamEvent, routeDirectoryEvent, type DirectoryEventRouterSinks, type RoutableEvent } from "./event-router"
 import { sessionTodoCacheQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
-import { resetSessionHistoryResyncForTest, sessionHistoryResyncRequest } from "../../../features/session/store/session-history-resync"
 
 function event(type: string, properties: Record<string, unknown> = {}): RoutableEvent {
   return { type, properties }
@@ -143,24 +142,6 @@ describe("directory event router", () => {
     } finally {
       unsubscribe()
     }
-  })
-
-  test("a stream gap diagnostic asks the session's owner to re-read its history", () => {
-    resetSessionHistoryResyncForTest()
-    routeDirectoryEvent({
-      event: event("runtime.diagnostic", { sessionID: "ses_gap", code: "runtime.sse_replay_gap", message: "cursor gone", severity: "warn" }),
-      directory: "/tmp/ws",
-      sinks: routerSinks(),
-    })
-    expect(sessionHistoryResyncRequest()).toMatchObject({ directory: "/tmp/ws", sessionID: "ses_gap", reason: "sse-gap" })
-
-    resetSessionHistoryResyncForTest()
-    routeDirectoryEvent({
-      event: event("runtime.diagnostic", { sessionID: "ses_other", code: "runtime.contract_version_mismatch", message: "v2", severity: "error" }),
-      directory: "/tmp/ws",
-      sinks: routerSinks(),
-    })
-    expect(sessionHistoryResyncRequest()).toBeUndefined()
   })
 
   test("session deletion removes session-scoped queries and directory cache row", () => {

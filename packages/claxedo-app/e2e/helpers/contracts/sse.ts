@@ -1,21 +1,18 @@
 import { encodeSseData } from "../../../../agent-sdk-runtime/src/sse"
-import { connectedFrame } from "../../../../claxedo-local-server/src/shell/events"
 
 const decoder = new TextDecoder()
 
-/** Canonical SSE byte encoder shared by both real runtime stream families. */
+/** Canonical SSE byte encoder shared by both real streams. */
 export function sseFrame(payload: unknown, id?: string) {
   return decoder.decode(encodeSseData(payload, id))
 }
 
-export function centralStreamHeartbeat(lastEventId?: number) {
-  return sseFrame(connectedFrame(), String(lastEventId ?? 0))
-}
-
-export function workspaceStreamHeartbeat(lastEventId?: number) {
+/** The bootstrap frame `cp/events` opens with: a heartbeat carrying the resume cursor. */
+export function controlPlaneStreamHeartbeat(lastEventId?: number) {
   return sseFrame({ type: "heartbeat" }, String(lastEventId ?? 0))
 }
 
-export function runtimeStreamHeartbeat() {
-  return sseFrame({ type: "heartbeat" })
+/** The bootstrap frame `wr/events` opens with: a heartbeat carrying the resume cursor. */
+export function workspaceStreamHeartbeat(lastEventId?: number) {
+  return sseFrame({ type: "heartbeat" }, String(lastEventId ?? 0))
 }

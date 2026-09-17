@@ -1,15 +1,14 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { SubagentRegistry } from "./subagent-registry"
 import { sessionEventInfoId, sessionEventSummary } from "../data/sync/session-event-info"
 
 type SessionLifecycleEvent = { type: string; properties: unknown }
 
-export function applySubagentRuntimeEventEnvelope(
-  input: { sessionId: string; payload: AgentRuntimeEvent },
+export function applySubagentPresentationEvent(
+  event: Extract<AgentPresentationEvent, { type: "subagent.updated" }>,
   registry: SubagentRegistry,
 ) {
-  if (input.payload.type !== "subagent-updated") return false
-  registry.apply(input.sessionId, input.payload)
+  registry.apply(event.properties.sessionID, { type: "subagent-updated", ...event.properties.update })
   return true
 }
 

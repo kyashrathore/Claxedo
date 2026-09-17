@@ -10,7 +10,7 @@
  * optimistically (`addRegisteredConversationMessage` in `src/components/prompt-input/
  * submit.ts`) before any round-trip settles; `POST /session` then creates the session and
  * `POST /session/:id/prompt_async` returns 204 without waiting for the reply. The reply
- * arrives over `/global/event` SSE as `session.status busy` → `message.updated` pending →
+ * arrives over `/api/wr/events` SSE as `session.status busy` → `message.updated` pending →
  * `message.part.delta`* → `message.updated` completed → `session.idle`, and the URL moves
  * from the draft route onto the session's route once the session exists.
  *
@@ -22,7 +22,7 @@
  * server session (if one does not already exist for this draft); (3) `POST
  * /session/:id/prompt_async` dispatches the turn and returns `204` immediately — it does
  * NOT wait for the assistant reply; (4) the reply arrives asynchronously over
- * `/global/event` SSE as separate events (`session.status busy` → `message.updated`
+ * `/api/wr/events` SSE as separate events (`session.status busy` → `message.updated`
  * (pending) → `message.part.delta`* → `message.updated` (completed) →
  * `session.idle`); (5) the URL navigates from the draft route to the created session's
  * route once the session exists. Directory attachment lives in the URL's `:dir` segment

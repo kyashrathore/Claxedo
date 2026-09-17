@@ -91,7 +91,7 @@ type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventSource = {
   on: <T extends ClaxedoEventType>(
     type: T,
-    handler: (event: Extract<ClaxedoEvent, { type: T }>, origin: "central" | "workspace") => void,
+    handler: (event: Extract<ClaxedoEvent, { type: T }>, origin: "cp" | "wr") => void,
   ) => (() => void) | undefined
 }
 
@@ -162,26 +162,6 @@ async function retrySessionRevocationOperation<T>(
   return { completed: false }
 }
 
-const claxedoDirectoryEventTypes = [
-  "message.updated",
-  "message.part.updated",
-  "message.part.delta",
-  "message.completed",
-  "session.idle",
-  "session.error",
-  "session.status",
-  "session.updated",
-  "session.deleted",
-  "session.agent",
-  "todo.updated",
-  "permission.asked",
-  "permission.replied",
-  "question.asked",
-  "question.replied",
-  "question.rejected",
-  "session.diff",
-  "session.compacted",
-] as const
 
 export function normalizeClaxedoSessionLifecycleEvent(
   event: Extract<ClaxedoEvent, { type: "session.lifecycle" }>,
@@ -336,15 +316,6 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
     void invalidateSessionShareQueries().catch(() => undefined)
   })
-  const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
-    .map((type) => input.claxedoEvents?.on(type, (event, origin) => {
-      // Central directory events already enter through GlobalSDK's coalescer.
-      // Only workspace streams need this direct path; applying both appends
-      // each central text delta twice before the final snapshot corrects it.
-      if (origin === "central") return
-      applyClaxedoDirectoryEventToSync(input, event)
-    }))
-    .filter((cleanup): cleanup is () => void => !!cleanup)
   const detachProjectionSelfHeal = installSessionProjectionSelfHeal()
 
   return () => {
@@ -352,7 +323,6 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
     unsubscribeClaxedoShareChanged?.()
-    unsubscribeClaxedoDirectoryEvents.forEach((cleanup) => cleanup())
     detachProjectionSelfHeal()
   }
 }
@@ -460,66 +430,6 @@ async function handleSessionShareRevoked(
   }
 }
 
-function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extract<ClaxedoEvent, { type: typeof claxedoDirectoryEventTypes[number] }>) {
-  const directory = event.directory
-  if (!directory) return
-  if (event.type === "session.updated" || event.type === "session.deleted") {
-    const info = readField(event.properties, "info")
-    if (info) {
-      projectCanonicalSessionTitle({
-        writer: input.sessionTitles,
-        info,
-        type: event.type === "session.deleted" ? "deleted" : "updated",
-        directory,
-        // The bridged auto-title frame's `info` names no workspaceID, but the
-        // frame itself is workspace-stamped. Without this the canonical title
-        // lands only under the directory key, and a rail row attributed to the
-        // workspace (created-event rows carry `workspaceID`) keeps resolving
-        // the stale canonical published under its workspace key at create
-        // time — the session.lifecycle path below already passes it.
-        ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
-      })
-    }
-  }
-  if (!input.children.has(directory)) {
-    applyDirectoryEventToShellQueries({ event, directory })
-    applySessionStatusSseEvent({ event, directory })
-    return
-  }
-  routeDirectoryEvent({
-    event,
-    directory,
-    sinks: {
-      schedule: (event) => {
-        const projection = sessionProjectionEvent(event)
-        const backing = projection
-          ? sessionProjectionBacking(sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }))
-          : undefined
-        if (projection && backing) {
-          void scheduleSessionProjectionPull({
-            action: projection.action,
-            reason: projection.reason,
-            workspaceId: backing.workspaceId,
-            sessionId: projection.sessionId,
-            ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
-            idempotencyKey: `${projection.reason}:${backing.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
-          })
-        }
-        if (shouldInvalidateBootstrapFresh(event.type)) input.push(directory)
-      },
-      mark: () => input.children.mark(directory),
-      cache: () => input.children.sessionCache(directory),
-      push: input.push,
-      cacheSessions: (next) => {
-        input.cacheSessions(directory, {
-          limit: input.sessionCacheLimit(directory, next.limit),
-          total: next.total,
-          session: next.session,
-        })
-      },
-    },
-  })
-}
 
 function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: ClaxedoSessionLifecycleEvent) {
   if (event.phase === "created" && event.draftId && input.draftWasRolledBack(event.draftId)) return
@@ -740,16 +650,6 @@ function sessionProjectionEvent(input: unknown) {
     return {
       action: "checkpoint" as const,
       reason: "message-checkpoint" as const,
-      sessionId,
-      ...(ordinal === undefined ? {} : { expectedEventOrdinal: ordinal }),
-    }
-  }
-  const replayGap = (type === "harness-notice" && asString(event?.code) === "runtime.sse_replay_gap") ||
-    (type === "runtime.diagnostic" && asString(properties?.code) === "runtime.sse_replay_gap")
-  if (replayGap) {
-    return {
-      action: "repair" as const,
-      reason: "sse-gap" as const,
       sessionId,
       ...(ordinal === undefined ? {} : { expectedEventOrdinal: ordinal }),
     }

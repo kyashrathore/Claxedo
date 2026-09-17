@@ -377,35 +377,6 @@ function beginApiFetchDebug(input: string | URL | Request) {
   return debug
 }
 
-function signedRuntimeEventInput(input: string | URL | Request, init?: RequestInit) {
-  const url = new URL(apiFetchUrl(input), getClaxedoServerUrl())
-  if (url.pathname !== "/global/event" && url.pathname !== "/event") return { input, init }
-  // Unsigned local keeps the loopback engine stream. A bound bearer means this
-  // document is a signed client — including 127.0.0.1 e2e fixtures — so it must
-  // use the control-plane lifecycle bus. Skipping that rewrite for every
-  // `localUrl` left signed cloud subscribed to a dead `/global/event` path and
-  // rail rows never appeared from session.lifecycle.
-  if (localUrl(url.href) && !cfg.bearerToken) return { input, init }
-  url.pathname = "/api/wr/events"
-  if (input instanceof Request) {
-    return {
-      input: new Request(url, {
-        method: input.method,
-        headers: input.headers,
-        signal: input.signal,
-        cache: input.cache,
-        redirect: input.redirect,
-        credentials: input.credentials,
-        mode: input.mode,
-        referrer: input.referrer,
-        integrity: input.integrity,
-      }),
-      init,
-    }
-  }
-  return { input: url, init }
-}
-
 function throttleInit(init: RequestInit | undefined, input: string | URL | Request) {
   if (isEventStreamPath(input)) return bypassFetchThrottle(init ?? {})
   return init
@@ -497,9 +468,6 @@ export function getDefaultBaseUrl(): string {
  * causes every request to silently 401 and the panels never recover.
  */
 export async function authFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-  const eventInput = signedRuntimeEventInput(input, init)
-  input = eventInput.input
-  init = eventInput.init
   const apiFetchDebug = beginApiFetchDebug(input)
   const cache = localUrl(apiFetchUrl(input)) ? ("no-store" as const) : init?.cache
   const credentials = credentialsFor(apiFetchUrl(input), init?.credentials)

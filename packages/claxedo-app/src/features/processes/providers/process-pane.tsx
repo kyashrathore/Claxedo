@@ -396,7 +396,7 @@ const processPaneContextInput = {
     }
 
     // ── SSE event subscription ───────────────────────────────────────
-    // Process events come from claxedo-server via claxedoBus (flat structure).
+    // Process events are the workspace's control frames on its stream.
     // Subscribe via ClaxedoEventsProvider; fall back silently if unavailable.
     // Subscribed here (after openTerminalTab/pendingTabOpens are defined) so
     // the handler factory can close over them.

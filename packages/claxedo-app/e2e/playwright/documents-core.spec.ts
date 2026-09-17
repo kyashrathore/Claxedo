@@ -607,17 +607,14 @@ function annotate(testInfo: TestInfo, extra = "") {
 }
 
 function unexpectedCanaryConsoleErrors(messages: string[]) {
-  // `installMockRuntime` mocks the central event stream (`GET /api/wr/events`) only under
-  // the relay origin, so the local-mode path here reaches for a backend that is not
-  // running and retries. Sustained failure produces three distinct shapes — the browser's
-  // own "Failed to load resource", plus one error apiece from the two independent
-  // event-stream consumers — so all three are filtered, not just the loudest.
+  // The local-mode path here reaches for a backend that is not running and
+  // retries. Sustained failure produces distinct shapes — the browser's own
+  // "Failed to load resource", plus the stream reader's own error — so all of
+  // them are filtered, not just the loudest.
   return messages.filter(
     (message) =>
       !message.includes("Failed to load resource") &&
-      !message.startsWith("[claxedo-events] stream failed") &&
-      !message.startsWith("[global-sdk] event stream failed") &&
-      !message.startsWith("[global-sdk] runtime event stream failed"),
+      !message.startsWith("[claxedo-events] stream failed"),
   )
 }
 
@@ -628,7 +625,7 @@ function unexpectedCanaryRequestFailures(urls: string[]) {
   // this harness, so its background inventory requests keep their origin exemption.
   return urls.filter((value) => {
     const pathname = new URL(value).pathname
-    if (["/api/claxedo/events", "/api/wr/events", "/global/event", "/event"].includes(pathname)) return false
+    if (["/api/cp/events", "/api/wr/events"].includes(pathname)) return false
     return !value.includes("127.0.0.1:3001")
   })
 }

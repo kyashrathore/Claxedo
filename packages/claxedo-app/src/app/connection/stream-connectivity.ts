@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js"
 
-export type StreamKind = "central" | "workspace"
+export type StreamKind = "cp" | "wr"
 
 /**
  * Per-kind connectedness for the Claxedo event streams.
@@ -40,7 +40,7 @@ export function createStreamConnectivity() {
         const delta = value ? 1 : -1
         total += delta
         setConnected(total > 0)
-        if (kind !== "central") return
+        if (kind !== "cp") return
         central += delta
         setCentralConnected(central > 0)
       }

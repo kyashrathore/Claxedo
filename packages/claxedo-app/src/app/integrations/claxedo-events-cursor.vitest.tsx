@@ -65,7 +65,7 @@ describe("ClaxedoEventsProvider reconnects", () => {
     transport.request.mockResolvedValue(stream.response)
     function Consumer() {
       const events = useClaxedoEvents()
-      unsubscribe = events.listenCentral((event) => shared.push(event))
+      unsubscribe = events.listen((event) => shared.push(event))
       events.on("session.updated", (event) => typed.push(event))
       return null
     }

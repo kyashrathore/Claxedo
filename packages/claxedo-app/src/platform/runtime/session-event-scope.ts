@@ -1,68 +1,55 @@
 /**
- * The single owner of "which session's event streams must be open, and are
- * they open yet".
+ * The single owner of "which session's live frames must be streaming, and are
+ * they yet".
  *
- * Two app-side lanes carry a session's live frames, and each is opened by its
- * own provider:
+ * A session's live frames — its parts, deltas, tool state, lifecycle — ride
+ * its workspace runtime's `wr/events`, opened by `ClaxedoEventsProvider`
+ * (`app/integrations/claxedo-events.tsx`) once per open workspace. The
+ * workspace's owner reads it unscoped and sees every session; a share grantee
+ * is refused at workspace level and re-opens it for one session, so the
+ * stream then carries exactly one session and something has to say which.
  *
- *  - `workspace-bus` — `app/integrations/claxedo-events.tsx` reading
- *    `/api/wr/events`. Carries `session.lifecycle`, `session.updated`,
- *    `agent.lifecycle` and the pty/process frames.
- *  - `runtime-events` — `app/providers/global-sdk/provider.tsx` reading
- *    `/api/wr/runtime-events?parentSessionId=…`. Carries the message parts and
- *    deltas of a turn.
- *
- * A relay-backed (cloud / user-hosted) runtime composes `sessionAuthority:
- * "managed-private"`, and `authorizeSessionEventScope` in workspace-runtime
- * answers an UNSCOPED workspace stream on such a runtime with
- * `400 session_event_scope_required`. Those streams are therefore opened for
- * exactly one session id, and something has to say which one. Deriving it from
- * the shell route alone means the stream can only exist once the route names a
- * real session — after a first turn's session has already been created — so
- * frames published in between are lost: `/api/wr/events` serves a cursor-less
- * connection nothing from its replay buffer, and `/api/wr/runtime-events`
- * withholds the turn's frames until it opens and then flushes them in one late
- * burst.
- *
- * So the scope is owned here instead, with two writers and one answer: the
- * composer publishes the session id it just created through
+ * Deriving that session from the shell route alone means the stream can only
+ * exist once the route names a real session — after a first turn's session
+ * has already been created — so frames published in between are lost: a
+ * cursor-less connection is served nothing from the replay ring. So the scope
+ * is owned here instead, with two writers and one answer: the composer
+ * publishes the session id it just created through
  * {@link holdSessionEventScope} before it dispatches that session's first
  * prompt, and the route's reader publishes the shell route's session through
- * {@link setSessionEventRouteScope} on every navigation. The route wins whenever
- * it names a session, because a navigation to another session is the user moving
- * on; the held id only bridges the draft route, where the route names no session
- * at all.
+ * {@link setSessionEventRouteScope} on every navigation. The route wins
+ * whenever it names a session, because a navigation to another session is
+ * the user moving on; the held id only bridges the draft route, where the
+ * route names no session at all.
  *
- * Both lanes READ that answer — {@link sessionEventScopeId} is reactive, so a
- * navigation retargets both. That is what makes an ATTACH (reaching a running
- * session by its route rather than creating it in the composer) open the same
- * lanes a create does.
+ * The reader reads that answer — {@link sessionEventScopeId} is reactive, so
+ * a navigation retargets the scoped stream — and reports each workspace's
+ * stream open or closed here, keyed by stream, with the session it is scoped
+ * to. The composer awaits {@link whenSessionEventStreamsOpen} before its
+ * first prompt so the turn's frames arrive live rather than as a late burst.
+ * The composer cannot share the reader's closures for this: it mounts
+ * underneath. This is the same single-writer platform module the connection
+ * state already uses (`stream-sync-status.ts`,
+ * `features/workspaces/data/workspace-connection.ts`).
  *
- * The two providers cannot share one of their own closures for this: the events
- * provider mounts ABOVE the global-sdk provider (`app/entry/app.tsx`'s
- * `AuthenticatedProviders` wraps `RuntimeProviders`), so neither can read the
- * other. This is the same single-writer platform module the connection state
- * already uses (`stream-sync-status.ts`, `features/workspaces/data/workspace-connection.ts`).
- *
- * A LOCAL (loopback) workspace needs no bridging: its runtime is unmanaged, so
- * its `/api/wr/events` stream is workspace-wide and already carries every
- * session's frames. That lane reports itself open with NO session id, and a
- * lane open without a session id satisfies readiness for any session — which is
- * why local needs no branch of its own here or in the composer.
+ * A stream open with NO session id is workspace-wide and satisfies readiness
+ * for any session — which is why a local workspace, whose runtime is
+ * unmanaged, needs no branch of its own here or in the composer.
  */
 
 import { createEffect, createMemo, createRoot } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 
-export type SessionEventStreamLane = "workspace-bus" | "runtime-events"
+/** One workspace runtime's stream, keyed the way `stream-sync-status` keys it. */
+export type SessionEventStreamLane = `wr:${string}`
 
 type LaneState = {
-  /** A provider is driving this lane, so readiness waits for it. */
+  /** The reader is driving this stream, so readiness waits for it. */
   registered: boolean
   /**
-   * The scope of the stream this lane currently has open: the session id for a
+   * The scope of the stream currently open: the session id for a
    * session-scoped stream, the empty string for a workspace-wide one that
-   * carries every session. Absent while the lane has no open stream.
+   * carries every session. Absent while the stream is not open.
    */
   open?: string
 }
@@ -86,11 +73,10 @@ const [scopeState, setScopeState] = createStore<SessionEventScopeState>({ lanes:
  * once the navigation lands. Reading `route ?? held` directly tracks both store
  * fields, so the second write re-notifies with an answer that never changed —
  * and a reader that treats the notification as a retarget tears its stream down
- * and reopens it with no cursor. The workspace bus and the compat stream are
- * served their whole retained log for a cursor-less connection, so every frame
- * already applied arrived a second time (a finished turn's `session.idle`
- * replayed, playing the completion sound twice). Settling by value means an
- * unchanged answer wakes nobody.
+ * and reopens it with no cursor. A reopened session-scoped stream re-reads
+ * from its retained ring, so every frame already applied arrived a second
+ * time (a finished turn's `session.idle` replayed, playing the completion
+ * sound twice). Settling by value means an unchanged answer wakes nobody.
  */
 const scopeId = createRoot(() => createMemo(() => scopeState.route ?? scopeState.held))
 
@@ -115,22 +101,16 @@ export function setSessionEventRouteScope(routeSessionId?: string): void {
 }
 
 /**
- * The session the scoped streams must carry, read reactively — and woken only
- * when that session changes, whichever writer supplied it.
- *
- * The route is authoritative whenever it names a session: opening a different
- * session is the user moving on from the one the composer published. Both lanes
- * read THIS rather than deriving their own answer — the runtime-events lane used
- * to derive its session from the live-session the history fetch happened to
- * mark, so a session reached by navigation (an attach) opened no lane until a
- * fetch had already run, and its turn's deltas were only ever seen as a whole
- * completed turn on the next refetch.
+ * The session a scoped stream must carry, read reactively — and woken only
+ * when that session changes, whichever writer supplied it. The route is
+ * authoritative whenever it names a session: opening a different session is
+ * the user moving on from the one the composer published.
  */
 export function sessionEventScopeId(): string | undefined {
   return scopeId()
 }
 
-/** Declares that a provider drives this lane, so readiness waits for it. */
+/** Declares that the reader drives this stream, so readiness waits for it. */
 export function registerSessionEventStreamLane(lane: SessionEventStreamLane): () => void {
   setScopeState("lanes", lane, { registered: true })
   return () => setScopeState("lanes", produce((lanes) => {
@@ -139,19 +119,19 @@ export function registerSessionEventStreamLane(lane: SessionEventStreamLane): ()
 }
 
 /**
- * Reports the lane's stream as open. `sessionId` is the session the stream is
- * scoped to; omit it for a workspace-wide stream, which carries every session.
+ * Reports the stream as open. `sessionId` is the session the stream is scoped
+ * to; omit it for a workspace-wide stream, which carries every session.
  */
 export function reportSessionEventStreamOpen(lane: SessionEventStreamLane, sessionId?: string): void {
   setScopeState("lanes", lane, "open", sessionId?.trim() || WORKSPACE_WIDE)
 }
 
-/** Reports the lane's stream as no longer open (connect failure, teardown, retarget). */
+/** Reports the stream as no longer open (connect failure, teardown, retarget). */
 export function reportSessionEventStreamClosed(lane: SessionEventStreamLane): void {
   setScopeState("lanes", lane, "open", undefined)
 }
 
-/** True once every registered lane has a stream open that carries `sessionId`. */
+/** True once every registered stream is open and carries `sessionId`. */
 export function sessionEventStreamsOpen(sessionId: string | undefined): boolean {
   for (const lane of Object.values(scopeState.lanes)) {
     if (!lane?.registered) continue
@@ -189,7 +169,7 @@ export function whenSessionEventStreamsOpen(
   })
 }
 
-/** Test seam: drops every lane registration, open report and published scope. */
+/** Test seam: drops every stream registration, open report and published scope. */
 export function resetSessionEventScope(): void {
   setScopeState({ held: undefined, route: undefined, lanes: {} })
 }

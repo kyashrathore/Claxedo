@@ -175,7 +175,7 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     // `cloud_runtime_unavailable`. Recorded so the tests can assert the rendered list never
     // depended on any of it.
     if (path.startsWith("/api/wr/") || path.startsWith(`/workspaces/${WORKSPACE_ID}/`)) {
-      if (path.endsWith("/events") || path.endsWith("/runtime-events")) return sse(route, { type: "heartbeat" })
+      if (path.endsWith("/api/wr/events")) return sse(route, { type: "heartbeat" })
       if (path.includes("/session")) state.runtimeSessionProbes.push(`${path}${url.search}`)
       return json(route, { error: { code: "cloud_runtime_unavailable", message: "Cloud workspace runtime is unavailable" } }, 409)
     }
@@ -315,9 +315,7 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     if (path === "/config") return json(route, { provider: { id: "opencode", model: "big-pickle" }, agent: { id: "build" } })
     if (path === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
     if (path === "/mcp" || path === "/command") return json(route, [])
-    if (path === "/global/event" || path === "/event" || path === "/api/claxedo/events") {
-      return sse(route, { directory: "global", payload: { type: "server.connected", properties: {} } })
-    }
+    if (path === "/api/cp/events") return sse(route, { type: "heartbeat" })
     if (path.startsWith("/api/claxedo/agent-config/")) {
       if (path.endsWith("/harness")) return json(route, { type: "opencode", model: "big-pickle", status: "ready", ready: true })
       return json(route, [])

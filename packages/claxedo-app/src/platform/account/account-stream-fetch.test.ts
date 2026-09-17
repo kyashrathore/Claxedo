@@ -93,7 +93,7 @@ describe("openAccountStreamResponse", () => {
       },
     })
 
-    const response = await openAccountStreamResponse({ operation: "session.events" })
+    const response = await openAccountStreamResponse({ operation: "controlPlane.events" })
 
     expect(await response.text()).toBe("first frame")
     expect(h.closes).toEqual(["stream_1"])
@@ -109,7 +109,7 @@ describe("openAccountStreamResponse", () => {
       },
     })
 
-    const response = await openAccountStreamResponse({ operation: "session.events" })
+    const response = await openAccountStreamResponse({ operation: "controlPlane.events" })
 
     await expect(response.text()).rejects.toThrow("stream refused")
     expect(h.closes).toEqual(["stream_1"])
@@ -125,7 +125,7 @@ describe("openAccountStreamResponse", () => {
       },
     })
 
-    await expect(openAccountStreamResponse({ operation: "session.events" })).rejects.toThrow("unknown account stream")
+    await expect(openAccountStreamResponse({ operation: "controlPlane.events" })).rejects.toThrow("unknown account stream")
 
     expect(h.closes).toEqual(["stream_1"])
     expect(h.chunks.size).toBe(0)
@@ -138,7 +138,7 @@ describe("openAccountStreamResponse", () => {
     const abort = new AbortController()
     abort.abort(new Error("caller stopped"))
 
-    await expect(openAccountStreamResponse({ operation: "session.events", signal: abort.signal })).rejects.toThrow(
+    await expect(openAccountStreamResponse({ operation: "controlPlane.events", signal: abort.signal })).rejects.toThrow(
       "caller stopped",
     )
 

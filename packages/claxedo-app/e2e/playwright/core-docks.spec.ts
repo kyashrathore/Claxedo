@@ -153,7 +153,7 @@ function composerTextbox(page: Page) {
 }
 
 test.describe("core docks — permission @core", () => {
-  test("an approved Codex permission stays absent after switching sessions and replaying runtime events", async ({ page }, testInfo) => {
+  test("an approved Codex permission stays absent after switching sessions and a late replay of its request", async ({ page }, testInfo) => {
     const otherSessionId = "ses_permission_other"
     const mock = await installMockRuntime(page, {
       dir: DIR, sessionId: SESSION_ID, harness: "codex-app-server",
@@ -178,20 +178,22 @@ test.describe("core docks — permission @core", () => {
     mock.emit({ type: "permission.replied", properties: { sessionID: SESSION_ID, requestID: requestId } })
     await expect(permissionDock(page)).toHaveCount(0)
     const otherRow = await expectRailRowVisible({ page, sessionId: otherSessionId })
-    const otherStream = page.waitForResponse(response => {
-      const url = new URL(response.url())
-      return url.pathname.endsWith("/api/wr/runtime-events") && url.searchParams.get("parentSessionId") === otherSessionId && response.status() === 200
-    })
     await otherRow.click()
     await expect(page).toHaveURL(sessionUrlPattern(otherSessionId))
-    await otherStream
     await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-docks", scenario: `permission-other-${testInfo.repeatEachIndex}` })
+    // The request's frame arrives again, late, on the workspace stream — the
+    // shape a retained replay takes after a reconnect — while another session
+    // is on screen. The stream is workspace-wide, so this reader receives it.
+    const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/events") && response.status() === 200 && (await response.text()).includes(requestId))
+    mock.emitRuntime({
+      directory: DIR, sessionId: SESSION_ID,
+      payload: { type: "permission-request", requestId, tool: "command", paths: ["/tmp/qa-permission"], details: { command: "printf QA > /tmp/qa-permission" } },
+    })
+    await replay
     const row = await expectRailRowVisible({ page, sessionId: SESSION_ID })
     const samples = await sampleElementDuringAction(page, '[data-component="dock-prompt"][data-kind="permission"]', async () => {
-      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/runtime-events") && response.status() === 200 && (await response.text()).includes(requestId))
       await row.click()
       await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
-      await replay
       await expectAssistantReplyVisible(page, "ack 1: permission replay probe", { spec: "core-docks", scenario: `permission-return-${testInfo.repeatEachIndex}` })
     })
     await writeFile(testInfo.outputPath("permission-return-frames.json"), JSON.stringify(samples, null, 2))
@@ -398,23 +400,25 @@ test.describe("core docks — question wizard @core", () => {
     })
     await expect(questionDock(page)).toBeVisible({ timeout: 20_000 })
     const otherRow = await expectRailRowVisible({ page, sessionId: otherSessionId })
-    const otherStream = page.waitForResponse(response => {
-      const url = new URL(response.url())
-      return url.pathname.endsWith("/api/wr/runtime-events") && url.searchParams.get("parentSessionId") === otherSessionId
-    })
     await otherRow.click()
     await expect(page).toHaveURL(sessionUrlPattern(otherSessionId))
-    await otherStream
     await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-docks", scenario: `runtime-question-other-${testInfo.repeatEachIndex}` })
     // A client that misses the resolution must reconcile the empty server list
-    // before displaying a cached request or replaying the retained question.
+    // before displaying a cached request or a late replay of the retained question.
     mock.clearPendingQuestion(requestId)
+    const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/events") && response.status() === 200 && (await response.text()).includes(requestId))
+    mock.emitRuntime({
+      directory: DIR, sessionId: SESSION_ID,
+      payload: {
+        type: "question", harness: "codex", requestId,
+        questions: [{ text: "Which QA color?", header: "QA color", options: ["TEAL"] }],
+      },
+    })
+    await replay
     const row = await expectRailRowVisible({ page, sessionId: SESSION_ID })
     const samples = await sampleElementDuringAction(page, '[data-component="dock-prompt"][data-kind="question"]', async () => {
-      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/runtime-events") && response.status() === 200 && (await response.text()).includes(requestId))
       await row.click()
       await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
-      await replay
       await expectAssistantReplyVisible(page, "ack 1: runtime question replay probe", { spec: "core-docks", scenario: `runtime-question-return-${testInfo.repeatEachIndex}` })
     })
     await writeFile(testInfo.outputPath("runtime-question-return-frames.json"), JSON.stringify(samples, null, 2))
@@ -451,7 +455,7 @@ test.describe("core docks — question wizard @core", () => {
     const row = await expectRailRowVisible({ page, sessionId: SESSION_ID })
     const samples = await sampleElementDuringAction(page, '[data-component="dock-prompt"][data-kind="question"]', async () => {
       const nextEventBatch = page.waitForResponse(response =>
-        /\/(events|runtime-events)$/.test(new URL(response.url()).pathname)
+        new URL(response.url()).pathname.endsWith("/api/wr/events")
         && response.status() === 200
         && response.headers()["content-type"]?.includes("text/event-stream"),
       )

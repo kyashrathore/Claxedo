@@ -19,7 +19,7 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
-import type { LiveSession } from "../global-sdk-event-fetch"
+import type { LiveSession } from "./live-session"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 
 export function initialRouteDirectory() {

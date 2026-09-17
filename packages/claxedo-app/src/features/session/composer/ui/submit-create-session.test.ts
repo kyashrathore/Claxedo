@@ -199,7 +199,7 @@ describe("acquireSubmitSessionTarget", () => {
 
   test("the created session's streams are not open yet when the caller returns, so the prompt waits", async () => {
     resetSessionEventScope()
-    registerSessionEventStreamLane("runtime-events")
+    registerSessionEventStreamLane("wr:ws_1")
     try {
       const target = await acquireSessionTarget({
         replaceSession: true,
@@ -215,7 +215,7 @@ describe("acquireSubmitSessionTarget", () => {
       await Promise.resolve()
       expect(dispatched).toBe(false)
 
-      reportSessionEventStreamOpen("runtime-events", "created-1")
+      reportSessionEventStreamOpen("wr:ws_1", "created-1")
       await prompt
       expect(dispatched).toBe(true)
     } finally {

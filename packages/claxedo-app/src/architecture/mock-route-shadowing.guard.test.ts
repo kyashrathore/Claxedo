@@ -93,8 +93,8 @@ describe("mock-runtime route shadowing", () => {
       ["**/session/*", "http://h/session/ses_a/config", false],
       ["**/session/status**", "http://h/session/status?directory=%2Ftmp", true],
       ["**/session/status", "http://h/session/status?directory=%2Ftmp", false],
-      ["**/event?**", "http://h/global/event?x=1", true],
-      ["**/global/event?**", "http://h/event?x=1", false],
+      ["**/events?**", "http://h/wr/events?x=1", true],
+      ["**/wr/events?**", "http://h/events?x=1", false],
       ["**/api/claxedo/agent-config/harness**", "http://h/api/claxedo/agent-config/harness/options", true],
     ]
     const offenders = cases

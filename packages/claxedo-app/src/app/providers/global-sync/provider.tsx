@@ -488,7 +488,7 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
 
   onMount(() => {
     queueMicrotask(() => {
-      void globalSDK.event.start()
+      globalSDK.event.start()
     })
     const loopback = centralTransportForServer(globalSDK.url) === "loopback"
     void (loopback

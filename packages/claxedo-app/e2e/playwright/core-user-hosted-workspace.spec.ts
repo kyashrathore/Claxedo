@@ -315,24 +315,14 @@ async function installUserHostedRuntimeMock(
     idleRuntimeSession?: boolean
   },
 ) {
-  const provisioningBus = new Bus<Record<string, unknown>>()
-  const sessionBus = new Bus<Record<string, unknown>>()
-  // The canonical-contract runtime-events lane. A ready user-hosted (workspace-relay)
-  // session consumes live turn events ONLY through global-sdk's runtime loop
-  // (`startRuntimeEvents`, src/app/providers/global-sdk/provider.tsx), which fetches
-  // `${relayUrl}/workspaces/:id/api/wr/runtime-events` and reads each frame with
-  // `runtimeEnvelope` — a `{contractVersion, directory, sessionId,
-  // assistantMessageId?, payload: AgentRuntimeEvent}` shape run through
-  // `createClientPresentationProjection`. For a workspace-routed session the classic
-  // `/global/event` loop goes idle, so this lane is the ONLY channel that drives the
-  // turn. Frames go here, NOT on `sessionBus` (whose `/global/event` route the app
-  // never polls for this route shape).
-  const runtimeBus = new Bus<Record<string, unknown>>()
-  // The FLAT workspace bus (`/api/wr/events`). The host's daemon composes the
-  // unbound local session policy, so it serves this stream WORKSPACE-WIDE: it
-  // carries `pty.*`, `process.*`, `agent.lifecycle` and `session.lifecycle`,
-  // none of which belong to a session, and a route with no session (a terminal)
-  // has to be able to open it.
+  // The workspace runtime's one stream, `${relayUrl}/workspaces/:id/api/wr/events`.
+  // The host's daemon composes the unbound local session policy, so it serves
+  // it WORKSPACE-WIDE to its owner: every session's projected turn frames
+  // (`{ directory, payload }` presentation events, projected on the HOST from
+  // the harness's raw runtime frames by `createClientPresentationProjection`),
+  // and the workspace's control frames — `pty.*`, `process.*`, `agent.lifecycle`,
+  // `session.lifecycle` — which belong to no session and which a route with no
+  // session (a terminal) has to be able to open.
   const workspaceBus = new Bus<Record<string, unknown>>()
   let sessionCreated = opts.existingRuntimeSession ?? false
   let sessionBusy = false
@@ -344,7 +334,7 @@ async function installUserHostedRuntimeMock(
   // workspace-runtime `session/service.ts`), which is after this client read
   // the transcript, and nothing refetches it — the behavior below asserts the
   // refetch count never moves. So the reply's row and its text both have to
-  // arrive on the runtime-events lane or not at all.
+  // arrive on the workspace stream or not at all.
   let messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> =
     opts.existingRuntimeSession
       ? [
@@ -361,11 +351,8 @@ async function installUserHostedRuntimeMock(
     promptCount: 0,
     healthProbeCount: 0,
     mintCount: 0,
-    /** GETs of `/workspaces/:id/api/wr/runtime-events` — proof the emitter is actually consumed. */
-    runtimeEventsPollCount: 0,
+    /** The raw runtime frames the host projected a turn from, in order. */
     runtimeFramesEmitted: [] as Array<Record<string, unknown>>,
-    /** `?parentSessionId=` of every `/api/wr/runtime-events` GET, in order. */
-    runtimeEventsParents: [] as Array<string | null>,
     /** `?sessionID=` of every `/api/wr/events` GET, in order (`null` = workspace-wide). */
     workspaceEventScopes: [] as Array<string | null>,
     /**
@@ -374,8 +361,6 @@ async function installUserHostedRuntimeMock(
      * off the wire can resume from beyond it.
      */
     workspaceEventCursors: [] as number[],
-    /** The same receipt for `/api/wr/runtime-events`. */
-    runtimeEventCursors: [] as number[],
     /** GETs of `/session/:id/message` — the whole-turn refetch path. */
     messageFetchCount: 0,
     relayHits: [] as string[],
@@ -389,8 +374,7 @@ async function installUserHostedRuntimeMock(
     hostPathScopes: [] as string[],
   }
   let ready = false
-
-  provisioningBus.emit({ directory: "global", payload: { type: "server.connected", properties: {} } })
+  const attachedTurnProjections = new Map<string, ReturnType<typeof createClientPresentationProjection>>()
 
   const sessionConfig = () => ({
     harness: { id: "pi", access: "native" },
@@ -492,11 +476,7 @@ async function installUserHostedRuntimeMock(
       // project metadata, unrelated to the per-workspace runtime lane.
       return json(route, projectRow())
     }
-    if (url.pathname === "/global/event" || url.pathname === "/event") {
-      const batch = await provisioningBus.drain(4000, lastEventId(route))
-      return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
-    }
-    // ---- Control-plane session inventory + central event stream (bare
+    // ---- Control-plane session inventory + notice stream (bare
     // origin, always — independent of any workspace's connect/ready state;
     // `src/context/global-sync/inventory-source.ts` and
     // `src/providers/claxedo-events.tsx`). Not part of the per-workspace runtime
@@ -516,15 +496,12 @@ async function installUserHostedRuntimeMock(
       return json(route, { harness: selected, activeHarness: selected, model: BIG_PICKLE.id, ok: true, status: "ready", ready: true })
     }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
-    // One central stream under three spellings, exactly as both real servers mount it:
-    // claxedo-local-server's compat-routes and claxedo-server's hosted/shell.ts each map
-    // `/global/event`, `/api/wr/events` and `/api/claxedo/events` onto a single handler.
-    // `ClaxedoEventsProvider` opens `/api/claxedo/events` for a signed account; leaving
-    // that spelling unanswered does not silence a stream, it makes the provider retry a
-    // rejected fetch for the life of the page and charge every attempt to the
-    // bare-origin count.
-    if (url.pathname === "/api/wr/events" || url.pathname === "/api/claxedo/events") {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
+    // The control plane's notice stream. `ClaxedoEventsProvider` opens it on
+    // every signed page; leaving it unanswered does not silence a stream, it
+    // makes the provider retry a rejected fetch for the life of the page and
+    // charge every attempt to the bare-origin count.
+    if (url.pathname === "/api/cp/events") {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
     }
     // Session share grants (`listSessionShares`, src/features/session/data/
     // session-share-api.ts → GET /api/control/sessions/:id/shares?workspaceId=…).
@@ -643,39 +620,14 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      // The canonical-contract turn lane (see `runtimeBus` above). Frames are served from
-      // the cursor-resumed log and already carry the full
-      // `{contractVersion, directory, sessionId, assistantMessageId, payload}`
-      // envelope the consumer expects, so they go on the wire verbatim.
-      if (runtimePath === "/api/wr/runtime-events") {
-        requests.runtimeEventsPollCount += 1
-        const parentSessionId = url.searchParams.get("parentSessionId")
-        requests.runtimeEventsParents.push(parentSessionId)
-        requests.runtimeEventCursors.push(lastEventId(route))
-        const batch = await runtimeBus.drain(4000, lastEventId(route))
-        // `allows()` in workspace-runtime routes/events.ts: a `parentSessionId`
-        // request receives that parent's frames and no others.
-        const scoped = parentSessionId
-          ? batch.filter((entry) => (entry.payload as { sessionId?: unknown }).sessionId === parentSessionId)
-          : batch
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(scoped) }).catch(() => {})
-      }
-      // The flat workspace bus. Recorded with its scope so a spec can prove the
-      // app opened the WORKSPACE-WIDE form this runtime actually serves rather
-      // than a session-scoped one a session-less route could never open.
+      // The workspace's stream (see `workspaceBus` above). Recorded with its
+      // scope so a spec can prove the app opened the WORKSPACE-WIDE form this
+      // runtime serves its owner rather than a session-scoped one a
+      // session-less route could never open.
       if (runtimePath === "/api/wr/events") {
         requests.workspaceEventScopes.push(url.searchParams.get("sessionID"))
         requests.workspaceEventCursors.push(lastEventId(route))
         const batch = await workspaceBus.drain(4000, lastEventId(route))
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
-      }
-      // The legacy runtime-events alias carries nothing here, so a bare
-      // heartbeat is correct.
-      if (runtimePath === "/api/claxedo/runtime-events") {
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
-      }
-      if (runtimePath === "/global/event" || runtimePath === "/event") {
-        const batch = await sessionBus.drain(4000, lastEventId(route))
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }
       if (runtimePath === "/session/status") {
@@ -742,25 +694,17 @@ async function installUserHostedRuntimeMock(
         ]
         await route.fulfill({ status: 204, body: "" })
 
-        // Fire-and-forget: emit the turn as AgentRuntimeEvent frames on the
-        // runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
-        // (src/app/providers/global-sdk/runtime-envelope.ts) validates — the
-        // canonical `contractVersion`,
-        // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
-        // `AgentRuntimeEvent` variant — then handed to `createClientPresentationProjection`.
-        // The `session-status: busy` → `finish` pair drives the app's turn
-        // busy→settled transition, and the settle re-fetches the message list over
-        // the relay lane (which now carries the `${userID}_r` assistant row), which
-        // is what renders the reply through the real projection path.
-        // What the HOST persists for this turn is what its own compat projection
-        // produced from these very frames: `createTurnEventProjector`
-        // (agent-sdk-runtime) appends every `projection.ingest(...)` event to the
-        // runtime store, and `GET /session/:id/message` reads that store back. So
-        // the settled reply's PART carries the projection's part id, and running
-        // the same projection here is how this mock keeps that identity instead of
-        // inventing one. An invented id makes the settle look like a SECOND part of
-        // the same reply beside the one the client streamed — a duplicate the real
-        // runtime never produces.
+        // Fire-and-forget: drive the turn the way the HOST does — the harness's
+        // raw `AgentRuntimeEvent` frames go through the host's own compat
+        // projection (`createTurnEventProjector`, agent-sdk-runtime), and what
+        // that projection produces is BOTH what the runtime store persists (so
+        // `GET /session/:id/message` reads it back) AND what `wr/events`
+        // carries to this client. Running the one projection here for both is
+        // how the mock keeps the streamed part and the settled part the same
+        // identity; an invented id would make the settle look like a SECOND
+        // part beside the one the client streamed — a duplicate the real runtime
+        // never produces. The projected `session.status busy` → `message.completed`
+        // + `session.idle` pair drives the app's turn busy→settled transition.
         const hostProjection = createClientPresentationProjection({
           sessionId: SESSION_ID,
           directory: HOST_DIR,
@@ -768,7 +712,8 @@ async function installUserHostedRuntimeMock(
         })
         const persistedParts = new Map<string, { id: string; sessionID: string; messageID: string; type: string; text: string }>()
         const persistCompat = (payload: Record<string, unknown>) => {
-          for (const { payload: event } of hostProjection.ingest(payload as never)) {
+          const projected = hostProjection.ingest(payload as never).map((event) => event.payload)
+          for (const event of projected) {
             if (event.type === "message.part.updated") {
               const part = event.properties.part as { id: string; type: string; text?: string }
               if (part.type !== "text") continue
@@ -785,23 +730,22 @@ async function installUserHostedRuntimeMock(
             const existing = persistedParts.get(event.properties.partID)
             if (existing) existing.text += event.properties.delta
           }
+          return projected
         }
         const emitFrame = (payload: Record<string, unknown>) => {
-          const frame = {
+          requests.runtimeFramesEmitted.push({
             contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
-            // A runtime stamps every frame with its OWN filesystem path — see
-            // `HOST_DIR`. Addressing the frame as the workspace is the CLIENT's
-            // job (`eventStreamFrameAddress` / `eventDirectoryForLiveSession`),
-            // so emitting the workspace id here would hide that translation and
-            // let a change in it pass unnoticed.
             directory: HOST_DIR,
             sessionId: SESSION_ID,
             assistantMessageId: assistantID,
             payload,
-          }
-          requests.runtimeFramesEmitted.push(frame)
-          persistCompat(payload)
-          runtimeBus.emit(frame)
+          })
+          // A runtime stamps every frame with its OWN filesystem path — see
+          // `HOST_DIR`. Addressing the frame as the workspace is the CLIENT's
+          // job (`eventStreamFrameAddress` / `eventDirectoryForLiveSession`),
+          // so emitting the workspace id here would hide that translation and
+          // let a change in it pass unnoticed.
+          for (const event of persistCompat(payload)) workspaceBus.emit({ directory: HOST_DIR, payload: event })
         }
 
         void (async () => {
@@ -903,20 +847,31 @@ async function installUserHostedRuntimeMock(
   return {
     requests,
     /**
-     * Publishes one canonical-contract frame on the session-scoped runtime-events lane,
-     * exactly as a turn started on the HOST (not by this client's composer)
-     * reaches an attached viewer.
+     * Feeds one raw runtime frame to the HOST's projection for a turn nobody
+     * here started, and publishes what it projects on the workspace stream —
+     * exactly how such a turn reaches an attached viewer. The host's projector
+     * announces the assistant row the parts hang from: `AgentRuntimeEvent` has
+     * no message variant, so the row can come from nowhere else.
      */
     emitRuntimeFrame(payload: Record<string, unknown>, input: { assistantMessageId: string }) {
-      const frame = {
+      requests.runtimeFramesEmitted.push({
         contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
         directory: HOST_DIR,
         sessionId: SESSION_ID,
         assistantMessageId: input.assistantMessageId,
         payload,
+      })
+      let projection = attachedTurnProjections.get(input.assistantMessageId)
+      if (!projection) {
+        projection = createClientPresentationProjection({
+          sessionId: SESSION_ID,
+          directory: HOST_DIR,
+          assistantMessageId: input.assistantMessageId,
+          announcesAssistantMessage: true,
+        })
+        attachedTurnProjections.set(input.assistantMessageId, projection)
       }
-      requests.runtimeFramesEmitted.push(frame)
-      runtimeBus.emit(frame)
+      for (const event of projection.ingest(payload as never)) workspaceBus.emit({ directory: HOST_DIR, payload: event.payload })
     },
     /**
      * The transcript `GET /session/:id/message` serves, right now.
@@ -927,9 +882,9 @@ async function installUserHostedRuntimeMock(
     restTranscript() {
       return messages
     },
-    /** Publishes one flat frame on the workspace-wide bus. */
+    /** Publishes one of the workspace's control frames on its stream. */
     emitWorkspaceFrame(payload: Record<string, unknown>) {
-      workspaceBus.emit(payload)
+      workspaceBus.emit({ directory: HOST_DIR, payload })
     },
   }
 }
@@ -983,9 +938,9 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(view).toHaveCount(0, { timeout: 20_000 })
   })
 
-  // The reply renders through the real projection path: the mock publishes the turn as
-  // AgentRuntimeEvent frames on the relay's runtime-events lane, and the `busy` → `finish`
-  // pair settles it into a message-list refetch over that same lane.
+  // The reply renders through the real projection path: the host projects the
+  // turn's raw frames onto the workspace stream over the relay, and the projected
+  // `busy` → `finish` pair settles it into a message-list refetch over the same relay.
   test("ready unlocks the composer and a send is proven by the oracle through the relay lane", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
@@ -1027,11 +982,11 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.relayHits.some((h) => h.includes("/session") && h.startsWith("POST"))).toBe(true)
     expect(mock.requests.bareHitsDuringReady).toEqual([])
 
-    // Consumption proof: the canonical-contract emitter is actually drained by the app —
-    // the relay `/api/wr/runtime-events` stream was polled (> 0), and the frames the
-    // reply was reconstructed from were really pushed onto that lane.
-    expect(mock.requests.runtimeEventsPollCount).toBeGreaterThan(0)
-    expect(mock.requests.relayHits.some((h) => h.includes("/api/wr/runtime-events"))).toBe(true)
+    // Consumption proof: the workspace stream was read over the relay (> 0
+    // opens), and the raw frames the host projected the reply from were the
+    // turn's real sequence.
+    expect(mock.requests.workspaceEventScopes.length).toBeGreaterThan(0)
+    expect(mock.requests.relayHits.some((h) => h.includes("/api/wr/events"))).toBe(true)
     expect(mock.requests.runtimeFramesEmitted.map((f) => (f.payload as { type: string }).type)).toEqual([
       "session-status",
       "text-delta",
@@ -1148,8 +1103,8 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/project" || url.pathname === "/experimental/project") {
         return json(route, [{ id: PROJECT_ID, worktree: DIR, name: "core-user-hosted-workspace", time: { created: Date.now(), updated: Date.now() } }])
       }
-      if (url.pathname === "/global/event" || url.pathname === "/event") {
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body: `data: ${JSON.stringify({ directory: "global", payload: { type: "server.connected", properties: {} } })}\n\n` }).catch(() => {})
+      if (url.pathname === "/api/cp/events") {
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
       }
       if (url.pathname === "/provider") return json(route, { all: [], connected: [], default: {} })
       if (url.pathname === "/provider/auth" || url.pathname === "/api/claxedo/agent-config/providers/auth") return json(route, {})
@@ -1305,20 +1260,15 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.hostPathScopes).toEqual([])
   })
 
-  // Attaching to a turn already running on the HOST. The frames go straight onto the
-  // session-scoped runtime-events lane, exactly as the host's runtime publishes them for
-  // a viewer who merely navigated to the session; nothing adds the reply's text to the
-  // REST message list, so a whole-turn `GET /session/:id/message` refetch cannot be what
+  // Attaching to a turn already running on the HOST. The host projects the turn
+  // onto the workspace stream exactly as it does for a viewer who merely
+  // navigated to the session; nothing adds the reply's text to the REST message
+  // list, so a whole-turn `GET /session/:id/message` refetch cannot be what
   // carries it.
   //
-  // What this pins is the lane: open for the route's session before the turn's frames
-  // exist, and read as they are published. The transcript's own rendering of those deltas
-  // is a separate seam and is not asserted here — the projected `message.part.updated` /
-  // `message.part.delta` events are published under the live session's bare `workspaceId`
-  // (`eventDirectoryForLiveSession`) while the pane registers its route directory, so
-  // `event-ingress.ts`'s `input.children.has(directory)` gate routes them to the shell
-  // caches instead of the conversation.
-  test("attaching to a running session by route opens its live lane", async ({ page }) => {
+  // What this pins is the stream: open before the turn's frames exist, and read
+  // as they are published.
+  test("attaching to a running session by route opens its live stream", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200], existingRuntimeSession: true })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
@@ -1338,28 +1288,26 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]:visible`))
       .toHaveAttribute("data-session-directory", WORKSPACE_REF, { timeout: CONTENTION_TIMEOUT })
 
-    // The lane must be OPEN for the route's session before the turn's frames
-    // exist — a stream that opens afterwards turns a live turn into a late burst.
+    // The stream must be OPEN before the turn's frames exist — a stream that
+    // opens afterwards turns a live turn into a late burst. The owner's own
+    // runtime serves it workspace-wide, so no session scope is negotiated.
     await expect
-      .poll(() => mock.requests.runtimeEventsParents.filter((parent) => parent === SESSION_ID).length, {
-        timeout: CONTENTION_TIMEOUT,
-      })
+      .poll(() => mock.requests.workspaceEventScopes.length, { timeout: CONTENTION_TIMEOUT })
       .toBeGreaterThan(0)
+    expect(mock.requests.workspaceEventScopes.every((scope) => scope === null)).toBe(true)
 
     // A turn STARTS on the host, answering the last user message: the exact
-    // frame sequence the real runtime publishes for a turn nobody here started
+    // raw frame sequence the harness produces for a turn nobody here started
     // (`AgentRuntime` names the reply `${userMessageId}_r`, then the harness
-    // adapter's deltas follow). Nothing on the lane carries a MESSAGE row —
-    // `AgentRuntimeEvent` has no such variant — so the row the transcript store
-    // needs to hang these parts on can only come from the compat projection.
+    // adapter's deltas follow), projected on the host.
     const assistantMessageId = `${HOST_USER_MESSAGE_ID}_r`
     mock.emitRuntimeFrame({ type: "session-status", status: "busy" }, { assistantMessageId })
     mock.emitRuntimeFrame({ type: "text-delta", delta: "streamed from the host " }, { assistantMessageId })
     mock.emitRuntimeFrame({ type: "text-delta", delta: "while attached" }, { assistantMessageId })
 
     // This client really read them off the wire: its own SSE cursor moved past
-    // the frames it applied.
-    await expect.poll(() => Math.max(0, ...mock.requests.runtimeEventCursors), { timeout: 10_000 })
+    // the frames it applied (the row, the status, and the streamed part).
+    await expect.poll(() => Math.max(0, ...mock.requests.workspaceEventCursors), { timeout: 10_000 })
       .toBeGreaterThanOrEqual(3)
     // And the words are ON SCREEN, growing, within a second of being published —
     // not as one finished block at the end of the turn.
@@ -1381,11 +1329,11 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.hostPathScopes).toEqual([])
   })
 
-  // The workspace bus is a WORKSPACE-scoped stream on this runtime, and it has to
-  // be: `pty.*`, `process.*` and `worktree.*` belong to no session, and the route
-  // that needs them most — a terminal — names no session at all: the `pty.created`
-  // frame that registers a terminal arrives on this stream and no other.
-  test("the workspace event bus opens workspace-wide on a session-less route", async ({ page }) => {
+  // The workspace stream is WORKSPACE-wide on this runtime, and it has to be:
+  // `pty.*` and `process.*` belong to no session, and the route that needs them
+  // most — a terminal — names no session at all: the `pty.created` frame that
+  // registers a terminal arrives on this stream and no other.
+  test("the workspace stream opens workspace-wide on a session-less route", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })

@@ -253,7 +253,7 @@ async function runLiveArm(scenario: LiveScenario, arm: "direct" | "accountPort")
   } else {
     const pacedFetch: typeof fetch = async (url) => {
       const href = url instanceof Request ? url.url : String(url)
-      if (href.includes("/api/wr/events") || href.includes("/runtime-events")) {
+      if (href.includes("/api/cp/events")) {
         return makePacedSseResponse(messages, scenario.bytes, interval, performance.now())
       }
       return new Response(JSON.stringify({ ok: true }), {
@@ -271,7 +271,7 @@ async function runLiveArm(scenario: LiveScenario, arm: "direct" | "accountPort")
         let idx = 0
         let seq = 0
         await service.openStream({
-          name: "session.events",
+          name: "controlPlane.events",
           params: {},
           onChunk: (text) => {
             if (text.length === 0) return

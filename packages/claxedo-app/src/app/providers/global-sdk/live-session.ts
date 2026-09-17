@@ -2,9 +2,18 @@ import { createServerClient } from "@/app/connection/server-client"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import type { LiveSession } from "../global-sdk-event-fetch"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
+
+/** The session whose frames the streams are open for, as this app addresses it. */
+export type LiveSession = {
+  sessionID: string
+  host?: "workspace"
+  directory?: string
+  workspaceId?: string
+  workspaceKind?: string
+  sessionRef?: SessionRef
+}
 
 export type GlobalSdkClientOptions = Omit<Parameters<typeof createServerClient>[0], "server" | "request"> & {
   workspaceId?: string
@@ -42,11 +51,7 @@ export function liveSessionTransition(
     next.directory !== current?.directory ||
     next.workspaceId !== current?.workspaceId ||
     next.workspaceKind !== current?.workspaceKind
-  return {
-    next,
-    workspaceScopeChanged,
-    runtimeStreamChanged: workspaceScopeChanged || next.sessionID !== current?.sessionID,
-  }
+  return { next, workspaceScopeChanged }
 }
 
 /**
@@ -133,31 +138,4 @@ export function liveSessionWithRelayBacking(session: LiveSession, projects: Work
   const ref = sessionWorkspaceRuntimeRef({ directory: session.directory, projects })
   if (!ref) return session
   return { ...session, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
-}
-
-/**
- * The session and workspace identity the runtime-events stream opens for.
- *
- * Runtime events are scoped to one real parent session. `scopeSessionId` is
- * `session-event-scope`'s answer — the shell route's session, or the one the
- * composer published for a draft route — and it is authoritative: navigating to
- * another session must retarget the stream even though the live session still
- * names the one whose history was fetched last. `current` supplies the workspace
- * identity the stream is routed with (relay vs central), and its own session id
- * is used only when the scope has none.
- *
- * The workspace-route sentinel `"route"` used by the global lifecycle stream is
- * not an authorized parent and must never be sent as `parentSessionId` to a
- * Workspace Runtime, so it never survives as the session id here.
- */
-export function runtimeEventLiveSession(
-  current: LiveSession | undefined,
-  projects: WorkspaceProjects,
-  scopeSessionId?: string,
-) {
-  if (!current) return undefined
-  const sessionID = scopeSessionId?.trim()
-    || (current.sessionID === "route" ? undefined : current.sessionID)
-  if (!sessionID) return undefined
-  return liveSessionWithRelayBacking({ ...current, sessionID }, projects)
 }

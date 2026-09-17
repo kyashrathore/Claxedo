@@ -46,17 +46,11 @@ function corsHeaders() {
   }
 }
 
-// ─── Claxedo event bus (route-level central-stream SSE injection) ──────────
+// ─── Workspace event bus (route-level `wr/events` SSE injection) ───────────
 //
-// Two independent readers connect to this bus at once on this route shape:
-// `ClaxedoEventsProvider`'s central target on `/api/claxedo/events`, and global-sdk's
-// `sseJsonStream`, whose request is rewritten to `/api/wr/events`. A real SSE endpoint
-// multicasts to both; one shared queue instead lets whichever connection is waiting steal
-// the event from the other, and global-sdk silently drops `agent.lifecycle`.
-//
-// So events fan out to persistent per-reader slots rather than ephemeral per-request
-// channels: `route.fulfill()` cannot drip a body over time, making every reconnect a fresh
-// HTTP request, and a channel torn down between one reader's own reconnects would drop
+// Events queue in a persistent per-reader slot rather than an ephemeral per-request
+// channel: `route.fulfill()` cannot drip a body over time, making every reconnect a fresh
+// HTTP request, and a channel torn down between the reader's own reconnects would drop
 // anything emitted in the gap. `drain()` claims whichever slot is idle, so a slot's backlog
 // survives its reader's reconnects.
 type ClaxedoTestEvent = Record<string, unknown>
@@ -66,12 +60,12 @@ type ClaxedoEventSlot = { pending: ClaxedoTestEvent[]; waiters: Array<() => void
 const emptySlot = (): ClaxedoEventSlot => ({ pending: [], waiters: [], busy: false })
 
 /**
- * One slot per reader that will connect, created up front rather than on that reader's
- * first `drain()`. `emit()` only reaches slots that already exist and there is no replay,
- * so a lazily-created slot misses every event emitted before its reader first connected —
- * and `emitClaxedoEvent` can fire before the provider's central connection is up.
+ * The reader's slot is created up front rather than on its first `drain()`. `emit()` only
+ * reaches slots that already exist and there is no replay, so a lazily-created slot misses
+ * every event emitted before the reader first connected — and `emitClaxedoEvent` can fire
+ * before the provider's workspace connection is up.
  */
-const CLAXEDO_BUS_READERS = 2
+const CLAXEDO_BUS_READERS = 1
 
 class ClaxedoEventBus {
   private slots: ClaxedoEventSlot[] = Array.from({ length: CLAXEDO_BUS_READERS }, emptySlot)
@@ -124,9 +118,10 @@ class ClaxedoEventBus {
   }
 }
 
-function claxedoSseBody(batch: ClaxedoTestEvent[]) {
+/** `wr/events` writes every frame as `{ directory, payload }`. */
+function claxedoSseBody(directory: string, batch: ClaxedoTestEvent[]) {
   if (batch.length === 0) return ": heartbeat\n\n"
-  return batch.map((payload) => `data: ${JSON.stringify(payload)}\n\n`).join("")
+  return batch.map((payload) => `data: ${JSON.stringify({ directory, payload })}\n\n`).join("")
 }
 
 const claxedoEventBuses = new WeakMap<Page, ClaxedoEventBus>()
@@ -244,19 +239,15 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   })
   await page.route("**/api/claxedo/agent-config/**", (r) => (api(r) ? json(r, { options: [], source: "empty", stale: false }) : r.continue()))
 
-  const eventStreamHandler = async (route: Route) => {
-    if (!api(route)) return route.continue()
-    const url = new URL(route.request().url())
-    if (url.pathname !== "/global/event" && url.pathname !== "/event") return route.fallback()
-    await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: ": heartbeat\n\n" }).catch(() => {})
-  }
-  await page.route("**/global/event?**", eventStreamHandler)
-  await page.route("**/event?**", eventStreamHandler)
+  // An unsigned loopback surface reads the control plane's notices over a
+  // WebSocket. Nothing this spec drives rides it, so it is held open quietly;
+  // left unrouted, the reader would retry forever against the dev server.
+  await page.routeWebSocket("**/api/cp/events**", (socket) => {
+    socket.send('id: 0\ndata: {"type":"heartbeat"}\n\n')
+  })
 
-  // Both real servers mount one handler on `/global/event`, `/api/wr/events` and
-  // `/api/claxedo/events`, so both spellings are served here too. The provider opens the
-  // central `/api/claxedo/events` one; mounting only `/api/wr/events` lets it escape to
-  // 127.0.0.1:3001, leaving this bus with no reader and every emitted frame dropped.
+  // The pty frames this spec injects are workspace control frames, read off the
+  // workspace's own `/api/wr/events`.
   //
   // The provider's `window.__claxedoEmitTestEvent` hook is not usable instead: it is
   // `import.meta.env.DEV`-gated and this suite's default target is a statically-served
@@ -264,7 +255,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   // `route.fulfill()` cannot drip a body; the reader reconnects and picks up the next batch.
   const claxedoEventBus = new ClaxedoEventBus()
   claxedoEventBuses.set(page, claxedoEventBus)
-  const claxedoEventsHandler = async (route: Route) => {
+  await page.route("**/api/wr/events**", async (route: Route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
     if (url.searchParams.get("directory") !== dir) {
@@ -272,10 +263,8 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
       return
     }
     const batch = await claxedoEventBus.drain(4000)
-    await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: claxedoSseBody(batch) }).catch(() => {})
-  }
-  await page.route("**/api/wr/events**", claxedoEventsHandler)
-  await page.route("**/api/claxedo/events**", claxedoEventsHandler)
+    await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: claxedoSseBody(dir, batch) }).catch(() => {})
+  })
 }
 
 async function seedProject(page: Page, dir: string) {

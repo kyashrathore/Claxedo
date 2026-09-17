@@ -118,7 +118,7 @@ export function controlSessionListUrl(input: {
 }
 
 export function controlPlaneEventsUrl(input: { baseUrl: string }) {
-  return new URL("/api/claxedo/events", controlPlaneBaseUrl(input.baseUrl))
+  return new URL("/api/cp/events", controlPlaneBaseUrl(input.baseUrl))
 }
 
 export function controlSessionUrl(input: {

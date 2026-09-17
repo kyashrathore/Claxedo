@@ -434,9 +434,9 @@ export function useReconnectReconciliation(input: {
   createEffect(on(input.connected, (isConnected) => {
     // Deliberately the AGGREGATE `connected()`, not `centralConnected()`: the
     // agent statuses reconciled here are driven by `agent.lifecycle` /
-    // `pty.*` events, which arrive on the central stream for local workspaces AND
-    // on each remote workspace's relay stream. Any of those coming back up can
-    // mean statuses drifted, so "any stream reconnected" is the right edge here.
+    // `pty.*` events, which arrive on each workspace's own stream. Any of
+    // those coming back up can mean statuses drifted, so "any stream
+    // reconnected" is the right edge here.
     if (!isConnected) return
     if (!hadConnection) {
       hadConnection = true

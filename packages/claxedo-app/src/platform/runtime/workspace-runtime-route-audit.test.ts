@@ -66,7 +66,6 @@ const workspaceSelectorSyntaxBoundary = new Set([
   "platform/sync/worktree.ts",
   // Imports the canonical workspaceIdFromRef directly.
   "platform/runtime/placement.ts",
-  "app/providers/global-sdk-event-fetch.ts",
   "features/workspaces/ui/panel/workspace-panel.tsx",
   // A draft's workspace-backing resolution short-circuits the async
   // `runtime.workspace()` liveness read when the directory isn't even

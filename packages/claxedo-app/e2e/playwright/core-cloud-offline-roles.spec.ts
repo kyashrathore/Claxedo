@@ -310,20 +310,13 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     if (url.pathname === "/api/claxedo/agent-config/agents")
       return json(route, [{ id: "build", name: "build", mode: "primary" }])
     if (url.pathname === "/api/claxedo/agent-config/commands") return json(route, [])
-    // One stream, three spellings — both real servers (claxedo-local-server's
-    // compat routes, claxedo-server's hosted shell routes) mount a single handler on
-    // all of them. `/api/claxedo/events` is `ClaxedoEventsProvider`'s CENTRAL target,
-    // opened on every signed page.
-    if (
-      url.pathname === "/global/event" ||
-      url.pathname === "/event" ||
-      url.pathname === "/api/claxedo/events"
-    ) {
+    // The control plane's notice stream, opened on every signed page.
+    if (url.pathname === "/api/cp/events") {
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
         headers: corsHeaders(),
-        body: sseEvent({ directory: "global", payload: { type: "server.connected", properties: {} } }),
+        body: sseEvent({ type: "heartbeat" }),
       })
     }
 
@@ -372,11 +365,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // the error boundary ("Something went wrong") before any assertion runs.
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
     if (url.pathname === "/provider") return json(route, providerCatalog())
-    if (
-      url.pathname === "/api/wr/events" ||
-      url.pathname === "/api/wr/runtime-events" ||
-      url.pathname === "/api/claxedo/runtime-events"
-    ) {
+    if (url.pathname === "/api/wr/events") {
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
@@ -462,19 +451,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
           appliesFrom: "next-turn",
         })
       }
-      if (runtimePath === "/global/event" || runtimePath === "/event") {
-        return route.fulfill({
-          status: 200,
-          contentType: "text/event-stream",
-          headers: corsHeaders(),
-          body: sseEvent({ directory: DIR, payload: { type: "server.connected", properties: {} } }),
-        })
-      }
-      if (
-        runtimePath === "/api/wr/events" ||
-        runtimePath === "/api/wr/runtime-events" ||
-        runtimePath === "/api/claxedo/runtime-events"
-      ) {
+      if (runtimePath === "/api/wr/events") {
         return route.fulfill({
           status: 200,
           contentType: "text/event-stream",

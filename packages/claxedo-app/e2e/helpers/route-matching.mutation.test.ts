@@ -12,8 +12,8 @@ test("the static route matcher agrees with actual Playwright interception", asyn
     ["**/session/*", "http://routes.test/session/ses_a/config", false],
     ["**/session/status**", "http://routes.test/session/status?directory=%2Ftmp", true],
     ["**/session/status", "http://routes.test/session/status?directory=%2Ftmp", false],
-    ["**/event?**", "http://routes.test/global/event?x=1", true],
-    ["**/global/event?**", "http://routes.test/event?x=1", false],
+    ["**/events?**", "http://routes.test/wr/events?x=1", true],
+    ["**/wr/events?**", "http://routes.test/events?x=1", false],
     ["**/api/claxedo/agent-config/harness**", "http://routes.test/api/claxedo/agent-config/harness/options", true],
   ]
   const page = await browser.newPage()

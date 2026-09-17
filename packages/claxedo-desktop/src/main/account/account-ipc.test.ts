@@ -112,7 +112,7 @@ describe("stream channels", () => {
     const sender = new StreamSender()
 
     const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
-      operation: "session.events",
+      operation: "controlPlane.events",
       input: { workspaceId: "ws_1" },
     }) as { streamId: string }
 
@@ -139,7 +139,7 @@ describe("stream channels", () => {
     })
     const sender = new StreamSender()
     const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
-      operation: "session.events",
+      operation: "controlPlane.events",
     }) as { streamId: string }
 
     await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
@@ -163,7 +163,7 @@ describe("stream channels", () => {
     })
     const sender = new StreamSender()
     const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
-      operation: "session.events",
+      operation: "controlPlane.events",
     }) as { streamId: string }
 
     await h.invokeFrom(sender, ACCOUNT_STREAM_CLOSE_CHANNEL, { streamId })
@@ -184,7 +184,7 @@ describe("stream channels", () => {
     })
     const sender = new StreamSender()
     const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
-      operation: "session.events",
+      operation: "controlPlane.events",
     }) as { streamId: string }
     await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
 
@@ -207,7 +207,7 @@ describe("stream channels", () => {
     const owner = new StreamSender()
     const other = new StreamSender()
     const { streamId } = await h.invokeFrom(owner, ACCOUNT_STREAM_OPEN_CHANNEL, {
-      operation: "session.events",
+      operation: "controlPlane.events",
     }) as { streamId: string }
 
     await expect(h.invokeFrom(other, ACCOUNT_STREAM_START_CHANNEL, { streamId })).rejects.toThrow("unknown")
@@ -230,7 +230,7 @@ describe("stream channels", () => {
     for (const start of [false, true]) {
       const sender = new StreamSender()
       const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
-        operation: "session.events",
+        operation: "controlPlane.events",
       }) as { streamId: string }
       if (start) await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
 

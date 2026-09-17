@@ -138,7 +138,7 @@ async function primeHarness(
   subagents?: {
     rows: MockRuntimeSubagentRow[]
     children?: MockRuntimeChildSession[]
-    runtimeEventAuthorizeParent?: (parentSessionId: string) => boolean
+    workspaceStreamAuthorize?: (scope: { sessionID?: string }) => boolean
   },
 ): Promise<{
   mock: MockRuntimeHandles
@@ -158,7 +158,7 @@ async function primeHarness(
     ...(subagents ? {
       subagents: { [`ses_harness_matrix_${harness}`]: subagents.rows },
       childSessions: subagents.children,
-      runtimeEventAuthorizeParent: subagents.runtimeEventAuthorizeParent,
+      workspaceStreamAuthorize: subagents.workspaceStreamAuthorize,
     } : {}),
     // A draft has no default model, so opencode needs a catalog entry to select.
     ...(harness === "opencode" ? { harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] } } : {}),
@@ -387,9 +387,8 @@ function completeSubagent(
   sessionId: string,
   subagentKey: string,
 ) {
-  // `subagent-updated` travels on `/api/wr/runtime-events` only, both in the runtime
-  // and in the app. `emitRuntime` publishes there; `emitFlat` would put the frame on
-  // compat channels where nothing applies it.
+  // A subagent revision is a runtime-channel event: the runtime projects it to
+  // `subagent.updated` on `wr/events`, which is what `emitRuntime` models.
   mock.emitRuntime({
     directory,
     sessionId,
@@ -490,7 +489,7 @@ async function revealTurn(page: Page) {
 }
 
 test.describe("core harness rendering matrix @core", () => {
-  test("a manually closed latest Codex turn stays closed through retained runtime replay", async ({ page }, testInfo) => {
+  test("a manually closed latest Codex turn stays closed when its settled frames arrive late", async ({ page }, testInfo) => {
     const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-completed-runtime-replay.json"), "utf-8")) as {
       messages: MockMessageRow[]; events: Array<Parameters<MockRuntimeHandles["emitRuntime"]>[0]>
     }
@@ -514,22 +513,23 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(fold).toHaveAttribute("aria-expanded", "true")
     await fold.click()
     await expect(fold).toHaveAttribute("aria-expanded", "false")
-    const otherStream = page.waitForResponse(response => new URL(response.url()).searchParams.get("parentSessionId") === otherId && new URL(response.url()).pathname.endsWith("/runtime-events") && response.status() === 200)
     await (await expectRailRowVisible({ page, sessionId: otherId })).click()
-    await otherStream
     await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-harness-rendering-matrix", scenario: `fold-other-${testInfo.repeatEachIndex}` })
+    // The settled turn's frames land on the workspace stream while another
+    // session is on screen — as a retained replay after a reconnect would —
+    // and the stream is workspace-wide, so this reader receives them.
+    const delivered = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/api/wr/events") && response.status() === 200 && (await response.text()).includes(fixture.events[0].assistantMessageId!))
     for (const event of fixture.events) mock.emitRuntime({ ...event, directory: dir })
+    await delivered
     const row = await expectRailRowVisible({ page, sessionId })
     const samples = await sampleElementDuringAction(page, '[data-component="tool-part-wrapper"]', async () => {
-      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/runtime-events") && new URL(response.url()).searchParams.get("parentSessionId") === sessionId && (await response.text()).includes(fixture.events[0].assistantMessageId!))
       await row.click()
-      await replay
       await expectAssistantReplyVisible(page, "QA_FIRST_DONE_1164", { spec: "core-harness-rendering-matrix", scenario: `fold-return-${testInfo.repeatEachIndex}` })
     })
     await writeFile(testInfo.outputPath("fold-return-frames.json"), JSON.stringify(samples, null, 2))
     expect(mock.requests.unhandled).toEqual([])
     expect(samples.length).toBeGreaterThan(2)
-    expect(samples.filter(sample => sample.elements.some(element => element.painted)), "closed completed work exposes tool rows during runtime replay").toEqual([])
+    expect(samples.filter(sample => sample.elements.some(element => element.painted)), "closed completed work exposes tool rows when its frames arrive late").toEqual([])
     await expect(fold).toHaveAttribute("aria-expanded", "false")
   })
 
@@ -1519,13 +1519,13 @@ test.describe("core harness rendering matrix @core", () => {
     expect(mock.requests.badResponses).toEqual([])
   })
 
-  test("subagents — unauthorized parent runtime stream is rejected before subscription", async ({ page }) => {
+  test("subagents — a session the authority does not grant is refused its scoped stream", async ({ page }) => {
     await primeHarness(page, "opencode", {
       rows: [],
-      runtimeEventAuthorizeParent: (parentSessionId) => parentSessionId !== "parent-denied",
+      workspaceStreamAuthorize: ({ sessionID }) => sessionID !== "parent-denied",
     })
     const response = await page.evaluate(async () => {
-      const result = await fetch("/api/wr/runtime-events?parentSessionId=parent-denied")
+      const result = await fetch("/api/wr/events?sessionID=parent-denied")
       return { status: result.status, body: await result.json() }
     })
     expect(response).toEqual({ status: 403, body: { error: "Forbidden" } })

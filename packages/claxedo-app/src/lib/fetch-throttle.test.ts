@@ -122,7 +122,7 @@ describe("throttledFetch", () => {
     await throttledFetch(
       async () => new Response(""),
       {},
-      new Request("http://127.0.0.1:2594/global/event"),
+      new Request("http://127.0.0.1:2594/api/cp/events"),
     )
     expect(t.inFlight()).toBe(1)
 
@@ -130,11 +130,10 @@ describe("throttledFetch", () => {
     await blockingRequest
   })
 
-  test("classifies hosted and workspace event paths as streams", () => {
+  test("classifies the control-plane and workspace-runtime event paths as streams", () => {
+    expect(isEventStreamPath("https://control.test/api/cp/events")).toBe(true)
     expect(isEventStreamPath("https://control.test/api/wr/events")).toBe(true)
-    expect(isEventStreamPath("https://control.test/api/wr/runtime-events")).toBe(true)
     expect(isEventStreamPath("https://control.test/workspaces/ws_1/api/wr/events")).toBe(true)
-    expect(isEventStreamPath("https://control.test/workspaces/ws_1/global/event")).toBe(true)
     expect(isEventStreamPath("http://127.0.0.1:2594/session")).toBe(false)
   })
 

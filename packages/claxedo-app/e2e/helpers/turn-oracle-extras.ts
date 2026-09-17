@@ -95,7 +95,7 @@ export async function observeRuntimeTextTraffic(page: Page) {
     window.fetch = new Proxy(window.fetch, {
       async apply(request, scope, args: Parameters<typeof fetch>) {
         const response: Response = await Reflect.apply(request, scope, args)
-        if (response.url.includes("runtime-events") && response.headers.get("content-type")?.includes("text/event-stream")) {
+        if (response.url.includes("/api/wr/events") && response.headers.get("content-type")?.includes("text/event-stream")) {
           const reader = response.clone().body?.getReader()
           if (reader) void (async () => {
             const decoder = new TextDecoder()

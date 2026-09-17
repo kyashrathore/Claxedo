@@ -49,15 +49,14 @@ describe("sessionEventScopeId", () => {
 })
 
 describe("sessionEventScopeId retargets", () => {
-  // Both lanes read the scope through `createEffect(on(sessionEventScopeId, …))`
-  // and treat every wake as a RETARGET: the stream is aborted and reopened with
-  // no cursor. A cursor-less connection is served the whole retained log
-  // (`e2e/helpers/mock-runtime.ts`'s `EventBus.drain`, and the compat stream on
-  // both real servers), so a wake that names the session the lane already
-  // carries redelivers every frame it has already applied — a finished turn's
-  // `session.idle` replayed, playing the completion sound a second time. These
-  // count the wakes, because one wake per SESSION is the property; one wake per
-  // WRITE is the bug.
+  // The reader reads the scope through `createEffect(on(sessionEventScopeId, …))`
+  // and treats every wake as a RETARGET: a session-scoped stream is aborted and
+  // reopened with no cursor. `e2e/helpers/mock-runtime.ts`'s `EventBus.drain`
+  // serves a cursor-less connection the whole retained log, so a wake that
+  // names the session the stream already carries redelivers every frame it has
+  // already applied — a finished turn's `session.idle` replayed, playing the
+  // completion sound a second time. These count the wakes, because one wake per
+  // SESSION is the property; one wake per WRITE is the bug.
   const countRetargets = () => {
     const seen: Array<string | undefined> = []
     const dispose = createRoot((dispose) => {
@@ -104,33 +103,33 @@ describe("sessionEventScopeId retargets", () => {
 })
 
 describe("sessionEventStreamsOpen", () => {
-  test("is satisfied vacuously when no provider drives a lane", () => {
+  test("is satisfied vacuously when no workspace stream is registered", () => {
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
   })
 
-  test("waits for a registered lane and requires it to carry the session", () => {
-    registerSessionEventStreamLane("runtime-events")
+  test("waits for a registered stream and requires it to carry the session", () => {
+    registerSessionEventStreamLane("wr:a")
     expect(sessionEventStreamsOpen("ses_1")).toBe(false)
 
-    reportSessionEventStreamOpen("runtime-events", "ses_other")
+    reportSessionEventStreamOpen("wr:a", "ses_other")
     expect(sessionEventStreamsOpen("ses_1")).toBe(false)
 
-    reportSessionEventStreamOpen("runtime-events", "ses_1")
+    reportSessionEventStreamOpen("wr:a", "ses_1")
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
 
-    reportSessionEventStreamClosed("runtime-events")
+    reportSessionEventStreamClosed("wr:a")
     expect(sessionEventStreamsOpen("ses_1")).toBe(false)
   })
 
   test("a workspace-wide stream carries every session, so local needs no scope", () => {
-    registerSessionEventStreamLane("workspace-bus")
-    reportSessionEventStreamOpen("workspace-bus")
+    registerSessionEventStreamLane("wr:b")
+    reportSessionEventStreamOpen("wr:b")
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
     expect(sessionEventStreamsOpen("ses_2")).toBe(true)
   })
 
-  test("an unregistered lane stops being waited for", () => {
-    const release = registerSessionEventStreamLane("runtime-events")
+  test("a released stream stops being waited for", () => {
+    const release = registerSessionEventStreamLane("wr:a")
     expect(sessionEventStreamsOpen("ses_1")).toBe(false)
     release()
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
@@ -138,23 +137,23 @@ describe("sessionEventStreamsOpen", () => {
 })
 
 describe("whenSessionEventStreamsOpen", () => {
-  test("resolves only once every registered lane carries the session", async () => {
-    registerSessionEventStreamLane("workspace-bus")
-    registerSessionEventStreamLane("runtime-events")
+  test("resolves only once every registered stream carries the session", async () => {
+    registerSessionEventStreamLane("wr:b")
+    registerSessionEventStreamLane("wr:a")
     const open = whenSessionEventStreamsOpen("ses_1")
 
     expect(await settled(open)).toBe(false)
 
-    reportSessionEventStreamOpen("workspace-bus", "ses_1")
+    reportSessionEventStreamOpen("wr:b", "ses_1")
     expect(await settled(open)).toBe(false)
 
-    reportSessionEventStreamOpen("runtime-events", "ses_1")
+    reportSessionEventStreamOpen("wr:a", "ses_1")
     expect(await settled(open)).toBe(true)
     await open
   })
 
   test("an aborted wait resolves and stops watching the session", async () => {
-    registerSessionEventStreamLane("runtime-events")
+    registerSessionEventStreamLane("wr:a")
     const give = new AbortController()
     const open = whenSessionEventStreamsOpen("ses_1", { signal: give.signal })
 

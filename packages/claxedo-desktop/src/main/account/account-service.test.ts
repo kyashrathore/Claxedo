@@ -750,13 +750,13 @@ describe("bound desktop account lifecycle", () => {
     await h.service.restore()
 
     await h.service.openStream({
-      name: "session.events",
+      name: "controlPlane.events",
       params: { lastEventId: "evt_9" },
       onChunk: (chunk) => chunks.push(chunk),
     })
 
     expect(request).toEqual({
-      url: "https://core.example/api/wr/events",
+      url: "https://core.example/api/cp/events",
       headers: {
         authorization: "Bearer at_1",
         Accept: "text/event-stream",
@@ -764,7 +764,7 @@ describe("bound desktop account lifecycle", () => {
       },
     })
     expect(chunks.join("")).toBe("event: ready\n\n")
-    await expect(h.service.run("session.events")).rejects.toThrow("is a stream")
+    await expect(h.service.run("controlPlane.events")).rejects.toThrow("is a stream")
   })
 
   test("stream opens renew a rejected token once before delivering chunks", async () => {
@@ -780,7 +780,7 @@ describe("bound desktop account lifecycle", () => {
       },
     })
     await h.service.restore()
-    await h.service.openStream({ name: "session.events", onChunk: (text) => chunks.push(text) })
+    await h.service.openStream({ name: "controlPlane.events", onChunk: (text) => chunks.push(text) })
     expect(tokens).toEqual(["Bearer at_1", "Bearer at_2"])
     expect(chunks).toEqual(["event: ready\n\n"])
     expect(h.service.state()).toMatchObject({ status: "signed" })
@@ -798,7 +798,7 @@ describe("bound desktop account lifecycle", () => {
       },
     })
     await h.service.restore()
-    await expect(h.service.openStream({ name: "session.events", onChunk: () => {} })).rejects.toThrow("session rejected")
+    await expect(h.service.openStream({ name: "controlPlane.events", onChunk: () => {} })).rejects.toThrow("session rejected")
     expect(attempts).toBe(2)
     expect(auth.refreshes()).toBe(1)
     expect(h.store.held()).toBeUndefined()
@@ -812,7 +812,7 @@ describe("bound desktop account lifecycle", () => {
       fetch: async () => Response.json({ error: { code: "missing_bearer_token", message: "Bearer required" } }, { status: 401 }),
     })
     await h.service.restore()
-    await expect(h.service.openStream({ name: "session.events", onChunk: () => {} })).rejects.toThrow("Bearer required")
+    await expect(h.service.openStream({ name: "controlPlane.events", onChunk: () => {} })).rejects.toThrow("Bearer required")
     expect(auth.refreshes()).toBe(0)
     expect(h.store.held()).toBeDefined()
   })
@@ -831,7 +831,7 @@ describe("bound desktop account lifecycle", () => {
       },
     })
     await h.service.restore()
-    const opening = h.service.openStream({ name: "session.events", onChunk: () => {} })
+    const opening = h.service.openStream({ name: "controlPlane.events", onChunk: () => {} })
     const result = opening.then(() => undefined, (error: unknown) => error)
     await started
     await h.service.signOut()

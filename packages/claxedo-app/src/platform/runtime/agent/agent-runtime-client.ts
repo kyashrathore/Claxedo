@@ -679,18 +679,5 @@ export function createAgentRuntimeClient(options: {
         init: { method: "POST" },
       })
     },
-    subscribeToEvents(input: { serverUrl?: string; sessionID?: string; workspaceId?: string }) {
-      const path = input.workspaceId ? `/workspaces/${encodeURIComponent(input.workspaceId)}/global/event` : "/api/wr/events"
-      const url = new URL(path, input.serverUrl ?? serverUrl())
-      if (input.sessionID) url.searchParams.set("sessionID", input.sessionID)
-      return url
-    },
-    subscribeToRuntimeEvents(input: { serverUrl?: string; workspaceId?: string; directory?: string } = {}) {
-      if (input.workspaceId) return new URL(`/workspaces/${encodeURIComponent(input.workspaceId)}/api/wr/runtime-events`, input.serverUrl ?? serverUrl())
-      if (!input.directory) throw new Error("workspaceId or directory is required for runtime events")
-      const url = new URL("/api/wr/runtime-events", input.serverUrl ?? serverUrl())
-      url.searchParams.set("directory", input.directory)
-      return url
-    },
   }
 }

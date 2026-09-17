@@ -396,30 +396,14 @@ async function gotoSession(page: Page, hash?: string) {
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 }
 
-// In this mock topology `/api/workspace/resolve` always reports a `workspaceId`
-// (even for a `kind:"local"` directory), which makes `workspaceRuntimeOwnsLive
-// Events()` (`src/context/global-sdk.tsx`) true and routes the client's live
-// event consumption exclusively through `/api/wr/runtime-events` — never
-// `/global/event` — for EVERY session, not just cloud ones. The shared mock
-// only mounts `/api/wr/*` routes when `installMockRuntime`'s `cloud` option is
-// passed, so in the default (local) mock configuration those runtime-event
-// requests hit real network and fail; `bus.emit()`-pushed SSE events (the
-// pattern `driveTurn` itself uses for the mocked text-only reply) are
-// therefore NEVER delivered to the browser in this configuration. Rendering a
-// real send's reply instead relies on `src/session/store/session-controller.ts`
-// `activeTurnTransition` firing `syncCompatSession(id, {force:true})` once the
-// LOCAL, submit-set-optimistic `activeTurn()` flag (`markBusy()` in
-// `src/components/prompt-input/submit.ts`) settles back down — a path that
-// only a real composer submit enters. A turn built by hand (no real submit)
-// has no way to flip that local flag, so it is invisible no matter how many
-// SSE events are pushed onto the bus.
-// What DOES reliably reach a freshly (re)loaded session, independent of SSE:
-// the unconditional first-fold hydrate in `session-controller.ts` (the
-// `shouldHydrateSession` effect) — `syncCompatSession` (`GET .../message`)
-// fires once on mount, and `refreshMeta` (`GET /session/status`) fires
-// ~1.5s later. So this spec drives busy→settle and pending→answered
-// transitions by overriding those two GET routes with MUTABLE state and
-// calling `page.reload()` between assertions, instead of a live SSE push.
+// This spec proves what a freshly (re)loaded session renders from its REST
+// reads alone, independent of the live stream: the unconditional first-fold
+// hydrate in `session-controller.ts` (the `shouldHydrateSession` effect) —
+// `syncCompatSession` (`GET .../message`) fires once on mount, and
+// `refreshMeta` (`GET /session/status`) ~1.5s later. So it drives
+// busy→settle and pending→answered transitions by overriding those two GET
+// routes with MUTABLE state and calling `page.reload()` between assertions,
+// instead of a live SSE push.
 type MutableSession = {
   mock: Awaited<ReturnType<typeof installMockRuntime>>
   setRows: (rows: Array<{ info: AnyInfo; parts: AnyPart[] }>) => void

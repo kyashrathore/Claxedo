@@ -6,7 +6,7 @@ describe("createStreamConnectivity", () => {
   test("aggregate connected() is an OR across every stream target", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
-      const central = connectivity.track("central")
+      const central = connectivity.track("cp")
       const workspace = connectivity.track("workspace")
 
       expect(connectivity.connected()).toBe(false)
@@ -33,7 +33,7 @@ describe("createStreamConnectivity", () => {
   test("central drop/recover is visible even while a workspace stream stays up", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
-      const central = connectivity.track("central")
+      const central = connectivity.track("cp")
       const workspace = connectivity.track("workspace")
 
       central(true)
@@ -64,8 +64,8 @@ describe("createStreamConnectivity", () => {
   test("repeated same-value reports do not double-count", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
-      const central = connectivity.track("central")
-      const other = connectivity.track("central")
+      const central = connectivity.track("cp")
+      const other = connectivity.track("cp")
 
       central(true)
       central(true)

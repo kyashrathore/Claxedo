@@ -32,9 +32,9 @@
  * step reported THERE becomes the pipeline's initial phase immediately (`onStatus`/
  * `onLog` fire synchronously with `workspace.status`) — this is the "resume at current
  * step" mechanism: the server's resolve response IS the source of truth, not a
- * client-held log. (2) it listens for `provision` events on the CENTRAL SSE stream
- * (`GET /api/wr/events`, event shape `{type:"provision", workspaceId, step, ts,
- * message?}` — `src/providers/claxedo-events.tsx`) for further step transitions. (3) it
+ * client-held log. (2) it listens for `provision` notices on the control plane's
+ * stream (`GET /api/cp/events`, event shape `{type:"provision", workspaceId, step, ts,
+ * message?}` — `src/app/integrations/claxedo-events.tsx`) for further step transitions. (3) it
  * calls `ensureWorkspaceRuntime` → `openWorkspaceConnection` (mint,
  * `GET /api/workspace/:id/connection`), which itself retries while the mint body is
  * `{status:"provisioning", retryAfterMs}` (`workspace-relay-connection.ts`); only once
@@ -248,18 +248,27 @@ function textOf(parts: unknown): string {
 }
 
 // Cursor-resumed SSE event log: every reader gets each event in order and reconnects
-// with its own Last-Event-ID. mock-runtime's cloud support does not model the central
-// provision stream or the `/workspaces/:id/...` lane.
+// with its own Last-Event-ID. mock-runtime's cloud support does not model the control
+// plane's provision notices or the `/workspaces/:id/...` lane.
 class Bus<T> {
   private log: Array<{ id: number; payload: T }> = []
   private sequence = 0
   private waiters: Array<() => void> = []
+  private subscribers = new Set<(batch: Array<{ id: number; payload: T }>) => void>()
   emit(payload: T) {
     this.sequence += 1
-    this.log.push({ id: this.sequence, payload })
+    const entry = { id: this.sequence, payload }
+    this.log.push(entry)
+    for (const subscriber of this.subscribers) subscriber([entry])
     const waiters = this.waiters
     this.waiters = []
     for (const resolve of waiters) resolve()
+  }
+  /** A persistent reader (a WebSocket): the backlog past `cursor` now, every later frame as it lands. */
+  subscribe(cursor: number, receive: (batch: Array<{ id: number; payload: T }>) => void) {
+    receive(this.log.filter((entry) => entry.id > cursor))
+    this.subscribers.add(receive)
+    return () => { this.subscribers.delete(receive) }
   }
   private async waitForPending(idleTimeoutMs: number, cursor: number) {
     if (this.sequence > cursor) return
@@ -366,16 +375,22 @@ async function installCloudRuntimeMock(
     })()
   }
 
+  // An unsigned loopback surface reads the control plane's notices over a
+  // WebSocket; `provision` steps ride it.
+  await page.routeWebSocket("**/api/cp/events**", (socket) => {
+    const cursor = Number(new URL(socket.url()).searchParams.get("lastEventId") ?? 0)
+    socket.send(`id: ${cursor}\ndata: {"type":"heartbeat"}\n\n`)
+    const unsubscribe = provisionBus.subscribe(cursor, (batch) => {
+      if (batch.length > 0) socket.send(eventStream(batch))
+    })
+    socket.onClose(unsubscribe)
+  })
+
   await page.route("**/*", async (route) => {
     if (!api(route)) return route.continue()
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
-    if (url.pathname === "/api/wr/events") {
-      const batch = await provisionBus.drain(4000, lastEventId(route))
-      await route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
-      return
-    }
 
     if (url.pathname === "/api/claxedo/bootstrap") {
       return json(route, {
@@ -444,8 +459,8 @@ async function installCloudRuntimeMock(
     if (isWorkspaceResolvePath(url.pathname) && url.searchParams.get("workspaceId") !== WORKSPACE_ID) {
       return json(route, { workspaceId: `local:${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
     }
-    if (url.pathname === "/global/event" || url.pathname === "/event") {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", body: `data: ${JSON.stringify({ directory: "global", payload: { type: "server.connected", properties: {} } })}\n\n` }).catch(() => {})
+    if (url.pathname === "/api/cp/events") {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: `id: 0\ndata: ${JSON.stringify({ type: "heartbeat" })}\n\n` }).catch(() => {})
     }
 
     // ---- Control-plane session catalog: the sidebar reads this, not the runtime's
@@ -557,9 +572,8 @@ async function installCloudRuntimeMock(
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "harness", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      // Session-scoped event channels all carry the same cursor-resumed turn log.
-      // The app subscribes to whichever channel its transport resolves.
-      if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events" || runtimePath === "/api/wr/runtime-events" || runtimePath === "/global/event" || runtimePath === "/event") {
+      // The workspace's one stream carries the cursor-resumed turn log.
+      if (runtimePath === "/api/wr/events") {
         const batch = await sessionBus.drain(4000, lastEventId(route))
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }

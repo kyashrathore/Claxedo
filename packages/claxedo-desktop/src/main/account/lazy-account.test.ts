@@ -168,7 +168,7 @@ describe("setupLazyAccount", () => {
       if (!openStream) throw new Error("the stream-open channel was not registered")
       const { streamId } = await openStream(
         { sender: streamSender.value },
-        { operation: "session.events", input: { cursor: "12" } },
+        { operation: "controlPlane.events", input: { cursor: "12" } },
       ) as { streamId: string }
       expect(loads).toBe(0)
 
@@ -176,7 +176,7 @@ describe("setupLazyAccount", () => {
       await flushStreamSettlement()
 
       expect(loads).toBe(1)
-      expect(streamInputs).toEqual([{ name: "session.events", params: { cursor: "12" } }])
+      expect(streamInputs).toEqual([{ name: "controlPlane.events", params: { cursor: "12" } }])
       expect(streamSender.sent.map((frame) => frame.channel)).toEqual([
         "claxedo.account.stream.chunk",
         "claxedo.account.stream.end",
@@ -211,7 +211,7 @@ describe("setupLazyAccount", () => {
       if (!openStream) throw new Error("the stream-open channel was not registered")
       const { streamId } = await openStream(
         { sender: streamSender.value },
-        { operation: "session.events" },
+        { operation: "controlPlane.events" },
       ) as { streamId: string }
 
       await target.handlers.get(ACCOUNT_STREAM_START_CHANNEL)?.({ sender: streamSender.value }, { streamId })

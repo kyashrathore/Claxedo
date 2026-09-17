@@ -43,9 +43,9 @@ function streamBridge(): StreamBridge | undefined {
  * it installed after sign-out, and installs it in unconfigured builds (no
  * `CLAXEDO_ACCOUNT_*` baked) whose every account operation refuses. Routing a
  * stream through the bridge in any of those states would loop on connect →
- * refuse → retry and no central event would ever arrive; those builds keep
- * the plain `authFetch` path against the local server, which serves
- * `/api/claxedo/events` itself.
+ * refuse → retry and no control-plane notice would ever arrive; those builds
+ * keep the plain `authFetch` path against the local daemon, which serves
+ * `/api/cp/events` itself.
  */
 export function accountStreamAvailable(accountState: AccountState) {
   return accountState.status === "signed" && Boolean(accountRunBridge() && streamBridge())

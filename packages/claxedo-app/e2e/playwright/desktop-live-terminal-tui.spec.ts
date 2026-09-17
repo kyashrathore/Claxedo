@@ -309,9 +309,9 @@ for (const { harness, child, pause } of [
       await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("DESKTOP_TUI_OK", { timeout: 30_000 })
       const after = await (await fetch(ptyUrl)).json() as { pid: number; status: string }
       expect(after).toMatchObject({ pid: before.pid, status: "running" })
-      if (child) await packaged.page.evaluate(async ({ server, terminalId }) => {
+      if (child) await packaged.page.evaluate(async ({ server, terminalId, directory }) => {
         const events: string[] = []
-        const stream = new EventSource(`${server}/api/claxedo/events`)
+        const stream = new EventSource(`${server}/api/wr/events?directory=${encodeURIComponent(directory)}`)
         Object.assign(window, { __claxedoChildLifecycle: events, __claxedoChildStream: stream })
         stream.onmessage = (message) => {
           const frame = JSON.parse(message.data)
@@ -322,7 +322,7 @@ for (const { harness, child, pause } of [
           stream.onopen = () => resolve()
           stream.onerror = () => reject(new Error("Real lifecycle observation stream failed"))
         })
-      }, { server, terminalId: pty.id })
+      }, { server, terminalId: pty.id, directory })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
       const delegation = child
         ? pause
@@ -479,9 +479,9 @@ for (const { harness, child, pause } of [
         await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-native-cancel-followup.png`) })
       }
       if (harness === "amp") {
-        await packaged.page.evaluate(async ({ server, terminalId }) => {
+        await packaged.page.evaluate(async ({ server, terminalId, directory }) => {
           const events: unknown[] = []
-          const stream = new EventSource(`${server}/api/claxedo/events`)
+          const stream = new EventSource(`${server}/api/wr/events?directory=${encodeURIComponent(directory)}`)
           Object.assign(window, { __ampCancellationEvents: events, __ampCancellationStream: stream })
           stream.onmessage = (message) => {
             const frame = JSON.parse(message.data)
@@ -492,7 +492,7 @@ for (const { harness, child, pause } of [
             stream.onopen = () => resolve()
             stream.onerror = () => reject(new Error("Amp cancellation observation stream failed"))
           })
-        }, { server, terminalId: pty.id })
+        }, { server, terminalId: pty.id, directory })
         const terminal = packaged.page.locator(selector)
         await terminal.locator(".xterm-helper-textarea").focus()
         await packaged.page.keyboard.type("Run sleep 60 in the foreground. Only after it finishes reply CANCEL_SHOULD_NOT_FINISH.", { delay: 15 })

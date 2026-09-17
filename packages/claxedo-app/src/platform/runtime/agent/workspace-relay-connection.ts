@@ -56,15 +56,13 @@ function workspaceConnectionRefreshUrl(input: { serverUrl?: string; workspaceId:
 }
 
 /**
- * Which event-stream scopes the workspace runtime behind a connection serves.
- *
- * It is the runtime's own composition marker (`SessionAccessPolicy.sessionAuthority`
+ * How the workspace runtime behind a connection composes its session
+ * authority: the runtime's own marker (`SessionAccessPolicy.sessionAuthority`
  * in `@claxedo/workspace-runtime`), reported by the control plane because the
  * control plane is what decided where the workspace runs. A `managed-private`
- * runtime answers an UNSCOPED `/api/wr/events` or `/api/wr/runtime-events` with
- * a permanent 400 `session_event_scope_required`; a `local` one (the owner's own
- * daemon serving a user-hosted workspace, and this machine's embedded runtime)
- * serves both the workspace-wide and the session-scoped form.
+ * runtime registers every session with the control plane before it may
+ * open; a `local` one (the owner's own daemon serving a user-hosted
+ * workspace, and this machine's embedded runtime) is its sessions' authority.
  *
  * The client cannot infer this from the workspace kind: "user-hosted" names who
  * owns the machine, not how the runtime composes its session authority.

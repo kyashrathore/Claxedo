@@ -380,7 +380,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
   // jumps from nothing to the whole message, so the request tap also proves no such
   // refetch landed during the growth.
   //
-  // The runtime-events lane carries both halves of the turn: the opencode publisher
+  // The workspace stream carries both halves of the turn: the opencode publisher
   // (`agent-sdk-runtime/src/harnesses/opencode/events.ts`) stamps every frame with
   // the turn's stable reply id and carries the prompt as `user-message-delta`, and
   // the compat projection (`opencode-compat/projection.ts`) opens the prompt row and
@@ -400,9 +400,9 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     const marker = `LIVEHOST-${`${Date.now()}`.slice(-6)}-AAAA-BBBB-CCCC-DDDD-EEEE-FFFF`
     const sessionId = await createHostSession(fixture, "attached host session")
 
-    // Every relay-lane request the page makes, with start and finish times, to answer
-    // two questions: did the session-scoped runtime-events stream open before the turn
-    // started, and did any whole-transcript refetch land while the text was growing.
+    // Every relay request the page makes, with start and finish times, to answer
+    // two questions: did the workspace stream open before the turn started, and
+    // did any whole-transcript refetch land while the text was growing.
     type Tap = { url: string; startedAt: number; finishedAt?: number }
     const relayCalls: Tap[] = []
     const taps = new WeakMap<Request, Tap>()
@@ -429,15 +429,14 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     await expect(page.locator(`[data-testid="session-content"][data-session-id="${sessionId}"]`))
       .toBeVisible({ timeout: 60_000 })
 
-    // The lane has to be listening before the turn's frames exist — a stream
-    // that opens afterwards turns a live turn into a late burst.
-    const runtimeEventsCalls = () =>
-      relayCalls.filter((call) => call.url.includes("/api/wr/runtime-events"))
+    // The stream has to be listening before the turn's frames exist — a stream
+    // that opens afterwards turns a live turn into a late burst. The owner's own
+    // host serves it workspace-wide, so it opens with no session scope.
     await expect
-      .poll(() => runtimeEventsCalls().filter((call) => call.url.includes(`parentSessionId=${encodeURIComponent(sessionId)}`)).length, {
+      .poll(() => relayCalls.filter((call) => call.url.includes("/api/wr/events") && !call.url.includes("sessionID=")).length, {
         timeout: 60_000,
         message:
-          "the app never opened the session-scoped runtime-events stream for the attached session — " +
+          "the app never opened the workspace stream for the attached session — " +
           `relay calls seen: ${JSON.stringify(relayCalls.map((call) => call.url))}`,
       })
       .toBeGreaterThan(0)

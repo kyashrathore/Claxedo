@@ -187,7 +187,7 @@ failure may appear only as the clause explaining why a guard exists.
    *nothing* was actually delivered to a real user (WebSocket `Origin: file://` rejected,
    a directory path posted as `workspaceId`, `CLAXEDO_PORT=80` from a portless synthetic
    origin, local workspaces opening no event stream at all). "On units it's working" was
-   true and useless. A transport-dependent proof goes through `mock.emitFlat()` (served by
+   true and useless. A transport-dependent proof goes through `mock.emit()` (served by
    the real `**/api/wr/events` route) or a real Tier R/L lane; the direct-bus seam may
    still be used for setup/scaffolding that is not itself the thing under test. See
    `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`.

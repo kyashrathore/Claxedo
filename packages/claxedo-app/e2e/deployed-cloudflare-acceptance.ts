@@ -561,7 +561,7 @@ async function openSse(
   operation: ValidationOperation,
   lastEventId?: string,
 ) {
-  const response = await apiRequest(context, config, "run-multiplayer", env, operation, "/api/claxedo/events", {
+  const response = await apiRequest(context, config, "run-multiplayer", env, operation, "/api/cp/events", {
     headers: { accept: "text/event-stream", ...(lastEventId ? { "last-event-id": lastEventId } : {}) },
     signal: AbortSignal.timeout(90_000),
   })

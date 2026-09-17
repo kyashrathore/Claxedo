@@ -400,58 +400,18 @@ describe("apiBearerToken", () => {
 })
 
 describe("authFetch event streams", () => {
-  test("leaves unsigned loopback engine events on the local stream", async () => {
-    resetApiRuntime()
-
-    await authFetch("http://127.0.0.1:2594/global/event", {
-      headers: { Accept: "text/event-stream" },
-    })
-
-    expect(calls).toHaveLength(1)
-    expect(calls[0]?.url).toBe("http://127.0.0.1:2594/global/event")
-    expect(calls[0]?.accept).toBe("text/event-stream")
-  })
-
-  test("rewrites hosted engine events onto the control-plane lifecycle stream", async () => {
+  test("passes a stream request through untouched, keeping Accept", async () => {
     token = "tok_123"
     window.location.href = "https://app.claxedo.com/workspace"
     setServerEnv({
       claxedo: "https://control.test/",
     })
 
-    await authFetch("https://control.test/global/event", {
-      headers: { Accept: "text/event-stream" },
-    })
-
-    expect(calls[0]?.url).toBe("https://control.test/api/wr/events")
-    expect(calls[0]?.accept).toBe("text/event-stream")
-  })
-
-  test("rewrites signed loopback engine events onto the control-plane lifecycle stream", async () => {
-    token = "tok_123"
-    setServerEnv({
-      claxedo: "http://127.0.0.1:4527/",
-    })
-
-    await authFetch("http://127.0.0.1:4527/global/event", {
-      headers: { Accept: "text/event-stream" },
-    })
-
-    expect(calls[0]?.url).toBe("http://127.0.0.1:4527/api/wr/events")
-    expect(calls[0]?.accept).toBe("text/event-stream")
-  })
-
-  test("keeps Accept when rewriting a hosted event Request", async () => {
-    token = "tok_123"
-    window.location.href = "https://app.claxedo.com/workspace"
-    setServerEnv({
-      claxedo: "https://control.test/",
-    })
-
-    await authFetch(new Request("https://control.test/global/event", {
+    await authFetch(new Request("https://control.test/api/wr/events", {
       headers: { Accept: "text/event-stream" },
     }))
 
+    expect(calls).toHaveLength(1)
     expect(calls[0]?.url).toBe("https://control.test/api/wr/events")
     expect(calls[0]?.accept).toBe("text/event-stream")
   })

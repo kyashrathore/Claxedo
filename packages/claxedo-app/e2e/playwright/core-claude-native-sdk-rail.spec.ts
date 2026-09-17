@@ -3,12 +3,12 @@
  * different set of wire events than the opencode and `codex-acp` harnesses the other rail
  * specs run against.
  *
- * Frames are delivered with `mock.emitFlat()`, served only to a workspace-scoped
+ * Frames are delivered with `mock.emit()`, served only to a workspace-scoped
  * `**\/api\/wr\/events**` request, so the SSE fetch, the stream-target selection and the
  * frame parser are all in the path. The dev-only `window.__claxedoEmitTestEvent` bus seam
  * skips all three and would stay green while nothing reached a real user. The first
- * scenario boots at `/` and enters the project client-side, so it fails if the app stays
- * subscribed to the central stream alone.
+ * scenario boots at `/` and enters the project client-side, so it fails if the app never
+ * opens the workspace's stream.
  *
  * What the server puts on that wire:
  *   1. creation publishes `session.lifecycle` `creating` then `created`, the latter
@@ -203,7 +203,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
     // before any event — same ordering the real backend produces.
     fixtures.setSessions([{ sessionId: "ses_claude_new", title: "New Session", createdAt: now, updatedAt: now }])
 
-    mock.emitFlat({
+    mock.emit({
       type: "session.lifecycle",
       phase: "created",
       directory: DIR,
@@ -276,7 +276,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
       neighbour,
       { sessionId: id, title: "New Session", createdAt: now, updatedAt: now, lastHumanTurnAt: now },
     ])
-    mock.emitFlat({
+    mock.emit({
       type: "session.lifecycle",
       phase: "created",
       directory: DIR,
@@ -305,7 +305,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
     // own refetch rather than by anything reacting to the turn.
     await page.waitForTimeout(3_000)
 
-    mock.emitFlat({ type: "agent.lifecycle", tabId: id, workspaceId: WORKSPACE_ID, sessionId: id, eventType: "Busy" })
+    mock.emit({ type: "agent.lifecycle", tabId: id, workspaceId: WORKSPACE_ID, sessionId: id, eventType: "Busy" })
 
     // The fixture is deliberately left alone: `/api/control/session-list` keeps serving the
     // "New Session" placeholder for the rest of the scenario.
@@ -319,7 +319,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
     // The frame that announces the new title. It reaches the workspace stream only because
     // `bridgeLifecycleEvent` (workspace-runtime `routes/session.ts`) forwards it; drop that
     // and the rail holds the placeholder until an unrelated refetch happens to land.
-    mock.emitFlat({
+    mock.emit({
       type: "session.updated",
       directory: DIR,
       workspaceId: WORKSPACE_ID,
@@ -339,7 +339,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
       },
     })
 
-    mock.emitFlat({ type: "agent.lifecycle", tabId: id, workspaceId: WORKSPACE_ID, sessionId: id, eventType: "Idle" })
+    mock.emit({ type: "agent.lifecycle", tabId: id, workspaceId: WORKSPACE_ID, sessionId: id, eventType: "Idle" })
 
     await expect(row.locator('[data-slot="session-navigation-title"]')).toHaveText(newTitle, { timeout: 20_000 })
 

@@ -770,16 +770,9 @@ test.describe("core processes @core", () => {
         })
         .catch(() => {})
     }
-    // `ProcessPaneProvider` reads the crash off `useClaxedoEvents`, whose stream
-    // target is `/api/claxedo/events`, while global-sdk's compat loop reads
-    // `/api/wr/events`. Both real servers mount one handler across `/global/event`,
-    // `/api/wr/events` and `/api/claxedo/events`, so serving the same frames on every
-    // spelling matches the contract — and pinning only one of them lets the other
-    // reader consume the interception, leaving the pane without its crash.
-    // Re-delivery is idempotent: the frame assigns the same crashed state.
+    // `process.crashed` is a workspace control frame: `ProcessPaneProvider`
+    // reads it off `useClaxedoEvents`, whose workspace stream is `/api/wr/events`.
     await page.route("**/api/wr/events**", deliverCrashEvent, { times: 1 })
-    await page.route("**/api/claxedo/events**", deliverCrashEvent, { times: 1 })
-    await page.route("**/api/wr/runtime-events**", deliverCrashEvent, { times: 1 })
 
     await openWorkspace(page, DIR)
     const overlay = await openProcessesNavigator(page)

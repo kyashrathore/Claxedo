@@ -1,11 +1,9 @@
 /**
- * Pure reconnect / backoff / heartbeat / escalation decisions for the Claxedo
- * event stream (`ClaxedoEventsProvider`). Extracted so the timing math and the
+ * Pure reconnect / backoff / heartbeat / escalation decisions for the two
+ * event streams (`ClaxedoEventsProvider`). Extracted so the timing math and the
  * failure-escalation rule can be spec-tested deterministically without a live
  * SSE connection — the provider's `connectTarget` closure consumes these and
  * keeps only the actual timer arming and fetch loop.
- *
- * Mirrors the sibling `platform/sync/global-sdk/reconnect-backoff.ts` shape.
  */
 export const RECONNECT_DELAY_MS = 2000
 export const MAX_RECONNECT_DELAY_MS = 30000

@@ -146,10 +146,8 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       const url = new URL(request.url())
       // Event streams are excluded: they are long-lived connections that re-establish by
       // design, so a reconnect is not the polling loop this guard looks for.
-      // `/api/wr/events` is the workspace-runtime bus stream and belongs with the other two.
       if (
-        url.pathname === "/event" ||
-        url.pathname === "/global/event" ||
+        url.pathname === "/api/cp/events" ||
         url.pathname === "/api/wr/events" ||
         url.pathname.endsWith("/health")
       ) {
