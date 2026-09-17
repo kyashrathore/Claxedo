@@ -18,6 +18,9 @@ import {
   sessionIdle,
 } from "../../../agent-sdk-runtime/src/compat-events"
 import { createSessionRoutes } from "../../../workspace-runtime/src/routes/session-core"
+import { workspaceEventsHandler } from "../../../workspace-runtime/src/routes/events"
+import { createRuntimeEventHub } from "../../../workspace-runtime/src/runtime-event-hub"
+import { sessionEventDeliveryPolicy } from "../../../workspace-runtime/src/event-delivery"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
 import { createRelayHostAuthMiddleware } from "../../../workspace-runtime/src/workspace-host-service-auth"
 import { WorkspaceCheckpointRoutes } from "../workspace/routes/checkpoints"
@@ -131,7 +134,7 @@ type Stream = {
 
 async function connect(app: Hono, token: string, lastEventId?: string): Promise<Stream> {
   const controller = new AbortController()
-  const response = await app.request("http://runtime.test/event?sessionID=ses_runtime_private", {
+  const response = await app.request("http://runtime.test/api/wr/events?sessionID=ses_runtime_private", {
     headers: {
       authorization: `Bearer ${token}`,
       accept: "text/event-stream",
@@ -454,6 +457,15 @@ describe("two-user signed runtime transport acceptance", () => {
       sessionBus,
       publishGlobal: () => {},
     }))
+    // The workspace's one stream: a share grantee reads it session-scoped
+    // under a lease, a principal without a grant is refused.
+    runtimeApp.get("/api/wr/events", workspaceEventsHandler({
+      directory: "/workspace",
+      eventHub: createRuntimeEventHub(),
+      bus: sessionBus as never,
+      sessionAccessPolicy: policy,
+      policy: sessionEventDeliveryPolicy(policy),
+    }))
 
     const operationId = "op_runtime_private"
     const reserved = await signedRequest(alice.token, "/api/control/session-registrations/reserve", {
@@ -565,7 +577,7 @@ describe("two-user signed runtime transport acceptance", () => {
     })
 
     const bobLive = await connect(runtimeApp, bobRht)
-    const caseyLive = await runtimeApp.request("http://runtime.test/event?sessionID=ses_runtime_private", {
+    const caseyLive = await runtimeApp.request("http://runtime.test/api/wr/events?sessionID=ses_runtime_private", {
       headers: {
         authorization: `Bearer ${caseyRht}`,
         accept: "text/event-stream",
@@ -583,7 +595,8 @@ describe("two-user signed runtime transport acceptance", () => {
       ts: 1,
     })
     sessionBus.publish({ type: "process.status", directory: "/workspace", configId: "public-process", status: "running" })
-    const bobLiveFrames = await bobLive.until((frames) => frames.some((frame) => frame.data.info && (frame.data.info as { title?: string }).title === "live-private"))
+    const control = (frame: { data: Record<string, unknown> }) => frame.data.payload as { info?: { title?: string }; sessionID?: string } | undefined
+    const bobLiveFrames = await bobLive.until((frames) => frames.some((frame) => control(frame)?.info?.title === "live-private"))
     const bobCursor = bobLiveFrames.findLast((frame) => frame.id)?.id
     expect(bobCursor).toBeTruthy()
     bobLive.close()
@@ -597,8 +610,8 @@ describe("two-user signed runtime transport acceptance", () => {
       ts: 2,
     })
     const bobReconnect = await connect(runtimeApp, bobRht, bobCursor)
-    const replay = await bobReconnect.until((frames) => frames.some((frame) => frame.data.info && (frame.data.info as { title?: string }).title === "during-reconnect-gap"))
-    expect(replay.some((frame) => frame.data.sessionID === "ses_runtime_private")).toBe(true)
+    const replay = await bobReconnect.until((frames) => frames.some((frame) => control(frame)?.info?.title === "during-reconnect-gap"))
+    expect(replay.some((frame) => control(frame)?.sessionID === "ses_runtime_private")).toBe(true)
 
     const removed = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/participants", {
       method: "DELETE",

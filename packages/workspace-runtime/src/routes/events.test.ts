@@ -66,7 +66,8 @@ const managedPolicy = (input: {
   }
 }
 
-const relayAuth = { actor_id: "actor_1", actor_kind: "human", org_id: "org_1", workspace_id: "ws_1", host_id: "host_1", role: "editor" }
+const relayAuth = { actor_id: "actor_1", actor_kind: "human", org_id: "org_1", workspace_id: "ws_1", host_id: "host_1", role: "owner" }
+const viewerAuth = { ...relayAuth, actor_id: "actor_2", role: "viewer" }
 
 const readers = new WeakMap<Response, ReadableStreamDefaultReader<Uint8Array>>()
 async function readUntil(response: Response, value: string, reads = 20) {
@@ -153,6 +154,24 @@ describe("wr/events — one stream per workspace runtime", () => {
     controller.abort()
     expect(text).toContain("prt-a")
     expect(text).toContain("prt-b")
+  })
+
+  test("a workspace share reads the unscoped stream, but only the sessions the authority grants", async () => {
+    const { app, hub, bus } = harness({
+      policy: managedPolicy({ workspace: "allow", session: (id) => id === "shared" }),
+      relayAuth: viewerAuth,
+    })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    hub.publishGlobal(part("private", "prt-private", { status: "running" }))
+    bus.publish({ type: "pty.exited", id: "pty-x", exitCode: 0 })
+    hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
+    const text = await readUntil(response, "prt-shared")
+    controller.abort()
+    expect(text).toContain("pty-x")
+    expect(text).toContain("prt-shared")
+    expect(text).not.toContain("prt-private")
   })
 
   test("a principal without workspace access is refused the unscoped stream", async () => {

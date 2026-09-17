@@ -400,9 +400,13 @@ export function createIdentityAwareEventSource<T>(input: {
       ...(input.isTerminal ? { isTerminal: input.isTerminal } : {}),
       ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
     })
+    // A cursor beyond anything this scope has assigned came from a scope this
+    // process no longer holds (or never held): it cannot be resumed, and the
+    // ring's own hole check would read it as "nothing to replay". Once the
+    // scope has assigned ids past the cursor, the cursor is its own numbering.
     const connectionReplay = !tombstone && key !== "local" && retained.lastId() !== undefined
       ? { ...replay, hasGap: (lastEventId?: string, throughId?: string) =>
-          Number(lastEventId ?? "0") > 0 || replay.hasGap(lastEventId, throughId) }
+          Number(lastEventId ?? "0") > Number(replay.lastId() ?? "0") || replay.hasGap(lastEventId, throughId) }
       : replay
     const created: Scope<T> = {
       key,
