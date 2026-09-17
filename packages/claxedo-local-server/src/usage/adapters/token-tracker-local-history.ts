@@ -32,11 +32,11 @@ export type LocalHistorySnapshot = {
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
   unclassified: number
+  scannedAt: number
 }
 
-const CACHE_VERSION = 8
-const CACHE_TTL_MS = 5 * 60_000
-const CACHE_FILE = "local-history-v8.json"
+const CACHE_VERSION = 9
+const CACHE_FILE = "local-history-v9.json"
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
 
 type EmbeddedHistoryRow = {
@@ -75,23 +75,15 @@ type TokenTrackerHistoryModule = {
 type CachedLocalHistory = {
   version: typeof CACHE_VERSION
   key: string
-  createdAt: number
+  since: number
+  until: number
   snapshot: LocalHistorySnapshot
 }
 
-function scanKey(input: {
-  sourceHome: string
-  since: number
-  until: number
-  sources?: string[]
-  classificationKey: string
-}) {
+function scanKey(input: { sourceHome: string; sources?: string[] }) {
   return createHash("sha256").update(JSON.stringify({
     sourceHome: input.sourceHome,
-    since: input.since,
-    until: input.until,
     sources: (input.sources ?? []).toSorted(),
-    classificationKey: input.classificationKey,
   })).digest("hex")
 }
 
@@ -104,26 +96,33 @@ function isCachedLocalHistory(value: unknown, key: string): value is CachedLocal
   const row = record(value)
   return row?.version === CACHE_VERSION
     && row.key === key
-    && typeof row.createdAt === "number"
-    && record(row.snapshot) !== undefined
+    && typeof row.since === "number"
+    && typeof row.until === "number"
+    && typeof record(row.snapshot)?.scannedAt === "number"
 }
 
-async function readCached(stateDir: string, key: string): Promise<LocalHistorySnapshot | undefined> {
+/**
+ * The stored snapshot answers any request inside the range it was scanned
+ * for; the route bounds rows to the requested instants itself. Its age is not
+ * a reason to rescan: a walk over every transcript on this machine is only ever
+ * requested explicitly, and the snapshot carries `scannedAt` so a reader can
+ * say how old it is.
+ */
+async function readCached(stateDir: string, key: string, range: { since: number; until: number }) {
   try {
     const cached: unknown = JSON.parse(await fs.readFile(path.join(stateDir, CACHE_FILE), "utf8"))
     if (!isCachedLocalHistory(cached, key)) return undefined
-    if (Date.now() - cached.createdAt > CACHE_TTL_MS) return undefined
+    if (cached.since > range.since || cached.until < range.until) return undefined
     return cached.snapshot
   } catch {
     return undefined
   }
 }
 
-async function writeCached(stateDir: string, key: string, snapshot: LocalHistorySnapshot) {
+async function writeCached(stateDir: string, cached: CachedLocalHistory) {
   await fs.mkdir(stateDir, { recursive: true, mode: 0o700 })
   const target = path.join(stateDir, CACHE_FILE)
-  const temporary = `${target}.${process.pid}.${key}.tmp`
-  const cached: CachedLocalHistory = { version: CACHE_VERSION, key, createdAt: Date.now(), snapshot }
+  const temporary = `${target}.${process.pid}.${cached.key}.tmp`
   await fs.writeFile(temporary, JSON.stringify(cached), { mode: 0o600 })
   await fs.rename(temporary, target)
 }
@@ -134,18 +133,18 @@ export async function scanTokenTrackerLocalHistory(input: {
   since: number
   until: number
   sources?: string[]
-  classificationKey: string
   refresh?: boolean
   classify: (input: { source?: string; nativeSessionId?: string; observedAt: number }) => UsageProvenance | Promise<UsageProvenance>
 }): Promise<LocalHistorySnapshot> {
   const key = scanKey(input)
-  const active = scans.get(key)
+  if (!input.refresh) {
+    const cached = await readCached(input.stateDir, key, input)
+    if (cached) return cached
+  }
+  const inflight = `${key}:${input.since}:${input.until}`
+  const active = scans.get(inflight)
   if (active) return await active
   const scan = (async () => {
-    if (!input.refresh) {
-      const cached = await readCached(input.stateDir, key)
-      if (cached) return cached
-    }
     // @ts-expect-error TokenTracker ships no declarations; the exact embedded
     // scanner contract is defined above and verified against the pinned patch.
     const scanner: TokenTrackerHistoryModule = await import("tokentracker-cli/src/lib/rollout.js")
@@ -188,14 +187,15 @@ export async function scanTokenTrackerLocalHistory(input: {
       })),
       classifiedClaxedo: result.classified_claxedo,
       unclassified: result.unclassified,
+      scannedAt: Date.now(),
     }
-    await writeCached(input.stateDir, key, snapshot)
+    await writeCached(input.stateDir, { version: CACHE_VERSION, key, since: input.since, until: input.until, snapshot })
     return snapshot
   })()
-  scans.set(key, scan)
+  scans.set(inflight, scan)
   try {
     return await scan
   } finally {
-    if (scans.get(key) === scan) scans.delete(key)
+    if (scans.get(inflight) === scan) scans.delete(inflight)
   }
 }

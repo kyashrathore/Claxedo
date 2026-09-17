@@ -151,6 +151,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
       error: z.string().optional(),
     })),
     unclassified: z.number(),
+    scannedAt: z.number().optional(),
     error: z.string().optional(),
   }),
   total: z.object(UsageSeriesShape),

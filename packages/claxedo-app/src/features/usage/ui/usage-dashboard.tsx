@@ -2,6 +2,7 @@ import { For, Show, createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { unifiedUsageQuery } from "../data/usage-query"
+import { formatRelativeTime } from "@/lib/relative-time"
 import { type UnifiedUsageResponse, type UsageSeries } from "../data/usage-api"
 import { UsageScopeSwitcher, type UsageView } from "./usage-scope-switcher"
 import { UsageChart } from "./usage-chart"
@@ -165,6 +166,11 @@ export function UsageDashboard() {
                 {snapshot.externalLocal.error ??
                   "Current-machine provider history is unavailable; Total local usage cannot be measured."}
               </p>
+            </Show>
+            <Show when={selected() === "total" ? snapshot.externalLocal.scannedAt : undefined} keyed>
+              {(scannedAt) => (
+                <p>Local history scanned {formatRelativeTime(scannedAt)}. Refresh to scan again.</p>
+              )}
             </Show>
             <For
               each={

@@ -185,6 +185,29 @@ describe("UsageDashboard", () => {
     }
   })
 
+  test("Total shows how old the stored transcript walk is, and only the refresh control asks for a new one", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      return { ...response, externalLocal: { ...response.externalLocal, scannedAt: Date.now() - 3 * 3_600_000 } }
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    clients.add(client)
+    render(() => (
+      <QueryClientProvider client={client}>
+        <UsageDashboard />
+      </QueryClientProvider>
+    ))
+    fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
+    expect(await screen.findByText("Local history scanned 3 hours ago. Refresh to scan again.")).toBeVisible()
+    fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+    await screen.findByRole("heading", { name: "By provider" })
+    fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
+    fireEvent.click(screen.getByRole("button", { name: "30 days" }))
+    await waitFor(() => expect(mocks.fetchUnifiedUsage.mock.calls.filter(([request]) => request.view === "total").length).toBeGreaterThanOrEqual(2))
+    expect(mocks.fetchUnifiedUsage.mock.calls.every(([request]) => !request.refreshNonce)).toBe(true)
+  })
+
   test("requests the selected sort metric from the first breakdown page", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.add(client)

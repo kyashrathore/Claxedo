@@ -52,6 +52,7 @@ type LocalHistorySnapshot = {
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
   unclassified: number
+  scannedAt?: number
 }
 
 type UsageOutboxResult = {
@@ -1388,6 +1389,7 @@ export function LocalUsageRoutes(input: {
         status: historyError ? "degraded" : view === "total" && input.history ? "available" : "unavailable",
         coverage: history.coverage,
         unclassified: history.unclassified,
+        ...(history.scannedAt === undefined ? {} : { scannedAt: history.scannedAt }),
         ...(historyError ? { error: historyError } : {}),
       },
       total: totalSeries,

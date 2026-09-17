@@ -55,7 +55,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1_000,
       until: observedAt + 1_000,
       sources: ["claude"],
-      classificationKey: "fixture-overlap-v1",
       classify,
     })
     expect(snapshot.rows).toEqual([expect.objectContaining({
@@ -84,7 +83,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1_000,
       until: observedAt + 1_000,
       sources: ["claude"],
-      classificationKey: "fixture-unclassified-total-v1",
       classify: () => "unclassified",
     })
 
@@ -103,7 +101,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1_000,
       until: observedAt + 1_000,
       sources: ["claude"],
-      classificationKey: "fixture-direct-v1",
       classify,
     }
     const [first, concurrent] = await Promise.all([
@@ -112,11 +109,14 @@ describe("TokenTracker embedded local history", () => {
     ])
     expect(concurrent).toEqual(first)
     expect(classify).toHaveBeenCalledTimes(2)
+    expect(first.scannedAt).toBeGreaterThan(observedAt)
 
     classify.mockClear()
     await expect(scanTokenTrackerLocalHistory(input)).resolves.toEqual(first)
     expect(classify).not.toHaveBeenCalled()
-    await expect(scanTokenTrackerLocalHistory({ ...input, refresh: true })).resolves.toEqual(first)
+    const refreshed = await scanTokenTrackerLocalHistory({ ...input, refresh: true })
+    expect(refreshed).toEqual({ ...first, scannedAt: refreshed.scannedAt })
+    expect(refreshed.scannedAt).toBeGreaterThanOrEqual(first.scannedAt)
     expect(classify).toHaveBeenCalledTimes(2)
 
     const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v8.json.gz"))).toString("utf8")
@@ -129,6 +129,70 @@ describe("TokenTracker embedded local history", () => {
     expect(cursorText).not.toContain("private response")
   })
 
+  test("a read never walks transcripts on its own: age, new facts and new files all wait for a refresh", async () => {
+    const { root, observedAt } = await fixture()
+    const stateDir = path.join(root, "state")
+    const input = {
+      sourceHome: root,
+      stateDir,
+      since: observedAt - 1_000,
+      until: observedAt + 1_000,
+      sources: ["claude"],
+      classify: vi.fn(() => "external" as const),
+    }
+    const first = await scanTokenTrackerLocalHistory(input)
+    const cursors = path.join(stateDir, "embedded-history-cursors-v8.json.gz")
+    const cursorsBefore = await fs.stat(cursors)
+
+    // A transcript that grows, a fact set that changes what "Claxedo" means,
+    // and a snapshot far older than any refresh interval: the previous policy
+    // rescanned every transcript on this machine for each of these.
+    const direct = path.join(root, ".claude", "projects", "fixture", "direct.jsonl")
+    await fs.appendFile(direct, `${JSON.stringify({
+      sessionId: "direct",
+      timestamp: new Date(observedAt).toISOString(),
+      message: { role: "assistant", model: "claude-sonnet-4-5", usage: { input_tokens: 7, output_tokens: 1 } },
+    })}\n`)
+    const reclassify = vi.fn(() => "claxedo" as const)
+    vi.useFakeTimers({ now: observedAt + 365 * 86_400_000, toFake: ["Date"] })
+    try {
+      const read = await scanTokenTrackerLocalHistory({ ...input, classify: reclassify })
+      expect(read).toEqual(first)
+      expect(reclassify).not.toHaveBeenCalled()
+      expect((await fs.stat(cursors)).mtimeMs).toBe(cursorsBefore.mtimeMs)
+
+      const narrower = await scanTokenTrackerLocalHistory({ ...input, since: observedAt - 500, until: observedAt + 500, classify: reclassify })
+      expect(narrower).toEqual(first)
+      expect(reclassify).not.toHaveBeenCalled()
+
+      const refreshed = await scanTokenTrackerLocalHistory({ ...input, refresh: true })
+      expect(refreshed.rows.find((row) => row.nativeSessionId === "direct")?.tokens).toMatchObject({ input: 17, output: 21 })
+      expect(refreshed.scannedAt).toBe(observedAt + 365 * 86_400_000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a range the stored snapshot does not cover is the one read that scans", async () => {
+    const { root, observedAt } = await fixture()
+    const stateDir = path.join(root, "state")
+    const classify = vi.fn(() => "external" as const)
+    const input = { sourceHome: root, stateDir, since: observedAt - 1_000, until: observedAt + 1_000, sources: ["claude"], classify }
+    await scanTokenTrackerLocalHistory(input)
+    classify.mockClear()
+
+    const wider = await scanTokenTrackerLocalHistory({ ...input, until: observedAt + 2_000 })
+    expect(classify).toHaveBeenCalled()
+    classify.mockClear()
+
+    // The wider walk now covers the original range too, so it is served, and
+    // the file holds exactly one snapshot: the widest walk, not the latest read.
+    await expect(scanTokenTrackerLocalHistory(input)).resolves.toEqual(wider)
+    expect(classify).not.toHaveBeenCalled()
+    const stored = JSON.parse(await fs.readFile(path.join(stateDir, "local-history-v9.json"), "utf8")) as { since: number; until: number }
+    expect(stored).toMatchObject({ since: observedAt - 1_000, until: observedAt + 2_000 })
+  })
+
   test("refreshes a changed file while reusing unchanged file cursors within a numeric warm budget", async () => {
     const { root, observedAt } = await fixture()
     const stateDir = path.join(root, "state")
@@ -138,7 +202,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1_000,
       until: observedAt + 1_000,
       sources: ["claude"],
-      classificationKey: "fixture-incremental-v1",
       classify: () => "external" as const,
     }
     await scanTokenTrackerLocalHistory(input)
@@ -165,7 +228,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1_000,
       until: observedAt + 1_000,
       sources: ["claude"],
-      classificationKey: "fixture-corrupt-v1",
       classify: () => "external",
     })
     expect(snapshot.rows).toHaveLength(2)
@@ -213,7 +275,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1,
       until: observedAt + 10,
       sources: ["codex"],
-      classificationKey: "fixture-codex-deltas-v1",
       classify: () => "external",
     })
 
@@ -234,7 +295,7 @@ describe("TokenTracker embedded local history", () => {
       label: "subagent thread_spawn",
       forkMarker: { source: { subagent: { thread_spawn: { parent_thread_id: "codex-parent" } } } },
     },
-  ])("counts copied parent history only once for a Codex $label rollout", async ({ label, forkMarker }) => {
+  ])("counts copied parent history only once for a Codex $label rollout", async ({ forkMarker }) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-fork-history-"))
     roots.push(root)
     const sessions = path.join(root, ".codex", "sessions", "2026", "08", "08")
@@ -310,7 +371,6 @@ describe("TokenTracker embedded local history", () => {
       since: forkedAt - 60_000,
       until: forkedAt + 20_000,
       sources: ["codex"],
-      classificationKey: `fixture-codex-fork-history-${label}-v1`,
       classify: () => "external",
     })
 
@@ -365,7 +425,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 60_000,
       until: observedAt + 3_000,
       sources: ["codex"],
-      classificationKey: "fixture-codex-identical-turns-v1",
       classify: () => "external",
     })
 
@@ -404,7 +463,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1,
       until: observedAt + 1,
       sources: ["claude"],
-      classificationKey: "fixture-claude-global-dedupe-v1",
       classify: () => "external",
     })
 
@@ -438,7 +496,6 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1,
       until: observedAt + 1,
       sources: ["cursor"],
-      classificationKey: "fixture-cursor-v1",
       classify: ({ nativeSessionId }) => nativeSessionId === "cursor-claxedo" ? "claxedo" : "external",
     })
 

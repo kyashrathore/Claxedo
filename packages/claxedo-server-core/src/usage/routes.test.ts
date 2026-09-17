@@ -42,3 +42,44 @@ describe("local usage routes, quota view", () => {
     })
   })
 })
+
+describe("local usage routes, total view", () => {
+  const empty = { rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0, scannedAt: 1_234 }
+  function withHistory(history: NonNullable<Parameters<typeof LocalUsageRoutes>[0]["history"]>) {
+    return LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      identity: async () => undefined,
+      outbox,
+      history,
+    })
+  }
+  const RANGE = "since=0&until=20&timezone=UTC"
+
+  test("a plain read asks for the stored history, and only the refresh nonce asks for a walk", async () => {
+    const history = vi.fn(async () => empty)
+    const app = withHistory(history)
+    expect((await app.request(`/?${RANGE}&view=total`)).status).toBe(200)
+    expect(history).toHaveBeenLastCalledWith({ since: 0, until: 20, refresh: false })
+    expect((await app.request(`/?${RANGE}&view=total&refresh_nonce=3`)).status).toBe(200)
+    expect(history).toHaveBeenLastCalledWith({ since: 0, until: 20, refresh: true })
+    expect((await app.request(`/?${RANGE}&view=total&refresh_nonce=3`)).status).toBe(200)
+    expect(history).toHaveBeenLastCalledWith({ since: 0, until: 20, refresh: false })
+    expect(history).toHaveBeenCalledTimes(3)
+  })
+
+  test("the views that do not draw local history never touch it", async () => {
+    const history = vi.fn(async () => empty)
+    const app = withHistory(history)
+    for (const view of ["quota", "claxedo"]) {
+      expect((await app.request(`/?${RANGE}&view=${view}`)).status).toBe(200)
+      expect((await app.request(`/?${RANGE}&view=${view}&refresh_nonce=${view.length}`)).status).toBe(200)
+    }
+    expect(history).not.toHaveBeenCalled()
+  })
+
+  test("the response says when the rows it draws were scanned", async () => {
+    const app = withHistory(async () => empty)
+    const body = await (await app.request(`/?${RANGE}&view=total`)).json()
+    expect(body.externalLocal).toMatchObject({ status: "available", scannedAt: 1_234 })
+  })
+})

@@ -167,6 +167,14 @@ export type UnifiedUsageResponse = {
       error?: string
     }>
     unclassified: number
+    /**
+     * Epoch ms of the transcript walk these rows came from. Absent when no
+     * walk has produced them (a view that does not read local history, or a
+     * scanner failure with nothing held). A walk runs only on an explicit
+     * refresh or for a range nothing stored covers, so rows can be much older
+     * than the response.
+     */
+    scannedAt?: number
     error?: string
   }
   total: UsageSeries
