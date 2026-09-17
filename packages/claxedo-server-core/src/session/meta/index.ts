@@ -26,7 +26,8 @@ import {
   sessionMetaMapByRef,
   sessionMetaMapBySessionId,
 } from "./read"
-import type { Workspace } from "../../workspace/store"
+import { resolveWorkspace, type Workspace } from "../../workspace/store"
+import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
@@ -49,7 +50,8 @@ export { parseSessionMeta } from "./shape"
  */
 export async function syncSessionMetas(ws: Workspace | undefined, input: unknown[]) {
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))
-  await upsertRows(rows)
+  const inserted = await upsertRows(rows)
+  await announceInventoryChange(inserted, ws)
   if (!ws?.id) return
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
   const owned = ClaxedoDB.use((db) => db
@@ -73,26 +75,47 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
     })
     return
   }
-  deleteSessionMetaRefs(owned.filter((session_ref) => !incoming.includes(session_ref)))
+  const stale = owned.filter((session_ref) => !incoming.includes(session_ref))
+  deleteSessionMetaRefs(stale)
+  if (stale.length) await announceInventoryChange([ws.id], ws)
 }
 
 export async function syncSessionMeta(ws: Workspace | undefined, input: unknown) {
-  await upsertRows([sessionMetaSyncRow(input, ws)])
+  const inserted = await upsertRows([sessionMetaSyncRow(input, ws)])
+  await announceInventoryChange(inserted, ws)
 }
 
 export async function deleteSessionMeta(sessionID: string) {
-  ClaxedoDB.transaction((db) => {
-    const sessionIDs = sessionTreeIDs(
-      db.select({
-        session_id: ClaxedoSessionMetaTable.session_id,
-        parent_session_id: ClaxedoSessionMetaTable.parent_session_id,
-      }).from(ClaxedoSessionMetaTable).all(),
-      sessionID,
-    )
+  const removed = ClaxedoDB.transaction((db) => {
+    const rows = db.select({
+      session_id: ClaxedoSessionMetaTable.session_id,
+      parent_session_id: ClaxedoSessionMetaTable.parent_session_id,
+      workspace_id: ClaxedoSessionMetaTable.workspace_id,
+    }).from(ClaxedoSessionMetaTable).all()
+    const sessionIDs = sessionTreeIDs(rows, sessionID)
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, sessionIDs)).run()
+    return rows.filter((row) => sessionIDs.includes(row.session_id)).flatMap((row) => row.workspace_id ? [row.workspace_id] : [])
   })
+  await announceInventoryChange(removed)
+}
+
+/**
+ * Rings `cp/events` once per workspace whose inventory gained or lost a row.
+ * After the write has committed, so the read the notice provokes sees the row.
+ */
+async function announceInventoryChange(workspaceIDs: Array<string | null | undefined>, ws?: Workspace) {
+  const ts = Date.now()
+  for (const workspaceId of new Set(workspaceIDs.flatMap((id) => (id ? [id] : [])))) {
+    const workspace = ws?.id === workspaceId ? ws : await resolveWorkspace({ workspaceId }).catch(() => undefined)
+    controlBus.publish({
+      type: "session.inventory.changed",
+      workspaceId,
+      ...(workspace?.org_id ? { orgId: workspace.org_id } : {}),
+      ts,
+    })
+  }
 }
 
 function sessionTreeIDs(
@@ -129,7 +152,7 @@ export async function putSessionMeta(
   },
 ) {
   const stamp = now()
-  ClaxedoDB.transaction((db) => {
+  const inserted = ClaxedoDB.transaction((db) => {
     const prevByID = db.select().from(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_id, sessionID)).get()
     if (prevByID && !host(prevByID.host)) throw new Error("Unsupported session metadata scope")
     const workspaceID = input.workspaceID === undefined
@@ -224,7 +247,9 @@ export async function putSessionMeta(
         }).run()
       }
     }
+    return prev ? [] : [workspaceID]
   })
+  await announceInventoryChange(inserted, input.ws)
 }
 
 export async function sessionMetas(input: string[]) {
@@ -469,11 +494,12 @@ export function applySessionMeta(input: Array<Record<string, unknown>>) {
   })
 }
 
-async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
+/** Writes the rows; returns the workspace of every row that did not exist before. */
+async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): Promise<Array<string | null>> {
   const all = rows.filter((item): item is Exclude<typeof item, undefined> => !!item)
-  if (!all.length) return
+  if (!all.length) return []
   const hit = ids(all.map((item) => item.session_ref))
-  ClaxedoDB.transaction((db) => {
+  return ClaxedoDB.transaction((db) => {
     // Before anything is written, so the row read as `prev` below is the
     // re-keyed row and keeps its `created_at`.
     for (const item of all) rekeySessionRef(db, item)
@@ -508,6 +534,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
         set: update,
       }).run()
     }
+    return all.filter((item) => !old.has(item.session_ref)).map((item) => item.workspace_id ?? null)
   })
 }
 

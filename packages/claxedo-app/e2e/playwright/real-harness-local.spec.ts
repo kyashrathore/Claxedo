@@ -1073,6 +1073,24 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
+  test("a session created elsewhere reaches the home route's rail from a cp/events notice", async ({ page }) => {
+    const dir = await makeWorkspace("inventory-notice", "claude")
+    await seedOneProject(page, dir)
+    const notices: string[] = []
+    page.on("websocket", (socket) => {
+      if (!socket.url().includes("/api/cp/events")) return
+      socket.on("framereceived", (frame) => { notices.push(String(frame.payload)) })
+    })
+    await page.goto("/")
+    await expect(page.locator('[data-testid="rail-sidebar"], [data-slot="rail-sidebar"]').first()).toBeVisible({ timeout: 30_000 }).catch(() => undefined)
+    await expect.poll(() => notices.some((frame) => frame.includes('"type":"heartbeat"')), { message: "cp/events is open on the home route", timeout: 30_000 }).toBe(true)
+    // No workspace is routed on `/`, so no wr/events stream is open; the only
+    // way the rail learns of this session is the control plane's own notice.
+    const created = await createHarnessSession(dir, { title: "Created from the CLI", harness: "claude", providerID: "anthropic", modelID: "claude-sonnet-4-5" })
+    await expectRailRowVisible({ page, sessionId: created.id, timeout: 30_000 })
+    await expect.poll(() => notices.some((frame) => frame.includes('"type":"session.inventory.changed"')), { timeout: 15_000 }).toBe(true)
+  })
+
   test("local new-worktree session receives its first reply", async ({ page }) => {
     scripted?.resetCounts()
     const dir = await makeWorkspace("new-local-worktree")

@@ -75,9 +75,10 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
       // same authority call at subscribe time, so both sides share a namespace.
       return !!principal.orgId && event.orgId === principal.orgId
     case "provision":
-      // orgId is stamped from Workspace.org_id at publish (provision-events.ts)
-      // — the same authority-internal namespace as principal.orgId. Org-less
-      // (local) workspaces stay invisible to signed subscribers.
+    case "session.inventory.changed":
+      // orgId is stamped from Workspace.org_id at publish — the same
+      // authority-internal namespace as principal.orgId. Org-less (local)
+      // workspaces stay invisible to signed subscribers.
       return !!principal.orgId && event.orgId === principal.orgId
     default:
       // worktree.* carries no owner identity: it is a local daemon's notice

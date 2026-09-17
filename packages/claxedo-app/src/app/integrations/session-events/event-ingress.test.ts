@@ -1263,6 +1263,51 @@ describe("global sync event ingress", () => {
     expect(relayReads).toBe(2)
     dispose()
   })
+
+  test("a workspace's inventory doorbell sends the section back to the runtime, naming no session", async () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const workspaceRows = queryKeys.runtime.workspaceSessions("http://test.local", "ws_home_route")
+    let reads = 0
+    const readWorkspaceRows = () => queryClient.fetchQuery({
+      queryKey: workspaceRows,
+      staleTime: 30_000,
+      queryFn: () => {
+        reads++
+        return reads === 1 ? [] : ["ses_created_elsewhere"]
+      },
+    })
+    expect(await readWorkspaceRows()).toEqual([])
+    const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+      onSessionAccessRevoked: () => undefined,
+    })
+    claxedoEvents.emit({ type: "session.inventory.changed", workspaceId: "ws_home_route", ts: 1788768588186 })
+    await settleUntil(() => queryClient.getQueryState(workspaceRows)?.isInvalidated === true)
+    expect(await readWorkspaceRows()).toEqual(["ses_created_elsewhere"])
+    expect(reads).toBe(2)
+    dispose()
+  })
 })
 
 describe("live session events reach the pane that registered the session", () => {

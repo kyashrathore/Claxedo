@@ -14,9 +14,10 @@ const prev = {
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const [{ listSessionNavigationMetas, sessionMeta, syncSessionMetas }, { ClaxedoDB }] = await Promise.all([
+const [{ deleteSessionMeta, listSessionNavigationMetas, putSessionMeta, sessionMeta, syncSessionMeta, syncSessionMetas }, { ClaxedoDB }, { controlBus }] = await Promise.all([
   import("./index"),
   import("../../platform/db"),
+  import("../../platform/runtime/lib/bus"),
 ])
 
 const ws = {
@@ -143,5 +144,29 @@ describe("session navigation order", () => {
       })
     }
     expect(seen).toEqual(["spoken-3", "spoken-2", "spoken-1", "quiet-new", "quiet-old"])
+  })
+})
+
+describe("session inventory notices on cp/events", () => {
+  test("a row's creation and deletion ring the workspace once each; an update rings nothing", async () => {
+    const notices: string[] = []
+    const unsubscribe = controlBus.subscribe((event) => {
+      if (event.type === "session.inventory.changed") notices.push(event.workspaceId)
+    })
+    try {
+      await putSessionMeta("ses_new", { ws, directory: ws.directory, title: "new" })
+      await putSessionMeta("ses_new", { ws, directory: ws.directory, title: "renamed" })
+      await syncSessionMeta(ws, engineSession({ id: "ses_new", created: 1, updated: 2 }))
+      await syncSessionMetas(ws, [
+        engineSession({ id: "ses_new", created: 1, updated: 3 }),
+        engineSession({ id: "ses_snapshot", created: 2, updated: 3 }),
+      ])
+      expect(notices).toEqual([ws.id, ws.id])
+      await deleteSessionMeta("ses_new")
+      expect(notices).toEqual([ws.id, ws.id, ws.id])
+      expect(await sessionMeta("ses_new")).toBeUndefined()
+    } finally {
+      unsubscribe()
+    }
   })
 })

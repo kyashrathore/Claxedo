@@ -316,6 +316,13 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
     void invalidateSessionShareQueries().catch(() => undefined)
   })
+  // The control plane's own inventory changed for a workspace whose stream
+  // this surface may not hold open (a session created from the CLI while the
+  // rail sits on the home route): the doorbell names the workspace only, and
+  // the reads it provokes apply access.
+  const unsubscribeClaxedoInventoryChanged = input.claxedoEvents?.on("session.inventory.changed", () => {
+    void invalidateSessionShareQueries().catch(() => undefined)
+  })
   const detachProjectionSelfHeal = installSessionProjectionSelfHeal()
 
   return () => {
@@ -323,6 +330,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
     unsubscribeClaxedoShareChanged?.()
+    unsubscribeClaxedoInventoryChanged?.()
     detachProjectionSelfHeal()
   }
 }

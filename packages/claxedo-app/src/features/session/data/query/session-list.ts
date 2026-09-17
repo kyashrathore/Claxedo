@@ -282,8 +282,9 @@ export function invalidateSessionInventoryQueries(input: { baseUrl?: string } = 
 }
 
 /**
- * Session-share doorbell: list APIs already include shares; refetch rail
- * session-list + inventory so Bob sees grant/revoke without navigation.
+ * A control-plane doorbell — a share granted or revoked, a workspace's
+ * inventory gaining or losing a session: the list and inventory reads already
+ * apply access, so the rail refetches both.
  */
 export function invalidateSessionShareQueries(input: { baseUrl?: string } = {}) {
   return Promise.all([

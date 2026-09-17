@@ -44,16 +44,17 @@ export function createBus<T>(options: BusOptions<T> = {}) {
 
 export type { PtyInfo }
 
-// Doorbell nudge for Documents live sync.
+// Doorbell nudge for Documents live sync: the one live-sync mechanism a
+// document has. It carries no content, so an open editor is not refreshed by
+// it — an external write surfaces as a CAS conflict on the next save.
 //
-// Publisher: the claxedo-server documents backend, from its save paths (see
-// `documents/backend.ts` `publishDocumentEvent`). External-change detection and
-// the per-surface `GET /documents/events` SSE were REMOVED; this
-// doorbell on the central events stream is the sole live-sync mechanism.
-// Consumer: claxedo-app `features/documents`, via the central events stream.
+// Publisher: the documents backend, from its save paths
+// (`documents/backend.ts` `publishDocumentEvent`).
+// Consumer: claxedo-app `features/documents`, off `cp/events`, to refresh
+// the document INDEX.
 //
 // ⚠ SHAPE COLLISION — read before wiring. A DIFFERENT `document.changed` payload
-// exists in-process on the legacy `subscribeDocumentEvents` listener registry: it
+// exists in-process on the `subscribeDocumentEvents` listener registry: it
 // is snake_case and wider (`document_id`, `org_id`, `project_id`, `reason`,
 // `invalidate`, `ts`; see `documents/backend.ts`). This bus envelope is camelCase,
 // matching every other event in this union. The two share a `type` discriminant
@@ -79,8 +80,8 @@ export type DocumentChangedEvent = {
 //
 // Publisher: control-plane share grant/revoke HTTP handlers, after the
 // authority write succeeds. One event per recipient subject.
-// Consumer: claxedo-app session rail/inventory via the central events stream —
-// invalidate and refetch (list APIs already include shares).
+// Consumer: claxedo-app session rail/inventory, off `cp/events` — invalidate
+// and refetch (list APIs already include shares).
 //
 // This remains a doorbell, not a change envelope. `ownerUserId` is the
 // *recipient* subject, NOT the granter — which is the whole reason this event
@@ -94,6 +95,21 @@ export type SessionShareChangedEvent = {
   sessionId: string
   workspaceId: string
   /** Authority-internal org id for hosted LiveSync room routing. */
+  orgId?: string
+  ts: number
+}
+
+/**
+ * A workspace's session inventory gained or lost a row in the control plane's
+ * own projection — the one the rail lists from. A doorbell with no session
+ * named: the reader re-reads the inventory, and the read applies access.
+ * Membership only: a title or model change is the runtime's own frame on
+ * `wr/events`, and rings nothing here.
+ */
+export type SessionInventoryChangedEvent = {
+  type: "session.inventory.changed"
+  workspaceId: string
+  /** Authority-internal org id, when the workspace has one; absent for a machine's own workspaces. */
   orgId?: string
   ts: number
 }
@@ -126,5 +142,6 @@ export type ControlPlaneEvent =
   | { type: "worktree.failed"; directory: string; message: string }
   | DocumentChangedEvent
   | SessionShareChangedEvent
+  | SessionInventoryChangedEvent
 
 export const controlBus = createBus<ControlPlaneEvent>()
