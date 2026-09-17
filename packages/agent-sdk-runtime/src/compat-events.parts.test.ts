@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { buildUserPromptParts } from "./compat-events"
+import { buildUserPromptParts, readRecordedPart } from "./compat-events"
 
 describe("buildUserPromptParts", () => {
   it("records a pasted image as the file part the composer sent, not a serialized string", () => {
@@ -36,5 +36,31 @@ describe("buildUserPromptParts", () => {
     ])
     expect(parts[1]).toMatchObject({ source: { type: "file", path: "/repo/a.ts" } })
     expect(parts.some((part) => part.type === "text" && part.synthetic)).toBe(false)
+  })
+})
+
+describe("readRecordedPart", () => {
+  const identity = { id: "prt_1", sessionID: "ses_1", messageID: "msg_1" } as const
+
+  it("reads an attachment the old recorder serialized into a synthetic text back as its file part", () => {
+    const file = { id: "prt_1", type: "file", mime: "image/png", filename: "image.png", url: "data:image/png;base64,iVBORw0KGgo=" }
+    expect(readRecordedPart({ ...identity, type: "text", text: JSON.stringify(file), synthetic: true })).toEqual({
+      ...identity,
+      type: "file",
+      mime: "image/png",
+      filename: "image.png",
+      url: "data:image/png;base64,iVBORw0KGgo=",
+    })
+  })
+
+  it("leaves every other part alone: prose, a comment note, a non-file record, malformed JSON", () => {
+    const keep = [
+      { ...identity, type: "text" as const, text: '{"type":"file"}' },
+      { ...identity, type: "text" as const, text: "review: fix this", synthetic: true },
+      { ...identity, type: "text" as const, text: '{"type":"agent","name":"x"}', synthetic: true },
+      { ...identity, type: "text" as const, text: '{"type":"file","mime":"image/png"}', synthetic: true },
+      { ...identity, type: "text" as const, text: '{"type":"file",', synthetic: true },
+    ]
+    for (const part of keep) expect(readRecordedPart(part)).toBe(part)
   })
 })

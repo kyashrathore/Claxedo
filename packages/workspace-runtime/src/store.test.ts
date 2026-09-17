@@ -1086,7 +1086,41 @@ void describe("RuntimeStore", () => {
     store.close()
   })
 
+  void it("an attachment recorded as a synthetic text reads back as its file part, and stays out of the surface", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const image = { id: "prt_image", type: "file", mime: "image/png", filename: "image.png", url: `data:image/png;base64,${"A".repeat(2048)}` }
+    for (const info of [
+      { id: "user-image", role: "user" },
+      { id: "assistant-image", role: "assistant", parentID: "user-image" },
+    ]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now(), completed: Date.now() }, ...info } as any),
+      })
+    }
+    for (const part of [
+      { id: "user-text", messageID: "user-image", type: "text", text: "" },
+      { id: "prt_image", messageID: "user-image", type: "text", text: JSON.stringify(image), synthetic: true },
+      { id: "assistant-answer", messageID: "assistant-image", type: "text", text: "Looks fine." },
+    ]) {
+      store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", ...part } as any) })
+    }
+
+    const complete = store.getMessagePage("s1", { view: "latest-turn" })
+    assert.ok(complete)
+    assert.deepEqual(complete.messages[0]?.parts.map((part) => part.type), ["text", "file"])
+    assert.deepEqual(complete.messages[0]?.parts[1], { ...image, sessionID: "s1", messageID: "user-image" })
+
+    const surface = store.getMessagePage("s1", { view: "latest-surface" })
+    assert.ok(surface)
+    assert.deepEqual(surface.messages[0]?.parts.map((part) => part.id), ["user-text"])
+    store.close()
+  })
+
   void it("does not invent a surface cursor for an adjacent user and final assistant", () => {
+
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [

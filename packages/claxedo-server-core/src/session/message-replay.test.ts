@@ -287,7 +287,33 @@ describe("message replay", () => {
     expect(complete.messages[1]?.parts[20]?.type).toBe("tool")
   })
 
+  test("an attachment recorded as a synthetic text reads back as its file part, and stays out of the surface", () => {
+    const sessionID = "sess_recorded_image"
+    const image = { id: "prt_image", type: "file", mime: "image/png", filename: "image.png", url: `data:image/png;base64,${"A".repeat(2048)}` }
+    for (const info of [
+      { id: "image-user", sessionID, role: "user", time: { created: 1 } },
+      { id: "image-assistant", sessionID, role: "assistant", parentID: "image-user", time: { created: 2 } },
+    ]) {
+      persistMessageEvent(sessionID, { type: "message.updated", properties: { info } })
+    }
+    for (const part of [
+      { id: "image-user-text", messageID: "image-user", type: "text", text: "" },
+      { id: "prt_image", messageID: "image-user", type: "text", text: JSON.stringify(image), synthetic: true },
+      { id: "image-answer", messageID: "image-assistant", type: "text", text: "Looks fine." },
+    ]) {
+      persistMessageEvent(sessionID, { type: "message.part.updated", properties: { part: { sessionID, ...part } } })
+    }
+
+    const complete = readSessionMessagePage(sessionID, { view: "latest-turn" })
+    expect(complete.messages[0]?.parts.map((part) => part.type)).toEqual(["text", "file"])
+    expect(complete.messages[0]?.parts[1]).toMatchObject({ type: "file", mime: "image/png", filename: "image.png" })
+
+    const surface = readSessionMessagePage(sessionID, { view: "latest-surface" })
+    expect(surface.messages[0]?.parts.map((part) => part.id)).toEqual(["image-user-text"])
+  })
+
   test("does not invent a surface cursor for an adjacent user and final assistant", () => {
+
     for (const info of [
       { id: "adjacent_user", sessionID: "sess_adjacent", role: "user" },
       {

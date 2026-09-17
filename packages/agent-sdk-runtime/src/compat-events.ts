@@ -11,6 +11,7 @@ import type {
   AgentSession,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
+import { parseAgentContentPart } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { StatusCompat } from "./status"
@@ -267,6 +268,24 @@ export function buildUserPromptParts(sessionID: string, messageID: string, parts
         return { ...part, id, sessionID, messageID }
     }
   })
+}
+
+/**
+ * A part read back from persistence. Until 2026-09-17 the recorder above wrote
+ * an attachment as a synthetic text part holding the file part's JSON, which
+ * no reader drew; rows written that way read back as the file part they were.
+ */
+export function readRecordedPart<T extends Record<string, unknown>>(part: T): T | CompatPart {
+  if (part.type !== "text" || part.synthetic !== true || typeof part.text !== "string" || !part.text.startsWith('{"')) return part
+  let record: unknown
+  try {
+    record = JSON.parse(part.text)
+  } catch {
+    return part
+  }
+  const row = asRecord(record)
+  if (row?.type !== "file") return part
+  return parseAgentContentPart({ ...row, id: part.id, sessionID: part.sessionID, messageID: part.messageID }) ?? part
 }
 
 export function messagePartUpdated(part: CompatPart): EventMessagePartUpdated {

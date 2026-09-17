@@ -10,6 +10,7 @@ import {
   type AgentMessagePage,
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import { projectLatestSurfaceMessages } from "@claxedo/agent-sdk-runtime/message-page"
 import {
   createMemorySubagentAdmissionStore,
   firstTurnErrorData,
@@ -43,6 +44,7 @@ import {
   messageCompleted,
   messagePartUpdated,
   messageUpdated,
+  readRecordedPart,
   sessionError,
   sessionIdle,
   sessionStatus,
@@ -546,7 +548,7 @@ function envelopeRecord(value: object): Record<string, unknown> {
 const readColumn = {
   messageInfo: (json: string): AgentMessage["info"] => JSON.parse(json),
   messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
-  messagePart: (json: string): AgentMessage["parts"][number] => JSON.parse(json),
+  messagePart: (json: string): AgentMessage["parts"][number] => readRecordedPart(JSON.parse(json)),
   partRecord: (json: string): Record<string, unknown> => JSON.parse(json),
   /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.start'` row. */
   turnStart: (json: string): Turn => JSON.parse(json),
@@ -3698,10 +3700,12 @@ export class RuntimeStore {
       current.push(readColumn.messagePart(part.data_json))
       partsByMessage.set(part.message_id, current)
     }
-    return msgs.map((msg) => ({
+    // The SQL above selects by the stored type; an attachment recorded as a
+    // synthetic text reads back as a file part and leaves the surface here.
+    return projectLatestSurfaceMessages(msgs.map((msg) => ({
       info: readColumn.messageInfo(msg.info_json),
       parts: partsByMessage.get(msg.id) ?? [],
-    }))
+    })))
   }
 
   getMessages(sessionId: string): AgentMessage[] {

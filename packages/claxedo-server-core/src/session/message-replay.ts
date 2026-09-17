@@ -8,7 +8,8 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
+import { readRecordedPart } from "@claxedo/agent-sdk-runtime/compat-events"
+import { AgentMessagePageError, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
@@ -360,12 +361,14 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       for (const part of selectedParts) {
         const parsed = asRecord(JSON.parse(part.part_json))
         if (!parsed) continue
-        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), parsed])
+        partsByOrdinal.set(part.message_ordinal, [...(partsByOrdinal.get(part.message_ordinal) ?? []), readRecordedPart(parsed)])
       }
-      const messages = infoRows.flatMap((row) => {
+      // The SQL above selects by the stored type; an attachment recorded as a
+      // synthetic text reads back as a file part and leaves the surface here.
+      const messages = projectLatestSurfaceMessages(infoRows.flatMap((row) => {
         const info = asRecord(JSON.parse(row.info_json))
         return info ? [{ info, parts: partsByOrdinal.get(row.ordinal) ?? [] }] : []
-      })
+      }))
       const omittedIntermediate =
         boundary.ordinal === final.ordinal
           ? undefined
@@ -540,7 +543,10 @@ export function subscribeMessageReplay(bus: {
 
 function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
   return terminalizeReplayMessages(
-    rows.map((row) => readStoredMessage(row.data)),
+    rows.map((row) => {
+      const message = readStoredMessage(row.data)
+      return { ...message, parts: message.parts.map(readRecordedPart) }
+    }),
   )
 }
 
