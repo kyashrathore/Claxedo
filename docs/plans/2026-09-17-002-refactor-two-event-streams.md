@@ -124,6 +124,27 @@ rewrite, no test-only URL builders. One replay ring per runtime scope, one
 terminal policy, one gap notice, one watchdog implementation, one resync
 request.
 
+Two properties the plan is not done without:
+
+- **Proven end to end, by tests that run.** Every flow this plan claims —
+  a turn streaming on `wr/events` on each deployment, an owner's
+  workspace-wide stream and a grantee's session-scoped one through the
+  relay, a `cp/events` notice landing a new session in the sidebar, a gap
+  notice repairing a stalled stream, a cursor-less first open — is
+  exercised by an e2e spec against the real handlers (Tier R, not the
+  whole-server mock), and the spec is green in CI. Unit tests on the
+  handlers and the reader support that; they do not replace it.
+- **Nothing else left.** "Simplified to two streams" means a repository
+  search cannot find a trace of any other event system: no route, handler,
+  bus alias, URL builder, rewrite, throttle case, proxy list entry,
+  ownership entry, e2e mock route, fixture, type, constant, memory note or
+  comment that names or describes a third stream, a compat stream, an
+  alias spelling, or a client-side projection of runtime events. A grep
+  gate in the ratchets enumerates the retired names and fails on any hit
+  outside this plan's own history section; the closure ceilings are
+  lowered to the measured values, not left with the deleted modules'
+  headroom.
+
 ## Design
 
 ### 1. Frame contracts
@@ -276,6 +297,26 @@ request.
       reader's bootstrap heartbeat carries the cursor and the reader's
       first `session-history-resync` fires after the stream opens, so the
       reply's `message.updated` is read rather than lost. Progress:
+- [ ] E2E, real handlers (Tier R harness, not `mock-runtime.ts`): one spec
+      per claimed flow — desktop-local turn streams on `wr/events`;
+      owner workspace-wide + grantee session-scoped through the relay
+      (grantee's unscoped attempt refused); `cp/events` notice → sidebar
+      row; stall → gap notice → resync → row settles; cursor-less first
+      open → resync reads the reply. All green in CI on the merge commit.
+      Progress:
+- [ ] Nothing else left: the ratchet grep gate lists every retired name —
+      `/global/event`, `/event`, `/api/claxedo/events`,
+      `/api/wr/runtime-events`, `runtimeEventsHandler`,
+      `runtimeBusEventsHandler`, `createGlobalEventsHandler`'s three
+      mounts, `signedRuntimeEventInput`, `subscribeToEvents`,
+      `subscribeToRuntimeEvents`, `projectRuntimeDiagnosticEnvelope`,
+      `resetRuntimeReplayGapState`, `runtime-event-projection`,
+      `global-sdk-event-fetch`, `heartbeat-watchdog`, `reconnect-backoff`,
+      `CLAXEDO_EVENTS_RELAY_PATH`, the `globalBus` envelope form on the
+      central stream, "compat loop", "compat stream", "three spellings" —
+      and returns zero hits across `packages/*/src`, `packages/*/e2e`,
+      `packages/*/scripts`, `script/`, `docs/` (outside this plan and plan
+      001) and the memory index. Progress:
 - [ ] Tests: one handler suite per stream (replay, gap, terminal reserve,
       overflow notice, owner vs grantee scope); one reader suite (cursor,
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
