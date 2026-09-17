@@ -63,7 +63,7 @@ async function readUntil(response: Response, expected: string) {
 }
 
 describe("workspace module wiring", () => {
-  test("managed /global/event closes after renewal denial", async () => {
+  test("a managed session-scoped wr/events closes after renewal denial", async () => {
     const eventHub = createRuntimeEventHub()
     const accessPolicy = managedPolicy()
     let authorizations = 0
@@ -78,7 +78,7 @@ describe("workspace module wiring", () => {
     verifiedRelay(app)
     host.mount(app, { exposure: loopbackExposure })
 
-    const response = await app.request("http://localhost/global/event?sessionID=session-a")
+    const response = await app.request("http://localhost/api/wr/events?sessionID=session-a")
     const reader = response.body!.getReader()
     const connected = await reader.read()
     const ended = await Promise.race([
@@ -88,21 +88,20 @@ describe("workspace module wiring", () => {
     await host.dispose()
 
     expect(connected.done).toBe(false)
-    expect(new TextDecoder().decode(connected.value)).toContain("server.connected")
+    expect(new TextDecoder().decode(connected.value)).toContain("heartbeat")
     expect(ended).toBe(true)
     expect(authorizations).toBe(2)
   })
 
-  test("managed /global/event and /event reject unscoped access and isolate replay by session", async () => {
+  test("a managed runtime without workspace authority requires a session, and scopes replay by it", async () => {
     const eventHub = createRuntimeEventHub()
     const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: managedPolicy() })
     const app = new Hono()
     verifiedRelay(app)
     host.mount(app, { exposure: loopbackExposure })
 
-    expect((await app.request("http://localhost/global/event")).status).toBe(400)
-    expect((await app.request("http://localhost/event")).status).toBe(400)
-    expect((await app.request("http://localhost/global/event?sessionID=session-b")).status).toBe(403)
+    expect((await app.request("http://localhost/api/wr/events")).status).toBe(400)
+    expect((await app.request("http://localhost/api/wr/events?sessionID=session-b")).status).toBe(403)
 
     eventHub.publishGlobal(withDir("/workspace", sessionIdle("session-b")))
     eventHub.publishGlobal(withDir("/workspace", sessionIdle("session-a")))
@@ -121,38 +120,30 @@ describe("workspace module wiring", () => {
       eventType: "UserActionRequired",
     })
 
-    const globalAbort = new AbortController()
-    const global = await app.request("http://localhost/global/event?sessionID=session-a", {
+    const abort = new AbortController()
+    const scoped = await app.request("http://localhost/api/wr/events?sessionID=session-a", {
       headers: { "Last-Event-ID": "0" },
-      signal: globalAbort.signal,
+      signal: abort.signal,
     })
-    const globalText = await readUntil(global, '"sessionID":"session-a"')
-    globalAbort.abort()
-
-    const eventAbort = new AbortController()
-    const session = await app.request("http://localhost/event?sessionID=session-a", {
-      headers: { "Last-Event-ID": "0" },
-      signal: eventAbort.signal,
-    })
-    const sessionText = await readUntil(session, "allowed-a")
-    eventAbort.abort()
+    const text = await readUntil(scoped, "allowed-a")
+    abort.abort()
     await host.dispose()
 
-    expect(globalText).toContain('"sessionID":"session-a"')
-    expect(globalText).not.toContain('"sessionID":"session-b"')
-    expect(sessionText).toContain("allowed-a")
-    expect(sessionText).not.toContain("secret-b")
+    expect(text).toContain('"sessionID":"session-a"')
+    expect(text).not.toContain('"sessionID":"session-b"')
+    expect(text).toContain("allowed-a")
+    expect(text).not.toContain("secret-b")
   })
 
   test("mountWorkspaceCore registers the workspace routes", async () => {
     const app = new Hono()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { eventHub: createRuntimeEventHub(), exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { directory: "/workspace", eventHub: createRuntimeEventHub(), exposure: loopbackExposure })
 
     const seen = paths(app)
     expect(has(seen, "/api/wr/pty")).toBe(true)
     expect(has(seen, "/api/wr/hook")).toBe(true)
     expect(has(seen, "/api/wr/events")).toBe(true)
-    expect(has(seen, "/api/wr/runtime-events")).toBe(true)
+    expect(has(seen, "/api/wr/runtime-events")).toBe(false)
     expect(has(seen, "/api/wr/process")).toBe(true)
     expect(has(seen, "/api/wr/file")).toBe(true)
     expect(has(seen, "/api/wr/find/file")).toBe(true)
@@ -188,7 +179,9 @@ describe("workspace module wiring", () => {
     const seen = paths(app)
     expect(seen).toContain("/api/wr/harness-config-options")
     expect(seen).not.toContain("/api/wr/provider-config")
-    expect(seen).toContain("/global/event")
+    expect(seen).toContain("/api/wr/events")
+    expect(seen).not.toContain("/global/event")
+    expect(seen).not.toContain("/event")
     expect(seen).toContain("/session/status")
 
     const res = await app.request("http://localhost/api/wr/harness-config-options")
@@ -246,7 +239,7 @@ describe("workspace module wiring", () => {
 
   test("workspace core streams claxedo bus events", async () => {
     const app = new Hono()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { eventHub: createRuntimeEventHub(), exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { directory: "/workspace", eventHub: createRuntimeEventHub(), exposure: loopbackExposure })
 
     const ac = new AbortController()
     const res = await app.request("http://localhost/api/wr/events", { signal: ac.signal })
@@ -276,60 +269,46 @@ describe("workspace module wiring", () => {
     expect(seen).toContain("\"type\":\"agent.lifecycle\"")
   })
 
-  test("workspace core replays runtime events after Last-Event-ID", async () => {
+  test("workspace core replays wr/events frames after Last-Event-ID", async () => {
     const app = new Hono()
     const eventHub = createRuntimeEventHub()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { eventHub, exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { directory: "/workspace", eventHub, exposure: loopbackExposure })
 
-    eventHub.publishRuntime({
-      directory: "/repo/main",
-      sessionId: "session-1",
-      payload: { type: "text-delta", delta: "old" },
-    })
-    eventHub.publishRuntime({
-      directory: "/repo/main",
-      sessionId: "session-1",
-      payload: { type: "text-delta", delta: "new" },
-    })
+    eventHub.publishGlobal(withDir("/repo/main", sessionIdle("old-session")))
+    eventHub.publishGlobal(withDir("/repo/main", sessionIdle("new-session")))
 
     const ac = new AbortController()
-    const res = await app.request("http://localhost/api/wr/runtime-events", {
+    const res = await app.request("http://localhost/api/wr/events", {
       headers: { "Last-Event-ID": "1" },
       signal: ac.signal,
     })
-    const next = await res.body!.getReader().read()
+    const text = await readUntil(res, "new-session")
     ac.abort()
 
-    const frame = new TextDecoder().decode(next.value)
-    expect(frame).toContain("id: 2")
-    expect(frame).toContain("\"delta\":\"new\"")
-    expect(frame).not.toContain("\"delta\":\"old\"")
+    expect(text).toContain("id: 2")
+    expect(text).toContain("new-session")
+    expect(text).not.toContain("old-session")
   })
 
-  test("workspace core emits a runtime replay gap when Last-Event-ID is stale", async () => {
+  test("workspace core emits a replay gap when Last-Event-ID is stale", async () => {
     const app = new Hono()
     const eventHub = createRuntimeEventHub()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { eventHub, exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { directory: "/workspace", eventHub, exposure: loopbackExposure })
 
     for (let i = 1; i <= 258; i += 1) {
-      eventHub.publishRuntime({
-        directory: "/repo/main",
-        sessionId: "session-1",
-        payload: { type: "text-delta", delta: String(i) },
-      })
+      eventHub.publishGlobal(withDir("/repo/main", sessionIdle(`session-${i}`)))
     }
 
     const ac = new AbortController()
-    const res = await app.request("http://localhost/api/wr/runtime-events?directory=/repo/main", {
+    const res = await app.request("http://localhost/api/wr/events?directory=/repo/main", {
       headers: { "Last-Event-ID": "1" },
       signal: ac.signal,
     })
-    const next = await res.body!.getReader().read()
+    const text = await readUntil(res, "runtime.sse_replay_gap")
     ac.abort()
 
-    const frame = new TextDecoder().decode(next.value)
-    expect(frame).toContain("runtime.sse_replay_gap")
-    expect(frame).toContain("lastEventId")
-    expect(frame).not.toContain("\"delta\":\"258\"")
+    expect(text).toContain("runtime.sse_replay_gap")
+    expect(text).toContain("lastEventId")
+    expect(text).not.toContain("session-258")
   })
 })

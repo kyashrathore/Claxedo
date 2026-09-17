@@ -156,6 +156,27 @@ export function isTerminalCompatEvent(event: CompatEvent): event is Extract<Comp
   return event.type === "session.idle" || event.type === "session.error"
 }
 
+/**
+ * Frames a stream must not shed and its replay buffer keeps in reserve:
+ * each settles a state machine the client renders and nothing re-states it
+ * before the turn ends — a lost one pins a turn to busy, a subagent to
+ * running, or a tool row to "Running" with its clock still ticking. A tool's
+ * start and input snapshots are chatty and stay evictable. Distinct from
+ * `isTerminalCompatEvent`, which is the adapters' "the prompt is over".
+ */
+export function isRetainedCompatEvent(event: CompatEvent): boolean {
+  if (isTerminalCompatEvent(event)) return true
+  if (event.type === "message.part.updated") {
+    const part = event.properties.part
+    return part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")
+  }
+  if (event.type === "subagent.updated") {
+    const status = event.properties.update.status
+    return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
+  }
+  return false
+}
+
 export function buildUserMessage(input: {
   id: string
   sessionID: string

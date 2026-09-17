@@ -246,7 +246,7 @@ describe("workspace runtime host route auth", () => {
       }),
     })
     try {
-      for (const route of ["/api/wr/runtime-events", "/api/wr/events"]) {
+      for (const route of ["/api/wr/events"]) {
         const response = await runtime.app.request(`http://localhost${route}`)
 
         expect(response.status).toBe(401)
@@ -258,8 +258,6 @@ describe("workspace runtime host route auth", () => {
         })
       }
       expect(seen).toEqual([
-        "guard:GET /api/wr/runtime-events",
-        "auth:GET /api/wr/runtime-events",
         "guard:GET /api/wr/events",
         "auth:GET /api/wr/events",
       ])

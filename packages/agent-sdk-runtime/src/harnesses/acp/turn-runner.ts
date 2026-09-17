@@ -419,13 +419,10 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         onEvent: (payload) => this.options.eventHub?.publishGlobal({ directory, payload }),
         onRuntimeEvent: this.options.eventHub?.publishRuntime,
       }),
-      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
-        directory,
-        sessionId: id,
-        agentSessionId,
-        assistantMessageId: input.assistantMessageId,
-        payload,
-      }),
+      // A routing diagnostic is a turn event like any other: through the
+      // parent's projector it reaches the store, the journal and the stream,
+      // instead of a runtime-channel-only side path nothing on the wire reads.
+      onDiagnostic: (payload) => parentProjector.project(payload, { dir: "in", method: "child-event-routing" }),
     })
     const wait = () =>
       new Promise<void>((resolve) => {

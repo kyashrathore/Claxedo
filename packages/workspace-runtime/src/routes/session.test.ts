@@ -1962,25 +1962,6 @@ describe("session prompt route", () => {
     }
   })
 
-  it("streams workspaceRuntimeBus process events on the documented compatibility event route", async () => {
-    const app = SessionRoutes(() => adapter({}))
-    const res = await app.request("http://localhost/event")
-    expect(res.status).toBe(200)
-    expect(res.body).toBeTruthy()
-
-    const reader = res.body!.getReader()
-    workspaceRuntimeBus.publish({ type: "process.status", directory: "/work", configId: "proc_1", status: "running" })
-
-    try {
-      const chunk = await reader.read()
-      expect(new TextDecoder().decode(chunk.value)).toContain(
-        'data: {"type":"process.status","directory":"/work","configId":"proc_1","status":"running"}',
-      )
-    } finally {
-      await reader.cancel().catch(() => {})
-    }
-  })
-
   it("does not contact the control plane before returning local responses", async () => {
     const directory = process.cwd()
     let calls = 0

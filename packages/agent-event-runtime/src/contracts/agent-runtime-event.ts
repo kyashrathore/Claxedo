@@ -1,5 +1,5 @@
 import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
-import type { RuntimeQuestion } from "@claxedo/agent-runtime-contract"
+import type { AgentSubagentUpdate, RuntimeGoalSnapshot, RuntimeQuestion } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
@@ -8,39 +8,18 @@ export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 7
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
 export type RuntimeNoticeSeverity = "debug" | "info" | "warn" | "error"
-export const RUNTIME_GOAL_STATUSES = ["active", "paused", "blocked", "limited", "complete"] as const
-export type RuntimeGoalStatus = typeof RUNTIME_GOAL_STATUSES[number]
-export type RuntimeGoalSnapshot = {
-  /** Claxedo session identity. One session owns at most one Goal. */
-  sessionId: string
-  objective: string
-  status: RuntimeGoalStatus
-  createdAt: number
-  updatedAt: number
-  /** Provider-reported fields. Absence means unknown and must remain absent. */
-  tokenBudget?: number
-  tokensUsed?: number
-  timeUsedSeconds?: number
-  iteration?: number
-  lastReason?: string
-}
-
-export function isRuntimeGoalStatus(value: unknown): value is RuntimeGoalStatus {
-  return typeof value === "string" && (RUNTIME_GOAL_STATUSES as readonly string[]).includes(value)
-}
-
-export type SubagentStatus = "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
-export type SubagentMode = "foreground" | "background"
-export type SubagentToolCallRole = "spawn" | "interaction"
-/**
- * The completion wake a host-owned child owes its parent: `pending` until the
- * runtime has started the parent turn that carries the child's summary.
- */
-export type SubagentWake = "pending" | "delivered"
-export type SubagentTranscript = {
-  kind: "live" | "file" | "messages" | "none"
-  ref?: string
-}
+export {
+  RUNTIME_GOAL_STATUSES,
+  isRuntimeGoalStatus,
+  type AgentSubagentUpdate,
+  type RuntimeGoalSnapshot,
+  type RuntimeGoalStatus,
+  type SubagentMode,
+  type SubagentStatus,
+  type SubagentToolCallRole,
+  type SubagentTranscript,
+  type SubagentWake,
+} from "@claxedo/agent-runtime-contract"
 
 /**
  * Provider-reported token categories for one turn observation.
@@ -71,25 +50,7 @@ export type RuntimeUsageObservation = {
   observedAt?: number
 }
 
-export type SubagentUpdatedEvent = {
-  type: "subagent-updated"
-  subagentKey: string
-  revision: number
-  toolCallId?: string
-  toolCallRole?: SubagentToolCallRole
-  mode?: SubagentMode
-  status?: SubagentStatus
-  label?: string
-  subagentType?: string
-  description?: string
-  providerId?: string
-  providerKind?: string
-  childSessionId?: string
-  transcript?: SubagentTranscript
-  /** Permission and question requests the child is holding open, to be answered by a human. */
-  attention?: number
-  wake?: SubagentWake
-}
+export type SubagentUpdatedEvent = { type: "subagent-updated" } & AgentSubagentUpdate
 
 export type ToolIntent =
   | "shell"

@@ -36,7 +36,7 @@ import {
 import { runtimeEnvText, workspaceRuntimeStoreDir } from "./env"
 import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
 import type { ProcessObserver } from "./managed-processes/process-observer"
-import type { RuntimeEventAuthorization } from "./routes/events"
+import type { WorkspaceEventParents } from "./routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "./session-access-policy"
 import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
@@ -69,7 +69,7 @@ export type WorkspaceRuntimeServerOptions = {
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onCompatEvent?: WorkspaceHostOptions["onCompatEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
-  runtimeEventAuthorization?: RuntimeEventAuthorization
+  sessionParents?: WorkspaceEventParents
   transcripts?: WorkspaceTranscriptRoutesOptions
   relayHostAuth?: RelayHostAuthOptions
   hostTunnel?: WorkspaceRelayHostTunnelOptions
@@ -451,7 +451,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
-    ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
+    ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })

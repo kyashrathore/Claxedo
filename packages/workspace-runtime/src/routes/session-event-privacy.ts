@@ -13,7 +13,7 @@ import {
 } from "../session-access-policy"
 
 export type SessionEventScope =
-  | { managed: false }
+  | { managed: false; grant?: "workspace" }
   | {
       managed: true
       sessionId: string
@@ -39,10 +39,16 @@ type LeaseWatchOptions = {
 }
 
 /**
- * Managed-private event streams are session resources, not workspace-wide
- * broadcast channels. The session id is supplied by the caller and admitted
+ * Who is asking decides the scope of a managed runtime's event stream.
+ *
+ * The workspace's owner — any principal the authority grants the workspace
+ * itself — opens it unscoped and receives every session and every
+ * session-less frame (pty, process, worktree). A share grantee holds no
+ * workspace access, only a grant on one session, so the stream is a session
+ * resource for them: the session id is supplied by the caller and admitted
  * through the same verified relay identity and authority oracle as the REST
- * session routes. Unmanaged/local runtimes retain their existing broad stream.
+ * session routes, under a renewable lease. Unmanaged/local runtimes serve the
+ * broad stream to whoever reached them.
  */
 export async function authorizeSessionEventScope(
   c: Context,
@@ -53,12 +59,23 @@ export async function authorizeSessionEventScope(
 
   const sessionId = c.req.query(queryName)?.trim()
   if (!sessionId) {
-    return Response.json({
-      error: {
-        code: "session_event_scope_required",
-        message: `Managed private event streams require ${queryName}`,
-      },
-    }, { status: 400 })
+    if (!policy.authorizeHost) {
+      return Response.json({
+        error: {
+          code: "session_event_scope_required",
+          message: `Managed private event streams require ${queryName}`,
+        },
+      }, { status: 400 })
+    }
+    const workspace = await policy.authorizeHost({
+      ...sessionAccessContext(c),
+      operation: "session_event_stream",
+      minimumRole: "viewer",
+      method: c.req.method,
+      path: c.req.path,
+    })
+    if (workspace.allowed) return { managed: false, grant: "workspace" }
+    return sessionAccessDenied(workspace)
   }
 
   if (!policy.authorizeStream) {

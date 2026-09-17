@@ -20,7 +20,6 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "DELETE /session/:id/goal",
   "GET /agent",
   "GET /command",
-  "GET /event",
   "GET /experimental/session",
   "GET /permission",
   "GET /permission/modes",
@@ -83,7 +82,6 @@ describe("Claxedo client-presentation session route inventory", () => {
       "GET /permission": { kind: "filter", operation: "permission_list" },
       "GET /question": { kind: "filter", operation: "question_list" },
       "POST /session/:id/message": { kind: "authorize", operation: "prompt" },
-      "GET /event": { kind: "stream", operation: "session_event_stream" },
     })
     expect(Object.values(SESSION_CORE_ROUTE_ACCESS).every((decision) => decision.kind !== undefined)).toBe(true)
   })

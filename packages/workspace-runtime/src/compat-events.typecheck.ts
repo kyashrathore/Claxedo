@@ -60,6 +60,9 @@ const kinds: Record<CompatEvent["type"], true> = {
   "session.config": true,
   "session.usage": true,
   "runtime.diagnostic": true,
+  "subagent.updated": true,
+  "goal.updated": true,
+  "goal.cleared": true,
   "server.connected": true,
   "server.heartbeat": true,
 }

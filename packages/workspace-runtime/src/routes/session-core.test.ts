@@ -190,59 +190,6 @@ function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAcc
 }
 
 describe("createSessionRoutes private-session lifecycle", () => {
-  test("managed event revocation ends the reader and ignores later private frames", async () => {
-    let authorityCalls = 0
-    let listener: ((event: unknown) => void) | undefined
-    const policy = managedPolicy({
-      authorizeStream: async () => {
-        authorityCalls += 1
-        return authorityCalls === 1
-          ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
-          : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
-      },
-    })
-    const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
-      resolveDirectory: () => "/workspace",
-      sessionAccessPolicy: policy,
-      sessionBus: {
-        publish: () => {},
-        subscribe: (next) => {
-          listener = next
-          return () => {
-            listener = undefined
-          }
-        },
-      },
-      publishGlobal: () => {},
-    })
-    const wrapped = new Hono()
-    wrapped.use("*", async (c, next) => {
-      ;(c as any).set("relayHostAuth", {
-        actor_id: "actor_1",
-        actor_kind: "human",
-        org_id: "org_1",
-        workspace_id: "ws_1",
-        host_id: "host_1",
-        role: "editor",
-      })
-      await next()
-    })
-    wrapped.route("/", app)
-
-    const response = await wrapped.request("http://localhost/event?sessionID=ses_private")
-    const reader = response.body!.getReader()
-    const ended = await Promise.race([
-      reader.read().then((item) => item.done),
-      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
-    ])
-    listener?.({ type: "session.updated", properties: { info: { id: "ses_private" } } })
-
-    expect(response.status).toBe(200)
-    expect(ended).toBe(true)
-    expect((await reader.read()).done).toBe(true)
-  })
-
   test("requires a preassigned session and reservation operation before runtime mutation", async () => {
     let creates = 0
     const fixture = { ...adapter(), getSession: async () => null, createSession: async () => {

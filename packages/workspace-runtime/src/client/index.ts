@@ -57,7 +57,6 @@ export type WorkspaceRuntimeClient = {
   health: () => Promise<WorkspaceRuntimeHealth>
   capabilities: () => Promise<WorkspaceCapabilities>
   applyConfig: (snapshot: RuntimeSnapshot, options?: WorkspaceRuntimeConfigApplyOptions) => Promise<void>
-  runtimeEventsUrl: () => URL
   eventsUrl: () => URL
   session: WorkspaceSessionClient
   permission: WorkspacePermissionClient
@@ -127,7 +126,6 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
         body: snapshot,
       })
     },
-    runtimeEventsUrl: () => caller.url(WorkspaceRuntimeRoutes.runtimeEvents),
     eventsUrl: () => caller.url(WorkspaceRuntimeRoutes.events),
     session: sessionClient(caller),
     permission: permissionClient(caller),

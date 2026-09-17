@@ -1,11 +1,9 @@
 import type { Hono } from "hono"
 import { PtyRoutes } from "../routes/pty"
 import { AgentHookRoutes } from "../routes/agent-hook"
-import { runtimeEventsHandler } from "../routes/events"
-import type { RuntimeEventAuthorization } from "../routes/events"
+import { workspaceEventsHandler, type WorkspaceEventParents } from "../routes/events"
 import { TranscriptRoutes } from "../routes/transcript"
 import type { TranscriptResolution, TranscriptUnavailable } from "../transcript-resolver"
-import { runtimeBusEventsHandler } from "../routes/runtime-events"
 import { ProcessRoutes } from "../routes/process"
 import { DiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
@@ -34,19 +32,18 @@ export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: Sessio
 }
 
 export function mountWorkspaceEvents(app: Hono, options: {
+  directory: string
   eventHub: RuntimeEventHub
-  runtimeEventAuthorization?: RuntimeEventAuthorization
+  sessionParents?: WorkspaceEventParents
   sessionAccessPolicy?: SessionAccessPolicy
 }) {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
-  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler(undefined, {
+  app.get(WorkspaceRuntimeRoutes.events, workspaceEventsHandler({
+    directory: options.directory,
+    eventHub: options.eventHub,
     policy,
     sessionAccessPolicy: options.sessionAccessPolicy,
-  }))
-  app.get(WorkspaceRuntimeRoutes.runtimeEvents, runtimeEventsHandler(options.eventHub, {
-    policy,
-    sessionAccessPolicy: options.sessionAccessPolicy,
-    ...options.runtimeEventAuthorization,
+    ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
   }))
 }
 
@@ -86,10 +83,11 @@ export function mountWorkspaceCore(
   app: Hono,
   upgradeWebSocket: Socket,
   options: {
+    directory: string
     eventHub: RuntimeEventHub
     exposure: WorkspaceRuntimeExposure
     processObserver?: ProcessObserver
-    runtimeEventAuthorization?: RuntimeEventAuthorization
+    sessionParents?: WorkspaceEventParents
     sessionAccessPolicy?: SessionAccessPolicy
     transcripts?: WorkspaceTranscriptRoutesOptions
   },

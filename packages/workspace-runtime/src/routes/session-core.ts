@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE } from "hono/streaming"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type {
   AgentMessage,
@@ -48,7 +47,6 @@ import {
 } from "../compat-events"
 import { recovering } from "@claxedo/agent-sdk-runtime/status"
 import { isAgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
-import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import {
   admitSessionPromptTurn,
   compatScope,
@@ -86,7 +84,6 @@ import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
 import {
-  managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
   sessionAccessDenied,
   type SessionAccessDecision,
@@ -94,22 +91,9 @@ import {
   type SessionAccessPolicy,
 } from "../session-access-policy"
 import {
-  createIdentityAwareEventSource,
-  eventDeliveryPrincipal,
-  sessionEventDeliveryPolicy,
-} from "../event-delivery"
-import {
-  authorizeSessionEventScope,
-  isSessionEventScopeResponse,
-  scopedReplay,
-  waitForSessionEventStream,
-  unknownEventSessionId,
-} from "./session-event-privacy"
-import {
   acquireSessionTurnLease,
   type ActiveSessionTurnLease,
 } from "./session-turn-lease"
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import { SessionRollbackError } from "../session-rollback-error"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -1174,21 +1158,6 @@ async function filterSessionStatus(opts: Opts, c: Ctx, status: unknown) {
   return Object.fromEntries(entries.filter(([sessionId]) => allowed.has(sessionId)))
 }
 
-function sessionBusEventSessionId(event: unknown): string | undefined {
-  const row = rec(event)
-  const properties = rec(rec(row?.payload)?.properties)
-  return str(row?.sessionId)
-    ?? str(row?.sessionID)
-    ?? (row?.type === "process.status" ? str(row.configId) : undefined)
-    ?? str(properties?.sessionID)
-    ?? str(properties?.sessionId)
-}
-
-function sensitiveSessionBusEvent(event: unknown) {
-  const row = asRecord(event)
-  return row?.type === "agent.lifecycle" && (typeof row.prompt === "string" || typeof row.lastAssistantMessage === "string")
-}
-
 /**
  * Resolves the session a `/question/:id` request acts on, then admits it.
  *
@@ -1272,13 +1241,6 @@ export function createSessionRoutes(opts: Opts) {
       if (timer) clearTimeout(timer)
     }
   }
-  const sessionEventSource = createIdentityAwareEventSource({
-    subscribe: opts.sessionBus.subscribe,
-    policy: sessionEventDeliveryPolicy(opts.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()),
-    sessionId: sessionBusEventSessionId,
-    sensitive: sensitiveSessionBusEvent,
-  })
-  sessionEventSource.open({ mode: "unmanaged-local", connectionId: "local-replay" })
   // Wakes left by a previous process are re-issued on the first request, once
   // the host has a store and adapters to deliver them with.
   app.use("*", async (_c, next) => {
@@ -2456,38 +2418,6 @@ export function createSessionRoutes(opts: Opts) {
         questionRejected(sessionId, id),
       )
       return c.json({ ok: true })
-    })
-    .get("/event", async (c) => {
-      const scope = await authorizeSessionEventScope(c, opts.sessionAccessPolicy, "sessionID")
-      if (isSessionEventScopeResponse(scope)) return scope
-      const allows = scope.managed
-        ? (event: unknown) => unknownEventSessionId(event) === scope.sessionId
-        : (_event: unknown) => true
-      const opened = sessionEventSource.open(eventDeliveryPrincipal(c))
-      await opened.ready
-      return streamSSE(c, async (stream) => {
-        let cleanup: () => void = () => {}
-        cleanup = attachSseFanout({
-          subscribe: (listener) => opened.subscribe((event) => {
-            if (allows(event)) listener(event)
-          }, () => {
-            cleanup()
-            stream.abort()
-          }),
-          write: async (event, meta) => {
-            return stream.writeSSE({
-            ...(meta?.id ? { id: meta.id } : {}),
-            data: JSON.stringify(event),
-            })
-          },
-          heartbeat: { type: "heartbeat" },
-          heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
-          lastEventId: c.req.header("last-event-id"),
-          replay: scope.managed ? scopedReplay(opened.replay, allows) : opened.replay,
-          replayLive: false,
-        })
-        await waitForSessionEventStream(stream, scope, opts.sessionAccessPolicy, cleanup)
-      })
     })
 
   if (opts.exposeCommandRoute !== false) {

@@ -238,7 +238,6 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "DELETE /session/:id": { kind: "authorize", operation: "delete" },
   "GET /agent": { kind: "workspace" },
   "GET /command": { kind: "workspace" },
-  "GET /event": { kind: "stream", operation: "session_event_stream" },
   "GET /experimental/session": { kind: "filter", operation: "session_list" },
   "GET /permission": { kind: "filter", operation: "permission_list" },
   "GET /permission/modes": { kind: "workspace" },

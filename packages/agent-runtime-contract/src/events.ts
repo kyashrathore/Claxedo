@@ -8,6 +8,7 @@ import type {
   AgentTodo,
 } from "./content"
 import type { AgentRuntimeStatus } from "./availability"
+import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 
 export type RuntimeTokenUsage = {
   input: number | null
@@ -47,6 +48,9 @@ export type AgentPresentationEvent =
   | { type: "session.agent"; properties: { sessionID: string; agentId: string } }
   | { type: "session.config"; properties: { sessionID: string; options: AgentConfigOption[] } }
   | { type: "session.usage"; properties: { sessionID: string; messageID?: string; contextSize: number; contextUsed: number; observation?: RuntimeUsageObservation; cost?: { amount: number; currency: string } } }
+  | { id?: string; type: "subagent.updated"; properties: { sessionID: string; update: AgentSubagentUpdate } }
+  | { id?: string; type: "goal.updated"; properties: { sessionID: string; goal: RuntimeGoalSnapshot } }
+  | { id?: string; type: "goal.cleared"; properties: { sessionID: string } }
   | { id?: string; type: "runtime.diagnostic"; properties: { sessionID: string; harness?: string; threadId?: string; projection?: string; phase?: "ingest" | "terminalize"; code: string; message: string; severity: "debug" | "info" | "warn" | "error"; eventType?: string; issues?: string[]; details?: unknown; auth?: unknown; rateLimit?: unknown; mcp?: unknown; diagnostic?: unknown; raw?: unknown } }
   | { id: string; type: "server.connected"; properties: Record<string, unknown> }
   | { type: "server.heartbeat"; properties: Record<string, unknown> }
@@ -75,6 +79,9 @@ export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "session.agent": true,
   "session.config": true,
   "session.usage": true,
+  "subagent.updated": true,
+  "goal.updated": true,
+  "goal.cleared": true,
   "runtime.diagnostic": true,
   "server.connected": true,
   "server.heartbeat": true,

@@ -235,9 +235,8 @@ function options(
         }),
       }),
     },
-    runtimeEventAuthorization: {
-      authorizeParent: (_context, parentSessionId) => sessionAccess.exists(parentSessionId),
-      resolveParentSessionId: (event) => sessionAccess.parentSessionIdFor(event.sessionId),
+    sessionParents: {
+      parentSessionIdFor: (sessionId) => sessionAccess.parentSessionIdFor(sessionId),
     },
     corsOrigin: claxedoCorsOrigin,
     // `createSessionRoutes` awaits this before publishing `session.lifecycle`

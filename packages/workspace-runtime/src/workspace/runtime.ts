@@ -31,10 +31,8 @@ import {
   type AgentRuntimeStoreWithRecovery,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { OpenCodeSdkHarnessAdapter, WorkspaceScope, type OpenCodeRuntime } from "../opencode/index"
-import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
-import { eventSessionId, isTerminalCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
@@ -53,30 +51,19 @@ import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import {
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
+  mountWorkspaceEvents,
   mountWorkspaceProcess,
   mountWorkspacePty,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { firstPartyMcpAdapterConfig, firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
-import type { RuntimeEventAuthorization } from "../routes/events"
+import type { WorkspaceEventParents } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
-import {
-  agentRuntimeEventDeliveryPolicy,
-  createIdentityAwareEventSource,
-  eventDeliveryPrincipal,
-  sessionEventDeliveryPolicy,
-} from "../event-delivery"
+import { agentRuntimeEventDeliveryPolicy } from "../event-delivery"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessPolicy,
 } from "../session-access-policy"
-import {
-  authorizeSessionEventScope,
-  compatEnvelopeSessionId,
-  isSessionEventScopeResponse,
-  scopedReplay,
-  watchSessionEventLease,
-} from "../routes/session-event-privacy"
 import { SessionRollbackError } from "../session-rollback-error"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 
@@ -166,7 +153,7 @@ export type WorkspaceHostOptions = {
    */
   onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
   /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
-  runtimeEventAuthorization?: RuntimeEventAuthorization
+  sessionParents?: WorkspaceEventParents
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
   transcripts?: WorkspaceTranscriptRoutesOptions
   /** Host-owned projection write that completes before the created lifecycle event. */
@@ -643,13 +630,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const cleanupRuntimeObserver = options.onRuntimeEvent
     ? eventHub.subscribeRuntime(options.onRuntimeEvent)
     : () => undefined
-  const globalEvents = createIdentityAwareEventSource<CompatEnvelope>({
-    subscribe: (fn) => eventHub.subscribeGlobal(fn),
-    policy: sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()),
-    sessionId: (event) => eventSessionId(event.payload),
-    isTerminal: (event) => isTerminalCompatEvent(event.payload),
-  })
-  globalEvents.open({ mode: "unmanaged-local", connectionId: "local-global-replay" })
   // `store()` is the host's own session-config store. Bound lazily: `store()`
   // opens SQLite on first use, and an idle host never opens it.
   const hostOptions = {
@@ -1454,14 +1434,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
       if (options.core) {
         mountWorkspaceCore(app, options.core.upgradeWebSocket, {
+          directory: hostOptions.target?.directory ?? workspaceDir(),
           eventHub,
           exposure: options.exposure,
           sessionAccessPolicy,
           processObserver: hostOptions.processObserver,
-          runtimeEventAuthorization: hostOptions.runtimeEventAuthorization,
+          sessionParents: hostOptions.sessionParents,
           transcripts: hostOptions.transcripts,
         })
       } else {
+        // A host that serves sessions serves their stream, whatever else it mounts.
+        mountWorkspaceEvents(app, {
+          directory: hostOptions.target?.directory ?? workspaceDir(),
+          eventHub,
+          sessionAccessPolicy,
+          ...(hostOptions.sessionParents ? { sessionParents: hostOptions.sessionParents } : {}),
+        })
         if (options.pty) {
           mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy)
         }
@@ -1517,56 +1505,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
       app.get("/vcs", async (c) => {
         return c.json(await localVcsInfo(requestDirectory(c)))
-      })
-
-      app.get("/global/event", async (c) => {
-        const scope = await authorizeSessionEventScope(c, sessionAccessPolicy, "sessionID")
-        if (isSessionEventScopeResponse(scope)) return scope
-        const allows = scope.managed
-          ? (event: CompatEnvelope) => compatEnvelopeSessionId(event) === scope.sessionId
-          : (_event: CompatEnvelope) => true
-        const principal = eventDeliveryPrincipal(c)
-        let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null
-        let cleanup = () => {}
-        let stopLeaseWatch = () => {}
-        let closed = false
-        const close = () => {
-          if (closed) return
-          closed = true
-          stopLeaseWatch()
-          cleanup()
-          try {
-            ctrl?.close()
-          } catch {}
-        }
-        const body = new ReadableStream<Uint8Array>({
-          start(next) {
-            ctrl = next
-            next.enqueue(encodeSseData({ payload: { id: "server.connected", type: "server.connected", properties: {} } }))
-          },
-          cancel: close,
-        })
-
-        const opened = globalEvents.open(principal)
-        await opened.ready
-        cleanup = attachSseFanout({
-          subscribe: (listener) => opened.subscribe((event) => {
-            if (allows(event)) listener(event)
-          }, close),
-          write: async (event, meta) => {
-            ctrl?.enqueue(encodeSseData(event, meta?.id))
-          },
-          heartbeat: { payload: { type: "server.heartbeat", properties: {} } },
-          heartbeatMs: 10_000,
-          lastEventId: c.req.header("last-event-id"),
-          replay: scope.managed ? scopedReplay(opened.replay, allows) : opened.replay,
-          replayLive: false,
-        })
-
-        stopLeaseWatch = watchSessionEventLease(scope, sessionAccessPolicy, close)
-        c.req.raw.signal.addEventListener("abort", close, { once: true })
-
-        return new Response(body, { headers: sseHeaders() })
       })
 
       const sessions = SessionRoutes((input) => adapterForSession(input), {
@@ -1936,7 +1874,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         adapter = undefined
         cleanupCompatObserver()
         cleanupRuntimeObserver()
-        globalEvents.close()
         sessionToolPrompts.clear()
         opencodeToolSessions.clear()
         sessionConfigStore?.close?.()
