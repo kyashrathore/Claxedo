@@ -3,7 +3,6 @@ import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
-import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
@@ -1244,17 +1243,12 @@ export function createSelfHostedApp(
         })
         const completeSources = ["claude", "codex", "cursor", "opencode", "pi"]
           .filter((source) => !incompleteSources.has(source))
-        const classificationKey = createHash("sha256").update(JSON.stringify({
-          entries: entries.toSorted((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-          completeSources,
-        })).digest("hex")
         return await scanTokenTrackerLocalHistory({
           sourceHome: os.homedir(),
           stateDir: path.join(dataDir(), "usage-scanner"),
           since,
           until,
           sources: completeSources,
-          classificationKey,
           refresh,
           classify: createUsageProvenanceClassifier(entries, { completeSources }),
         })
