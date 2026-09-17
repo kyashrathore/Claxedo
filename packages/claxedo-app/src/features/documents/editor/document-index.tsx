@@ -1,7 +1,7 @@
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { List } from "@opencode-ai/ui/list"
 import { Popover } from "@opencode-ai/ui/popover"
-import { For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createResource, createSignal, on, onCleanup } from "solid-js"
 import { SemanticIcon } from "@/ui/semantic-icon"
 import { formatServerError } from "@/lib/server-errors"
 import { claxedoEventsPort } from "../app-ports"
@@ -305,23 +305,28 @@ export function PageIndex(props: PageIndexProps) {
   // The controller is a plain object, so the connectivity signal is bridged to it
   // through this handler rather than the controller reading the signal itself.
   //
-  // `centralConnected` (the `cp` bit), NOT the aggregate `connected`:
+  // `centralConnected` (the `cp` level), NOT the aggregate `connected`:
   // `document.changed` rides `cp/events` only, and the aggregate ORs in every
-  // workspace stream — so it stays true across a `cp` drop/recover, the
-  // reconnect edge never fires, and the nudges missed during the gap are never
-  // recovered (silent staleness). See `app/connection/stream-connectivity.ts`.
+  // workspace stream — so it stays true across a `cp` drop/recover. The
+  // reconnect edge itself is `controlPlaneReconnects`: with two control
+  // planes the level stays up while one of them flaps, and the nudges missed
+  // during that gap would never be recovered (silent staleness). See
+  // `app/connection/stream-connectivity.ts`.
   let connectionHandler: ((connected: boolean) => void) | undefined
   createEffect(() => {
     const connected = events?.centralConnected()
     if (connected !== undefined) connectionHandler?.(connected)
   })
-  // A hole in the control plane's stream may have swallowed a doorbell: the
-  // same revalidation a reconnect performs, driven as one.
+  const revalidate = () => {
+    connectionHandler?.(false)
+    connectionHandler?.(true)
+  }
   if (events) {
+    createEffect(on(events.controlPlaneReconnects, revalidate, { defer: true }))
+    // A hole in a control plane's stream may have swallowed a doorbell: the
+    // same revalidation a reconnect performs, driven as one.
     onCleanup(events.listen((frame) => {
-      if (frame.type !== "stream.replay-gap" || frame.stream !== "cp") return
-      connectionHandler?.(false)
-      connectionHandler?.(true)
+      if (frame.type === "stream.replay-gap" && frame.stream === "cp") revalidate()
     }))
   }
   const [state, setState] = createSignal<IndexState>({

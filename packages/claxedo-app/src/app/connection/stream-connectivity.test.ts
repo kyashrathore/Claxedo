@@ -50,24 +50,30 @@ describe("createStreamConnectivity", () => {
     })
   })
 
-  test("two control planes: the bit is up only while both are, and a released one no longer counts", () => {
+  test("two control planes: the level holds while either is up, and each return after a drop is a reconnect", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()
       const daemon = connectivity.track("cp")
       const account = connectivity.track("cp")
       daemon(true)
-      expect(connectivity.centralConnected()).toBe(false)
-      account(true)
       expect(connectivity.centralConnected()).toBe(true)
-      // The hosted stream drops while the daemon's holds: the edge must fire.
+      account(true)
+      expect(connectivity.controlPlaneReconnects()).toBe(0)
+      // The hosted stream drops while the daemon's holds: the level stays up
+      // (the daemon's doorbells still arrive) and its return is the edge.
       account(false)
-      expect(connectivity.centralConnected()).toBe(false)
+      expect(connectivity.centralConnected()).toBe(true)
+      account(true)
+      expect(connectivity.controlPlaneReconnects()).toBe(1)
+      daemon(false)
+      daemon(true)
+      expect(connectivity.controlPlaneReconnects()).toBe(2)
+      // Signed out: the account stream is torn down for good; a later report
+      // from it counts for nothing.
+      account.release()
       account(true)
       expect(connectivity.centralConnected()).toBe(true)
-      // Signed out: the account stream is torn down for good, not merely down.
-      account.release()
-      expect(connectivity.centralConnected()).toBe(true)
-      expect(connectivity.connected()).toBe(true)
+      expect(connectivity.controlPlaneReconnects()).toBe(2)
       dispose()
     })
   })
@@ -93,14 +99,12 @@ describe("createStreamConnectivity", () => {
       central(true)
       central(true)
       other(true)
-      expect(connectivity.centralConnected()).toBe(true)
-      // Three redundant `true`s must not inflate the count: one `false` from
-      // one stream takes the bit down, and one `false` from the other takes
-      // the aggregate down too.
+      // Three redundant `true`s must not inflate the count: one `false` from each
+      // real stream still takes the bit down.
       central(false)
-      expect(connectivity.centralConnected()).toBe(false)
-      expect(connectivity.connected()).toBe(true)
+      expect(connectivity.centralConnected()).toBe(true)
       other(false)
+      expect(connectivity.centralConnected()).toBe(false)
       expect(connectivity.connected()).toBe(false)
       dispose()
     })

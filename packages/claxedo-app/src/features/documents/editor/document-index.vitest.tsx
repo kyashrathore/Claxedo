@@ -18,6 +18,7 @@ const events = vi.hoisted(() => ({
   on: vi.fn(),
   listen: vi.fn(() => () => undefined),
   centralConnected: vi.fn(() => true),
+  controlPlaneReconnects: vi.fn(() => 0),
   unsubscribes: [] as Array<{ calls: number }>,
 }))
 

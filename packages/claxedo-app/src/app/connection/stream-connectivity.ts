@@ -5,46 +5,46 @@ export type StreamKind = "cp" | "wr"
 /**
  * Per-kind connectedness for the Claxedo event streams.
  *
- * Not one signal: `ClaxedoEventsProvider` runs a control-plane stream (`cp`;
- * two on a signed desktop, the daemon's and the hosted control plane's) plus
- * the routed workspace runtime's stream (`wr`). The `document.changed`
- * doorbell rides `cp` only, and its consumer revalidates on the
- * `false → true` edge. An aggregate "any stream up" count goes 2 → 1 → 2 when
- * `cp` drops while a workspace stream stays up, so that edge never fires and
- * every nudge missed in the gap is lost. `centralConnected()` is true only
- * while EVERY tracked `cp` stream is up, so a drop of either control plane
- * flips it and its recovery is the revalidation edge; `connected()` keeps the
- * any-stream meaning for consumers that want it
+ * Not one signal: `ClaxedoEventsProvider` runs one or two control-plane
+ * streams (`cp`; a signed desktop reads its daemon's and the hosted control
+ * plane's) plus the routed workspace runtime's stream (`wr`). The
+ * `document.changed` doorbell rides `cp` only, and its consumer revalidates
+ * on a control-plane reconnect. An aggregate "any stream up" count goes
+ * 2 → 1 → 2 when `cp` drops while a workspace stream stays up, so no level
+ * signal over every stream ever shows that edge — and with two control
+ * planes not even a level over `cp` does, while a level that demands both up
+ * would report the daemon's doorbells as down whenever the hosted plane is
+ * away. So the level and the edge are separate: `centralConnected()` is
+ * "some control plane is up", and `controlPlaneReconnects()` counts every
+ * control-plane stream's return after a drop, whichever one it was.
+ * `connected()` keeps the any-stream meaning for consumers that want it
  * (`workbench/state/agent-status-listener.ts`).
  */
 export function createStreamConnectivity() {
   const [connected, setConnected] = createSignal(false)
   const [centralConnected, setCentralConnected] = createSignal(false)
+  const [controlPlaneReconnects, setControlPlaneReconnects] = createSignal(0)
   let total = 0
   let cpUp = 0
-  let cpTracked = 0
-  const publishCentral = () => setCentralConnected(cpTracked > 0 && cpUp === cpTracked)
 
   return {
     /** Any stream target is up. */
     connected,
-    /** Every control-plane stream (`cp`) is up — the doorbell-bearing ones. */
+    /** A control-plane stream (`cp`) is up — one of the doorbell-bearing ones. */
     centralConnected,
+    /** Incremented each time a control-plane stream comes back after a drop: the revalidation edge for its doorbells. */
+    controlPlaneReconnects,
     /**
      * One tracker per stream target, owning that stream's up/down bit. Repeated
      * calls with the same value are no-ops, so a target can report its state
      * freely (connect, heartbeat timeout, error path, teardown) without
      * double-counting. `release` retires the target (its stream is closed for
-     * good), so a control plane that is no longer read does not hold
-     * `centralConnected` down.
+     * good): a later report from it counts for nothing.
      */
     track(kind: StreamKind) {
       let up = false
+      let wasUp = false
       let tracked = true
-      if (kind === "cp") {
-        cpTracked += 1
-        publishCentral()
-      }
       const set = (value: boolean) => {
         if (!tracked || up === value) return
         up = value
@@ -53,16 +53,15 @@ export function createStreamConnectivity() {
         setConnected(total > 0)
         if (kind !== "cp") return
         cpUp += delta
-        publishCentral()
+        setCentralConnected(cpUp > 0)
+        if (value && wasUp) setControlPlaneReconnects((count) => count + 1)
+        if (value) wasUp = true
       }
       return Object.assign(set, {
         release() {
           if (!tracked) return
           set(false)
           tracked = false
-          if (kind !== "cp") return
-          cpTracked -= 1
-          publishCentral()
         },
       })
     },

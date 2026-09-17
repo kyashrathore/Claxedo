@@ -309,14 +309,18 @@ type ClaxedoEventsContextValue = {
    */
   connected: () => boolean
   /**
-   * A control plane's stream is up. It carries `document.changed`,
-   * `session.share.changed` and `session.inventory.changed`, so its
-   * `false → true` edge is the revalidation
-   * trigger for every consumer of those doorbells. Distinct from `connected`
-   * on purpose: with a remote workspace open the aggregate never drops to
-   * false when only the control plane's stream flaps.
+   * A control-plane stream is up. They carry `document.changed`,
+   * `session.share.changed` and `session.inventory.changed`. Distinct from
+   * `connected` on purpose: with a remote workspace open the aggregate never
+   * drops to false when only a control plane's stream flaps.
    */
   centralConnected: () => boolean
+  /**
+   * Counts every control-plane stream's return after a drop — the
+   * revalidation edge for the doorbells above, which no level signal shows
+   * once a second control plane holds the level up.
+   */
+  controlPlaneReconnects: () => number
 }
 
 const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue>()
@@ -794,6 +798,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     listen: emitter.listen,
     connected: connectivity.connected,
     centralConnected: connectivity.centralConnected,
+    controlPlaneReconnects: connectivity.controlPlaneReconnects,
   }
 
   return (
