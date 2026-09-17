@@ -6,6 +6,7 @@ import path from "node:path"
 const configRequire = createRequire(import.meta.url)
 
 import { createElectronRenderer, desktopDir } from "./vite.renderer"
+import { desktopNodeWorkerBundlePlugin } from "./scripts/node-worker-bundles"
 import { desktopMainBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const channel = (() => {
@@ -65,6 +66,13 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [
         desktopMainBoundaryManifestPlugin(desktopDir),
+        desktopNodeWorkerBundlePlugin({
+          desktopRoot: desktopDir,
+          workerEntries: [
+            "src/main/diagnostics/process-metrics-worker-entry.ts",
+            "src/main/diagnostics/session-memory-worker-entry.ts",
+          ],
+        }),
         {
           name: "copy-claxedo-server",
           closeBundle() {
@@ -100,6 +108,13 @@ export default defineConfig(({ mode }) => {
               // `undefined` leaves the chunk to Rollup's own splitting.
               return id.endsWith("/src/main/account/index.ts") ? "desktop-account" : undefined
             },
+            // Without this Rollup folds the manual chunk's whole static subtree
+            // into it, so `shared/json-read` (also imported by both worker
+            // entries) landed in `desktop-account-*.js` next to
+            // `import { app, safeStorage, shell } from "electron"`. The
+            // workers run under ELECTRON_RUN_AS_NODE, where `electron` has no
+            // named exports, and died at module instantiation.
+            onlyExplicitManualChunks: true,
           },
         },
       },

@@ -60,6 +60,7 @@ export function createProcessMetricsSource(options: {
   worker?: ProcessMetricsWorker
   workerFactory?: () => ProcessMetricsWorker
   workerPath?: string
+  workerExecPath?: string
   wsl?: WslDiagnosticsSource
   reconcileIntervalMs?: number
   random?: () => number
@@ -76,6 +77,7 @@ export function createProcessMetricsSource(options: {
         ? createIsolatedPosixProcessMetricsWorker({
             platform,
             workerPath: options.workerPath,
+            execPath: options.workerExecPath,
             memoryHelperPath: options.memoryHelperPath,
           })
         : platform === "win32"

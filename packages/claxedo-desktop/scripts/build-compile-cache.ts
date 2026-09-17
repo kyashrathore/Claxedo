@@ -350,7 +350,7 @@ export function serverStartupRefusal(): string {
  * nothing. Keyed relative to the BUNDLE directory, because that is what the
  * child resolves `import.meta.dirname` to at runtime.
  */
-export function buildClaxedoServerCompileCache(input: {
+export async function buildClaxedoServerCompileCache(input: {
   /** The chunk `index.js` dynamically imports; `bundleClaxedoServer` returns it. */
   deferredEntryPath: string
   /** The bundle root, i.e. the directory holding `index.js`. */
@@ -359,21 +359,43 @@ export function buildClaxedoServerCompileCache(input: {
   electronPath: string
   log?: (message: string) => void
 }) {
-  return buildCompileCache({
-    entryPath: input.deferredEntryPath,
-    rootDir: input.bundleDir,
-    outputDir: input.outputDir,
-    electronPath: input.electronPath,
-    // Absent, not merely unset here: a developer shell that exports these would
-    // otherwise let the build start a real server.
-    env: {
-      CLAXEDO_CHILD_PORT: undefined,
-      CLAXEDO_DAEMON_PROTOCOL: undefined,
-      CLAXEDO_DAEMON_TOKEN: undefined,
-      CLAXEDO_DAEMON_GENERATION: undefined,
-      CLAXEDO_DAEMON_DISCOVERY_PATH: undefined,
-    },
-    expectRefusal: serverStartupRefusal(),
-    ...(input.log ? { log: input.log } : {}),
-  })
+  // The import must refuse before it reaches the data directory, and the only
+  // way to know is to hand it an empty one and look afterwards. Pointing it at
+  // a scratch directory also keeps a developer's real `~/.claxedo` out of
+  // reach of a build, whatever the entry does on the way to its refusal.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-compile-cache-data-"))
+  try {
+    const result = await buildCompileCache({
+      entryPath: input.deferredEntryPath,
+      rootDir: input.bundleDir,
+      outputDir: input.outputDir,
+      electronPath: input.electronPath,
+      // Absent, not merely unset here: a developer shell that exports these would
+      // otherwise let the build start a real server.
+      env: {
+        CLAXEDO_CHILD_PORT: undefined,
+        CLAXEDO_DAEMON_PROTOCOL: undefined,
+        CLAXEDO_DAEMON_TOKEN: undefined,
+        CLAXEDO_DAEMON_GENERATION: undefined,
+        CLAXEDO_DAEMON_DISCOVERY_PATH: undefined,
+        CLAXEDO_DATA_DIR: dataDir,
+      },
+      expectRefusal: serverStartupRefusal(),
+      ...(input.log ? { log: input.log } : {}),
+    })
+    assertDataDirUntouched(dataDir, input.deferredEntryPath)
+    return result
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+}
+
+export function assertDataDirUntouched(dataDir: string, entryPath: string) {
+  const touched = fs.readdirSync(dataDir)
+  if (touched.length === 0) return
+  throw new Error(
+    `${entryPath} wrote to its data directory (${touched.join(", ")}) before refusing to run. ` +
+      "Every store the daemon opens must come after claxedoServerStartup; a build that imports the bundle " +
+      "would otherwise migrate a developer's real database.",
+  )
 }

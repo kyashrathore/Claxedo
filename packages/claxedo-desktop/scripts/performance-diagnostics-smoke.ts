@@ -3,6 +3,7 @@
 import { cpus, tmpdir } from "node:os"
 import { createRequire } from "node:module"
 import { join, resolve } from "node:path"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { createServer } from "node:net"
@@ -36,6 +37,21 @@ const SECRET_SENTINEL = "claxedo-diagnostics-secret-must-not-cross"
 // Named on the binding rather than asserted: `require` answers `any`, so
 // the declaration IS the contract for the slice this smoke uses.
 const packageUsage: Pidusage = createRequire(import.meta.url)("pidusage")
+
+/**
+ * The built worker must be loaded by the runtime that loads it in the product:
+ * the Electron binary as Node. This smoke runs under bun, whose loader answers
+ * a missing named import from a CJS module with `undefined` where Node's ESM
+ * linker throws — a worker bundle that reached `electron` stayed green here
+ * and died in the app.
+ */
+export function electronBinary(): string {
+  const electron: unknown = createRequire(import.meta.url)("electron")
+  if (typeof electron !== "string" || !existsSync(electron)) {
+    throw new Error("Diagnostics smoke needs the electron package's binary to run the built worker")
+  }
+  return electron
+}
 
 export type DiagnosticsSmokeEvidence = {
   mode: "source" | "packaged"
@@ -187,6 +203,7 @@ export async function runSourceSmoke() {
           worker: createIsolatedPosixProcessMetricsWorker({
             platform: process.platform,
             workerPath: resolve(import.meta.dirname, "../out/main/process-metrics-worker.js"),
+            execPath: electronBinary(),
           }),
         }
       : {}),
@@ -1186,6 +1203,7 @@ async function runCpuProbe(enabled: boolean) {
         platform: process.platform,
         electron: emptyElectronSource(),
         workerPath: process.env.CLAXEDO_DIAGNOSTICS_WORKER_PATH,
+        workerExecPath: electronBinary(),
       })
     : undefined
   const profiler = source
@@ -1237,6 +1255,7 @@ async function runFlowProfiler() {
           platform: process.platform,
           electron: emptyElectronSource(),
           workerPath: process.env.CLAXEDO_DIAGNOSTICS_WORKER_PATH,
+          workerExecPath: electronBinary(),
         })
   const profiler = createProfiler({
     source,

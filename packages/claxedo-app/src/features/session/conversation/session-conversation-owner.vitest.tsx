@@ -24,7 +24,7 @@ describe("SessionConversationOwner", () => {
     const first = mount()
     const second = mount()
     expect(warmConversationMemorySnapshot()).toMatchObject([
-      { directory: "/repo", sessionId: "ses_owner", mounted: true, messageCount: 0 },
+      { sessionId: "ses_owner", mounted: true, messageCount: 0 },
     ])
 
     setParts([{ id: "part_prompt", sessionID: "ses_owner", messageID: "msg_user", type: "text", text: "hello" }])

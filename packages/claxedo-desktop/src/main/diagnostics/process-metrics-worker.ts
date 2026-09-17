@@ -79,7 +79,14 @@ function isProcessMetricSample(value: unknown): value is ProcessMetricSample {
   const rssBytes = readUnknown(value, "rssBytes")
   if (rssBytes !== undefined && typeof rssBytes !== "number") return false
   const memoryImpact = readUnknown(value, "memoryImpact")
-  return memoryImpact === undefined || LocalDiagnostics.MemoryImpactReading.safeParse(memoryImpact).success
+  if (memoryImpact === undefined) return true
+  const bytes = readNumber(memoryImpact, "bytes")
+  return (
+    LocalDiagnostics.MemoryImpactKind.safeParse(readUnknown(memoryImpact, "kind")).success &&
+    bytes !== undefined &&
+    Number.isSafeInteger(bytes) &&
+    bytes >= 0
+  )
 }
 
 function isSampleReply(value: unknown): value is ProcessMetricSample[] {
@@ -117,6 +124,13 @@ export function lowerDiagnosticsWorkerPriority(
 export function createIsolatedPosixProcessMetricsWorker(options: {
   platform: "darwin" | "linux"
   workerPath?: string
+  /**
+   * Defaults to `process.execPath`, which in Electron main is the app binary
+   * and, with ELECTRON_RUN_AS_NODE below, Node's ESM linker. A harness that is
+   * not itself Electron (the bun smoke) must pass the Electron binary here, or
+   * it proves the worker under a loader with different import semantics.
+   */
+  execPath?: string
   requestTimeoutMs?: number
   random?: () => number
   memoryHelperPath?: string
@@ -217,7 +231,7 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
 
   function ensureChild() {
     if (child && child.exitCode === null) return
-    child = spawn(process.execPath, [options.workerPath ?? join(import.meta.dirname, "process-metrics-worker.js")], {
+    child = spawn(options.execPath ?? process.execPath, [options.workerPath ?? join(import.meta.dirname, "process-metrics-worker.js")], {
       cwd: policy.cwd,
       env: {
         ...policy.env,

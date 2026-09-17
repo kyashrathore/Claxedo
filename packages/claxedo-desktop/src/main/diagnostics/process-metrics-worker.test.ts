@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { EventEmitter } from "node:events"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
 
 import {
   collectWindowsAncestry,
+  createIsolatedPosixProcessMetricsWorker,
   createWindowsCimQuery,
   createWindowsProcessMetricsWorker,
   diagnosticsWorkerProcessOptions,
@@ -19,6 +22,43 @@ import {
 } from "./process-metrics-worker-runtime"
 
 describe("process metrics worker", () => {
+  test("the isolated worker runs under the executable it is given and accepts the wire sample shape", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "claxedo-worker-exec-"))
+    const workerPath = join(dir, "worker.mjs")
+    const sample = {
+      pid: 1,
+      ppid: 0,
+      rootPid: 1,
+      creation: { state: "unavailable", reason: "identity-unavailable" },
+      cpuMachinePercent: 0.5,
+      rssBytes: 4096,
+      memoryImpact: { kind: "physical-footprint", bytes: 2048 },
+    }
+    writeFileSync(
+      workerPath,
+      `process.stdin.on("data", (line) => {
+        const { id, method } = JSON.parse(String(line))
+        const value = method === "sample"
+          ? ${JSON.stringify([sample])}
+          : { entries: [{ pid: 1, ppid: 0, rootPid: 1, executable: process.execPath }], truncated: false }
+        process.stdout.write(JSON.stringify({ id, ok: true, value }) + "\\n")
+      })`,
+    )
+    const worker = createIsolatedPosixProcessMetricsWorker({ platform: "linux", workerPath, execPath: process.execPath })
+    try {
+      expect((await worker.reconcile([1])).entries[0]).toMatchObject({ executable: process.execPath })
+      expect(await worker.sample([{ pid: 1, ppid: 0, rootPid: 1 }], 0)).toEqual([sample])
+    } finally {
+      worker.dispose()
+    }
+    const missing = createIsolatedPosixProcessMetricsWorker({ platform: "linux", workerPath, execPath: join(dir, "no-such-runtime") })
+    try {
+      await expect(missing.reconcile([1])).rejects.toThrow("process metrics worker unavailable")
+    } finally {
+      missing.dispose()
+    }
+  })
+
   test("runs host collectors below the UI process priority", () => {
     const calls: Array<{ pid: number; priority: number }> = []
     expect(lowerDiagnosticsWorkerPriority((pid, priority) => calls.push({ pid, priority }))).toBe(true)

@@ -248,7 +248,6 @@ export function warmConversationMemorySnapshot() {
     const messages = entry.handle.messages()
     return {
       sessionId: entry.sessionID,
-      directory: entry.directory,
       mounted: entry.refs > 0,
       recency,
       messageCount: messages.length,

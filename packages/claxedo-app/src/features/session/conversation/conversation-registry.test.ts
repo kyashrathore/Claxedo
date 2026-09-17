@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import type { UIMessage } from "@tanstack/ai"
 import { queryClient } from "@/platform/query/query-client"
+import { LocalDiagnostics } from "../../processes/data/local-diagnostics"
 import { conversationScopeKey, conversationSnapshotKey } from "./conversation-chat-client"
 import {
   addRegisteredConversationMessage as addScopedConversationMessage,
@@ -139,10 +140,10 @@ describe("conversation chat registry", () => {
       parts: { msg_1: [textPart("part_1", "ses_1", "msg_1", "large transcript")] },
     })
 
-    expect(warmConversationMemorySnapshot()).toEqual([
-      expect.objectContaining({ sessionId: "ses_1", mounted: true, recency: 0, messageCount: 1 }),
-    ])
-    expect(warmConversationMemorySnapshot()[0]!.buckets.totalBytes).toBeGreaterThan("large transcript".length)
+    const snapshot = warmConversationMemorySnapshot()
+    expect(snapshot).toMatchObject([{ sessionId: "ses_1", mounted: true, recency: 0, messageCount: 1 }])
+    expect(snapshot[0]!.buckets.totalBytes).toBeGreaterThan("large transcript".length)
+    expect(LocalDiagnostics.SessionMemoryScanRequest.safeParse({ warmSessions: snapshot })).toMatchObject({ success: true })
 
     unregister()
     expect(warmConversationMemorySnapshot()[0]).toMatchObject({ sessionId: "ses_1", mounted: false })
