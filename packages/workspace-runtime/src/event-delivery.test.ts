@@ -306,9 +306,12 @@ describe("createIdentityAwareEventSource", () => {
 
   test("a cursor from a scope this process never held is a gap; a live scope's own cursor resumes", async () => {
     const bus = createBus<Event>()
+    // The clock, as in production: a ring that continues no tombstone starts
+    // where the clock is, and every cursor at or below that start is a gap.
+    let origin = 0
     const source = createIdentityAwareEventSource<Event>({
       subscribe: (fn) => bus.subscribe(fn),
-      sequenceOrigin: () => 0,
+      sequenceOrigin: () => origin,
       policy: () => "deliver",
       sessionId: (event) => event.sessionId,
     })
@@ -329,17 +332,20 @@ describe("createIdentityAwareEventSource", () => {
     expect(reminted.replay.replayAfter("2").map((entry) => entry.payload.value)).toEqual(["c"])
 
     // Another actor's cursor names a frame in a numbering this scope never
-    // had: a new scope, rebuilt from the retained ring and numbered from 1,
-    // so "2" is a gap — not "replay c".
+    // had: a new scope, rebuilt from the retained ring and numbered from the
+    // clock, so "2" is a gap — not "replay c" — and stays one after a
+    // connection has attached.
+    origin = 1_000
     const stranger = source.open({ ...participant("connection_3"), actorId: "actor_other" })
     await stranger.ready
     expect(stranger.replay.hasGap("2", stranger.replay.lastId())).toBe(true)
     stranger.subscribe(() => undefined)
+    expect(stranger.replay.hasGap("2", stranger.replay.lastId())).toBe(true)
     bus.publish({ sessionId: "ses", value: "d" })
     await source.flush()
-    // Once attached, the new scope's own numbering resumes.
-    expect(stranger.replay.hasGap("3", stranger.replay.lastId())).toBe(false)
-    expect(stranger.replay.replayAfter("3").map((entry) => entry.payload.value)).toEqual(["d"])
+    // The new scope's own numbering resumes.
+    expect(stranger.replay.hasGap("1003", stranger.replay.lastId())).toBe(false)
+    expect(stranger.replay.replayAfter("1003").map((entry) => entry.payload.value)).toEqual(["d"])
     source.close()
   })
 

@@ -293,6 +293,35 @@ describe("wr/events — one stream per workspace runtime", () => {
     controller.abort()
   })
 
+  test("a session-scoped reader's cursor is contiguous: its ring numbers only that session's frames, and a workspace frame in between is not a hole", async () => {
+    // The same actor holds the unscoped arm in another tab, whose ring
+    // numbers every workspace frame; the session-scoped tab's ring is its own.
+    const policy = managedPolicy({ workspace: "allow", session: (id) => id === "shared" || id === "other" })
+    policy.authorizeHost = () => ({ allowed: true, lease: "ws", expiresAt: Date.now() + 60_000 })
+    const { app, hub, bus } = harness({ policy, relayAuth })
+    const wide = new AbortController()
+    const unscoped = await app.request("http://localhost/api/wr/events", { signal: wide.signal })
+    const first = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events?sessionID=shared", { signal: first.signal })
+    hub.publishGlobal(part("shared", "prt-1", { status: "running" }))
+    const cursor = frameId(await readUntil(response, "prt-1"), "prt-1")
+    first.abort()
+    // Frames the session arm never carries, numbered by the workspace ring only.
+    bus.publish({ type: "process.status", directory: DIRECTORY, configId: "svc", status: "running" })
+    hub.publishGlobal(part("other", "prt-other", { status: "running" }))
+    hub.publishGlobal(part("shared", "prt-2", { status: "completed" }))
+    const second = new AbortController()
+    const reconnect = await app.request("http://localhost/api/wr/events?sessionID=shared", { headers: { "Last-Event-ID": cursor! }, signal: second.signal })
+    const replayed = await readUntil(reconnect, "prt-2")
+    second.abort()
+    expect(replayed).toContain("prt-2")
+    expect(replayed).not.toContain("runtime.sse_replay_gap")
+    expect(replayed).not.toContain("prt-other")
+    expect(Number(frameId(replayed, "prt-2"))).toBe(Number(cursor) + 1)
+    expect(await readUntil(unscoped, "prt-other")).toContain("prt-other")
+    wide.abort()
+  })
+
   test("a grantee is refused a session the authority does not grant, by the runtime's own named refusal", async () => {
     const { app } = harness({ policy: managedPolicy({ workspace: "deny", session: () => false }), relayAuth })
     const response = await app.request("http://localhost/api/wr/events?sessionID=not-mine")
@@ -452,9 +481,15 @@ describe("wr/events — one stream per workspace runtime", () => {
     const second = new AbortController()
     const reconnect = await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": cursor! }, signal: second.signal })
     const replayed = await readUntil(reconnect, "runtime.sse_replay_gap")
-    second.abort()
     expect(replayed).toContain("runtime.sse_replay_gap")
     expect(replayed).not.toContain("prt-b")
+    // A second tab of the same actor, same cursor, while the first stays
+    // attached: the hole is the ring's, not the first reconnect's to consume.
+    const third = new AbortController()
+    const other = await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": cursor! }, signal: third.signal })
+    expect(await readUntil(other, "runtime.sse_replay_gap")).toContain("runtime.sse_replay_gap")
+    second.abort()
+    third.abort()
   })
 
   test("deleting a session the reader held does not end the workspace arm at the next renewal", async () => {

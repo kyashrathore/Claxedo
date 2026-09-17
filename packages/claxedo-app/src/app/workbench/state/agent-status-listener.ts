@@ -15,6 +15,7 @@ import type { ClaxedoStateApi } from "./provider"
 import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 import { terminalAgentStatusFromEventType } from "@/features/terminal/core/terminal-agent-status"
+import { parseTerminalSessionPreview, terminalSessionPreviewPath } from "@/features/terminal/lib/terminal-session-preview"
 import { readField, readString } from "@/lib/record"
 
 type AgentLifecycleEvent = Extract<ClaxedoEvent, { type: "agent.lifecycle" }>
@@ -146,7 +147,7 @@ export function agentLifecycleTitle(input: {
   return next
 }
 
-function ownedTerminalIds(state: ClaxedoStateApi, contentId: string): string[] {
+function ownedTerminalIds(state: AgentStatusReconcileState, contentId: string): string[] {
   const ids = [...state.terminal.ownedIds(contentId)]
   const meta = state.meta.get(contentId)
   if (meta?.terminalId && !ids.includes(meta.terminalId)) ids.push(meta.terminalId)
@@ -433,20 +434,15 @@ function useReconnectCleanup() {
  * `app/connection/stream-connectivity.ts`). The aggregate `connected()`
  * never drops while the control plane's stream holds it up, and a `wr`-only
  * outage across a `pty.exited` would leave a terminal pinned "busy". A
- * workspace switch is a return too: one reconcile per switch.
+ * workspace switch is a return too, and so is the first stream of a page
+ * load: the indicators persisted from before it are stale in the same way.
  */
 export function useReconnectReconciliation(input: {
   connected: Accessor<boolean>
   reconcile: () => void | Promise<void>
 }) {
-  let hadConnection = false
-
   createEffect(on(input.connected, (isConnected) => {
     if (!isConnected) return
-    if (!hadConnection) {
-      hadConnection = true
-      return
-    }
     // `on` runs this callback untracked. Reconciliation synchronously snapshots
     // metadata and terminal statuses before its first await; those reads must not
     // turn later title/status changes into another network reconciliation while
@@ -455,14 +451,20 @@ export function useReconnectReconciliation(input: {
   }))
 }
 
-function terminalReconnectTargets(state: ClaxedoStateApi) {
+/** What the reconciliation reads and writes: the terminals each content owns, and their indicators. */
+export type AgentStatusReconcileState = {
+  terminal: Pick<ClaxedoStateApi["terminal"], "ownedIds" | "agentStatus" | "setAgentStatus" | "clearSeen">
+  meta: Pick<ClaxedoStateApi["meta"], "all" | "get">
+}
+
+// Every terminal a content owns, whatever its indicator says: a terminal
+// whose agent started while its workspace was not routed shows nothing yet.
+function terminalReconnectTargets(state: AgentStatusReconcileState) {
   const targets = new Map<string, Set<string>>()
   for (const content of state.meta.all()) {
     const directory = contentScopeDir(content, content.directory)
     if (!directory) continue
     for (const id of ownedTerminalIds(state, content.id)) {
-      if (!state.terminal.isTracked(id)) continue
-      if (state.terminal.agentStatus(id) === "idle") continue
       const ids = targets.get(directory) ?? new Set<string>()
       ids.add(id)
       targets.set(directory, ids)
@@ -485,20 +487,27 @@ async function resolveWorkspaceRuntime(directory: string, request: typeof fetch)
 
 /**
  * Re-reads, from the runtime, what the workspace stream would have told us
- * had it been open: which tracked terminals still exist, and for those that
+ * had it been open: which owned terminals still exist, and for those that
  * do, the last lifecycle the runtime recorded (`/hook/terminal-session`).
  * Only the routed workspace's stream is open, so a terminal in another
- * workspace whose agent finished meanwhile is healed here, on the next
- * return of a workspace stream. Each directory is read on its own: a
- * workspace whose host is away keeps its indicators as they were rather than
- * clearing every other workspace's.
+ * workspace whose agent started, asked or finished meanwhile is healed
+ * here, on the next return of a workspace stream. Each directory is read
+ * and applied on its own: a workspace whose host is away keeps its
+ * indicators as they were rather than clearing every other workspace's,
+ * and a slow one does not hold a fast one's answer. A reconcile started
+ * later supersedes this one, so a stale read never lands over a fresher.
+ * A heal writes the indicator only — a completion it reveals plays no
+ * sound, and a live Idle's "done" mark (`seen`) is left as the live path
+ * leaves it; only a terminal that is gone loses it.
  */
-export async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fetch) {
+export async function reconcileAgentStatuses(state: AgentStatusReconcileState, request: typeof fetch) {
   const targets = terminalReconnectTargets(state)
   if (targets.size === 0) return
-  const outcomes = new Map<string, TerminalAgentStatus>()
+  const generation = ++reconcileGeneration
 
   for (const [directory, ids] of targets) {
+    const gone = new Set<string>()
+    const outcomes = new Map<string, TerminalAgentStatus>()
     try {
       const workspace = await resolveWorkspaceRuntime(directory, request)
       const workspaceId = workspace?.workspaceId
@@ -520,8 +529,10 @@ export async function reconcileAgentStatuses(state: ClaxedoStateApi, request: ty
       // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`
       // exists at the relay edge, while the local runtime is addressed by
       // `?directory=...`.
-      const address = relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }
-      const ptys = await transport.json(terminalPtyApiPath(address), { headers: { Accept: "application/json" } })
+      const ptys = await transport.json(
+        terminalPtyApiPath(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }),
+        { headers: { Accept: "application/json" } },
+      )
       const live = new Set<string>()
       for (const pty of Array.isArray(ptys) ? ptys : []) {
         const id = readString(pty, "id")
@@ -529,35 +540,35 @@ export async function reconcileAgentStatuses(state: ClaxedoStateApi, request: ty
       }
       for (const id of ids) {
         if (!live.has(id)) {
-          outcomes.set(id, "idle")
+          gone.add(id)
           continue
         }
-        const recorded = await transport.json(terminalSessionHookPath(id, address), { headers: { Accept: "application/json" } }).catch(() => undefined)
-        const status = terminalAgentStatusFromEventType(readField(readField(recorded, "session"), "eventType"))
+        const recorded = await transport
+          .json(terminalSessionPreviewPath(id, relayWorkspaceId ? undefined : directory), { headers: { Accept: "application/json" } })
+          .then(parseTerminalSessionPreview)
+          .catch(() => null)
+        const status = terminalAgentStatusFromEventType(recorded?.eventType)
         if (status) outcomes.set(id, status)
       }
     } catch {
       continue
     }
-  }
-
-  untrack(() => {
-    batch(() => {
-      for (const [id, status] of outcomes) {
-        if (state.terminal.agentStatus(id) === status) continue
-        state.terminal.setAgentStatus(id, status)
-        if (status === "idle") state.terminal.clearSeen(id)
-      }
+    if (generation !== reconcileGeneration) return
+    untrack(() => {
+      batch(() => {
+        for (const id of gone) {
+          if (state.terminal.agentStatus(id) !== "idle") state.terminal.setAgentStatus(id, "idle")
+          state.terminal.clearSeen(id)
+        }
+        for (const [id, status] of outcomes) {
+          if (state.terminal.agentStatus(id) !== status) state.terminal.setAgentStatus(id, status)
+        }
+      })
     })
-  })
+  }
 }
 
-function terminalSessionHookPath(terminalId: string, address: { workspaceId?: string; directory?: string }) {
-  const url = new URL("/api/wr/hook/terminal-session", "http://claxedo.local")
-  url.searchParams.set("terminalId", terminalId)
-  if (address.directory) url.searchParams.set("directory", address.directory)
-  return `${url.pathname}${url.search}`
-}
+let reconcileGeneration = 0
 
 export function useAgentHooks() {
   useAgentLifecycleListener()

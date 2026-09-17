@@ -75,7 +75,8 @@ const previewCacheKey = (cacheKey: string): CacheKey<TerminalSessionPreview> =>
   ["shell", "terminal-session-preview", cacheKey, "cache"] as const
 const previewRequestKey = (cacheKey: string) => ["shell", "terminal-session-preview", cacheKey, "request"] as const
 
-const previewPath = (terminalId: string, directory?: string) => {
+/** The runtime's record of a terminal's agent session: `GET /api/wr/hook/terminal-session`, addressed by `?directory=` on loopback. */
+export const terminalSessionPreviewPath = (terminalId: string, directory?: string) => {
   const url = new URL("/api/wr/hook/terminal-session", "http://claxedo.local")
   url.searchParams.set("terminalId", terminalId)
   if (directory) url.searchParams.set("directory", directory)
@@ -113,7 +114,7 @@ export const aliasTerminalSessionPreview = (oldId: string, newId: string) => {
   rememberRecovery(alias, prev, next)
 }
 
-const parse = (value: unknown): TerminalSessionPreview | null => {
+export const parseTerminalSessionPreview = (value: unknown): TerminalSessionPreview | null => {
   const body = asRecord(value)
   if (!body || body.success !== true) return null
   const session = asRecord(body.session)
@@ -177,7 +178,7 @@ const previewFetch = (
 async function fetchPreviewBody(url: string, request: PreviewRequest, headers?: Record<string, string>) {
   return request(url, headers ? { headers } : undefined)
     .then((res) => (res.ok ? res.json() : undefined))
-    .then((value) => parse(value))
+    .then((value) => parseTerminalSessionPreview(value))
     .catch(() => null)
 }
 
@@ -213,17 +214,17 @@ export const loadTerminalSessionPreview = (
           await opts.resolveWorkspaceRuntime?.({ directory: opts.directory }).catch(() => null)
         if (resolved && isRelayBackedWorkspaceKind(resolved.kind) && resolved.workspaceId) {
           return fetchPreviewBody(
-            previewPath(nextTarget.id),
+            terminalSessionPreviewPath(nextTarget.id),
             previewFetch(nextTarget.site, opts.directory, request, resolved, signedWorkspace),
           )
         }
         return fetchPreviewBody(
-          previewPath(nextTarget.id, opts.directory),
+          terminalSessionPreviewPath(nextTarget.id, opts.directory),
           previewFetch(nextTarget.site, opts.directory, request, resolved, signedWorkspace),
         )
       }
       return fetchPreviewBody(
-        new URL(previewPath(nextTarget.id), nextTarget.site).toString(),
+        new URL(terminalSessionPreviewPath(nextTarget.id), nextTarget.site).toString(),
         request,
       )
     },

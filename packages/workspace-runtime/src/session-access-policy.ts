@@ -546,9 +546,7 @@ export function sessionAccessContext(input: SessionAccessContextReader):
     : {}
   return {
     ...(input.req?.header("authorization") ? { credential: input.req.header("authorization") } : {}),
-    ...(auth.actor_id && auth.actor_kind
-      ? { actor: { actorId: auth.actor_id, actorKind: auth.actor_kind } }
-      : {}),
+    actor: { actorId: auth.actor_id, actorKind: auth.actor_kind },
     ...author,
     authority: {
       managed: true,

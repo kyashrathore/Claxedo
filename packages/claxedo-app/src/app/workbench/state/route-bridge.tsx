@@ -163,18 +163,9 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   })
 
   createEffect(() => {
+    if (!events) return
     const unsub = createBatchAutoTabListener({
-      // Both are control frames off the workspace stream, which the coalescer
-      // does not carry; they come straight from the events emitter.
-      listen: (listener) => {
-        const lifecycle = events?.on("session.lifecycle", (event) => {
-          listener({ name: event.directory ?? "", details: event })
-        })
-        const terminals = events?.on("pty.created", (event) => {
-          listener({ name: "directory" in event && typeof event.directory === "string" ? event.directory : "", details: event })
-        })
-        return () => { lifecycle?.(); terminals?.() }
-      },
+      events,
       adapters: {
         addSession: (dir, sid, title) => {
           const fastSwitch =

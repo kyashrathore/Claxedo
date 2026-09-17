@@ -1980,7 +1980,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // for both arms — so a cursor carried across the narrowing is not a gap
     // on this mock; that the reader drops it is proven by its own suite
     // (`claxedo-events-cursor.vitest.tsx`), and that the real handler's
-    // session ring is another numbering by `routes/events.test.ts`.
+    // session ring numbers only that session's frames by
+    // `routes/events.test.ts` ("a session-scoped reader's cursor…").
     const scoped = sessionID
       ? batch.filter((entry) => {
         const frameSession = frameSessionId(entry)

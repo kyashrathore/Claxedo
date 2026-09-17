@@ -262,6 +262,48 @@ describe("the workspace stream's two arms", () => {
     expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_revoked", "ses_other"])
   })
 
+  test("a parked session reopens on its re-grant notice, and on a navigation that names it afresh", async () => {
+    let granted = false
+    const refusedSession = () => Response.json({ error: { code: "session_event_stream_denied", message: "revoked", cause: "session_private" } }, { status: 403 })
+    const notice = { type: "session.share.changed", phase: "granted", ownerUserId: "u", sessionId: "ses_a", workspaceId: "ws_shared", ts: 1 }
+    let cp: ReturnType<typeof openStream> | undefined
+    transport.request.mockImplementation(async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (url.pathname.endsWith("/api/cp/events")) {
+        cp = openStream(init?.signal)
+        return cp.response
+      }
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      const session = url.searchParams.get("sessionID")
+      if (!session) return refusedAtWorkspaceLevel()
+      return granted ? quiet() : refusedSession()
+    })
+    const [pathname, setPathname] = createSignal("/w/ws_shared/session/ses_a")
+    mountRoute(pathname)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const opens = () => workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))
+    expect(opens()).toEqual([null, "ses_a"])
+    // Re-granted while the reader sits on the session: the notice reopens it.
+    granted = true
+    cp?.send(notice)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(opens()).toEqual([null, "ses_a", "ses_a"])
+
+    // Refused again, the notice missed: leaving and coming back is one more
+    // open — a navigation, not a retry loop.
+    granted = false
+    setPathname("/w/ws_shared/session/ses_b")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    setPathname("/w/ws_shared/session/ses_a")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(MAX_RECONNECT_DELAY_MS * 2)
+    expect(opens().filter((session) => session === "ses_a")).toHaveLength(3)
+  })
+
   test("a 403 minted elsewhere on the path is retried unscoped, not narrowed to the session", async () => {
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)

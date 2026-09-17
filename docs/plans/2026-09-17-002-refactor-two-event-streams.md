@@ -438,10 +438,10 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       brief above. Round 1 findings fixed; round 2 on the fixed tree;
       further rounds until a round returns zero findings. Each round's
       findings, fixes and the zero-finding report are recorded here with
-      the commit they reviewed. Progress: rounds 1–8 recorded under
+      the commit they reviewed. Progress: rounds 1–9 recorded under
       "Execution → Review rounds" with their commits (each round's full
       reports from round 7 on are kept under `docs/plans/reviews/`); no
-      round has yet returned zero findings — round 9 runs on the round-8
+      round has yet returned zero findings — round 10 runs on the round-9
       fixes.
 - [ ] One written account of the system exists and matches the code: the
       module comments on the two handlers, the two reader targets and
@@ -460,9 +460,9 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
       `bun run test:architecture-ratchets` with the closure ceilings
       LOWERED to the measured values. Progress: `routes/events.test.ts`
-      (22), `event-delivery.test.ts` (25), local `shell/events.test.ts` (11)
+      (23), `event-delivery.test.ts` (25), local `shell/events.test.ts` (11)
       + `event-stream-response.test.ts`; reader suite
-      `claxedo-events-cursor.vitest.tsx` (15) + `claxedo-event-targets.test.ts`;
+      `claxedo-events-cursor.vitest.tsx` (16) + `claxedo-event-targets.test.ts`;
       ceilings lowered in `2c10b5aaa4` (app-local 1077, renderer 1120,
       self-hosted 124, desktop main 90) and unchanged since.
 
@@ -870,4 +870,45 @@ and fixes (the commit after this one):
   rewritten; the desktop's `sessionAuthority` comments say a hosted-plane
   client registers regardless.
 
-**Round 9**: see below.
+**Round 9** (tree `3d6a5559ab`, two reviewers; reports in
+`docs/plans/reviews/2026-09-17-002-round9-{server,client}.md`). Findings
+and fixes (the commit after this one):
+
+- MAJOR (server): the round-8 hole was a boolean the first attach reset,
+  so a second connection of the same actor reconnecting with the same
+  cursor resumed over the undecidable frame. The scope now keeps a hole
+  watermark (`holeBelow`: the ring position at its last hole, or the start
+  of a ring that continues no tombstone), and any cursor at or below it is
+  a gap whoever presents it; route test with a second tab.
+- MINOR (server): the outage cycle (never-granted + away → terminate → hole
+  → rebuild → gap → resync, once per session's first frame at the
+  authority's timeout rate) is stated where the rule lives. The fresh-ring
+  comment no longer says "numbers from 1"; `sessionAccessContext` no longer
+  guards an actor both claim types require; `deletedSessionParent` reads
+  the wire defensively.
+- MAJOR (client): the round-8 heal cleared a live terminal's "done" mark on
+  a recorded Idle, read only terminals already showing an indicator (so an
+  agent that started or asked while unrouted was never shown) and skipped
+  the first stream-up (persisted indicators never reconciled). The
+  reconcile now reads every owned terminal, applies per workspace as read,
+  is superseded by a later reconcile (no stale record over a fresher), runs
+  on the first stream-up too, and clears `seen` only for a terminal that is
+  gone. Tests for all four.
+- MAJOR (client): a parked session re-granted never reopened. The share
+  notice's `granted` phase reaches the reader, which reopens the parked
+  target where it stands; a navigation that names the refused session
+  afresh is one open per navigation. Tested.
+- MAJOR (client): the Tier M rendering-matrix spec asserted the mock's old
+  `session_access_denied` body; updated to the named refusal.
+- MINOR (client): the reconcile shares the preview module's path builder
+  and parser instead of a second copy; each connect attempt is bound to
+  its own controller, so a retarget landing during a 403 body read cannot
+  schedule a second stream for one target.
+- NIT: the mock's narrowing note names the route test that proves the
+  session ring's own numbering (added: two arms of one actor).
+- Size budget: the reader had grown past the 800-line ceiling; the frame
+  union and the emitter now live in `claxedo-event-frames.ts` (the reader
+  re-exports them), and `batch-autotab.ts` subscribes to the emitter itself
+  instead of through a `{name, details}` relay in `route-bridge.tsx`.
+
+**Round 10**: see below.

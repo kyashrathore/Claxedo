@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
-import { agentLifecycleTitle, reconcileAgentStatuses, reconcilePtyExit, terminalLifecycleSound, useReconnectReconciliation } from "./agent-status-listener"
-import type { ClaxedoStateApi, ContentMeta } from "./provider"
+import { agentLifecycleTitle, reconcileAgentStatuses, reconcilePtyExit, terminalLifecycleSound, useReconnectReconciliation, type AgentStatusReconcileState } from "./agent-status-listener"
+import type { ContentMeta } from "./provider"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -13,7 +13,7 @@ function terminalSlice() {
 }
 
 describe("useReconnectReconciliation", () => {
-  test("reconciles once on reconnect and ignores later metadata and status mutations", async () => {
+  test("reconciles on each stream up, the first included, and ignores later metadata and status mutations", async () => {
     let dispose: (() => void) | undefined
     let setConnected!: (connected: boolean) => void
     let setMetadata!: (title: string) => void
@@ -43,19 +43,21 @@ describe("useReconnectReconciliation", () => {
     })
 
     try {
+      // The first stream up reconciles too: indicators persisted from before
+      // the page load are stale in the same way.
       await settleEffects()
-      expect(fetches).toBe(0)
+      expect(fetches).toBe(1)
 
       setConnected(false)
       await settleEffects()
       setConnected(true)
       await settleEffects()
-      expect(fetches).toBe(1)
+      expect(fetches).toBe(2)
 
       setMetadata("Claude: Fix reconnect tracking")
       setStatus("permission")
       await settleEffects()
-      expect(fetches).toBe(1)
+      expect(fetches).toBe(2)
     } finally {
       dispose?.()
     }
@@ -67,9 +69,18 @@ async function settleEffects() {
   await Promise.resolve()
 }
 
+const terminalContent = (id: string, directory: string, terminalId: string): ContentMeta => ({
+  id,
+  type: "terminal",
+  directory,
+  terminalId,
+  content: { type: "terminal", directory, terminalId, title: terminalId },
+})
+
 describe("reconcileAgentStatuses", () => {
   test("reads each workspace on its own: a live terminal takes the lifecycle the runtime recorded, a gone one idles, an unreachable workspace keeps its indicators", async () => {
     const terminal = terminalSlice()
+    // `setAgentStatus` to a non-idle status marks the terminal seen (the done dot's condition).
     terminal.setAgentStatus("pty_done", "working")
     terminal.setAgentStatus("pty_still", "working")
     terminal.setAgentStatus("pty_gone", "working")
@@ -78,23 +89,27 @@ describe("reconcileAgentStatuses", () => {
     terminal.own("tab_still", "pty_still")
     terminal.own("tab_gone", "pty_gone")
     terminal.own("tab_away", "pty_away")
-    const contents: ContentMeta[] = [
-      { id: "tab_done", type: "terminal", directory: "/repo/a", terminalId: "pty_done" },
-      { id: "tab_still", type: "terminal", directory: "/repo/a", terminalId: "pty_still" },
-      { id: "tab_gone", type: "terminal", directory: "/repo/a", terminalId: "pty_gone" },
-      { id: "tab_away", type: "terminal", directory: "/repo/b", terminalId: "pty_away" },
-    ] as ContentMeta[]
-    const state = {
+    terminal.own("tab_started", "pty_started")
+    terminal.own("tab_asking", "pty_asking")
+    const contents = [
+      terminalContent("tab_done", "/repo/a", "pty_done"),
+      terminalContent("tab_still", "/repo/a", "pty_still"),
+      terminalContent("tab_gone", "/repo/a", "pty_gone"),
+      terminalContent("tab_started", "/repo/a", "pty_started"),
+      terminalContent("tab_asking", "/repo/a", "pty_asking"),
+      terminalContent("tab_away", "/repo/b", "pty_away"),
+    ]
+    const state: AgentStatusReconcileState = {
       terminal,
       meta: { all: () => contents, get: (id: string) => contents.find((content) => content.id === id) },
-    } as unknown as ClaxedoStateApi
-    const recorded: Record<string, string> = { pty_done: "Idle", pty_still: "Busy" }
+    }
+    const recorded: Record<string, string> = { pty_done: "Idle", pty_still: "Busy", pty_started: "Busy", pty_asking: "UserActionRequired" }
     const request: typeof fetch = async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
       const directory = url.searchParams.get("scope") ?? url.searchParams.get("directory")
       if (directory === "/repo/b") return new Response("host away", { status: 502 })
       if (url.pathname.endsWith("/workspace/resolve")) return Response.json({ kind: "local" })
-      if (url.pathname.endsWith("/api/wr/pty")) return Response.json([{ id: "pty_done" }, { id: "pty_still" }])
+      if (url.pathname.endsWith("/api/wr/pty")) return Response.json([{ id: "pty_done" }, { id: "pty_still" }, { id: "pty_started" }, { id: "pty_asking" }])
       if (url.pathname.endsWith("/hook/terminal-session")) {
         const id = url.searchParams.get("terminalId") ?? ""
         return Response.json({ success: true, source: "runtime", terminalId: id, session: { terminalId: id, eventType: recorded[id] } })
@@ -102,10 +117,43 @@ describe("reconcileAgentStatuses", () => {
       return new Response("unexpected", { status: 404 })
     }
     await reconcileAgentStatuses(state, request)
+    // Finished while unrouted: the live Idle path's "done" mark stays.
     expect(terminal.agentStatus("pty_done")).toBe("idle")
+    expect(terminal.seen("pty_done")).toBe(true)
     expect(terminal.agentStatus("pty_still")).toBe("working")
+    // Gone: nothing to mark done any more.
     expect(terminal.agentStatus("pty_gone")).toBe("idle")
+    expect(terminal.seen("pty_gone")).toBe(false)
+    // Started or asked while unrouted, never tracked before: healed too.
+    expect(terminal.agentStatus("pty_started")).toBe("working")
+    expect(terminal.agentStatus("pty_asking")).toBe("permission")
     expect(terminal.agentStatus("pty_away")).toBe("working")
+  })
+
+  test("a reconcile started later supersedes one still reading, so a stale record never lands over a fresher", async () => {
+    const terminal = terminalSlice()
+    terminal.own("tab_x", "pty_x")
+    const contents = [terminalContent("tab_x", "/repo/a", "pty_x")]
+    const state: AgentStatusReconcileState = { terminal, meta: { all: () => contents, get: (id: string) => contents.find((content) => content.id === id) } }
+    let recorded = "Busy"
+    let release: (() => void) | undefined
+    const stalled = new Promise<void>((resolve) => { release = resolve })
+    const request: typeof fetch = async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (url.pathname.endsWith("/workspace/resolve")) return Response.json({ kind: "local" })
+      if (url.pathname.endsWith("/api/wr/pty")) return Response.json([{ id: "pty_x" }])
+      const answer = recorded
+      if (answer === "Busy") await stalled
+      return Response.json({ success: true, source: "runtime", terminalId: "pty_x", session: { terminalId: "pty_x", eventType: answer } })
+    }
+    const first = reconcileAgentStatuses(state, request)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    recorded = "Idle"
+    await reconcileAgentStatuses(state, request)
+    expect(terminal.agentStatus("pty_x")).toBe("idle")
+    release?.()
+    await first
+    expect(terminal.agentStatus("pty_x")).toBe("idle")
   })
 })
 

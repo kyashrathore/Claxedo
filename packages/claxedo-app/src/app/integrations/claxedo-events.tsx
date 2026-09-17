@@ -8,11 +8,13 @@
  * One workspace stream, the routed one: a pane of another local workspace
  * left open on the desktop gets no live `pty.*` or `agent.lifecycle` while
  * it is not routed — the daemon's control-plane stream no longer carries
- * every local workspace's frames. Its terminals' indicators are re-read
- * from the runtime (`reconcileAgentStatuses`: the pty list and the recorded
- * lifecycle) each time a workspace stream comes up, a workspace switch
- * included; a completion there plays no sound, and a pty exit or creation
- * there opens or closes no tab until then.
+ * every local workspace's frames. Every owned terminal's indicator is
+ * re-read from the runtime (`reconcileAgentStatuses`: the pty list, and the
+ * lifecycle it recorded for each live terminal) each time a workspace
+ * stream comes up — the first of a page load and every workspace switch
+ * included — so an agent that started, asked or finished there shows so on
+ * the next switch. What is not recovered: the completion sound, and the tab
+ * a pty's creation or exit there would have opened or closed.
  */
 
 import {
@@ -23,16 +25,13 @@ import {
   type ParentProps,
 } from "solid-js"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
-import { asRecord, readField, readString } from "@/lib/record"
+import { readField, readString } from "@/lib/record"
 import type { AccountState } from "@/platform/account/account-port"
-import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
-import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
 import {
   claxedoEventRouteSessionID,
   claxedoEventStreamTargets,
   eventStreamFetch,
   eventStreamFrameAddress,
-  type StreamFrameAddress,
   eventStreamTargetKey,
   routeDirectory,
   type ClaxedoEventStreamTarget,
@@ -65,244 +64,27 @@ import {
   failureEscalation,
   reconnectDelayMs,
 } from "../providers/claxedo-events-reconnect"
-import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
+import {
+  createClaxedoEventEmitter,
+  isClaxedoEvent,
+  isStreamReplayGap,
+  normalizeClaxedoStreamEvent,
+  stampWorkspace,
+  type ClaxedoEvent,
+  type ClaxedoEventType,
+  type Handler,
+} from "./claxedo-event-frames"
+
+export {
+  createClaxedoEventEmitter,
+  isStreamReplayGap,
+  normalizeClaxedoStreamEvent,
+  type ClaxedoDirectoryEvent,
+  type ClaxedoEvent,
+  type PtyInfo,
+} from "./claxedo-event-frames"
 import { errorMessage } from "@/lib/server-errors"
 import { accountStreamAvailable } from "@/platform/account/account-stream-fetch"
-
-// ─── Event Types ──────────────────────────────────────────────────────────
-//
-// The union of everything either stream delivers, each shape kept in sync
-// with its producer across the package boundary: the control-plane notices
-// with `ControlPlaneEvent` (claxedo-server-core `platform/runtime/lib/bus.ts`),
-// the pty/process/agent/session control frames with `WorkspaceRuntimeEvent`
-// (workspace-runtime `bus.ts`), and the session frames with the runtime's
-// projected presentation events (`ClientPresentationEvent`).
-
-export type PtyInfo = {
-  id: string
-  title: string
-  command: string
-  args: string[]
-  cwd: string
-  status: "running" | "exited"
-  pid: number
-}
-
-type SessionShareChangedEvent = {
-  type: "session.share.changed"
-  phase: "granted" | "revoked"
-  ownerUserId: string
-  sessionId: string
-  workspaceId: string
-  orgId?: string
-  ts: number
-}
-
-/** A workspace's inventory gained or lost a session in the control plane's projection; the reader re-reads it. */
-type SessionInventoryChangedEvent = {
-  type: "session.inventory.changed"
-  workspaceId: string
-  orgId?: string
-  ts: number
-}
-
-export type ClaxedoEvent =
-  | { type: "pty.created"; info: PtyInfo }
-  | { type: "pty.updated"; info: PtyInfo }
-  | { type: "pty.exited"; id: string; exitCode: number }
-  | { type: "pty.deleted"; id: string }
-  | {
-      type: "pty.stream"
-      id: string
-      kind: "exit" | "disconnect" | "error" | "command-exit"
-      exitCode?: number
-      message?: string
-    }
-  | {
-      type: "agent.lifecycle"
-      tabId: string
-      terminalId?: string
-      workspaceId?: string
-      provider?: string
-      sessionId?: string
-      transcriptPath?: string
-      refName?: string
-      prompt?: string
-      lastAssistantMessage?: string
-      eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
-      outcome?: "done" | "error" | "cancelled"
-    }
-  | { type: "process.started"; directory?: string; configId: string; ptyId: string }
-  | { type: "process.stopped"; directory?: string; configId: string; exitCode: number }
-  | { type: "process.crashed"; directory?: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
-  | { type: "process.status"; directory?: string; configId: string; status: string }
-  | { type: "process.config.changed"; directory?: string; configs: unknown[] }
-  | { type: "worktree.ready"; directory: string; name: string; branch: string }
-  | { type: "worktree.failed"; directory: string; message: string }
-  | SessionLifecycleEvent
-  | DocumentChangedEvent
-  | SessionShareChangedEvent
-  | SessionInventoryChangedEvent
-  | ClaxedoDirectoryEvent
-  | {
-      type: "provision"
-      workspaceId: string
-      step: "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"
-      message?: string
-      totalMs?: number
-      ts: number
-    }
-  /**
-   * A stream's own notice that frames between the reader's cursor and the
-   * live position are gone. Raised for a rolled replay ring and for frames
-   * shed under a slow consumer alike. A `wr` gap names the workspace whose
-   * sessions have to be re-read; a `cp` gap means every notice the control
-   * plane could have sent — a worktree landing, a share, a document save —
-   * has to be re-read from its source.
-   */
-  | { type: "stream.replay-gap"; stream: "cp"; transport: "server" | "account" }
-  | { type: "stream.replay-gap"; stream: "wr"; workspaceId: string; directory?: string }
-  | { type: "subagent.updated"; directory?: string; workspaceId?: string; properties: unknown }
-  | { type: "goal.updated"; directory?: string; workspaceId?: string; properties: unknown }
-  | { type: "goal.cleared"; directory?: string; workspaceId?: string; properties: unknown }
-
-type ClaxedoDirectoryEventType =
-    | "message.updated"
-    | "message.part.updated"
-    | "message.part.delta"
-    | "message.completed"
-    | "session.idle"
-    | "session.error"
-    | "session.status"
-    | "session.updated"
-    | "session.deleted"
-    | "session.agent"
-    | "todo.updated"
-    | "permission.asked"
-    | "permission.replied"
-    | "question.asked"
-    | "question.replied"
-    | "question.rejected"
-    | "session.diff"
-    | "session.compacted"
-
-export type ClaxedoDirectoryEvent = { [Type in ClaxedoDirectoryEventType]: {
-  type: Type
-  directory?: string
-  /**
-   * The workspace the frame was published for: what the frame itself names,
-   * else the workspace whose stream delivered it (`stampWorkspace`). The
-   * session-title projection keys entries by it as well as by `directory`;
-   * a `session.updated` retitle that carries no workspace is written under
-   * the directory key only, which the workspace-attributed rail rows never
-   * read.
-   */
-  workspaceId?: string
-  properties?: unknown
-} }[ClaxedoDirectoryEventType]
-
-type ClaxedoEventType = ClaxedoEvent["type"]
-type ClaxedoEventOf<T extends ClaxedoEventType> = Extract<ClaxedoEvent, { type: T }>
-
-type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>) => void
-
-// ─── Event Emitter ────────────────────────────────────────────────────────
-
-export function createClaxedoEventEmitter() {
-  const handlers = new Map<ClaxedoEventType, Set<Handler<ClaxedoEventType>>>()
-  const listeners = new Set<(event: ClaxedoEvent) => void>()
-
-  return {
-    listen: (listener: (event: ClaxedoEvent) => void) => {
-      listeners.add(listener)
-      return () => { listeners.delete(listener) }
-    },
-    on<T extends ClaxedoEventType>(type: T, handler: Handler<T>) {
-      if (!handlers.has(type)) handlers.set(type, new Set())
-      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- as-any: handlers are stored in one map and recovered by the discriminant key.
-      handlers.get(type)!.add(handler as unknown as Handler<ClaxedoEventType>)
-      return () => {
-        // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- as-any: remove uses the same discriminant-keyed handler registered above.
-        handlers.get(type)?.delete(handler as unknown as Handler<ClaxedoEventType>)
-      }
-    },
-    emit(event: ClaxedoEvent) {
-      applyWorktreeLifecycleEvent(event)
-      for (const listener of listeners) {
-        try { listener(event) } catch {}
-      }
-      const set = handlers.get(event.type)
-      if (!set) return
-      for (const handler of set) {
-        try {
-          handler(event as ClaxedoEventOf<ClaxedoEventType>)
-        } catch {
-        }
-      }
-    },
-  }
-}
-
-/**
- * A workspace stream's session frames belong to that workspace: the
- * session-title projection keys by it as well as by directory. A frame that
- * names its own workspace keeps it.
- */
-function stampWorkspace(event: ClaxedoEvent, target: ClaxedoEventStreamTarget): ClaxedoEvent {
-  if (target.kind !== "wr" || !("properties" in event) || !("directory" in event)) return event
-  if ("workspaceId" in event && typeof event.workspaceId === "string" && event.workspaceId) return event
-  return { ...event, workspaceId: target.workspaceId }
-}
-
-export function isStreamReplayGap(input: unknown) {
-  return asRecord(input)?.type === "stream.replay-gap"
-}
-
-function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartbeat" } {
-  return !!input && typeof input === "object" && "type" in input && typeof input.type === "string"
-}
-
-/**
- * One stream frame, addressed the way this app addresses that workspace.
- *
- * `address` is the stream's own translation (`eventStreamFrameAddress`): a
- * producer stamps frames with the only path it knows — its own — and for a
- * relay-backed workspace that path names nothing this app can resolve, while
- * every consumer keys on the `workspace:<id>` form the pane, the rail section
- * and the session rows were registered under. It applies to the ENVELOPE's
- * directory and to a payload that carries its own, because both come from the
- * same producer.
- */
-export function normalizeClaxedoStreamEvent(
-  input: unknown,
-  address: StreamFrameAddress = (hostDirectory) => hostDirectory,
-): ClaxedoEvent | { type: "heartbeat" } | undefined {
-  if (isClaxedoEvent(input)) {
-    if (input.type === "heartbeat") return input
-    return addressClaxedoEvent(input, address)
-  }
-  const envelope = asRecord(input)
-  const payload = asRecord(envelope?.payload)
-  if (!payload) return undefined
-  if (payload.type === "heartbeat") return { type: "heartbeat" }
-  // The envelope's directory addresses a payload that names none of its own.
-  // Stamped on the FRAME, before it is read as a `ClaxedoEvent`: stamping it
-  // after meant re-declaring the result to be one, which is false for the arms
-  // whose contract has no `directory` at all (`pty.*`, `agent.lifecycle`,
-  // `provision`). It also leaves `addressClaxedoEvent` as the single place the
-  // address translation is applied, instead of two branches applying it apart.
-  const envelopeDirectory = readString(envelope, "directory")
-  const framed = readString(payload, "directory") || !envelopeDirectory
-    ? payload
-    : { ...payload, directory: envelopeDirectory }
-  if (!isClaxedoEvent(framed) || framed.type === "heartbeat") return undefined
-  return addressClaxedoEvent(framed, address)
-}
-
-function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
-  if (!("directory" in event) || typeof event.directory !== "string" || !event.directory) return event
-  return { ...event, directory: address(event.directory) }
-}
 
 // ─── Context ──────────────────────────────────────────────────────────────
 
@@ -413,7 +195,12 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const emitter = createClaxedoEventEmitter()
   const connectivity = createStreamConnectivity()
 
-  type Connection = { retarget: (target: ClaxedoEventStreamTarget) => void; close: () => void }
+  type Connection = {
+    retarget: (target: ClaxedoEventStreamTarget) => void
+    close: () => void
+    /** The share notice for a session this target was parked on. */
+    regranted: (sessionId: string) => void
+  }
   const connections = new Map<string, Connection>()
   let stopped = false
 
@@ -551,6 +338,19 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       }, HEARTBEAT_TIMEOUT_MS)
     }
 
+    // A parked target opens session-scoped for the session named.
+    const reopen = () => {
+      state.scope = "session"
+      state.refusedSession = undefined
+      state.lastEventId = null
+      connect()
+    }
+    // The share notice for the refused session: the runtime will serve it
+    // now, so the target reopens where it stands.
+    const regranted = (sessionID: string) => {
+      if (state.scope !== "refused" || state.refusedSession !== sessionID || target.kind !== "wr" || target.sessionID !== sessionID) return
+      reopen()
+    }
     // Refused by the runtime with nothing to reopen for: no retry, no
     // escalation, no "Reconnecting…"; the next navigation that names a
     // session the runtime may serve reopens.
@@ -579,7 +379,12 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         }
         return
       }
-      state.abort = new AbortController()
+      // This attempt's own controller: a retarget or close aborts it, and
+      // whatever the transport then does with the body — reject with
+      // AbortError, resolve a 403 it was mid-way through reading — is not
+      // this target's to act on any more.
+      const attempt = new AbortController()
+      state.abort = attempt
       // NOTE: no `bypassFetchThrottle` here — the `Accept: text/event-stream`
       // header already exempts SSE from the throttle, and the bypass MARKER
       // header leaks onto the wire, failing the relay's CORS preflight
@@ -590,10 +395,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       if (state.lastEventId) headers.set("Last-Event-ID", state.lastEventId)
       void eventStreamFetch(target, {
         headers,
-        signal: state.abort.signal,
+        signal: attempt.signal,
       }, { scope: state.scope === "session" ? "session" : "workspace" }).then(async (res) => {
         // Only the runtime's own refusal narrows or parks the stream.
         if (res.status === 403 && target.kind === "wr" && state.scope === "workspace" && await streamDenied(res, "workspace")) {
+          if (attempt.signal.aborted) return
           state.abort = null
           if (target.sessionID) {
             state.scope = "session"
@@ -610,6 +416,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // not an outage either: nothing the runtime will serve until the
         // route names another session.
         if (res.status === 403 && target.kind === "wr" && state.scope === "session" && await streamDenied(res, "session")) {
+          if (attempt.signal.aborted) return
           state.abort = null
           park(target.sessionID)
           return
@@ -620,6 +427,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           // "Workspace connection failed: 401" or a network message). Read it
           // so the diagnostic surfaces the true root cause, not just "502".
           const detail = (await res.text().catch(() => "")).trim()
+          if (attempt.signal.aborted) return
           throw new Error(`events stream failed: ${res.status}${detail ? ` (${detail.slice(0, 200)})` : ""}`)
         }
         stepLifecycle("open")
@@ -674,7 +482,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         }
         throw new Error("events stream closed")
       }).catch((error) => {
-        if (stopped || closed) return
+        if (stopped || closed || attempt.signal.aborted) return
         if (error instanceof DOMException && error.name === "AbortError") return
         // Diagnostic: the per-workspace event stream silently failing is the #1
         // thing that makes the app look dead (no live updates / no streamed
@@ -746,11 +554,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       target = next
       if (next.kind !== "wr" || previous.kind !== "wr") return
       if (state.scope === "refused") {
-        if (!next.sessionID || next.sessionID === state.refusedSession) return
-        state.scope = "session"
-        state.refusedSession = undefined
-        state.lastEventId = null
-        connect()
+        // The refused session named again by the route the reader is
+        // already on is the same refusal; named afresh by a navigation it
+        // is one open per navigation, never a loop.
+        if (!next.sessionID || (next.sessionID === state.refusedSession && previous.sessionID === next.sessionID)) return
+        reopen()
         return
       }
       if (state.scope !== "session" || previous.sessionID === next.sessionID) return
@@ -772,7 +580,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       connect()
     }
 
-    return { retarget, close }
+    return { retarget, close, regranted }
   }
 
   const reconcileTargets = () => {
@@ -816,6 +624,13 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const publishRouteScope = () => setSessionEventRouteScope(claxedoEventRouteSessionID(props.pathname()))
   publishRouteScope()
   createEffect(publishRouteScope)
+
+  // A grantee parked on a session the runtime refused is let back in by the
+  // control plane's share notice, not by the route.
+  onCleanup(emitter.on("session.share.changed", (event) => {
+    if (event.phase !== "granted") return
+    for (const connection of connections.values()) connection.regranted(event.sessionId)
+  }))
 
   // Route identity and project/workspace identity resolve independently. A
   // client-side navigation can supply the former after boot, while the project

@@ -1531,9 +1531,10 @@ test.describe("core harness rendering matrix @core", () => {
       const result = await fetch("/api/wr/events?sessionID=parent-denied")
       return { status: result.status, body: await result.json() }
     })
-    // The runtime's session-arm refusal is not the unscoped arm's
-    // `workspace_event_stream_denied`, so the reader does not reopen on it.
-    expect(response).toEqual({ status: 403, body: { error: { code: "session_access_denied", message: "Forbidden" } } })
+    // The runtime's session-arm refusal is named apart from the unscoped
+    // arm's `workspace_event_stream_denied`: the reader parks the target on
+    // it rather than narrowing or retrying.
+    expect(response).toEqual({ status: 403, body: { error: { code: "session_event_stream_denied", message: "Forbidden", cause: "session_private" } } })
   })
 
   test("assistant file-type parts (image/audio/resource-link) render", async ({ page }) => {

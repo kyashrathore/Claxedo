@@ -60,8 +60,14 @@ type Scope<T extends object> = {
   replayPrincipal?: EventDeliveryPrincipal
   replay: SseReplayBuffer<T>
   connections: Set<Connection<T>>
-  /** A connection has attached since this scope was created without a tombstone. */
-  attached: boolean
+  /**
+   * The ring position at the scope's last hole: a frame the ring never rang
+   * (one the authority could not decide) or, for a ring that continues no
+   * tombstone, the position it started at. A cursor at or below it names a
+   * frame the reader may have missed, and reads as a gap whoever presents
+   * it, however many connections have attached since.
+   */
+  holeBelow: number
   reservations: number
   retainedCursor?: string
   tail: Promise<void>
@@ -201,7 +207,10 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
   //    expires. On a session the reader was never granted the frame cannot
   //    be delivered and must not be dropped in silence either — omitting it
   //    would leave the cursor contiguous over a frame the reader never saw —
-  //    so the stream ends and the reconnect reads the hole as a gap;
+  //    so the stream ends and the reconnect reads the hole as a gap. While
+  //    the plane stays away that repeats once per session's first frame
+  //    after each reconnect, at the authority's timeout rate: a resync per
+  //    cycle, chosen over a frame lost in silence;
   //  - the reader's own credential gone (401) ends the stream.
   const refusal = (
     grant: { granted: boolean; denied?: boolean; expiresAt: number },
@@ -394,8 +403,8 @@ export function createIdentityAwareEventSource<T extends object>(input: {
       if (result.next === "terminate") {
         // The frame is not rung for this scope's ring (it may be one the
         // connection was never allowed), so the numbering runs on over a
-        // hole: the connection's reconnect must not resume through it.
-        scope.attached = false
+        // hole: no reconnect with a cursor from before it may resume through.
+        scope.holeBelow = Math.max(scope.holeBelow, Number(scope.replay.lastId() ?? "0"))
         disconnect(scope, result.connection)
         continue
       }
@@ -524,28 +533,30 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     // seen by a reader that reconnects after another reader already
     // re-attached — then lies below this ring's window and reads as a gap,
     // never as a resumable position in a numbering it never saw.
+    const initialSequence = tombstone?.sequence ?? sequenceOrigin()
     const replay = createSseReplayBuffer<T>({
       ...(input.isTerminal ? { isTerminal: input.isTerminal } : {}),
-      initialSequence: tombstone?.sequence ?? sequenceOrigin(),
+      initialSequence,
     })
-    // A scope created without a tombstone numbers its ring from 1 (from the
-    // retained ring), so a cursor a reader presents to it came from some other
-    // numbering — a scope this process evicted long ago, or one keyed by a
-    // credential the relay has since re-minted — and only LOOKS resumable:
-    // the ring's own hole check would read it as "nothing to replay" and the
-    // frames behind it would be lost silently. Until a connection has attached
-    // to this scope, every positive cursor is a gap. Once one has, a cursor is
-    // this scope's own numbering, and the ring's hole check decides. A scope
-    // restored from a tombstone continues its numbering only while the
-    // retained ring still holds everything since the tombstone's cursor; once
-    // that ring has rolled past it, the restored ring is contiguous over a
-    // hole and the reader's cursor is a gap all the same.
+    // A cursor a reader presents to a ring that continues no tombstone came
+    // from some other numbering — a scope this process evicted long ago, or
+    // another process's — and only LOOKS resumable: the ring's own hole check
+    // reads a cursor at its start as "nothing to replay", and the frames
+    // behind it would be lost silently. So the ring's start is a hole: every
+    // cursor at or below it is a gap, and only a cursor this ring issued
+    // resumes. A scope restored from a tombstone continues its numbering
+    // only while the retained ring still holds everything since the
+    // tombstone's cursor; once that ring has rolled past it, the restored
+    // ring is contiguous over a hole and the reader's cursor is a gap all the
+    // same. The local scope and a runtime that has published nothing yet have
+    // no numbering a cursor could have come from.
+    const continues = (!!tombstone && !retained.hasGap(tombstone.retainedCursor)) || key === "local" || retained.lastId() === undefined
     const created: Scope<T> = {
       key,
       ...(key === "local" ? { replayPrincipal: principal } : {}),
       replay,
       connections: new Set(),
-      attached: (!!tombstone && !retained.hasGap(tombstone.retainedCursor)) || key === "local" || retained.lastId() === undefined,
+      holeBelow: continues ? 0 : initialSequence,
       reservations: 0,
       ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
       tail: Promise.resolve(),
@@ -583,26 +594,28 @@ export function createIdentityAwareEventSource<T extends object>(input: {
             results[index] = await decideBeforeDeadline(retainedEvents[index].payload)
           }
         }))
-        // A frame the authority could not decide — away, or past the startup
-        // deadline — is not in this ring and not known to be nobody's: the
-        // ring is holed, so a cursor presented to it reads as a gap and the
-        // reader re-reads, rather than resuming over a frame it never saw.
-        if (results.some((result) => result === "terminate")) created.attached = false
         for (let index = 0; index < retainedEvents.length; index += 1) {
           if (results[index] !== "deliver") continue
           replay.push(retainedEvents[index].payload)
           created.retainedCursor = retainedEvents[index].id
+        }
+        // A frame the authority could not decide — away, or past the startup
+        // deadline — is not in this ring and not known to be nobody's: the
+        // ring is holed up to here, so a cursor from before it reads as a gap
+        // and the reader re-reads, rather than resuming over a frame it never
+        // saw.
+        if (results.some((result) => result === "terminate")) {
+          created.holeBelow = Math.max(created.holeBelow, Number(replay.lastId() ?? "0"))
         }
       })()
       void created.tail.finally(() => {
         created.pending = false
       })
     }
-    // Consulted at every open, not only for a scope created unattached: a
-    // `terminate` decision later takes `attached` down again (a frame the
-    // ring never rang), and the next reconnect must read that as a gap.
-    created.replay = { ...replay, hasGap: (lastEventId?: string, throughId?: string) =>
-      (!created.attached && Number(lastEventId ?? "0") > 0) || replay.hasGap(lastEventId, throughId) }
+    created.replay = { ...replay, hasGap: (lastEventId?: string, throughId?: string) => {
+      const cursor = Number(lastEventId ?? "0")
+      return (cursor > 0 && cursor <= created.holeBelow) || replay.hasGap(lastEventId, throughId)
+    } }
     return created
   }
 
@@ -626,7 +639,6 @@ export function createIdentityAwareEventSource<T extends object>(input: {
         subscribe(listener, terminate = () => undefined) {
           const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions, delivered: new WeakSet() }
           scope.connections.add(connection)
-          scope.attached = true
           if (input.policy.renew) {
             connection.renewalTimer = setInterval(() => {
               void Promise.resolve(input.policy.renew!(principal)).then((next) => {

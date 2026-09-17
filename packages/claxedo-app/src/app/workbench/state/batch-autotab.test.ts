@@ -1,19 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createBatchAutoTabListener,
-  type BatchAutoTabDeps,
-} from "./batch-autotab"
+import { createBatchAutoTabListener, type BatchAutoTabDeps } from "./batch-autotab"
 
 function createHarness(projects: ReturnType<BatchAutoTabDeps["projects"]>) {
   const calls = {
     sessions: [] as Array<{ dir: string; sessionId: string; title: string }>,
     terminals: [] as Array<{ dir: string; terminalId: string; title: string }>,
   }
-  let listener: Parameters<BatchAutoTabDeps["listen"]>[0] | undefined
+  const handlers = new Map<string, (event: never) => void>()
   const cleanup = createBatchAutoTabListener({
-    listen(fn) {
-      listener = fn
-      return () => {}
+    events: {
+      on(type: string, handler: (event: never) => void) {
+        handlers.set(type, handler)
+        return () => {}
+      },
     },
     adapters: {
       addSession(dir, sessionId, title) {
@@ -37,7 +36,10 @@ function createHarness(projects: ReturnType<BatchAutoTabDeps["projects"]>) {
   return {
     calls,
     cleanup,
-    emit: (event: Parameters<NonNullable<typeof listener>>[0]) => listener?.(event),
+    emit: (event: { name: string; details: Record<string, unknown> }) => {
+      const directory = event.name === "global" ? undefined : event.name
+      handlers.get(String(event.details.type))?.({ ...event.details, ...(directory ? { directory } : {}) } as never)
+    },
   }
 }
 
@@ -68,7 +70,7 @@ describe("batch auto-tab listener", () => {
     harness.cleanup()
   })
 
-  test("a pty is filed under its own cwd, not the runtime root the stream named", () => {
+  test("a pty is filed under its own cwd, whatever the stream stamped on the frame", () => {
     const harness = createHarness([{ worktree: "/repo/main", sandboxes: ["/repo/sandbox"] }])
 
     harness.emit({
@@ -82,17 +84,15 @@ describe("batch auto-tab listener", () => {
     harness.cleanup()
   })
 
-  test("uses event info directory when stream name is global", () => {
+  test("a pty whose cwd is a main worktree opens no tab", () => {
     const harness = createHarness([{ worktree: "/repo/main", sandboxes: ["/repo/sandbox"] }])
 
     harness.emit({
-      name: "global",
-      details: { type: "pty.created", info: { id: "pty_1", title: "Codex", cwd: "/repo/sandbox" } },
+      name: "/repo/main",
+      details: { type: "pty.created", info: { id: "pty_3", title: "Shell", cwd: "/repo/main" } },
     })
 
-    expect(harness.calls.terminals).toEqual([
-      { dir: "/repo/sandbox", terminalId: "pty_1", title: "Codex" },
-    ])
+    expect(harness.calls.terminals).toEqual([])
     harness.cleanup()
   })
 })
