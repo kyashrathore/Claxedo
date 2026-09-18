@@ -160,12 +160,24 @@ Two properties the plan is not done without:
 
 ### 1. Frame contracts
 
-- `cp/events`: notices only — `session.lifecycle` (created/deleted/
-  updated, the id and workspace, no content), `workspace.*`, `worktree.*`,
-  `provision`, `document.changed`, `session.share.changed`, account/access
-  changes. Terminal policy: all of them (each is a settlement nothing
-  re-states). The `globalBus` envelope form (`{directory, payload}`) is
-  retired from this stream.
+- `cp/events`: notices only — `worktree.*`, `provision`,
+  `document.changed`, `session.share.changed` (the `ControlPlaneEvent`
+  union in `server-core/platform/runtime/lib/bus.ts`). Terminal policy:
+  all of them (each is a settlement nothing re-states). The `globalBus`
+  envelope form (`{directory, payload}`) is retired from this stream.
+  `session.lifecycle` is NOT a notice (a deviation from the first draft,
+  decided while landing): it is the runtime's own create protocol —
+  `creating` / `created` / `failed` with the composer's `draftId`, which
+  `features/session/submit/create-with-lifecycle.ts` reconciles the HTTP
+  create against — so only the runtime that ran the create can publish it,
+  and it rides that workspace's `wr/events` as a control frame. A control
+  plane could only ever re-announce `created` after its projection pull,
+  without the draft or the failure. The stream a frame rides is decided by
+  who produces it. Known consequence: on a route with no workspace (the
+  home route) no `wr/events` is open, so a session created elsewhere (a
+  second window, an MCP- or Telegram-driven create) reaches the rail on
+  the next inventory read rather than live; the old central stream
+  forwarded the daemon's process-global runtime bus and covered this.
 - `wr/events`: the compat presentation envelope the runtime already
   publishes on its hub channel (`createOpencodeCompatProjection` /
   `createClientPresentationProjection`, `service.ts:404`) plus the
@@ -175,11 +187,18 @@ Two properties the plan is not done without:
   process settlements ∪ subagent settlements. The store's journal is the
   same projection, so what the client sees is what the store holds.
 - Scope on `wr/events` (`authorizeSessionEventScope`): try workspace
-  authority first (`authorizeHost`, role ≥ viewer) → workspace-wide; else
-  require `sessionID` and the session stream lease (`authorizeStream`) →
-  session-scoped; else 400 as today. The policy marker `managed-private`
-  keeps meaning "ask the control plane"; it stops meaning "every stream is
-  a session".
+  authority first (`authorizeHost`, role ≥ viewer) → the stream opens
+  unscoped; else require `sessionID` and the session stream lease
+  (`authorizeStream`) → session-scoped; else 400 as today. On an unscoped
+  stream the workspace's OWNER (the RAT role `owner`) is served every
+  session without a per-session grant; any other admitted principal — a
+  workspace share, a team member — is served the workspace's session-less
+  frames and, through the per-session delivery policy, only the sessions
+  the authority grants it. Workspace access alone unlocks no session
+  (decided while landing: `host_read` admits every workspace share, so an
+  admitted-means-everything arm leaked private sessions to a viewer). The
+  policy marker `managed-private` keeps meaning "ask the control plane"; it
+  stops meaning "every stream is a session".
 
 ### 2. Server
 
@@ -381,7 +400,28 @@ installed build, and then the whole-system consistency rounds from the DoD
 (reviewers who wrote none of the lanes; repeat until a round is clean):
 
 - **Lane A — server `wr/events`** (workspace-runtime routes + hub, the
-  server-side projection, local-server proxy list).
+  server-side projection, local-server proxy list). Landed:
+  `4530b4d2de` on `refactor/two-event-streams`.
 - **Lane B — server `cp/events`** (shell events handler, hosted shell,
-  route ownership, guard, process-events re-pointing).
-- **Lane C — client** (one reader, targets, deletions, e2e mock).
+  route ownership, guard, process-events re-pointing). Landed:
+  `740f83b087`.
+- **Lane C — client** (one reader, targets, deletions, e2e mock). Landed:
+  `9d80c764f8`; the trace sweep across every other package, the docs and
+  the closure ceilings: `2c10b5aaa4`.
+
+Landing notes (2026-09-17, worktree `~/test/opencode-streams`):
+
+- Phase 0 was not run as a wire capture on the installed desktop: the
+  static reading in "The flow today, observed" stands as the premise, and
+  the capture's role is taken by the Tier M and Tier R specs below, which
+  assert the routes opened and the frames they carried.
+- `session-event-scope` keys each workspace's stream by `wr:<workspaceId>`
+  rather than by a two-lane registry, so two open workspaces do not
+  overwrite one entry.
+- The gap repair pull (`scheduleSessionProjectionPull` with reason
+  `sse-gap`) moved from the ingress' `runtime.diagnostic` route into
+  `resetStreamGapState`, the one place a stream's gap is answered.
+- The Tier M mock's `emitRuntime` projects raw harness frames through
+  `createClientPresentationProjection` on the mock's side, as a host does,
+  and publishes the result on `wr/events`; raw runtime frames never reach
+  the mocked wire either.
