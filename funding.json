@@ -1,20 +1,34 @@
 {
-  "version": "v1.0.0",
+  "$schema": "https://fundingjson.org/schema/v1.1.0.json",
+  "version": "v1.1.0",
   "entity": {
     "type": "individual",
     "role": "owner",
     "name": "Yash Rathore",
-    "email": "Kanusdlp@gmail.com"
+    "email": "Kanusdlp@gmail.com",
+    "description": "Founder and maintainer of Claxedo.",
+    "webpageUrl": {
+      "url": "https://claxedo.com"
+    }
   },
   "projects": [
     {
       "guid": "claxedo",
       "name": "Claxedo",
       "description": "Open-source desktop workspace for AI coding agents. Set up your coding agents once - run them anywhere, with anyone. Syncs agent setup into each agent's native config, runs on your choice of third-party sandbox, and offers free self-hosted multiplayer.",
-      "webpageUrl": "https://claxedo.com",
-      "repositoryUrl": "https://github.com/kyashrathore/Claxedo",
+      "webpageUrl": {
+        "url": "https://claxedo.com"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/kyashrathore/Claxedo"
+      },
       "licenses": [
-        "MIT"
+        "spdx:MIT"
+      ],
+      "tags": [
+        "developer-tools",
+        "ai-agents",
+        "desktop-app"
       ]
     }
   ],
