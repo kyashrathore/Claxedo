@@ -32,7 +32,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-compact);
+    font-size: var(--transcript-compact-size, var(--font-size-compact));
     font-weight: var(--font-weight-medium);
     text-transform: capitalize;
   }
@@ -46,7 +46,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
+    font-size: var(--transcript-meta-size, var(--font-size-small));
     color: var(--text-weaker);
   }
 
@@ -57,13 +57,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
+    font-size: var(--transcript-meta-size, var(--font-size-small));
     color: var(--text-weak);
   }
 
   [data-slot="subagent-chip-status"] {
     flex-shrink: 0;
-    font-size: var(--font-size-small);
+    font-size: var(--transcript-meta-size, var(--font-size-small));
     color: var(--text-weaker);
   }
 
@@ -94,7 +94,7 @@ span[data-component="subagent-chip"] {
   background: none;
   cursor: pointer;
   font-family: inherit;
-  font-size: var(--font-size-compact);
+  font-size: var(--transcript-compact-size, var(--font-size-compact));
   color: var(--text-weak);
   text-decoration: underline;
   text-underline-offset: 2px;

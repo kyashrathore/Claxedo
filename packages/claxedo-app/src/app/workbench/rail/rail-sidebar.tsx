@@ -2319,7 +2319,7 @@ export function RailSidebar(props: RailSidebarProps) {
       </div>
 
       <Show when={typographyOpen()}>
-        <RailTranscriptTypographyPanel onClose={() => setTypographyOpen(false)} onMenuOpenChange={handleRailMenuOpenChange} />
+        <RailTranscriptTypographyPanel onClose={() => setTypographyOpen(false)} />
       </Show>
 
       {/* Footer - fixed at bottom. The inset rule is the inner box's own

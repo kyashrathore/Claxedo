@@ -54,45 +54,17 @@ describe("appearance.transcript", () => {
     expect(appearance.transcript()).toEqual({})
   })
 
-  test("returning to the theme's pairing drops the stored pairing and every override", async () => {
+  test("choosing a pairing replaces the whole stored record, including knobs an earlier build persisted", async () => {
+    setPersisted(TARGET, { appearance: { transcript: { pairing: "editorial", fontSize: 17, body: "palatino" } } })
     await mount()
-    appearance.setTranscriptPairing("editorial")
-    appearance.setTranscriptOverride({ fontSize: 17 })
-    await waitFor(() => expect(appearance.transcript()).toEqual({ pairing: "editorial", fontSize: 17 }))
-
-    appearance.setTranscriptPairing(undefined)
-
-    await waitFor(() => expect(appearance.transcript()).toEqual({}))
-    await waitFor(() => expect(persisted().appearance?.transcript).toEqual({}))
-  })
-
-  test("choosing a pairing clears every override the previous pairing carried", async () => {
-    await mount()
-    appearance.setTranscriptPairing("editorial")
-    appearance.setTranscriptOverride({ body: "palatino", mono: "menlo" })
-    appearance.setTranscriptOverride({ fontSize: 17, lineHeight: 1.7 })
-    await waitFor(() =>
-      expect(appearance.transcript()).toEqual({
-        pairing: "editorial",
-        body: "palatino",
-        mono: "menlo",
-        fontSize: 17,
-        lineHeight: 1.7,
-      }),
-    )
+    await waitFor(() => expect(appearance.transcript()).toEqual({ pairing: "editorial", fontSize: 17, body: "palatino" }))
 
     appearance.setTranscriptPairing("swiss")
 
     await waitFor(() => expect(appearance.transcript()).toEqual({ pairing: "swiss" }))
     await waitFor(() => expect(persisted().appearance?.transcript).toEqual({ pairing: "swiss" }))
-  })
 
-  test("an override set back to follow-pairing is dropped rather than stored as undefined", async () => {
-    await mount()
-    appearance.setTranscriptOverride({ heading: "newyork" })
-    await waitFor(() => expect(appearance.transcript().heading).toBe("newyork"))
-
-    appearance.setTranscriptOverride({ heading: undefined })
+    appearance.setTranscriptPairing(undefined)
 
     await waitFor(() => expect(appearance.transcript()).toEqual({}))
     await waitFor(() => expect(persisted().appearance?.transcript).toEqual({}))

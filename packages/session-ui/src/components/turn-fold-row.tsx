@@ -24,28 +24,25 @@ export function TurnFoldRow(props: {
     return parts.join(" · ")
   }
   return (
-    <div data-component="turn-fold" class="w-full">
+    <div data-component="turn-fold">
       <button
         type="button"
+        data-slot="turn-fold-toggle"
         aria-expanded={!props.folded}
         onClick={(event) => {
           event.stopPropagation()
           props.onToggle()
         }}
-        class="group/turn-fold flex items-center gap-1.5 h-8 rounded-sm px-1 -mx-1 text-text-weak hover:text-text-strong focus-visible:text-text-strong focus-visible:outline-none transition-colors"
       >
-        <span class="text-14-medium tabular-nums">{label()}</span>
-        <span
-          class="inline-flex items-center opacity-60 group-hover/turn-fold:opacity-100 transition-transform duration-300"
-          style={{ transform: props.folded ? "rotate(0deg)" : "rotate(90deg)" }}
-        >
+        <span data-slot="turn-fold-label">{label()}</span>
+        <span data-slot="turn-fold-chevron" style={{ transform: props.folded ? "rotate(0deg)" : "rotate(90deg)" }}>
           <Icon name="chevron-right" size="small" />
         </span>
         <Show when={footer()}>
-          <span class="ml-auto text-12-regular text-text-weaker tabular-nums">{footer()}</span>
+          <span data-slot="turn-fold-footer">{footer()}</span>
         </Show>
       </button>
-      <div class="h-px w-full bg-border-weak-base" aria-hidden="true" />
+      <div data-slot="turn-fold-rule" aria-hidden="true" />
     </div>
   )
 }

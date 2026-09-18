@@ -1,10 +1,13 @@
-import { Show, type Component } from "solid-js"
+import { For, Show, type Component } from "solid-js"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { TRANSCRIPT_PAIRINGS } from "@opencode-ai/ui/theme/transcript-typography"
-import { TranscriptTypographyKnobs } from "@opencode-ai/session-ui/transcript-typography-knobs"
+import {
+  TRANSCRIPT_PAIRINGS,
+  TRANSCRIPT_PAIRING_KEYS,
+  transcriptFaceFamily,
+  type TranscriptPairing,
+} from "@opencode-ai/ui/theme/transcript-typography"
 import { useSettings } from "@/platform/settings/provider"
 import { useTranscriptTypography } from "@/platform/settings/transcript-typography"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 
@@ -21,21 +24,38 @@ export const RailTranscriptTypographyMenuItem: Component<{ open: boolean; onTogg
   </Show>
 )
 
+const ROW_CLASS =
+  "w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 text-text-base/80 hover:text-text-base hover:bg-surface-base-hover/35 aria-checked:bg-surface-base-hover aria-checked:text-text-strong"
+
 /**
- * A knob for choosing the transcript typography that ships, not a product
- * setting: dev builds only, English only, and the chosen values are meant to
- * become the defaults in `@opencode-ai/ui/theme/transcript-typography` and
- * `session-ui/src/components/markdown.css`. It expands inside the rail rather
- * than Settings so the open transcript re-renders beside each pick.
+ * Picks which transcript pairing the open transcript renders with: the active
+ * theme's own, or one named here. Dev builds only, English only; the pairings
+ * themselves are the catalogue in `@opencode-ai/ui/theme/transcript-typography`,
+ * so a value that should ship is changed there, not here. It expands inside
+ * the rail rather than Settings so the transcript re-renders beside each pick.
  */
-export const RailTranscriptTypographyPanel: Component<{
-  onClose: () => void
-  onMenuOpenChange: (open: boolean) => void
-}> = (props) => {
+export const RailTranscriptTypographyPanel: Component<{ onClose: () => void }> = (props) => {
   const settings = useSettings()
   const source = useTranscriptTypography()
-  const transcript = source.setting
-  const themed = () => Object.keys(transcript()).length === 0
+  const chosen = () => source.setting().pairing
+  const themeLabel = () => TRANSCRIPT_PAIRINGS[source.theme()?.pairing ?? "default"].label
+  const row = (pairing: TranscriptPairing | undefined, label: string, detail?: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={chosen() === pairing}
+      data-action={`settings-transcript-pairing-${pairing ?? "theme"}`}
+      class={ROW_CLASS}
+      style={{ "font-family": pairing ? transcriptFaceFamily(TRANSCRIPT_PAIRINGS[pairing].body) : undefined }}
+      onClick={() => settings.appearance.setTranscriptPairing(pairing)}
+    >
+      <span class="min-w-0 flex-1 truncate text-left">{label}</span>
+      <Show when={detail}>{(text) => <span class="min-w-0 truncate text-text-weak">{text()}</span>}</Show>
+      <Show when={chosen() === pairing}>
+        <span class="shrink-0 text-text-weak/50">&#10003;</span>
+      </Show>
+    </button>
+  )
   return (
     <Show when={import.meta.env.DEV}>
       <section
@@ -45,17 +65,6 @@ export const RailTranscriptTypographyPanel: Component<{
       >
         <div class="flex h-8 shrink-0 items-center gap-1 pl-5 pr-2.5">
           <span class="min-w-0 flex-1 truncate text-xs font-medium uppercase tracking-normal text-text-weaker">Typography (dev)</span>
-          <Tooltip placement="top" value="Back to the theme's">
-            <IconButton
-              icon="reset"
-              variant="ghost"
-              class="h-6 w-6 rounded-md text-icon-weak-base hover:text-icon-base"
-              data-action="settings-transcript-reset"
-              aria-label="Back to the theme's"
-              disabled={themed()}
-              onClick={() => settings.appearance.setTranscriptPairing(undefined)}
-            />
-          </Tooltip>
           <IconButton
             icon="close-small"
             variant="ghost"
@@ -65,14 +74,9 @@ export const RailTranscriptTypographyPanel: Component<{
             onClick={() => props.onClose()}
           />
         </div>
-        <div class="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2" style={{ "scrollbar-width": "thin" }}>
-          <TranscriptTypographyKnobs
-            value={transcript()}
-            pairingDetail={`Theme · ${TRANSCRIPT_PAIRINGS[source.typography().pairing].label}`}
-            onPairing={(pairing) => settings.appearance.setTranscriptPairing(pairing)}
-            onOverride={(patch) => settings.appearance.setTranscriptOverride(patch)}
-            onMenuOpenChange={props.onMenuOpenChange}
-          />
+        <div role="radiogroup" aria-label="Transcript pairing" class="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2" style={{ "scrollbar-width": "thin" }}>
+          {row(undefined, "Theme's", themeLabel())}
+          <For each={TRANSCRIPT_PAIRING_KEYS}>{(pairing) => row(pairing, TRANSCRIPT_PAIRINGS[pairing].label)}</For>
         </div>
       </section>
     </Show>

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
   DEFAULT_TRANSCRIPT_TYPOGRAPHY,
+  TRANSCRIPT_COLOR_KEYS,
   TRANSCRIPT_FACES,
+  TRANSCRIPT_NUMBER_KEYS,
   TRANSCRIPT_PAIRINGS,
   composeTranscriptTypography,
   normalizeTranscriptTypography,
@@ -37,15 +39,29 @@ describe("normalizeTranscriptTypography", () => {
     })
   })
 
-  test("sizes outside the offered range are dropped, boundaries kept", () => {
-    expect(normalizeTranscriptTypography({ pairing: "default", fontSize: 12.5 }).fontSize).toBeUndefined()
-    expect(normalizeTranscriptTypography({ pairing: "default", fontSize: 18 }).fontSize).toBe(18)
+  test("numbers outside a knob's range are dropped, boundaries kept, and every knob in the catalogue is read", () => {
+    expect(normalizeTranscriptTypography({ pairing: "default", fontSize: 9 }).fontSize).toBeUndefined()
+    expect(normalizeTranscriptTypography({ pairing: "default", fontSize: 20 }).fontSize).toBe(20)
     expect(normalizeTranscriptTypography({ pairing: "default", lineHeight: Number.NaN }).lineHeight).toBeUndefined()
     expect(normalizeTranscriptTypography({ pairing: "default", lineHeight: 1.35 }).lineHeight).toBe(1.35)
     expect(normalizeTranscriptTypography({ pairing: "default", codeFontSize: 40, measure: 64, boldWeight: "700" })).toEqual({
       pairing: "default",
       measure: 64,
     })
+    expect(normalizeTranscriptTypography({ toolSize: 12, toolRowHeight: 28, turnGap: 16, groupCap: 999 })).toEqual({
+      toolSize: 12,
+      toolRowHeight: 28,
+      turnGap: 16,
+    })
+  })
+
+  test("a colour knob takes a hex or a token reference and nothing else", () => {
+    expect(normalizeTranscriptTypography({ toolColor: "var(--text-base)", linkColor: "#08f", markerColor: "red", metaColor: "url(x)" })).toEqual({
+      toolColor: "var(--text-base)",
+      linkColor: "#08f",
+    })
+    expect(normalizeTranscriptTypography({ links: "always" }).links).toBe("always")
+    expect(normalizeTranscriptTypography({ links: "sometimes" }).links).toBeUndefined()
   })
 
   test("an unknown heading scale is dropped; a known one kept", () => {
@@ -93,9 +109,9 @@ describe("composeTranscriptTypography", () => {
 })
 
 describe("resolveTranscriptTypography", () => {
-  test("an override wins over the pairing; the rest follows the pairing or the shipped CSS", () => {
-    const resolved = resolveTranscriptTypography({ pairing: "swiss", body: "charter", fontSize: 17, codeFontSize: 14 })
-    expect(resolved).toEqual({
+  test("an override wins over the pairing; the rest follows the pairing or the stylesheet's own value", () => {
+    const resolved = resolveTranscriptTypography({ pairing: "swiss", body: "charter", fontSize: 17, codeFontSize: 14, toolSize: 13 })
+    expect(resolved).toMatchObject({
       body: "charter",
       heading: "helvetica",
       mono: "menlo",
@@ -115,7 +131,15 @@ describe("resolveTranscriptTypography", () => {
       proseColor: "strong",
       inlineCode: "pill",
       rules: "hidden",
+      links: "hover",
+      toolSize: 13,
+      toolLineHeight: 1.5,
+      toolColor: "var(--text-weak)",
+      turnGap: 24,
+      scrollbarSize: 8,
     })
+    for (const key of TRANSCRIPT_NUMBER_KEYS) expect(key in resolved, key).toBe(true)
+    for (const key of TRANSCRIPT_COLOR_KEYS) expect(typeof resolved[key], key).toBe("string")
     expect(resolveTranscriptTypography({ pairing: "swiss", tracking: 0 }).tracking).toBe(0)
   })
 
@@ -165,18 +189,42 @@ describe("resolveTranscriptTypography", () => {
 })
 
 describe("transcriptTypographyStyle", () => {
-  test("the default pairing sets only the shipped numeric variables: no family, measure or heading scale", () => {
-    expect(transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "default" }))).toEqual({
-      "--transcript-font-size": "14px",
-      "--transcript-line-height": "1.6",
-      "--transcript-letter-spacing": "normal",
-      "--transcript-inline-code-size": "0.8em",
-      "--transcript-code-font-size": "13px",
-      "--transcript-paragraph-gap": "6px",
-      "--transcript-list-gap": "8px",
-      "--transcript-list-indent": "32px",
-      "--transcript-bold-weight": "600",
+  test("only what departs from the stylesheet's own value is written; a knob at its shipped value leaves the fallback in charge", () => {
+    expect(transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "technical" }))).toEqual({
+      "--transcript-line-height": "1.55",
+      "--transcript-letter-spacing": "-0.08px",
+      "--transcript-font-family-heading": TRANSCRIPT_FACES.sfdisplay.stack,
     })
+    const tool = transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "technical", toolSize: 12 }))
+    expect(tool["--transcript-tool-size"]).toBe("12px")
+    expect(transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "technical", toolSize: 14 }))["--transcript-tool-size"]).toBeUndefined()
+  })
+
+  test("the Default pairing is Cursor's measurements: the two resolve identically", () => {
+    expect(resolveTranscriptTypography({ pairing: "default" })).toEqual(resolveTranscriptTypography({ pairing: "cursor" }))
+    expect(transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "default" }))).toMatchObject({
+      "--transcript-line-height": `${22 / 14}`,
+      "--transcript-paragraph-gap": "16px",
+      "--transcript-block-gap": "16px",
+      "--transcript-list-indent": "28px",
+      "--transcript-nested-list-indent": "28px",
+      "--transcript-inline-code-size": "0.9em",
+      "--transcript-inline-code-ring": "none",
+      "--transcript-hr-height": "1px",
+      "--transcript-h1-size": "17px",
+      "--transcript-h4-size": "16px",
+      "--transcript-prose-color": "color-mix(in oklab, var(--text-strong) 85%, var(--background-base))",
+    })
+  })
+
+  test("a colour knob and a link policy emit their variables", () => {
+    const style = transcriptTypographyStyle(
+      resolveTranscriptTypography({ pairing: "technical", toolColor: "#123456", scrollbarThumb: "var(--text-base)", links: "always" }),
+    )
+    expect(style["--transcript-tool-color"]).toBe("#123456")
+    expect(style["--transcript-scrollbar-thumb"]).toBe("var(--text-base)")
+    expect(style["--transcript-link-decoration"]).toBe("underline")
+    expect(transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "technical", links: "never" }))["--transcript-link-hover-decoration"]).toBe("none")
   })
 
   test("prose colour, body weight, rules, block gap and an inline-code variant emit only when they depart", () => {
@@ -216,7 +264,7 @@ describe("transcriptTypographyStyle", () => {
     const subtle = transcriptTypographyStyle(resolveTranscriptTypography({ pairing: "default", headingScale: "subtle" }))
     expect(subtle["--transcript-h2-tracking"]).toBe("normal")
     expect(subtle["--transcript-heading-line-height"]).toBe("1.25")
-    expect(Object.keys(subtle).filter((key) => key.startsWith("--transcript-h"))).toHaveLength(16)
+    expect(Object.keys(subtle).filter((key) => /^--transcript-(h\d|heading)/.test(key))).toHaveLength(21)
   })
 
   test("the soft prose colour is the theme's strong text mixed 85% toward its background", () => {

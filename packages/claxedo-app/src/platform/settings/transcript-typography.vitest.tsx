@@ -55,17 +55,14 @@ describe("useTranscriptTypography", () => {
     expect(port.source.theme()).toBeUndefined()
     expect(port.source.typography()).toEqual({ pairing: "default" })
 
-    port.settings.appearance.setTranscriptOverride({ fontSize: 16 })
-    await waitFor(() => expect(port.source.typography()).toEqual({ pairing: "default", fontSize: 16 }))
+    port.settings.appearance.setTranscriptPairing("swiss")
+    await waitFor(() => expect(port.source.typography()).toEqual({ pairing: "swiss" }))
   })
 
   test("the Codex theme brings the codex pairing once its file loads; a stored pairing overrides it; switching theme flips it back", async () => {
     await mount({ theme: "codex" })
     await waitFor(() => expect(port.source.theme()).toEqual({ pairing: "codex" }))
     expect(port.source.typography()).toEqual({ pairing: "codex" })
-
-    port.settings.appearance.setTranscriptOverride({ listGap: 6 })
-    await waitFor(() => expect(port.source.typography()).toEqual({ pairing: "codex", listGap: 6 }))
 
     port.settings.appearance.setTranscriptPairing("swiss")
     await waitFor(() => expect(port.source.typography()).toEqual({ pairing: "swiss" }))

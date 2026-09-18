@@ -207,8 +207,8 @@ const settingsContextInput = {
     })
 
     const transcript = createMemo(() => normalizeTranscriptTypography(store.appearance?.transcript))
-    // A plain object write would merge into the stored record and keep the
-    // overrides a pairing change is meant to clear.
+    // A plain object write merges into the stored record, so knob overrides an
+    // earlier build persisted would outlive a pairing change.
     const writeTranscript = (next: TranscriptTypography) => setStore("appearance", "transcript", reconcile(next))
 
     return {
@@ -301,13 +301,9 @@ const settingsContextInput = {
         },
         /** The stored choice; an absent pairing follows the theme's (see `useTranscriptTypography`). */
         transcript,
-        /** `undefined` returns to the theme's pairing; either way every override is dropped. */
+        /** `undefined` returns to the theme's pairing. */
         setTranscriptPairing(pairing: TranscriptPairing | undefined) {
           writeTranscript(pairing ? { pairing } : {})
-        },
-        /** An `undefined` value returns that knob to following the pairing. */
-        setTranscriptOverride(patch: Partial<Omit<TranscriptTypography, "pairing">>) {
-          writeTranscript({ ...transcript(), ...patch })
         },
       },
       keybinds: {

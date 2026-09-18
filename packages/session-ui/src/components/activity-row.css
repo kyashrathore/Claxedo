@@ -10,13 +10,13 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
+  gap: var(--transcript-tool-gap, 8px);
+  height: var(--transcript-tool-row-height, 32px);
   max-width: 100%;
   min-width: 0;
   cursor: pointer;
   /* One dim tone for the whole row; hover lifts the text only. */
-  color: var(--text-weak);
+  color: var(--transcript-tool-color, var(--text-weak));
 }
 
 .activity-row__hit {
@@ -49,15 +49,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: var(--transcript-tool-icon-size, 14px);
+  height: var(--transcript-tool-icon-size, 14px);
   color: inherit;
   pointer-events: none;
 }
 
 .activity-row__icon .ui-icon {
-  width: 14px;
-  height: 14px;
+  width: var(--transcript-tool-icon-size, 14px);
+  height: var(--transcript-tool-icon-size, 14px);
   color: inherit;
 }
 
@@ -65,7 +65,7 @@
   position: relative;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--transcript-tool-gap, 8px);
   min-width: 0;
   flex: 0 1 auto;
   overflow: hidden;
@@ -75,10 +75,10 @@
 .activity-row__verb {
   flex-shrink: 0;
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--line-height-large);
-  color: var(--text-weak);
+  font-size: var(--transcript-tool-size, var(--font-size-base));
+  font-weight: var(--transcript-tool-weight, var(--font-weight-medium));
+  line-height: var(--transcript-tool-line-height, var(--line-height-large));
+  color: var(--transcript-tool-color, var(--text-weak));
   transition: color 0.15s ease;
 }
 
@@ -90,10 +90,10 @@
   white-space: nowrap;
   font-family: var(--font-family-sans);
   font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-base);
+  font-size: var(--transcript-tool-size, var(--font-size-base));
   font-weight: var(--font-weight-regular);
-  line-height: var(--line-height-large);
-  color: var(--text-weak);
+  line-height: var(--transcript-tool-line-height, var(--line-height-large));
+  color: var(--transcript-tool-color, var(--text-weak));
   transition: color 0.15s ease;
 }
 
@@ -103,7 +103,7 @@
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--transcript-tool-gap, 8px);
   font-variant-numeric: tabular-nums;
 }
 
@@ -132,7 +132,7 @@
 @media (hover: hover) {
   .activity-row:hover .activity-row__verb,
   .activity-row:hover .activity-row__tail {
-    color: var(--text-strong);
+    color: var(--transcript-tool-hover-color, var(--text-strong));
   }
 
   .activity-row:hover .activity-row__chevron {
@@ -142,7 +142,7 @@
 
 /* Keyboard focus mirrors hover for the brighten + chevron reveal. */
 .activity-row:focus-within .activity-row__verb {
-  color: var(--text-strong);
+  color: var(--transcript-tool-hover-color, var(--text-strong));
 }
 
 .activity-row__hit:focus-visible ~ .activity-row__chevron,
@@ -164,7 +164,7 @@
 }
 
 .activity-row[data-nested="true"] .activity-row__verb {
-  color: var(--text-weak);
+  color: var(--transcript-tool-color, var(--text-weak));
 }
 
 .activity-row[data-nested="true"] .activity-row__tail {

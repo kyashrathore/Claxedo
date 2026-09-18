@@ -76,12 +76,13 @@
   h4,
   h5,
   h6 {
-    font-size: var(--font-size-compact);
+    font-size: var(--transcript-h4-size, var(--font-size-compact));
     color: var(--v2-text-text-muted);
-    font-weight: var(--font-weight-medium);
-    margin-top: 20px;
-    margin-bottom: 8px;
-    line-height: var(--line-height-large);
+    font-weight: var(--transcript-h4-weight, var(--font-weight-medium));
+    margin-top: var(--transcript-h4-top, 20px);
+    margin-bottom: var(--transcript-h4-bottom, 8px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h4-tracking, normal);
   }
 
   /* Emphasis & Strong: Neutral strong color */
@@ -98,13 +99,13 @@
 
   /* Links */
   a {
-    color: var(--text-interactive-base);
-    text-decoration: none;
+    color: var(--transcript-link-color, var(--text-interactive-base));
+    text-decoration: var(--transcript-link-decoration, none);
     font-weight: inherit;
   }
 
   a:hover {
-    text-decoration: underline;
+    text-decoration: var(--transcript-link-hover-decoration, underline);
     text-underline-offset: 2px;
   }
 
@@ -152,30 +153,29 @@
 
   li > p + p {
     display: block;
-    margin-top: 0.5rem;
+    margin-top: var(--transcript-paragraph-gap, 0.5rem);
   }
 
   li::marker {
-    color: var(--v2-text-text-muted);
+    color: var(--transcript-marker-color, var(--v2-text-text-muted));
   }
 
-  /* Nested lists spacing */
   li > ul,
   li > ol {
     margin-top: 0.25rem;
     margin-bottom: 0.25rem;
-    padding-left: 1rem; /* Minimal indent for nesting only */
+    padding-left: var(--transcript-nested-list-indent, 1rem);
   }
 
   li > ol {
-    padding-left: 1.75rem;
+    padding-left: calc(var(--transcript-nested-list-indent, 1rem) + 0.75rem);
   }
 
   /* Blockquotes */
   blockquote {
-    border-left: 0.5px solid var(--v2-border-border-base);
+    border-left: var(--transcript-quote-border, 0.5px) solid var(--v2-border-border-base);
     margin: var(--transcript-block-gap, 1rem) 0;
-    padding-left: 0.5rem;
+    padding-left: var(--transcript-quote-indent, 0.5rem);
     color: var(--v2-text-text-muted);
     font-style: normal;
   }
@@ -191,7 +191,8 @@
     background: var(--background-stronger);
     color: var(--text-base);
     font-size: var(--transcript-code-font-size, var(--font-size-compact));
-    padding: 12px;
+    line-height: var(--transcript-code-line-height, inherit);
+    padding: var(--transcript-code-padding, 12px);
     border-radius: var(--radius-md);
     border: 0.5px solid var(--v2-border-border-base);
   }
@@ -422,16 +423,15 @@
 
   th,
   td {
-    /* Minimal borders for structure, matching TUI "lines" roughly but keeping it web-clean */
     border-bottom: 0.5px solid var(--v2-border-border-muted);
-    padding: 12px;
+    padding: var(--transcript-table-cell-padding, 12px);
     text-align: left;
     vertical-align: top;
   }
 
   th {
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--transcript-table-head-weight, var(--font-weight-medium));
     background: var(--v2-background-bg-layer-01);
     border-bottom: 0.5px solid var(--v2-border-border-base);
   }
@@ -526,6 +526,13 @@ body:not([data-new-layout]) .ui-markdown {
     font-weight: var(--font-weight-medium);
   }
 
+  h4,
+  h5,
+  h6 {
+    font-size: var(--transcript-h4-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h4-weight, var(--font-weight-medium));
+  }
+
   h1 {
     font-size: var(--transcript-h1-size, var(--transcript-font-size, var(--font-size-base)));
     font-weight: var(--transcript-h1-weight, var(--font-weight-medium));
@@ -547,11 +554,11 @@ body:not([data-new-layout]) .ui-markdown {
   }
 
   li::marker {
-    color: var(--text-weak);
+    color: var(--transcript-marker-color, var(--text-weak));
   }
 
   blockquote {
-    border-left: 2px solid var(--border-weak-base);
+    border-left: var(--transcript-quote-border, 2px) solid var(--border-weak-base);
     color: var(--text-weak);
   }
 

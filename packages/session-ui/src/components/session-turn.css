@@ -46,14 +46,14 @@
   [data-slot="session-turn-thinking"] {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-top: 12px;
+    gap: var(--transcript-tool-gap, 8px);
+    margin-top: var(--transcript-part-gap, 12px);
     width: 100%;
     min-width: 0;
-    color: var(--text-weak);
+    color: var(--transcript-tool-color, var(--text-weak));
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
+    font-size: var(--transcript-tool-size, var(--font-size-base));
+    font-weight: var(--transcript-tool-weight, var(--font-weight-medium));
     line-height: var(--line-height-20);
     min-height: 20px;
 
@@ -102,7 +102,7 @@
     display: flex;
     flex-direction: column;
     align-self: stretch;
-    gap: 12px;
+    gap: var(--transcript-part-gap, 12px);
   }
 
   [data-slot="session-turn-diffs"] {
@@ -127,17 +127,17 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-strong);
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-large);
+    font-size: var(--transcript-tool-size, var(--font-size-base));
+    font-weight: var(--transcript-tool-weight, var(--font-weight-medium));
+    line-height: var(--transcript-tool-line-height, var(--line-height-large));
   }
 
   [data-slot="session-turn-diffs-toggle"] {
-    color: var(--text-interactive-base);
+    color: var(--transcript-link-color, var(--text-interactive-base));
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
+    font-size: var(--transcript-tool-size, var(--font-size-base));
     font-weight: var(--font-weight-regular);
-    line-height: var(--line-height-large);
+    line-height: var(--transcript-tool-line-height, var(--line-height-large));
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.15s ease;
@@ -153,10 +153,10 @@
   }
 
   [data-slot="session-turn-diffs-more"] {
-    color: var(--text-weak);
+    color: var(--transcript-meta-color, var(--text-weak));
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
-    line-height: var(--line-height-large);
+    font-size: var(--transcript-meta-size, var(--font-size-small));
+    line-height: var(--transcript-meta-line-height, var(--line-height-large));
     margin-top: 12px;
     padding: 0 0 6px;
     cursor: pointer;
@@ -254,7 +254,7 @@ body:not([data-new-layout]) [data-component="session-turn"] {
 }
 
 [data-slot="session-turn-list"] {
-  gap: 24px;
+  gap: var(--transcript-turn-gap, 24px);
 }
 
 @keyframes session-turn-loading-reveal {
