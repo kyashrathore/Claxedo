@@ -460,6 +460,7 @@ async function installUserHostedRuntimeMock(
         healthy: true,
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
+        events: { hostAggregate: true },
         project: [projectRow()],
         provider: { all: [], connected: [], default: {} },
         provider_auth: {},
@@ -497,6 +498,15 @@ async function installUserHostedRuntimeMock(
     // makes the provider retry a rejected fetch for the life of the page and
     // charge every attempt to the bare-origin count.
     if (url.pathname === "/api/cp/events") {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
+    }
+    // The daemon's HOST AGGREGATE: `/api/wr/events` naming no workspace, which
+    // a loopback surface opens for its own local runtimes. Bare-origin by
+    // contract — it is the daemon's own route, not this workspace's runtime
+    // lane — so it is answered here and never counted below. It carries
+    // nothing of a user-hosted workspace: that runtime is on another machine
+    // and speaks only through the relay mount above.
+    if (url.pathname === "/api/wr/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
     }
     // Session share grants (`listSessionShares`, src/features/session/data/
@@ -1087,6 +1097,7 @@ test.describe("core user-hosted workspace @core", () => {
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
+          events: { hostAggregate: true },
           project: [{ id: PROJECT_ID, worktree: DIR, name: "core-user-hosted-workspace", time: { created: Date.now(), updated: Date.now() } }],
           provider: { all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }], default: { opencode: BIG_PICKLE.id }, connected: ["opencode"] },
           provider_auth: {},
@@ -1160,6 +1171,12 @@ test.describe("core user-hosted workspace @core", () => {
         assignments.push(`${method} ${url.pathname}`)
         if (!machine.workspaceIds.includes(PROJECT_ID)) machine.workspaceIds.push(PROJECT_ID)
         return json(route, { workspaceId: PROJECT_ID, assigned: true })
+      }
+      // The daemon's host aggregate. Answered as a stream rather than by the
+      // `{}` catch-all below so the reader parks on an open connection instead
+      // of re-opening it as fast as a JSON body ends.
+      if (url.pathname === "/api/wr/events") {
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
       }
 
       return json(route, {}, 200)

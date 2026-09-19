@@ -148,6 +148,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: dir, directory: dir, home: "/tmp" },
+          events: { hostAggregate: true },
           project: [{
             id: projectId,
             worktree: dir,
@@ -246,8 +247,10 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
     socket.send('id: 0\ndata: {"type":"heartbeat"}\n\n')
   })
 
-  // The pty frames this spec injects are workspace control frames, read off the
-  // workspace's own `/api/wr/events`.
+  // The pty frames this spec injects are workspace control frames. A loopback
+  // surface reads them off the daemon's host aggregate — `/api/wr/events`
+  // naming no workspace — so a request that names one belongs to a
+  // relay-backed workspace, which this spec has none of.
   //
   // The provider's `window.__claxedoEmitTestEvent` hook is not usable instead: it is
   // `import.meta.env.DEV`-gated and this suite's default target is a statically-served
@@ -258,7 +261,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   await page.route("**/api/wr/events**", async (route: Route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
-    if (url.searchParams.get("directory") !== dir) {
+    if (["directory", "workspaceId", "workspace", "sessionID"].some((param) => url.searchParams.has(param))) {
       await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: ": heartbeat\n\n" }).catch(() => {})
       return
     }

@@ -161,6 +161,7 @@ function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
 function bootstrapBody() {
   return {
     healthy: true,
+    events: { hostAggregate: true },
     version: "1.0.0-test",
     path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
     project: [

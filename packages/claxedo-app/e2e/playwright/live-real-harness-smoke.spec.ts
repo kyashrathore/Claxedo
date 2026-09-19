@@ -321,7 +321,8 @@ test.describe("live real-harness smoke @live", () => {
     testInfo.setTimeout(240_000)
   })
 
-  test.afterEach(async (_fixtures, testInfo) => {
+  test.afterEach(async () => {
+    const testInfo = test.info()
     if (testInfo.status === testInfo.expectedStatus) return
     await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
   })

@@ -1429,6 +1429,7 @@ test.describe("core settings + auth @core", () => {
       await page.route("**/api/claxedo/bootstrap**", (route) =>
         json(route, {
           healthy: true,
+          events: { hostAggregate: true },
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
           project: [],

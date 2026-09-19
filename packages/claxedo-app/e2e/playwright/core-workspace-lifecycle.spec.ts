@@ -81,6 +81,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
 
   const bootstrapBody = {
     healthy: true,
+    events: { hostAggregate: true },
     version: "1.0.0-test",
     path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
     project: [proj],

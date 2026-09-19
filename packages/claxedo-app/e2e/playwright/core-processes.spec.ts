@@ -735,7 +735,7 @@ test.describe("core processes @core", () => {
     const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
 
-    // Ordered deterministically rather than raced: hold the workspace-scoped
+    // Ordered deterministically rather than raced: hold the daemon's
     // `/api/wr/events` connection open behind a gate promise, release it only once
     // the `start()` POST is in flight, and delay that POST's response past the point
     // the crash event lands. Process events are workspace-runtime frames —

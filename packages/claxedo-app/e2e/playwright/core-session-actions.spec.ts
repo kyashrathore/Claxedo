@@ -606,8 +606,8 @@ test.describe("core session actions: subagent (child session) @core", () => {
     // (src/features/session/data/sync/directory-event-projector.ts) runs in BOTH branches
     // of event-ingress's `children.has(directory)` check, and keys the permission-request
     // cache by `permission.sessionID` — the CHILD's id — not by directory. The mock emits a
-    // production-shaped `permission.asked` over the real `/api/wr/events` +
-    // `/api/wr/events` streams; the `replied.sessionID === CHILD_ID` assertion
+    // production-shaped `permission.asked` over the real `/api/wr/events`
+    // stream; the `replied.sessionID === CHILD_ID` assertion
     // below can only hold if the dock rendered the CHILD's permission and the Allow-once
     // POST routed to `/session/CHILD_ID/permissions/...`.
 

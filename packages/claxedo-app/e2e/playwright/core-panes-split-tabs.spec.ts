@@ -694,6 +694,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         contentType: "application/json",
         body: JSON.stringify({
           healthy: true,
+          events: { hostAggregate: true },
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: CLOUD_DIR, directory: CLOUD_DIR, home: "/tmp" },
           project: projectPayload,

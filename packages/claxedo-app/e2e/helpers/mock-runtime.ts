@@ -656,22 +656,24 @@ class EventBus {
   }
 }
 
-// `wr/events` is served on the primary origin (a local workspace, through the
-// daemon's loopback proxy) and on the relay origin (a cloud workspace, through
-// the workspace's relay connection). Each mount gets its own `EventBus` log so
-// a `Last-Event-ID` cursor from one is only ever resumed against that same
-// mount's log; `emit()` fans out to both.
+// Two mounts of `wr/events`: the daemon's host aggregate, which names no
+// workspace and carries every LOCAL runtime's frames, and a relay-backed
+// workspace's own stream. Both are open at once while a cloud workspace is
+// routed, so a frame carried by both would be applied twice and every
+// `message.part.delta` would double the reply's text. A mount takes only the
+// directories it owns, and keeps its own `EventBus` log so a `Last-Event-ID`
+// cursor is only ever resumed against the log that numbered it.
 class FanoutBus {
-  private channels: EventBus[] = []
+  private channels: Array<{ bus: EventBus; carries: (directory: string) => boolean }> = []
 
-  channel(): EventBus {
+  channel(carries: (directory: string) => boolean): EventBus {
     const bus = new EventBus()
-    this.channels.push(bus)
+    this.channels.push({ bus, carries })
     return bus
   }
 
   emit(directory: string, payload: MockWireEvent) {
-    for (const channel of this.channels) channel.emit(directory, payload)
+    for (const { bus, carries } of this.channels) if (carries(directory)) bus.emit(directory, payload)
   }
 
 }
@@ -1003,12 +1005,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     : undefined
 
   // The two streams. `cp/events` carries the control plane's notices, flat.
-  // `wr/events` carries a workspace runtime's frames, `{ directory, payload }`,
-  // on the primary origin (loopback) and on the relay origin (cloud).
+  // `wr/events` carries a workspace runtime's frames, `{ directory, payload }`:
+  // the daemon's host aggregate carries every local workspace's, and the cloud
+  // workspace's own stream carries its own and nothing else.
+  const cloudDirectory = options.cloud?.workspaceId
   const controlPlaneBus = new EventBus()
   const workspaceFanout = new FanoutBus()
-  const busWrEvents = workspaceFanout.channel()
-  const busRelayEvents = workspaceFanout.channel()
+  const busWrEvents = workspaceFanout.channel((directory) => directory !== cloudDirectory)
+  const busRelayEvents = workspaceFanout.channel((directory) => directory === cloudDirectory)
   let messages: MockMessageRow[] = []
   let lastTurn: AgentTurnOutcome | undefined
   // The user message id of the turn the mock is driving, which is what a scoped
@@ -1890,6 +1894,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
+          // This fixture is the desktop daemon: it hosts every local runtime
+          // in-process and answers the unscoped `wr/events` below, so it says
+          // so. Without the declaration the app opens no workspace stream at
+          // all and every spec here waits for frames that never come.
+          events: { hostAggregate: true },
           project: [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])],
           provider: providerCatalogIndex(providerResponse()),
           provider_auth: { [providerIdFor(harness)]: [{ type: "api", label: "API key" }] },
@@ -1994,8 +2003,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       body: sseBody(scoped, () => streamHeartbeat(cursor)),
     }).catch(() => {})
   }
-  // `wr/events` on the primary origin: a local workspace's stream, reached
-  // through the daemon's loopback proxy (`?directory=`).
+  // `wr/events` on the primary origin, named by no workspace: the daemon's
+  // host aggregate, the only stream a loopback surface opens for its local
+  // workspaces.
   await contractRoute(page, "**/api/wr/events**", workspaceStreamHandler(busWrEvents))
 
   // ProcessPane reconciles once when a workspace shell mounts. The shared

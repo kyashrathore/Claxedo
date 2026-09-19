@@ -397,6 +397,7 @@ async function installCloudRuntimeMock(
         healthy: true,
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
+        events: { hostAggregate: true },
         project: [projectRow()],
         provider: providerCatalogIndex(providerCatalog()),
         provider_auth: {},
@@ -460,6 +461,14 @@ async function installCloudRuntimeMock(
       return json(route, { workspaceId: `local:${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
     }
     if (url.pathname === "/api/cp/events") {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: `id: 0\ndata: ${JSON.stringify({ type: "heartbeat" })}\n\n` }).catch(() => {})
+    }
+    // The daemon's host aggregate — `/api/wr/events` naming no workspace — which
+    // a loopback surface opens for its local runtimes. This spec's workspace is
+    // cloud-backed and speaks on the relay-prefixed stream below, so the
+    // aggregate has nothing to say here; left unanswered it would 598 on the
+    // session route's suspense path.
+    if (url.pathname === "/api/wr/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: `id: 0\ndata: ${JSON.stringify({ type: "heartbeat" })}\n\n` }).catch(() => {})
     }
 
@@ -868,6 +877,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
             healthy: true,
             version: "1.0.0-test",
             path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
+            events: { hostAggregate: true },
             project: created.map((project) => ({
               id: project.id,
               name: project.name,

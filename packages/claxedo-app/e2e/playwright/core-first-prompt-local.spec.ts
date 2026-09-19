@@ -385,6 +385,7 @@ test.describe("core first prompt (local) @core", () => {
         contentType: "application/json",
         body: JSON.stringify({
           healthy: true,
+          events: { hostAggregate: true },
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
           project: [],

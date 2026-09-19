@@ -28,7 +28,7 @@ import { startRealLocalServer, type RealLocalServer } from "../helpers/real-loca
 import { composeText as composePrompt, selectScriptedModel } from "../helpers/web-signed-relay-harness"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount, observeStreamingReply, expectStreamingSegmentsOnce, observeRuntimeTextTraffic } from "../helpers/turn-oracle-extras"
-import { expectRailRowVisible, expectRailStatusAbsent, expectRailTitleSettled, readRailSessionOrder } from "../helpers/rail-oracle"
+import { expectRailRowVisible, expectRailStatus, expectRailStatusAbsent, expectRailTitleSettled, readRailSessionOrder } from "../helpers/rail-oracle"
 import { readPaintGeometry } from "../helpers/geometry-oracle"
 import { startNetworkProxy } from "../helpers/network-proxy"
 
@@ -103,11 +103,11 @@ async function makeWorkspace(name: string, harnessKey = "pi") {
   return directory
 }
 
-async function seedOneProject(page: Page, dir: string) {
-  await page.addInitScript((d: string) => {
+async function seedProjects(page: Page, dirs: string[]) {
+  await page.addInitScript((seeded: string[]) => {
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
-      activeDirectory: d,
+      activeDirectory: seeded[0],
     }
     // Init scripts run on every navigation. Seed only the fresh browser context;
     // reload must retain the app's actual project, model and terminal state.
@@ -116,13 +116,17 @@ async function seedOneProject(page: Page, dir: string) {
       "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
-        projects: { local: [{ worktree: d, expanded: true }] },
+        projects: { local: seeded.map((worktree) => ({ worktree, expanded: true })) },
         lastProject: {},
         workspaceServer: {},
         closedProjects: {},
       }),
     )
-  }, dir)
+  }, dirs)
+}
+
+async function seedOneProject(page: Page, dir: string) {
+  await seedProjects(page, [dir])
 }
 
 async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
@@ -997,11 +1001,13 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
-  // The two streams, on the real daemon: a turn's frames ride the workspace's
-  // `/api/wr/events` and nothing session-shaped rides the control plane's
-  // `/api/cp/events`. The reply's parts are asserted on the wire itself, not
-  // inferred from the screen, so a transcript that only advanced through a
-  // history refetch cannot pass.
+  // The two streams, on the real daemon: a turn's frames ride the host
+  // aggregate — `/api/wr/events` naming no workspace — and nothing
+  // session-shaped rides the control plane's `/api/cp/events`. The reply's
+  // parts are asserted on the wire itself, and only on chunks that arrived on
+  // the parameter-less connection, so neither a transcript that advanced
+  // through a history refetch nor a frame carried by some other stream can
+  // pass.
   test("a turn's frames ride wr/events; cp/events carries no session frame", async ({ page }, testInfo) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     requireBinary(binary, "claude", "install Claude to exercise a native turn over the two streams.")
@@ -1011,13 +1017,13 @@ test.describe("real harness journeys @core @tier-real", () => {
     // A live SSE body never resolves for Playwright's `response.text()`; the
     // in-page reader records each chunk as it lands.
     const traffic = await observeRuntimeTextTraffic(page)
-    const workspaceOpens: Array<{ cursor: string | null; scope: string | null }> = []
+    const workspaceOpens: Array<{ cursor: string | null; search: string }> = []
     page.on("response", (response) => {
       const url = new URL(response.url())
       if (url.pathname !== "/api/wr/events") return
       workspaceOpens.push({
         cursor: response.request().headers()["last-event-id"] ?? null,
-        scope: url.searchParams.get("sessionID"),
+        search: url.search,
       })
     })
     const controlPlaneFrames: string[] = []
@@ -1043,12 +1049,15 @@ test.describe("real harness journeys @core @tier-real", () => {
     const counts = (types: string[]) =>
       types.reduce<Record<string, number>>((acc, type) => ({ ...acc, [type]: (acc[type] ?? 0) + 1 }), {})
 
-    // The workspace stream is the owner's, opened unscoped, and the reader
-    // resumes it by cursor rather than re-reading it.
+    // Exactly one kind of workspace stream is open here: the host aggregate,
+    // which names no workspace at all — no `directory`, no `workspaceId`, no
+    // `sessionID`.
     expect(workspaceOpens.length).toBeGreaterThan(0)
-    expect(workspaceOpens.every((open) => open.scope === null)).toBe(true)
-    // The frames of the turn, on the wire: the row, its parts and the settlement.
-    const workspaceFrames = async () => (await traffic()).map((chunk) => chunk.data)
+    expect(workspaceOpens.map((open) => open.search).filter((search) => search !== "")).toEqual([])
+    // The frames of the turn, on the wire, counted only where they landed: the
+    // aggregate's connection. The row, its parts and the settlement.
+    const workspaceFrames = async () =>
+      (await traffic()).filter((chunk) => new URL(chunk.url).search === "").map((chunk) => chunk.data)
     await expect.poll(async () => counts(frameTypes(await workspaceFrames()))["session.idle"] ?? 0, { timeout: 15_000 }).toBeGreaterThan(0)
     const workspaceCounts = counts(frameTypes(await workspaceFrames()))
     expect(workspaceCounts["message.updated"] ?? 0).toBeGreaterThan(0)
@@ -1079,7 +1088,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
-  test("a session created elsewhere reaches the rail of a route with no workspace from a cp/events notice", async ({ page }) => {
+  test("a session created elsewhere reaches the rail of a route with no workspace", async ({ page }) => {
     const dir = await makeWorkspace("inventory-notice", "claude")
     await seedOneProject(page, dir)
     const notices: string[] = []
@@ -1087,23 +1096,114 @@ test.describe("real harness journeys @core @tier-real", () => {
       if (!socket.url().includes("/api/cp/events")) return
       socket.on("framereceived", (frame) => { notices.push(String(frame.payload)) })
     })
-    const workspaceOpens: Array<{ at: number; url: string }> = []
+    const workspaceOpens: Array<{ at: number; search: string }> = []
     page.on("response", (response) => {
-      if (new URL(response.url()).pathname === "/api/wr/events") workspaceOpens.push({ at: Date.now(), url: response.url() })
+      const url = new URL(response.url())
+      if (url.pathname === "/api/wr/events") workspaceOpens.push({ at: Date.now(), search: url.search })
     })
-    // `/` opens the seeded project's own route, which has a workspace stream;
-    // the Tasks route names no workspace, so the rail there holds none, and
-    // only what opens once that route is the document counts.
+    // The Tasks route names no workspace. The host aggregate is open there
+    // regardless — it is the daemon's, not a workspace's — and only what opens
+    // once that route is the document counts.
     const tasksRouteAt = Date.now()
     await page.goto("/tasks")
     await expect(page).toHaveURL(/\/tasks$/)
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"heartbeat"')), { message: "cp/events is open on the Tasks route", timeout: 30_000 }).toBe(true)
-    // No workspace is routed here, so no wr/events stream is open; the only
-    // way the rail learns of this session is the control plane's own notice.
     const created = await createHarnessSession(dir, { title: "Created from the CLI", harness: "claude", providerID: "anthropic", modelID: "claude-sonnet-4-5" })
     await expectRailRowVisible({ page, sessionId: created.id, timeout: 30_000 })
     await expect.poll(() => notices.some((frame) => frame.includes('"type":"session.inventory.changed"')), { timeout: 15_000 }).toBe(true)
-    expect(workspaceOpens.filter((open) => open.at >= tasksRouteAt), "no workspace stream is open on the Tasks route").toEqual([])
+    expect(
+      workspaceOpens.filter((open) => open.at >= tasksRouteAt).map((open) => open.search).filter((search) => search !== ""),
+      "a route that names no workspace opens no workspace-scoped stream",
+    ).toEqual([])
+  })
+
+  // The reason the aggregate exists: before it, a local workspace off screen
+  // went quiet, and its rail indicator only caught up on a switch.
+  test("an agent finishing in a workspace not on screen updates that workspace's rail indicator without a switch", async ({ page }, testInfo) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install Claude to run a turn in a workspace that is not on screen.")
+    const routed = await makeWorkspace("aggregate-routed")
+    const offscreen = await makeWorkspace("aggregate-offscreen", "claude")
+    await seedProjects(page, [routed, offscreen])
+
+    // The query of every `wr/events` connection this page opens. A local
+    // workspace gets no stream of its own, so an off-screen turn can only
+    // reach the rail through the parameter-less aggregate. Its frames are
+    // read off the wire too: a rail that never moves is a different failure
+    // from frames that never arrived.
+    const streamOpens: string[] = []
+    page.on("response", (response) => {
+      const url = new URL(response.url())
+      if (url.pathname === "/api/wr/events") streamOpens.push(url.search)
+    })
+    const traffic = await observeRuntimeTextTraffic(page)
+
+    const session = await createHarnessSession(offscreen, {
+      title: "Off-screen turn",
+      harness: "claude",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+    })
+
+    await openDraftPrompt(page, routed)
+    const routedUrl = page.url()
+
+    const marker = `OFFSCREEN_${Date.now()}`
+    scripted!.scriptText({ marker, text: marker })
+    const releaseReply = scripted!.holdTextReplies(marker)
+    try {
+      await expectRailStatus({
+        page,
+        sessionId: session.id,
+        timeout: 60_000,
+        driveWorking: async () => {
+          const response = await page.request.post(
+            `${BACKEND_URL}/session/${session.id}/prompt_async?directory=${encodeURIComponent(offscreen)}`,
+            { data: { parts: [{ type: "text", text: `Reply with exactly this one token and nothing else: ${marker}` }] } },
+          )
+          expect(response.ok(), await response.text()).toBe(true)
+        },
+        driveDone: () => releaseReply(),
+      })
+    } finally {
+      releaseReply()
+      await testInfo.attach("wr-events.json", {
+        body: JSON.stringify({ routedUrl, streamOpens, frames: await traffic() }, null, 2),
+        contentType: "application/json",
+      })
+    }
+
+    expect(page.url(), "the routed workspace never left the screen").toBe(routedUrl)
+
+    // What the aggregate itself carried. The rail dot alone does not pin it:
+    // the daemon also answers `/session/status?directory=` for a workspace
+    // that is not routed, and that poll moves the same dot. The frames below
+    // arrived on the parameter-less connection and nowhere else.
+    const offscreenFrames = (await traffic())
+      .filter((chunk) => new URL(chunk.url).search === "")
+      .flatMap((chunk) => chunk.data.split("\n"))
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice("data: ".length)) as {
+        directory?: string
+        payload?: { type?: string; properties?: { sessionID?: string } }
+      })
+      .filter((frame) => frame.payload?.properties?.sessionID === session.id)
+    expect(
+      offscreenFrames.map((frame) => frame.payload?.type),
+      "the off-screen turn rode the host aggregate, from busy to settled",
+    ).toEqual(expect.arrayContaining(["session.status", "session.idle"]))
+    // The daemon stamps its own filesystem path, which resolves through
+    // /private on macOS, so the tail is what identifies the workspace.
+    expect(
+      [...new Set(offscreenFrames.map((frame) => frame.directory?.endsWith(path.basename(offscreen))))],
+      "those frames are addressed to the workspace that was never on screen",
+    ).toEqual([true])
+
+    expect(streamOpens.length, "the host aggregate is open").toBeGreaterThan(0)
+    expect(
+      streamOpens.filter((search) => search !== ""),
+      "no workspace-scoped stream is opened for a local workspace",
+    ).toEqual([])
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {

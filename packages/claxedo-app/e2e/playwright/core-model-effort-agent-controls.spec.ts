@@ -152,6 +152,7 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
       contentType: "application/json",
       body: JSON.stringify({
         healthy: true,
+        events: { hostAggregate: true },
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: mock.session.dir, directory: mock.session.dir, home: "/tmp" },
         project: [{ id: mock.session.projectId, worktree: mock.session.dir, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
@@ -178,6 +179,7 @@ async function installNoModelFixture(page: Page, mock: MockRuntimeHandles) {
       contentType: "application/json",
       body: JSON.stringify({
         healthy: true,
+        events: { hostAggregate: true },
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: mock.session.dir, directory: mock.session.dir, home: "/tmp" },
         project: [{ id: mock.session.projectId, worktree: mock.session.dir, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
