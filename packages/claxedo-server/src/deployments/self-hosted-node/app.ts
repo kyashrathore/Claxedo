@@ -1041,6 +1041,7 @@ export function createSelfHostedApp(
     listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
       id: workspace.id,
       kind: workspace.kind,
+      directory: workspace.directory,
       displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
       projectId: workspace.project_id,
       repoUrl: workspace.repo_url ?? workspace.git_remote,

@@ -51,7 +51,8 @@ export type FakeEnrollment = {
   fingerprint: string
   key_version: number
   serving_generation: number
-  scope: FakeScope
+  /** Absent for a machine the owner enrolled through their account: that path grants no roots. */
+  scope?: FakeScope
   expires_at: number
   last_seen_at: number
   revoked_at?: number
@@ -77,7 +78,12 @@ export type FakeAssignment = {
   workspace_id: string
   enrollment_id: string
   host_id: string
-  remote_directory: string
+  /**
+   * Absent when the owner assigned the workspace without naming a directory.
+   * The row exists and the workspace counts as assigned, but there is no
+   * description to hand the machine, so it can never ack it.
+   */
+  remote_directory?: string
   display_name?: string
   revision: number
 }
@@ -277,37 +283,42 @@ export function createFakeControlPlane(
     return {
       expires_at: enrollment.expires_at,
       last_seen_at: enrollment.last_seen_at,
-      assignments: mine.map((assignment) => ({
+      assignments: mine.flatMap((assignment) => assignment.remote_directory === undefined ? [] : [{
         workspace_id: assignment.workspace_id,
         remote_directory: assignment.remote_directory,
         ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
         revision: assignment.revision,
-      })),
-      scope: enrollment.scope,
+      }]),
+      ...(enrollment.scope ? { scope: enrollment.scope } : {}),
       assigned_workspace_ids: mine.map((assignment) => assignment.workspace_id).sort(),
       ...(credential ? { hostTunnel: credential } : {}),
       ...endpoints(),
     }
   }
 
-  const redeemResponse = (enrollment: FakeEnrollment, resumed: boolean) => ({
-    resumed,
-    enrollment: {
-      enrollment_id: enrollment.enrollment_id,
-      host_id: enrollment.host_id,
-      expires_at: enrollment.expires_at,
-      last_seen_at: enrollment.last_seen_at,
-      created_at: enrollment.created_at,
-    },
-    owner_user_id: enrollment.owner,
-    owner_actor_id: `actor_${enrollment.owner}`,
-    org_id: "org_1",
-    owner_display_name: "Alice",
-    key_version: enrollment.key_version,
-    serving_generation: enrollment.serving_generation,
-    scope: enrollment.scope,
-    ...endpoints(),
-  })
+  const redeemResponse = (enrollment: FakeEnrollment, resumed: boolean) => {
+    // An invitation carries the scope it was created with onto the enrollment
+    // it mints, so a redeemed row without one is this fake losing state.
+    if (!enrollment.scope) throw new Error(`enrollment ${enrollment.enrollment_id} was redeemed without a scope`)
+    return {
+      resumed,
+      enrollment: {
+        enrollment_id: enrollment.enrollment_id,
+        host_id: enrollment.host_id,
+        expires_at: enrollment.expires_at,
+        last_seen_at: enrollment.last_seen_at,
+        created_at: enrollment.created_at,
+      },
+      owner_user_id: enrollment.owner,
+      owner_actor_id: `actor_${enrollment.owner}`,
+      org_id: "org_1",
+      owner_display_name: "Alice",
+      key_version: enrollment.key_version,
+      serving_generation: enrollment.serving_generation,
+      scope: enrollment.scope,
+      ...endpoints(),
+    }
+  }
 
   const redeem = async (body: Record<string, unknown>) => {
     const invitationId = typeof body.invitationId === "string" ? body.invitationId : ""
@@ -419,6 +430,62 @@ export function createFakeControlPlane(
       return enrollment ? routable(enrollment) : []
     },
     enrollmentByHostId,
+    /**
+     * What `POST /api/claxedo/host/enrollments` leaves behind when the OWNER
+     * enrolls a machine with their account credential. State, not a route: the
+     * caller that drives it (Electron main, on behalf of the connector child)
+     * reaches the control plane through the account, never through this
+     * fetch, so there is nothing here for a machine transport to call.
+     *
+     * Upserts on (owner, host id), which is the uniqueness both authorities
+     * declare (`on conflict (owner_actor_id, host_id)` on D1,
+     * `ON CONFLICT (owner_token_identifier, host_id)` on SQLite). A machine
+     * that restarts and enrolls again keeps its enrollment id, its serving
+     * generation and the assignments pointed at it; minting a second row
+     * instead would let a test's restart find an empty control plane and pass
+     * without ever exercising the restore.
+     *
+     * The row carries no scope, as the real one does not: an account
+     * enrollment grants no roots, and a host reached this way confines no
+     * directory.
+     */
+    enrollAccountHost: async (input: { hostId: string; publicKey: string; owner?: string; displayName?: string }) => {
+      const publicKey = publicKeyJwk(input.publicKey)
+      const fingerprint = await hostPublicKeyFingerprint(publicKey)
+      const owner = input.owner ?? "alice"
+      const existing = [...enrollments.values()].find((entry) => entry.owner === owner && entry.host_id === input.hostId)
+      if (existing) {
+        // Proving possession of the key again is a stronger statement than a
+        // pause or a revoke, so it clears both. A DIFFERENT key is a new
+        // version, which is what turns a stale machine's request into
+        // `enrollment_key_version_mismatch` rather than a bare signature
+        // refusal.
+        if (existing.fingerprint !== fingerprint) existing.key_version += 1
+        existing.public_key = publicKey
+        existing.fingerprint = fingerprint
+        if (input.displayName) existing.display_name = input.displayName
+        existing.expires_at = now() + LEASE_MS
+        existing.last_seen_at = now()
+        delete existing.revoked_at
+        delete existing.paused_at
+        return existing
+      }
+      const enrollment: FakeEnrollment = {
+        enrollment_id: nextId("enr"),
+        host_id: input.hostId,
+        display_name: input.displayName ?? "machine",
+        owner,
+        public_key: publicKey,
+        fingerprint,
+        key_version: 1,
+        serving_generation: 0,
+        expires_at: now() + LEASE_MS,
+        last_seen_at: now(),
+        created_at: now(),
+      }
+      enrollments.set(enrollment.enrollment_id, enrollment)
+      return enrollment
+    },
     createInvitation: async (input: {
       owner?: string
       displayName?: string
@@ -446,13 +513,13 @@ export function createFakeControlPlane(
      * control plane), so `/srv/app/` and `/srv/app` are one row.
      */
     assign: (
-      input: ({ enrollmentId: string } | { hostId: string }) & { workspaceId: string; remoteDirectory: string; displayName?: string },
+      input: ({ enrollmentId: string } | { hostId: string }) & { workspaceId: string; remoteDirectory?: string; displayName?: string },
     ) => {
       const enrollment = "hostId" in input ? enrollmentByHostId(input.hostId) : enrollments.get(input.enrollmentId)
       if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
-      const remoteDirectory = normalizeAbsolutePath(input.remoteDirectory)
-      if (remoteDirectory === undefined) throw new FakeRefusal(400, "invalid_input")
-      if (!pathWithinRoots(remoteDirectory, enrollment.scope.allowed_roots)) {
+      const remoteDirectory = input.remoteDirectory === undefined ? undefined : normalizeAbsolutePath(input.remoteDirectory)
+      if (input.remoteDirectory !== undefined && remoteDirectory === undefined) throw new FakeRefusal(400, "invalid_input")
+      if (enrollment.scope && !pathWithinRoots(remoteDirectory ?? "", enrollment.scope.allowed_roots)) {
         throw new FakeRefusal(400, "host_assignment_outside_scope")
       }
       const existing = assignments.get(input.workspaceId)
@@ -460,7 +527,7 @@ export function createFakeControlPlane(
         workspace_id: input.workspaceId,
         enrollment_id: enrollment.enrollment_id,
         host_id: enrollment.host_id,
-        remote_directory: remoteDirectory,
+        ...(remoteDirectory === undefined ? {} : { remote_directory: remoteDirectory }),
         ...(input.displayName ? { display_name: input.displayName } : {}),
         revision: (existing?.revision ?? 0) + 1,
       }
@@ -472,10 +539,10 @@ export function createFakeControlPlane(
     setScope: (enrollmentId: string, scope: Omit<FakeScope, "revision">) => {
       const enrollment = enrollments.get(enrollmentId)
       if (!enrollment) throw new FakeRefusal(404, "host_enrollment_not_found")
-      enrollment.scope = { ...scope, revision: enrollment.scope.revision + 1 }
+      enrollment.scope = { ...scope, revision: (enrollment.scope?.revision ?? 0) + 1 }
       for (const [workspaceId, assignment] of assignments) {
         if (assignment.enrollment_id !== enrollmentId) continue
-        if (!pathWithinRoots(assignment.remote_directory, scope.allowed_roots)) unassign(workspaceId)
+        if (!pathWithinRoots(assignment.remote_directory ?? "", scope.allowed_roots)) unassign(workspaceId)
       }
       return enrollment.scope
     },

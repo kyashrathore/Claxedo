@@ -227,12 +227,3 @@ describe("heartbeat", () => {
     expect(new Set(nonces).size).toBe(nonces.length)
   })
 })
-
-test("createRequest and enroll are not part of a machine's protocol", async () => {
-  const { transport } = await host()
-
-  await expect(transport.createRequest({ hostId: "h" })).rejects.toThrow(/already enrolled/)
-  await expect(
-    transport.enroll({ hostId: "h", publicKey: "{}", requestId: "r", signature: "s" }),
-  ).rejects.toThrow(/already enrolled/)
-})

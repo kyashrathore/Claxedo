@@ -67,6 +67,8 @@ export function machineDisplayName(platform: NodeJS.Platform): string {
 /** Production adapter from Electron primitives to the dependency-light supervisor. */
 export function setupElectronHostConnector(input: {
   runAccountOperation: AccountOperationRunner
+  /** The account's control-plane origin; the child beats there itself once enrolled. */
+  controlPlaneUrl?: string
   describeWorkspace?: Parameters<typeof setupHostConnectorChild>[0]["describeWorkspace"]
   safeStorage: SafeStorageApi
   userDataDir: string
@@ -94,6 +96,7 @@ export function setupElectronHostConnector(input: {
 
   return setupHostConnectorChild({
     runAccountOperation: input.runAccountOperation,
+    ...(input.controlPlaneUrl ? { controlPlaneUrl: input.controlPlaneUrl } : {}),
     ...(input.describeWorkspace ? { describeWorkspace: input.describeWorkspace } : {}),
     loadSharedWorkspaces: () => shares.load(),
     storeSharedWorkspaces: (next) => shares.store(next),

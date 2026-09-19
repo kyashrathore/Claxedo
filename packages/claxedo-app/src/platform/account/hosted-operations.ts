@@ -263,11 +263,6 @@ export const HOSTED_OPERATIONS = {
   // Unsafe: each call mints a nonce, so a retry burns one. The nonce itself is
   // public and worthless without the machine's private key.
   "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
-  // Safe: the server extends an existing enrollment rather than creating
-  // anything, and a heartbeat that arrives twice is a heartbeat. A rejected one
-  // is not retried at all — the connector stops, because re-enrolling would be
-  // it overruling a revocation.
-  "host.enrollmentHeartbeat": { safe: true, decode: object },
   // Workspace shares under machine-wide enrollment: the owner assigns a
   // workspace to an enrolled host (pure data — the machine's consent is the
   // Host Connector's signed heartbeat set). Main-only like the enrollment

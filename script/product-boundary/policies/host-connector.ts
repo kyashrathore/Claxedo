@@ -45,14 +45,15 @@ export const hostConnector: Policy = {
   forbiddenModules: [],
 
   control: {
-    // The connector entry reaches three modules: the identity it signs with,
-    // and host-state.ts, because `ack` validates a description's resolved
-    // directory against the effective roots inside the connector — the one
-    // place no caller can bypass. The transport, bootstrap and node adapter
-    // are separate entries and stay out of this graph. Small enough that the
-    // required list below is doing the real work.
-    minModules: 3,
-    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-identity.ts`, `${SRC}/host-state.ts`],
+    // The connector entry reaches two modules: itself and host-state.ts,
+    // because `ack` validates a description's resolved directory against the
+    // effective roots inside the connector — the one place no caller can
+    // bypass. It reaches no key material: the machine signature belongs to
+    // the transport, which is a separate entry, as are bootstrap and the node
+    // adapter. Small enough that the required list below is doing the real
+    // work.
+    minModules: 2,
+    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-state.ts`],
     // Deliberately EMPTY, and this is the only policy for which that is
     // allowed: the package declares no runtime dependency and imports no bare
     // specifier at all. `requiredModules` above is what proves the walk read
@@ -60,13 +61,16 @@ export const hostConnector: Policy = {
     requiredPackages: [],
   },
 
-  ceilings: { modules: 3, packages: 0 },
+  ceilings: { modules: 2, packages: 0 },
 
   emitted: {
     file: "packages/claxedo-host-connector/.artifacts/u8-package-split/manifests/host-connector.json",
     minModules: 2,
     minChunks: 2,
-    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-identity.ts`],
+    // The same two the source walk reaches. `host-identity` is still a built
+    // chunk — the transport and bootstrap entries import it — but nothing on
+    // the connector entry's path does.
+    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-state.ts`],
   },
 
   isolation: {

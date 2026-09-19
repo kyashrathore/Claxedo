@@ -298,7 +298,6 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const connector = createHostConnector({
     mode: "machine",
     hostId: state.host_id,
-    keys,
     transport,
     enrollmentId: enrollment.enrollment_id,
     heartbeatIntervalMs: BEAT_INTERVAL_MS,

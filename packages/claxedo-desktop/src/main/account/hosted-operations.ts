@@ -276,16 +276,12 @@ export const HOSTED_OPERATIONS = {
   // exactly the `proxyRequest`/`hostedFetch` shape this whole table exists to
   // prevent. The guard was right and "nonce" is the more accurate word.
   //
-  // The nonce the machine signs, and the presence beat. Both are signed-only
-  // routes, so the connector reaches them through the account rather than
-  // holding a bearer of its own — the machine key proves the MACHINE, the
-  // account bearer proves the owner, and enrollment needs both.
+  // The nonce the machine signs. Signed-only, so the connector reaches it
+  // through the account rather than holding a bearer of its own — the machine
+  // key proves the MACHINE, the account bearer proves the owner, and
+  // enrollment needs both. Nothing after enrollment does: the machine signs
+  // its own beats with its key and never spends this credential again.
   "host.enrollmentNonce": { method: "POST", path: "/api/claxedo/host/enrollments/requests", body: ["hostId"] },
-  "host.enrollmentHeartbeat": {
-    method: "POST",
-    path: "/api/claxedo/host/enrollments/heartbeat",
-    body: ["hostId", "signature", "ttlMs", "workspaceIds", "sessionAuthority"],
-  },
   // Session people (private share grants + participants). Hosted control plane
   // only — the desktop local sidecar deliberately does not mount these routes.
   "session.shares.list": {

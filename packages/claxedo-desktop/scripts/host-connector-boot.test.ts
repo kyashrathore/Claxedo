@@ -4,6 +4,9 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
+import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
+
 import { bundleHostConnector, HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA } from "./bundle-host-connector"
 import { runHostConnectorChild } from "./host-connector-entry"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
@@ -18,8 +21,14 @@ function tempDir() {
   return dir
 }
 
-async function until(condition: () => boolean, description: string) {
-  for (let attempt = 0; attempt < 1_000; attempt++) {
+/**
+ * Poll against the clock, not a turn count: every wait here spans real signing
+ * and real requests to the fake control plane, so how many microtask turns one
+ * takes depends on how busy the machine running the suite is.
+ */
+async function until(condition: () => boolean, description: string, budgetMs = 5_000) {
+  const deadline = Date.now() + budgetMs
+  while (Date.now() < deadline) {
     if (condition()) return
     await Bun.sleep(0)
   }
@@ -42,6 +51,13 @@ async function untilElapsed(condition: () => boolean, description: string, budge
   throw new Error(`timed out waiting for ${description}`)
 }
 
+/**
+ * Electron main, as the child sees it, in front of the real control plane.
+ *
+ * The two enrollment operations are the only ones main performs, so they are
+ * answered here against the fake's state; everything the child does after them
+ * is a machine-signed request the fake verifies for itself.
+ */
 function childHarness(options?: {
   /**
    * Withhold this operation's answer until `release()`.
@@ -51,7 +67,9 @@ function childHarness(options?: {
    * than the supervisor's bootstrap budget.
    */
   stall?: string
+  controlPlane?: ReturnType<typeof createFakeControlPlane>
 }) {
+  const cp = options?.controlPlane ?? createFakeControlPlane()
   let receive: ((message: unknown) => void) | undefined
   const sent: HostConnectorChildMessage[] = []
   const accountOperations: Array<Extract<HostConnectorChildMessage, { type: "account-operation" }>> = []
@@ -59,43 +77,57 @@ function childHarness(options?: {
   let createdIdentity: Extract<HostConnectorChildMessage, { type: "identity-created" }>["identity"] | undefined
 
   const send = (message: HostConnectorParentMessage) => receive?.(message)
-  const runtime = runHostConnectorChild({
-    onMessage(listener) {
-      receive = listener
+  const runtime = runHostConnectorChild(
+    {
+      onMessage(listener) {
+        receive = listener
+      },
+      postMessage(message) {
+        sent.push(message)
+        if (message.type === "identity-created") {
+          createdIdentity = message.identity
+          send({ type: "identity-stored", requestId: message.requestId })
+          return
+        }
+        if (message.type !== "account-operation") return
+        accountOperations.push(message)
+        const answer = () =>
+          void (async () => {
+            const value =
+              message.name === "host.enrollmentNonce"
+                ? { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
+                : {
+                  enrollment: await cp.enrollAccountHost({
+                    hostId: String(message.input?.hostId),
+                    publicKey: String(message.input?.publicKey),
+                    ...(typeof message.input?.displayName === "string" ? { displayName: message.input.displayName } : {}),
+                  }),
+                }
+            send({ type: "account-result", requestId: message.requestId, ok: true, value })
+          })()
+        if (message.name === options?.stall) {
+          stalled.push(answer)
+          return
+        }
+        answer()
+      },
     },
-    postMessage(message) {
-      sent.push(message)
-      if (message.type === "identity-created") {
-        createdIdentity = message.identity
-        send({ type: "identity-stored", requestId: message.requestId })
-        return
-      }
-      if (message.type !== "account-operation") return
-      accountOperations.push(message)
-      const hostId = String(message.input?.hostId)
-      const value =
-        message.name === "host.enrollmentNonce"
-          ? { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
-          : message.name === "host.enrollCurrentMachine"
-            ? { enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 10_000 } }
-            : { expires_at: 11_000 }
-      const answer = () => send({ type: "account-result", requestId: message.requestId, ok: true, value })
-      if (message.name === options?.stall) {
-        stalled.push(answer)
-        return
-      }
-      answer()
-    },
-  })
+    { fetch: cp.fetch },
+  )
   return {
+    cp,
     runtime,
     send,
     sent,
     accountOperations,
     createdIdentity: () => createdIdentity,
+    enrollmentId: () => [...cp.enrollments.keys()][0],
+    beats: () => cp.beats(),
     release: () => stalled.splice(0).forEach((answer) => answer()),
   }
 }
+
+const CONTROL_PLANE_URL = "https://control-plane.test"
 
 describe("the separately built child", () => {
   let built: Awaited<ReturnType<typeof bundleHostConnector>>
@@ -140,7 +172,7 @@ describe("the private bootstrap protocol", () => {
     const child = childHarness()
     const requestId = "bootstrap_1"
 
-    child.send({ type: "bootstrap", requestId, heartbeatIntervalMs: 20_000, displayName: "Work laptop" })
+    child.send({ type: "bootstrap", requestId, controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000, displayName: "Work laptop" })
     await until(
       () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push",
@@ -170,7 +202,7 @@ describe("the private bootstrap protocol", () => {
   test("answers the bootstrap while the first enrollment call is still stalled", async () => {
     const child = childHarness({ stall: "host.enrollmentNonce" })
 
-    child.send({ type: "bootstrap", requestId: "stalled", heartbeatIntervalMs: 20_000 })
+    child.send({ type: "bootstrap", requestId: "stalled", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
     await until(
       () => child.sent.some((message) => message.type === "response" && message.requestId === "stalled"),
       "bootstrap response",
@@ -202,7 +234,7 @@ describe("the private bootstrap protocol", () => {
   test("a stalled enrollment that is stopped mid-flight never claims an enrollment", async () => {
     const child = childHarness({ stall: "host.enrollmentNonce" })
 
-    child.send({ type: "bootstrap", requestId: "stalled", heartbeatIntervalMs: 20_000 })
+    child.send({ type: "bootstrap", requestId: "stalled", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
     await until(() => child.accountOperations.length === 1, "the stalled nonce request")
     child.send({ type: "stop", requestId: "stop_1" })
     await until(
@@ -226,7 +258,7 @@ describe("the private bootstrap protocol", () => {
     // waiting on. `heartbeatIntervalMs` is small here so a real timer tick
     // fires inside the test without a fake clock.
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", heartbeatIntervalMs: 20 })
+    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20 })
     await until(
       () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push",
@@ -234,34 +266,205 @@ describe("the private bootstrap protocol", () => {
     const enrolledPush = child.sent.find(
       (message) => message.type === "status" && message.status.status === "enrolled",
     )
-    expect(enrolledPush).toMatchObject({ status: { enrollment: { expires_at: 10_000 } } })
+    const firstLease = enrolledPush?.type === "status" && enrolledPush.status.status === "enrolled"
+      ? enrolledPush.status.enrollment.expires_at
+      : 0
+    expect(firstLease).toBeGreaterThan(0)
 
-    await untilElapsed(
-      () => child.accountOperations.some((message) => message.name === "host.enrollmentHeartbeat"),
-      "the timer-driven heartbeat",
-    )
+    const beatsAfterStart = child.beats().length
+    await untilElapsed(() => child.beats().length > beatsAfterStart, "the timer-driven heartbeat")
     await untilElapsed(
       () =>
         child.sent.some(
           (message) =>
             message.type === "status"
             && message.status.status === "enrolled"
-            && message.status.enrollment.expires_at === 11_000,
+            && message.status.enrollment.expires_at > firstLease,
         ),
       "a status push carrying the heartbeat-renewed lease",
     )
+    expect(child.accountOperations.map((message) => message.name)).toEqual([
+      "host.enrollmentNonce",
+      "host.enrollCurrentMachine",
+    ])
     child.runtime.close()
+  })
+
+  test("beats with the machine key alone, and acks the workspaces it was asked to serve", async () => {
+    const child = childHarness()
+    child.send({
+      type: "bootstrap",
+      requestId: "bootstrap",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+      sessionAuthority: "local",
+    })
+    await until(
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
+    )
+
+    const enrollmentId = child.enrollmentId()
+    // The acquire and the beat are signed by the key the enrollment recorded:
+    // the fake verifies every one of them and refuses anything else.
+    expect(child.cp.log.map((entry) => entry.path)).toEqual([
+      "/api/claxedo/host/enrollments/acquire",
+      "/api/claxedo/host/enrollments/heartbeat",
+    ])
+    expect(child.beats()[0]?.body).toMatchObject({ generation: 1, acks: [], sessionAuthority: "local" })
+
+    child.cp.assign({ enrollmentId, workspaceId: "ws_1", remoteDirectory: "/Users/me/project" })
+    child.send({ type: "share-workspace", requestId: "share_1", workspaceId: "ws_1" })
+    await until(
+      () => child.sent.some((message) => message.type === "response" && message.requestId === "share_1"),
+      "share response",
+    )
+
+    expect(child.sent.find((message) => message.type === "response" && message.requestId === "share_1")).toMatchObject({
+      ok: true,
+      status: { status: "enrolled", sharedWorkspaceIds: ["ws_1"] },
+    })
+    // The ack rides the beat it queued, so readiness — and the credential that
+    // follows it — land one round trip after the share is answered.
+    await until(() => child.cp.routable(enrollmentId).length === 1, "the workspace becoming routable")
+    expect(child.sent.filter((message) => message.type === "serving").at(-1)).toMatchObject({
+      tunnel: { workspaceIds: ["ws_1"] },
+    })
+    expect(child.accountOperations.map((message) => message.name)).toEqual([
+      "host.enrollmentNonce",
+      "host.enrollCurrentMachine",
+    ])
+    child.runtime.close()
+  })
+
+  test("the control plane's addresses ride every serving push to the parent", async () => {
+    // The parent forwards a push to the daemon verbatim, and the daemon admits
+    // a relayed caller against these two: the relay's key set verifies the
+    // caller's Relay Host Token, the authority decides what it may read. The
+    // control plane sends them only when they change, so a push without them
+    // would leave the daemon answering 503 for the life of the credential.
+    const child = childHarness()
+    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    await until(
+      () => child.sent.some((message) => message.type === "serving"),
+      "the first serving push",
+    )
+
+    expect(child.sent.find((message) => message.type === "serving")).toEqual({
+      type: "serving",
+      tunnel: null,
+      endpoints: {
+        relayJwksUrl: "https://relay.test/.well-known/jwks.json",
+        sessionAuthorityUrl: `${CONTROL_PLANE_URL}/api/runtime-authority/session-authorize`,
+      },
+    })
+
+    const enrollmentId = child.enrollmentId()
+    child.cp.assign({ enrollmentId, workspaceId: "ws_1", remoteDirectory: "/Users/me/project" })
+    child.send({ type: "share-workspace", requestId: "share_1", workspaceId: "ws_1" })
+    await until(
+      () => child.sent.some((message) => message.type === "serving" && message.tunnel !== null),
+      "the serving push carrying the credential",
+    )
+
+    expect(child.sent.filter((message) => message.type === "serving").at(-1)).toEqual({
+      type: "serving",
+      tunnel: expect.objectContaining({ workspaceIds: ["ws_1"] }) as Record<string, unknown>,
+      endpoints: {
+        relayJwksUrl: "https://relay.test/.well-known/jwks.json",
+        sessionAuthorityUrl: `${CONTROL_PLANE_URL}/api/runtime-authority/session-authorize`,
+      },
+    })
+    child.runtime.close()
+  })
+
+  test("a workspace nobody shared here is never acked, however the owner assigned it", async () => {
+    const child = childHarness()
+    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20 })
+    await until(
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
+    )
+    const enrollmentId = child.enrollmentId()
+    child.cp.assign({ enrollmentId, workspaceId: "ws_elsewhere", remoteDirectory: "/Users/me/other" })
+
+    const beatsBefore = child.beats().length
+    await untilElapsed(() => child.beats().length > beatsBefore + 1, "two more beats")
+
+    expect(child.cp.routable(enrollmentId)).toEqual([])
+    for (const beat of child.beats()) expect(beat.body.acks).toEqual([])
+    child.runtime.close()
+  })
+
+  test("unsharing withdraws the ack within one beat", async () => {
+    const child = childHarness()
+    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    await until(
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
+    )
+    const enrollmentId = child.enrollmentId()
+    child.cp.assign({ enrollmentId, workspaceId: "ws_1", remoteDirectory: "/Users/me/project" })
+    child.send({ type: "share-workspace", requestId: "share_1", workspaceId: "ws_1" })
+    await until(() => child.cp.routable(enrollmentId).length === 1, "the shared workspace")
+
+    child.send({ type: "unshare-workspace", requestId: "unshare_1", workspaceId: "ws_1" })
+    await until(
+      () => child.sent.some((message) => message.type === "response" && message.requestId === "unshare_1"),
+      "unshare response",
+    )
+
+    expect(child.cp.routable(enrollmentId)).toEqual([])
+    expect(child.beats().at(-1)?.body.acks).toEqual([])
+    child.runtime.close()
+  })
+
+  test("the shares a restart carries back are re-acked from the owner's own assignments", async () => {
+    const first = childHarness()
+    first.send({ type: "bootstrap", requestId: "first", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    await until(() => !!first.createdIdentity(), "new identity")
+    await until(
+      () => first.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
+    )
+    const identity = first.createdIdentity()!
+    const enrollmentId = first.enrollmentId()
+    first.cp.assign({ enrollmentId, workspaceId: "ws_1", remoteDirectory: "/Users/me/project" })
+    first.send({ type: "share-workspace", requestId: "share_1", workspaceId: "ws_1" })
+    await until(() => first.cp.routable(enrollmentId).length === 1, "the shared workspace")
+    first.runtime.close()
+
+    const restarted = childHarness({ controlPlane: first.cp })
+    restarted.send({
+      type: "bootstrap",
+      requestId: "restarted",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+      identity,
+      sharedWorkspaces: [{ workspaceId: "ws_1" }],
+    })
+    await until(
+      () => restarted.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push after the restart",
+    )
+
+    await until(() => restarted.cp.routable(enrollmentId).length === 1, "the restored share becoming routable")
+    const restoredKeys = await hostKeyPairFromJwk(identity.privateKeyJwk)
+    expect(JSON.parse(restoredKeys.publicKey)).toMatchObject(
+      restarted.cp.enrollments.get(enrollmentId)!.public_key as Record<string, unknown>,
+    )
+    restarted.runtime.close()
   })
 
   test("restores an acknowledged identity without creating or exporting another", async () => {
     const first = childHarness()
-    first.send({ type: "bootstrap", requestId: "first", heartbeatIntervalMs: 20_000 })
+    first.send({ type: "bootstrap", requestId: "first", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
     await until(() => !!first.createdIdentity(), "new identity")
     const identity = first.createdIdentity()!
     first.runtime.close()
 
     const restored = childHarness()
-    restored.send({ type: "bootstrap", requestId: "restored", heartbeatIntervalMs: 20_000, identity })
+    restored.send({ type: "bootstrap", requestId: "restored", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000, identity })
     await until(
       () => restored.sent.some((message) => message.type === "response" && message.requestId === "restored"),
       "restored bootstrap response",
@@ -274,7 +477,7 @@ describe("the private bootstrap protocol", () => {
 
   test("stop closes the child-owned connector and acknowledges the terminal state", async () => {
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", heartbeatIntervalMs: 20_000 })
+    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
     await until(
       () => child.sent.some((message) => message.type === "response" && message.requestId === "bootstrap"),
       "bootstrap response",

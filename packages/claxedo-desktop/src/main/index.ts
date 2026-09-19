@@ -92,10 +92,13 @@ import { readCliSignInMode } from "./account/cli-credential-file"
 import { store } from "./store"
 import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
+import { readAccountConfig } from "./account/account-config"
 import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
 import { remoteAccessFollow } from "./host-connector/account-follow"
 import { describeLocalWorkspace } from "./host-connector/local-workspace-description"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
+import type { HostConnectorServing } from "./host-connector/child-protocol"
+import { setupHostServingPush } from "./host-connector/serving-push"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
@@ -714,33 +717,21 @@ const account = setupLazyAccount({
  * must not travel to the control plane.
  */
 /**
- * Push the serving credential from each heartbeat ack to the daemon, which
- * owns the workspace runtimes and therefore the relay connection. The last
- * credential is retained so a daemon that becomes ready AFTER the first ack
- * still starts serving immediately.
+ * The last ack's serving facts, retained so a daemon that becomes ready AFTER
+ * the first ack still starts serving immediately — with the addresses that ack
+ * named, not just its credential.
  */
-let lastServingCredential: Record<string, unknown> | null = null
-const pushServing = async (tunnel: Record<string, unknown> | null) => {
-  lastServingCredential = tunnel
-  try {
-    const server = await serverReady.promise
-    const response = await fetch(new URL("/api/claxedo/host-serving", server.url), {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ credential: tunnel }),
-    })
-    const body = await response.text()
-    // The daemon rejecting the credential (or the ack carrying none) must be
-    // visible: this hop failing silently cost a full acceptance run to find.
-    logger.info(
-      `[host-serving] pushed credential=${tunnel ? "present" : "null"} -> ${response.status} ${body.slice(0, 200)}`,
-    )
-  } catch (error) {
-    logger.warn(`[host-serving] push failed: ${String(error)}`)
-  }
+let lastServing: HostConnectorServing | undefined
+const sendServing = setupHostServingPush({
+  serverUrl: async () => (await serverReady.promise).url,
+  log: { info: (message) => logger.info(message), warn: (message) => logger.warn(message) },
+})
+const pushServing = async (serving: HostConnectorServing) => {
+  lastServing = serving
+  await sendServing(serving)
 }
 void serverReady.promise.then(() => {
-  if (lastServingCredential) void pushServing(lastServingCredential)
+  if (lastServing) void pushServing(lastServing)
 })
 
 // The signed Agent Plugins world follows the account the same way remote
@@ -755,8 +746,14 @@ agentPluginsSync = setupAgentPluginsSignedSync({
 })
 void account.ready.then(() => agentPluginsSync?.follow(account.state()))
 
+const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig))
+
 hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name, params),
+  // The machine beats with its own key from the enrollment onward, so the
+  // child needs the deployment by name. It is the account's own origin: a
+  // credential is bound to one control plane, and the enrollment lives there.
+  ...(accountConfig.configured ? { controlPlaneUrl: accountConfig.coreOrigin } : {}),
   describeWorkspace: async (workspaceId) => describeLocalWorkspace((await serverReady.promise).url, workspaceId),
   safeStorage,
   userDataDir: app.getPath("userData"),
@@ -779,7 +776,7 @@ hostConnector = setupElectronHostConnector({
   // because this fires from a heartbeat timer.
   onStatusChange: (state) =>
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
-  onServing: (tunnel) => void pushServing(tunnel),
+  onServing: (serving) => void pushServing(serving),
   // The daemon composed this machine's workspace runtimes, so the daemon is
   // the only process that knows how they admit sessions. Read it from the
   // same loopback surface the serving credential is pushed to, and let the

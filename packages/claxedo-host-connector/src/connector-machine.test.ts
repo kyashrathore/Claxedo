@@ -12,6 +12,7 @@ import {
 } from "./connector"
 import { createFakeControlPlane, enrollFakeHost, type FakeControlPlane } from "./fake-control-plane.test-support"
 import { effectiveRoots, type HostScope, type HostState } from "./host-state"
+import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "./host-identity"
 import { createMachineSignedTransport } from "./machine-transport"
 
 /**
@@ -53,7 +54,6 @@ async function machineHost(
   const connector = createHostConnector({
     mode: "machine",
     hostId: state.host_id,
-    keys: enrolled.keys,
     transport,
     enrollmentId: enrolled.enrollmentId,
     heartbeatIntervalMs: 25_000,
@@ -122,7 +122,6 @@ describe("start", () => {
     const connector = createHostConnector({
       mode: "machine",
       hostId: enrolled.state.host_id,
-      keys: enrolled.keys,
       transport: createMachineSignedTransport({
         controlPlaneUrl: cp.url,
         keys: enrolled.keys,
@@ -420,6 +419,84 @@ describe("assignment discovery", () => {
   })
 })
 
+describe("a host that confines no directory", () => {
+  /**
+   * The desktop daemon's shape: enrolled through the owner's account, so the
+   * control plane hands it no scope, and serving workspace ids out of its own
+   * store rather than opening the directory a description names.
+   */
+  async function accountHost(cp: FakeControlPlane) {
+    const created = await createHostKeyPair()
+    const keys = await hostKeyPairFromJwk(created.privateKeyJwk)
+    const hostId = newHostId()
+    const enrollment = await cp.enrollAccountHost({ hostId, publicKey: keys.publicKey })
+    const scopes: HostScope[] = []
+    const ackFailures: unknown[] = []
+    let tick: (() => void) | undefined
+    const connector = createHostConnector({
+      mode: "machine",
+      hostId,
+      transport: createMachineSignedTransport({
+        controlPlaneUrl: cp.url,
+        keys,
+        enrollmentId: enrollment.enrollment_id,
+        hostId,
+        fetch: cp.fetch,
+      }),
+      enrollmentId: enrollment.enrollment_id,
+      heartbeatIntervalMs: 25_000,
+      sessionAuthority: "local",
+      setInterval: (fn) => {
+        tick = fn
+        return { cancel: () => undefined }
+      },
+      onScope: (scope) => {
+        scopes.push(scope)
+      },
+      onAssignments: async (descriptions) => {
+        for (const description of descriptions) {
+          await connector
+            .ack({ workspaceId: description.workspaceId, revision: description.revision })
+            .catch((error: unknown) => ackFailures.push(error))
+        }
+      },
+    })
+    return { connector, enrollment, scopes, ackFailures, tick: () => tick?.() }
+  }
+
+  test("acks a description by id, with no scope delivered and no path resolved", async () => {
+    const cp = createFakeControlPlane()
+    const h = await accountHost(cp)
+    await h.connector.start()
+
+    // A directory no filesystem here could resolve: this host never opens it.
+    cp.assign({
+      enrollmentId: h.enrollment.enrollment_id,
+      workspaceId: "ws_local",
+      remoteDirectory: "/Users/me/does-not-exist",
+    })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrollment.enrollment_id)).toEqual(["ws_local"]))
+
+    expect(h.ackFailures).toEqual([])
+    expect(h.scopes, "an account enrollment carries no roots to deliver").toEqual([])
+    expect(h.connector.acked()).toEqual([{ workspaceId: "ws_local", revision: 1 }])
+  })
+
+  test("keyVersion is absent from every signed request when the enrollment never stated one", async () => {
+    const cp = createFakeControlPlane()
+    const h = await accountHost(cp)
+    await h.connector.start()
+
+    const machineCalls = cp.log.filter((entry) => entry.path.startsWith("/api/claxedo/host/enrollments/"))
+    expect(machineCalls.map((entry) => entry.path)).toEqual([
+      "/api/claxedo/host/enrollments/acquire",
+      "/api/claxedo/host/enrollments/heartbeat",
+    ])
+    for (const call of machineCalls) expect(call.body).not.toHaveProperty("keyVersion")
+  })
+})
+
 describe("generation fencing", () => {
   test("a newer instance's acquire stops this one on its next beat as a decision", async () => {
     const cp = createFakeControlPlane()
@@ -514,30 +591,7 @@ describe("serialization", () => {
   })
 })
 
-describe("mode boundaries", () => {
-  test("share/unshare are refused in machine mode, ack/unack in account mode", async () => {
-    const cp = createFakeControlPlane()
-    const h = await machineHost(cp)
-    await h.connector.start()
-
-    await expect(h.connector.shareWorkspace({ workspaceId: "ws" })).rejects.toThrow(/use ack/)
-    await expect(h.connector.unshareWorkspace("ws")).rejects.toThrow(/use unack/)
-
-    const account = createHostConnector({
-      hostId: "h",
-      keys: h.enrolled.keys,
-      transport: {
-        createRequest: async () => ({ request_id: "r", nonce: "n", expires_at: 1 }),
-        enroll: async () => ({ enrollment_id: "e", host_id: "h", expires_at: 1 }),
-        heartbeat: async () => ({ expires_at: 2 }),
-      },
-      heartbeatIntervalMs: 1_000,
-      setInterval: () => ({ cancel: () => undefined }),
-    })
-    await expect(account.ack({ workspaceId: "ws", revision: 1 })).rejects.toThrow(/machine-mode/)
-    await expect(account.unack("ws")).rejects.toThrow(/machine-mode/)
-  })
-
+describe("consent, withdrawal and drain", () => {
   test("an ack whose description moved on while its path was resolving is refused", async () => {
     const cp = createFakeControlPlane()
     let releaseResolve: (() => void) | undefined

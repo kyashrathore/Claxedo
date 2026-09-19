@@ -392,7 +392,6 @@ describe("operations whose parameters are a machine identity", () => {
   const MACHINE_OPERATIONS = [
     "host.enrollCurrentMachine",
     "host.enrollmentNonce",
-    "host.enrollmentHeartbeat",
   ] as const
 
   /** A service that answers and records the call; same recorder caveat as `minting`. */

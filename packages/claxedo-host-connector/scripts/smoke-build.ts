@@ -11,7 +11,6 @@ for (const [name, value] of Object.entries({
   createHostConnector: connector.createHostConnector,
   createHostKeyPair: identity.createHostKeyPair,
   enrollmentPayload: identity.enrollmentPayload,
-  heartbeatPayloadV2: identity.heartbeatPayloadV2,
   hostKeyPairFromJwk: identity.hostKeyPairFromJwk,
   machineRequestSignature: identity.machineRequestSignature,
   hostInvitationRedeemPayload: identity.hostInvitationRedeemPayload,

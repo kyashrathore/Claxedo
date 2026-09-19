@@ -40,9 +40,9 @@
  *
  * `--run-multiplayer` exercises the enrollment grain end to end: nonce →
  * signed enroll → owner assignment (which cold-registers the workspace) →
- * heartbeat v2. Routing requires all three of owner assignment, the machine's
- * heartbeat-acked set, and a live lease, so the relay tunnel it opens is only
- * legitimate after the beat lands.
+ * the machine's own acquire and signed beats. Routing requires all three of
+ * owner assignment, the machine's acked set, and a live lease, so the relay
+ * tunnel it opens is only legitimate after the beat lands.
  *
  * The payload builders exported here are unit-gated offline by
  * `playwright/deployed-cloudflare-acceptance.vitest.ts`
@@ -51,7 +51,7 @@
 
 import fs from "node:fs/promises"
 import path from "node:path"
-import { generateKeyPairSync, sign } from "node:crypto"
+import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto"
 import { chromium, type BrowserContext } from "@playwright/test"
 import { asRecord } from "@claxedo/helpers/guards"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnel } from "@claxedo/workspace-runtime/relay"
@@ -140,21 +140,74 @@ export function enrollmentPayload(input: { hostId: string; requestId: string; no
 }
 
 /**
- * Heartbeat v2: ONE signature covers the lease renewal AND the workspaces this
- * machine serves (sorted, comma-joined). Byte-identical to
- * `hostEnrollmentHeartbeatPayloadV2`.
+ * The bytes every machine-signed request is signed over. Byte-identical to
+ * `machineRequestPayload`; restated for the same reason as the enrollment
+ * payload above — this harness talks to a deployed control plane over HTTP and
+ * links no server code, so the literal is the contract.
  */
-export function heartbeatPayloadV2(input: {
-  hostId: string
-  ttlMs?: number
-  workspaceIds: readonly string[]
+export function machineRequestPayload(input: {
+  method: string
+  pathname: string
+  bodySha256Hex: string
+  ts: number
+  nonce: string
+  enrollmentId: string
 }) {
   return [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
+    "claxedo.machine-request.v1",
+    input.method.toUpperCase(),
+    input.pathname,
+    input.bodySha256Hex,
+    String(input.ts),
+    input.nonce,
+    input.enrollmentId,
   ].join("\n")
+}
+
+export const MACHINE_REQUEST_HEADERS = {
+  enrollmentId: "x-claxedo-enrollment-id",
+  ts: "x-claxedo-host-ts",
+  nonce: "x-claxedo-host-nonce",
+  signature: "x-claxedo-host-signature",
+} as const
+
+/**
+ * One machine-signed request: the body, and the four headers that carry the
+ * signature over it.
+ *
+ * Nothing in the set names an account — the enrollment id and the signature
+ * are the whole credential the host-enrollment routes read.
+ */
+export function machineRequest(input: {
+  machine: { sign(payload: string): string }
+  enrollmentId: string
+  hostId: string
+  pathname: string
+  body?: Record<string, unknown>
+  ts?: number
+  nonce?: string
+}) {
+  const bodyText = JSON.stringify({ enrollmentId: input.enrollmentId, hostId: input.hostId, ...input.body })
+  const ts = input.ts ?? Date.now()
+  const nonce = input.nonce ?? randomBytes(16).toString("base64url")
+  return {
+    bodyText,
+    headers: {
+      [MACHINE_REQUEST_HEADERS.enrollmentId]: input.enrollmentId,
+      [MACHINE_REQUEST_HEADERS.ts]: String(ts),
+      [MACHINE_REQUEST_HEADERS.nonce]: nonce,
+      [MACHINE_REQUEST_HEADERS.signature]: input.machine.sign(
+        machineRequestPayload({
+          method: "POST",
+          pathname: input.pathname,
+          bodySha256Hex: createHash("sha256").update(bodyText).digest("hex"),
+          ts,
+          nonce,
+          enrollmentId: input.enrollmentId,
+        }),
+      ),
+    },
+  }
 }
 
 /**
@@ -752,6 +805,10 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
             orgId,
             hostId,
             displayName: `Cloudflare acceptance ${config.acceptanceId}`,
+            // The machine acks a DESCRIPTION, and an assignment with no
+            // directory produces none — the workspace would stay unroutable
+            // with every other part of the handshake correct.
+            remoteDirectory: `/acceptance/${config.acceptanceId}`,
           }),
         },
       ),
@@ -766,27 +823,51 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
       throw new Error("host assignment did not return the assigned workspace/host pair")
     }
 
-    // 4. One beat: the signed served set IS the machine's consent, and the ack
-    //    carries back the owner's assignment view plus the credential for
-    //    assigned∩acked. Routing needs all three, so the tunnel below is only
+    // 4. The machine takes over from the account here: it claims a serving
+    //    generation and beats with its own key, acking the description the
+    //    owner's assignment produced. Routing needs the assignment, the ack at
+    //    its current revision and a live lease, so the tunnel below is only
     //    legitimate once this beat has landed.
-    const beat = record(
-      await jsonRequest(
-        owner,
-        config,
-        "run-multiplayer",
-        env,
-        "private_session",
-        "/api/claxedo/host/enrollments/heartbeat",
-        {
+    const enrollmentId = textField(enrollment.enrollment_id, "enrollment.enrollment_id")
+    // The machine headers are the only credential these two routes read. The
+    // owner's browser context still carries them because the candidate worker
+    // admits no request without an authenticated browser actor
+    // (`better-auth-d1-candidate-worker.cf.ts`), so a machine leg sent bare
+    // would be refused before reaching the route at all. The refusal asserted
+    // after the beat is what proves the route spends none of that credential.
+    const machineBeat = async (route: string, body: Record<string, unknown>, label: string) => {
+      const signed = machineRequest({ machine, enrollmentId, hostId, pathname: route, body })
+      return record(
+        await jsonRequest(owner, config, "run-multiplayer", env, "private_session", route, {
           method: "POST",
-          body: JSON.stringify({
-            hostId,
-            signature: machine.sign(heartbeatPayloadV2({ hostId, workspaceIds: [workspaceId] })),
-            workspaceIds: [workspaceId],
-          }),
-        },
-      ),
+          body: signed.bodyText,
+          headers: signed.headers,
+        }),
+        label,
+      )
+    }
+
+    const acquired = await machineBeat("/api/claxedo/host/enrollments/acquire", {}, "serving generation")
+    const generation = acquired.generation
+    if (typeof generation !== "number") throw new Error("acquire returned no serving generation")
+
+    // The first beat carries no acks: it is what the owner's description comes
+    // back on, with the revision this machine must consent to.
+    const discovered = await machineBeat(
+      "/api/claxedo/host/enrollments/heartbeat",
+      { generation, acks: [] },
+      "machine heartbeat discovery",
+    )
+    const description = (Array.isArray(discovered.assignments) ? discovered.assignments : [])
+      .map((entry) => asRecord(entry))
+      .find((entry) => entry?.workspace_id === workspaceId)
+    if (!description) throw new Error("the beat carried back no description for the assigned workspace")
+    const revision = description.revision
+    if (typeof revision !== "number") throw new Error("the assignment description carries no revision")
+
+    const beat = await machineBeat(
+      "/api/claxedo/host/enrollments/heartbeat",
+      { generation, acks: [{ workspaceId, revision }] },
       "machine heartbeat",
     )
     const ackedAssignments = Array.isArray(beat.assigned_workspace_ids) ? beat.assigned_workspace_ids : undefined
@@ -795,6 +876,26 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
     }
     if (typeof beat.expires_at !== "number" || typeof beat.last_seen_at !== "number") {
       throw new Error("heartbeat ack is missing expires_at/last_seen_at")
+    }
+
+    // The same beat, with the owner's credential and no signature: refused.
+    // Without this, an account-credentialed branch could come back on this
+    // route and every assertion above would still pass.
+    const refusedBeat = record(
+      await jsonRequest(
+        owner,
+        config,
+        "run-multiplayer",
+        env,
+        "private_session",
+        "/api/claxedo/host/enrollments/heartbeat",
+        { method: "POST", body: JSON.stringify({ enrollmentId, hostId, generation, acks: [] }) },
+        [400],
+      ),
+      "unsigned heartbeat refusal",
+    )
+    if (asRecord(refusedBeat.error)?.code !== "machine_headers_invalid") {
+      throw new Error("an unsigned, account-credentialed heartbeat was not refused as machine_headers_invalid")
     }
 
     // The ack mints a serving credential too, for exactly the assigned∩acked

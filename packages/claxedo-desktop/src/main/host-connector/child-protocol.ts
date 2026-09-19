@@ -13,19 +13,20 @@ export type HostConnectorChildState =
   | {
       status: "enrolled"
       enrollment: { enrollment_id: string; host_id: string; expires_at: number }
-      /** Workspaces this machine currently publishes (live local-host links). */
+      /** Workspaces this machine has acked at the owner's current revision, so the control plane routes them here. */
       sharedWorkspaceIds?: readonly string[]
     }
   | { status: "stopped"; reason: "revoked" | "error" | "closed"; detail: string }
 
+/**
+ * The whole account surface the child reaches through main: the enrollment
+ * handshake, and nothing after it. From the `enrollment_id` onward the child
+ * signs its own requests with the machine key and talks to the control plane
+ * directly, so no beat spends the owner's credential.
+ */
 export const HOST_ENROLLMENT_OPERATIONS = {
   createRequest: "host.enrollmentNonce",
   enroll: "host.enrollCurrentMachine",
-  // One signed beat per interval carries the lease renewal AND the served
-  // workspace set (heartbeat payload v2); its response carries the owner's
-  // assignment view and the serving credentials. The child owns it because
-  // it is the only process holding the machine key.
-  heartbeat: "host.enrollmentHeartbeat",
 } as const
 
 export type HostEnrollmentOperation = (typeof HOST_ENROLLMENT_OPERATIONS)[keyof typeof HOST_ENROLLMENT_OPERATIONS]
@@ -37,6 +38,39 @@ export type HostConnectorBootstrapIdentity = {
 
 export type HostConnectorSharedWorkspace = { workspaceId: string; displayName?: string }
 
+/**
+ * The two addresses a heartbeat ack names, in the shape the daemon's serving
+ * route accepts: the relay's published key set, against which the daemon
+ * verifies a relayed caller's Relay Host Token, and the control plane's
+ * session authority, which decides whether that caller may read a session.
+ *
+ * Flattened here rather than carried in the connector's own nested form
+ * because main only forwards them, and main's import closure deliberately
+ * never reaches the connector package — `host-connector-boundary.test.ts`
+ * holds that line, `import type` included.
+ */
+export type HostConnectorServingEndpoints = {
+  relayJwksUrl?: string
+  sessionAuthorityUrl?: string
+}
+
+/**
+ * Everything one heartbeat ack says about serving.
+ *
+ * The credential and the endpoints travel together because the daemon needs
+ * both before the tunnel opens: a relayed request can arrive the moment it
+ * does, and a daemon holding the credential alone answers 503 to every
+ * relayed session read.
+ */
+export type HostConnectorServing = {
+  /**
+   * ONE Host Tunnel token whose claim covers every workspace this machine is
+   * currently routable for, or null when nothing is.
+   */
+  tunnel: Record<string, unknown> | null
+  endpoints?: HostConnectorServingEndpoints
+}
+
 export type HostConnectorParentMessage =
   | {
       type: "bootstrap"
@@ -44,6 +78,16 @@ export type HostConnectorParentMessage =
       identity?: HostConnectorBootstrapIdentity
       displayName?: string
       heartbeatIntervalMs: number
+      /**
+       * Where this machine beats, once it is enrolled.
+       *
+       * The child holds the machine key, so from the enrollment onward it
+       * signs and sends its own requests instead of asking main to spend the
+       * account on them — and it has no way to learn the deployment it was
+       * enrolled against. Main does: the account is bound to exactly one
+       * control-plane origin.
+       */
+      controlPlaneUrl: string
       /**
        * How the DAEMON's workspace runtimes composed their session access.
        *
@@ -69,12 +113,14 @@ export type HostConnectorParentMessage =
 export type HostConnectorChildMessage =
   | { type: "ready" }
   /**
-   * The serving credential from the latest heartbeat ack: ONE Host Tunnel
-   * token whose claim covers every workspace this machine is currently
-   * routable for, or null when nothing is. The parent forwards it to the
-   * daemon, which owns the relay connection.
+   * What the latest heartbeat ack said about serving. The parent forwards it
+   * to the daemon, which owns the relay connection.
+   *
+   * The endpoints are the child's latest, not the latest ack's: the control
+   * plane sends them only when they change, so the child restates them on
+   * every message and the parent never has to remember an earlier one.
    */
-  | { type: "serving"; tunnel: Record<string, unknown> | null }
+  | ({ type: "serving" } & HostConnectorServing)
   | { type: "identity-created"; requestId: string; identity: HostConnectorBootstrapIdentity }
   | {
       type: "account-operation"
@@ -105,6 +151,26 @@ function identity(value: unknown): HostConnectorBootstrapIdentity | undefined {
   const input = asRecord(value)
   if (!input || !isNonEmptyString(input.hostId) || !isJsonWebKey(input.privateKeyJwk)) return undefined
   return { hostId: input.hostId, privateKeyJwk: input.privateKeyJwk }
+}
+
+/**
+ * Answers `undefined` for a record naming neither address as well as for a
+ * malformed one, so a `serving` message carrying an unreadable `endpoints` is
+ * rejected whole rather than forwarded with the field quietly dropped — the
+ * daemon would then hold a credential it cannot admit anyone against.
+ */
+function servingEndpoints(value: unknown): HostConnectorServingEndpoints | undefined {
+  const input = asRecord(value)
+  if (!input) return undefined
+  const relayJwksUrl = input.relayJwksUrl
+  const sessionAuthorityUrl = input.sessionAuthorityUrl
+  if (relayJwksUrl !== undefined && !isNonEmptyString(relayJwksUrl)) return undefined
+  if (sessionAuthorityUrl !== undefined && !isNonEmptyString(sessionAuthorityUrl)) return undefined
+  if (relayJwksUrl === undefined && sessionAuthorityUrl === undefined) return undefined
+  return {
+    ...(isNonEmptyString(relayJwksUrl) ? { relayJwksUrl } : {}),
+    ...(isNonEmptyString(sessionAuthorityUrl) ? { sessionAuthorityUrl } : {}),
+  }
 }
 
 function connectorState(value: unknown): HostConnectorChildState | undefined {
@@ -156,6 +222,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
   if (input.type === "bootstrap") {
     const id = requestId(input)
     if (!id || typeof input.heartbeatIntervalMs !== "number" || !Number.isFinite(input.heartbeatIntervalMs)) return undefined
+    if (!isNonEmptyString(input.controlPlaneUrl)) return undefined
     const restored = input.identity === undefined ? undefined : identity(input.identity)
     if (input.identity !== undefined && !restored) return undefined
     if (input.displayName !== undefined && typeof input.displayName !== "string") return undefined
@@ -181,6 +248,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
       type: "bootstrap",
       requestId: id,
       heartbeatIntervalMs: input.heartbeatIntervalMs,
+      controlPlaneUrl: input.controlPlaneUrl,
       ...(restored ? { identity: restored } : {}),
       ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
       ...(sessionAuthority ? { sessionAuthority } : {}),
@@ -230,9 +298,11 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   if (input.type === "ready") return { type: "ready" }
 
   if (input.type === "serving") {
-    if (input.tunnel === null) return { type: "serving", tunnel: null }
-    const tunnel = asRecord(input.tunnel)
-    return tunnel ? { type: "serving", tunnel } : undefined
+    const endpoints = servingEndpoints(input.endpoints)
+    if (input.endpoints !== undefined && !endpoints) return undefined
+    const tunnel = input.tunnel === null ? null : asRecord(input.tunnel)
+    if (tunnel === undefined) return undefined
+    return { type: "serving", tunnel, ...(endpoints ? { endpoints } : {}) }
   }
 
   if (input.type === "identity-created") {

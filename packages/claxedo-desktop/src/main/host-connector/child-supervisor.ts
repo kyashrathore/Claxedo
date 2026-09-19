@@ -5,6 +5,7 @@ import {
   type HostConnectorBootstrapIdentity,
   type HostConnectorChildState,
   type HostConnectorParentMessage,
+  type HostConnectorServing,
   type HostConnectorSharedWorkspace,
 } from "./child-protocol"
 
@@ -36,9 +37,9 @@ export type HostConnectorSetup = {
   status(): HostConnectorStatus
   start(): Promise<HostConnectorStatus>
   /**
-   * Publish one workspace from this machine. The child signs the control
-   * plane's challenge with the machine key; success is remembered so the
-   * share is re-established after a restart.
+   * Publish one workspace from this machine: the owner assigns it here with
+   * the account, then the child acks the assignment it gets back. Success is
+   * remembered so the share is re-established after a restart.
    */
   shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<HostConnectorStatus>
   unshareWorkspace(workspaceId: string): Promise<HostConnectorStatus>
@@ -49,9 +50,13 @@ export type HostConnectorSetup = {
    *
    * Separate from `stop()` because the two look identical from the outside and
    * must not behave identically afterwards. Failing closed on auth loss is
-   * right — a credential the deployment may have revoked must not keep
-   * beating — but a two-second control-plane blip then un-published the machine
-   * for good, because nothing remembered that the stop was not a decision.
+   * right — a signed-out user must not keep a machine published — but a stop
+   * nothing remembers as involuntary is never undone, so a control-plane blip
+   * of a couple of seconds takes the machine off the air permanently.
+   *
+   * Stopping the child is the ONLY thing that takes the machine off the air:
+   * beats are signed with the machine key and renew the lease whatever the
+   * account is doing, so an account that has gone stops nothing by itself.
    *
    * Returns whether there was anything to suspend, so the caller can say so in
    * the log without guessing.
@@ -77,6 +82,23 @@ export type HostConnectorSetup = {
  */
 export const HOST_CONNECTOR_AUTH_LAPSE_DETAIL =
   "the account session lapsed; remote access is suspended until it returns"
+
+/**
+ * Budget for the child's half of a share or unshare.
+ *
+ * Both answer only once a machine-signed beat has carried the ack, and the
+ * connector serializes beats: a share arriving while one is in flight waits
+ * for that beat and then sends its own, so the reply can be two sequential
+ * machine requests away. Each is bounded by `MACHINE_REQUEST_TIMEOUT_MS`
+ * (15s, in `@claxedo/host-connector/machine-transport`), and 2 × 15s is this
+ * number. The owner's account assignment is awaited before the bound opens and
+ * spends none of it.
+ *
+ * Written out rather than imported: the Electron supervisor's import closure
+ * deliberately never reaches the connector package, which ships as a
+ * separately fingerprinted child.
+ */
+const SHARE_ROUND_TRIP_TIMEOUT_MS = 30_000
 
 type PendingRequest = {
   resolve(status: HostConnectorChildState): void
@@ -120,8 +142,9 @@ export function setupHostConnectorChild(input: {
   storeIdentity: (identity: HostConnectorBootstrapIdentity) => Promise<{ ok: true } | { ok: false; detail: string }>
   clearIdentity: () => void
   /**
-   * Shares to survive a restart. Not secrets — workspace ids and labels; the
-   * proof is re-signed by the child at every registration and heartbeat.
+   * Shares to survive a restart. Not secrets — workspace ids and labels; they
+   * are this machine's consent, and the owner's assignment behind each one
+   * lives at the control plane, which hands it back on the first beat.
    */
   loadSharedWorkspaces?: () => readonly HostConnectorSharedWorkspace[]
   storeSharedWorkspaces?: (shares: readonly HostConnectorSharedWorkspace[]) => void
@@ -131,8 +154,11 @@ export function setupHostConnectorChild(input: {
    * host assignment so every client addresses the workspace by what it is.
    */
   describeWorkspace?: (workspaceId: string) => Promise<LocalWorkspaceDescription | undefined>
-  /** The serving credential from the latest heartbeat ack, for the tunnel owner. */
-  onServing?: (tunnel: Record<string, unknown> | null) => void
+  /**
+   * What the latest heartbeat ack said about serving — the credential and the
+   * addresses a relayed caller is admitted by — for the tunnel owner.
+   */
+  onServing?: (serving: HostConnectorServing) => void
   /**
    * How the DAEMON's workspace runtimes composed their session access, read
    * from the daemon itself once per launch and handed to the child with the
@@ -146,6 +172,14 @@ export function setupHostConnectorChild(input: {
    * its sessions wrongly, or not at all.
    */
   sessionAuthority?: () => Promise<"local" | "managed-private" | undefined>
+  /**
+   * The deployment this machine enrolls against and then beats to directly.
+   *
+   * Absent in a build with no account origin configured, which can enroll
+   * nothing: `launch` stops with that as the reason rather than spawning a
+   * child that would discover it after the handshake.
+   */
+  controlPlaneUrl?: string
   displayName?: string
   heartbeatIntervalMs?: number
   /**
@@ -154,14 +188,15 @@ export function setupHostConnectorChild(input: {
    */
   startupTimeoutMs?: number
   /**
-   * Budget for the enrollment that follows the bootstrap reply — the
-   * createRequest/enroll/heartbeat round trips the child now runs after
-   * answering. Wider than the startup budget on purpose: it must exceed the
-   * worst-case SUM of three sequential hosted control-plane calls, each
-   * already bounded on its own by the account layer's per-request deadline
-   * (`HOSTED_REQUEST_DEADLINE_MS` in `../account/hosted-transport.ts`), not
-   * approximate it — an enrollment legitimately taking close to that sum on a
-   * slow-but-working deployment must finish, not be reported as a hung child.
+   * Budget for what follows the bootstrap reply: the nonce and enroll round
+   * trips through main's account, then the child's own acquire and first beat.
+   * Wider than the startup budget on purpose: it must exceed the worst-case
+   * SUM of those sequential control-plane calls, the first two each already
+   * bounded by the account layer's per-request deadline
+   * (`HOSTED_REQUEST_DEADLINE_MS` in `../account/hosted-transport.ts`) and the
+   * last two by `MACHINE_REQUEST_TIMEOUT_MS`, not approximate it — an
+   * enrollment legitimately taking close to that sum on a slow-but-working
+   * deployment must finish, not be reported as a hung child.
    */
   enrollmentTimeoutMs?: number
   onError?: (stage: string, error: unknown) => void
@@ -251,7 +286,7 @@ export function setupHostConnectorChild(input: {
       return
     }
     if (message.type === "serving") {
-      input.onServing?.(message.tunnel)
+      input.onServing?.({ tunnel: message.tunnel, ...(message.endpoints ? { endpoints: message.endpoints } : {}) })
       return
     }
     if (message.type === "account-operation") {
@@ -282,6 +317,14 @@ export function setupHostConnectorChild(input: {
 
   const launch = async (cancelled: Promise<never>): Promise<HostConnectorStatus> => {
     const startedIn = era
+    const controlPlaneUrl = input.controlPlaneUrl
+    if (!controlPlaneUrl) {
+      return settle({
+        status: "stopped",
+        reason: "error",
+        detail: "This build has no control plane to enroll against",
+      })
+    }
     const restored = await Promise.race([input.loadIdentity(), cancelled])
     if (startedIn !== era) return status
     if (!restored.ok) return settle({ status: "unavailable", reason: restored.reason, detail: restored.detail })
@@ -343,6 +386,7 @@ export function setupHostConnectorChild(input: {
           request(target, {
             type: "bootstrap",
             requestId,
+            controlPlaneUrl,
             heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
             ...(restored.identity ? { identity: restored.identity } : {}),
             ...(input.displayName ? { displayName: input.displayName } : {}),
@@ -365,9 +409,9 @@ export function setupHostConnectorChild(input: {
       // expiry, a rejected beat, a revocation — reaches this process.
       const decided = await bounded(
         Promise.race([enrolled.promise, cancelled]),
-        // 60s: three sequential hosted calls (createRequest/enroll/heartbeat)
-        // at 20s each — see the option doc above.
-        input.enrollmentTimeoutMs ?? 60_000,
+        // 70s: two account calls at 20s, then the machine's acquire and first
+        // beat at 15s each — see the option doc above.
+        input.enrollmentTimeoutMs ?? 70_000,
         "Host Connector child enrollment",
       )
       if (startedIn !== era) return status
@@ -455,9 +499,10 @@ export function setupHostConnectorChild(input: {
         throw new Error("Remote access is not running on this machine — enable it in Settings first")
       }
       // Owner intent first: the account credential (main's) assigns the
-      // workspace to this host at the control plane. Machine consent second:
-      // the child adds the id to its served set and forces one signed beat,
-      // and only a beat that comes back with the assignment counts as shared.
+      // workspace to this host at the control plane, which bumps the
+      // assignment's revision. Machine consent second: the child forces one
+      // machine-signed beat, acks the description that comes back at that
+      // revision, and only then is the workspace routable here.
       const description = await input.describeWorkspace?.(share.workspaceId)
       const displayName = share.displayName ?? description?.displayName
       await input.runAccountOperation("workspace.assignHost", {
@@ -480,7 +525,7 @@ export function setupHostConnectorChild(input: {
           workspaceId: share.workspaceId,
           ...(share.displayName ? { displayName: share.displayName } : {}),
         }),
-        input.startupTimeoutMs ?? 10_000,
+        SHARE_ROUND_TRIP_TIMEOUT_MS,
         "Host Connector workspace share",
       )
       sharedWorkspaces = [
@@ -503,7 +548,7 @@ export function setupHostConnectorChild(input: {
       await input.runAccountOperation("workspace.unassignHost", { id: workspaceId })
       const settled = await bounded(
         request(target, { type: "unshare-workspace", requestId: crypto.randomUUID(), workspaceId }),
-        input.startupTimeoutMs ?? 10_000,
+        SHARE_ROUND_TRIP_TIMEOUT_MS,
         "Host Connector workspace unshare",
       )
       sharedWorkspaces = sharedWorkspaces.filter((existing) => existing.workspaceId !== workspaceId)

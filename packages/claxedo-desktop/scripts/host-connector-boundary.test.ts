@@ -124,7 +124,11 @@ test("the separately built child entry imports the connector while its main asse
     specifiers(fs.readFileSync(childEntry, "utf8")).filter(
       (specifier) => specifier === CONNECTOR || specifier.startsWith(`${CONNECTOR}/`),
     ),
-  ).toEqual(["@claxedo/host-connector/connector", "@claxedo/host-connector/host-identity"])
+  ).toEqual([
+    "@claxedo/host-connector/connector",
+    "@claxedo/host-connector/host-identity",
+    "@claxedo/host-connector/machine-transport",
+  ])
 
   const mainAssembly = walk(path.join(PACKAGE_DIR, "src/main/host-connector/electron-child.ts"))
   expect([...mainAssembly.packages].filter((name) => name === CONNECTOR || name.startsWith(`${CONNECTOR}/`))).toEqual([])

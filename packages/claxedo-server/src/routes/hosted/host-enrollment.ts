@@ -11,14 +11,18 @@
  *   Account callers (the desktop, the panel, the CLI on the owner's account)
  *     POST /requests   → a one-use nonce. Mutates no enrollment.
  *     POST /           → verify the machine's signature, record the enrollment.
- *     POST /heartbeat  → v2, client-signed over the served set; extend.
  *     POST /pause, GET /, PATCH /:id/scope
  *     and, mounted beside these, the invitation routes.
  *
- *   The machine itself (a `claxedo connect` host with no account on the box)
+ *   The machine itself, once enrolled — a `claxedo connect` host with no
+ *   account on the box, or the desktop's connector child after its owner
+ *   enrolled it
  *     POST /redeem     → no auth: the single-use invitation secret is the credential.
  *     POST /acquire    → machine-signed: claim the next serving generation.
- *     POST /heartbeat  → machine-signed v3: renew, ack descriptions, discover assignments.
+ *     POST /heartbeat  → machine-signed: renew, ack descriptions, discover assignments.
+ *
+ * An account credential buys no beat here. Enrollment is where the owner
+ * speaks; everything after it is the machine speaking for itself.
  *
  * The server never holds the host key. It stores the public half and verifies;
  * `@claxedo/host-connector` holds the private half on the user's machine.
@@ -37,7 +41,6 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { MACHINE_REQUEST_HEADERS } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -50,7 +53,6 @@ import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards
 import {
   configuredHostRelay,
   configuredHostTunnelTokenSigner,
-  configuredRelayUrl,
   parsedBody,
   signedOrError,
   type WorkspaceRouteOptions,
@@ -76,21 +78,6 @@ const enrollBody = z
     signature: z.string().min(1).max(4_000),
     displayName: z.string().trim().min(1).max(120).optional(),
     ttlMs: z.number().int().positive().optional(),
-  })
-  .strict()
-
-const heartbeatBody = z
-  .object({
-    hostId,
-    signature: z.string().min(1).max(4_000),
-    ttlMs: z.number().int().positive().optional(),
-    // The served set the signature covers (heartbeat payload v2): one
-    // signature per interval carries the machine's whole consent set.
-    workspaceIds: z.array(z.string().min(1).max(200)).max(200),
-    // How the runtime this machine serves composed its session access. The
-    // machine is the only party that knows, so it says here; a beat that omits
-    // it leaves the enrollment undeclared and mints no stream scope.
-    sessionAuthority: z.enum(["local", "managed-private"]).optional(),
   })
   .strict()
 
@@ -261,10 +248,6 @@ function parseJsonText(text: string): unknown {
   }
 }
 
-function machineHeadersPresent(request: Request) {
-  return Object.values(MACHINE_REQUEST_HEADERS).some((name) => request.headers.has(name))
-}
-
 function unsupported(c: Context, what: string) {
   return c.json({ error: { code: "machine_caller_unsupported", message: `${what} is not supported by this authority` } }, 501)
 }
@@ -411,45 +394,6 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     }
   }
 
-  const accountHeartbeat = handle(heartbeatBody, async ({ body, auth, authority }) => {
-    const result = await authority.heartbeatHostEnrollment(auth, {
-      hostId: body.hostId,
-      signature: body.signature,
-      workspaceIds: body.workspaceIds,
-      ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
-      ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
-    })
-    // The serving credential rides the ack: ONE Host Tunnel Token whose
-    // workspace_ids claim is exactly the set that is BOTH owner-assigned
-    // and covered by the signature this beat just verified. The machine
-    // (re)opens or re-registers its single relay connection from the same
-    // response that renewed its lease. Local workspaces have no home
-    // region of their own; the deployment default names the relay.
-    const assigned = new Set(result.assigned_workspace_ids ?? [])
-    const serveable = body.workspaceIds.filter((workspaceId) => assigned.has(workspaceId)).sort()
-    const signer = configuredHostTunnelTokenSigner(options)
-    const relayUrl = configuredRelayUrl(options)
-    if (!signer || serveable.length === 0) return result
-    const credential = await signer({
-      subject: auth.user.subject,
-      hostId: body.hostId,
-      workspaceIds: serveable,
-    })
-    return {
-      ...result,
-      hostTunnel: {
-        ...credential,
-        hostId: body.hostId,
-        workspaceIds: serveable,
-        ...(relayUrl ? { relayUrl } : {}),
-      },
-    }
-  }, "POST", {
-    limiter: controlPlaneRateLimiter,
-    key: "host.enrollments.heartbeat",
-    action: "host_enrollment.heartbeat.denied",
-  })
-
   const machineHeartbeat = machine(machineHeartbeatBody, async ({ body, machine: caller, authority }) => {
     if (!authority.heartbeatHostEnrollmentByMachine) throw unsupportedError("Machine heartbeat")
     const result = await authority.heartbeatHostEnrollmentByMachine(caller, {
@@ -526,13 +470,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         action: "host_enrollment.enroll.denied",
       }),
     )
-    .post("/heartbeat", tooLarge(MACHINE_BODY_LIMIT_BYTES), async (c) => {
-      // The account path answers every request that carries an account
-      // credential — a bearer or a browser session — valid or not. Only a
-      // request with no credential and the machine headers is a machine beat.
-      if (!c.req.header("authorization") && machineHeadersPresent(c.req.raw)) return machineHeartbeat(c)
-      return accountHeartbeat(c)
-    })
+    .post("/heartbeat", tooLarge(MACHINE_BODY_LIMIT_BYTES), machineHeartbeat)
     .post("/acquire", tooLarge(MACHINE_BODY_LIMIT_BYTES), machine(acquireBody, async ({ machine: caller, authority }) => {
       if (!authority.acquireHostServingGeneration) throw unsupportedError("Serving generation acquisition")
       const result = await authority.acquireHostServingGeneration(caller)

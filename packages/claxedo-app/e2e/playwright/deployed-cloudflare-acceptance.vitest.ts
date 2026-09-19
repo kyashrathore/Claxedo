@@ -3,17 +3,17 @@
  *
  * ## This file talks to nothing
  *
- * Every assertion below is local: origin/run-id parsing, and the two signed
+ * Every assertion below is local: origin/run-id parsing, and the signed
  * payload literals verified against a key generated in-process. No fetch, no
  * deployment, no credentials. Passing it is NOT evidence that any deployed
  * system works — it is evidence that the harness would build the right bytes
  * if pointed at one. Do not cite a green run here as acceptance.
  *
  * Its value is the one failure it catches early and cheaply: a payload literal
- * drifting from the authority's verifier (`hostEnrollmentPayload` /
- * `hostEnrollmentHeartbeatPayloadV2`, duplicated in the D1 and SQLite adapters
- * and the host-enrollment authority). That drift would otherwise surface as an
- * opaque `host_attestation_denied` from a live worker, at the slowest and most
+ * drifting from the authority's verifier (`hostEnrollmentPayload` and the
+ * machine-request payload, duplicated in the D1 and SQLite adapters and the
+ * host-enrollment authority). That drift would otherwise surface as an opaque
+ * `host_attestation_denied` from a live worker, at the slowest and most
  * expensive point in the loop.
  *
  * Run: `bun run test:deployed-acceptance` (also chained into `bun run test`).
@@ -25,14 +25,16 @@
  * environment are documented at the top of `../deployed-cloudflare-acceptance.ts`.
  */
 
-import { createPublicKey, verify } from "node:crypto"
+import { createHash, createPublicKey, verify } from "node:crypto"
 import { describe, expect, test } from "vitest"
 
 import {
   acceptanceConfig,
   createMachineIdentity,
   enrollmentPayload,
-  heartbeatPayloadV2,
+  machineRequest,
+  machineRequestPayload,
+  MACHINE_REQUEST_HEADERS,
 } from "../deployed-cloudflare-acceptance"
 
 describe("deployed Cloudflare acceptance runner", () => {
@@ -99,24 +101,74 @@ describe("deployed Cloudflare acceptance runner", () => {
     ).toBe(true)
   })
 
-  test("covers the served set in one heartbeat v2 signature, sorted", () => {
-    // Sorted and comma-joined is the contract, not a formatting choice: the
-    // authority rebuilds this literal from ITS view of the set, so a client
-    // that signed the caller's order would be rejected whenever the two
-    // disagreed.
+  test("carries the machine credential in headers alone, with the enrollment and host in the body", () => {
     const machine = createMachineIdentity()
-    const payload = heartbeatPayloadV2({ hostId: "host_acceptance", workspaceIds: ["ws_b", "ws_a"] })
+    const built = machineRequest({
+      machine,
+      enrollmentId: "enr_acceptance",
+      hostId: "host_acceptance",
+      pathname: "/api/claxedo/host/enrollments/heartbeat",
+      body: { generation: 3, acks: [] },
+      ts: 1_700_000_000_000,
+      nonce: "nonce_acceptance",
+    })
+
+    expect(JSON.parse(built.bodyText)).toEqual({
+      enrollmentId: "enr_acceptance",
+      hostId: "host_acceptance",
+      generation: 3,
+      acks: [],
+    })
+    // The whole header set, asserted as a whole: a cookie or an authorization
+    // header added here would make the live journey pass on the owner's
+    // credential instead of the machine's signature.
+    expect(Object.keys(built.headers).sort()).toEqual(Object.values(MACHINE_REQUEST_HEADERS).sort())
+    expect(
+      verify(
+        "sha256",
+        Buffer.from(
+          machineRequestPayload({
+            method: "POST",
+            pathname: "/api/claxedo/host/enrollments/heartbeat",
+            bodySha256Hex: createHash("sha256").update(built.bodyText).digest("hex"),
+            ts: 1_700_000_000_000,
+            nonce: "nonce_acceptance",
+            enrollmentId: "enr_acceptance",
+          }),
+        ),
+        { key: createPublicKey({ key: JSON.parse(machine.publicKey), format: "jwk" }), dsaEncoding: "ieee-p1363" },
+        Buffer.from(built.headers[MACHINE_REQUEST_HEADERS.signature], "base64url"),
+      ),
+    ).toBe(true)
+  })
+
+  test("signs a machine request over the method, path, body hash, clock, nonce and enrollment", () => {
+    // Field order IS the contract: the verifier rebuilds this literal from the
+    // request that arrived, so a client that joined the same values in another
+    // order would be refused with a signature error and nothing to read from
+    // it.
+    const machine = createMachineIdentity()
+    const payload = machineRequestPayload({
+      method: "post",
+      pathname: "/api/claxedo/host/enrollments/heartbeat",
+      bodySha256Hex: "abc123",
+      ts: 1_700_000_000_000,
+      nonce: "nonce_acceptance",
+      enrollmentId: "enr_acceptance",
+    })
     const publicKey = createPublicKey({ key: JSON.parse(machine.publicKey), format: "jwk" })
 
     expect(payload).toBe(
       [
-        "claxedo.host-enrollment.heartbeat.v2",
-        "host_id=host_acceptance",
-        "ttl_ms=",
-        "workspaces=ws_a,ws_b",
+        "claxedo.machine-request.v1",
+        "POST",
+        "/api/claxedo/host/enrollments/heartbeat",
+        "abc123",
+        "1700000000000",
+        "nonce_acceptance",
+        "enr_acceptance",
       ].join("\n"),
     )
-    expect(heartbeatPayloadV2({ hostId: "host_acceptance", workspaceIds: ["ws_a", "ws_b"] })).toBe(payload)
     expect(
       verify(
         "sha256",

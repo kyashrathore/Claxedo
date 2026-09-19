@@ -397,8 +397,11 @@ const UNAVAILABLE_ROUTES: Record<string, number> = {
   "DELETE /auth/:providerID": 503,
   "PUT /auth/:providerID": 503,
   // The fixture's authority admits no machine caller and redeems no
-  // invitation; both routes take no account credential and say so first.
+  // invitation; none of these three takes an account credential, and each
+  // says so before it looks at one. The beat is on this list because a
+  // machine is the only caller it has.
   "POST /api/claxedo/host/enrollments/acquire": 501,
+  "POST /api/claxedo/host/enrollments/heartbeat": 501,
   "POST /api/claxedo/host/enrollments/redeem": 501,
 }
 

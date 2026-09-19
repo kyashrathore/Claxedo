@@ -70,7 +70,12 @@ export type WorkspaceRecord = {
   // (`=== "cloud-vm"`), which narrows fine, while the concrete payload shape is
   // the adapter's concern.
   backing?: string
-  access?: string
+  /**
+   * Where the workspace runs: the enrolled machine serving it, and the
+   * directory on that machine. A provisioner-owned cloud VM names no
+   * enrollment — `backing` is what says the provisioner owns it.
+   */
+  placement?: { host_enrollment_id?: string; directory?: string }
   display_name?: string
   home_region?: string
   [field: string]: unknown
@@ -218,43 +223,6 @@ export type WorkspaceAuthority = {
       ttlMs?: number
     },
   ) => Promise<HostEnrollment>
-  heartbeatHostEnrollment: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      hostId: string
-      signature: string
-      ttlMs?: number
-      /**
-       * The workspaces this machine currently serves, sorted, covered by the
-       * heartbeat signature (payload v2). One signature per interval carries
-       * the machine's whole consent set; routing requires a workspace to be
-       * BOTH owner-assigned and inside the machine's last-acked set.
-       */
-      workspaceIds: readonly string[]
-      /**
-       * How the runtime this machine serves composed its session access —
-       * `SessionAccessPolicy.sessionAuthority` on that very runtime, read from
-       * the composition rather than assumed from the product.
-       *
-       * Deliberately outside the heartbeat signature, which exists to prove
-       * MACHINE CONSENT to serve a workspace set. This is a description of a
-       * composition, not an authorization claim: it can neither grant nor
-       * widen access, because the runtime itself is what admits or refuses
-       * every stream (`authorizeSessionEventScope`). A wrong value only makes
-       * a client open a stream its own runtime then rejects.
-       *
-       * Absent means the machine did not say. The control plane records the
-       * absence and mints no stream scope from it — it never guesses a
-       * runtime's composition on the host's behalf.
-       */
-      sessionAuthority?: HostSessionAuthority
-    },
-  ) => Promise<{
-    expires_at: number
-    last_seen_at: number
-    /** Owner assignments for this host, for client-side set reconciliation. */
-    assigned_workspace_ids: string[]
-  }>
   /** The owner destroys one of their machine enrollments; absent, the deployment cannot. */
   revokeHostEnrollment?: (
     auth: SignedControlPlaneAuth,

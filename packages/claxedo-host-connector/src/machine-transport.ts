@@ -200,8 +200,14 @@ export type MachineSignedTransportOptions = {
    * Sent in the body so a key the control plane has since replaced fails as
    * `enrollment_key_version_mismatch` (a decision) instead of as a generic
    * signature refusal.
+   *
+   * Omitted by a caller whose enrollment answer never stated one: the account
+   * enroll route returns the enrollment, not the version its key landed at.
+   * The verifier compares the field only when it is present, and a key that
+   * was replaced still fails — as `machine_request_denied`, because the stored
+   * public key no longer verifies this signature.
    */
-  keyVersion: number
+  keyVersion?: number
   fetch: FetchLike
   now?: () => number
   nonce?: () => string
@@ -212,6 +218,8 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   const now = options.now ?? (() => Date.now())
   const nonce = options.nonce ?? randomNonce
   const timeoutMs = options.requestTimeoutMs ?? MACHINE_REQUEST_TIMEOUT_MS
+
+  const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
 
   const signedPost = async (pathname: string, body: Record<string, unknown>, requestTimeoutMs = timeoutMs) => {
     const url = controlPlaneRequestUrl(options.controlPlaneUrl, pathname)
@@ -237,16 +245,10 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   }
 
   return {
-    createRequest: async () => {
-      throw new Error("a machine-signed transport is already enrolled; it never requests an enrollment nonce")
-    },
-    enroll: async () => {
-      throw new Error("a machine-signed transport is already enrolled; enrollment is by invitation")
-    },
     acquire: async (input) => {
       const value = await signedPost(
         HOST_ENROLLMENT_ACQUIRE_PATH,
-        { keyVersion: options.keyVersion },
+        keyVersion,
         input?.timeoutMs === undefined ? timeoutMs : Math.min(timeoutMs, input.timeoutMs),
       )
       if (!isPlainRecord(value)) throw new Error("control plane returned no acquire body")
@@ -254,7 +256,7 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
     },
     heartbeat: async (input: MachineHeartbeatInput) => {
       const value = await signedPost(HOST_ENROLLMENT_HEARTBEAT_PATH, {
-        keyVersion: options.keyVersion,
+        ...keyVersion,
         generation: input.generation,
         acks: input.acks.map((ack) => ({ workspaceId: ack.workspaceId, revision: ack.revision })),
         ...(input.ttlMs !== undefined ? { ttlMs: input.ttlMs } : {}),

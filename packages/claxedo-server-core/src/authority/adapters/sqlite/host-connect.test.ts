@@ -87,20 +87,6 @@ async function enrollByAccount(api: Api, input: { auth?: SignedControlPlaneAuth;
   return { enrollment, keys, hostId }
 }
 
-async function accountBeat(api: Api, input: { auth?: SignedControlPlaneAuth; hostId: string; keys: Keys; workspaceIds: string[] }) {
-  const payload = [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    "ttl_ms=",
-    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
-  ].join("\n")
-  return api.heartbeatHostEnrollment(input.auth ?? owner, {
-    hostId: input.hostId,
-    workspaceIds: input.workspaceIds,
-    signature: signPayload(input.keys.privateKey, payload),
-  })
-}
-
 let nonceCounter = 0
 
 async function machineRequest(keys: Keys, input: { enrollmentId: string; pathname: string; body: unknown; ts?: number; nonce?: string }) {
@@ -322,10 +308,17 @@ describe("machine heartbeat, readiness and generations", () => {
     expect(await online(api)).toEqual({ ws_a: true })
     expect(await api.listHostEnrollments!(owner)).toMatchObject([{ acked: [{ workspaceId: "ws_a", revision: 1 }] }])
 
-    // The account path lands its acks at the current revision.
-    await accountBeat(api, { hostId, keys, workspaceIds: [] })
+    // Readiness is rewritten from each beat alone: a beat that stops acking
+    // the workspace takes it out of routing, and the next one that acks it at
+    // the current revision puts it back.
+    await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [] })
     expect(await online(api)).toEqual({ ws_a: false })
-    await accountBeat(api, { hostId, keys, workspaceIds: ["ws_a"] })
+    await machineBeat(api, keys, {
+      enrollmentId: enrollment.enrollment_id,
+      hostId,
+      generation: 0,
+      acks: [{ workspaceId: "ws_a", revision: 1 }],
+    })
     expect(await online(api)).toEqual({ ws_a: true })
   })
 
@@ -354,7 +347,6 @@ describe("machine heartbeat, readiness and generations", () => {
     const bare = await machineBeat(api, first.keys, { enrollmentId: first.enrollment.enrollment_id, hostId: "host_one", generation: 0, acks: [] })
     expect(bare.assigned_workspace_ids).toEqual(["ws_bare", "ws_one"])
     expect(bare.assignments.map((assignment) => assignment.workspace_id)).toEqual(["ws_one"])
-    expect((await accountBeat(api, { hostId: "host_one", keys: first.keys, workspaceIds: [] })).assigned_workspace_ids).toEqual(["ws_bare", "ws_one"])
   })
 
   test("re-pointing bumps the revision with the directory; routing waits for the new revision's ack", async () => {

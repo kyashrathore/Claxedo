@@ -1,93 +1,51 @@
 import { describe, expect, test, vi } from "vitest"
-import { createHostConnector, type ConnectorErrorStage, type ConnectorTransport } from "./connector"
-import {
-  createHostKeyPair,
-  enrollmentPayload,
-  heartbeatPayloadV2,
-  hostKeyPairFromJwk,
-} from "./host-identity"
+import { createHostConnector, type ConnectorErrorStage, type HostSessionAuthority, type MachineTransport } from "./connector"
+import { createFakeControlPlane, enrollFakeHost } from "./fake-control-plane.test-support"
+import { createHostKeyPair, enrollmentPayload, hostKeyPairFromJwk } from "./host-identity"
+import { createMachineSignedTransport } from "./machine-transport"
 
 /**
- * The connector's protocol, and the contract it shares with the authority.
- *
- * The payload tests matter more than they look. The connector duplicates the
- * payload builders rather than importing server code, so the two definitions
- * can drift — and a drift would show up as "enrollment mysteriously rejects
- * every signature". The literal strings are asserted on both sides.
+ * The connector's lifecycle against the strict fake: what a beat does to the
+ * lease, when a failed beat is a decision and when it is a disruption, and
+ * what an answer that lands after its era ended is allowed to write.
+ * Assignment discovery is `connector-machine.test.ts`.
  */
 
-const HOST_ID = "host_laptop"
+const LEASE_MS = 60_000
 
-function transport(overrides: Partial<ConnectorTransport> = {}) {
-  const calls = {
-    requests: 0,
-    enrolls: [] as unknown[],
-    beats: [] as unknown[],
-    /** The owner's assignment view the fake control plane answers with. */
-    assigned: undefined as readonly string[] | undefined,
-    tunnel: undefined as Record<string, unknown> | undefined,
-  }
-  const base: ConnectorTransport = {
-    createRequest: async () => {
-      calls.requests++
-      return { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
-    },
-    enroll: async (input) => {
-      calls.enrolls.push(input)
-      return { enrollment_id: "enr_1", host_id: HOST_ID, expires_at: 1_000 }
-    },
-    heartbeat: async (input) => {
-      calls.beats.push(input)
-      return {
-        expires_at: 2_000,
-        // Default: the owner assigned exactly what the machine serves.
-        assigned_workspace_ids: calls.assigned ?? input.workspaceIds,
-        ...(calls.tunnel ? { hostTunnel: calls.tunnel } : {}),
-      }
-    },
-    ...overrides,
-  }
-  return { transport: base, calls }
-}
-
-/**
- * What a real revocation looks like on the wire.
- *
- * The transport reports every HTTP failure as `HOSTED_HTTP <status> <json>`
- * (`claxedo-desktop/src/main/account/account-service.ts`), and the connector
- * now reads that status to tell a DECISION apart from a DISRUPTION. These
- * tests used a bare `Error("revoked")`, a shape production never produces —
- * which meant they could not have distinguished the two, and did not notice
- * when a transient 503 was being treated as a revocation.
- */
-const REVOCATION = 'HOSTED_HTTP 403 {"detail":"host enrollment revoked"}'
-
-/** A control plane that is briefly unreachable — a deploy, a blip, a timeout. */
-const DISRUPTION = 'HOSTED_HTTP 503 {"error":{"code":"deployment_candidate_unavailable"}}'
-
-async function connector(
-  overrides: Partial<ConnectorTransport> = {},
-  onError?: (stage: ConnectorErrorStage, error: unknown) => void,
-  onServing?: (tunnel: Record<string, unknown> | undefined) => void,
-  onLeaseRenewed?: (state: { status: "enrolled"; enrollment: { expires_at: number } }) => void,
-  sessionAuthority?: "local" | "managed-private",
+async function machineHost(
+  input: {
+    sessionAuthority?: HostSessionAuthority
+    wrap?: (transport: MachineTransport) => MachineTransport
+  } = {},
 ) {
-  const t = transport(overrides)
-  let tick: (() => void) | undefined
+  // One clock for the fake and the transport: the fake refuses a request
+  // whose timestamp is more than 60 s from its own time, and the lease it
+  // returns is computed from that time.
+  const clock = { now: Date.now() }
+  const cp = createFakeControlPlane({ now: () => clock.now })
+  const enrolled = await enrollFakeHost(cp)
+  const real = createMachineSignedTransport({
+    controlPlaneUrl: cp.url,
+    keys: enrolled.keys,
+    enrollmentId: enrolled.enrollmentId,
+    hostId: enrolled.state.host_id,
+    keyVersion: 1,
+    fetch: cp.fetch,
+    now: () => clock.now,
+  })
   const ticks: Array<() => void> = []
   const cancels = { count: 0 }
-  const instance = createHostConnector({
-    hostId: HOST_ID,
-    displayName: "Work laptop",
-    keys: await createHostKeyPair(),
-    transport: t.transport,
-    heartbeatIntervalMs: 30_000,
-    ...(onError ? { onError } : {}),
-    ...(onServing ? { onServing } : {}),
-    ...(onLeaseRenewed ? { onLeaseRenewed } : {}),
-    ...(sessionAuthority ? { sessionAuthority } : {}),
+  const errors: Array<{ stage: ConnectorErrorStage; error: unknown }> = []
+  const renewals: Array<{ expires_at: number }> = []
+  const connector = createHostConnector({
+    mode: "machine",
+    hostId: enrolled.state.host_id,
+    transport: input.wrap ? input.wrap(real) : real,
+    enrollmentId: enrolled.enrollmentId,
+    heartbeatIntervalMs: 25_000,
+    ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
     setInterval: (fn) => {
-      tick = fn
       ticks.push(fn)
       return {
         cancel: () => {
@@ -95,363 +53,357 @@ async function connector(
         },
       }
     },
+    onError: (stage, error) => errors.push({ stage, error }),
+    onLeaseRenewed: (state) => renewals.push(state.enrollment),
   })
-  return { instance, calls: t.calls, tick: () => tick?.(), ticks, cancels }
+  return {
+    cp,
+    clock,
+    enrollmentId: enrolled.enrollmentId,
+    connector,
+    ticks,
+    tick: () => ticks.at(-1)?.(),
+    cancels,
+    errors,
+    renewals,
+    beats: cp.beats,
+    acquires: () => cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/acquire"),
+  }
+}
+
+/**
+ * Heartbeat answers the test releases by hand.
+ *
+ * The fake answers at once and the wrap parks that answer until `release`,
+ * so the beat is in flight for exactly as long as the test needs while the
+ * control plane's side has already settled — the shape of a response that
+ * lands after the enrollment it belongs to is over. Nothing here waits on a
+ * clock.
+ */
+function heldAnswers() {
+  const pending: Array<{ release: () => void; reject: (error: unknown) => void }> = []
+  let holding = false
+  return {
+    pending,
+    hold: () => {
+      holding = true
+    },
+    wrap: (transport: MachineTransport): MachineTransport => ({
+      ...transport,
+      heartbeat: async (input) => {
+        const answer = await transport.heartbeat(input)
+        if (!holding) return answer
+        await new Promise<void>((resolve, reject) => pending.push({ release: resolve, reject }))
+        return answer
+      },
+    }),
+  }
 }
 
 describe("start", () => {
-  test("enrolls with a signature over the issued nonce", async () => {
-    const { instance, calls } = await connector()
-
-    const state = await instance.start()
-
-    expect(state).toMatchObject({ status: "enrolled", enrollment: { host_id: HOST_ID } })
-    expect(calls.enrolls).toHaveLength(1)
-    expect(calls.enrolls[0]).toMatchObject({ hostId: HOST_ID, requestId: "req_1", displayName: "Work laptop" })
-  })
-
-  test("never sends the private key", async () => {
-    // The whole premise: the control plane stores a public key and verifies
-    // signatures. A private JWK crossing this boundary would end that.
-    const { instance, calls } = await connector()
-    await instance.start()
-
-    const sent = JSON.stringify(calls.enrolls[0])
-    expect(sent).toContain("publicKey")
-    // A P-256 private JWK is exactly the public one plus `d`.
-    expect(JSON.parse(JSON.parse(sent).publicKey)).not.toHaveProperty("d")
-  })
-
-  test("stops without starting a heartbeat when enrollment fails", async () => {
-    // Beating against an enrollment that does not exist is noise the control
-    // plane has to reject on every tick.
-    const { instance, calls, tick } = await connector({
-      enroll: async () => {
-        throw new Error("rejected")
-      },
+  test("a transport failure on acquire stops the connector without a timer, and never escapes as a rejection", async () => {
+    // Every start failure is one stopped state rather than two shapes: a
+    // rejection here would surface as unhandled on Electron startup, and a
+    // timer installed anyway would beat against a generation never claimed.
+    const h = await machineHost({
+      wrap: (transport) => ({
+        ...transport,
+        acquire: async () => {
+          throw new Error("control plane unreachable")
+        },
+      }),
     })
 
-    const state = await instance.start()
+    const state = await h.connector.start()
 
-    expect(state).toMatchObject({ status: "stopped", reason: "error" })
-    tick()
-    expect(calls.beats).toEqual([])
+    expect(state).toMatchObject({ status: "stopped", reason: "error", detail: expect.stringContaining("control plane unreachable") })
+    expect(h.errors.map((entry) => entry.stage)).toEqual(["acquire"])
+    expect(h.ticks).toEqual([])
+    expect(h.beats()).toEqual([])
   })
 })
 
 describe("heartbeat", () => {
-  test("extends the enrollment on each tick", async () => {
-    const { instance, calls, tick } = await connector()
-    await instance.start()
+  test("extends the lease on each timer tick", async () => {
+    const h = await machineHost()
+    await h.connector.start()
+    const issued = h.clock.now
 
-    tick()
-    await vi.waitFor(() => expect(calls.beats).toHaveLength(1))
-    expect(instance.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: 2_000 } })
+    h.clock.now += 10_000
+    h.tick()
+    await vi.waitFor(() => expect(h.beats()).toHaveLength(2))
+
+    expect(h.connector.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: issued + 10_000 + LEASE_MS } })
   })
 
   test("tells a listener about the renewed lease on every tick, not just an explicit beat()", async () => {
     // A timer-driven tick has no caller waiting on its result; `state()`
     // holds the answer, but nothing across a process boundary polls it. The
-    // desktop's Host Connector child forwards exactly this to the parent, and
-    // a heartbeat that renewed the lease without telling anyone is how the
-    // parent's copy of the status went on reporting the ORIGINAL enrollment
-    // long after the real lease had been extended.
-    const renewals: Array<{ expires_at: number }> = []
-    const { instance, tick } = await connector({}, undefined, undefined, (state) => {
-      renewals.push(state.enrollment)
-    })
-    await instance.start()
+    // desktop's Host Connector child forwards exactly this to the parent.
+    const h = await machineHost()
+    await h.connector.start()
+    expect(h.renewals).toHaveLength(1)
 
-    tick()
-    await vi.waitFor(() => expect(renewals).toHaveLength(1))
-    expect(renewals[0]).toMatchObject({ expires_at: 2_000 })
+    h.clock.now += 10_000
+    h.tick()
+    await vi.waitFor(() => expect(h.renewals).toHaveLength(2))
+
+    expect(h.renewals[1]).toMatchObject({ enrollment_id: h.enrollmentId, expires_at: h.clock.now + LEASE_MS })
   })
 
   test("does not tell a listener about a lease that was not renewed", async () => {
-    // A disruption (no answer) and a revocation (a decisive refusal) both
-    // leave the lease exactly where it was; a listener told about either
-    // would show a lease extension that never happened.
-    const renewals: unknown[] = []
-    const { instance } = await connector(
-      { heartbeat: async () => { throw new Error(DISRUPTION) } },
-      undefined,
-      undefined,
-      (state) => renewals.push(state),
-    )
-    await instance.start()
+    // A disruption and a decision both leave the lease where it was; a
+    // listener told about either would show an extension that never happened.
+    const h = await machineHost()
+    await h.connector.start()
+    expect(h.renewals).toHaveLength(1)
 
-    await instance.beat()
+    h.cp.faults.unavailable = 503
+    await h.connector.beat()
+    h.cp.faults.unavailable = undefined
+    h.cp.revoke(h.enrollmentId)
+    await h.connector.beat()
 
-    expect(renewals).toEqual([])
+    expect(h.renewals).toHaveLength(1)
+    expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "revoked" })
   })
 
-  test("stops on rejection instead of re-enrolling", async () => {
-    // A rejected heartbeat means the control plane no longer recognises this
-    // machine. Re-enrolling would be the connector overruling a revocation,
-    // and a connector that reconnects through one looks exactly like a working
-    // one on a status screen.
-    const { instance, calls } = await connector({
-      heartbeat: async () => {
-        throw new Error(REVOCATION)
-      },
-    })
-    await instance.start()
+  test("stops on a decision instead of acquiring again", async () => {
+    // A refused beat means the control plane no longer recognises this
+    // machine. Claiming a new generation would be the connector overruling a
+    // revocation, and a connector that reconnects through one looks exactly
+    // like a working one on a status screen.
+    const h = await machineHost()
+    await h.connector.start()
+    h.cp.revoke(h.enrollmentId)
 
-    const state = await instance.beat()
+    const state = await h.connector.beat()
 
-    expect(state).toMatchObject({ status: "stopped", reason: "revoked" })
-    expect(calls.requests).toBe(1)
-    expect(calls.enrolls).toHaveLength(1)
+    expect(state).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_revoked") })
+    expect(h.errors.map((entry) => entry.stage)).toEqual(["heartbeat"])
+    expect(h.acquires()).toHaveLength(1)
+  })
+
+  test("a paused enrollment is a decision too", async () => {
+    const h = await machineHost()
+    await h.connector.start()
+    h.cp.pause(h.enrollmentId, true)
+
+    expect(await h.connector.beat()).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_paused") })
   })
 
   /**
-   * The live failure this closes, seen many times before it was understood:
-   * deploying the control plane makes it answer
+   * Deploying the control plane makes it answer
    * `503 deployment_candidate_unavailable` for the seconds between the upload
-   * and the release phase opening. Every beat in that window stopped the
-   * machine permanently and put `revoked` on the panel — so every deploy took
-   * remote access down, and the laptop went on reporting `serving: true` with
-   * open relay sockets because its credential lease had not expired yet. The
-   * app said "Workspace host is offline": the same symptom as a real
+   * and the release phase opening. A beat in that window that stopped the
+   * machine put `revoked` on the panel while the laptop went on reporting
+   * `serving: true` with open relay sockets: the same symptom as a real
    * revocation, none of the same cause.
    */
   test("survives a control plane that is briefly unavailable, and beats again", async () => {
-    let failures = 1
-    const { instance, calls } = await connector({
-      heartbeat: async () => {
-        if (failures-- > 0) throw new Error(DISRUPTION)
-        return { expires_at: 3_000 }
-      },
-    })
-    await instance.start()
+    const h = await machineHost()
+    await h.connector.start()
+    const leased = h.connector.state()
 
-    expect(await instance.beat(), "a disruption is not a decision").toMatchObject({ status: "enrolled" })
-    expect(await instance.beat()).toMatchObject({ status: "enrolled", enrollment: { expires_at: 3_000 } })
-    expect(calls.enrolls, "recovering must not re-enroll behind the user").toHaveLength(1)
+    h.cp.faults.unavailable = 503
+    expect(await h.connector.beat(), "a disruption is not a decision").toEqual(leased)
+    expect(h.errors.map((entry) => entry.stage)).toEqual(["heartbeat"])
+
+    h.cp.faults.unavailable = undefined
+    h.clock.now += 10_000
+    expect(await h.connector.beat()).toMatchObject({ status: "enrolled", enrollment: { expires_at: h.clock.now + LEASE_MS } })
+    expect(h.acquires(), "recovering must not claim a new generation behind the user").toHaveLength(1)
   })
 
   test("a transport failure with no status is a disruption, not a revocation", async () => {
     // A socket that never opened says nothing about the enrollment. The
     // control plane's own lease is what stops routing if the machine is
     // really gone.
-    const { instance } = await connector({
-      heartbeat: async () => {
-        throw new Error("fetch failed")
-      },
+    let failures = 1
+    const h = await machineHost({
+      wrap: (transport) => ({
+        ...transport,
+        heartbeat: async (input) => {
+          if (failures-- > 0) throw new TypeError("fetch failed")
+          return transport.heartbeat(input)
+        },
+      }),
     })
-    await instance.start()
+    await h.connector.start()
 
-    expect(await instance.beat()).toMatchObject({ status: "enrolled" })
+    expect(await h.connector.beat()).toMatchObject({ status: "enrolled" })
+    expect(await h.connector.beat()).toMatchObject({ status: "enrolled" })
+    expect(h.beats()).toHaveLength(2)
   })
 
   test("cancels the timer when it stops", async () => {
     // Otherwise a stopped connector keeps waking to do nothing, forever.
-    const { instance, cancels } = await connector({
-      heartbeat: async () => {
-        throw new Error(REVOCATION)
-      },
-    })
-    await instance.start()
+    const h = await machineHost()
+    await h.connector.start()
+    h.cp.revoke(h.enrollmentId)
 
-    await instance.beat()
+    await h.connector.beat()
 
-    expect(cancels.count).toBe(1)
+    expect(h.cancels.count).toBe(1)
   })
 
   test("starting again does not leave the previous loop running", async () => {
-    // A second `start` on a live connector installs a second interval. Before
-    // this, the handle for the first one was simply overwritten — nothing held
-    // it, so `close()` could not cancel it and it woke forever. The desktop
-    // guards against calling `start` twice; a headless connector is on its own.
-    const { instance, ticks, cancels } = await connector()
-    await instance.start()
+    // A second `start` on a live connector installs a second interval; the
+    // handle for the first must be cancelled, not overwritten, or nothing
+    // holds it and `close()` cannot stop it. The desktop guards against
+    // calling `start` twice; a headless connector is on its own.
+    const h = await machineHost()
+    await h.connector.start()
 
-    await instance.start()
+    await h.connector.start()
 
-    expect(ticks).toHaveLength(2)
-    expect(cancels.count).toBe(1)
-    instance.close()
-    expect(cancels.count).toBe(2)
+    expect(h.connector.generation()).toBe(2)
+    expect(h.ticks).toHaveLength(2)
+    expect(h.cancels.count).toBe(1)
+    h.connector.close()
+    expect(h.cancels.count).toBe(2)
   })
 
   test("does nothing once stopped", async () => {
-    const { instance, calls } = await connector()
-    await instance.start()
-    instance.close()
+    const h = await machineHost()
+    await h.connector.start()
+    h.connector.close()
 
-    await instance.beat()
+    await h.connector.beat()
+    h.tick()
+    await h.connector.beat()
 
-    expect(calls.beats).toEqual([])
+    expect(h.beats()).toHaveLength(1)
   })
 })
 
-/**
- * A heartbeat the test answers by hand.
- *
- * Every assertion below depends on two beats being genuinely in flight at the
- * same moment, so the responses cannot be produced by the transport — the test
- * has to hold them open, and prove it is holding them, before it resolves
- * either one. Nothing here waits on a clock.
- */
-function gatedHeartbeat() {
-  const pending: Array<{ resolve: (expiresAt: number) => void; reject: (error: unknown) => void }> = []
-  return {
-    pending,
-    heartbeat: () =>
-      new Promise<{ expires_at: number }>((resolve, reject) => {
-        pending.push({ resolve: (expires_at) => resolve({ expires_at }), reject })
-      }),
-  }
-}
-
-describe("overlapping heartbeats", () => {
+describe("a beat still in flight when its era ends", () => {
   /**
-   * Two beats overlap in production for two ordinary reasons: a beat that takes
-   * longer than the 20s interval, and the forced beat `beat()` exists for —
-   * "after a wake from sleep", fired while the pre-sleep request is still
-   * hanging off a socket that died with the lid.
+   * A beat outlives its era when the control plane answers slowly and, in
+   * the meantime, the user closes the connector or the process restarts it:
+   * `beat()` exists to be forced after a wake from sleep while the pre-sleep
+   * request is still hanging off a socket that died with the lid.
    */
   test("a late success cannot reverse a revocation", async () => {
-    const gate = gatedHeartbeat()
-    const { instance } = await connector({ heartbeat: gate.heartbeat })
-    await instance.start()
+    const gate = heldAnswers()
+    const h = await machineHost({ wrap: gate.wrap })
+    await h.connector.start()
+    gate.hold()
 
-    // Issued one at a time so `pending` is in a KNOWN order. Both beats send
-    // the same bytes, so a test that fired them together could not say which
-    // entry belonged to which promise, and would settle the wrong one roughly
-    // half the time — a coin flip in a suite that runs with `retries: 0`.
-    const early = instance.beat()
+    const early = h.connector.beat()
+    // The overlap, proved: the request is answered and unreleased. If this
+    // ever reads zero entries, the assertions below are measuring nothing.
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
-    const late = instance.beat()
-    // The overlap, proved: two requests are open and neither has answered. If
-    // this ever reads one entry, the assertions below are measuring nothing.
-    await vi.waitFor(() => expect(gate.pending).toHaveLength(2))
 
-    // The second beat comes back first, rejected: the control plane no longer
-    // recognises this machine.
-    gate.pending[1].reject(new Error(REVOCATION))
-    await late
-    expect(instance.state()).toMatchObject({ status: "stopped", reason: "revoked" })
+    // The control plane revokes the machine and a restart learns of it first.
+    h.cp.revoke(h.enrollmentId)
+    expect(await h.connector.start()).toMatchObject({ status: "stopped", reason: "revoked" })
 
     // Now the older request finally answers, successfully. It was issued
-    // against an enrollment that no longer exists.
-    gate.pending[0].resolve(2_000)
+    // against a generation the control plane has since refused.
+    gate.pending[0]?.release()
     await early
 
-    expect(instance.state()).toMatchObject({ status: "stopped", reason: "revoked" })
+    expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_revoked") })
+    expect(h.renewals).toHaveLength(1)
   })
 
   test("a late success does not resurrect a connector the user closed", async () => {
-    // Asserted as the WHOLE state rather than a subset: the resurrection did
-    // not merely re-enter `enrolled`, it entered it with nothing. `stopped`
-    // carries no `enrollment`, so spreading `state.enrollment` after the await
-    // spread `undefined` and produced an enrollment with an expiry, no id and
-    // no host — a machine the panel shows as published and the control plane
-    // has never heard of.
-    const gate = gatedHeartbeat()
-    const { instance } = await connector({ heartbeat: gate.heartbeat })
-    await instance.start()
+    // Asserted as the WHOLE state: `stopped` carries no `enrollment`, so a
+    // resurrection that spread `state.enrollment` after the await would
+    // produce an enrollment with an expiry, no id and no host — a machine the
+    // panel shows as published and the control plane has never heard of.
+    const gate = heldAnswers()
+    const h = await machineHost({ wrap: gate.wrap })
+    await h.connector.start()
+    gate.hold()
 
-    const inFlight = instance.beat()
+    const inFlight = h.connector.beat()
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
-    instance.close()
+    h.connector.close()
 
-    gate.pending[0].resolve(2_000)
+    gate.pending[0]?.release()
     await inFlight
 
-    expect(instance.state()).toEqual({ status: "stopped", reason: "closed", detail: "connector closed" })
+    expect(h.connector.state()).toEqual({ status: "stopped", reason: "closed", detail: "connector closed" })
+    expect(h.renewals).toHaveLength(1)
   })
 
-  test("a late rejection does not relabel a pause as a revocation", async () => {
-    // The distinction `close` exists to preserve, in the other direction: the
-    // user paused, and a request that was already open came back rejected —
-    // which it would, since the enrollment is being allowed to lapse. Telling
-    // them their access was taken away is a false alarm about the one event
-    // this panel exists to report honestly.
-    const gate = gatedHeartbeat()
-    const errors: Array<{ stage: string }> = []
-    const { instance } = await connector({ heartbeat: gate.heartbeat }, (stage) => errors.push({ stage }))
-    await instance.start()
+  test("a late rejection does not relabel a close as a revocation", async () => {
+    // The user turned remote access off, and a request that was already open
+    // came back refused — which it would, since the generation is being let
+    // go. Telling them their access was taken away is a false alarm about the
+    // one event this panel exists to report honestly.
+    const gate = heldAnswers()
+    const h = await machineHost({ wrap: gate.wrap })
+    await h.connector.start()
+    gate.hold()
 
-    const inFlight = instance.beat()
+    const inFlight = h.connector.beat()
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
-    instance.close()
+    h.connector.close()
 
-    gate.pending[0].reject(new Error("404 unknown enrollment"))
+    gate.pending[0]?.reject(new Error('HOSTED_HTTP 404 {"error":{"code":"host_enrollment_not_found"}}'))
     await inFlight
 
-    expect(instance.state()).toMatchObject({ status: "stopped", reason: "closed" })
-    // And it is not reported as an error either: nothing went wrong.
-    expect(errors).toEqual([])
+    expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "closed" })
+    expect(h.errors, "nothing went wrong, so nothing is reported").toEqual([])
   })
 
-  /** A connector whose enrollments are numbered, so a stale one is nameable. */
-  async function numberedEnrollments(gate: ReturnType<typeof gatedHeartbeat>) {
-    const enrollments = { count: 0 }
-    return await connector({
-      heartbeat: gate.heartbeat,
-      enroll: async () => {
-        enrollments.count++
-        return { enrollment_id: `enr_${enrollments.count}`, host_id: HOST_ID, expires_at: 1_000 }
-      },
+  /**
+   * A restart claims the next generation while the older beat is still out.
+   * Its answer describes the generation the acquire just superseded, so it is
+   * dropped; the restart's own first beat — queued behind it — is what renews
+   * the lease. Asserted between the two landings, where the difference is
+   * visible.
+   */
+  for (const closedFirst of [false, true]) {
+    test(`a beat from before a restart${closedFirst ? " through close()" : ""} cannot write onto the generation that replaced it`, async () => {
+      const gate = heldAnswers()
+      const h = await machineHost({ wrap: gate.wrap })
+      await h.connector.start()
+      gate.hold()
+
+      const stale = h.connector.beat()
+      await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
+      if (closedFirst) h.connector.close()
+      h.clock.now += 10_000
+      const restarting = h.connector.start()
+      await vi.waitFor(() => expect(h.connector.generation()).toBe(2))
+      expect(h.connector.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: 0 } })
+
+      gate.pending[0]?.release()
+      await stale
+
+      expect(h.connector.state(), "the stale answer wrote nothing").toMatchObject({ status: "enrolled", enrollment: { expires_at: 0 } })
+      expect(h.renewals).toHaveLength(1)
+
+      await vi.waitFor(() => expect(gate.pending).toHaveLength(2))
+      gate.pending[1]?.release()
+      await restarting
+
+      expect(h.connector.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: h.clock.now + LEASE_MS } })
+      expect(h.renewals).toHaveLength(2)
     })
   }
 
-  test("a beat from before a pause cannot write onto the enrollment that replaced it", async () => {
-    // Pause and resume, with a request left over from before the pause. The
-    // stale answer describes an enrollment that no longer exists; adopting it
-    // would put the dead enrollment's record back on a live machine.
-    const gate = gatedHeartbeat()
-    const { instance } = await numberedEnrollments(gate)
-    await instance.start()
-
-    const stale = instance.beat()
-    await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
-    instance.close()
-    await instance.start()
-    expect(instance.state()).toMatchObject({ enrollment: { enrollment_id: "enr_2" } })
-
-    gate.pending[0].resolve(2_000)
-    await stale
-
-    expect(instance.state()).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_2" } })
-  })
-
-  test("a beat from before a re-enrollment cannot write onto the one that replaced it", async () => {
-    // The same staleness without a pause to mark the boundary: `start` called
-    // on a connector that is already enrolled. Nothing passed through `stop`,
-    // so the enrollment itself has to be what moves the era on.
-    const gate = gatedHeartbeat()
-    const { instance } = await numberedEnrollments(gate)
-    await instance.start()
-
-    const stale = instance.beat()
-    await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
-    await instance.start()
-    expect(instance.state()).toMatchObject({ enrollment: { enrollment_id: "enr_2" } })
-
-    gate.pending[0].resolve(2_000)
-    await stale
-
-    expect(instance.state()).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_2" } })
-  })
-
   test("the timer stays cancelled after a late success", async () => {
-    // The reversal left a connector reporting `enrolled` with no timer: it can
-    // never beat again, so the enrollment it claims lapses silently while the
-    // panel keeps saying the machine is published.
-    const gate = gatedHeartbeat()
-    const { instance, cancels } = await connector({ heartbeat: gate.heartbeat })
-    await instance.start()
+    // A reversal would leave a connector reporting `enrolled` with no timer:
+    // it can never beat again, so the lease it claims lapses silently while
+    // the panel keeps saying the machine is published.
+    const gate = heldAnswers()
+    const h = await machineHost({ wrap: gate.wrap })
+    await h.connector.start()
+    gate.hold()
 
-    const inFlight = instance.beat()
+    const inFlight = h.connector.beat()
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
-    instance.close()
-    gate.pending[0].resolve(2_000)
+    h.connector.close()
+    gate.pending[0]?.release()
     await inFlight
 
-    expect(cancels.count).toBe(1)
-    expect(instance.state().status).toBe("stopped")
+    expect(h.cancels.count).toBe(1)
+    expect(h.connector.state().status).toBe("stopped")
   })
 })
 
@@ -459,33 +411,31 @@ describe("close", () => {
   test("reports closed, not revoked", async () => {
     // The distinction the user sees: "you turned this off" versus "your access
     // was taken away".
-    const { instance } = await connector()
-    await instance.start()
+    const h = await machineHost()
+    await h.connector.start()
 
-    instance.close()
+    h.connector.close()
 
-    expect(instance.state()).toMatchObject({ status: "stopped", reason: "closed" })
+    expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "closed" })
   })
 
   test("does not overwrite an earlier revocation", async () => {
-    const { instance } = await connector({
-      heartbeat: async () => {
-        throw new Error(REVOCATION)
-      },
-    })
-    await instance.start()
-    await instance.beat()
+    const h = await machineHost()
+    await h.connector.start()
+    h.cp.revoke(h.enrollmentId)
+    await h.connector.beat()
 
-    instance.close()
+    h.connector.close()
 
-    expect(instance.state()).toMatchObject({ reason: "revoked" })
+    expect(h.connector.state()).toMatchObject({ reason: "revoked" })
+    expect(h.cancels.count).toBe(1)
   })
 })
 
 describe("host identity", () => {
   test("signatures verify against the exported public key", async () => {
     const keys = await createHostKeyPair()
-    const payload = enrollmentPayload({ hostId: HOST_ID, requestId: "req_1", nonce: "nonce_1" })
+    const payload = enrollmentPayload({ hostId: "host_laptop", requestId: "req_1", nonce: "nonce_1" })
 
     const signature = await keys.sign(payload)
     const publicKey = await crypto.subtle.importKey(
@@ -517,53 +467,13 @@ describe("host identity", () => {
     expect(JSON.parse(restored.publicKey)).not.toHaveProperty("d")
   })
 
-  test("payloads match the authority's verifiers byte for byte", async () => {
+  test("the enrollment payload matches the authority's verifier byte for byte", () => {
     // Duplicated definitions drift. When they do, the symptom is "enrollment
     // rejects every signature", which reads as a crypto bug rather than a
-    // string mismatch. Both sides assert these literals.
+    // string mismatch. Both sides assert this literal.
     expect(enrollmentPayload({ hostId: "h", requestId: "r", nonce: "n" })).toBe(
       "claxedo.host-enrollment.enroll.v1\nhost_id=h\nrequest_id=r\nnonce=n",
     )
-    expect(heartbeatPayloadV2({ hostId: "h", workspaceIds: [] }))
-      .toBe("claxedo.host-enrollment.heartbeat.v2\nhost_id=h\nttl_ms=\nworkspaces=")
-    expect(heartbeatPayloadV2({ hostId: "h", ttlMs: 60_000, workspaceIds: ["b", "a"] }))
-      .toBe("claxedo.host-enrollment.heartbeat.v2\nhost_id=h\nttl_ms=60000\nworkspaces=a,b")
-  })
-})
-
-describe("a control-plane failure before enrollment", () => {
-  test("stops rather than escaping as a rejection", async () => {
-    // `createRequest` is a network call inside the try, so every enrollment
-    // failure normalizes to one stopped state instead of two different
-    // shapes — a rejection here would surface as unhandled on Electron
-    // startup.
-    const { instance, calls } = await connector({
-      createRequest: async () => {
-        throw new Error("control plane unreachable")
-      },
-    })
-
-    const state = await instance.start()
-
-    expect(state).toMatchObject({ status: "stopped", reason: "error" })
-    if (state.status !== "stopped") throw new Error(`expected a stopped state, got ${state.status}`)
-    expect(state.detail).toContain("control plane unreachable")
-    expect(calls.enrolls).toEqual([])
-  })
-
-  test("does not start a heartbeat after that failure", async () => {
-    // Beating against an enrollment that was never requested is noise the
-    // control plane has to reject on every tick.
-    const { instance, calls, tick } = await connector({
-      createRequest: async () => {
-        throw new Error("offline")
-      },
-    })
-    await instance.start()
-
-    tick()
-
-    expect(calls.beats).toEqual([])
   })
 })
 
@@ -574,111 +484,26 @@ describe("declared session composition", () => {
     // from this declaration. Both flavours, because a beat that hard-coded one
     // would still satisfy a single-value test.
     for (const declared of ["local", "managed-private"] as const) {
-      const { instance, calls } = await connector({}, undefined, undefined, undefined, declared)
-      await instance.start()
-      await instance.beat()
-      await instance.beat()
+      const h = await machineHost({ sessionAuthority: declared })
+      await h.connector.start()
+      await h.connector.beat()
+      await h.connector.beat()
 
-      expect(calls.beats).toHaveLength(2)
-      for (const beat of calls.beats as Array<{ sessionAuthority?: string }>) {
-        expect(beat.sessionAuthority).toBe(declared)
-      }
+      expect(h.beats()).toHaveLength(3)
+      for (const beat of h.beats()) expect(beat.body.sessionAuthority).toBe(declared)
     }
   })
 
   test("says nothing when nothing was injected, rather than picking a flavour", async () => {
     // A connector whose parent could not read the daemon's composition
     // publishes an UNDECLARED machine. The control plane records the absence
-    // and mints no scope, which is the honest outcome — a default here would
-    // put every client of this machine on the wrong stream.
-    const { instance, calls } = await connector()
-    await instance.start()
-    await instance.beat()
+    // and mints no scope — a default here would put every client of this
+    // machine on the wrong stream.
+    const h = await machineHost()
+    await h.connector.start()
+    await h.connector.beat()
 
-    expect(calls.beats).toHaveLength(1)
-    for (const beat of calls.beats as Array<Record<string, unknown>>) {
-      expect(beat).not.toHaveProperty("sessionAuthority")
-    }
-  })
-})
-
-describe("workspace shares", () => {
-  test("consenting to a workspace signs the new set into the next beat and gates on the owner's assignment", async () => {
-    const { instance, calls } = await connector()
-    await instance.start()
-
-    await instance.shareWorkspace({ workspaceId: "ws_local_1", displayName: "opencode" })
-    expect(instance.sharedWorkspaceIds()).toEqual(["ws_local_1"])
-    const beat = calls.beats.at(-1) as { workspaceIds: readonly string[]; signature: string }
-    expect(beat.workspaceIds).toEqual(["ws_local_1"])
-    expect(typeof beat.signature).toBe("string")
-
-    // Every beat re-signs the CURRENT set — no signature is ever reused.
-    await instance.beat()
-    const next = calls.beats.at(-1) as { signature: string }
-    expect(next.signature).not.toBe(beat.signature)
-  })
-
-  test("a share the owner never assigned fails and leaves the served set unchanged", async () => {
-    const failures: string[] = []
-    const { instance, calls } = await connector({}, (stage) => failures.push(stage))
-    await instance.start()
-    calls.assigned = []
-
-    await expect(instance.shareWorkspace({ workspaceId: "ws_unassigned" }))
-      .rejects.toThrow(/no assignment/)
-    expect(failures).toContain("share")
-    expect(instance.sharedWorkspaceIds()).toEqual([])
-  })
-
-  test("refuses to share while not enrolled, and clears shares when the connector stops", async () => {
-    const { instance } = await connector()
-    await expect(instance.shareWorkspace({ workspaceId: "ws_local_1" })).rejects.toThrow(/not active/)
-
-    await instance.start()
-    await instance.shareWorkspace({ workspaceId: "ws_local_1" })
-    instance.close()
-    expect(instance.sharedWorkspaceIds()).toEqual([])
-  })
-
-  test("reconciles against the owner's view: an unassigned workspace leaves the set on the next beat", async () => {
-    const served: Array<Record<string, unknown>> = []
-    const { instance, calls } = await connector()
-    ;(instance as unknown as { options?: never })
-    await instance.start()
-    await instance.shareWorkspace({ workspaceId: "ws_a" })
-    await instance.shareWorkspace({ workspaceId: "ws_b" })
-    expect(instance.sharedWorkspaceIds()).toEqual(["ws_a", "ws_b"])
-
-    // The owner unassigned ws_b elsewhere.
-    calls.assigned = ["ws_a"]
-    await instance.beat()
-    expect(instance.sharedWorkspaceIds()).toEqual(["ws_a"])
-    void served
-  })
-
-  test("unsharing drops consent and acks the smaller set immediately", async () => {
-    const { instance, calls } = await connector()
-    await instance.start()
-    await instance.shareWorkspace({ workspaceId: "ws_a" })
-
-    await instance.unshareWorkspace("ws_a")
-    expect(instance.sharedWorkspaceIds()).toEqual([])
-    const last = calls.beats.at(-1) as { workspaceIds: readonly string[] }
-    expect(last.workspaceIds).toEqual([])
-  })
-
-  test("the serving credential from the ack reaches the consumer", async () => {
-    const tunnels: Array<Record<string, unknown> | undefined> = []
-    const { instance, calls } = await connector({}, undefined, (t) => tunnels.push(t))
-    await instance.start()
-    calls.tunnel = { token: "htt", workspaceIds: ["ws_a"], relayUrl: "wss://relay.test" }
-    await instance.shareWorkspace({ workspaceId: "ws_a" })
-    expect(tunnels.at(-1)).toEqual({ token: "htt", workspaceIds: ["ws_a"], relayUrl: "wss://relay.test" })
-  })
-
-  test("share payload literal matches the authority's verifier", async () => {
-    expect(heartbeatPayloadV2({ hostId: "host_1", ttlMs: 300000, workspaceIds: ["ws_2", "ws_1"] }))
-      .toBe("claxedo.host-enrollment.heartbeat.v2\nhost_id=host_1\nttl_ms=300000\nworkspaces=ws_1,ws_2")
+    expect(h.beats()).toHaveLength(2)
+    for (const beat of h.beats()) expect(beat.body).not.toHaveProperty("sessionAuthority")
   })
 })

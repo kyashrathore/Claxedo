@@ -103,7 +103,14 @@ export const desktopMainComposition: Policy = {
   //
   // Re-measured 2026-09-17 at 90 modules / 24 packages; the two modules of
   // headroom had accrued unrecorded. Pinned with none.
-  ceilings: { modules: 90, packages: 24 },
+  // +1 module (2026-09-19): `main/host-connector/serving-push.ts`, the one
+  // owner of the hand-off from a heartbeat ack to the daemon's serving route —
+  // the credential the machine dials the relay with and the addresses it
+  // admits a relayed caller against. Reviewed owner: Electron main, which is
+  // the only process that receives an ack and the only one that may reach the
+  // daemon's loopback surface. It imports a type from `child-protocol.ts`
+  // (already in this closure) and uses `fetch`, so no package edge. 91/24.
+  ceilings: { modules: 91, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

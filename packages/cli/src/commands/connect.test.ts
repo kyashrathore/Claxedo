@@ -360,7 +360,9 @@ describe("claxedo connect", () => {
 
     // The control plane's lexical check is faked permissively here so the
     // host's own resolved-path check is what refuses this one.
-    h.cp.enrollments.get(enrollmentIdOf(h))!.scope.allowed_roots.push("/")
+    const redeemed = h.cp.enrollments.get(enrollmentIdOf(h))?.scope
+    if (!redeemed) throw new Error("a redeemed enrollment always carries the invitation's scope")
+    redeemed.allowed_roots.push("/")
     h.cp.assign({ hostId, workspaceId: "ws_out", remoteDirectory: os.tmpdir() })
     h.tick()
     await until(() => h.lines.some((line) => line.startsWith("workspace ws_out: refused: ")), "the outside-root refusal")

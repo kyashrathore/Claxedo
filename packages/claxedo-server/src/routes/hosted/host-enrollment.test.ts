@@ -40,7 +40,6 @@ function authority(overrides: Record<string, unknown> = {}): Record<string, Retu
     auditAllow: vi.fn(async () => {}),
     createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "n", expires_at: 9_999 })),
     enrollHost: vi.fn(async () => ({ enrollment_id: "enr_1", host_id: "host_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
-    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1, assigned_workspace_ids: [] })),
     pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
     activeHostEnrollment: vi.fn(async () => ({ active: true, host_id: "host_1", enrollment_id: "enr_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
     ...overrides,
@@ -74,7 +73,6 @@ describe("authentication", () => {
     for (const [path, method] of [
       ["/requests", "POST"],
       ["/", "POST"],
-      ["/heartbeat", "POST"],
       ["/pause", "POST"],
       ["/", "GET"],
     ] as const) {
@@ -183,30 +181,22 @@ describe("POST /", () => {
 })
 
 describe("POST /heartbeat and /pause", () => {
-  test("heartbeat forwards the client signature and the served set it covers", async () => {
+  test("an account credential buys no beat: the bearer reaches the machine path, never the authority", async () => {
+    // Enrollment is where the owner speaks. After it the machine signs for
+    // itself, so a bearer with the old client-signed body gets the machine
+    // path's answer — here 501, because this authority admits no machine
+    // caller at all — rather than a second, account-shaped way to renew a
+    // lease. The refusal a deployment that DOES admit machines gives the same
+    // request is asserted with the mixed-credential case below.
     const { api, post } = routes()
 
     const response = await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
 
-    expect(response.status).toBe(200)
-    expect(api.heartbeatHostEnrollment).toHaveBeenCalledWith(expect.anything(), {
-      hostId: "host_1",
-      signature: "sig",
-      workspaceIds: ["ws_1"],
-    })
-    expect(await response.json()).toMatchObject({ assigned_workspace_ids: [] })
-  })
-
-  test("heartbeat refuses the old shape with no workspaceIds", async () => {
-    // Heartbeat payload v2: the ONE signature per interval covers the served
-    // set, so a body without it cannot be verified and must fail before the
-    // authority is touched.
-    const { api, post } = routes()
-
-    const response = await post("/heartbeat", { hostId: "host_1", signature: "sig" })
-
-    expect(response.status).toBe(400)
-    expect(api.heartbeatHostEnrollment).not.toHaveBeenCalled()
+    expect(response.status).toBe(501)
+    expect(await response.json()).toMatchObject({ error: { code: "machine_caller_unsupported" } })
+    // The bearer was never resolved into an account caller: an account branch
+    // would have had to identify the owner before it could beat.
+    expect(api.usersMe).not.toHaveBeenCalled()
   })
 
   test("pause with no host id means every machine", async () => {
@@ -226,76 +216,6 @@ describe("POST /heartbeat and /pause", () => {
       action: "host_enrollment.resumed",
       metadata: { hostId: "host_1" },
     })
-  })
-})
-
-describe("the serving credential rides the heartbeat ack", () => {
-  const signer: HostTunnelTokenSigner = vi.fn(async (input) => ({
-    hostTunnelToken: `htt-for-${input.hostId}`,
-    tokenExpiresAt: 2_000_000,
-    jti: "jti_htt",
-  }))
-
-  test("mints ONE Host Tunnel Token for the assigned ∩ acked set when a signer is configured", async () => {
-    const { api, post } = routes(
-      {
-        heartbeatHostEnrollment: vi.fn(async () => ({
-          expires_at: 9_999,
-          last_seen_at: 1,
-          // ws_3 is assigned but not in this beat's acked set; ws_2 is acked
-          // but never assigned. Only ws_1 is routable, so only ws_1 may appear
-          // in the credential's claim.
-          assigned_workspace_ids: ["ws_1", "ws_3"],
-        })),
-      },
-      { hostTunnelTokenSigner: signer, relayUrl: "https://relay.test" },
-    )
-
-    const response = await post("/heartbeat", {
-      hostId: "host_1",
-      signature: "sig",
-      workspaceIds: ["ws_2", "ws_1"],
-    })
-
-    expect(response.status).toBe(200)
-    expect(signer).toHaveBeenCalledWith({ subject: "user_1", hostId: "host_1", workspaceIds: ["ws_1"] })
-    expect(await response.json()).toMatchObject({
-      expires_at: 9_999,
-      assigned_workspace_ids: ["ws_1", "ws_3"],
-      hostTunnel: {
-        hostTunnelToken: "htt-for-host_1",
-        hostId: "host_1",
-        workspaceIds: ["ws_1"],
-        relayUrl: "https://relay.test",
-      },
-    })
-    expect(api.heartbeatHostEnrollment).toHaveBeenCalledTimes(1)
-  })
-
-  test("mints nothing when the beat acks no assigned workspace", async () => {
-    const localSigner = vi.fn(async () => ({ hostTunnelToken: "unused", tokenExpiresAt: 1, jti: "j" }))
-    const { post } = routes({}, { hostTunnelTokenSigner: localSigner, relayUrl: "https://relay.test" })
-
-    const response = await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
-
-    expect(response.status).toBe(200)
-    expect(localSigner).not.toHaveBeenCalled()
-    expect(await response.json()).not.toHaveProperty("hostTunnel")
-  })
-
-  test("omits the credential entirely when no signer is configured", async () => {
-    const { post } = routes({
-      heartbeatHostEnrollment: vi.fn(async () => ({
-        expires_at: 9_999,
-        last_seen_at: 1,
-        assigned_workspace_ids: ["ws_1"],
-      })),
-    })
-
-    const response = await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).not.toHaveProperty("hostTunnel")
   })
 })
 
@@ -380,23 +300,23 @@ describe("per-account budget", () => {
     expect(
       (await post("/", { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })).status,
     ).toBe(200)
-    expect((await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: [] })).status).toBe(200)
+    expect((await post("/pause", { paused: true })).status).toBe(200)
   })
 
-  test("renewal traffic is bounded too", async () => {
+  test("account traffic on the shared budget is bounded too", async () => {
     // The confirmed defect named enrollment AND renewal. 120/min per account,
-    // the deployment's control-plane budget — far above any honest connector,
-    // which heartbeats about once per TTL.
+    // the deployment's control-plane budget — far above any honest client of
+    // these routes.
     const { api, post } = routes()
 
     const statuses: number[] = []
     for (let attempt = 0; attempt < 130; attempt += 1) {
-      statuses.push((await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: [] })).status)
+      statuses.push((await post("/pause", { paused: true })).status)
     }
 
     expect(statuses.filter((status) => status === 200)).toHaveLength(120)
     expect(statuses.filter((status) => status === 429)).toHaveLength(10)
-    expect(api.heartbeatHostEnrollment).toHaveBeenCalledTimes(120)
+    expect(api.pauseHostEnrollment).toHaveBeenCalledTimes(120)
   })
 
   test("the budget is overridable, so a deployment can tighten it", async () => {
@@ -534,7 +454,6 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         relayUrl: "https://relay.test/",
       },
     })
-    expect(api.heartbeatHostEnrollment).not.toHaveBeenCalled()
   })
 
   test("uses a configured relay JWKS URL over the derived one and omits endpoints it does not know", async () => {
@@ -644,15 +563,17 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     expect((await real(key, "/requests", { hostId: "host_1" })).status).toBe(401)
     expect((await real(key, "/pause", { paused: true })).status).toBe(401)
     expect(api.createHostEnrollmentRequest).not.toHaveBeenCalled()
-    // A bearer, even with machine headers, is answered as an account call.
-    const { app } = await mountedRoutes(machineAuthority(enrollmentRow(key)))
+    // A bearer buys nothing on this route: with machine headers that do not
+    // verify it is a refused machine request, not an account beat.
+    const { app, api: mixedApi } = await mountedRoutes(machineAuthority(enrollmentRow(key)))
     const mixed = await app.request("http://control.test/api/claxedo/host/enrollments/heartbeat", {
       method: "POST",
       headers: { authorization: "Bearer user_1", "content-type": "application/json", [MACHINE_REQUEST_HEADERS.enrollmentId]: "enr_1" },
       body: JSON.stringify({ hostId: "host_1", signature: "sig", workspaceIds: [] }),
     })
-    expect(mixed.status).toBe(200)
-    expect(await mixed.json()).toMatchObject({ assigned_workspace_ids: [] })
+    expect(mixed.status).toBe(400)
+    expect(await mixed.json()).toMatchObject({ error: { code: "machine_headers_invalid" } })
+    expect(mixedApi.heartbeatHostEnrollmentByMachine).not.toHaveBeenCalled()
   })
 })
 
