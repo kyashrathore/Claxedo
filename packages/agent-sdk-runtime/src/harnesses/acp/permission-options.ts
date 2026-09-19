@@ -62,20 +62,22 @@ export function selectPermissionOption(
 export function acpPermissionRequest(input: {
   permId: string
   sessionId: string
-  /** The agent's human-readable `toolCall.title`. */
-  tool: string
+  /** The agent's human-readable `toolCall.title`; absent when it sent none. */
+  tool?: string
   /** The protocol's `toolCall.kind`; absent when the agent sends none. */
   kind?: ToolKind
   paths: string[]
 }) {
+  const title = input.tool ?? "unknown"
   return {
     id: input.permId,
     sessionID: input.sessionId,
     // `"other"` routes unclassified requests through the ask tier.
     permission: input.kind ?? ("other" satisfies ToolKind),
     patterns: input.paths,
-    // Preserve the agent's human-readable description separately from policy.
-    metadata: { title: input.tool },
+    // The dock renders `command` for a shell call and `reason` for anything
+    // else; ACP's `title` is the only text the agent sends for either.
+    metadata: input.kind === "execute" ? { title, command: title } : { title, reason: title },
     always: input.paths,
   }
 }

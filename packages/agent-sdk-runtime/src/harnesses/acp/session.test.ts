@@ -223,6 +223,7 @@ function promptingProcess(input: { caps: PromptCapabilities; kind: "stdio" | "we
     transport: { kind: input.kind, alive: true },
     promptQueue: Promise.resolve(),
     promptQueueDepth: 0,
+    promptQuiet: new Map(),
     sessionListeners: new Map(),
   })
   return { proc, sent }

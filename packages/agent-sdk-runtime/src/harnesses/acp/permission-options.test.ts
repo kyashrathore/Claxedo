@@ -116,7 +116,8 @@ describe("acpPermissionRequest — the classification, not the prose", () => {
   })
 
   test("the human title is preserved in metadata rather than discarded", () => {
-    expect(acpPermissionRequest({ ...base, kind: "execute" }).metadata).toEqual({ title: base.tool })
+    expect(acpPermissionRequest({ ...base, kind: "execute" }).metadata).toEqual({ title: base.tool, command: base.tool })
+    expect(acpPermissionRequest({ ...base, kind: "read" }).metadata).toEqual({ title: base.tool, reason: base.tool })
   })
 
   // Fail-safe: an unclassified request must land in the ask tier, not inherit

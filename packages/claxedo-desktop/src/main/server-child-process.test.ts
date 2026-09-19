@@ -10,7 +10,7 @@ describe("Claxedo server daemon process", () => {
       ELECTRON_RUN_AS_NODE: "0",
     }
 
-    expect(claxedoServerForkOptions(env)).toEqual({
+    expect(claxedoServerForkOptions(env, 7)).toEqual({
       execPath: process.execPath,
       execArgv: ["--expose-gc", "--optimize-for-size", "--max-old-space-size=512"],
       env: {
@@ -19,7 +19,7 @@ describe("Claxedo server daemon process", () => {
         ELECTRON_RUN_AS_NODE: "1",
       },
       detached: true,
-      stdio: ["ignore", "ignore", "ignore", "ipc"],
+      stdio: ["ignore", 7, 7, "ipc"],
     })
     expect(env.ELECTRON_RUN_AS_NODE).toBe("0")
   })

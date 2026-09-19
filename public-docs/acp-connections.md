@@ -60,6 +60,82 @@ the descriptor and browser projection never contain the resolved value.
 There is no v1/v2 decoder, ACP map importer, built-in OpenCode row, or fallback
 connection.
 
+### Where the file lives
+
+The desktop app keeps one data directory per release channel, so the file a
+`dev` build reads is not the one a `prod` build reads:
+
+| Channel | Data directory |
+| --- | --- |
+| `prod` | `~/.claxedo/` |
+| `beta` | `~/.claxedo-beta/` |
+| `dev` | `~/.claxedo-dev/` |
+
+`CLAXEDO_DATA_DIR` overrides the directory for every channel. The server
+watches the directory: a connection written by hand, or by a script, reaches
+the running workspace runtimes within a second, the same as one saved through
+the API. A file that no longer parses is left alone until it does.
+
+### Process connections
+
+A `process` connection is spawned directly, with no shell; the one exception
+is a Windows `.cmd` or `.bat` shim, which `cmd.exe` has to run. `command` is
+resolved the way `execvp` resolves it: an absolute path is used as written, and
+a bare name is looked up on the server's `PATH`. Because an app started from
+the Dock or a launcher inherits none of the login shell's additions, the
+desktop app prepends the usual install directories to that `PATH` at launch:
+`~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin` on macOS;
+`~/.local/bin`, `/usr/local/bin` and `/usr/bin` on Linux; nothing on Windows.
+A binary anywhere else needs an absolute `command`. Shell syntax in `command`
+or `args` is passed to the agent literally.
+
+The agent's stdout is the protocol stream; its stderr is logged by the server,
+and its last stderr line is attached to a failed handshake so a binary that
+refuses to start says why.
+
+### Turn timeouts
+
+A turn has no wall-clock limit. The only bound is the agent going quiet: a
+turn fails when the agent has sent no `session/update` for
+`CLAXEDO_ACP_PROMPT_TIMEOUT_MS` (default 300000) while nothing is waiting on
+the human. A permission request the user has not answered holds that countdown
+open, and a long tool call keeps it alive by streaming. When the countdown
+fires, the agent's session is cancelled and the process is replaced; a turn
+queued on the same process fails with the same reason.
+
+| Variable | Default | Bounds |
+| --- | --- | --- |
+| `CLAXEDO_ACP_PROMPT_TIMEOUT_MS` | 300000 | Silence inside a turn |
+| `CLAXEDO_ACP_IDLE_TIMEOUT_MS` | 300000 | A process with no turn running |
+| `CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS` | 10000 | `session/new`, `session/load`, mode changes |
+| `CLAXEDO_ACP_INITIALIZE_TIMEOUT_MS` | same as new-session | The `initialize` handshake |
+| `CLAXEDO_ACP_PROBE_TIMEOUT_MS` | same as new-session | Config-option discovery |
+
+### What an ACP connection cannot do
+
+The adapter advertises the capabilities the protocol gives it and nothing
+more. Compared with the native harnesses, an ACP connection has:
+
+- no reconnect: a process that exits mid-turn fails the turn and is replaced
+  on the next one;
+- no questions, todos, slash commands, revert, or subagents;
+- one turn at a time per process: sessions that share a workspace share the
+  process and queue behind each other;
+- instructions delivered as a prefix of the prompt, not as a system channel;
+- model selection marked `optional`, with whatever `session/new` returns as
+  the model list.
+
+### Permissions
+
+Every `session/request_permission` is shown as a permission prompt. The
+protocol carries no command or path patterns, only the agent's `title`, so
+that title is what the prompt shows and what an "always" answer remembers: the
+next request with the same tool kind and the same title is answered with the
+agent's allow option without asking. Agents that keep their own allowlist
+still receive `allow_always` when they offer it. A compound shell command is a
+new title each time it changes, so a per-program allowlist has to come from the
+agent.
+
 ### Already-running OpenCode server
 
 An OpenCode HTTP server uses the same descriptor slot with provider key
@@ -180,10 +256,23 @@ connection unselectable. It must not install a compatibility string encoding.
 - Removing a connection prevents new execution while canonical session history
   remains readable.
 
+## Server logs
+
+The desktop app writes the embedded server's stdout and stderr, which carry
+every ACP adapter line including the agent's stderr, to `server.log` next to
+`main.log` in the app's log directory (`~/Library/Logs/<app name>/` on macOS).
+One previous generation is kept as `server.old.log`.
+
 ## Grounding
 
 - Trusted descriptor and provider-owned public projection:
   `packages/agent-sdk-runtime/src/connection-provider.ts`
+- Turn quiet countdown and permission hold:
+  `packages/agent-sdk-runtime/src/harnesses/acp/process.ts`
+- Remembered "always" answers:
+  `packages/agent-sdk-runtime/src/harnesses/acp/permission-grants.ts`
+- Config file watch:
+  `packages/claxedo-server-core/src/agent-config/index.ts`
 - Strict v3 persistence/map validation:
   `packages/claxedo-server-core/src/agent-config/connections.ts`
 - Secret boundary:

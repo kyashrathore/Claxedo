@@ -63,6 +63,36 @@ describe("agent config", () => {
     process.env.CLAXEDO_DATA_DIR = prev
   })
 
+  // ── watchUserConfigFile ────────────────────────────────────────────────
+
+  test("an edit made outside the API is reported, an API save is not", async () => {
+    const changes: number[] = []
+    const stop = mod.watchUserConfigFile(() => changes.push(Date.now()))
+    try {
+      await mod.saveUserConfig({ version: 3, mcp: {}, connections: {} })
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(changes).toHaveLength(0)
+
+      const edited = { version: 3 as const, mcp: {}, connections: { [trustedConnection().connectionId]: trustedConnection() } }
+      await fs.writeFile(cfgFile(), JSON.stringify(edited, null, 2) + "\n")
+      const deadline = Date.now() + 5_000
+      while (changes.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(changes).toHaveLength(1)
+
+      await mod.saveUserConfig({ ...edited, defaultConnectionId: trustedConnection().connectionId })
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(changes).toHaveLength(1)
+
+      // Reverting by hand to what the API last wrote is still an external edit.
+      await fs.writeFile(cfgFile(), JSON.stringify(edited, null, 2) + "\n")
+      const revertDeadline = Date.now() + 5_000
+      while (changes.length < 2 && Date.now() < revertDeadline) await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(changes).toHaveLength(2)
+    } finally {
+      stop()
+    }
+  })
+
   // ── defaultHarness ────────────────────────────────────────────────────
 
   test("leaves the default unresolved when no explicit selection is configured", () => {

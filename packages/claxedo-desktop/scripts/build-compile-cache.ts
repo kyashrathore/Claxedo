@@ -177,8 +177,11 @@ export async function buildCompileCache(input: {
       maxBuffer: 64 * 1024 * 1024,
     })
     if (run.status !== 0) {
+      // `status` is null when the runtime never ran or was signalled; `error`
+      // then carries the only cause (ENOENT, EACCES, ETIMEDOUT) and stderr is empty.
+      const cause = run.error ? `, error ${run.error.message}` : ""
       throw new Error(
-        `compile cache generation failed (status ${run.status}, signal ${run.signal})\n${run.stderr?.slice(-4000) ?? ""}`,
+        `compile cache generation failed (status ${run.status}, signal ${run.signal}${cause})\n${run.stderr?.slice(-4000) ?? ""}`,
       )
     }
     const generated: unknown = JSON.parse(fs.readFileSync(report, "utf8"))

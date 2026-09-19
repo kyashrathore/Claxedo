@@ -57,7 +57,8 @@ import {
   rememberLiveModes,
   type AcpConfigOptions,
 } from "./session"
-import { permissionOptionPreference, selectPermissionOption } from "./permission-options"
+import { permissionOptionPreference } from "./permission-options"
+import { answerAcpPermission } from "./permission-grants"
 import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
@@ -632,17 +633,16 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       })
       return clear()
     }
-    const preferred = permissionOptionPreference(decision)
-    const option = selectPermissionOption(decision, pending.options)
+    const option = answerAcpPermission(this.store, row.sessionID, decision, pending)
     if (option) {
       log.info("respondPermission: resolving with option", {
         permId,
         decision,
-        requestedKind: preferred[0],
+        requestedKind: permissionOptionPreference(decision)[0],
         selectedOptionId: option.optionId,
         selectedKind: option.kind,
         // Loud when we had to settle for something other than first choice.
-        degraded: option.kind !== preferred[0],
+        degraded: option.kind !== permissionOptionPreference(decision)[0],
       })
       proc.respondPermission(permId, { outcome: { outcome: "selected", optionId: option.optionId } })
       return clear()
@@ -650,7 +650,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     log.info("respondPermission: no acceptable option found in pending.options", {
       permId,
       decision,
-      preferred,
+      preferred: permissionOptionPreference(decision),
       availableKinds: pending.options.map((o) => o.kind),
     })
     proc.respondPermission(permId, { outcome: { outcome: "cancelled" } })

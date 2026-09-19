@@ -212,7 +212,7 @@ export abstract class AcpProcessManager {
         this.permissionOwnerMap().delete(permId)
         this.store.stalePermission?.(permId)
       }
-      if (options?.dispose !== false) target.dispose()
+      if (options?.dispose !== false) target.dispose(message)
     }
     if (options?.recover === false) return
     if (this.store.markSessionsInterruptedByOwner) {

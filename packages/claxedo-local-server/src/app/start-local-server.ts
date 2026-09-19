@@ -36,7 +36,8 @@ import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig, disposeAgentConfig, watchUserConfigFile } from "@claxedo/server-core/agent-config/index"
+import { fanOutConfig } from "../agent-config/fanout"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import {
@@ -171,6 +172,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     connectionProviders,
     projectAuth: (input) => credentialBroker.projectAuth(input),
     ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
+  })
+  const stopConfigWatch = watchUserConfigFile(() => {
+    fanOutConfig().catch((error: unknown) => {
+      log.warn("config fan-out after an on-disk edit failed", { error: String(error) })
+    })
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
@@ -370,6 +376,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     })
     stopOperation = (async () => {
       try {
+        stopConfigWatch()
         stopConfigRenewal()
         options.daemon?.lifecycle.stop()
         await shutdownEmbeddedWorkspaceRuntimes()

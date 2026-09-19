@@ -10,6 +10,7 @@
  */
 
 import { asRecord } from "@claxedo/helpers/guards"
+import { createHash } from "crypto"
 import * as fs from "fs"
 import * as path from "path"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -287,16 +288,68 @@ export async function saveUserConfig(config: UserAgentConfig): Promise<void> {
   })
 }
 
+/** Every active watcher's "already seen" sink, told about each API write before it lands. */
+const configWriteSinks = new Set<(digest: string) => void>()
+
+function digest(text: string) {
+  return createHash("sha256").update(text).digest("hex")
+}
+
 async function writeUserConfigFile(config: UserAgentConfig): Promise<void> {
   await fs.promises.mkdir(claxedoDir(), { recursive: true, mode: 0o755 })
   const target = userConfigFile()
   const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`
+  const text = JSON.stringify(config, null, 2) + "\n"
   try {
-    await fs.promises.writeFile(temporary, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 })
+    await fs.promises.writeFile(temporary, text, { mode: 0o600 })
+    for (const sink of configWriteSinks) sink(digest(text))
     await fs.promises.rename(temporary, target)
   } catch (error) {
     await fs.promises.unlink(temporary).catch(() => undefined)
     throw error
+  }
+}
+
+/**
+ * Reports edits to the config file that did not come through `saveUserConfig`,
+ * so a hand-edited connection reaches the runtimes the same way a saved one
+ * does. The directory is watched rather than the file: an editor's atomic save
+ * replaces the inode, which a file watch would silently stop following.
+ */
+export function watchUserConfigFile(onExternalChange: () => void): () => void {
+  const dir = claxedoDir()
+  const name = path.basename(userConfigFile())
+  fs.mkdirSync(dir, { recursive: true, mode: 0o755 })
+  let seen = fs.existsSync(userConfigFile()) ? digest(fs.readFileSync(userConfigFile(), "utf-8")) : undefined
+  const sink = (written: string) => {
+    seen = written
+  }
+  configWriteSinks.add(sink)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const check = async () => {
+    timer = undefined
+    const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch(() => undefined)
+    if (raw === undefined) return
+    const current = digest(raw)
+    if (current === seen) return
+    seen = current
+    log.info("User agent config changed on disk outside the API")
+    onExternalChange()
+  }
+  const watcher = fs.watch(dir, (_event, filename) => {
+    if (filename !== null && filename !== name) return
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => void check(), 200)
+    timer.unref()
+  })
+  watcher.on("error", (error) => {
+    log.warn("User agent config watch failed", { error: String(error) })
+  })
+  return () => {
+    configWriteSinks.delete(sink)
+    if (timer) clearTimeout(timer)
+    timer = undefined
+    watcher.close()
   }
 }
 

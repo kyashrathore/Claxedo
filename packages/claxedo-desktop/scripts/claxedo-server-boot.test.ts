@@ -149,6 +149,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
   const generation = "server-boot-generation"
   const daemonToken = "server-boot-daemon-token"
   const daemonDiscoveryPath = path.join(root, "data", "local-daemon.json")
+  const serverLog = fs.openSync(path.join(root, "server.log"), "a")
   const child = fork(SERVER_BUNDLE, [], {
     ...claxedoServerForkOptions({
       ...Object.fromEntries(
@@ -165,10 +166,11 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       CLAXEDO_DATA_DIR: path.join(root, "data"),
       CLAXEDO_DIAGNOSTICS_LAUNCH_ID: launchId,
       CLAXEDO_DIAGNOSTICS_GENERATION: generation,
-    }),
+    }, serverLog),
     execPath: electronExecutable(),
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   })
+  fs.closeSync(serverLog)
   const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
   let stderr = ""
   child.stderr?.setEncoding("utf8")
@@ -298,6 +300,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-idle-daemon-test-"))
   const port = await freePort()
   const discoveryPath = path.join(root, "data", "local-daemon.json")
+  const serverLog = fs.openSync(path.join(root, "server.log"), "a")
   const child = fork(SERVER_BUNDLE, [], {
     ...claxedoServerForkOptions({
       ...Object.fromEntries(
@@ -312,10 +315,11 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
       CLAXEDO_DAEMON_POLL_INTERVAL_MS: "5",
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-    }),
+    }, serverLog),
     execPath: electronExecutable(),
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
+  fs.closeSync(serverLog)
   const messages: unknown[] = []
   child.on("message", (message) => messages.push(message))
   let stderr = ""

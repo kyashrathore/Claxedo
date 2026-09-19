@@ -62,7 +62,8 @@ export function acpClientCapabilities(): ClientCapabilities {
  */
 export type PermissionPushPayload = {
   permId: string
-  tool: string
+  /** The agent's `toolCall.title`; absent when the agent sent none. */
+  tool?: string
   kind?: ToolKind
   paths: string[]
 }
@@ -71,7 +72,7 @@ export type PermissionPusher = (payload: PermissionPushPayload) => void
 
 export interface PendingPermission {
   aid: string
-  tool: string
+  tool?: string
   /** Protocol classification; absent when the agent does not send one. */
   kind?: ToolKind
   paths: string[]
@@ -89,6 +90,8 @@ export class ACPProcess {
   private caps: InitializeResponse["agentCapabilities"] | null = null
   private goal: ACPGoalExtension | null = null
   readonly pendingPermissions = new Map<string, PendingPermission>()
+  // agentSessionId → the running prompt's quiet countdown
+  private readonly promptQuiet = new Map<string, IdleReaper>()
   // agentSessionId → update listener
   readonly sessionListeners = new Map<string, (update: SessionUpdate) => void>()
   // agentSessionId → lifecycle observer retained between prompts
@@ -230,7 +233,7 @@ export class ACPProcess {
       .onRequest(methods.client.session.requestPermission, async ({ params }) => {
         const permId = randomUUID()
         const toolCall = params.toolCall
-        const tool = toolCall.title ?? "unknown"
+        const tool = toolCall.title ?? undefined
         // `title` is prose for display; `kind` is the stable classification used
         // by permission policy.
         // ACP types this as `ToolKind | null | undefined`; collapse the null so
@@ -248,6 +251,9 @@ export class ACPProcess {
           hasListener,
         })
 
+        // A permission waits on the human, not the agent, so the prompt's quiet
+        // countdown holds until the answer arrives.
+        const waiting = this.promptQuiet.get(params.sessionId)?.lease()
         return new Promise<RequestPermissionResponse>((resolve) => {
           this.pendingPermissions.set(permId, {
             aid: params.sessionId,
@@ -255,7 +261,10 @@ export class ACPProcess {
             kind,
             paths,
             options: params.options,
-            resolve,
+            resolve: (response) => {
+              waiting?.release()
+              resolve(response)
+            },
           })
 
           // Push permission-request directly via the registered pusher (no synthetic injection)
@@ -637,26 +646,22 @@ export class ACPProcess {
         ...(this.transport.kind === "stdio" ? { directory } : {}),
       })
 
-      // Inactivity timeout: resets on every received update so long tool calls
-      // don't hit the wall-clock limit. Only fires when the agent goes silent.
-      let timeoutId: ReturnType<typeof setTimeout> | undefined
-      let rejectTimeout!: (err: Error) => void
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        rejectTimeout = reject
+      // The only bound on a turn is the agent going quiet: a tool call that
+      // streams nothing for this long, with no permission waiting on the human,
+      // is a wedged agent. Wall-clock length is never a failure.
+      let rejectQuiet!: (err: Error) => void
+      const quietPromise = new Promise<never>((_, reject) => {
+        rejectQuiet = reject
       })
-      const resetTimeout = () => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId)
-        timeoutId = setTimeout(
-          () => rejectTimeout(new Error(`ACP prompt timed out after ${promptTimeoutMs()}ms of inactivity`)),
-          promptTimeoutMs(),
-        )
-      }
-      resetTimeout()
+      const quiet = createIdleReaper({
+        idleMs: promptTimeoutMs(),
+        onIdle: () => rejectQuiet(new Error(`ACP prompt timed out after ${promptTimeoutMs()}ms of inactivity`)),
+      })
+      quiet.touch()
+      this.promptQuiet.set(agentSessionId, quiet)
 
-      // Wrap the listener so every incoming update resets both the inactivity timer
-      // and the process idle timer (prevents the process from being killed mid-prompt).
       this.sessionListeners.set(agentSessionId, (update: SessionUpdate) => {
-        resetTimeout()
+        quiet.touch()
         this.resetIdleTimer()
         onUpdate(update)
       })
@@ -664,7 +669,7 @@ export class ACPProcess {
       try {
         const result = await Promise.race([
           this.agent.request(methods.agent.session.prompt, { sessionId: agentSessionId, prompt }),
-          timeoutPromise,
+          quietPromise,
         ])
         log.info("ACP prompt: completed", {
           agentSessionId,
@@ -679,7 +684,8 @@ export class ACPProcess {
         this.agent.notify(methods.agent.session.cancel, { sessionId: agentSessionId }).catch(() => {})
         throw err
       } finally {
-        if (timeoutId !== undefined) clearTimeout(timeoutId)
+        quiet.cancel()
+        if (this.promptQuiet.get(agentSessionId) === quiet) this.promptQuiet.delete(agentSessionId)
       }
     } catch (err) {
       log.error("ACP prompt: error", { agentSessionId, err, ms: Date.now() - t0 })
@@ -733,16 +739,23 @@ export class ACPProcess {
     return fork.sessionId
   }
 
-  dispose() {
+  /**
+   * `reason` becomes the failure every request still in flight on this
+   * process sees, so a session queued behind a wedged sibling learns why its
+   * turn died instead of a bare "connection closed".
+   */
+  dispose(reason?: string) {
     if (this.disposed) return
     this.disposed = true
+    const replaced = reason ? new Error(`ACP process replaced: ${reason}`) : undefined
+    if (replaced) this.exitReason ??= replaced
     this.sessionObservers.clear()
     this.goalListeners.clear()
     this.goalUpdateListeners.clear()
     this.exitObservation({ reason: "disposed" })
     this.idle.cancel()
-    log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind })
-    this.connection.close()
+    log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind, reason })
+    this.connection.close(replaced)
     this.transport.dispose()
   }
 

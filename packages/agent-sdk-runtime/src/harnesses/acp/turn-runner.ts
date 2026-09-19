@@ -12,6 +12,7 @@ import {
   isTerminalCompatEvent,
   messageUpdated,
   permissionAsked,
+  permissionReplied,
   sessionError,
   sessionStatus,
   type CompatEvent,
@@ -23,14 +24,14 @@ import { Log } from "../../log"
 import { recovering } from "../../status"
 import { createTurnEventProjector } from "../shared/turn-projection"
 import { createChildEventRouter } from "../shared/child-event-routing"
-import { acpPermissionRequest } from "./permission-options"
+import { acpPermissionRequest, selectPermissionOption } from "./permission-options"
+import { acpPermissionGrant, hasAcpGrant } from "./permission-grants"
 import { ACPProcess, type SessionUpdate } from "./process"
 import {
   errorMessage,
   messageUsage,
   missing,
   newSessionTimeoutMs,
-  promptTimeoutMs,
   runtimeUsage,
 } from "./helpers"
 import { AcpProcessManager } from "./process-manager"
@@ -430,17 +431,17 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         else resolvers.push(resolve)
       })
 
-    const bound = async <T>(label: string, run: Promise<T>, timeoutMs?: number) => {
+    const untilDrained = <T>(run: Promise<T>) => Promise.race([run, drainPromise])
+    const bound = async <T>(label: string, run: Promise<T>) => {
       let id: ReturnType<typeof setTimeout> | undefined
-      const ms = timeoutMs ?? newSessionTimeoutMs()
+      const ms = newSessionTimeoutMs()
       try {
-        return await Promise.race([
+        return await untilDrained(Promise.race([
           run,
-          drainPromise,
           new Promise<T>((_, reject) => {
             id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
           }),
-        ])
+        ]))
       } finally {
         if (id) clearTimeout(id)
       }
@@ -514,23 +515,34 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       }
       const install = () => {
         proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+          const pending = proc.pendingPermissions.get(permId)
+          const grant = acpPermissionGrant({ kind, tool })
+          const granted = pending && grant
+            && hasAcpGrant(this.store.getSessionConfig(id)?.permissionState, grant)
+            && selectPermissionOption("allow_always", pending.options)
+          const record = (event: CompatEvent, method: string) => {
+            this.store.appendEvent({
+              ...fenced,
+              sessionId: id,
+              agentSessionId,
+              payload: event,
+              source: { dir: "in", method, frame: { tool, paths } },
+            })
+            push(event)
+          }
+          if (granted) {
+            // Answered before anything is recorded: a stale-fence throw from the
+            // store must not leave the agent waiting on a reply that never comes.
+            // No `permission.asked` either, since nobody was asked; the reply
+            // alone is the transcript's record of what was approved.
+            log.info("sendMessage: permission answered by a saved grant", { permId, tool, kind, optionId: granted.optionId })
+            proc.respondPermission(permId, { outcome: { outcome: "selected", optionId: granted.optionId } })
+            record(permissionReplied(id, permId, "always"), "permission.grant")
+            return
+          }
           log.info("sendMessage: forwarding permission-request to stream", { permId, tool, kind })
           this.permissionOwnerMap().set(permId, proc)
-          const event = permissionAsked(
-            acpPermissionRequest({ permId, sessionId: id, tool, kind, paths }),
-          )
-          this.store.appendEvent({
-            ...fenced,
-            sessionId: id,
-            agentSessionId,
-            payload: event,
-            source: {
-              dir: "in",
-              method: "requestPermission",
-              frame: { tool, paths },
-            },
-          })
-          push(event)
+          record(permissionAsked(acpPermissionRequest({ permId, sessionId: id, tool, kind, paths })), "requestPermission")
         })
       }
       const stop = (stopReason: StopReason) => {
@@ -547,9 +559,9 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       const run = async (): Promise<void> => {
         install()
         try {
-          // Model turns use the prompt timeout; session creation and restoration
-          // use the shorter handshake timeout.
-          const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward, directory), promptTimeoutMs())
+          // No wall clock on a turn: `ACPProcess.prompt` fails it only when the
+          // agent goes quiet with nothing waiting on the human.
+          const result = await untilDrained(proc.prompt(agentSessionId, input, forward, directory))
           // Prompt-result usage is the ONLY meterable usage on this rail:
           // mid-turn `usage_update` notifications carry a context meter, not
           // token categories. The ACP agent is authoritative for the final

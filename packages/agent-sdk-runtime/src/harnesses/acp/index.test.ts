@@ -77,6 +77,8 @@ function adapter() {
     store: {
       listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
       appendEvent: (input: unknown) => void
+      getSessionConfig?: (id: string) => { permissionState: Record<string, unknown> } | null
+      updateSessionConfig?: (id: string, update: unknown) => object
     }
     processes: Map<string, { proc: { alive: boolean; pendingPermissions: Map<string, unknown>; respondPermission: (id: string, response: unknown) => void } }>
   }>
@@ -135,6 +137,12 @@ describe("AcpHarnessAdapter permissions", () => {
         return [{ id: "perm-1", sessionID: "session-1" }]
       },
       appendEvent() {},
+      getSessionConfig() {
+        return null
+      },
+      updateSessionConfig() {
+        return {}
+      },
     }
     const selected: unknown[] = []
     item.processes.set("session-1", {
@@ -191,14 +199,22 @@ describe("AcpHarnessAdapter permissions", () => {
     expect(stale).toEqual([])
   })
 
-  test("responds to permissions owned by a live replacement process", async () => {
+  test("responds to permissions owned by a live replacement process and remembers an 'always'", async () => {
     const item = adapter()
     const selected: unknown[] = []
+    const configUpdates: unknown[] = []
     item.store = {
       listPermissions() {
         return [{ id: "perm-1", sessionID: "session-1" }]
       },
       appendEvent() {},
+      getSessionConfig() {
+        return { permissionState: { codexCommandGrants: [] } }
+      },
+      updateSessionConfig(id: string, update: unknown) {
+        configUpdates.push([id, update])
+        return {}
+      },
     }
     item.processes.set("session-1", {
       proc: {
@@ -212,6 +228,8 @@ describe("AcpHarnessAdapter permissions", () => {
         alive: true,
         pendingPermissions: new Map([
           ["perm-1", {
+            tool: "bun test src",
+            kind: "execute",
             options: [{ kind: "allow_always", optionId: "allow-session" }],
           }],
         ]),
@@ -224,6 +242,94 @@ describe("AcpHarnessAdapter permissions", () => {
     await item.respondPermission(executionBinding("session-1", path.resolve("/work")), "perm-1", "allow_always")
 
     expect(selected).toEqual([{ outcome: { outcome: "selected", optionId: "allow-session" } }])
+    expect(configUpdates).toEqual([[
+      "session-1",
+      { permissionState: { codexCommandGrants: [], acpGrants: [{ kind: "execute", tool: "bun test src" }] } },
+    ]])
+  })
+
+  test("a request covered by a saved 'always' is answered without asking", async () => {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+      store: {
+        getAgentSessionId: (id: string) => string
+        getSession: (id: string) => { title?: string | null } | null
+        getSessionConfig: (id: string) => { permissionState: Record<string, unknown> }
+        consumeRecoveryError: (id: string) => string | null
+        startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
+        appendEvent: (input: { payload: { type: string } }) => void
+        bindSession: (input: unknown) => void
+      }
+      options: { connection: { kind: "process"; command: string }; harness: string }
+      turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
+      getOrSpawnProcess: () => Promise<{ proc: unknown; isNew: boolean }>
+    }>
+    const appended: string[] = []
+    const answered: unknown[] = []
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
+    item.turnLifecycle = createSessionTurnLifecycle()
+    item.store = {
+      getAgentSessionId() {
+        return "agent-session-1"
+      },
+      getSession() {
+        return { title: "Active" }
+      },
+      getSessionConfig() {
+        return { permissionState: { acpGrants: [{ kind: "execute", tool: "bun test src" }] } }
+      },
+      consumeRecoveryError() {
+        return null
+      },
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
+      appendEvent(input) {
+        appended.push(input.payload.type)
+      },
+      bindSession() {},
+    }
+    const permissionPushers = new Map<string, (payload: unknown) => void>()
+    item.getOrSpawnProcess = async () => ({
+      isNew: false,
+      proc: {
+        permissionPushers,
+        pendingPermissions: new Map([
+          ["perm-1", { tool: "bun test src", kind: "execute", options: [{ kind: "allow_once", optionId: "once" }] }],
+          ["perm-2", { tool: "rm -rf build", kind: "execute", options: [{ kind: "allow_once", optionId: "once" }] }],
+        ]),
+        async resumeSession() {},
+        async syncSession() {},
+        async prompt() {
+          const push = permissionPushers.get("agent-session-1")!
+          push({ permId: "perm-1", tool: "bun test src", kind: "execute", paths: [] })
+          push({ permId: "perm-2", tool: "rm -rf build", kind: "execute", paths: [] })
+          return { stopReason: "end_turn", usage: null }
+        },
+        respondPermission(permId: string, response: unknown) {
+          answered.push([permId, response])
+        },
+        async cancel() {},
+        dispose() {},
+      },
+    })
+
+    const events: string[] = []
+    for await (const event of executeTestTurn(item, "s1", {
+      parts: [{ type: "text", text: "hello" }],
+      userMessageId: "user-1",
+      assistantMessageId: "assistant-1",
+      agent: "build",
+      model: { providerID: "connection:example", modelID: "default" },
+    }, path.resolve("/work"))) {
+      events.push(event.type)
+    }
+
+    expect(answered).toEqual([["perm-1", { outcome: { outcome: "selected", optionId: "once" } }]])
+    // Nobody was asked about the granted request, so only its answer is recorded.
+    expect(events.filter((type) => type === "permission.asked")).toHaveLength(1)
+    expect(events.filter((type) => type === "permission.replied")).toHaveLength(1)
+    expect(appended.filter((type) => type === "permission.asked")).toHaveLength(1)
+    expect(appended.filter((type) => type === "permission.replied")).toHaveLength(1)
   })
 })
 
@@ -968,12 +1074,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
   })
 
-  test("prompt timeout cancels and disposes the wedged process", async () => {
-    // The PROMPT turn is bounded by the prompt timeout (not the new-session
-    // handshake timeout — a slow model turn must not be cancelled at 10s).
-    const prev = process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS
-    process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "5"
-
+  test("a prompt the process reports as quiet cancels and disposes the wedged process", async () => {
+    // The process owns the only bound on a turn (see `ACPProcess.prompt`); the
+    // runner must not add a wall clock of its own, so a prompt that outlives
+    // the handshake timeout many times over is left alone until the process
+    // itself gives up on it.
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
@@ -1024,7 +1129,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         async syncSession() {},
         async prompt() {
           calls.push("prompt")
-          return new Promise<never>(() => {})
+          await new Promise((resolve) => setTimeout(resolve, 30))
+          throw new Error("ACP prompt timed out after 5ms of inactivity")
         },
         async cancel() {
           calls.push("cancel")
@@ -1035,6 +1141,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     })
 
+    const prevHandshake = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
+    process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
     try {
       const events: string[] = []
       for await (const event of executeTestTurn(item, "s1", {
@@ -1054,8 +1162,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       expect(item.turnLifecycle.busySessions.has("s1")).toBe(false)
       expect(item.turnLifecycle.activeTurns.size).toBe(0)
     } finally {
-      if (prev === undefined) delete process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS
-      else process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = prev
+      if (prevHandshake === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
+      else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = prevHandshake
     }
   })
 

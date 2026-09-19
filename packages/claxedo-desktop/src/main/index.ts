@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events"
 import { fork, spawn } from "node:child_process"
-import { existsSync, renameSync, writeFileSync } from "node:fs"
+import { closeSync, existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -97,7 +97,7 @@ import { remoteAccessFollow } from "./host-connector/account-follow"
 import { describeLocalWorkspace } from "./host-connector/local-workspace-description"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
-import { initLogging } from "./logging"
+import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
 import { createNativeMarkdownRenderer } from "./native-markdown"
 import { createNativeMermaidRenderer } from "./native-mermaid"
@@ -338,6 +338,8 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
     const serverGeneration = `server-generation-${crypto.randomUUID()}`
     const daemonToken = crypto.randomUUID()
     const daemonDiscovery = claxedoDaemonDiscoveryPath(serverDataDir)
+    const serverLog = openServerLogFile()
+    logger.log("claxedo-server stdout and stderr are written to", { path: serverLog.path })
     const child = fork(
       serverPath,
       [],
@@ -356,8 +358,9 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
           : {}),
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
         CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
-      }),
+      }, serverLog.fd),
     )
+    closeSync(serverLog.fd)
     const listening = defer<void>()
     let ownerBridge: ReturnType<typeof createOwnerOperationBridge> | undefined
     const connectOwnerBridge = () => {
