@@ -5,7 +5,7 @@ import { submitBlockedByRole } from "../../features/session/composer/role-gate"
 import {
   __workspaceConnectionInternals as internals,
   acquireWorkspaceConnection,
-  workspacePlacement,
+  workspaceRelayPlacement,
 } from "@/features/workspaces/data/workspace-connection"
 import type { WorkspaceConnectionInfo } from "@/platform/runtime/agent/workspace-relay-connection"
 import { Can } from "./role"
@@ -39,11 +39,11 @@ describe("viewer read-only role gates", () => {
       onMount(() => {
         mounts += 1
       })
-      const submitBlocked = createMemo(() => submitBlockedByRole(workspacePlacement("ws_readonly")))
+      const submitBlocked = createMemo(() => submitBlockedByRole(workspaceRelayPlacement("ws_readonly")))
       return (
         <section>
           <button data-testid="submit" disabled={submitBlocked()}>Send</button>
-          <Can do="mutate.workspace" on={workspacePlacement("ws_readonly")}>
+          <Can do="mutate.workspace" on={workspaceRelayPlacement("ws_readonly")}>
             <button data-testid="delete">Delete workspace</button>
           </Can>
         </section>

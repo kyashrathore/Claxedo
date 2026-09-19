@@ -70,12 +70,14 @@ function hostedFixture(input: { now: () => number; ttlMs?: number; relayUrl?: st
     if (call.path.startsWith("/api/workspace?access=")) {
       const access = call.path.slice("/api/workspace?access=".length)
       const rows = [
-        { workspace_id: "ws-cloud", access: "cloud", backing: "cloud-vm", display_name: "Cloud box", role: "owner" },
-        { workspace_id: "ws-mac", access: "user-hosted", backing: "local-worktree", display_name: "Mac", remote_directory: "/Users/me/app", host_online: true, role: "owner" },
-        { workspace_id: "ws-laptop", access: "user-hosted", backing: "local-worktree", remote_directory: "/home/me/app", host_online: false, role: "editor" },
-        { access: "cloud" },
+        { workspace_id: "ws-cloud", backing: "cloud-vm", display_name: "Cloud box", role: "owner" },
+        { workspace_id: "ws-mac", backing: "local-worktree", display_name: "Mac", remote_directory: "/Users/me/app", host_online: true, role: "owner" },
+        { workspace_id: "ws-laptop", backing: "local-worktree", remote_directory: "/home/me/app", host_online: false, role: "editor" },
+        { backing: "cloud-vm" },
       ]
-      return Response.json({ workspaces: access === "user-hosted" ? rows.filter((row) => row.access === "user-hosted") : rows })
+      return Response.json({
+        workspaces: access === "user-hosted" ? rows.filter((row) => row.backing === "local-worktree") : rows,
+      })
     }
     return Response.json({ error: { code: "not_found", message: `no route ${call.path}` } }, { status: 404 })
   })

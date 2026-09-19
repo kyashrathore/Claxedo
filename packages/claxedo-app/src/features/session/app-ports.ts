@@ -68,7 +68,7 @@ export type SessionAppPorts = {
   usePaneCtx: typeof PaneCtxModule.usePaneCtx
   useWorkspaceQuery: typeof WorkspaceQuery.useWorkspaceQuery
   isWorkspaceReady: typeof WorkspaceConnection.isWorkspaceReady
-  workspacePlacement: typeof WorkspaceConnection.workspacePlacement
+  workspacePlacement: typeof WorkspaceConnection.workspaceRelayPlacement
   createCloudWorkspace: typeof WorkspaceCreate.createCloudWorkspace
   WorkspaceGate: typeof WorkspaceGateModule.WorkspaceGate
   useWorkspaceScopeRegistryOptional: typeof WorkspaceScope.useWorkspaceScopeRegistryOptional

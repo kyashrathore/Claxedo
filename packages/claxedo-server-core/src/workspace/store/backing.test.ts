@@ -96,32 +96,28 @@ describe("workspaceBacking", () => {
     })
   })
 
-  test("returns user-hosted when a cloud workspace has no driver/sandbox attached", () => {
+  test("a cloud row stored before the driver was required stays a cloud-vm", () => {
     expect(workspaceBacking(ws({
       kind: "cloud",
       workspace_name: "selfhost",
       project_name: "acme",
       git_branch: "main",
     }))).toEqual({
-      kind: "user-hosted",
+      kind: "cloud-vm",
       workspaceName: "selfhost",
       projectName: "acme",
       branch: "main",
     })
   })
 
-  test("does not leak local host directory through user-hosted/cloud backings", () => {
+  test("a cloud backing publishes the remote directory, never the sandbox's own path field", () => {
     const cloud = workspaceBacking(ws({
       kind: "cloud",
       directory: "/workspace/cloud",
       driver: "daytona",
       sandbox_id: "sandbox-x",
     }))
-    const userHosted = workspaceBacking(ws({
-      kind: "cloud",
-      directory: "/workspace/cloud",
-    }))
     expect(cloud).not.toHaveProperty("directory")
-    expect(userHosted).not.toHaveProperty("directory")
+    expect(cloud).not.toHaveProperty("remoteDirectory")
   })
 })

@@ -111,7 +111,7 @@ configureSessionAppPorts({
   usePaneCtx: PaneCtxModule.usePaneCtx,
   useWorkspaceQuery: WorkspaceQuery.useWorkspaceQuery,
   isWorkspaceReady: WorkspaceConnection.isWorkspaceReady,
-  workspacePlacement: WorkspaceConnection.workspacePlacement,
+  workspacePlacement: WorkspaceConnection.workspaceRelayPlacement,
   createCloudWorkspace: WorkspaceCreate.createCloudWorkspace,
   WorkspaceGate: WorkspaceGateModule.WorkspaceGate,
   useWorkspaceScopeRegistryOptional: WorkspaceScope.useWorkspaceScopeRegistryOptional,

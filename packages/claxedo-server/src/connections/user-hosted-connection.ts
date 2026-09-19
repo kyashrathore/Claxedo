@@ -28,10 +28,7 @@ export async function userHostedConnectionInfo(
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
-  if (
-    result.workspace?.backing !== "local-worktree"
-    || result.workspace.access !== "user-hosted"
-  ) {
+  if (result.workspace?.backing !== "local-worktree") {
     return {
       error: apiError("workspace_relay_user_hosted_required", "Workspace Relay user-hosted connection is only available for shared local workspaces"),
       status: 400,

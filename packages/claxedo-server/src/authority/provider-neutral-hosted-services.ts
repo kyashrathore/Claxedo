@@ -43,6 +43,7 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLease
 import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -326,6 +327,13 @@ export function composeProviderNeutralHostedControlPlane(
   // sink that does not exist yet cannot receive it.
   const telemetry = workerTelemetry(env)
   const manager = sandboxManager(env, telemetry, bindings.sandbox)
+  // The provisioner this deployment places every cloud workspace on. The
+  // fetch-bridge driver answers to `fetch`, which is outside `SandboxDriverID`
+  // and therefore cannot be recorded on a workspace row at all; such a
+  // deployment declares no driver and the allocator refuses rather than
+  // storing a root whose machine nothing names.
+  const injectedDriverId = bindings.sandbox?.driver.id
+  const managerDriver = manager && isSandboxDriverID(injectedDriverId) ? injectedDriverId : undefined
   const homeRegion = defaultHomeRegion(env)
   const relayUrls = relayEndpointsFromEnv(env, relayUrl)
   const runtimeAccessSigner = runtimeAccessTokenSigner(env)
@@ -362,7 +370,7 @@ export function composeProviderNeutralHostedControlPlane(
       runtimeAccessTokenSigner: runtimeAccessSigner,
       hostTunnelTokenSigner: hostTunnelSigner,
     },
-    sandbox: (manager ? { sandboxManager: manager } : {}),
+    sandbox: (manager ? { sandboxManager: manager, ...(managerDriver ? { defaultDriver: managerDriver } : {}) } : {}),
     telemetry,
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,

@@ -30,6 +30,7 @@ const MIGRATIONS = [
   "0017_adapter_custom.sql",
   "0018_drop_agent_extensions.sql",
   "0023_agent_plugin_sources.sql",
+  "0034_drop_workspace_access.sql",
 ]
 
 const EMPTY_BASE: CatalogSourceProvider = { listAuthorizedSources: async () => [] }

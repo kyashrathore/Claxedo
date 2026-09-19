@@ -23,8 +23,8 @@ describe("SQLite workspace authority tenancy migration", () => {
     `).run()
     expect(() => database.prepare(`
       INSERT INTO workspaces
-        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, created_at, updated_at)
-      VALUES ('ws_mismatch', 'org_one', 'prj_missing', 'owner', 'cloud-vm', 'cloud', 1, 1)
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, created_at, updated_at)
+      VALUES ('ws_mismatch', 'org_one', 'prj_missing', 'owner', 'cloud-vm', 1, 1)
     `).run()).toThrow("workspace_project_tenant_conflict")
   })
 
@@ -134,6 +134,91 @@ describe("SQLite workspace authority tenancy migration", () => {
       SELECT target_key, granted_to_org_id FROM workspace_share_grants WHERE grant_id = 'grant_org'
     `).get()).toEqual({ target_key: "org:org_team", granted_to_org_id: "org_team" })
     database.close()
+  })
+
+  test("a legacy database upgrades without the access mode, keeping every row and its normalized directory", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-access-drop-")), "authority.db")
+    const legacy = new Database(file)
+    createLegacyAuthorityTables(legacy)
+    legacy.exec(`
+      INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
+      VALUES ('owner', 'owner', 'issuer', 'human', 1, 1);
+      INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
+      VALUES ('org_one', 'One', 'personal', 'owner', 1, 1);
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES ('org_one', 'owner', 'owner', 1, 1);
+      INSERT INTO projects (project_id, org_id, owner_token_identifier, created_at, updated_at)
+      VALUES ('prj_one', 'org_one', 'owner', 1, 1);
+      INSERT INTO workspaces
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+         second_device_open_at, remote_directory, created_at, updated_at)
+      VALUES
+        ('ws_machine', 'org_one', 'prj_one', 'owner', 'local-worktree', 'user-hosted', 'Machine', NULL, '/srv/app/../code/', 1, 1),
+        ('ws_vm', 'org_one', 'prj_one', 'owner', 'cloud-vm', 'cloud', 'VM', NULL, NULL, 2, 2);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })()
+    expect((database.prepare("PRAGMA table_info(workspaces)").all() as Array<{ name: string }>)
+      .map((column) => column.name)).not.toContain("access")
+    expect(database.prepare("SELECT workspace_id, backing, remote_directory FROM workspaces ORDER BY workspace_id").all())
+      .toEqual([
+        { workspace_id: "ws_machine", backing: "local-worktree", remote_directory: "/srv/code" },
+        { workspace_id: "ws_vm", backing: "cloud-vm", remote_directory: null },
+      ])
+    database.close()
+
+    const reopened = openAuthorityDb({ path: file })()
+    expect(reopened.prepare("SELECT count(*) AS count FROM workspaces").get()).toEqual({ count: 2 })
+    reopened.close()
+  })
+
+  // The tenancy rebuild drops the column as a side effect of rewriting the
+  // table, and it runs only for a database whose tenancy columns are still
+  // nullable. Every deployed database is already past that point, so this is
+  // the shape the drop actually has to handle.
+  test("a database already on the current tenancy shape loses the access mode on open", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-access-drop-current-")), "authority.db")
+    const legacy = new Database(file)
+    createLegacyAuthorityTables(legacy)
+    legacy.exec(`
+      INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
+      VALUES ('owner', 'owner', 'issuer', 'human', 1, 1);
+      INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
+      VALUES ('org_one', 'One', 'personal', 'owner', 1, 1);
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES ('org_one', 'owner', 'owner', 1, 1);
+      INSERT INTO projects (project_id, org_id, owner_token_identifier, created_at, updated_at)
+      VALUES ('prj_one', 'org_one', 'owner', 1, 1);
+    `)
+    legacy.close()
+
+    const current = openAuthorityDb({ path: file })()
+    expect(required(current, "workspaces", "org_id")).toBe(true)
+    current.exec(`
+      ALTER TABLE workspaces ADD COLUMN access TEXT NOT NULL DEFAULT 'cloud';
+      INSERT INTO workspaces
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+         remote_directory, created_at, updated_at)
+      VALUES
+        ('ws_machine', 'org_one', 'prj_one', 'owner', 'local-worktree', 'user-hosted', 'Machine', '/srv/app/../code/', 1, 1),
+        ('ws_vm', 'org_one', 'prj_one', 'owner', 'cloud-vm', 'cloud', 'VM', NULL, 2, 2);
+    `)
+    current.close()
+
+    const upgraded = openAuthorityDb({ path: file })()
+    expect((upgraded.prepare("PRAGMA table_info(workspaces)").all() as Array<{ name: string }>)
+      .map((column) => column.name)).not.toContain("access")
+    expect(upgraded.prepare("SELECT workspace_id, backing, remote_directory FROM workspaces ORDER BY workspace_id").all())
+      .toEqual([
+        { workspace_id: "ws_machine", backing: "local-worktree", remote_directory: "/srv/code" },
+        { workspace_id: "ws_vm", backing: "cloud-vm", remote_directory: null },
+      ])
+    upgraded.prepare(`
+      INSERT INTO workspaces (workspace_id, org_id, project_id, owner_token_identifier, backing, created_at, updated_at)
+      VALUES ('ws_new', 'org_one', 'prj_one', 'owner', 'local-worktree', 3, 3)
+    `).run()
+    upgraded.close()
   })
 
   test("upgrades legacy nullable rows, rebuilds constraints, and is idempotent", () => {

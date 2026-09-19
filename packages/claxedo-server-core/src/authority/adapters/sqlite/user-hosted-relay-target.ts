@@ -30,7 +30,6 @@ export function createSqliteUserHostedTargetResolver(
       WHERE assignment.workspace_id = ?
         AND ${HOST_SERVING_WORKSPACE_SQL}
         AND workspace.deleted_at IS NULL
-        AND workspace.access = 'user-hosted'
         AND workspace.backing = 'local-worktree'
       LIMIT 1
     `).get(workspaceId, now())

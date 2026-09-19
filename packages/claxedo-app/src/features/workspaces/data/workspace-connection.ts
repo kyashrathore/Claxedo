@@ -177,7 +177,7 @@ export function connectionPlacement(workspaceId: string | undefined): Connection
   return connections[workspaceId]?.rolePlacement
 }
 
-export function workspacePlacement(workspaceId: string | undefined): Placement | undefined {
+export function workspaceRelayPlacement(workspaceId: string | undefined): Placement | undefined {
   if (!workspaceId) return undefined
   const state = connections[workspaceId]
   if (!state?.relayPlacement) return undefined

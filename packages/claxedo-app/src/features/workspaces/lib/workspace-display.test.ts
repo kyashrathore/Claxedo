@@ -349,7 +349,7 @@ describe("workspaceRouteIdentity over a control-plane catalog", () => {
     workspaces: [{
       workspace_id: "ws_hosted",
       project_id: "proj_hosted",
-      access: "user-hosted",
+      backing: "local-worktree",
       remote_directory: HOST_PATH,
       workspace_name: "shared",
     }],

@@ -14,7 +14,7 @@ import {
  * The port is the only thing stubbed.
  *
  * Everything between the hook and it is the real path: the real
- * `registerUserHostedWorkspace` (which routes through `port.shareWorkspace`
+ * `publishWorkspacePlacement` (which routes through `port.shareWorkspace`
  * when a connector is bound), the real `localWorkspaceShareTarget` kind
  * filter, and the real `useSharedWorkspaceIds` query. Stubbing the share
  * helper instead would have tested the test's idea of the boundary.

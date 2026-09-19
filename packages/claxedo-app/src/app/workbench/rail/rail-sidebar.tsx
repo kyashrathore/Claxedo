@@ -94,7 +94,7 @@ import { focusComposerWhenReady } from "@/features/session/composer/ui/composer-
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
 import { useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
 import { can } from "@/platform/auth/role"
-import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
+import { isWorkspaceReady, workspaceRelayPlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { isRelayBackedWorkspaceKind, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
@@ -1420,7 +1420,7 @@ export function RailSidebar(props: RailSidebarProps) {
       })
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
-    const canMutateWorkspace = () => !workspace(input.project, input.workspaceDir).workspaceId || can("mutate.workspace", workspacePlacement(workspace(input.project, input.workspaceDir).workspaceId))
+    const canMutateWorkspace = () => !workspace(input.project, input.workspaceDir).workspaceId || can("mutate.workspace", workspaceRelayPlacement(workspace(input.project, input.workspaceDir).workspaceId))
 
     // The cluster's buttons are `size-6` in a `gap-0.5` row: two of them on a
     // project header (new session, new terminal) plus the menu, and two more

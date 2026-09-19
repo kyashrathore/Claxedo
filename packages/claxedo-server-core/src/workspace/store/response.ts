@@ -5,7 +5,7 @@ import { workspaceBacking } from "./backing"
 export function workspaceResponse(ws: Workspace | undefined, statusOverride?: string) {
   if (!ws) return undefined
   const backing = workspaceBacking(ws)
-  const access = backing.kind === "cloud-vm" ? "cloud" : backing.kind === "user-hosted" ? "user-hosted" : "local"
+  const access = backing.kind === "cloud-vm" ? "cloud" : "local"
   return {
     workspaceId: ws.id,
     projectId: ws.project_id ?? ws.id,

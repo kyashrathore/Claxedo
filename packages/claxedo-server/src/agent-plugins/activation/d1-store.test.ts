@@ -25,11 +25,14 @@ const MIGRATIONS = [
   "0002_workspace_authority.sql",
   "0003_private_sessions.sql",
   "0008_user_deployed_owner_bootstrap.sql",
+  "0004_host_access_and_sharing.sql",
   "0013_org_team_session_sharing.sql",
+  "0014_host_workspace_assignments.sql",
   "0017_adapter_custom.sql",
   "0018_drop_agent_extensions.sql",
   "0019_agent_plugin_activations.sql",
   "0028_workspace_org_member_visible.sql",
+  "0034_drop_workspace_access.sql",
 ]
 
 const PLUGIN = "claxedo/review"
@@ -167,7 +170,6 @@ async function workspace(input: {
     displayName: input.workspaceId,
     repoUrl: `https://github.com/claxedo/${input.workspaceId}.git`,
     backing: input.access === "cloud" ? "cloud-vm" : "local-worktree",
-    access: input.access,
   })
 }
 

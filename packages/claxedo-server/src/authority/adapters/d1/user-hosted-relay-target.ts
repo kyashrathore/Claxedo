@@ -9,13 +9,14 @@ type ActiveHostRow = {
 }
 
 /**
- * Service-side relay lookup for D1-backed user-hosted workspaces.
+ * Service-side relay lookup for a workspace placed on an enrolled machine.
  *
  * The internal resolver has machine authority, not an end-user principal, so
- * it cannot call `WorkspaceAuthority.activeWorkspaceHost`. It reads only the
- * minimum routing fact — owner assignment AND the serving predicate every other
- * routability reader uses (`HOST_SERVING_WORKSPACE_SQL`) — and rechecks
- * authoritative workspace posture in the same query.
+ * it cannot call `WorkspaceAuthority.activeWorkspaceHost`. It reads the
+ * placement — the owner's assignment naming the machine — under the serving
+ * predicate every other routability reader uses (`HOST_SERVING_WORKSPACE_SQL`),
+ * and rechecks the workspace's posture in the same query. A provisioner-owned
+ * workspace is refused by its backing: no enrollment serves a cloud VM.
  */
 export function createD1UserHostedTargetResolver(
   database: D1Database,
@@ -40,7 +41,6 @@ export function createD1UserHostedTargetResolver(
         and workspace.deleted_at is null
         and organization.deleted_at is null
         ${deploymentId ? "and organization.deployment_id = ?" : ""}
-        and workspace.access = 'user-hosted'
         and workspace.backing = 'local-worktree'
       limit 1
     `,

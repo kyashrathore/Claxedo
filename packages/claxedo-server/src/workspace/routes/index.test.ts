@@ -263,11 +263,6 @@ function services(): ControlPlaneServices {
         last_seen_at: 1,
         created_at: 1,
       })),
-      heartbeatHostEnrollment: vi.fn(async () => ({
-        expires_at: 120_000,
-        last_seen_at: 1,
-        assigned_workspace_ids: [] as string[],
-      })),
       pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
       activeHostEnrollment: vi.fn(async () => ({ active: false as const, reason: "not-enrolled" as const })),
       markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 1 })),

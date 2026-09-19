@@ -68,7 +68,7 @@
  *   The reconciler is `useLocalWorkspaceAutoShareDriver` (`features/workspaces/data/auto-
  *   share-local-workspaces.tsx`), mounted once by the app shell in `app/entry/runtime-
  *   providers.tsx`; per workspace it still fires the same ONE-SHOT
- *   `registerUserHostedWorkspace` (`features/workspaces/data/share-workspace.ts`) →
+ *   `publishWorkspacePlacement` (`features/workspaces/data/share-workspace.ts`) →
  *   `POST /api/workspace/:id/host-assignment`. It does not touch `workspaceConnection` at
  *   all — it is orthogonal to the connect pipeline above. Which workspaces qualify is
  *   still `localWorkspaceShareTarget`
@@ -121,7 +121,7 @@
  * Sharing is a machine-level gesture, not a per-workspace one: enabling remote access in
  * Settings > Devices publishes every local workspace this machine holds, reconciled by
  * `useLocalWorkspaceAutoShareDriver` through the same one-shot
- * `registerUserHostedWorkspace` → `POST /api/workspace/:id/host-assignment`. It never
+ * `publishWorkspacePlacement` → `POST /api/workspace/:id/host-assignment`. It never
  * touches `workspaceConnection`.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"

@@ -1,7 +1,7 @@
 import { createContext, createEffect, createMemo, createSignal, onCleanup, onMount, useContext, type JSX } from "solid-js"
 import { useQueryClient } from "@tanstack/solid-query"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace } from "./share-workspace"
+import { localWorkspaceShareTarget, publishWorkspacePlacement } from "./share-workspace"
 import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "./shared-workspaces"
 
 /**
@@ -11,7 +11,7 @@ import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "./shared-wor
  * There is no per-workspace choice to hold, so there is no per-workspace state
  * to reconcile against — the target set is simply "every local workspace this
  * machine has", and this module's whole job is to make the published set equal
- * it. The backend contract stays one `registerUserHostedWorkspace` call per
+ * it. The backend contract stays one `publishWorkspacePlacement` call per
  * workspace (an assignment POST plus a beat); the machine's own inventory is
  * the list, not a user-ticked selection.
  *
@@ -218,7 +218,7 @@ function useLocalWorkspaceAutoShareDriver(input: {
     let shared = 0
     for (const candidate of pending) {
       try {
-        await registerUserHostedWorkspace({
+        await publishWorkspacePlacement({
           workspaceId: candidate.workspaceId,
           displayName: candidate.label,
         })

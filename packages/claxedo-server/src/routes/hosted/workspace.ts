@@ -241,7 +241,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             return c.json({
               workspaces:
                 Array.isArray(workspaces) && access === "user-hosted"
-                  ? workspaces.filter((item) => asRecord(item)?.access === "user-hosted")
+                  ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
                   : workspaces,
             })
           } catch (err) {

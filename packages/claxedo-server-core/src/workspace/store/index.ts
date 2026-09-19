@@ -505,6 +505,7 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     const project_name = trimToUndefined(input.project_name) || ws.project_name
     const workspace_name = trimToUndefined(input.workspace_name) || ws.workspace_name
     const driver = input.driver ?? ws.driver
+    if (kind === "cloud" && !driver) return undefined
     const repo_url = trimToUndefined(input.repo_url) || ws.repo_url
     const repo_key = info.repo_key ?? ws.repo_key
     const repo_root = info.repo_root ?? ws.repo_root
@@ -558,6 +559,9 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
 
   // New local workspaces require a git repo
   if (kind !== "cloud" && !info.repo_key) return undefined
+  // A cloud row's placement IS its driver: the provisioner owns the machine it
+  // provisions. Stored without one the row names no machine at all.
+  if (kind === "cloud" && !input.driver) return undefined
 
   const id = requestedId || randomUUID()
   const ws = upsert({
@@ -613,7 +617,9 @@ export async function bindWorkspace(id: string, dir: string) {
 
 export async function updateWorkspace(
   id: string,
-  patch: Partial<Pick<Workspace, "project_name" | "workspace_name" | "driver" | "repo_url" | "remote_directory" | "status">>,
+  patch: Partial<
+    Pick<Workspace, "project_name" | "workspace_name" | "driver" | "repo_url" | "remote_directory" | "status">
+  >,
 ) {
   await boot()
   const ws = byId.get(id)

@@ -1,5 +1,6 @@
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { Workspace } from "./index"
+import { workspacePlacement } from "./placement"
 
 export type LocalWorktreeBacking = {
   kind: "local-worktree"
@@ -11,7 +12,7 @@ export type LocalWorktreeBacking = {
 
 export type CloudVmBacking = {
   kind: "cloud-vm"
-  driver: SandboxDriverID
+  driver?: SandboxDriverID
   projectName?: string
   workspaceName?: string
   repoUrl?: string
@@ -20,17 +21,10 @@ export type CloudVmBacking = {
   remoteDirectory?: string
 }
 
-export type UserHostedBacking = {
-  kind: "user-hosted"
-  workspaceName?: string
-  projectName?: string
-  branch?: string
-}
-
-export type WorkspaceBacking = LocalWorktreeBacking | CloudVmBacking | UserHostedBacking
+export type WorkspaceBacking = LocalWorktreeBacking | CloudVmBacking
 
 /**
- * Derives the public backing model from the persisted workspace record.
+ * The placement as clients read it.
  *
  * Each optional field is spread in only when present. An explicit
  * `undefined`-valued key is not the same as an absent one once the record is
@@ -42,25 +36,14 @@ export function workspaceBacking(workspace: Workspace): WorkspaceBacking {
     ...(workspace.repo_name !== undefined ? { repoName: workspace.repo_name } : {}),
     ...(workspace.git_branch !== undefined ? { branch: workspace.git_branch } : {}),
   }
-  const named = {
+  const host = workspacePlacement(workspace).host
+  if (host.kind === "self") return { kind: "local-worktree", directory: workspace.directory, ...shared }
+  return {
+    kind: "cloud-vm",
+    ...(host.driver ? { driver: host.driver } : {}),
     ...(workspace.workspace_name !== undefined ? { workspaceName: workspace.workspace_name } : {}),
     ...(workspace.project_name !== undefined ? { projectName: workspace.project_name } : {}),
+    ...shared,
+    ...(workspace.remote_directory !== undefined ? { remoteDirectory: workspace.remote_directory } : {}),
   }
-  if (workspace.kind === "cloud") {
-    if (!workspace.driver) {
-      return {
-        kind: "user-hosted",
-        ...named,
-        ...(workspace.git_branch !== undefined ? { branch: workspace.git_branch } : {}),
-      }
-    }
-    return {
-      kind: "cloud-vm",
-      driver: workspace.driver,
-      ...named,
-      ...shared,
-      ...(workspace.remote_directory !== undefined ? { remoteDirectory: workspace.remote_directory } : {}),
-    }
-  }
-  return { kind: "local-worktree", directory: workspace.directory, ...shared }
 }

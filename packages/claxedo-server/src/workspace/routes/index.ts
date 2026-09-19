@@ -127,11 +127,11 @@ function startCloudWorkspaceProvisioning(input: {
 }
 
 /**
- * The access-scoped list for a node with no signed identity: its own store,
+ * The placement-scoped list for a node with no signed identity: its own store,
  * projected into the rows the signed authority branch answers with, so a
- * caller cannot tell which branch served it. Local-only workspaces are absent
- * by construction — they carry `access: "local"`, which this query never asks
- * for.
+ * caller cannot tell which branch served it. This node's own worktrees are
+ * absent by construction — they carry `access: "local"`, which this query never
+ * asks for, and no enrolled machine serves them.
  */
 async function unsignedWorkspaceList(access: "cloud" | "user-hosted") {
   return (await listWorkspaces()).flatMap((workspace) => {
@@ -140,7 +140,6 @@ async function unsignedWorkspaceList(access: "cloud" | "user-hosted") {
     return [{
       workspace_id: row.workspaceId,
       project_id: row.projectId,
-      access: row.access,
       backing: row.backing.kind,
       ...(row.workspaceName ? { display_name: row.workspaceName } : {}),
       ...(row.directory ? { remote_directory: row.directory } : {}),
@@ -268,7 +267,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             return c.json({
               workspaces:
                 Array.isArray(workspaces) && access === "user-hosted"
-                  ? workspaces.filter((item) => asRecord(item)?.access === "user-hosted")
+                  ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
                   : workspaces,
             })
           } catch (err) {

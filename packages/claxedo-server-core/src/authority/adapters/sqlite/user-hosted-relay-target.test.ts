@@ -40,7 +40,7 @@ async function setup(now?: () => number) {
   const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
   const hostId = "host_box"
   const request = await api.createHostEnrollmentRequest(owner, { hostId })
-  await api.enrollHost(owner, {
+  const enrollment = await api.enrollHost(owner, {
     hostId,
     publicKey: JSON.stringify(pair.publicKey.export({ format: "jwk" })),
     requestId: request.request_id,
@@ -51,17 +51,35 @@ async function setup(now?: () => number) {
       `nonce=${request.nonce}`,
     ].join("\n")),
   })
-  const beat = (workspaceIds: string[]) =>
-    api.heartbeatHostEnrollment(owner, {
-      hostId,
-      workspaceIds,
-      signature: signPayload(pair.privateKey, [
-        "claxedo.host-enrollment.heartbeat.v2",
-        `host_id=${hostId}`,
-        "ttl_ms=",
-        `workspaces=${[...workspaceIds].sort().join(",")}`,
-      ].join("\n")),
+  // A machine acks a description at its revision, so the ack set is built from
+  // what the owner currently declares. The principal comes straight from the
+  // enrollment row: the machine-request verifier has its own coverage, and the
+  // subject here is the resolver.
+  const beat = async (workspaceIds: string[]) => {
+    const row = await api.machineAuth!.lookupEnrollment(enrollment.enrollment_id)
+    if (!row) throw new Error("the enrollment this test just made is not in the store")
+    const declared = new Map(
+      ((await api.listHostEnrollments!(owner))[0]?.assignments ?? []).map((assignment) => [assignment.workspace_id, assignment.revision]),
+    )
+    return api.heartbeatHostEnrollmentByMachine!({
+      enrollmentId: row.enrollment_id,
+      hostId: row.host_id,
+      ownerUserId: row.owner_user_id,
+      ownerActorId: row.owner_actor_id,
+      scope: row.scope,
+      keyVersion: row.key_version,
+      generation: row.serving_generation,
+    }, {
+      enrollmentId: row.enrollment_id,
+      hostId: row.host_id,
+      generation: row.serving_generation,
+      acks: workspaceIds.map((workspaceId) => {
+        const revision = declared.get(workspaceId)
+        if (revision === undefined) throw new Error(`no assignment describes ${workspaceId}`)
+        return { workspaceId, revision }
+      }),
     })
+  }
   return { api, resolve, hostId, beat }
 }
 

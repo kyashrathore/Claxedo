@@ -16,11 +16,7 @@ import { sha256Hex } from "@claxedo/helpers/crypto"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { createD1UserHostedTargetResolver } from "./user-hosted-relay-target"
-import {
-  D1HostAccessAuthority,
-  hostEnrollmentHeartbeatPayloadV2,
-  hostEnrollmentPayload,
-} from "./host-access-authority"
+import { D1HostAccessAuthority, hostEnrollmentPayload } from "./host-access-authority"
 
 const MIGRATIONS = [
   "0001_service_installations.sql",
@@ -37,6 +33,7 @@ const MIGRATIONS = [
   "0029_host_connect.sql",
   "0030_workspace_host_assignment_revision.sql",
   "0031_normalize_user_hosted_directories.sql",
+  "0034_drop_workspace_access.sql",
 ].map(migrationPath)
 
 function migrationPath(name: string) {
@@ -186,7 +183,6 @@ async function fixture(input: Awaited<ReturnType<typeof setup>>) {
     displayName: "local",
     repoUrl: "https://github.com/acme/local.git",
     backing: "local-worktree",
-    access: "user-hosted",
   })
   await input.workspace.createWorkspace(alice, {
     workspaceId: "ws_cloud",
@@ -194,7 +190,6 @@ async function fixture(input: Awaited<ReturnType<typeof setup>>) {
     displayName: "cloud",
     repoUrl: "https://github.com/acme/cloud.git",
     backing: "cloud-vm",
-    access: "cloud",
   })
   return { alice, bob, admin, outsider, local }
 }
@@ -222,6 +217,60 @@ async function hostKey() {
 
 function base64Url(value: Uint8Array) {
   return Buffer.from(value).toString("base64url")
+}
+
+type Input = Awaited<ReturnType<typeof setup>>
+
+async function enrollAccountMachine(
+  input: Input,
+  owner: SignedControlPlaneAuth,
+  hostId: string,
+  options: { ttlMs?: number; displayName?: string } = {},
+) {
+  const key = await hostKey()
+  const request = await input.hostAccess.createHostEnrollmentRequest(owner, { hostId })
+  const enrollment = await input.hostAccess.enrollHost(owner, {
+    hostId,
+    publicKey: key.publicKey,
+    requestId: request.request_id,
+    signature: await key.sign(hostEnrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce })),
+    ttlMs: options.ttlMs ?? 8_000,
+    ...(options.displayName ? { displayName: options.displayName } : {}),
+  })
+  return { key, enrollmentId: enrollment.enrollment_id, enrollment }
+}
+
+/** What the verifier hands the authority after admitting a signed request. */
+async function principal(input: Input, enrollmentId: string): Promise<MachinePrincipal> {
+  const row = await input.hostAccess.machineAuth.lookupEnrollment(enrollmentId)
+  if (!row) throw new Error(`no enrollment ${enrollmentId}`)
+  return {
+    enrollmentId: row.enrollment_id,
+    hostId: row.host_id,
+    ownerUserId: row.owner_user_id,
+    ownerActorId: row.owner_actor_id,
+    scope: row.scope,
+    keyVersion: row.key_version,
+    generation: row.serving_generation,
+  }
+}
+
+async function machineBeat(
+  input: Input,
+  enrollmentId: string,
+  acks: Array<{ workspaceId: string; revision: number }>,
+  overrides: Partial<MachinePrincipal> & { generation?: number; sessionAuthority?: "local" | "managed-private" } = {},
+) {
+  const { sessionAuthority, ...principalOverrides } = overrides
+  const machine = { ...(await principal(input, enrollmentId)), ...principalOverrides }
+  return await input.hostAccess.heartbeatHostEnrollmentByMachine(machine, {
+    enrollmentId: machine.enrollmentId,
+    hostId: machine.hostId,
+    generation: overrides.generation ?? machine.generation,
+    acks,
+    ttlMs: 8_000,
+    ...(sessionAuthority ? { sessionAuthority } : {}),
+  })
 }
 
 describe("D1 host access and workspace sharing authority", () => {
@@ -304,7 +353,7 @@ describe("D1 host access and workspace sharing authority", () => {
     await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_cold" })).resolves.toMatchObject({
       workspace: {
         backing: "local-worktree",
-        access: "user-hosted",
+        placement: { directory: "/workspace/cold" },
         display_name: "Cold workspace",
         repo_url: "https://github.com/acme/cold.git",
         remote_directory: "/workspace/cold",
@@ -395,7 +444,6 @@ describe("D1 host access and workspace sharing authority", () => {
       orgId: "org_acme",
       displayName: "Shared",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_shared", hostId: "machine-l" })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-l" })
@@ -410,7 +458,7 @@ describe("D1 host access and workspace sharing authority", () => {
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_shared", hostId: "machine-l" })
     expect(await listed()).toEqual(["ws_cloud", "ws_local", "ws_shared"])
     await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_shared" })).resolves.toMatchObject({
-      workspace: { access: "user-hosted", display_name: "Shared" },
+      workspace: { backing: "local-worktree", display_name: "Shared" },
     })
 
     // Revoking the machine retires everything it served; the fixture's cloud row is untouched.
@@ -421,49 +469,25 @@ describe("D1 host access and workspace sharing authority", () => {
   test("routes a workspace through owner assignment AND the machine's acked set on a live lease", async () => {
     const input = await setup()
     const { alice, outsider } = await fixture(input)
-    const key = await hostKey()
-    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-b" })
-    await input.hostAccess.enrollHost(alice, {
-      hostId: "machine-b",
-      publicKey: key.publicKey,
-      requestId: request.request_id,
-      signature: await key.sign(hostEnrollmentPayload({
-        hostId: "machine-b",
-        requestId: request.request_id,
-        nonce: request.nonce,
-      })),
-      displayName: "Laptop B",
-      ttlMs: 8_000,
-    })
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-b", { displayName: "Laptop B" })
 
     // Owner intent alone is not routable: no ack yet.
-    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-b" })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-b",
+      remoteDirectory: "/srv/local",
+    })
     expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
       .toEqual({ active: false })
 
-    // A signature over a DIFFERENT set than the one claimed is rejected.
-    await expect(input.hostAccess.heartbeatHostEnrollment(alice, {
-      hostId: "machine-b",
-      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
-        hostId: "machine-b",
-        ttlMs: 8_000,
-        workspaceIds: [],
-      })),
-      ttlMs: 8_000,
-      workspaceIds: ["ws_local"],
-    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+    // An ack at a revision the assignment does not hold is consent to
+    // something the owner has moved on from, and earns no readiness.
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 99 }])
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
+      .toEqual({ active: false })
 
     // Ack the set: now routable, and the response reconciles owner intent.
-    const beat = await input.hostAccess.heartbeatHostEnrollment(alice, {
-      hostId: "machine-b",
-      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
-        hostId: "machine-b",
-        ttlMs: 8_000,
-        workspaceIds: ["ws_local"],
-      })),
-      ttlMs: 8_000,
-      workspaceIds: ["ws_local"],
-    })
+    const beat = await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
     expect(beat.assigned_workspace_ids).toEqual(["ws_local"])
     expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
       .toMatchObject({ active: true, host_id: "machine-b", workspace_id: "ws_local", display_name: "Laptop B" })
@@ -477,7 +501,6 @@ describe("D1 host access and workspace sharing authority", () => {
       orgId: "org_acme",
       displayName: "local-2",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local_2", hostId: "machine-b" })
     expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
@@ -525,34 +548,16 @@ describe("D1 host access and workspace sharing authority", () => {
     // composition at all rather than a default.
     const input = await setup()
     const { alice } = await fixture(input)
-    const key = await hostKey()
-    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-d" })
-    await input.hostAccess.enrollHost(alice, {
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-d")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
       hostId: "machine-d",
-      publicKey: key.publicKey,
-      requestId: request.request_id,
-      signature: await key.sign(hostEnrollmentPayload({
-        hostId: "machine-d",
-        requestId: request.request_id,
-        nonce: request.nonce,
-      })),
-      ttlMs: 8_000,
+      remoteDirectory: "/srv/local",
     })
-    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-d" })
 
     const beat = async (sessionAuthority?: "local" | "managed-private") => {
       input.advance(1)
-      await input.hostAccess.heartbeatHostEnrollment(alice, {
-        hostId: "machine-d",
-        signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
-          hostId: "machine-d",
-          ttlMs: 8_000,
-          workspaceIds: ["ws_local"],
-        })),
-        ttlMs: 8_000,
-        workspaceIds: ["ws_local"],
-        ...(sessionAuthority ? { sessionAuthority } : {}),
-      })
+      await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }], sessionAuthority ? { sessionAuthority } : {})
       return await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })
     }
 
@@ -568,19 +573,7 @@ describe("D1 host access and workspace sharing authority", () => {
   test("stamps host reachability on every user-hosted row of the workspace list", async () => {
     const input = await setup()
     const { alice } = await fixture(input)
-    const key = await hostKey()
-    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-c" })
-    await input.hostAccess.enrollHost(alice, {
-      hostId: "machine-c",
-      publicKey: key.publicKey,
-      requestId: request.request_id,
-      signature: await key.sign(hostEnrollmentPayload({
-        hostId: "machine-c",
-        requestId: request.request_id,
-        nonce: request.nonce,
-      })),
-      ttlMs: 8_000,
-    })
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-c")
     const listed = async () =>
       Object.fromEntries(
         (await input.workspace.listWorkspaces(alice) as Array<{ workspace_id: string; host_online?: boolean }>)
@@ -588,19 +581,14 @@ describe("D1 host access and workspace sharing authority", () => {
       )
 
     // Assigned but never acked: listed, and honestly offline.
-    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-c" })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-c",
+      remoteDirectory: "/srv/local",
+    })
     expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })
 
-    await input.hostAccess.heartbeatHostEnrollment(alice, {
-      hostId: "machine-c",
-      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
-        hostId: "machine-c",
-        ttlMs: 8_000,
-        workspaceIds: ["ws_local"],
-      })),
-      ttlMs: 8_000,
-      workspaceIds: ["ws_local"],
-    })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
     expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: true })
 
     // The lease expiring is what makes it unreachable — no revoke, no unassign.
@@ -642,21 +630,14 @@ describe("D1 host access and workspace sharing authority", () => {
     })).rejects.toMatchObject({ code: "host_attestation_denied" })
     expect(await input.hostAccess.activeHostEnrollment(alice)).toMatchObject({ active: true, host_id: "machine-a" })
 
-    const heartbeat = await key.sign(
-      hostEnrollmentHeartbeatPayloadV2({ hostId: "machine-a", ttlMs: 8_000, workspaceIds: [] }),
-    )
-    await input.hostAccess.heartbeatHostEnrollment(alice, {
+    const enrolledMachine = await principal(input, enrolled.enrollment_id)
+    await input.hostAccess.heartbeatHostEnrollmentByMachine(enrolledMachine, {
+      enrollmentId: enrolled.enrollment_id,
       hostId: "machine-a",
-      signature: heartbeat,
+      generation: enrolledMachine.generation,
+      acks: [],
       ttlMs: 8_000,
-      workspaceIds: [],
     })
-    await expect(input.hostAccess.heartbeatHostEnrollment(alice, {
-      hostId: "machine-a",
-      signature: heartbeat,
-      ttlMs: 8_000,
-      workspaceIds: [],
-    })).rejects.toMatchObject({ code: "signature_replayed" })
 
     await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-a", paused: true })
     expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "paused" })
@@ -840,52 +821,6 @@ describe("D1 host access and workspace sharing authority", () => {
  * stays a mirror.
  */
 describe("host-connect: machine heartbeat, readiness, invitations, scope", () => {
-  type Input = Awaited<ReturnType<typeof setup>>
-
-  async function enrollAccountMachine(input: Input, owner: SignedControlPlaneAuth, hostId: string, ttlMs = 8_000) {
-    const key = await hostKey()
-    const request = await input.hostAccess.createHostEnrollmentRequest(owner, { hostId })
-    const enrollment = await input.hostAccess.enrollHost(owner, {
-      hostId,
-      publicKey: key.publicKey,
-      requestId: request.request_id,
-      signature: await key.sign(hostEnrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce })),
-      ttlMs,
-    })
-    return { key, enrollmentId: enrollment.enrollment_id }
-  }
-
-  /** What the verifier hands the authority after admitting a signed request. */
-  async function principal(input: Input, enrollmentId: string): Promise<MachinePrincipal> {
-    const row = await input.hostAccess.machineAuth.lookupEnrollment(enrollmentId)
-    if (!row) throw new Error(`no enrollment ${enrollmentId}`)
-    return {
-      enrollmentId: row.enrollment_id,
-      hostId: row.host_id,
-      ownerUserId: row.owner_user_id,
-      ownerActorId: row.owner_actor_id,
-      scope: row.scope,
-      keyVersion: row.key_version,
-      generation: row.serving_generation,
-    }
-  }
-
-  async function machineBeat(
-    input: Input,
-    enrollmentId: string,
-    acks: Array<{ workspaceId: string; revision: number }>,
-    overrides: Partial<MachinePrincipal> & { generation?: number } = {},
-  ) {
-    const machine = { ...(await principal(input, enrollmentId)), ...overrides }
-    return await input.hostAccess.heartbeatHostEnrollmentByMachine(machine, {
-      enrollmentId: machine.enrollmentId,
-      hostId: machine.hostId,
-      generation: overrides.generation ?? machine.generation,
-      acks,
-      ttlMs: 8_000,
-    })
-  }
-
   async function invite(input: Input, owner: SignedControlPlaneAuth, roots: string[], visibility: "owner" | "org" = "owner") {
     const created = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: roots, visibility } })
     const parts = invitationTokenParts(created.token)
@@ -952,28 +887,8 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(acked.assigned_workspace_ids).toEqual(["ws_local"])
     expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
     expect(await readiness(input, "ws_local")).toEqual({ enrollment_id: enrollmentId, generation: 0, revision: 1 })
-  })
 
-  test("account beat is unchanged: it acks by workspace id at the current revision and stays routable", async () => {
-    const input = await setup()
-    const { alice } = await fixture(input)
-    const { key } = await enrollAccountMachine(input, alice, "machine-a")
-    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-a" })
-    const beat = await input.hostAccess.heartbeatHostEnrollment(alice, {
-      hostId: "machine-a",
-      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({ hostId: "machine-a", ttlMs: 8_000, workspaceIds: ["ws_local"] })),
-      ttlMs: 8_000,
-      workspaceIds: ["ws_local"],
-    })
-    expect(beat).toEqual({ expires_at: input.now() + 8_000, last_seen_at: input.now(), assigned_workspace_ids: ["ws_local"] })
-    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
-    // Dropping the workspace from the served set withdraws its readiness.
-    await input.hostAccess.heartbeatHostEnrollment(alice, {
-      hostId: "machine-a",
-      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({ hostId: "machine-a", ttlMs: 8_000, workspaceIds: [] })),
-      ttlMs: 8_000,
-      workspaceIds: [],
-    })
+    await machineBeat(input, enrollmentId, [])
     expect(await readiness(input, "ws_local")).toBeNull()
     expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
   })
@@ -989,7 +904,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       orgId: "org_acme",
       displayName: "other",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_other", hostId: "machine-other", remoteDirectory: "/srv/b" })
     // Bob enrolls a machine with the SAME host id: host ids are per owner.
@@ -1004,7 +918,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       orgId: "org_acme",
       displayName: "nodir",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_nodir", hostId: "machine-mine" })
     const beat = await machineBeat(input, mine.enrollmentId, [])
@@ -1361,7 +1274,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       orgId: "org_beta",
       displayName: "beta",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     await expect(input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_beta", hostId: enrollment.host_id, remoteDirectory: "/srv/beta" }))
       .rejects.toMatchObject({ code: "host_assignment_outside_scope" })
@@ -1420,7 +1332,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       orgId: "org_acme",
       displayName: "open",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_open", hostId: "laptop" })
     expect(await input.workspace.openWorkspace(carol, { workspaceId: "ws_open" })).toMatchObject({ role: "viewer" })

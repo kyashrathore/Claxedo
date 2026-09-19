@@ -15,6 +15,7 @@ const MIGRATIONS = [
   "0028_workspace_org_member_visible.sql",
   "0029_host_connect.sql",
   "0030_workspace_host_assignment_revision.sql",
+  "0034_drop_workspace_access.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const active: Miniflare[] = []
 
@@ -51,8 +52,8 @@ async function database() {
       .bind("project-1", "org-1", "repo:one", "user-1", 1, 1),
     database
       .prepare(
-        `insert into workspaces (workspace_id, org_id, project_id, owner_user_id, backing, access, display_name, created_at, updated_at)
-         values (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?)`,
+        `insert into workspaces (workspace_id, org_id, project_id, owner_user_id, backing, display_name, created_at, updated_at)
+         values (?, ?, ?, ?, 'local-worktree', ?, ?, ?)`,
       )
       .bind("workspace-1", "org-1", "project-1", "user-1", "Workspace", 1, 1),
     // Enrollment (live lease) + owner assignment + the readiness row the

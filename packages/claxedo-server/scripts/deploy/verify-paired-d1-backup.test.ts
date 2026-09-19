@@ -53,6 +53,7 @@ async function exports(phase = "provider_sync") {
     "0015_drop_local_host_links.sql",
     "0016_host_session_authority.sql",
     "0018_drop_agent_extensions.sql",
+    "0034_drop_workspace_access.sql",
   ])}
     insert into control_plane_recovery_epochs values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`

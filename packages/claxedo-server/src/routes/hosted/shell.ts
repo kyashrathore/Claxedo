@@ -245,7 +245,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: asString(row?.access) ?? asString(row?.backing) ?? "cloud",
+      kind: asString(row?.backing) === "local-worktree" ? "user-hosted" : "cloud",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),

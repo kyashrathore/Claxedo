@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import {
   accountCanShareWorkspace,
   localWorkspaceShareTarget,
-  registerUserHostedWorkspace,
-  unregisterUserHostedWorkspace,
+  publishWorkspacePlacement,
+  withdrawWorkspacePlacement,
   workspaceShareUrl,
 } from "./share-workspace"
 
@@ -107,7 +107,7 @@ describe("share workspace helpers", () => {
       })
     }
 
-    await registerUserHostedWorkspace({
+    await publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       displayName: "Main",
@@ -125,7 +125,7 @@ describe("share workspace helpers", () => {
     // Machine-level auto-share always has a label, but the helper's optional
     // parameter must still produce a valid body without one.
     const calls: Array<{ url: string; init?: RequestInit }> = []
-    await registerUserHostedWorkspace({
+    await publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       request: async (url, init) => {
@@ -139,7 +139,7 @@ describe("share workspace helpers", () => {
 
   test("never sends a hostId — the machine identity is the server's to decide", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
-    await registerUserHostedWorkspace({
+    await publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       displayName: "Main",
@@ -155,7 +155,7 @@ describe("share workspace helpers", () => {
   })
 
   test("a rejected assignment surfaces the server's own message", async () => {
-    await expect(registerUserHostedWorkspace({
+    await expect(publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_cloud",
       request: async () => new Response(
@@ -172,7 +172,7 @@ describe("share workspace helpers", () => {
 
   test("withdrawing one workspace deletes the same assignment", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
-    await unregisterUserHostedWorkspace({
+    await withdrawWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       request: async (url, init) => {

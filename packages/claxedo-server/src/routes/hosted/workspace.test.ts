@@ -68,8 +68,8 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     revokeRuntimeAccessToken: vi.fn(async () => ({})),
     runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
     listWorkspaces: vi.fn(async () => [
-      { workspace_id: "ws_user", access: "user-hosted" },
-      { workspace_id: "ws_cloud", access: "cloud" },
+      { workspace_id: "ws_user", backing: "local-worktree" },
+      { workspace_id: "ws_cloud", backing: "cloud-vm" },
     ]),
     assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
     unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
@@ -764,24 +764,24 @@ describe("hosted connection rate limiting (mint-only)", () => {
 })
 
 describe("hosted workspace list (GET /api/workspace)", () => {
-  test("signed access=user-hosted returns only the caller's user-hosted workspaces", async () => {
+  test("signed access=user-hosted returns only the caller's machine-placed workspaces", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(get("/?access=user-hosted"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
-    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", access: "user-hosted" }])
+    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", backing: "local-worktree" }])
     expect(authority!.usersMe).toHaveBeenCalledTimes(1)
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
-  test("signed access=cloud returns the full list (no user-hosted filter)", async () => {
+  test("signed access=cloud returns the full list (no machine-placement filter)", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(get("/?access=cloud"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([
-      { workspace_id: "ws_user", access: "user-hosted" },
-      { workspace_id: "ws_cloud", access: "cloud" },
+      { workspace_id: "ws_user", backing: "local-worktree" },
+      { workspace_id: "ws_cloud", backing: "cloud-vm" },
     ])
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })

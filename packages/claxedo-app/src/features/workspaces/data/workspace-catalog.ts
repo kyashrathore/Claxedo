@@ -7,7 +7,7 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { readArray } from "@/lib/record"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
-import type { SignedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { workspaceKindFromBacking, type SignedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
@@ -407,21 +407,13 @@ export async function refreshWorkspaceCatalog(input: WorkspaceCatalogQueryInput)
   return await queryClient.fetchQuery(options)
 }
 
-/** The kind a control-plane row states for itself; a row that states none is not a catalog row. */
-/** The access kinds a catalog row may declare, as one list rather than a chain. */
-const accessKinds: readonly WorkspaceCatalogEntry["kind"][] = ["cloud", "local", "user-hosted"]
-
-function isAccessKind(value: unknown): value is WorkspaceCatalogEntry["kind"] {
-  return accessKinds.some((entry) => entry === value)
-}
-
 function controlPlaneRowKind(row: Record<string, unknown>): WorkspaceCatalogEntry["kind"] {
-  const kind = txt(row.access)
-  if (!isAccessKind(kind)) {
-    // Unchanged for a missing kind; an UNKNOWN one is now refused for the same
-    // reason — a row whose access this build cannot interpret must not be
-    // rendered as though it could be opened.
-    throw new Error(`Control-plane workspace row states no access kind${kind ? `: ${kind}` : ""}`)
+  const kind = workspaceKindFromBacking(row.backing)
+  if (!kind) {
+    // A row whose placement this build cannot interpret must not be rendered as
+    // though it could be opened.
+    const backing = txt(row.backing)
+    throw new Error(`Control-plane workspace row states no placement${backing ? `: ${backing}` : ""}`)
   }
   return kind
 }

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
@@ -12,23 +12,19 @@ import {
   type D1AuthorityProductPolicy,
 } from "./workspace-authority"
 
-const MIGRATIONS = [
-  fileURLToPath(new URL("../../../../migrations/control-plane/0001_service_installations.sql", import.meta.url)),
-  fileURLToPath(new URL("../../../../migrations/control-plane/0002_workspace_authority.sql", import.meta.url)),
-  fileURLToPath(new URL("../../../../migrations/control-plane/0003_private_sessions.sql", import.meta.url)),
-  fileURLToPath(
-    new URL("../../../../migrations/control-plane/0008_user_deployed_owner_bootstrap.sql", import.meta.url),
-  ),
-  fileURLToPath(
-    new URL("../../../../migrations/control-plane/0013_org_team_session_sharing.sql", import.meta.url),
-  ),
-  fileURLToPath(
-    new URL("../../../../migrations/control-plane/0017_adapter_custom.sql", import.meta.url),
-  ),
-  fileURLToPath(
-    new URL("../../../../migrations/control-plane/0028_workspace_org_member_visible.sql", import.meta.url),
-  ),
-]
+const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
+
+/**
+ * Every shipped migration, in the order production applies them.
+ *
+ * Read from the directory rather than listed here: a curated subset drifts
+ * silently from what deployments run, and this file's subject — the placement
+ * a workspace row carries — is rewritten by migrations a subset would omit.
+ */
+async function migrations() {
+  return (await readdir(MIGRATIONS_DIRECTORY)).filter((name) => name.endsWith(".sql")).sort()
+}
+
 const active: Miniflare[] = []
 
 afterEach(async () => {
@@ -44,8 +40,8 @@ async function setup(product: D1AuthorityProductPolicy) {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const path of MIGRATIONS) {
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
+  for (const name of await migrations()) {
+    const migration = (await readFile(MIGRATIONS_DIRECTORY + name, "utf8")).replace(/^\s*--.*$/gm, "")
     for (const statement of migration
       .split(/;\s*\n\s*\n/)
       .map((part) => part.trim())
@@ -211,7 +207,6 @@ describe("D1 hosted workspace authority", () => {
       displayName: "main",
       repoUrl: "https://github.com/Acme/Widgets.git",
       backing: "cloud-vm",
-      access: "cloud",
     })
     await expect(
       authority.createWorkspace(alice, {
@@ -220,7 +215,6 @@ describe("D1 hosted workspace authority", () => {
         displayName: "main",
         repoUrl: "https://github.com/Acme/Widgets.git",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).resolves.toEqual(created)
     const reused = await authority.createWorkspace(alice, {
@@ -229,7 +223,6 @@ describe("D1 hosted workspace authority", () => {
       displayName: "feature",
       repoUrl: "git@github.com:Acme/Widgets.git",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     expect(reused.project_id).toBe(created.project_id)
     await expect(
@@ -239,7 +232,6 @@ describe("D1 hosted workspace authority", () => {
         displayName: "collision",
         repoUrl: "https://github.com/acme/collision.git",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).rejects.toMatchObject({ code: "resource_conflict" })
     expect(
@@ -282,7 +274,6 @@ describe("D1 hosted workspace authority", () => {
         displayName: "denied",
         repoUrl: "https://github.com/acme/denied.git",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
     expect(
@@ -304,7 +295,6 @@ describe("D1 hosted workspace authority", () => {
         displayName: "admin",
         repoUrl: "https://github.com/acme/admin.git",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).resolves.toMatchObject({ org_id: "org_acme" })
 
@@ -341,7 +331,6 @@ describe("D1 hosted workspace authority", () => {
       displayName: "main",
       repoUrl: "https://github.com/Acme/Widgets.git",
       backing: "cloud-vm",
-      access: "cloud",
     })
     const principalOf = (auth: SignedControlPlaneAuth) =>
       ({ principalKind: "user", actorId: auth.principal!.actorId, actorKind: "human" }) as const
@@ -356,7 +345,7 @@ describe("D1 hosted workspace authority", () => {
     await authority.createRuntimeCloudWorkspace(principalOf(alice), { ...root, workspaceId: "ws_root_1" })
     expect(await authority.openWorkspace(alice, { workspaceId: "ws_root_1" })).toMatchObject({
       role: "owner",
-      workspace: { org_id: "org_acme", project_id: project.project_id, backing: "cloud-vm", access: "cloud", git_branch: "main" },
+      workspace: { org_id: "org_acme", project_id: project.project_id, backing: "cloud-vm", placement: {}, git_branch: "main" },
     })
     expect(
       await database.prepare("select owner_user_id from workspaces where workspace_id = 'ws_root_1'").first(),
@@ -526,7 +515,7 @@ describe("D1 user-deployed workspace authority", () => {
       remoteDirectory: "/srv/repos/widgets",
     })
     await expect(authority.openWorkspace(owner, { workspaceId: "ws_contract_local" })).resolves.toMatchObject({
-      workspace: { access: "user-hosted", remote_directory: "/srv/repos/widgets" },
+      workspace: { backing: "local-worktree", placement: { directory: "/srv/repos/widgets" } },
     })
 
     const memberIdentity = identity("member")
@@ -539,7 +528,6 @@ describe("D1 user-deployed workspace authority", () => {
       displayName: "shared",
       repoUrl: "https://github.com/acme/shared.git",
       backing: "cloud-vm",
-      access: "cloud",
     })
     expect(await authority.openWorkspace(member, { workspaceId: "ws_shared" })).toMatchObject({ role: "viewer" })
     await expect(
@@ -548,7 +536,6 @@ describe("D1 user-deployed workspace authority", () => {
         orgId: "org_deployment",
         displayName: "denied",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
 
@@ -563,7 +550,6 @@ describe("D1 user-deployed workspace authority", () => {
         orgId: "org_deployment",
         displayName: "admin",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).resolves.toMatchObject({ org_id: "org_deployment" })
 
@@ -587,9 +573,89 @@ describe("D1 user-deployed workspace authority", () => {
         orgId: "org_other",
         displayName: "wrong",
         backing: "cloud-vm",
-        access: "cloud",
       }),
     ).rejects.toMatchObject({ code: "organization_policy_denied" })
     expect((await database.prepare("select count(*) as count from orgs").first<{ count: number }>())?.count).toBe(1)
+  })
+})
+
+describe("a workspace's row carries its placement", () => {
+  async function two(authority: D1WorkspaceAuthority, alice: SignedControlPlaneAuth) {
+    const orgId = await authority.resolveOrgId(alice)
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_vm",
+      orgId,
+      displayName: "vm",
+      repoUrl: "https://github.com/acme/vm.git",
+      backing: "cloud-vm",
+    })
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_machine",
+      orgId,
+      displayName: "machine",
+      repoUrl: "https://github.com/acme/machine.git",
+      remoteDirectory: "/srv/machine",
+      backing: "local-worktree",
+    })
+    return orgId
+  }
+
+  test("publishes the enrolled machine the owner assigned and the directory on it", async () => {
+    const { authority, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(authority, identity("alice"))
+    const orgId = await two(authority, alice)
+    const owner = await database
+      .prepare(`
+        select w.owner_user_id, a.actor_id from workspaces w
+        join actors a on a.user_id = w.owner_user_id
+        where w.workspace_id = 'ws_machine'
+      `)
+      .first<{ owner_user_id: string; actor_id: string }>()
+    await database.prepare(
+      `insert into host_enrollments
+         (enrollment_id, owner_user_id, owner_actor_id, host_id, public_key_json, display_name,
+          last_seen_at, expires_at, created_at, updated_at)
+       values ('enr_a', ?, ?, 'host-a', '{}', 'MacBook', 1, 1, 1, 1)`,
+    ).bind(owner!.owner_user_id, owner!.actor_id).run()
+    await database.prepare(
+      `insert into host_workspace_assignments
+         (workspace_id, host_id, org_id, owner_user_id, owner_actor_id, second_device_open_at, assigned_at, updated_at, revision)
+       values ('ws_machine', 'host-a', ?, ?, ?, null, 1, 1, 1)`,
+    ).bind(orgId, owner!.owner_user_id, owner!.actor_id).run()
+
+    await expect(authority.openWorkspace(alice, { workspaceId: "ws_machine" })).resolves.toMatchObject({
+      workspace: { backing: "local-worktree", placement: { host_enrollment_id: "enr_a", directory: "/srv/machine" } },
+    })
+    await expect(authority.openWorkspace(alice, { workspaceId: "ws_vm" })).resolves.toMatchObject({
+      workspace: { backing: "cloud-vm", placement: {} },
+    })
+
+    const listed = new Map((await authority.listWorkspaces(alice)).map((row) => [row.workspace_id, row]))
+    expect(listed.get("ws_machine")).toMatchObject({
+      placement: { host_enrollment_id: "enr_a", directory: "/srv/machine" },
+    })
+    expect(listed.get("ws_vm")).toMatchObject({ placement: {} })
+  })
+
+  test("no workspace row carries an access mode any more", async () => {
+    const { authority, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(authority, identity("alice"))
+    await two(authority, alice)
+
+    const columns = await database.prepare("select name from pragma_table_info('workspaces')").all<{ name: string }>()
+    expect(columns.results.map((row) => row.name)).not.toContain("access")
+    const opened = await authority.openWorkspace(alice, { workspaceId: "ws_machine" })
+    expect(opened.workspace).not.toHaveProperty("access")
+    expect((await authority.listWorkspaces(alice)).every((row) => !("access" in row))).toBe(true)
+  })
+
+  test("reachability is reported for machine-placed rows and withheld from provisioner-owned ones", async () => {
+    const { authority } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(authority, identity("alice"))
+    await two(authority, alice)
+
+    const listed = new Map((await authority.listWorkspaces(alice)).map((row) => [row.workspace_id, row]))
+    expect(listed.get("ws_vm")).not.toHaveProperty("host_online")
+    expect(listed.get("ws_machine")).toMatchObject({ host_online: false })
   })
 })

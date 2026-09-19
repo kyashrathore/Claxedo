@@ -3,7 +3,7 @@
 -- normalized the directory may carry `.`, `..`, repeated or trailing
 -- separators, so `/srv/allowed/../secret` would survive a tightening to
 -- `/srv/allowed` and `/srv/app/` would be retired under `/srv/app`. Every
--- absolute POSIX directory of a user-hosted workspace is rewritten to the form
+-- absolute POSIX directory of a machine-placed workspace is rewritten to the form
 -- `normalizePosixDirectory` produces; a Windows path stays as given.
 --
 -- The walk consumes one segment per step from `rest` (which ends in a
@@ -13,7 +13,7 @@
 with recursive walk (workspace_id, rest, acc) as (
   select workspace_id, substr(remote_directory, 2) || '/', ''
   from workspaces
-  where access = 'user-hosted' and remote_directory is not null and substr(remote_directory, 1, 1) = '/'
+  where backing = 'local-worktree' and remote_directory is not null and substr(remote_directory, 1, 1) = '/'
   union all
   select
     workspace_id,

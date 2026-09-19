@@ -30,6 +30,7 @@ const MIGRATIONS = [
   "0028_workspace_org_member_visible.sql",
   "0029_host_connect.sql",
   "0030_workspace_host_assignment_revision.sql",
+  "0034_drop_workspace_access.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -124,7 +125,6 @@ describe("composed Better Auth + D1 authority", () => {
       orgId: "org_acme",
       displayName: "Acme workspace",
       backing: "cloud-vm",
-      access: "cloud",
     })
 
     await expect(
@@ -246,7 +246,6 @@ describe("composed Better Auth + D1 authority", () => {
       orgId: "org_team_sharing",
       displayName: "Team sharing workspace",
       backing: "cloud-vm",
-      access: "cloud",
     })
 
     const defaultTeam = await authority.ensureDefaultTeam!(alice, { orgId: "org_team_sharing" }) as {
@@ -369,7 +368,6 @@ describe("composed Better Auth + D1 authority", () => {
       orgId: "org_channels",
       displayName: "Channels workspace",
       backing: "cloud-vm",
-      access: "cloud",
     })
     const project = await database
       .prepare(`select project_id from workspaces where workspace_id = ?`)
@@ -467,7 +465,6 @@ describe("composed Better Auth + D1 authority", () => {
       orgId: "org_visibility",
       displayName: "hidden",
       backing: "local-worktree",
-      access: "user-hosted",
     })
     // The column an owner-visibility host assignment writes.
     await database.prepare("update workspaces set org_member_visible = 0 where workspace_id = 'ws_hidden'").run()
@@ -497,7 +494,6 @@ describe("composed Better Auth + D1 authority", () => {
       orgId: "org_services",
       displayName: "Services workspace",
       backing: "cloud-vm",
-      access: "cloud",
     })
     await expect(
       authority.recordRuntimeAccessTokenForService({

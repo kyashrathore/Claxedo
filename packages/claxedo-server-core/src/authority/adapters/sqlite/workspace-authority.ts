@@ -176,28 +176,6 @@ function enrollmentPayload(input: { host_id: string; request_id: string; nonce: 
   ].join("\n")
 }
 
-/**
- * Heartbeat v2: the machine's ONE signature per interval also covers the
- * workspaces it currently serves (sorted, comma-joined). Routing requires a
- * workspace to be BOTH owner-assigned and inside this acked set, which
- * preserves the retired per-workspace signature's security property — an
- * owner session cannot conjure serving the machine never consented to — at
- * one signature instead of N+1. Same literal as the D1 authority's
- * `hostEnrollmentHeartbeatPayloadV2`: two authorities, one signed contract.
- */
-function heartbeatEnrollmentPayloadV2(input: {
-  host_id: string
-  ttl_ms?: number
-  workspace_ids: readonly string[]
-}) {
-  return [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.host_id}`,
-    `ttl_ms=${input.ttl_ms ?? ""}`,
-    `workspaces=${[...input.workspace_ids].sort().join(",")}`,
-  ].join("\n")
-}
-
 type HostEnrollmentRow = {
   enrollment_id: string
   owner_token_identifier: string
@@ -463,8 +441,7 @@ type LeaseRenewal = {
 function renewLease(db: SqliteAuthorityDb, input: {
   enrollmentId: string
   ttlMs?: number
-  /** `"current"` acks whatever revision the assignment holds now (account v2 callers, which do not see revisions). */
-  acks: Array<{ workspaceId: string; revision: number | "current" }>
+  acks: Array<{ workspaceId: string; revision: number }>
   sessionAuthority?: HostSessionAuthority
   where: { sql: string; params: unknown[] }
 }): LeaseRenewal | undefined {
@@ -501,7 +478,7 @@ function renewLease(db: SqliteAuthorityDb, input: {
     SELECT assignment.workspace_id, ?, ?, assignment.revision, ?
     FROM host_workspace_assignments assignment
     WHERE assignment.workspace_id = ? AND assignment.host_id = ? AND assignment.owner_token_identifier = ?
-      AND (? IS NULL OR assignment.revision = ?)
+      AND assignment.revision = ?
     ON CONFLICT (workspace_id) DO UPDATE SET
       enrollment_id = excluded.enrollment_id,
       generation = excluded.generation,
@@ -509,8 +486,7 @@ function renewLease(db: SqliteAuthorityDb, input: {
       ready_at = excluded.ready_at
   `)
   for (const ack of input.acks) {
-    const revision = ack.revision === "current" ? null : ack.revision
-    ready.run(row.enrollment_id, row.serving_generation, now, ack.workspaceId, row.host_id, row.owner_token_identifier, revision, revision)
+    ready.run(row.enrollment_id, row.serving_generation, now, ack.workspaceId, row.host_id, row.owner_token_identifier, ack.revision)
   }
   db.prepare(`
     DELETE FROM host_assignment_readiness
@@ -559,6 +535,22 @@ function hostAssignments(db: SqliteAuthorityDb, hostId: string, ownerTokenIdenti
   }
 }
 
+/**
+ * The enrolled machine each of these workspaces is assigned to, whether or not
+ * it is currently serving. Assignment is the placement; serving is reachability.
+ */
+function assignedHostEnrollmentIds(db: SqliteAuthorityDb, workspaceIds: string[]) {
+  if (workspaceIds.length === 0) return new Map<string, string>()
+  const rows = db.prepare<unknown[], { workspace_id: string; enrollment_id: string }>(`
+    SELECT assignment.workspace_id, enrollment.enrollment_id
+    FROM host_workspace_assignments assignment
+    JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
+      AND enrollment.owner_token_identifier = assignment.owner_token_identifier
+    WHERE assignment.workspace_id IN (${workspaceIds.map(() => "?").join(", ")})
+  `).all(...workspaceIds)
+  return new Map(rows.map((row) => [row.workspace_id, row.enrollment_id]))
+}
+
 /** Of these workspaces, the ones a live enrollment currently serves. */
 function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]) {
   if (workspaceIds.length === 0) return new Set<string>()
@@ -574,20 +566,20 @@ function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]
 }
 
 /**
- * A user-hosted workspace exists in the inventory exactly as long as a machine
- * is assigned to serve it: unsharing it or revoking its machine retires the
- * row, and sharing it again revives the same record. Cloud rows are never
+ * A machine-placed workspace exists in the inventory exactly as long as a
+ * machine is assigned to serve it: unsharing it or revoking its machine retires
+ * the row, and sharing it again revives the same record. Cloud rows are never
  * touched here — their lifetime is the sandbox's.
  */
 function retireUserHostedWorkspaceSql(where: string) {
   return `
     UPDATE workspaces SET deleted_at = ?, updated_at = ?
-    WHERE access = 'user-hosted' AND deleted_at IS NULL AND ${where}
+    WHERE backing = 'local-worktree' AND deleted_at IS NULL AND ${where}
   `
 }
 
-function refuseCloudWorkspace(workspace: { backing?: unknown; access?: unknown }) {
-  if (workspace.backing === "cloud-vm" || workspace.access === "cloud") {
+function refuseCloudWorkspace(workspace: { backing?: unknown }) {
+  if (workspace.backing === "cloud-vm") {
     throw new Error("workspace_backing_conflict: cannot attach a local host link to a cloud workspace")
   }
 }
@@ -717,13 +709,16 @@ function jsonText(input: unknown) {
   }
 }
 
-function workspaceJson(workspace: WorkspaceRow) {
+function workspaceJson(workspace: WorkspaceRow, hostEnrollmentId?: string) {
   return {
     workspace_id: workspace.workspace_id,
     org_id: workspace.org_id ?? undefined,
     project_id: workspace.project_id ?? undefined,
     backing: workspace.backing,
-    access: workspace.access,
+    placement: {
+      ...(hostEnrollmentId ? { host_enrollment_id: hostEnrollmentId } : {}),
+      ...(workspace.remote_directory ? { directory: workspace.remote_directory } : {}),
+    },
     home_region: workspace.home_region ?? undefined,
     display_name: workspace.display_name ?? undefined,
     repo_url: workspace.repo_url ?? undefined,
@@ -1418,7 +1413,10 @@ export function createSqliteWorkspaceAuthority(
       return {
         allowed: true,
         role,
-        workspace: workspaceJson(workspace),
+        workspace: workspaceJson(
+          workspace,
+          assignedHostEnrollmentIds(db, [workspace.workspace_id]).get(workspace.workspace_id),
+        ),
       }
     },
     async listWorkspaces(auth: SignedControlPlaneAuth) {
@@ -1431,21 +1429,23 @@ export function createSqliteWorkspaceAuthority(
           project_id: workspace.project_id ?? undefined,
           display_name: workspace.display_name ?? undefined,
           backing: workspace.backing,
-          access: workspace.access,
           remote_directory: workspace.remote_directory ?? undefined,
           role: workspaceRoleForUser(db, workspace, who),
         }))
         .filter((item) => !!item.role)
-      const online = workspacesWithServingHost(
-        db,
-        visible.filter((item) => item.access === "user-hosted").map((item) => item.workspace_id),
-      )
+      const machinePlaced = visible.filter((item) => item.backing === "local-worktree").map((item) => item.workspace_id)
+      const online = workspacesWithServingHost(db, machinePlaced)
+      const assigned = assignedHostEnrollmentIds(db, machinePlaced)
       return visible.map((item) => ({
         ...item,
+        placement: {
+          ...(assigned.get(item.workspace_id) ? { host_enrollment_id: assigned.get(item.workspace_id) } : {}),
+          ...(item.remote_directory ? { directory: item.remote_directory } : {}),
+        },
         // Reachability, not authorization: a shared workspace whose machine is
         // asleep is still listed, and the rail says "host offline" for it
         // rather than dropping the row or waiting for a pane to discover it.
-        ...(item.access === "user-hosted" ? { host_online: online.has(item.workspace_id) } : {}),
+        ...(item.backing === "local-worktree" ? { host_online: online.has(item.workspace_id) } : {}),
       }))
     },
     async registerLocalForSharing(auth: SignedControlPlaneAuth, args) {
@@ -1457,7 +1457,7 @@ export function createSqliteWorkspaceAuthority(
       const existing = workspaceByPublicId(db, args.workspaceId)
       if (existing) {
         if (!authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
-        if (existing.backing === "cloud-vm" || existing.access === "cloud") {
+        if (existing.backing === "cloud-vm") {
           throw new Error("workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace")
         }
         if (!existing.org_id || !existing.project_id) throw new Error("workspace_tenant_missing")
@@ -1474,7 +1474,7 @@ export function createSqliteWorkspaceAuthority(
         db.prepare(`
           UPDATE workspaces SET
             project_id = ?,
-            backing = 'local-worktree', access = 'user-hosted',
+            backing = 'local-worktree',
             home_region = COALESCE(?, home_region),
             display_name = ?,
             repo_url = COALESCE(?, repo_url),
@@ -1500,10 +1500,10 @@ export function createSqliteWorkspaceAuthority(
       const { orgId, projectId } = ownedProject(db, who, { ...args, remoteDirectory })
       db.prepare(`
         INSERT INTO workspaces (
-          workspace_id, org_id, project_id, owner_token_identifier, backing, access,
+          workspace_id, org_id, project_id, owner_token_identifier, backing,
           display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, 'local-worktree', ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         args.workspaceId,
         orgId,
@@ -1528,9 +1528,9 @@ export function createSqliteWorkspaceAuthority(
       const now = Date.now()
       db.prepare(`
         INSERT INTO workspaces (
-          workspace_id, org_id, project_id, owner_token_identifier, backing, access,
+          workspace_id, org_id, project_id, owner_token_identifier, backing,
           display_name, home_region, repo_url, repo_name, git_branch, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'cloud-vm', 'cloud', ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, 'cloud-vm', ?, ?, ?, ?, ?, ?, ?)
       `).run(
         args.workspaceId,
         orgId,
@@ -1795,40 +1795,6 @@ export function createSqliteWorkspaceAuthority(
         return toHostEnrollment(row)
       })()
     },
-    async heartbeatHostEnrollment(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const row = db.prepare<unknown[], HostEnrollmentRow>(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
-        .get(who.token_identifier, args.hostId)
-      if (!row || row.revoked_at) throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
-      if (!Array.isArray(args.workspaceIds)) {
-        throw new Error("workspaceIds is required — the heartbeat signature covers the served set")
-      }
-      const workspaceIds = [...new Set(args.workspaceIds.map((id) => requiredText(id, "workspaceIds")))].sort()
-      if (workspaceIds.length > MAX_ACKED_WORKSPACES) {
-        throw new Error("workspaceIds exceeds the served-set cap")
-      }
-      await verifyHostSignature({
-        public_key: row.public_key,
-        payload: heartbeatEnrollmentPayloadV2({ host_id: args.hostId, ttl_ms: args.ttlMs, workspace_ids: workspaceIds }),
-        signature: args.signature,
-      })
-      // A v2 caller consents to a workspace set, not to revisions: each ack
-      // lands at the assignment's current revision.
-      const renewed = db.transaction(() => renewLease(db, {
-        enrollmentId: row.enrollment_id,
-        ttlMs: args.ttlMs,
-        acks: workspaceIds.map((workspaceId) => ({ workspaceId, revision: "current" as const })),
-        sessionAuthority: args.sessionAuthority,
-        where: { sql: "host_enrollments.enrollment_id = ? AND host_enrollments.revoked_at IS NULL", params: [row.enrollment_id] },
-      }))()
-      if (!renewed) throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
-      return {
-        expires_at: renewed.expires_at,
-        last_seen_at: renewed.last_seen_at,
-        assigned_workspace_ids: renewed.assigned_workspace_ids,
-      }
-    },
     async heartbeatHostEnrollmentByMachine(machine: MachinePrincipal, args) {
       const db = database()
       if (!Array.isArray(args.acks)) throw new SqliteHostConnectError("invalid_input", "acks is required")
@@ -2012,7 +1978,7 @@ export function createSqliteWorkspaceAuthority(
         // A retired user-hosted row is the same workspace coming back, so it
         // is authorized as live; any other deleted row stays gone. Nothing is
         // written until every refusal below has had its chance.
-        const revivable = existing !== undefined && existing.deleted_at !== null && existing.access === "user-hosted"
+        const revivable = existing !== undefined && existing.deleted_at !== null && existing.backing === "local-worktree"
         if (existing) {
           const candidate = revivable ? { ...existing, deleted_at: null } : existing
           if (candidate.deleted_at || !authorizeWorkspaceForUser(db, candidate, who, "admin")) {
@@ -2063,10 +2029,10 @@ export function createSqliteWorkspaceAuthority(
           const { orgId, projectId } = ownedProject(db, who, { ...args, orgId: args.orgId ?? invitationOrgId, remoteDirectory })
           db.prepare(`
             INSERT INTO workspaces (
-              workspace_id, org_id, project_id, owner_token_identifier, backing, access,
+              workspace_id, org_id, project_id, owner_token_identifier, backing,
               display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
               org_member_visible, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'local-worktree', ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             args.workspaceId,
             orgId,

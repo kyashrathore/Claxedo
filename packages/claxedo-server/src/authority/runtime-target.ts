@@ -17,7 +17,7 @@ export async function resolveWorkspaceRuntimeTarget(
   input: { workspaceId: string; workspace?: WorkspaceRecord },
 ) {
   const { workspaceId, workspace } = input
-  if (workspace?.backing === "local-worktree" && workspace.access === "user-hosted") {
+  if (workspace?.backing === "local-worktree") {
     if (auth?.mode !== "signed") {
       throw new WorkspaceRuntimeTargetError(
         409,
@@ -42,11 +42,8 @@ export async function resolveWorkspaceRuntimeTarget(
     }
   }
   const needsExplicitSignedPlacement = auth?.mode === "signed"
-  const hasExplicitPlacement = workspace?.backing !== undefined || workspace?.access !== undefined
-  if (
-    (needsExplicitSignedPlacement || hasExplicitPlacement)
-    && (workspace?.backing !== "cloud-vm" || workspace.access !== "cloud")
-  ) {
+  const hasExplicitPlacement = workspace?.backing !== undefined
+  if ((needsExplicitSignedPlacement || hasExplicitPlacement) && workspace?.backing !== "cloud-vm") {
     throw new WorkspaceRuntimeTargetError(
       409,
       "workspace_runtime_unavailable",

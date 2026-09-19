@@ -22,6 +22,7 @@ const CONTROL_MIGRATIONS = [
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
   "0017_adapter_custom.sql",
+  "0034_drop_workspace_access.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))
@@ -220,6 +221,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
       sandbox,
     })
     expect(composed.plane.services.sandbox.sandboxManager).toBeDefined()
+    // The placement every cloud root this deployment allocates is stored under.
+    expect(composed.plane.services.sandbox.defaultDriver).toBe("cloudflare")
     expect(await composed.options.cloudWorkspaceAdmission({} as never)).toBeUndefined()
     await composed.authReady.catch(() => undefined)
 
@@ -239,6 +242,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     )
     const plain = composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env() })
     expect(plain.plane.services.sandbox.sandboxManager).toBeUndefined()
+    expect(plain.plane.services.sandbox.defaultDriver).toBeUndefined()
     expect((await plain.options.cloudWorkspaceAdmission({} as never))?.status).toBe(403)
     await plain.authReady.catch(() => undefined)
   })

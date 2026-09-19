@@ -21,7 +21,7 @@ type ShareableProject = {
   workspaces?: Record<string, ProjectWorkspace>
 }
 
-/** Share registers a user-hosted workspace on the signed control plane. */
+/** Publishing a placement needs a signed account to record it against. */
 export function accountCanShareWorkspace(status: string | undefined) {
   return status === "signed"
 }
@@ -71,14 +71,16 @@ function workspaceHostAssignmentUrl(input: { serverUrl?: string; workspaceId: st
 }
 
 /**
- * Sharing assigns the workspace to an ENROLLED machine, and the renderer
- * cannot name that machine: the host id belongs to whoever holds the machine
- * key, which on desktop is Electron main's Host Connector and never this
- * process. So the port is the only path when one is bound; the self-hosted
- * server has no port and performs the same assignment server-side from its own
- * local route below.
+ * Records this workspace's placement: the directory, on the machine this
+ * process runs on.
+ *
+ * The renderer cannot name that machine — the host id belongs to whoever holds
+ * the machine key, which on desktop is Electron main's Host Connector and
+ * never this process. So the port is the only path when one is bound; the
+ * self-hosted server has no port and performs the same assignment server-side
+ * from its own local route below.
  */
-export async function registerUserHostedWorkspace(input: {
+export async function publishWorkspacePlacement(input: {
   workspaceId: string
   displayName?: string
   serverUrl?: string
@@ -110,8 +112,8 @@ export async function registerUserHostedWorkspace(input: {
   if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
 }
 
-/** Withdraw one workspace this machine publishes. Mirrors the register above. */
-export async function unregisterUserHostedWorkspace(input: {
+/** Withdraws one placement this machine published. Mirrors the publish above. */
+export async function withdrawWorkspacePlacement(input: {
   workspaceId: string
   serverUrl?: string
   request?: typeof fetch

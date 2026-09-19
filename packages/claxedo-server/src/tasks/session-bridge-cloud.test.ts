@@ -138,7 +138,7 @@ function runtime() {
   return { sessions }
 }
 
-function services(sandboxManager: SandboxManager | undefined) {
+function services(sandboxManager: SandboxManager | undefined, sandbox: { defaultDriver?: "daytona" } = { defaultDriver: "daytona" }) {
   const created = new Map<string, { projectId?: string; displayName: string }>()
   const authority = {
     reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string }) => ({
@@ -183,7 +183,7 @@ function services(sandboxManager: SandboxManager | undefined) {
     value: {
       authority,
       projectionStore,
-      sandbox: { ...(sandboxManager ? { sandboxManager } : {}), defaultDriver: "daytona" },
+      sandbox: { ...(sandboxManager ? { sandboxManager } : {}), ...sandbox },
       relay: { relayUrls: { "us-east": "https://relay.claxedo.test" } },
       defaultHomeRegion: "us-east",
     } as unknown as ControlPlaneServices,
@@ -323,6 +323,7 @@ beforeEach(async () => {
     workspace_name: "importer",
     directory: "/workspace",
     kind: "cloud",
+    driver: "daytona",
     repo_url: REPO,
     git_branch: "main",
     remote_directory: "/workspace",
@@ -453,7 +454,7 @@ describe("hosted tasks cloud roots", () => {
     expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
   })
 
-  test("refuses cloud placement on a deployment with no sandbox driver, and allocates nothing", async () => {
+  test("refuses cloud placement on a deployment that provisions no sandboxes, and allocates nothing", async () => {
     runtime()
     const composition = services(undefined)
 
@@ -462,10 +463,38 @@ describe("hosted tasks cloud roots", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([
-      { code: "placement_unsupported", detail: expect.stringContaining("No cloud sandbox driver is configured") },
+      { code: "placement_unsupported", detail: "This control plane provisions no cloud sandboxes" },
     ])
     expect(await rootOf("tsk_one")).toBeUndefined()
     expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a manager whose driver the placement cannot name refuses the start, and says so distinctly", async () => {
+    runtime()
+    const composition = services(
+      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
+      {},
+    )
+
+    const { started } = await start(bridge(composition), "tsk_one")
+    expect(started).toMatchObject({
+      ok: false,
+      error: {
+        message: "This control plane's sandbox provisioner is not one a workspace placement can name",
+      },
+    })
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("stores the deployment's declared driver as the root's placement", async () => {
+    runtime()
+    const composition = services(
+      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
+    )
+    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
+
+    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "daytona" })
   })
 
   test("keeps a root out of its project's workspace list, so an ordinary start still resolves one workspace", async () => {

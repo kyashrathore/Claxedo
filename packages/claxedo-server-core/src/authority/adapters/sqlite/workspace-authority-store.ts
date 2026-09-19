@@ -181,7 +181,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   project_id TEXT NOT NULL,
   owner_token_identifier TEXT NOT NULL,
   backing TEXT NOT NULL,
-  access TEXT NOT NULL,
   display_name TEXT,
   second_device_open_at INTEGER,
   home_region TEXT,
@@ -961,7 +960,21 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
       )
     `)
     normalizeUserHostedDirectories(db)
+    dropWorkspaceAccessMode(db)
   })()
+}
+
+/**
+ * Drops `workspaces.access`, whose every value was decided by `backing`.
+ *
+ * A failure is fatal rather than tolerated: the column is `NOT NULL` with no
+ * default and nothing writes it any more, so a database that kept it would
+ * refuse every workspace insert. `rebuildWorkspacesIfNeeded` also removes it,
+ * but only for a database whose tenancy columns are still nullable.
+ */
+function dropWorkspaceAccessMode(db: SqliteAuthorityDb) {
+  if (!hasColumn(db, "workspaces", "access")) return
+  db.exec("ALTER TABLE workspaces DROP COLUMN access")
 }
 
 /**
@@ -972,7 +985,7 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
 function normalizeUserHostedDirectories(db: SqliteAuthorityDb) {
   const rows = db.prepare<unknown[], { workspace_id: string; remote_directory: string }>(`
     SELECT workspace_id, remote_directory FROM workspaces
-    WHERE access = 'user-hosted' AND remote_directory IS NOT NULL
+    WHERE backing = 'local-worktree' AND remote_directory IS NOT NULL
   `).all()
   const update = db.prepare(`UPDATE workspaces SET remote_directory = ? WHERE workspace_id = ?`)
   for (const row of rows) {
@@ -1080,7 +1093,6 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
       project_id TEXT NOT NULL,
       owner_token_identifier TEXT NOT NULL,
       backing TEXT NOT NULL,
-      access TEXT NOT NULL,
       display_name TEXT,
       second_device_open_at INTEGER,
       home_region TEXT,
@@ -1093,10 +1105,10 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
       deleted_at INTEGER
     );
     INSERT INTO workspaces_tenant_v2
-      (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+      (workspace_id, org_id, project_id, owner_token_identifier, backing, display_name,
        second_device_open_at, home_region, repo_url, repo_name, git_branch, remote_directory,
        created_at, updated_at, deleted_at)
-    SELECT workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+    SELECT workspace_id, org_id, project_id, owner_token_identifier, backing, display_name,
        second_device_open_at, home_region, repo_url, repo_name, git_branch, remote_directory,
        created_at, updated_at, deleted_at FROM workspaces;
     DROP TABLE workspaces;
@@ -1217,7 +1229,6 @@ export type WorkspaceRow = {
   project_id: string
   owner_token_identifier: string
   backing: string
-  access: string
   display_name: string | null
   home_region: string | null
   repo_url: string | null

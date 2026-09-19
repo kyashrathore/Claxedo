@@ -68,14 +68,14 @@ describe("signedSessionList", () => {
    * workspaces; the user-hosted ones are read by the client over their own
    * relay, so listing them here would render a truncated duplicate.
    */
-  test("omits a project's user-hosted workspaces from the registry union", async () => {
+  test("omits a project's machine-placed workspaces from the registry union", async () => {
     const listSessions = vi.fn(async (_auth: unknown, args: { workspaceId: string }) => [
       { session_id: `ses_${args.workspaceId}`, title: args.workspaceId, created_at: 1, updated_at: 2 },
     ])
     const svc = services({
       listWorkspaces: vi.fn(async () => [
-        { workspace_id: "ws_cloud", project_id: "prj_1", access: "cloud" },
-        { workspace_id: "ws_host", project_id: "prj_1", access: "user-hosted" },
+        { workspace_id: "ws_cloud", project_id: "prj_1", backing: "cloud-vm" },
+        { workspace_id: "ws_host", project_id: "prj_1", backing: "local-worktree" },
       ]),
       listSessions,
     })

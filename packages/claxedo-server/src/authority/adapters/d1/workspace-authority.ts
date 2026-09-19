@@ -81,7 +81,6 @@ export type D1WorkspaceCreateArgs = {
   remoteDirectory?: string
   homeRegion?: string
   backing: "local-worktree" | "cloud-vm"
-  access: "user-hosted" | "cloud"
   /** Whether ordinary org members get the implicit viewer rank; the serving host's scope decides it. */
   orgMemberVisible?: boolean
 }
@@ -130,13 +129,13 @@ type WorkspaceAccessRow = {
   project_id: string
   owner_user_id: string
   backing: "local-worktree" | "cloud-vm"
-  access: "user-hosted" | "cloud"
   display_name: string
   home_region: string | null
   repo_url: string | null
   repo_name: string | null
   git_branch: string | null
   remote_directory: string | null
+  host_enrollment_id: string | null
   deleted_at: number | null
   role_rank: number
 }
@@ -1085,7 +1084,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       .all<WorkspaceAccessRow>()
     const rows = result.results.filter((row) => row.role_rank >= 1)
     const online = await this.workspacesWithServingHost(
-      rows.filter((row) => row.access === "user-hosted").map((row) => row.workspace_id),
+      rows.filter((row) => row.backing === "local-worktree").map((row) => row.workspace_id),
     )
     return rows.map((row) => ({
       ...workspaceJson(row),
@@ -1093,7 +1092,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       // Reachability, not authorization: a shared workspace whose machine is
       // asleep is still listed, and the rail says "host offline" for it rather
       // than dropping the row or waiting for a pane to discover it.
-      ...(row.access === "user-hosted" ? { host_online: online.has(row.workspace_id) } : {}),
+      ...(row.backing === "local-worktree" ? { host_online: online.has(row.workspace_id) } : {}),
     }))
   }
 
@@ -1159,7 +1158,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     if (!(await this.canAdminOrganization(who.userId, orgId))) {
       throw denied("Workspace creation authority was denied")
     }
-    validateWorkspacePlacement(input.backing, input.access)
     const homeRegion = validateHomeRegion(input.homeRegion)
     const remoteDirectory = input.remoteDirectory === undefined ? null : normalizeStoredDirectory(input.remoteDirectory)
     const repoKey = canonicalRepositoryKey({
@@ -1214,11 +1212,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .prepare(
             `
         insert into workspaces (
-          workspace_id, org_id, project_id, owner_user_id, backing, access, display_name,
+          workspace_id, org_id, project_id, owner_user_id, backing, display_name,
           home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at,
           org_member_visible
         )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?
+        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?
         from projects p
         where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
           and (? is null or p.project_id = ?)
@@ -1231,7 +1229,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             orgId,
             who.userId,
             input.backing,
-            input.access,
             displayName,
             homeRegion ?? null,
             input.repoUrl ?? null,
@@ -1256,7 +1253,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
         values (?, case when exists (
           select 1 from workspaces w join projects p on p.project_id = w.project_id and p.org_id = w.org_id
           where w.workspace_id = ? and w.org_id = ? and w.owner_user_id = ?
-            and w.backing = ? and w.access = ? and w.display_name = ?
+            and w.backing = ? and w.display_name = ?
             and w.home_region is ? and w.repo_url is ? and w.repo_name is ?
             and w.git_branch is ? and w.remote_directory is ? and w.deleted_at is null
             and p.repo_key = ? and (? is null or p.project_id = ?)
@@ -1269,7 +1266,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             orgId,
             who.userId,
             input.backing,
-            input.access,
             displayName,
             homeRegion ?? null,
             input.repoUrl ?? null,
@@ -1301,7 +1297,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       ...args,
       orgId: await this.creationOrgId(auth, args.projectId),
       backing: "cloud-vm",
-      access: "cloud",
     })
   }
 
@@ -1340,7 +1335,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const projectId = requireText(args.projectId, "projectId")
     const orgId = await this.adminProjectOrgId(who.userId, projectId)
     if (orgId !== requireText(args.orgId, "orgId")) throw denied("Project creation authority was denied")
-    return await this.createWorkspaceAs(who, { ...args, orgId, projectId, backing: "cloud-vm", access: "cloud" })
+    return await this.createWorkspaceAs(who, { ...args, orgId, projectId, backing: "cloud-vm" })
   }
 
   private async localWorkspaceArgs(
@@ -1351,7 +1346,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       ...args,
       orgId: args.orgId ?? await this.creationOrgId(auth, args.projectId),
       backing: "local-worktree",
-      access: "user-hosted",
     }
   }
 
@@ -1698,7 +1692,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
 function workspaceAccessSql(predicate: string) {
   return `
-    select w.*,
+    select w.*, assignment_enrollment.enrollment_id as host_enrollment_id,
       max(
         case when w.owner_user_id = ? then 4 else 0 end,
         coalesce(case wm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
@@ -1727,6 +1721,11 @@ function workspaceAccessSql(predicate: string) {
       on pm.project_id = w.project_id and pm.user_id = ? and pm.revoked_at is null
     left join org_memberships om
       on om.org_id = w.org_id and om.user_id = ? and om.revoked_at is null
+    left join host_workspace_assignments assignment
+      on assignment.workspace_id = w.workspace_id
+    left join host_enrollments assignment_enrollment
+      on assignment_enrollment.host_id = assignment.host_id
+      and assignment_enrollment.owner_actor_id = assignment.owner_actor_id
     where ${predicate}
       and (o.owner_user_id = ? or om.user_id is not null)
     order by w.created_at, w.workspace_id
@@ -1749,7 +1748,10 @@ function workspaceJson(row: WorkspaceAccessRow) {
     org_id: row.org_id,
     project_id: row.project_id,
     backing: row.backing,
-    access: row.access,
+    placement: {
+      ...(row.host_enrollment_id ? { host_enrollment_id: row.host_enrollment_id } : {}),
+      ...(row.remote_directory ? { directory: row.remote_directory } : {}),
+    },
     display_name: row.display_name,
     ...(row.home_region ? { home_region: row.home_region } : {}),
     ...(row.repo_url ? { repo_url: row.repo_url } : {}),
@@ -1834,12 +1836,6 @@ function validateHomeRegion(value?: string) {
     throw new D1WorkspaceAuthorityError("invalid_input", `${value} is not a known Claxedo region`)
   }
   return value
-}
-
-function validateWorkspacePlacement(backing: string, access: string) {
-  if ((backing === "cloud-vm" && access !== "cloud") || (backing === "local-worktree" && access !== "user-hosted")) {
-    throw new D1WorkspaceAuthorityError("invalid_input", "Workspace backing and access mode conflict")
-  }
 }
 
 function denied(message = "Workspace authority denied access") {

@@ -13,7 +13,7 @@ import {
   retryWorkspaceConnection,
   workspaceConnection,
   workspaceOffline,
-  workspacePlacement,
+  workspaceRelayPlacement,
 } from "./workspace-connection"
 import {
   openWorkspaceConnection,
@@ -64,7 +64,7 @@ describe("workspace connection authority", () => {
       expect(isWorkspaceReady("ws_local")).toBe(true)
       expect(workspaceConnection("ws_local")?.status).toBe("ready")
       expect(connectionPlacement("ws_local")).toEqual({ state: "role-known", workspaceId: "ws_local", role: "owner" })
-      expect(workspacePlacement("ws_local")).toEqual({
+      expect(workspaceRelayPlacement("ws_local")).toEqual({
         workspaceId: "ws_local",
         hosting: "workspace",
         transport: "loopback",
@@ -85,7 +85,7 @@ describe("workspace connection authority", () => {
       const state = workspaceConnection("ws_uh")
       expect(state?.status).toBe("connecting")
       expect(connectionPlacement("ws_uh")).toEqual({ state: "role-pending", workspaceId: "ws_uh" })
-      expect(workspacePlacement("ws_uh")).toBeUndefined()
+      expect(workspaceRelayPlacement("ws_uh")).toBeUndefined()
       expect(isWorkspaceConnecting("ws_uh")).toBe(true)
       dispose()
     })
@@ -97,7 +97,7 @@ describe("workspace connection authority", () => {
       internals.applyWorkspaceConnectionInfo(relayInfo())
 
       expect(connectionPlacement("ws_relay")).toEqual({ state: "role-known", workspaceId: "ws_relay", role: "viewer" })
-      expect(workspacePlacement("ws_relay")).toMatchObject({
+      expect(workspaceRelayPlacement("ws_relay")).toMatchObject({
         workspaceId: "ws_relay",
         hosting: "workspace",
         transport: "workspace-relay",
@@ -106,7 +106,7 @@ describe("workspace connection authority", () => {
 
       internals.applyWorkspaceConnectionInfo(relayInfo({ role: "editor" }))
       expect(connectionPlacement("ws_relay")).toEqual({ state: "role-known", workspaceId: "ws_relay", role: "editor" })
-      expect(workspacePlacement("ws_relay")?.role).toBe("editor")
+      expect(workspaceRelayPlacement("ws_relay")?.role).toBe("editor")
       dispose()
     })
   })
@@ -142,7 +142,7 @@ describe("workspace connection authority", () => {
 
       expect(isWorkspaceReady(workspaceId)).toBe(true)
       expect(connectionPlacement(workspaceId)).toEqual({ state: "role-known", workspaceId, role: "viewer" })
-      expect(workspacePlacement(workspaceId)?.role).toBe("viewer")
+      expect(workspaceRelayPlacement(workspaceId)?.role).toBe("viewer")
       handle.release()
       dispose()
     })
@@ -184,7 +184,7 @@ describe("workspace connection authority", () => {
 
       expect(workspaceConnection(workspaceId)).toMatchObject({ status: "ready" })
       expect(connectionPlacement(workspaceId)).toEqual({ state: "role-known", workspaceId, role: "editor" })
-      expect(workspacePlacement(workspaceId)?.role).toBe("editor")
+      expect(workspaceRelayPlacement(workspaceId)?.role).toBe("editor")
       handle.release()
       dispose()
     })
@@ -378,7 +378,7 @@ describe("workspace connection authority", () => {
       markWorkspaceReconnecting("ws_reco")
       expect(workspaceConnection("ws_reco")?.status).toBe("reconnecting")
       expect(connectionPlacement("ws_reco")).toEqual({ state: "reconnecting", workspaceId: "ws_reco", role: "owner" })
-      expect(workspacePlacement("ws_reco")?.role).toBe("owner")
+      expect(workspaceRelayPlacement("ws_reco")?.role).toBe("owner")
       // Reconnecting is NOT ready — workspace queries park.
       expect(isWorkspaceReady("ws_reco")).toBe(false)
       expect(isWorkspaceConnecting("ws_reco")).toBe(true)

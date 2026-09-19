@@ -160,6 +160,7 @@ describe("greenfield target-absence proof", () => {
       "0015_drop_local_host_links.sql",
       "0016_host_session_authority.sql",
       "0018_drop_agent_extensions.sql",
+      "0034_drop_workspace_access.sql",
     ]) {
       await applyMigration(control, new URL(`../../migrations/control-plane/${name}`, import.meta.url))
     }

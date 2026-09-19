@@ -41,6 +41,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0031_normalize_user_hosted_directories.sql",
   "0032_task_attachments.sql",
   "0033_task_child_number.sql",
+  "0034_drop_workspace_access.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(
@@ -303,6 +304,32 @@ describe("workspace assignment revision counter", () => {
     expect(await counters(target)).toEqual([
       { workspace_id: "ws-assigned", host_assignment_revision: 5 },
       { workspace_id: "ws-free", host_assignment_revision: 0 },
+    ])
+  })
+})
+
+describe("dropping the workspace access mode", () => {
+  test("removes the column and leaves every row and its backing untouched", async () => {
+    const target = await database()
+    const before = CONTROL_PLANE_MIGRATIONS.slice(
+      0,
+      CONTROL_PLANE_MIGRATIONS.indexOf("0034_drop_workspace_access.sql"),
+    )
+    await apply(target, before)
+    await seedOwnerAndProject(target)
+    await seedWorkspace(target, "ws-machine", "user-hosted", "/srv/app")
+    await seedWorkspace(target, "ws-vm", "cloud", null)
+
+    await apply(target, ["0034_drop_workspace_access.sql"])
+
+    const columns = await target.prepare("select name from pragma_table_info('workspaces')").all<{ name: string }>()
+    expect(columns.results.map((row) => row.name)).not.toContain("access")
+    const rows = await target
+      .prepare("select workspace_id, backing, remote_directory from workspaces order by workspace_id")
+      .all<{ workspace_id: string; backing: string; remote_directory: string | null }>()
+    expect(rows.results).toEqual([
+      { workspace_id: "ws-machine", backing: "local-worktree", remote_directory: "/srv/app" },
+      { workspace_id: "ws-vm", backing: "cloud-vm", remote_directory: null },
     ])
   })
 })

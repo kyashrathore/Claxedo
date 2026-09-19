@@ -49,10 +49,11 @@ describe("global sync inventory source helpers", () => {
     expect(local.sessions.map((item) => item.id)).toEqual(["ses_local"])
   })
 
-  test("workspaceHostingKind accepts control-plane access and backing vocabulary", () => {
-    expect(workspaceHostingKind({ access: "cloud" })).toBe("cloud")
-    expect(workspaceHostingKind({ backing: "user-hosted" })).toBe("user-hosted")
-    expect(workspaceHostingKind({ access: "local" })).toBeUndefined()
+  test("workspaceHostingKind reads a resolved kind or a control-plane placement", () => {
+    expect(workspaceHostingKind({ kind: "cloud" })).toBe("cloud")
+    expect(workspaceHostingKind({ backing: "cloud-vm" })).toBe("cloud")
+    expect(workspaceHostingKind({ backing: "local-worktree" })).toBe("user-hosted")
+    expect(workspaceHostingKind({ kind: "local" })).toBeUndefined()
     expect(workspaceHostingKind(undefined)).toBeUndefined()
   })
 
@@ -97,7 +98,7 @@ describe("global sync inventory source helpers", () => {
       workspace: {
         workspace_name: "Cloud Workspace",
         project_id: "proj_123",
-        access: "cloud",
+        kind: "cloud",
         backing: "cloudflare",
       },
       session: {
@@ -140,7 +141,7 @@ describe("global sync inventory source helpers", () => {
       workspace: {
         workspaceName: "User Workspace",
         projectID: "proj_456",
-        backing: "user-hosted",
+        backing: "local-worktree",
       },
       session: {
         sessionID: "ses_456",
@@ -156,7 +157,7 @@ describe("global sync inventory source helpers", () => {
       projectID: "proj_456",
       environment: {
         kind: "user-hosted",
-        driver: "user-hosted",
+        driver: "local-worktree",
       },
       time: { created: 30, updated: 40 },
     })
@@ -264,8 +265,7 @@ describe("global sync inventory source helpers", () => {
               workspace_id: "ws_cloud",
               workspace_name: "Cloud",
               project_id: "project_cloud",
-              access: "cloud",
-              backing: "cloudflare",
+              backing: "cloud-vm",
               remote_directory: "workspace:ws_cloud",
             }],
           })
@@ -276,8 +276,7 @@ describe("global sync inventory source helpers", () => {
               workspace_id: "ws_user",
               workspace_name: "User Hosted",
               project_id: "project_user",
-              access: "user-hosted",
-              backing: "user-hosted",
+              backing: "local-worktree",
               remote_directory: "workspace:ws_user",
             }],
           })

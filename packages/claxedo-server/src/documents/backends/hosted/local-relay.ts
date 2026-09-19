@@ -34,7 +34,7 @@ export function createHostedLocalDocumentRelay(
       if (!authority || !provider) throw new Error("Local document relay is unavailable")
       const opened = await authority.openWorkspace(input.auth, { workspaceId: input.localWorkspaceId })
       if (opened.workspace?.org_id !== input.orgId || opened.workspace.project_id !== input.projectId ||
-        opened.workspace.access !== "user-hosted" || opened.workspace.backing !== "local-worktree") {
+        opened.workspace.backing !== "local-worktree") {
         throw new Error("Local document workspace scope is invalid")
       }
       const write = input.operation === "write" || input.operation === "resolve"

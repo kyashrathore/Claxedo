@@ -37,7 +37,6 @@ import {
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel.ts"
 import {
-  hostEnrollmentHeartbeatPayloadV2,
   hostEnrollmentPayload,
   localHostIdentity,
   signHostPayload,
@@ -598,14 +597,14 @@ if (hostMode === "connect") {
   })
 
   // Starting the relay tunnel above proves transport availability, while the
-  // machine-wide enrollment + owner assignment + signed v2 heartbeat is the
+  // machine-wide enrollment + owner assignment + machine beat is the
   // authoritative control-plane presence record used to mint browser
   // connection credentials. Run it through the real SQLite authority with the
-  // same enroll/assign/beat contract as the public routes, so terminal and
-  // runtime-event clients exercise the production flow: routable = owner-
-  // assigned AND machine-acked AND live lease.
+  // same enroll/assign/acquire/beat contract as the public routes, so terminal
+  // and runtime-event clients exercise the production flow: routable = owner-
+  // assigned AND acked at the owner's current revision AND live lease.
   const enrollmentRequest = await authority.createHostEnrollmentRequest(browserAuth, { hostId })
-  await authority.enrollHost(browserAuth, {
+  const hostEnrollment = await authority.enrollHost(browserAuth, {
     hostId,
     publicKey: fixtureLocalHostIdentity.publicKey,
     requestId: enrollmentRequest.request_id,
@@ -619,21 +618,45 @@ if (hostMode === "connect") {
     ),
     displayName: "Signed Browser Relay Host",
   })
-  await authority.assignWorkspaceHost(browserAuth, { workspaceId, hostId })
-  const beatHostEnrollment = () => authority.heartbeatHostEnrollment(browserAuth, {
-    hostId,
-    ttlMs: 60_000,
-    workspaceIds: [workspaceId],
-    // Read off the policy this machine's runtimes actually mount, never a
-    // literal — the whole point of the declaration is that it comes from the
-    // composition.
-    sessionAuthority: embeddedSessionPolicy.sessionAuthority,
-    signature: signHostPayload(
-      fixtureLocalHostIdentity,
-      hostEnrollmentHeartbeatPayloadV2({ hostId, ttlMs: 60_000, workspaceIds: [workspaceId] }),
-    ),
-  })
-  // The first beat acks the served set so the assignment is routable before
+  await authority.assignWorkspaceHost(browserAuth, { workspaceId, hostId, remoteDirectory: workspaceDir })
+  // The machine caller the verifier builds for a signed request. This fixture
+  // holds the authority in its own process, so there is no wire to sign
+  // across; the row is read fresh per beat because the key version and serving
+  // generation on it are what every write re-asserts.
+  const machineCaller = async () => {
+    const row = await authority.machineAuth.lookupEnrollment(hostEnrollment.enrollment_id)
+    if (!row) throw new Error("signed-browser-relay-fixture: the host enrollment is gone")
+    return {
+      enrollmentId: row.enrollment_id,
+      hostId: row.host_id,
+      ownerUserId: row.owner_user_id,
+      ownerActorId: row.owner_actor_id,
+      scope: row.scope,
+      keyVersion: row.key_version,
+      generation: row.serving_generation,
+    }
+  }
+  const { generation } = await authority.acquireHostServingGeneration(await machineCaller())
+  const beatHostEnrollment = async () => {
+    const declared = (await authority.listHostEnrollments(browserAuth))
+      .find((row) => row.host_id === hostId)?.assignments ?? []
+    return await authority.heartbeatHostEnrollmentByMachine(await machineCaller(), {
+      enrollmentId: hostEnrollment.enrollment_id,
+      hostId,
+      generation,
+      ttlMs: 60_000,
+      // Read off the policy this machine's runtimes actually mount, never a
+      // literal — the whole point of the declaration is that it comes from the
+      // composition.
+      sessionAuthority: embeddedSessionPolicy.sessionAuthority,
+      // Only an ack at the revision the owner currently describes makes the
+      // workspace routable, so the revision is read back rather than assumed.
+      acks: declared
+        .filter((assignment) => assignment.workspace_id === workspaceId)
+        .map((assignment) => ({ workspaceId: assignment.workspace_id, revision: assignment.revision })),
+    })
+  }
+  // The first beat acks the described set so the assignment is routable before
   // any spec asks for a connection.
   await beatHostEnrollment()
 

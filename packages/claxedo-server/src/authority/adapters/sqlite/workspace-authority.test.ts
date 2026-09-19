@@ -186,14 +186,14 @@ describe("sqlite workspace authority", () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_1", displayName: "One" })
 
-    const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; project_id: string; role: string; access: string }>
+    const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; project_id: string; role: string; backing: string }>
     expect(listed).toHaveLength(1)
-    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: expect.stringMatching(/^prj_/), role: "owner", access: "cloud" })
+    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: expect.stringMatching(/^prj_/), role: "owner", backing: "cloud-vm" })
 
     const opened = await authority.openWorkspace(owner, { workspaceId: "ws_1" })
     expect(opened.allowed).toBe(true)
     expect(opened.role).toBe("owner")
-    expect(opened.workspace).toMatchObject({ workspace_id: "ws_1", backing: "cloud-vm", access: "cloud" })
+    expect(opened.workspace).toMatchObject({ workspace_id: "ws_1", backing: "cloud-vm", placement: {} })
 
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({
       status: 403,
@@ -796,6 +796,49 @@ describe("sqlite workspace authority", () => {
   })
 })
 
+describe("a workspace's row carries its placement", () => {
+  test("names the enrolled machine the owner assigned and the directory on it, on open and in the list", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.registerLocalForSharing(owner, {
+      workspaceId: "ws_machine",
+      displayName: "Machine",
+      remoteDirectory: "/srv/machine",
+    })
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_vm", displayName: "VM" })
+
+    const now = Date.now()
+    const db = database()
+    db.prepare(`
+      INSERT INTO host_enrollments
+        (enrollment_id, owner_token_identifier, host_id, public_key, display_name, last_seen_at, expires_at, created_at, updated_at)
+      VALUES ('enr_a', ?, 'host-a', '{}', 'MacBook', ?, ?, ?, ?)
+    `).run(owner.user.tokenIdentifier, now, now + 60_000, now, now)
+    db.prepare(`
+      INSERT INTO host_workspace_assignments
+        (workspace_id, host_id, owner_token_identifier, revision, assigned_at, updated_at)
+      VALUES ('ws_machine', 'host-a', ?, 1, ?, ?)
+    `).run(owner.user.tokenIdentifier, now, now)
+
+    const opened = await authority.openWorkspace(owner, { workspaceId: "ws_machine" })
+    expect(opened.workspace).toMatchObject({
+      backing: "local-worktree",
+      placement: { host_enrollment_id: "enr_a", directory: "/srv/machine" },
+    })
+    expect(opened.workspace).not.toHaveProperty("access")
+
+    const listed = new Map(
+      (await authority.listWorkspaces(owner) as Array<{ workspace_id: string; placement?: unknown }>)
+        .map((row) => [row.workspace_id, row]),
+    )
+    expect(listed.get("ws_machine")).toMatchObject({
+      placement: { host_enrollment_id: "enr_a", directory: "/srv/machine" },
+      host_online: false,
+    })
+    expect(listed.get("ws_vm")).toMatchObject({ placement: {} })
+    expect(listed.get("ws_vm")).not.toHaveProperty("host_online")
+  })
+})
+
 describe("a folder project registered for sharing", () => {
   test("keeps the local project id and reports the served directory", async () => {
     const authority = memoryAuthority()
@@ -820,7 +863,7 @@ describe("a folder project registered for sharing", () => {
       workspace_id: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
       project_id: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
       backing: "local-worktree",
-      access: "user-hosted",
+      placement: { directory: "/srv/checkouts/live-check" },
       remote_directory: "/srv/checkouts/live-check",
     })
   })

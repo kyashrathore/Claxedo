@@ -18,7 +18,6 @@ import type {
   HostMachineHeartbeatResult,
   HostScopeDefinition,
   HostScopeUpdateResult,
-  HostSessionAuthority,
   MachineAuthAdapter,
   MachinePrincipal,
   WorkspaceAuthority,
@@ -41,7 +40,6 @@ import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-aut
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
   "enrollHost",
-  "heartbeatHostEnrollment",
   "heartbeatHostEnrollmentByMachine",
   "acquireHostServingGeneration",
   "pauseHostEnrollment",
@@ -93,7 +91,6 @@ type WorkspaceRow = {
   org_id: string
   project_id: string
   backing: "local-worktree" | "cloud-vm"
-  access: "user-hosted" | "cloud"
   home_region: string | null
   remote_directory: string | null
   host_assignment_revision: number
@@ -472,7 +469,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         update workspaces set deleted_at = null, host_assignment_revision = ?,
           ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
-        where workspace_id = ? and host_assignment_revision = ? and access = 'user-hosted'
+        where workspace_id = ? and host_assignment_revision = ? and backing = 'local-worktree'
           and exists (
             select 1 from host_enrollments
             where owner_actor_id = ? and host_id = ? and revoked_at is null and scope_revision = ?
@@ -715,83 +712,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.deleteAssertion(assertionId),
     ], "Host enrollment raced with another request")
     return enrollmentJson((await this.enrollment(who.actorId, hostId))!)
-  }
-
-  async heartbeatHostEnrollment(
-    auth: SignedControlPlaneAuth,
-    args: {
-      hostId: string
-      signature: string
-      ttlMs?: number
-      workspaceIds: readonly string[]
-      sessionAuthority?: HostSessionAuthority
-    },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const hostId = requireText(args.hostId, "hostId")
-    const enrollment = await this.enrollment(who.actorId, hostId)
-    if (!enrollment || enrollment.revoked_at !== null) {
-      throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
-    }
-    if (!Array.isArray(args.workspaceIds)) {
-      throw new D1HostAccessAuthorityError("invalid_input", "workspaceIds is required — the heartbeat signature covers the served set")
-    }
-    const workspaceIds = [...new Set(args.workspaceIds.map((id) => requireText(id, "workspaceIds")))].sort()
-    if (workspaceIds.length > MAX_ACKED_WORKSPACES) {
-      throw new D1HostAccessAuthorityError("invalid_input", "workspaceIds exceeds the served-set cap")
-    }
-    const signatureHash = await verifyHostSignature({
-      publicKey: enrollment.public_key_json,
-      signature: args.signature,
-      payload: hostEnrollmentHeartbeatPayloadV2({ hostId, ttlMs: args.ttlMs, workspaceIds }),
-    })
-    const now = this.now()
-    const expiresAt = now + normalizedTtl(args.ttlMs)
-    const assertionId = this.randomId("assert")
-    await this.guardedBatch([
-      this.signatureUse(signatureHash, "host-heartbeat", who.actorId, hostId, now),
-      this.database.prepare(`
-        update host_enrollments set
-          last_seen_at = ?, expires_at = ?, last_signature_hash = ?, updated_at = ?,
-          acked_workspace_ids = ?, acked_at = ?, session_authority = ?
-        where owner_actor_id = ? and host_id = ? and revoked_at is null
-      `).bind(
-        now,
-        expiresAt,
-        signatureHash,
-        now,
-        JSON.stringify(workspaceIds),
-        now,
-        // The latest beat is the whole truth about the machine's composition:
-        // a host that stops declaring is undeclared again, so this assigns
-        // rather than coalesces.
-        hostSessionAuthority(args.sessionAuthority) ?? null,
-        who.actorId,
-        hostId,
-      ),
-      // An account caller acks by workspace id alone, so its readiness is
-      // recorded at whatever revision the assignment currently has.
-      this.readinessWithdrawal(enrollment.enrollment_id, workspaceIds),
-      this.readinessUpsert(enrollment.enrollment_id, workspaceIds.map((workspaceId) => ({ workspaceId })), now),
-      this.database.prepare(`
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from host_enrollments
-          where owner_actor_id = ? and host_id = ? and last_seen_at = ?
-            and expires_at = ? and last_signature_hash = ? and revoked_at is null
-        ) then 1 else 0 end)
-      `).bind(assertionId, who.actorId, hostId, now, expiresAt, signatureHash),
-      this.deleteAssertion(assertionId),
-    ], "Host enrollment heartbeat raced with revocation")
-    // The owner's assignment view rides back on every ack so the machine can
-    // reconcile its persisted set — without this, machine consent and owner
-    // intent drift apart silently forever.
-    const assigned = await this.assignmentDescriptions(who.actorId, hostId)
-    return {
-      expires_at: expiresAt,
-      last_seen_at: now,
-      assigned_workspace_ids: assigned.map((row) => row.workspace_id),
-    }
   }
 
   async heartbeatHostEnrollmentByMachine(
@@ -1550,10 +1470,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return row
   }
 
-  /** Whether an assignment would write to an existing record: a live row, or a retired user-hosted one it revives. */
+  /** Whether an assignment would write to an existing record: a live row, or a retired machine-placed one it revives. */
   private async assignableWorkspaceExists(workspaceId: string) {
     return !!await this.database.prepare(`
-      select 1 from workspaces where workspace_id = ? and (deleted_at is null or access = 'user-hosted')
+      select 1 from workspaces where workspace_id = ? and (deleted_at is null or backing = 'local-worktree')
     `).bind(workspaceId).first()
   }
 
@@ -1769,12 +1689,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   /**
    * Readiness for each ack whose workspace is assigned to this enrollment's
-   * host — at the ack's revision when it names one, else at the assignment's
-   * current revision — recorded at the enrollment's current generation.
+   * host at exactly the revision the ack names, recorded at the enrollment's
+   * current generation.
    */
   private readinessUpsert(
     enrollmentId: string,
-    acks: ReadonlyArray<{ workspaceId: string; revision?: number }>,
+    acks: ReadonlyArray<{ workspaceId: string; revision: number }>,
     now: number,
   ) {
     return this.database.prepare(`
@@ -1783,7 +1703,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       from json_each(?) ack
       join host_workspace_assignments assignment
         on assignment.workspace_id = json_extract(ack.value, '$.workspaceId')
-        and (json_extract(ack.value, '$.revision') is null or assignment.revision = json_extract(ack.value, '$.revision'))
+        and assignment.revision = json_extract(ack.value, '$.revision')
       join host_enrollments enrollment on enrollment.enrollment_id = ?
         and enrollment.host_id = assignment.host_id and enrollment.owner_actor_id = assignment.owner_actor_id
       where true
@@ -1896,7 +1816,7 @@ function workspaceAccessCte(rank: 1 | 3, revivable = false) {
     where actor.actor_id = ? and actor.state = 'active'
   ), authorized_workspace as (
     select workspace.workspace_id, workspace.org_id, workspace.project_id,
-      workspace.backing, workspace.access, workspace.home_region, workspace.remote_directory,
+      workspace.backing, workspace.home_region, workspace.remote_directory,
       workspace.host_assignment_revision,
       max(
         case when workspace.owner_user_id = current_actor.user_id then 4 else 0 end,
@@ -1911,7 +1831,7 @@ function workspaceAccessCte(rank: 1 | 3, revivable = false) {
       ) as role_rank
     from current_actor
     join workspaces workspace on workspace.workspace_id = ?
-      and ${revivable ? "(workspace.deleted_at is null or workspace.access = 'user-hosted')" : "workspace.deleted_at is null"}
+      and ${revivable ? "(workspace.deleted_at is null or workspace.backing = 'local-worktree')" : "workspace.deleted_at is null"}
     join projects project
       on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
     join orgs organization on organization.org_id = workspace.org_id and organization.deleted_at is null
@@ -1934,30 +1854,6 @@ export function hostEnrollmentPayload(input: { hostId: string; requestId: string
     `host_id=${input.hostId}`,
     `request_id=${input.requestId}`,
     `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
-/**
- * Heartbeat v2: the machine's ONE signature per interval also covers the
- * workspaces it currently serves (sorted, comma-joined). Routing requires a
- * workspace to be BOTH owner-assigned and ready from this acked set, which
- * preserves the retired per-workspace signature's security property — an
- * owner session cannot conjure serving the machine never consented to — at
- * one signature instead of N+1. Replay is defended exactly like v1: every
- * signature hash is single-use (`host_signature_uses` primary key) and ECDSA
- * signatures are randomized, so a client must re-sign on every beat and a
- * captured signature collides with its own prior use.
- */
-export function hostEnrollmentHeartbeatPayloadV2(input: {
-  hostId: string
-  ttlMs?: number
-  workspaceIds: readonly string[]
-}) {
-  return [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
   ].join("\n")
 }
 
@@ -2076,23 +1972,23 @@ function requireShareRole(role: string): "viewer" | "editor" | "admin" {
 }
 
 /**
- * A user-hosted workspace exists in the inventory exactly as long as a machine
- * is assigned to serve it: unsharing it or revoking its machine retires the
- * row, and sharing it again revives the same record. Cloud rows are never
+ * A machine-placed workspace exists in the inventory exactly as long as a
+ * machine is assigned to serve it: unsharing it or revoking its machine retires
+ * the row, and sharing it again revives the same record. Cloud rows are never
  * touched here — their lifetime is the sandbox's.
  */
 export function retireUserHostedWorkspaceSql(where: string) {
   return `
     update workspaces set deleted_at = ?, updated_at = ?
-    where access = 'user-hosted' and deleted_at is null and ${where}
+    where backing = 'local-worktree' and deleted_at is null and ${where}
   `
 }
 
 function requireLocalWorkspace(workspace: WorkspaceRow) {
-  if (workspace.backing !== "local-worktree" || workspace.access !== "user-hosted") {
+  if (workspace.backing !== "local-worktree") {
     throw new D1HostAccessAuthorityError(
       "resource_conflict",
-      "Local host links require a user-hosted local workspace",
+      "A host assignment names a directory, so its workspace must be a local worktree",
     )
   }
 }

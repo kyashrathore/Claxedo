@@ -548,7 +548,7 @@ describe("hosted tasks session bridge", () => {
   })
 
 
-  test("blocks a cloud preset on a deployment with no sandbox driver, and never reserves an origin for one", async () => {
+  test("blocks a cloud preset on a deployment that provisions no sandboxes, and never reserves an origin for one", async () => {
     const host = runtime()
     const composition = services()
     const kit = bridge(composition)
@@ -560,7 +560,7 @@ describe("hosted tasks session bridge", () => {
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([
-      { code: "placement_unsupported", detail: expect.stringContaining("No cloud sandbox driver is configured") },
+      { code: "placement_unsupported", detail: "This control plane provisions no cloud sandboxes" },
     ])
 
     const started = await kit.start(await startCommand(previewed.preview.digest, cloud))

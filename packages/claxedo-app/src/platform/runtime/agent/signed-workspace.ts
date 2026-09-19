@@ -1,4 +1,4 @@
-import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
+import { isRelayBackedWorkspaceKind, workspaceKind, workspaceKindFromBacking, type SignedWorkspaceKind } from "./workspace-kind"
 import { isFilesystemDirectory, sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { asRecord } from "@/lib/record"
 export type { SignedWorkspaceKind }
@@ -92,20 +92,17 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
 }
 
 /**
- * The signed hosting kind recorded on a raw inventory/session row — checking
- * `access` (the live, control-plane-confirmed field) before `backing` (how the
- * workspace was originally provisioned), since a workspace's access can be
- * re-hosted after creation while `backing` keeps naming its origin. The one
- * owner for this derivation, shared by the global sync inventory reducer and
- * the session inventory query.
+ * The signed hosting kind recorded on a raw inventory/session row.
+ *
+ * A daemon row states its own `kind`; a control-plane row states only where it
+ * runs, so its `backing` is mapped. The one owner for this derivation, shared
+ * by the global sync inventory reducer and the session inventory query.
  */
 export function workspaceHostingKind(input: unknown): SignedWorkspaceKind | undefined {
   const row = asRecord(input)
-  const access = workspaceKind(row?.access)
-  if (access && isRelayBackedWorkspaceKind(access)) return access
-  const backing = workspaceKind(row?.backing)
-  if (backing && isRelayBackedWorkspaceKind(backing)) return backing
-  return undefined
+  const kind = workspaceKind(row?.kind)
+  if (kind && isRelayBackedWorkspaceKind(kind)) return kind
+  return workspaceKindFromBacking(row?.backing)
 }
 
 function findSignedWorkspaceFromProjects(projects: readonly WorkspaceInventoryProject[], directory: string) {

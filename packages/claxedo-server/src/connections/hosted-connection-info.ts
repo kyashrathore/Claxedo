@@ -31,16 +31,10 @@ export async function hostedConnectionInfo(
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
-  if (
-    result.workspace?.backing === "local-worktree"
-    && result.workspace.access === "user-hosted"
-  ) {
+  if (result.workspace?.backing === "local-worktree") {
     return userHostedConnectionInfo(services, options, auth, workspaceId, previousJti)
   }
-  if (
-    result.workspace?.backing !== "cloud-vm"
-    || result.workspace.access !== "cloud"
-  ) {
+  if (result.workspace?.backing !== "cloud-vm") {
     return {
       error: apiError("workspace_relay_unsupported", "Workspace connection is only available for user-hosted or cloud workspaces"),
       status: 400,

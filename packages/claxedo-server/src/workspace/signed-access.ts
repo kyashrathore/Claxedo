@@ -10,14 +10,16 @@ import { controlPlaneRateLimitError } from "./runtime-token-guards"
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const workspace = asRecord(asRecord(result)?.workspace)
   const resolvedWorkspaceId = txt(workspace?.workspace_id) ?? txt(workspace?.workspaceId) ?? workspaceId
-  const access = txt(workspace?.access)
   const backing = txt(workspace?.backing)
   const branch = txt(workspace?.git_branch) ?? txt(workspace?.gitBranch)
   const repoUrl = txt(workspace?.repo_url) ?? txt(workspace?.repoUrl)
   const repoName = txt(workspace?.repo_name) ?? txt(workspace?.repoName)
-  const normalizedAccess = access === "user-hosted"
+  // The placement, as the app still names it: a cloud VM is the provisioner's,
+  // a local worktree is on an enrolled machine, and a record with no backing at
+  // all came from a node that answers for its own directories.
+  const normalizedAccess = backing === "local-worktree"
     ? "user-hosted"
-    : access === "cloud" || backing === "cloud-vm"
+    : backing === "cloud-vm"
       ? "cloud"
       : "local"
   return {
@@ -49,11 +51,7 @@ export function signedWorkspaceJson(result: unknown, workspaceId: string) {
             kind: "local-worktree" as const,
             branch,
           },
-    kind: access === "user-hosted"
-      ? "user-hosted"
-      : access === "cloud" || backing === "cloud-vm"
-        ? "cloud"
-        : "local",
+    kind: normalizedAccess,
     driver: null,
     status: "ready",
     git: {

@@ -167,13 +167,14 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
 
 /**
  * One control-plane list row. `?access=cloud` answers every visible row, not
- * only cloud ones, so the row's own `access` decides its kind and a row whose
- * access is not the one asked for is dropped and picked up by its own query.
+ * only cloud ones, so the row's own placement decides its kind and a row whose
+ * placement is not the one asked for is dropped and picked up by its own query.
  */
 function workspaceSummary(row: unknown, access: "cloud" | "user-hosted"): WorkspaceSummary | undefined {
   const record = asRecord(row)
   const id = record?.workspace_id
-  if (typeof id !== "string" || id.length === 0 || record?.access !== access) return undefined
+  const backing = access === "cloud" ? "cloud-vm" : "local-worktree"
+  if (typeof id !== "string" || id.length === 0 || record?.backing !== backing) return undefined
   return {
     id,
     kind: access,

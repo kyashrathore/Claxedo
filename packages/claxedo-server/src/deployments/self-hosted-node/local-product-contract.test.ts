@@ -322,7 +322,7 @@ describe("desktop-local product contract", () => {
 
   test("answers the workspace list in one envelope, signed or not, so the MCP client can read it", async () => {
     const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
-    const shared = await ensureWorkspace({ kind: "cloud", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
+    const shared = await ensureWorkspace({ kind: "cloud", driver: "daytona", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
     if (!shared) throw new Error("the store refused the fixture workspace")
     const app = localApp()
 
@@ -338,7 +338,7 @@ describe("desktop-local product contract", () => {
       controlPlane: { fetch: async (path, init) => await app.request(path, init) },
     })
     expect((await client.workspaces()).map((row) => ({ id: row.id, kind: row.kind, name: row.name })))
-      .toEqual([{ id: shared.id, kind: "user-hosted", name: "shared box" }])
+      .toEqual([{ id: shared.id, kind: "cloud", name: "shared box" }])
   })
 
   test("resolves the profile root from the product data directory, not the package location", async () => {

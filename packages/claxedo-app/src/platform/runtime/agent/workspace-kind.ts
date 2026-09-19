@@ -24,6 +24,20 @@ export function workspaceKind(input: unknown): WorkspaceKind | undefined {
 }
 
 /**
+ * The kind a control-plane row's `backing` states.
+ *
+ * The control plane stores where a workspace runs, not how a client reaches
+ * it: `cloud-vm` is the provisioner's machine and `local-worktree` is an
+ * enrolled one. It emits no kind of its own, so every reader of a control-plane
+ * row maps it here.
+ */
+export function workspaceKindFromBacking(input: unknown): SignedWorkspaceKind | undefined {
+  if (input === "cloud-vm") return "cloud"
+  if (input === "local-worktree") return "user-hosted"
+  return undefined
+}
+
+/**
  * Whether a workspace of this kind is reached over the relay rather than the
  * loopback server — the single "is this remote?" predicate every caller that
  * gates on `kind === "cloud" || kind === "user-hosted"` should import instead

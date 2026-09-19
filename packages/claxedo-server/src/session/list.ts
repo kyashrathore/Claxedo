@@ -111,7 +111,7 @@ async function assertRegistryIsSessionAuthority(
   workspaceId: string,
 ) {
   const opened = await requireAuthority(services).openWorkspace(auth, { workspaceId })
-  if (workspaceRow(workspaceRow(opened)?.workspace)?.access !== "user-hosted") return
+  if (workspaceRow(workspaceRow(opened)?.workspace)?.backing !== "local-worktree") return
   throw new SessionListAuthorityError(workspaceId)
 }
 
@@ -178,10 +178,11 @@ async function registryWorkspaceIdsForProject(
     if (!row) return []
     const workspaceId = rowText(row.workspace_id) ?? rowText(row.workspaceId)
     if (!workspaceId) return []
-    // A user-hosted workspace's sessions are the runtime's, not the registry's:
-    // its rows here would be only those created through the control plane, a
-    // subset of what its host holds. The client reads each one over the relay.
-    if (rowText(row.access) === "user-hosted") return []
+    // A machine-placed workspace's sessions are the runtime's, not the
+    // registry's: its rows here would be only those created through the control
+    // plane, a subset of what its host holds. The client reads each one over
+    // the relay.
+    if (rowText(row.backing) === "local-worktree") return []
     const rowProjectId = rowText(row.project_id) ?? rowText(row.projectID) ?? rowText(row.projectId)
     return rowProjectId === projectId ? [workspaceId] : []
   })
