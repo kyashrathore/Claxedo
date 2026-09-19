@@ -71,7 +71,7 @@ describe("resolvePreparedSubmitDirectory", () => {
       runtimeWorkspaceRef: (directory) =>
         directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "machine" } : undefined,
       workspaceForDirectory: (directory) =>
-        directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "user-hosted" } : undefined,
+        directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "machine" } : undefined,
       createCloudWorkspace: async (projectId) => {
         createdProjects.push(projectId)
         return { workspaceId: "ws_1" }
@@ -95,10 +95,8 @@ describe("resolvePreparedSubmitDirectory", () => {
       draftId: "draft_1",
       projectDirectory: "/repo/user-hosted",
       runtimeWorkspaceRef: () => undefined,
-      workspaceForDirectory: (directory) => ({
-        workspaceId: "uh_filesystem",
-        kind: directory === "/repo/user-hosted" ? "user-hosted" : undefined,
-      }),
+      workspaceForDirectory: (directory) =>
+        directory === "/repo/user-hosted" ? { workspaceId: "uh_filesystem", kind: "machine" } : undefined,
       prepareUserHostedRuntime: async (input) => {
         prepared.push(input.workspaceId)
         return { ok: true, status: "ready" }
@@ -116,10 +114,8 @@ describe("resolvePreparedSubmitDirectory", () => {
       hostKind: "provisioner",
       projectDirectory: "/repo/cloud-workspace",
       runtimeWorkspaceRef: () => undefined,
-      workspaceForDirectory: (directory) => ({
-        workspaceId: "ws_cloud_filesystem",
-        kind: directory === "/repo/cloud-workspace" ? "cloud" : undefined,
-      }),
+      workspaceForDirectory: (directory) =>
+        directory === "/repo/cloud-workspace" ? { workspaceId: "ws_cloud_filesystem", kind: "provisioner" } : undefined,
       createCloudWorkspace: async (projectId) => {
         createdProjects.push(projectId)
         return { workspaceId: "ws_unexpected" }
@@ -147,7 +143,7 @@ describe("resolvePreparedSubmitDirectory", () => {
       hostKind: "provisioner",
       worktreeSelection: "workspace:ws_1",
       runtimeWorkspaceRef: () => ({ workspaceId: "ws_1", kind: "provisioner" }),
-      workspaceForDirectory: () => ({ workspaceId: "ws_1", kind: "cloud" }),
+      workspaceForDirectory: () => ({ workspaceId: "ws_1", kind: "provisioner" }),
       onCloudStartup: (state) => states.push(state),
       publishCloudHandoff: (status) => handoffs.push(status),
       prepareWorkspaceRuntime: async (input) => {
@@ -270,7 +266,7 @@ describe("resolvePreparedSubmitDirectory", () => {
       runtimeWorkspaceRef: (directory) =>
         directory === "ws_other" ? { workspaceId: "ws_other", kind: "provisioner" } : undefined,
       workspaceForDirectory: (directory) =>
-        directory === "ws_other" ? { workspaceId: "ws_other", kind: "cloud" } : undefined,
+        directory === "ws_other" ? { workspaceId: "ws_other", kind: "provisioner" } : undefined,
       createCloudWorkspace: async () => ({ workspaceId: "ws_selected" }),
       prepareWorkspaceRuntime: async (input) => {
         prepared.push(input.directory)
@@ -301,7 +297,7 @@ describe("resolvePreparedSubmitDirectory", () => {
       runtimeWorkspaceRef: (directory) =>
         directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "provisioner" } : undefined,
       workspaceForDirectory: (directory) =>
-        directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "cloud" } : undefined,
+        directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "provisioner" } : undefined,
       createCloudWorkspace: async (projectId) => {
         createdProjects.push(projectId)
         return { workspaceId: "ws_new" }

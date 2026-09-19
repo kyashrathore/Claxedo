@@ -9,6 +9,8 @@ import {
   exercisePrivateSessionAuthorityConformance,
   exerciseRuntimeForkReservationConformance,
   exerciseSessionShareLevelConformance,
+  exerciseSessionShareRuntimeTokenConformance,
+  exerciseSessionWriteClassConformance,
 } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
@@ -40,18 +42,41 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true })
 })
 
+/**
+ * The authority and a second handle on the same file, which is what writing a
+ * workspace or organization membership takes: the authority's only grant call
+ * is a session share, and `:memory:` gives a second handle a different
+ * database.
+ */
+function authorityWithSeed() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-authority-"))
+  temporaryDirectories.push(directory)
+  const databasePath = path.join(directory, "authority.db")
+  const store = createSqliteWorkspaceAuthority({ path: databasePath })
+  const seed = openAuthorityDb({ path: databasePath })
+  openAuthorities.push(store, seed)
+  return { store, seed }
+}
+
+function orgMember(seed: () => Database.Database, workspaceId: string, tokenIdentifier: string, role: string) {
+  const now = Date.now()
+  const db = seed()
+  const workspace = db.prepare(`SELECT org_id FROM workspaces WHERE workspace_id = ?`).get(workspaceId) as { org_id: string }
+  db.prepare(`
+    INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (org_id, token_identifier) DO UPDATE SET role = excluded.role
+  `).run(workspace.org_id, tokenIdentifier, role, now, now)
+}
+
 describe("SQLite private-session authority", () => {
   test("satisfies the provider-neutral conformance runner", async () => {
     const creator = auth("creator")
     const participant = auth("participant")
-    const store = authority()
+    const { store, seed } = authorityWithSeed()
     await store.usersMe(participant)
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
-    await store.grantWorkspaceShare(creator, {
-      workspaceId: "workspace_main",
-      role: "editor",
-      target: { kind: "actor", actorId: participant.user.tokenIdentifier },
-    })
+    orgMember(seed, "workspace_main", participant.user.tokenIdentifier, "member")
 
     await expect(exercisePrivateSessionAuthorityConformance({
       authority: store,
@@ -83,14 +108,10 @@ describe("SQLite private-session authority", () => {
   test("satisfies the provider-neutral runtime fork-reservation conformance runner", async () => {
     const creator = auth("creator")
     const participant = auth("participant")
-    const store = authority()
+    const { store, seed } = authorityWithSeed()
     await store.usersMe(participant)
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
-    await store.grantWorkspaceShare(creator, {
-      workspaceId: "workspace_main",
-      role: "editor",
-      target: { kind: "actor", actorId: participant.user.tokenIdentifier },
-    })
+    orgMember(seed, "workspace_main", participant.user.tokenIdentifier, "member")
 
     await expect(exerciseRuntimeForkReservationConformance({
       authority: store,
@@ -122,11 +143,10 @@ describe("SQLite private-session authority", () => {
     openAuthorities.push(store, seed)
     await store.usersMe(member)
     await store.createCloudWorkspace(owner, { workspaceId: "workspace_main", displayName: "Main" })
-    await store.grantWorkspaceShare(owner, {
-      workspaceId: "workspace_main",
-      role: "editor",
-      target: { kind: "actor", actorId: member.user.tokenIdentifier },
-    })
+    // An org admin ranks `admin` on the workspace, which is the standing this
+    // suite needs its non-owner to have: enough to create a session there,
+    // never enough to adopt one the machine holds.
+    orgMember(seed, "workspace_main", member.user.tokenIdentifier, "admin")
 
     await expect(exercisePrivateSessionAdoptionConformance({
       authority: store,
@@ -162,21 +182,19 @@ describe("SQLite private-session authority", () => {
   test("satisfies the provider-neutral session-share-level conformance surface", async () => {
     const creator = auth("creator")
     const grantee = auth("grantee")
-    const reader = auth("reader")
-    const store = authority()
+    const administrator = auth("administrator")
+    const outsider = auth("outsider")
+    const { store, seed } = authorityWithSeed()
     await store.usersMe(grantee)
-    await store.usersMe(reader)
+    await store.usersMe(administrator)
+    await store.usersMe(outsider)
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
-    await store.grantWorkspaceShare(creator, {
-      workspaceId: "workspace_main",
-      role: "editor",
-      target: { kind: "actor", actorId: grantee.user.tokenIdentifier },
-    })
-    await store.grantWorkspaceShare(creator, {
-      workspaceId: "workspace_main",
-      role: "viewer",
-      target: { kind: "actor", actorId: reader.user.tokenIdentifier },
-    })
+    // `org_member_visible = 0` withholds the implicit viewer role a plain
+    // member would otherwise carry, which is what leaves the grantee with no
+    // workspace rank at all and the share as their only standing.
+    seed().prepare(`UPDATE workspaces SET org_member_visible = 0 WHERE workspace_id = ?`).run("workspace_main")
+    orgMember(seed, "workspace_main", grantee.user.tokenIdentifier, "member")
+    orgMember(seed, "workspace_main", administrator.user.tokenIdentifier, "admin")
     await store.reserveSession(creator, {
       operationId: "operation_shared",
       sessionId: "session_shared",
@@ -203,14 +221,84 @@ describe("SQLite private-session authority", () => {
         runtime: { principalKind: "user", actorId: grantee.user.tokenIdentifier, actorKind: "human" },
         target: { grantedToTokenIdentifier: grantee.user.tokenIdentifier },
       },
-      readOnlyRecipient: { target: { grantedToTokenIdentifier: reader.user.tokenIdentifier } },
+      organizationAdministrator: {
+        auth: administrator,
+        runtime: { principalKind: "user", actorId: administrator.user.tokenIdentifier, actorKind: "human" },
+      },
+      outsider: { target: { grantedToTokenIdentifier: outsider.user.tokenIdentifier } },
     })).resolves.toEqual({
       defaultsToFollow: true,
       followReadsButDoesNotWrite: true,
-      sendWrites: true,
+      sendWritesWithoutWorkspaceRank: true,
       downgradeEndsWriting: true,
       revokeEndsReading: true,
-      sendRefusedWhereItCouldNotBeHonoured: true,
+      organizationAdministratorRefusedWithoutAGrant: true,
+      offerRefusedOutsideTheOrganization: true,
+    })
+    await expect(store.openWorkspace(grantee, { workspaceId: "workspace_main" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
+  })
+
+  test("satisfies the provider-neutral session-share runtime-token conformance surface", async () => {
+    const creator = auth("creator")
+    const grantee = auth("grantee")
+    const departing = auth("departing")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(grantee)
+    await store.usersMe(departing)
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    // `org_member_visible = 0` withholds the implicit member rank, so the
+    // grantee's only standing on this workspace is the share under test. An
+    // org ADMIN keeps their rank either way, which is what lets the departing
+    // member create a session and what revoking the membership takes back.
+    seed().prepare(`UPDATE workspaces SET org_member_visible = 0 WHERE workspace_id = ?`).run("workspace_main")
+    orgMember(seed, "workspace_main", grantee.user.tokenIdentifier, "member")
+    orgMember(seed, "workspace_main", departing.user.tokenIdentifier, "admin")
+    for (const [operationId, sessionId, owner] of [
+      ["operation_shared", "session_shared", creator],
+      ["operation_departing", "session_departing", departing],
+    ] as const) {
+      await store.reserveSession(owner, { operationId, sessionId, workspaceId: "workspace_main", kind: "create" })
+      await store.registerRuntimeSession({
+        principalKind: "user",
+        actorId: owner.user.tokenIdentifier,
+        actorKind: "human",
+        operationId,
+        sessionId,
+        workspaceId: "workspace_main",
+      })
+    }
+
+    await expect(exerciseSessionShareRuntimeTokenConformance({
+      sessions: store,
+      workspace: store,
+      workspaceId: "workspace_main",
+      hostId: "host_main",
+      sessionId: "session_shared",
+      creator: { auth: creator },
+      grantee: {
+        auth: grantee,
+        runtime: { principalKind: "user", actorId: grantee.user.tokenIdentifier, actorKind: "human" },
+        target: { grantedToTokenIdentifier: grantee.user.tokenIdentifier },
+      },
+      offboarded: {
+        auth: departing,
+        runtime: { principalKind: "user", actorId: departing.user.tokenIdentifier, actorKind: "human" },
+        sessionId: "session_departing",
+        leaveOrganization: async () => {
+          const workspace = seed().prepare(`SELECT org_id FROM workspaces WHERE workspace_id = ?`)
+            .get("workspace_main") as { org_id: string }
+          seed().prepare(`DELETE FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+            .run(workspace.org_id, departing.user.tokenIdentifier)
+        },
+      },
+      expiresAt: Date.now() + 600_000,
+    })).resolves.toEqual({
+      tokenRefusedBeforeTheShare: true,
+      sendGranteeMintsAViewerTokenAndWrites: true,
+      shareNeverWidensTheTokenRole: true,
+      followGranteeKeepsTheTokenAndLosesTheTurn: true,
+      offboardedCreatorLosesReadWriteAndToken: true,
     })
   })
 
@@ -222,7 +310,8 @@ describe("SQLite private-session authority", () => {
     const participant = auth("participant")
     const first = createSqliteWorkspaceAuthority({ path: databasePath })
     const reconstructed = createSqliteWorkspaceAuthority({ path: databasePath })
-    openAuthorities.push(first, reconstructed)
+    const seed = openAuthorityDb({ path: databasePath })
+    openAuthorities.push(first, reconstructed, seed)
     await first.usersMe(participant)
     await first.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
     await first.reserveSession(creator, {
@@ -239,11 +328,7 @@ describe("SQLite private-session authority", () => {
       sessionId: "session_turns",
       workspaceId: "workspace_main",
     })
-    await first.grantWorkspaceShare(creator, {
-      workspaceId: "workspace_main",
-      role: "editor",
-      target: { kind: "actor", actorId: participant.user.tokenIdentifier },
-    })
+    orgMember(seed, "workspace_main", participant.user.tokenIdentifier, "member")
     await first.grantSessionParticipant(creator, {
       sessionId: "session_turns",
       workspaceId: "workspace_main",
@@ -377,11 +462,7 @@ describe("SQLite private-session authority", () => {
       sessionId: "session_1",
       workspaceId: "workspace_main",
     })
-    await store.grantWorkspaceShare(creator, {
-      workspaceId: "workspace_main",
-      role: "editor",
-      target: { kind: "actor", actorId: "actor_agent" },
-    })
+    orgMember(seed, "workspace_main", "actor_agent", "member")
     await store.grantSessionParticipant(creator, {
       sessionId: "session_1",
       workspaceId: "workspace_main",
@@ -442,5 +523,85 @@ describe("SQLite private-session authority", () => {
 
     await expect(store.listSessions(creator, { workspaceId: "workspace_main" })).resolves.toEqual([])
     await expect(store.resolveSession(creator, { sessionId: "legacy_session" })).resolves.toBeNull()
+  })
+})
+
+describe("SQLite private-session authority, shares of a session this store never registered", () => {
+  test("answers the organization it belongs to and refuses everyone else", async () => {
+    const creator = auth("creator")
+    const teammate = auth("teammate")
+    const outsider = auth("outsider")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(teammate)
+    await store.usersMe(outsider)
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    // Withholding the implicit member rank leaves the teammate standing in
+    // the organization and nowhere else, which is what the two twins have to
+    // answer the same way.
+    seed().prepare(`UPDATE workspaces SET org_member_visible = 0 WHERE workspace_id = ?`).run("workspace_main")
+    orgMember(seed, "workspace_main", teammate.user.tokenIdentifier, "member")
+
+    await expect(store.listSessionShares!(teammate, {
+      sessionId: "session_created_on_the_machine",
+      workspaceId: "workspace_main",
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    await expect(store.listSessionShares!(outsider, {
+      sessionId: "session_created_on_the_machine",
+      workspaceId: "workspace_main",
+    })).rejects.toThrow("session_share_admin_required")
+  })
+})
+
+describe("SQLite private-session authority, write classes", () => {
+  test("satisfies the provider-neutral session-write-class conformance surface", async () => {
+    const creator = auth("creator")
+    const grantee = auth("grantee")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(grantee)
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    // `org_member_visible = 0` withholds the implicit viewer role a plain
+    // member would otherwise carry, so the share is the grantee's only
+    // standing and the class alone decides each write.
+    seed().prepare(`UPDATE workspaces SET org_member_visible = 0 WHERE workspace_id = ?`).run("workspace_main")
+    orgMember(seed, "workspace_main", grantee.user.tokenIdentifier, "member")
+    await store.reserveSession(creator, {
+      operationId: "operation_classes",
+      sessionId: "session_classes",
+      workspaceId: "workspace_main",
+      kind: "create",
+    })
+    await store.registerRuntimeSession({
+      principalKind: "user",
+      actorId: creator.user.tokenIdentifier,
+      actorKind: "human",
+      operationId: "operation_classes",
+      sessionId: "session_classes",
+      workspaceId: "workspace_main",
+    })
+
+    // Before the share exists there is nothing to admit them: what follows is
+    // the share's alone, never a rank on the workspace.
+    await expect(store.openWorkspace(grantee, { workspaceId: "workspace_main" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
+
+    await expect(exerciseSessionWriteClassConformance({
+      authority: store,
+      shares: store,
+      workspaceId: "workspace_main",
+      sessionId: "session_classes",
+      creator: {
+        auth: creator,
+        runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" },
+      },
+      grantee: {
+        runtime: { principalKind: "user", actorId: grantee.user.tokenIdentifier, actorKind: "human" },
+        target: { grantedToTokenIdentifier: grantee.user.tokenIdentifier },
+      },
+    })).resolves.toEqual({
+      sendGranteeDrivesTheTurn: true,
+      sendGranteeRefusedSessionControl: true,
+      creatorHoldsBothClasses: true,
+      absentClassAsksAboutTheTurn: true,
+    })
   })
 })

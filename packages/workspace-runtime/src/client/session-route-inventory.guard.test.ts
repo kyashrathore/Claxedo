@@ -15,11 +15,14 @@ const ids = {
   messageID: "msg",
   providerID: "provider",
   modelID: "model",
+  seq: 1,
+  action: "cancel",
 }
 
 function inventoryPattern(method: string, pathname: string) {
   const path = pathname
     .replace(/^\/session\/sid\/permissions\/pid$/, "/session/:sessionId/permissions/:permId")
+    .replace(/^\/session\/sid\/queue\/1\/cancel$/, "/session/:id/queue/:seq/:action")
     .replace(/^\/session\/sid(?=\/|$)/, "/session/:id")
     .replace(/^\/question\/qid(?=\/|$)/, "/question/:id")
   return `${method} ${path}`

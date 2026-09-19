@@ -864,7 +864,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return {
       team_id: selected.team_id,
       org_id: orgId,
-      workspace_shares_retargeted: 0,
       session_shares_retargeted: 0,
     }
   }
@@ -1080,7 +1079,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const who = await this.requirePrincipal(auth)
     const result = await this.database
       .prepare(workspaceAccessSql("w.deleted_at is null"))
-      .bind(who.userId, who.userId, who.userId, who.userId, who.userId, who.userId, who.userId)
+      .bind(who.userId, who.userId, who.userId, who.userId, who.userId, who.userId)
       .all<WorkspaceAccessRow>()
     const rows = result.results.filter((row) => row.role_rank >= 1)
     const online = await this.workspacesWithServingHost(
@@ -1664,9 +1663,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private async workspaceAccess(userId: string, workspaceId: string) {
     const row = await this.database
       .prepare(workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null"))
-      .bind(userId, userId, userId, userId, userId, userId, workspaceId, userId)
+      .bind(userId, userId, userId, userId, userId, workspaceId, userId)
       .first<WorkspaceAccessRow>()
-    return row && row.role_rank >= 1 ? row : null
+    if (!row) return null
+    if (row.role_rank >= 1) return row
+    const shared = await this.database.prepare(SESSION_SHARE_WORKSPACE_ACCESS_SQL)
+      .bind(userId, workspaceId).first()
+    return shared ? { ...row, role_rank: 1 } : null
   }
 
   private assertOrganizationAllowed(orgId: string) {
@@ -1690,12 +1693,53 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 }
 
+/**
+ * What a session share is worth on the workspace that holds the session: the
+ * grantee has no role there and still has to reach the machine serving it, so
+ * an active grant floors them at `viewer` — enough to open the placement and
+ * be handed a Runtime Access Token, and nothing else. Read and write on the
+ * session stay the session authority's answer, asked per request, so the share
+ * LEVEL deliberately does not appear here.
+ *
+ * Binds the user id, then the workspace id.
+ */
+export const SESSION_SHARE_WORKSPACE_ACCESS_SQL = `
+  select 1
+  from session_share_grants share
+  join sessions session
+    on session.session_id = share.session_id
+    and session.workspace_id = share.workspace_id
+    and session.deleted_at is null
+  join users share_user on share_user.user_id = ? and share_user.state = 'active'
+  where share.workspace_id = ? and share.revoked_at is null
+    and (
+      share.target_user_id = share_user.user_id
+      or (
+        share.target_org_id = session.org_id
+        and exists (
+          select 1 from org_memberships share_org_member
+          where share_org_member.org_id = share.target_org_id
+            and share_org_member.user_id = share_user.user_id
+            and share_org_member.revoked_at is null
+        )
+      )
+      or exists (
+        select 1 from team_memberships share_team_member
+        join teams share_team on share_team.team_id = share_team_member.team_id
+          and share_team.org_id = session.org_id and share_team.deleted_at is null
+        where share_team_member.team_id = share.target_team_id
+          and share_team_member.user_id = share_user.user_id
+          and share_team_member.revoked_at is null
+      )
+    )
+  limit 1
+`
+
 function workspaceAccessSql(predicate: string) {
   return `
     select w.*, assignment_enrollment.enrollment_id as host_enrollment_id,
       max(
         case when w.owner_user_id = ? then 4 else 0 end,
-        coalesce(case wm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
         coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
         coalesce((
           select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
@@ -1715,8 +1759,6 @@ function workspaceAccessSql(predicate: string) {
     from workspaces w
     join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null
     join orgs o on o.org_id = w.org_id and o.deleted_at is null
-    left join workspace_memberships wm
-      on wm.workspace_id = w.workspace_id and wm.user_id = ? and wm.revoked_at is null
     left join project_memberships pm
       on pm.project_id = w.project_id and pm.user_id = ? and pm.revoked_at is null
     left join org_memberships om

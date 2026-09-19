@@ -42,6 +42,7 @@ const toast = vi.hoisted(() => ({ showToast: vi.fn() }))
 vi.mock("@opencode-ai/ui/toast", () => toast)
 vi.mock("@/ui/controls/claxedo-icon", () => ({ ClaxedoIcon: () => null }))
 
+import { LanguageProvider } from "@/platform/i18n/provider"
 import { SessionPeopleControl } from "./session-people-control"
 
 beforeEach(() => {
@@ -76,7 +77,7 @@ describe("SessionPeopleControl person mutation", () => {
     const view = render(() => {
       const [target, set] = createSignal({ sessionId: "ses_1", workspaceId: "ws_1" })
       setTarget = set
-      return <SessionPeopleControl sessionId={target().sessionId} workspaceId={target().workspaceId} />
+      return <LanguageProvider locale="en"><SessionPeopleControl sessionId={target().sessionId} workspaceId={target().workspaceId} /></LanguageProvider>
     })
 
     await view.findByText("Share", { selector: "div" })
@@ -93,7 +94,7 @@ describe("SessionPeopleControl person mutation", () => {
     peopleApi.listSessionShares
       .mockRejectedValueOnce(new Error("network unavailable"))
       .mockResolvedValueOnce({ can_manage_shares: true, grants: [], participants: [], teams: [] })
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     const retry = await view.findByRole("button", { name: "Retry sharing controls" })
     expect(view.queryByText("Share", { selector: "div" })).not.toBeInTheDocument()
@@ -103,7 +104,7 @@ describe("SessionPeopleControl person mutation", () => {
   })
 
   test("refreshes People data when the menu opens", async () => {
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     await view.findByText("Share", { selector: "div" })
     const callsBeforeOpen = peopleApi.listSessionShares.mock.calls.length
@@ -119,7 +120,7 @@ describe("SessionPeopleControl person mutation", () => {
       participants: [],
       teams: [],
     })
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     await waitFor(() => expect(peopleApi.listSessionShares).toHaveBeenCalled())
     expect(view.queryByLabelText("Share session")).not.toBeInTheDocument()
@@ -136,7 +137,7 @@ describe("SessionPeopleControl person mutation", () => {
         { team_id: "team_backend", name: "Backend", is_shared: false },
       ],
     })
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     expect(await view.findByText("Everyone")).toBeInTheDocument()
     expect(view.getByText("Backend")).toBeInTheDocument()
@@ -160,7 +161,7 @@ describe("SessionPeopleControl person mutation", () => {
       teams: [{ team_id: "team_everyone", name: "Everyone", is_shared: true }],
     })
     peopleApi.revokeSessionShare.mockResolvedValue({ revoked: true })
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     fireEvent.click(await view.findByRole("button", { name: "Remove Everyone from session" }))
 
@@ -175,7 +176,7 @@ describe("SessionPeopleControl person mutation", () => {
   })
 
   test("creates one removable user share without separately enrolling a participant", async () => {
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     fireEvent.input(await view.findByPlaceholderText("Person token identifier"), {
       target: { value: "  https://issuer.test|user_bob  " },
@@ -204,7 +205,7 @@ describe("SessionPeopleControl person mutation", () => {
       }],
     })
     peopleApi.revokeSessionShare.mockResolvedValue({ revoked: true })
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
 
     await view.findByText("User user_bob")
     fireEvent.click(view.getByRole("button", { name: "Remove User user_bob from session" }))
@@ -239,7 +240,7 @@ describe("SessionPeopleControl share levels", () => {
       teams: [],
       ...context,
     })
-    const view = render(() => <SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" />)
+    const view = render(() => <LanguageProvider locale="en"><SessionPeopleControl sessionId="ses_1" workspaceId="ws_1" /></LanguageProvider>)
     await view.findByText("Share", { selector: "div" })
     return view
   }
@@ -356,7 +357,7 @@ describe("SessionPeopleControl share levels", () => {
   test("a refused send grant reports the plane's reason and leaves the disclosure open", async () => {
     const view = await openControl()
     peopleApi.grantSessionShare.mockRejectedValueOnce(
-      new Error("That person can follow this session, but they cannot be allowed to send messages on it."),
+      new Error("That person is not in this organization, so this session cannot be shared with them."),
     )
 
     fireEvent.input(await view.findByPlaceholderText("Person token identifier"), {
@@ -370,7 +371,7 @@ describe("SessionPeopleControl share levels", () => {
     await waitFor(() => {
       expect(toast.showToast).toHaveBeenCalledWith({
         title: "Could not share this session",
-        description: "That person can follow this session, but they cannot be allowed to send messages on it.",
+        description: "That person is not in this organization, so this session cannot be shared with them.",
       })
     })
     expect(view.getByText(DISCLOSURE)).toBeInTheDocument()

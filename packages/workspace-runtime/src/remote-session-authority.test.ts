@@ -51,7 +51,7 @@ describe("remote workspace session authority", () => {
     expect(await host()).toMatchObject({ allowed: false, status: 503 })
   })
 
-  test("forwards only the opaque proof, session id, and read/write action", async () => {
+  test("forwards only the opaque proof, session id, action and the write's class", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
@@ -74,7 +74,7 @@ describe("remote workspace session authority", () => {
       body: fetchBodyJson(request.init?.body),
     }))).toEqual([
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "read" } },
-      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
+      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write", writeClass: "agent_turn" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register", operationId: "op_register_1" } },
     ])
   })
@@ -246,6 +246,52 @@ describe("a share level narrows the authority's answer, not the runtime's questi
       .toMatchObject({ allowed: true, lease: "stream_lease" })
 
     expect(actions).toEqual(["write", "write", "write", "turn_acquire", "read", "read"])
+  })
+
+  test("names the class of each write, so a shell or a deletion is never a turn", async () => {
+    const bodies: Array<Record<string, unknown> | undefined> = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_url, init) => {
+        bodies.push(rec(fetchBodyJson(init?.body)))
+        return Response.json({ allowed: true })
+      },
+    })
+    const turnOperations = ["prompt", "permission_response", "question_response", "abort"] as const
+    const controlOperations = [
+      "shell",
+      "permission_mode_write",
+      "delete",
+      "fork",
+      "revert",
+      "unrevert",
+      "command",
+      "summarize",
+      "session_meta_write",
+      "session_config_write",
+      "worktree_write",
+      "goal_start",
+      "goal_pause",
+      "goal_resume",
+      "goal_stop",
+      "goal_delete",
+    ] as const
+
+    for (const operation of [...turnOperations, ...controlOperations]) {
+      expect((await policy.authorize({ ...input, operation })).allowed).toBe(true)
+    }
+    expect((await policy.authorize({ ...input, operation: "queue_read" })).allowed).toBe(true)
+
+    expect(bodies.map((body) => body?.writeClass)).toEqual([
+      ...turnOperations.map(() => "agent_turn"),
+      ...controlOperations.map(() => "session_control"),
+      undefined,
+    ])
+    expect(bodies.map((body) => body?.action)).toEqual([
+      ...turnOperations.map(() => "write"),
+      ...controlOperations.map(() => "write"),
+      "read",
+    ])
   })
 
   test("a send grantee is the same runtime asking the same questions and being admitted", async () => {

@@ -203,7 +203,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const worktreeSelection = input.newSessionWorktree?.() || "main"
     const baseRef = input.newSessionBaseRef?.()?.trim() || undefined
     const sourceBranch = input.newSessionSourceBranch?.()?.trim() || undefined
-    const hostKind = input.newSessionHostKind?.() ?? "local"
+    const hostKind = input.newSessionHostKind?.() ?? "self"
     const relayWorkspaceConnectionReady = () => {
       const workspaceId =
         input.workspaceId?.() ??
@@ -285,9 +285,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         missingWorkspaceTitle: language.t("prompt.toast.sessionCreateFailed.title"),
         selectProjectForWorktree: "Select a project before creating a local worktree.",
         requestFailed: language.t("common.requestFailed"),
-        cloudWorkspaceCreateFailedTitle: "Failed to create cloud workspace",
+        cloudWorkspaceCreateFailedTitle: "Failed to create cloud environment",
         attachWorkspaceBeforePrompt: "Attach a workspace before sending a prompt.",
-        attachProjectBeforeCloudWorkspace: "Attach a project before creating a cloud workspace.",
+        attachProjectBeforeCloudWorkspace: "Attach a project before creating a cloud environment.",
       },
     })
     if (!resolvedDirectory) return undefined

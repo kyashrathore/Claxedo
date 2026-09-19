@@ -800,7 +800,7 @@ describe("hosted-core remote access (the owner's view)", () => {
     const response = await core({}).request("/api/claxedo/remote-access/enable", {
       method: "POST",
       headers: { ...signed, "content-type": "application/json" },
-      body: JSON.stringify({ display_name: "browser" }),
+      body: JSON.stringify({ start_at_login: false }),
     })
     expect(response.status).toBe(404)
   })

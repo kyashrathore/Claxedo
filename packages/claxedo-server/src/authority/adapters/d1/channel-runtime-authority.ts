@@ -9,6 +9,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { organizationRoleRankSql } from "./host-access-authority"
+import { SESSION_SHARE_WORKSPACE_ACCESS_SQL } from "./workspace-authority"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
@@ -499,9 +500,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
 
   private async workspaceAccess(userId: string, workspaceId: string) {
     const row = await this.database.prepare(workspaceAccessSql).bind(
-      userId, userId, userId, userId, userId, workspaceId, userId,
+      userId, userId, userId, userId, workspaceId, userId,
     ).first<AccessRow>()
-    return row && row.role_rank >= 1 ? row : null
+    if (!row) return null
+    if (row.role_rank >= 1) return row
+    const shared = await this.database.prepare(SESSION_SHARE_WORKSPACE_ACCESS_SQL)
+      .bind(userId, workspaceId).first()
+    return shared ? { ...row, role_rank: 1 } : null
   }
 
   private async workspaceExists(workspaceId: string) {
@@ -537,7 +542,6 @@ const workspaceAccessSql = `
   select workspace.org_id,
     max(
       case when workspace.owner_user_id = ? then 4 else 0 end,
-      coalesce(case direct.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
       coalesce(case project_member.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
       ${organizationRoleRankSql({
         orgOwnerUserId: "org.owner_user_id",
@@ -549,8 +553,6 @@ const workspaceAccessSql = `
   from workspaces workspace
   join projects project on project.project_id = workspace.project_id and project.deleted_at is null
   join orgs org on org.org_id = workspace.org_id and org.deleted_at is null
-  left join workspace_memberships direct
-    on direct.workspace_id = workspace.workspace_id and direct.user_id = ? and direct.revoked_at is null
   left join project_memberships project_member
     on project_member.project_id = workspace.project_id and project_member.user_id = ? and project_member.revoked_at is null
   left join org_memberships org_member

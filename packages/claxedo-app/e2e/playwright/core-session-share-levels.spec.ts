@@ -130,27 +130,41 @@ async function seedProject(page: Page) {
   )
 }
 
-async function openShareDialog(page: Page, store: ReturnType<typeof shareStore>) {
+async function openSession(
+  page: Page,
+  cloud: { role?: "owner" | "viewer"; sessionPrompt?: boolean } = {},
+) {
   await seedProject(page)
-  await page.route("**/api/control/sessions/*/shares*", (route) => void store.handle(route))
   // A local-only session is unshareable by design, so the session under test
   // is on the relay lane: only a relay-backed ref carries the workspace id the
   // control reads.
-  await installMockRuntime(page, {
+  const handles = await installMockRuntime(page, {
     dir: DIR,
     sessionId: SESSION_ID,
     projectId: PROJECT_ID,
     projectName: "share-levels",
-    cloud: { workspaceId: WORKSPACE_ID, relayOrigin: RELAY_ORIGIN, projectName: "share-levels-workspace" },
+    cloud: {
+      workspaceId: WORKSPACE_ID,
+      relayOrigin: RELAY_ORIGIN,
+      projectName: "share-levels-workspace",
+      ...cloud,
+    },
   })
   await page.goto(`/w/${encodeURIComponent(WORKSPACE_ID)}/session/${SESSION_ID}`)
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  return handles
+}
+
+async function openShareDialog(page: Page, store: ReturnType<typeof shareStore>) {
+  await page.route("**/api/control/sessions/*/shares*", (route) => void store.handle(route))
+  await openSession(page)
   await page.getByLabel("Share session").click()
   await expect(page.getByText("Share this private session")).toBeVisible()
 }
 
 const DISCLOSURE = "The agent runs on the workspace's machine with that machine's files."
+const FOLLOW_PLACEHOLDER = "You can follow this session, not send to it"
 
 test.describe("core session share levels @core @surface-web", () => {
   test("a follow grant is sent with no disclosure", async ({ page }) => {
@@ -222,5 +236,35 @@ test.describe("core session share levels @core @surface-web", () => {
     await expect(page.getByText("Can send messages").first()).toBeVisible()
     expect(store.posts).toEqual([{ level: "send", target: BOB }])
     expect(store.grants.map((grant) => grant.level)).toEqual(["send"])
+  })
+
+  // The composer gate, driven from the two answers the session authority can
+  // give. The workspace role is deliberately the OPPOSITE of the session's
+  // answer in both cases, so a composer that still read the role would fail
+  // each one.
+  test("a send grantee composes although the workspace ranks them viewer", async ({ page }) => {
+    await openSession(page, { role: "viewer", sessionPrompt: true })
+
+    const editor = page.locator('[data-component="prompt-input"]').last()
+    await expect(editor).toHaveAttribute("aria-label", "Ask anything, / for commands, @ for context...")
+    await editor.click()
+    await editor.fill("run the build")
+    await expect(page.locator('[data-action="prompt-submit"]').last()).toBeEnabled()
+  })
+
+  test("a follow grantee is refused although the workspace ranks them owner", async ({ page }) => {
+    const following = await openSession(page, { sessionPrompt: false })
+    const editor = page.locator('[data-component="prompt-input"]').last()
+    await expect(editor).toHaveAttribute("aria-label", FOLLOW_PLACEHOLDER)
+
+    const submit = page.locator('[data-action="prompt-submit"]').last()
+    await expect(submit).toBeDisabled()
+    await expect(submit).toHaveAttribute("aria-label", FOLLOW_PLACEHOLDER)
+
+    await editor.click()
+    await editor.fill("this should never send")
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(800)
+    expect(following.requests.cloudPromptCount).toBe(0)
   })
 })

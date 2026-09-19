@@ -348,12 +348,21 @@ describe("two-user signed runtime transport acceptance", () => {
       displayName: "Runtime transport acceptance",
       repoUrl: "https://github.com/acme/runtime-private.git",
     })
+    const membershipNow = Date.now()
+    // A rank on the workspace's project, plus the organization membership the
+    // session authority asks of everyone it admits.
+    const workspaceRow = inspectAuthority()
+      .prepare("SELECT org_id, project_id FROM workspaces WHERE workspace_id = 'ws_runtime_private'")
+      .get() as { org_id: string; project_id: string }
     for (const identity of [bobIdentity, caseyIdentity]) {
-      const granted = await signedRequest(alice.token, "/api/workspace/ws_runtime_private/shares", {
-        method: "POST",
-        body: JSON.stringify({ role: "editor", target: { kind: "actor", actorId: identity.actor_id } }),
-      })
-      expect(granted.status).toBe(200)
+      inspectAuthority().prepare(`
+        INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+        VALUES (?, ?, 'editor', ?, ?)
+      `).run(workspaceRow.project_id, identity.token_identifier, membershipNow, membershipNow)
+      inspectAuthority().prepare(`
+        INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+        VALUES (?, ?, 'member', ?, ?)
+      `).run(workspaceRow.org_id, identity.token_identifier, membershipNow, membershipNow)
     }
 
     const key = await generateKeyPair("EdDSA", { extractable: true })
@@ -587,8 +596,6 @@ describe("two-user signed runtime transport acceptance", () => {
 
     // The unscoped arm, on the real authority: everyone the workspace admits
     // opens it; the session authority decides per session what each receives.
-    // Alice owns the session, Bob is a participant, Casey holds only the
-    // workspace share.
     // Alice's host token dies a second after her stream opens: the session's
     // first frame reaches the connection later than that, so what admits it
     // is the workspace lease her admission minted, not the request's token.
@@ -667,12 +674,6 @@ describe("two-user signed runtime transport acceptance", () => {
     })
     expect(removed.status).toBe(200)
     await expect(removed.json()).resolves.toMatchObject({ removed: true })
-    const revoked = await signedRequest(alice.token, "/api/workspace/ws_runtime_private/shares", {
-      method: "DELETE",
-      body: JSON.stringify({ target: { kind: "actor", actorId: bobIdentity.actor_id } }),
-    })
-    expect(revoked.status).toBe(200)
-    await expect(revoked.json()).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 0 })
     await expect(authority.runtimeAccessTokenActive({
       jti: "jti_runtime_bob",
       workspaceId: "ws_runtime_private",

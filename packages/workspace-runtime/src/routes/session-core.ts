@@ -1014,6 +1014,25 @@ async function sessionOperationGuard(
   return opts.beforeSessionOperation?.(c, { sessionId, operation })
 }
 
+/**
+ * Whether this reader may prompt the session, answered by the same policy the
+ * prompt route asks and reported alongside the harness's capabilities.
+ *
+ * A `follow` share admits the transcript and refuses the turn, so the reader
+ * reaches this route and not `POST /session/:id/message`. Without the answer
+ * here the composer has only the workspace role to go on, which says nothing
+ * about a session someone was shared, and the reader meets the refusal as a
+ * 403 after typing.
+ */
+async function sessionPromptAdmitted(opts: Opts, c: Ctx, sessionId: string) {
+  const decision = await opts.sessionAccessPolicy?.authorize({
+    ...sessionAccessContext(c),
+    sessionId,
+    operation: "prompt",
+  })
+  return decision?.allowed !== false
+}
+
 async function registerCreatedSession(
   opts: Opts,
   c: Ctx,
@@ -1575,7 +1594,10 @@ export function createSessionRoutes(opts: Opts) {
       try {
         const directory = await opts.resolveDirectory(c, { sessionId })
         const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-        return noStoreJson(c, await adapter.readHarnessCapabilities(directory, { sessionId }))
+        return noStoreJson(c, {
+          ...await adapter.readHarnessCapabilities(directory, { sessionId }),
+          prompt: await sessionPromptAdmitted(opts, c, sessionId),
+        })
       } catch (error) {
         const refusal = harnessUnavailableResponse(c, error)
         if (refusal) return refusal
@@ -2111,7 +2133,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/queue", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
+      const guarded = await sessionOperationGuard(opts, c, id, "queue_read")
       if (guarded) return guarded
       return c.json((opts.queuedPrompts?.list(id) ?? []).map(({ seq, parts, messageId, queuedAt, held }) => ({ seq, parts, messageId, queuedAt, held })))
     })

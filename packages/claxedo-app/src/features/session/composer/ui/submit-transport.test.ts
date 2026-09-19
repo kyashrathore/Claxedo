@@ -467,6 +467,39 @@ describe("submit transport adapter", () => {
     expect(adapterFor().usesManagedSessionRegistration("/repo/main")).toBe(false)
   })
 
+  test("the resolve body the daemon writes still names a relay workspace for the session request", async () => {
+    const urls: string[] = []
+    const request: typeof fetch = async (target) => {
+      const url = new URL(target instanceof Request ? target.url : String(target))
+      urls.push(`${url.pathname}${url.search}`)
+      if (url.pathname.endsWith("/api/workspace/resolve")) {
+        // The word the daemon's own store writes, not the app's host kind.
+        return Response.json({ workspaceId: "ws_c", kind: "cloud", directory: "/repo/relay" })
+      }
+      if (url.pathname === "/api/workspace/ws_c/connection") {
+        return new Response("connection denied", { status: 403 })
+      }
+      return Response.json({}, { status: 200, headers: { "content-type": "application/json" } })
+    }
+    const adapter = createSubmitTransportAdapter({
+      serverUrl: () => "https://control.example",
+      signedControlPlane: () => true,
+      projects: () => [],
+      workspaceId: () => undefined,
+      hostKind: () => undefined,
+      request,
+      localRequest: request,
+      createClient: () => ({
+        session: { get: async () => ({}), prompt: async () => ({}), promptAsync: async () => ({}) },
+      }),
+      showToast: (toast) => toasts.push(toast),
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
+      text: { configSaveFailedTitle: "Could not save session config" },
+    })
+    await adapter.readSessionConfig({ sessionID: "ses_1", directory: "/repo/relay" }).catch(() => undefined)
+    expect(urls).toContain("/api/workspace/ws_c/connection")
+  })
+
   test("the reservation workspace id falls back to the project catalog row for a locally served workspace", () => {
     const projects = [{
       id: "prj_1",

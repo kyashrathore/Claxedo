@@ -3,6 +3,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { useLanguage } from "@/platform/i18n/provider"
 import {
   grantSessionShare,
   listSessionShares,
@@ -11,27 +12,13 @@ import {
 } from "@/features/session/data/session-share-api"
 
 /**
- * Shown before every `send` grant, and acknowledged before it is sent.
- *
- * The consequence it states is not a policy the product could choose
- * otherwise: the agent has the machine's filesystem, so whoever can prompt it
- * can read whatever that machine holds.
- */
-const SEND_DISCLOSURE =
-  "The agent runs on the workspace's machine with that machine's files. A teammate who can send "
-  + "messages can ask it to read anything there, including the transcripts of your other sessions "
-  + "in this workspace. Sharing works best for sessions on a cloud environment, where each session "
-  + "has a machine of its own. If this machine holds anything you would not want a teammate to "
-  + "reach, do not share sessions from workspaces on it."
-
-/**
  * What the grantee may do, and the whole of it: a share level is the only
  * cross-person grant in the product, so nothing a person is a member of adds
  * to or subtracts from what these two words promise.
  */
-const LEVEL_LABEL: Record<SessionShareLevel, string> = {
-  follow: "Can follow",
-  send: "Can send messages",
+const LEVEL_KEY: Record<SessionShareLevel, "session.share.level.follow" | "session.share.level.send"> = {
+  follow: "session.share.level.follow",
+  send: "session.share.level.send",
 }
 
 /** A `send` grant the granter has asked for and not yet acknowledged. */
@@ -44,6 +31,8 @@ export const SessionPeopleControl: Component<{
   sessionId: string
   workspaceId: string
 }> = (props) => {
+  const language = useLanguage()
+  const levelLabel = (level: SessionShareLevel) => language.t(LEVEL_KEY[level])
   const [open, setOpen] = createSignal(false)
   const [personToken, setPersonToken] = createSignal("")
   const [newLevel, setNewLevel] = createSignal<SessionShareLevel>("follow")
@@ -98,7 +87,7 @@ export const SessionPeopleControl: Component<{
         input.onGranted?.()
         closeDisclosure()
         await refetch()
-        showToast({ title: `${input.description} — ${LEVEL_LABEL[input.level].toLowerCase()}` })
+        showToast({ title: `${input.description} — ${levelLabel(input.level).toLowerCase()}` })
       } catch (error) {
         report("Could not share this session", error)
       }
@@ -168,7 +157,7 @@ export const SessionPeopleControl: Component<{
                     class="flex flex-col gap-2 rounded-md border border-border-weak-base p-2"
                   >
                     <div class="text-12-medium text-text-strong">Before you allow sending</div>
-                    <p class="text-12-regular text-text-weak">{SEND_DISCLOSURE}</p>
+                    <p class="text-12-regular text-text-weak">{language.t("session.share.disclosure.send")}</p>
                     <label class="flex items-start gap-2 text-12-regular text-text-strong">
                       <input
                         type="checkbox"
@@ -208,8 +197,8 @@ export const SessionPeopleControl: Component<{
                     value={newLevel()}
                     onChange={(event) => setNewLevel(event.currentTarget.value === "send" ? "send" : "follow")}
                   >
-                    <option value="follow">{LEVEL_LABEL.follow}</option>
-                    <option value="send">{LEVEL_LABEL.send}</option>
+                    <option value="follow">{levelLabel("follow")}</option>
+                    <option value="send">{levelLabel("send")}</option>
                   </select>
                 </label>
                 <Button
@@ -247,7 +236,7 @@ export const SessionPeopleControl: Component<{
                               fallback={(
                                 <div class="flex items-center gap-1">
                                   <span class="text-12-regular text-text-weak">
-                                    {LEVEL_LABEL[level() ?? "follow"]}
+                                    {levelLabel(level() ?? "follow")}
                                   </span>
                                   <Button
                                     size="small"
@@ -315,7 +304,7 @@ export const SessionPeopleControl: Component<{
                       return (
                         <div class="flex items-center justify-between gap-2 text-12-regular">
                           <span class="truncate">{name()}</span>
-                          <span class="shrink-0 text-text-weak">{LEVEL_LABEL[grant.level]}</span>
+                          <span class="shrink-0 text-text-weak">{levelLabel(grant.level)}</span>
                           <Button
                             size="small"
                             variant="ghost"

@@ -90,11 +90,6 @@ describe("sqlite Org→Team + session share", () => {
       orgId: org.org_id,
     })
     await authority.ensureDefaultTeam!(alice, { orgId: org.org_id })
-    await authority.grantWorkspaceShare(alice, {
-      workspaceId: "ws_team_share",
-      role: "editor",
-      target: { kind: "actor", actorId: bob.user.tokenIdentifier },
-    })
 
     await authority.reserveSession(alice, {
       operationId: "op_team_private",
@@ -203,8 +198,8 @@ describe("sqlite Org→Team + session share", () => {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
     })).rejects.toThrow("session_share_admin_required")
-    // A session this authority does not hold has no shares: a workspace reader
-    // gets a definite empty answer; a stranger to the workspace is refused.
+    // A session this authority does not hold has no shares: an organization
+    // member gets a definite empty answer; anyone outside it is refused.
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_missing",
       workspaceId: "ws_team_share",
@@ -214,22 +209,35 @@ describe("sqlite Org→Team + session share", () => {
       workspaceId: "ws_team_share",
     })).rejects.toThrow("session_share_admin_required")
 
+    const stranger = signedAuth("stranger")
+    await authority.usersMe(stranger)
+    await expect(authority.grantSessionShare!(alice, {
+      sessionId: "ses_private",
+      workspaceId: "ws_team_share",
+      grantedToTokenIdentifier: stranger.user.tokenIdentifier,
+    })).rejects.toThrow("session_share_target_outside_organization")
+
+    const userGrant = await authority.grantSessionShare!(alice, {
+      sessionId: "ses_private",
+      workspaceId: "ws_team_share",
+      grantedToTokenIdentifier: bob.user.tokenIdentifier,
+    }) as { grant_id: string }
     db().prepare(`UPDATE org_memberships SET role = 'admin' WHERE org_id = ? AND token_identifier = ?`)
       .run(org.org_id, bob.user.tokenIdentifier)
     await expect(authority.listSessionShares!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
-    })).resolves.toMatchObject({ can_manage_shares: true })
-    const orgAdminGrant = await authority.grantSessionShare!(bob, {
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    await expect(authority.grantSessionShare!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
       grantedToTeamId: org.default_team_id,
-    }) as { grant_id: string }
+    })).rejects.toThrow("session_share_admin_required")
     await expect(authority.revokeSessionShare!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
-      grantId: orgAdminGrant.grant_id,
-    })).resolves.toMatchObject({ revoked: true })
+      grantId: userGrant.grant_id,
+    })).rejects.toThrow("session_share_admin_required")
 
     db().prepare(`UPDATE org_memberships SET role = 'member' WHERE org_id = ? AND token_identifier = ?`)
       .run(org.org_id, bob.user.tokenIdentifier)
@@ -238,15 +246,30 @@ describe("sqlite Org→Team + session share", () => {
     await expect(authority.listSessionShares!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
-    })).resolves.toMatchObject({
-      can_manage_shares: true,
-      teams: [expect.objectContaining({ team_id: org.default_team_id, is_shared: false })],
-    })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
     await expect(authority.grantSessionShare!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
       grantedToTeamId: org.default_team_id,
-    })).resolves.toMatchObject({ grant_id: expect.any(String) })
+    })).rejects.toThrow("session_share_admin_required")
+    await expect(authority.revokeSessionShare!(bob, {
+      sessionId: "ses_private",
+      workspaceId: "ws_team_share",
+      grantId: userGrant.grant_id,
+    })).rejects.toThrow("session_share_admin_required")
+
+    await expect(authority.listSessionShares!(alice, {
+      sessionId: "ses_private",
+      workspaceId: "ws_team_share",
+    })).resolves.toMatchObject({
+      can_manage_shares: true,
+      grants: [expect.objectContaining({ grant_id: userGrant.grant_id, granted_to_user_id: bob.user.tokenIdentifier })],
+    })
+    await expect(authority.revokeSessionShare!(alice, {
+      sessionId: "ses_private",
+      workspaceId: "ws_team_share",
+      grantId: userGrant.grant_id,
+    })).resolves.toMatchObject({ revoked: true })
 
     authority.close()
   })
@@ -268,7 +291,7 @@ describe("sqlite Org→Team + session share", () => {
     authority.close()
   })
 
-  test("ensureDefaultTeam retargets org session and workspace shares onto the default team", async () => {
+  test("ensureDefaultTeam retargets org session shares onto the default team", async () => {
     const { authority, db } = setup()
     await authority.usersMe(alice)
     await authority.usersMe(bob)
@@ -287,13 +310,6 @@ describe("sqlite Org→Team + session share", () => {
       workspaceId: "ws_retarget",
       displayName: "Repo",
       orgId: org.org_id,
-    })
-
-    // Interim org-targeted workspace share (pre-nesting shape).
-    await authority.grantWorkspaceShare(alice, {
-      workspaceId: "ws_retarget",
-      role: "editor",
-      target: { kind: "org", orgId: org.org_id },
     })
 
     await authority.reserveSession(alice, {
@@ -320,12 +336,10 @@ describe("sqlite Org→Team + session share", () => {
 
     const result = await authority.ensureDefaultTeam!(alice, { orgId: org.org_id }) as {
       session_shares_retargeted: number
-      workspace_shares_retargeted: number
       team_id: string
     }
     expect(result.team_id).toBe(org.default_team_id)
     expect(result.session_shares_retargeted).toBeGreaterThanOrEqual(1)
-    expect(result.workspace_shares_retargeted).toBeGreaterThanOrEqual(1)
 
     const shares = await authority.listSessionShares!(alice, {
       sessionId: "ses_org_share",

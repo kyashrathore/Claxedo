@@ -48,7 +48,7 @@ describe("prompt input submit UI state", () => {
           rawModes.push(mode)
           promptValue = [{ type: "text", content: "", start: 0, end: 0 }]
         },
-        roleSubmitBlocked: () => false,
+        authorityBlocked: () => false,
         prompt: {
           current: () => promptValue,
           set: (next) => {
@@ -97,7 +97,7 @@ describe("prompt input submit UI state", () => {
         rawHandleSubmit: () => {
           rawPrompts.push(promptValue)
         },
-        roleSubmitBlocked: () => false,
+        authorityBlocked: () => false,
         prompt: {
           current: () => promptValue,
           set: (next) => {
@@ -140,7 +140,7 @@ describe("prompt input submit UI state", () => {
         rawHandleSubmit: () => {
           rawCalls++
         },
-        roleSubmitBlocked: () => true,
+        authorityBlocked: () => true,
         prompt: {
           current: () => [{ type: "text", content: "first", start: 0, end: 5 }],
           set: () => undefined,
@@ -172,7 +172,7 @@ describe("prompt input submit UI state", () => {
         rawHandleSubmit: () => {
           rawCalls++
         },
-        roleSubmitBlocked: () => false,
+        authorityBlocked: () => false,
         submitBlocked: () => true,
         submitBlock: () => ({ reason: "no-model", copy: "Choose a model to continue", actionable: true }),
         onChooseModel: () => {
@@ -209,7 +209,7 @@ describe("prompt input submit UI state", () => {
         rawHandleSubmit: () => {
           rawCalls++
         },
-        roleSubmitBlocked: () => false,
+        authorityBlocked: () => false,
         submitBlocked: () => false,
         submitBlock: () => null,
         onChooseModel: () => {

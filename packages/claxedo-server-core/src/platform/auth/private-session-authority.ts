@@ -67,10 +67,28 @@ export type TransitionPrivateSessionRegistrationInput = PrivateSessionRuntimePri
   reason: string
 }
 
+/**
+ * What a session write is: driving the agent's turn, or controlling the
+ * session and the machine through it. A `send` share carries the first and
+ * never the second, so the level cannot answer a write on its own.
+ */
+export type SessionWriteClass = "agent_turn" | "session_control"
+
 export type AuthorizeRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & {
   sessionId: string
   workspaceId: string
   action: "read" | "write"
+  /** Absent asks about a turn: what a caller that does not distinguish the two is doing. */
+  writeClass?: SessionWriteClass
+}
+
+/** What an adapter is being asked about a session, read off the port's input. */
+export type SessionAccessQuestion = "read" | SessionWriteClass
+
+export function sessionAccessQuestion(
+  input: { action: "read" | "write"; writeClass?: SessionWriteClass },
+): SessionAccessQuestion {
+  return input.action === "read" ? "read" : input.writeClass ?? "agent_turn"
 }
 
 export type PrivateSessionParticipantInput = {

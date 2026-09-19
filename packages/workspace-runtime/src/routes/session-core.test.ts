@@ -2540,4 +2540,27 @@ describe("a share level reaches the runtime as the authority's answer to a write
     expect(responded).toEqual(["perm_1"])
     expect(replied).toEqual(["question_1"])
   })
+
+  test("the session's capabilities carry the same prompt answer the prompt route gets", async () => {
+    const refusing = sharedRoutes({
+      authorizeWrite: async () => ({
+        allowed: false,
+        status: 403,
+        code: "workspace_authorization_denied",
+        message: "denied",
+      }),
+    })
+    const admitting = sharedRoutes({ authorizeWrite: async () => ({ allowed: true }) })
+
+    const refused = await refusing.app.request("http://localhost/session/session_shared/capabilities")
+    const admitted = await admitting.app.request("http://localhost/session/session_shared/capabilities")
+
+    expect(refused.status).toBe(200)
+    expect(await refused.json()).toMatchObject({ prompt: false })
+    expect(await admitted.json()).toMatchObject({ prompt: true })
+    expect(refusing.actions).toEqual([
+      { operation: "session_capabilities_read", write: false },
+      { operation: "prompt", write: true },
+    ])
+  })
 })

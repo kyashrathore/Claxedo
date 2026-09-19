@@ -3,7 +3,7 @@ import { submitBlockReason, submitHardBlocked, type SubmitBlockInput } from "./s
 
 // A healthy, typed composer: nothing blocks Send.
 const healthy: SubmitBlockInput = {
-  roleBlocked: false,
+  authorityBlock: undefined,
   harnessMode: false,
   harnessReadiness: "ready",
   harnessConfigError: false,
@@ -48,10 +48,10 @@ describe("submitBlockReason", () => {
   })
 
   describe("priority ordering", () => {
-    test("viewer beats everything else", () => {
+    test("an authority refusal beats everything else", () => {
       const reason = submitBlockReason(
         input({
-          roleBlocked: true,
+          authorityBlock: "workspace-role",
           harnessMode: true,
           harnessReadiness: "degraded",
           modelBlocked: true,
@@ -61,7 +61,9 @@ describe("submitBlockReason", () => {
           blank: true,
         }),
       )
-      expect(reason?.reason).toBe("viewer-role")
+      expect(reason?.reason).toBe("workspace-role")
+      expect(submitBlockReason(input({ authorityBlock: "session-share", harnessMode: true, harnessReadiness: "degraded" }))?.reason)
+        .toBe("session-share")
     })
 
     test("degraded + empty → harness-degraded wins", () => {
@@ -187,7 +189,8 @@ describe("submitBlockReason", () => {
 
   test("every reason carries non-empty copy", () => {
     const cases: SubmitBlockInput[] = [
-      input({ roleBlocked: true }),
+      input({ authorityBlock: "workspace-role" }),
+      input({ authorityBlock: "session-share" }),
       input({ harnessMode: true, harnessReadiness: "degraded" }),
       input({ harnessMode: true, harnessReadiness: "error" }),
       input({ harnessMode: true, harnessReadiness: "polling" }),

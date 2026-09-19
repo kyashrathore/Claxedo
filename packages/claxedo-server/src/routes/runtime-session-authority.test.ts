@@ -807,11 +807,17 @@ describe("reservation and adoption against a real private-session authority", ()
     const me = await store.usersMe(owner) as { org_id: string }
     await store.usersMe(member)
     await store.createCloudWorkspace(owner, { workspaceId: "ws_real", displayName: "Main" })
-    await store.grantWorkspaceShare(owner, {
-      workspaceId: "ws_real",
-      role: "editor",
-      target: { kind: "actor", actorId: member.user.tokenIdentifier },
-    })
+    const project = seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_real'`)
+      .get() as { project_id: string }
+    seed().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'editor', 1, 1)
+    `).run(project.project_id, member.user.tokenIdentifier)
+    seed().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', 1, 1)
+      ON CONFLICT (org_id, token_identifier) DO NOTHING
+    `).run(me.org_id, member.user.tokenIdentifier)
     const identityOf = (who: SignedControlPlaneAuth) => ({
       userId: who.user.tokenIdentifier,
       actorId: who.user.tokenIdentifier,

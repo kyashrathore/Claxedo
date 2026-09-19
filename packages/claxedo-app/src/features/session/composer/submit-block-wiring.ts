@@ -1,8 +1,8 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useProviders } from "@/features/session/app-ports"
+import { useProviders, workspacePlacement } from "@/features/session/app-ports"
 import type { HarnessReadiness } from "@/features/session/harness/selection"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
-import { submitBlockedByWorkspaceRole } from "@/features/session/composer/role-gate"
+import { submitAuthorityBlock } from "@/features/session/composer/role-gate"
 import { createPromptToolbarState } from "./toolbar-state"
 import { submitBlockReason, type SubmitBlock } from "./submit-block-reason"
 
@@ -10,11 +10,13 @@ import { submitBlockReason, type SubmitBlock } from "./submit-block-reason"
  * The composer's "why is Send blocked?" derivation and the intent action that
  * resolves an actionable missing-model block. `submitBlock` is the one source
  * both `submitInertBlocked` and the explain-on-intent copy derive from;
- * `roleSubmitBlocked` hard-blocks the handler unconditionally; `openModelPicker`
+ * `authorityBlock` hard-blocks the handler unconditionally; `openModelPicker`
  * clicks the model picker already rendered in the toolbar.
  */
 export function createComposerSubmitBlockWiring(deps: {
   workspaceId?: Accessor<string | undefined>
+  /** The session authority's own answer for this session, absent while a draft names none. */
+  sessionPromptAdmitted?: Accessor<boolean | undefined>
   statusReady?: Accessor<boolean>
   scope: () => string
   isHarnessMode: (scope: string) => boolean
@@ -28,7 +30,10 @@ export function createComposerSubmitBlockWiring(deps: {
   blank: Accessor<boolean>
   rootEl: () => HTMLDivElement | undefined
 }) {
-  const roleSubmitBlocked = createMemo(() => submitBlockedByWorkspaceRole(deps.workspaceId?.()))
+  const authorityBlock = createMemo(() => submitAuthorityBlock({
+    sessionPromptAdmitted: deps.sessionPromptAdmitted?.(),
+    workspacePlacement: workspacePlacement(deps.workspaceId?.()),
+  }))
   const submitBlock = createMemo<SubmitBlock | null>(() => {
     const nextScope = deps.scope()
     const harnessMode = deps.isHarnessMode(nextScope)
@@ -37,7 +42,7 @@ export function createComposerSubmitBlockWiring(deps: {
     const modelReadiness = deps.toolbarState.readiness()
     return submitBlockReason({
       sessionStatusReady: deps.statusReady?.(),
-      roleBlocked: roleSubmitBlocked(),
+      authorityBlock: authorityBlock(),
       harnessMode,
       harnessReadiness: deps.harnessReadiness(nextScope),
       harnessConfigError: !!harnessState?.configError,
@@ -72,5 +77,5 @@ export function createComposerSubmitBlockWiring(deps: {
     picker?.click()
   }
 
-  return { roleSubmitBlocked, submitBlock, submitInertBlocked, openModelPicker }
+  return { authorityBlock, submitBlock, submitInertBlocked, openModelPicker }
 }

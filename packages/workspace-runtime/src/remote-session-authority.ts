@@ -5,7 +5,9 @@ import {
   type SessionAuthorityInput,
   type SessionReservationDecision,
   type SessionTurnLeaseDecision,
+  type SessionWriteClass,
   sessionAccessRequiresWrite,
+  sessionAccessWriteClass,
 } from "./session-access-policy"
 import { bool, num, rec, str } from "./json-value"
 
@@ -115,14 +117,16 @@ export function remoteWorkspaceSessionAccessPolicy(
     }
   }
   const authorize = async (input: SessionAuthorityInput): Promise<SessionAccessDecision> => {
-    const action = sessionAccessRequiresWrite(input) ? "write" : "read"
-    const decision = await request(input, action, decodeAllowed)
+    const writeClass = sessionAccessWriteClass(input)
+    const action = writeClass ? "write" : "read"
+    const classified = writeClass ? { writeClass } : undefined
+    const decision = await request(input, action, decodeAllowed, classified)
     const adoptRefused = options.adoptRefusedSession
     if (decision.allowed || !adoptRefused) return decision
     return adoptRefused(input, {
       denial: decision,
       adopt: () => request(input, "adopt", decodeAllowed),
-      reauthorize: () => request(input, action, decodeAllowed),
+      reauthorize: () => request(input, action, decodeAllowed, classified),
     })
   }
   const policy = managedWorkspaceSessionAccessPolicy({
@@ -205,6 +209,7 @@ export function remoteWorkspaceSessionAccessPolicy(
 type AuthorityRequestInput = SessionAccessPolicyInput & { sessionId: string }
 
 type AuthorityRequestOptions = {
+  writeClass?: SessionWriteClass
   lease?: string
   stream?: boolean
   reason?: string
@@ -296,6 +301,7 @@ function authorityRequestBody(
   return {
     sessionId: input.sessionId,
     action,
+    ...(requestOptions?.writeClass ? { writeClass: requestOptions.writeClass } : {}),
     ...(isRegistrationAction(action) ? { operationId: input.registrationOperationId } : {}),
     ...(requestOptions?.stream
       ? { stream: true, ...(requestOptions.lease ? { lease: requestOptions.lease } : {}) }
@@ -345,6 +351,6 @@ function denied(
       message ??
       (status === 503
         ? "Session authority is temporarily unavailable"
-        : "Session access requires current creator, participant, or organization administrator authority"),
+        : "Session access requires creator, participant, or session share authority"),
   }
 }

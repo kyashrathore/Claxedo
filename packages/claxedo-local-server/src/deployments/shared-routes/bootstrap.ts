@@ -65,7 +65,7 @@ function events(options: Options) {
   return { hostAggregate: options.hostAggregateEvents }
 }
 
-function machineIdentity(options: Options) {
+function bootstrapHostIdentity(options: Options) {
   return { enrollment: options.hostEnrollmentId?.() ?? null }
 }
 
@@ -75,7 +75,7 @@ async function localBootstrapBody(options: Options) {
     version: version(options),
     path: bootPath(),
     events: events(options),
-    host: machineIdentity(options),
+    host: bootstrapHostIdentity(options),
     project: await listProjects(),
     provider_auth: providerAuthMethods(),
   }
@@ -87,7 +87,7 @@ async function localShellBootstrapBody(options: Options) {
     version: version(options),
     path: bootPath(),
     events: events(options),
-    host: machineIdentity(options),
+    host: bootstrapHostIdentity(options),
     project: await listProjects(),
   }
 }
@@ -161,7 +161,7 @@ async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Option
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
     events: events(options),
-    host: machineIdentity(options),
+    host: bootstrapHostIdentity(options),
     project: await Promise.all(projects.map(async (project) => ({ ...project, ...await getProjectMetadata(project.id) }))),
     provider_auth: providerAuthMethods(),
   }

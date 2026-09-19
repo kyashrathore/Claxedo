@@ -39,6 +39,7 @@ export type SessionAccessOperation =
   | "question_list"
   | "question_response"
   | "todo_read"
+  | "queue_read"
   | "abort"
   | "revert"
   | "unrevert"
@@ -267,6 +268,8 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "DELETE /session/:id/goal": { kind: "authorize", operation: "goal_delete" },
   "GET /session/:id/message": { kind: "authorize", operation: "message_read" },
   "GET /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_read" },
+  "GET /session/:id/queue": { kind: "authorize", operation: "queue_read" },
+  "POST /session/:id/queue/:seq/:action": { kind: "authorize", operation: "prompt" },
   "GET /session/:id/todo": { kind: "authorize", operation: "todo_read" },
   "GET /session/capabilities": { kind: "workspace" },
   "GET /session/status": { kind: "filter", operation: "session_status" },
@@ -288,15 +291,27 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "PUT /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_write" },
 } as const satisfies Record<string, SessionRouteDecision>
 
-const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
-  "session_create",
-  "session_meta_write",
-  "session_config_write",
+/**
+ * The two kinds of write a session decision can be asked about. A `send`
+ * share carries an agent turn and nothing else, so the class has to reach the
+ * session authority with the question: the level alone cannot tell a prompt
+ * from a shell command, and both arrive as a write.
+ */
+export type SessionWriteClass = "agent_turn" | "session_control"
+
+/** Driving the agent and answering what it asks: what a `send` share buys. */
+const AGENT_TURN_OPERATIONS = new Set<SessionAccessOperation>([
   "prompt",
-  "permission_mode_write",
   "permission_response",
   "question_response",
   "abort",
+])
+
+const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
+  "session_create",
+  "session_meta_write",
+  "session_config_write",
+  "permission_mode_write",
   "revert",
   "unrevert",
   "fork",
@@ -317,9 +332,16 @@ const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
   "worktree_write",
 ])
 
-const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
 const SESSION_FILTER_CONCURRENCY = 16
 
+const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
+
+/**
+ * A write carrying no session is the workspace's own, and the relay role is
+ * the only thing that answers for it. A session-scoped write is the session
+ * authority's question instead, because a `send` share admits someone the
+ * workspace ranks below editor — or not at all.
+ */
 function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean): SessionAccessDecision {
   if (!input.authority && !requireActor) return { allowed: true }
   if (!input.actor) {
@@ -330,12 +352,17 @@ function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean
       message: "Managed session access requires verified actor claims",
     }
   }
-  if (input.authority && sessionAccessRequiresWrite(input) && ROLE_RANK[input.authority.role] < ROLE_RANK.editor) {
+  if (
+    input.authority
+    && !input.sessionId
+    && sessionAccessRequiresWrite(input)
+    && ROLE_RANK[input.authority.role] < ROLE_RANK.editor
+  ) {
     return {
       allowed: false,
       status: 403,
-      code: "session_write_forbidden",
-      message: "Session mutation requires workspace editor authority",
+      code: "workspace_write_forbidden",
+      message: "Workspace mutation requires workspace editor authority",
     }
   }
   return { allowed: true }
@@ -344,7 +371,15 @@ function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean
 export function sessionAccessRequiresWrite(
   input: Pick<SessionAccessPolicyInput, "operation" | "method">,
 ) {
-  return WRITE_OPERATIONS.has(input.operation)
+  return sessionAccessWriteClass(input) !== undefined
+}
+
+/** The class a write carries to the session authority; nothing for a read. */
+export function sessionAccessWriteClass(
+  input: Pick<SessionAccessPolicyInput, "operation" | "method">,
+): SessionWriteClass | undefined {
+  if (AGENT_TURN_OPERATIONS.has(input.operation)) return "agent_turn"
+  return SESSION_CONTROL_OPERATIONS.has(input.operation) ? "session_control" : undefined
 }
 
 function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | void): SessionAccessDecision {
@@ -354,7 +389,7 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
       allowed: false,
       status: 403,
       code: "session_private",
-      message: "Session access requires creator, participant, or organization administrator authority",
+      message: "Session access requires creator, participant, or session share authority",
     }
   }
   return result
@@ -386,7 +421,7 @@ export function managedWorkspaceSessionAccessPolicy(
         allowed: false,
         status: 403,
         code: "session_authority_required",
-        message: "Managed session access requires creator, participant, or organization administrator authority",
+        message: "Managed session access requires creator, participant, or session share authority",
       } satisfies SessionAccessDecision
     }
     const predicate = sessionAccessRequiresWrite(input)

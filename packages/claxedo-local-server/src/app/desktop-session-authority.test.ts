@@ -30,7 +30,7 @@ import { setLocalHostEndpoints } from "../deployments/local/host-session-authori
 const OWNER = { actorId: "actor_owner", actorPublicId: "user_owner", actorName: "Owner" }
 const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Member" }
 
-type AuthorityCall = { action: string; sessionId?: string; actorId?: string }
+type AuthorityCall = { action: string; writeClass?: string; sessionId?: string; actorId?: string }
 
 let dataDir: string
 let previousDataDir: string | undefined
@@ -95,19 +95,23 @@ function fakeAuthority() {
     let raw = ""
     request.on("data", (chunk) => { raw += chunk })
     request.on("end", () => {
-      const body = JSON.parse(raw || "{}") as { action?: string; sessionId?: string }
+      const body = JSON.parse(raw || "{}") as { action?: string; writeClass?: string; sessionId?: string }
       const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? "")?.[1]
       const actor = bearer ? bearers.get(bearer) : undefined
       authorityCalls.push({
         action: String(body.action),
+        ...(body.writeClass ? { writeClass: body.writeClass } : {}),
         ...(body.sessionId ? { sessionId: body.sessionId } : {}),
         ...(actor ? { actorId: actor.actorId } : {}),
       })
-      // Both adapters refuse a `follow` grantee's write with the same 403 they
-      // raise for a session the caller has no row for at all.
+      // Both adapters refuse a `follow` grantee's write, and any grantee's
+      // `session_control` write, with the same 403 they raise for a session
+      // the caller has no row for at all. A turn action carries no class and
+      // is the turn itself.
       const writing = body.action === "write" || String(body.action).startsWith("turn_")
       const shared = actor ? shareLevels.get(actor.actorId) : undefined
-      const allowed = !!actor && admitted.has(actor.actorId) && !(writing && shared === "follow")
+      const refusedShare = shared === "follow" || (!!shared && body.writeClass === "session_control")
+      const allowed = !!actor && admitted.has(actor.actorId) && !(writing && refusedShare)
       response.statusCode = allowed ? 200 : 403
       response.setHeader("content-type", "application/json")
       if (!allowed) {
@@ -360,6 +364,35 @@ describe("a share level decides what a relayed grantee may do", () => {
       .toEqual([`read:${MEMBER.actorId}`, `read:${MEMBER.actorId}`, `write:${MEMBER.actorId}`])
   })
 
+  test("a send grantee is refused the shell, the permission mode and the delete, and the authority is asked for control", async () => {
+    const workspace = await resolveWorkspace()
+    admitted = new Set([OWNER.actorId, MEMBER.actorId])
+    shareLevels = new Map([[MEMBER.actorId, "send"]])
+
+    const shell = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/shell`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...relayed("member-token") },
+      body: JSON.stringify({ command: "id" }),
+    })
+    const permissionMode = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/permission-mode`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...relayed("member-token") },
+      body: JSON.stringify({ modeId: "yolo" }),
+    })
+    const deleted = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared`, {
+      method: "DELETE",
+      headers: relayed("member-token"),
+    })
+
+    expect([shell.status, permissionMode.status, deleted.status]).toEqual([403, 403, 403])
+    expect(await shell.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(authorityCalls.map((call) => `${call.action}/${call.writeClass}:${call.actorId}`)).toEqual([
+      `write/session_control:${MEMBER.actorId}`,
+      `write/session_control:${MEMBER.actorId}`,
+      `write/session_control:${MEMBER.actorId}`,
+    ])
+  })
+
   test("the same grantee at send is admitted to the prompt and reaches the harness", async () => {
     const workspace = await resolveWorkspace()
     admitted = new Set([OWNER.actorId, MEMBER.actorId])
@@ -374,8 +407,8 @@ describe("a share level decides what a relayed grantee may do", () => {
     // Admitted, then refused by the unconfigured harness this fixture has
     // instead of an agent — which is as far past admission as it can get here.
     expect(prompt.status).not.toBe(403)
-    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`))
-      .toEqual([`write:${MEMBER.actorId}`])
+    expect(authorityCalls.map((call) => `${call.action}/${call.writeClass}:${call.actorId}`))
+      .toEqual([`write/agent_turn:${MEMBER.actorId}`])
   })
 })
 
@@ -421,6 +454,7 @@ describe("the composition's own relay actor", () => {
         endpoints: { relayJwksUrl: `${keySetOrigin}/.well-known/jwks.json`, sessionAuthorityUrl: authorityUrl },
         credential: {
           hostId: "host_machine",
+          enrollmentId: "enr_this_machine",
           // The tunnel dials this and gets no upgrade; what the test needs from
           // serving is the machine identity a relay token is bound to.
           relayUrl: keySetOrigin,

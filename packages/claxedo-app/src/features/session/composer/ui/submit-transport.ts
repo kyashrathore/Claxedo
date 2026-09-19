@@ -12,7 +12,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
-import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { requestWorkspaceRecord } from "@/platform/runtime/workspace-runtime-record"
 import {
   centralTransportForServer,
   submitTransportForPlacement,
@@ -155,14 +155,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       directory: dir,
       request: input.request,
       relayRequest: input.request,
-      resolveWorkspaceRuntime: async ({ directory }) => {
-        const res = await input.request(workspaceResolveUrl({ baseUrl: input.serverUrl(), scope: directory }), {
-          headers: { Accept: "application/json" },
-        })
-        if (res.status === 404) return null
-        if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
-        return await res.json()
-      },
+      resolveWorkspaceRuntime: ({ directory }) =>
+        requestWorkspaceRecord({ baseUrl: input.serverUrl(), directory, request: input.request }),
     }).sdkFetch
   }
 

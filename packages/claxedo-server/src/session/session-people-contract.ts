@@ -46,7 +46,7 @@ function peopleAuthorityError(error: unknown): PeopleError | undefined {
     return {
       status: 403,
       code: "session_share_admin_required",
-      message: "Only the session creator or an org/team admin can manage People on this session.",
+      message: "Only the person who started this session can manage its People.",
     }
   }
   if (hasCode(message, "session_share_target_required")) {
@@ -63,18 +63,11 @@ function peopleAuthorityError(error: unknown): PeopleError | undefined {
       message: "Share target was not found",
     }
   }
-  if (hasCode(message, "session_participant_workspace_access_required")) {
+  if (hasCode(message, "session_share_target_outside_organization")) {
     return {
       status: 403,
-      code: "session_participant_workspace_access_required",
-      message: "That person needs workspace access before they can be added to the session.",
-    }
-  }
-  if (hasCode(message, "session_share_send_workspace_write_required")) {
-    return {
-      status: 403,
-      code: "session_share_send_workspace_write_required",
-      message: "That person can follow this session, but they cannot be allowed to send messages on it.",
+      code: "session_share_target_outside_organization",
+      message: "That person is not in this organization, so this session cannot be shared with them.",
     }
   }
   if (hasCode(message, "session_share_level_invalid")) {

@@ -69,14 +69,9 @@ describe("People route contract", () => {
     { thrown: "session_share_target_required", status: 400, code: "session_share_target_required" },
     { thrown: "session_share_target_not_found", status: 404, code: "session_share_target_not_found" },
     {
-      thrown: "session_participant_workspace_access_required",
+      thrown: "session_share_target_outside_organization",
       status: 403,
-      code: "session_participant_workspace_access_required",
-    },
-    {
-      thrown: "session_share_send_workspace_write_required",
-      status: 403,
-      code: "session_share_send_workspace_write_required",
+      code: "session_share_target_outside_organization",
     },
     { thrown: "session_share_team_org_mismatch", status: 400, code: "session_share_team_org_mismatch" },
     { thrown: "session_share_org_mismatch", status: 400, code: "session_share_org_mismatch" },

@@ -116,7 +116,7 @@ describe("two-user signed app transport", () => {
     await authority.ensureDefaultTeam!(aliceAuth, { orgId: org.org_id })
 
     // Add Casey to the organization only after default-team reconciliation so
-    // the later direct workspace share does not also make Casey a team member.
+    // Casey is never swept onto the default team.
     inspectAuthority().prepare(`
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
       VALUES (?, ?, 'member', ?, ?)
@@ -128,12 +128,15 @@ describe("two-user signed app transport", () => {
     })
     expect(addMember.status).toBe(200)
 
-    // Casey: workspace editor only (not on the team).
-    const caseyShare = await signedRequest(alice.token, "/api/workspace/ws_signed_private/shares", {
-      method: "POST",
-      body: JSON.stringify({ role: "editor", target: { kind: "actor", actorId: caseyIdentity.actor_id } }),
-    })
-    expect(caseyShare.status).toBe(200)
+    // Casey: a rank on the workspace's project and nothing else (not on the
+    // team, and no grant on the session).
+    const caseyProject = inspectAuthority()
+      .prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_signed_private'`)
+      .get() as { project_id: string }
+    inspectAuthority().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'editor', ?, ?)
+    `).run(caseyProject.project_id, caseyIdentity.token_identifier, membershipNow, membershipNow)
 
     await authority.reserveSession(aliceAuth, {
       operationId: "op_signed_private",

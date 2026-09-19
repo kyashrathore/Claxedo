@@ -24,6 +24,7 @@ function serve() {
   return setUserHostedServing(
     {
       hostId: "host_machine-1",
+      enrollmentId: "enr_this_machine",
       relayUrl: "https://relay.claxedo.test",
       token: "host-tunnel-token",
       workspaceIds: [WS],

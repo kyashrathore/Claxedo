@@ -26,6 +26,7 @@ import {
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
+import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const bodyLimitBytes = 16 * 1024
@@ -657,6 +658,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         sessionId,
         workspaceId: claims.workspaceId,
         action,
+        ...(request.writeClass ? { writeClass: request.writeClass } : {}),
       })
       return context.json({ allowed: true })
     } catch (error) {
@@ -690,6 +692,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
 function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined) {
   const sessionId = trimToUndefined(body?.sessionId)
   const action = body?.action
+  const writeClass = body?.writeClass
   const operationId = trimToUndefined(body?.operationId)
   const reason = optionalText(body?.reason)
   const title = optionalText(body?.title)
@@ -701,14 +704,28 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
   const fencingToken = positiveInteger(body?.fencingToken)
   if (!sessionId || !isAuthorityAction(action)) return undefined
   if (
-    (body?.title !== undefined && title === undefined)
+    (writeClass !== undefined && !isSessionWriteClass(writeClass))
+    || (writeClass !== undefined && action !== "write")
+    || (body?.title !== undefined && title === undefined)
     || (body?.reason !== undefined && reason === undefined)
     || (body?.stream !== undefined && typeof body.stream !== "boolean")
     || (body?.lease !== undefined && !lease)
     || (!!lease && !stream)
     || (stream && action !== "read" && action !== "write")
   ) return undefined
-  const fields = { sessionId, operationId, reason, title, stream, lease, turnId, turnLeaseId, fencingToken, parentSessionId }
+  const fields = {
+    sessionId,
+    operationId,
+    reason,
+    title,
+    stream,
+    lease,
+    turnId,
+    turnLeaseId,
+    fencingToken,
+    parentSessionId,
+    ...(isSessionWriteClass(writeClass) ? { writeClass } : {}),
+  }
   switch (action) {
     case "reserve":
       if (!parentSessionId) return undefined
@@ -766,6 +783,10 @@ function isAuthorityAction(value: unknown): value is AuthorityAction {
     || value === "turn_acquire"
     || value === "turn_renew"
     || value === "turn_release"
+}
+
+function isSessionWriteClass(value: unknown): value is SessionWriteClass {
+  return value === "agent_turn" || value === "session_control"
 }
 
 function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" {
