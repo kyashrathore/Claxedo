@@ -41,7 +41,7 @@ import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
 import { pickProjectFolderWith } from "./components/session-pick-project-folder"
 import { NewSessionDesignView, SessionHeader } from "@/features/session/ui/components"
-import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, inventoryHostKind, isRelayHostKind, type RelayHostKind, type WorkspaceHostKind, type InventoryKindWord } from "@/platform/runtime/placement-wire"
 import { PreviousMessagesRow } from "./message-timeline-turn-rows"
 
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
@@ -65,7 +65,7 @@ import {
   sessionFirstFoldReady,
   sessionMessagesReady,
   shouldRenderNewSessionComposer,
-  resolveDraftWorkspaceKind,
+  resolveDraftHostKind,
   sessionSwitchResetPlan,
   sessionUserMessages,
   stableSessionInfo,
@@ -251,7 +251,7 @@ export default function SessionPage(props: {
       const cwd = dir()
       const project = activeProject()
       const workspaces = (project as typeof project & {
-        workspaces?: Record<string, { id?: string; kind?: "local" | "cloud" | "user-hosted"; status?: string | null; directory?: string }>
+        workspaces?: Record<string, { id?: string; kind?: InventoryKindWord; status?: string | null; directory?: string }>
       } | undefined)?.workspaces ?? {}
       const workspace =
         Object.entries(workspaces).find(([key]) => sameDirectory(key, cwd))?.[1] ??
@@ -262,7 +262,7 @@ export default function SessionPage(props: {
   const signedControlPlane = createMemo(() => {
     const workspaceId = routeSessionWorkspaceId()
     const workspace = sdk.workspace(dir()) ?? ws()
-    const kind = workspace?.kind
+    const kind = inventoryHostKind(workspace?.kind)
     const cwd = dir()
     const placement = placementFor({
       // The typed ref can still be a provisional local ref while signed
@@ -273,14 +273,14 @@ export default function SessionPage(props: {
         serverUrl: getClaxedoServerUrl(),
         principalHasSignedAccess: principalHasSignedAccess(principal()),
         routeWorkspaceAuthorityId: workspaceId,
-        workspaceKind: kind,
+        hostKind: kind,
         sessionRef: activeSessionRef(),
       }),
       serverUrl: getClaxedoServerUrl(),
       legacy: {
         directory: cwd,
         workspaceId,
-        workspaceKind: kind,
+        hostKind: kind,
       },
     })
     return !!placement && placement.transport !== "loopback"
@@ -308,11 +308,11 @@ export default function SessionPage(props: {
   const replayWorkspaceId = createMemo(() => inventorySession()?.workspaceId ?? signedWorkspaceId() ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id)
   const routeIdForDirectory = (value: string) => (sameDirectory(value, dir()) ? routeSessionWorkspaceId() : undefined) ?? workspaceRouteId(projects(), value)
   // Resolve split-draft transport kind from full inventory so every pane agrees.
-  const resolvedWorkspaceKind = createMemo<"cloud" | "user-hosted" | undefined>(() => {
-    const inventoryKind = inventorySession()?.environment?.kind
-    if (inventoryKind === "cloud" || inventoryKind === "user-hosted") return inventoryKind
-    const kind = ws()?.kind
-    if (kind === "cloud" || kind === "user-hosted") return kind
+  const resolvedHostKind = createMemo<RelayHostKind | undefined>(() => {
+    const inventoryKind = asHostKind(inventorySession()?.environment?.kind)
+    if (isRelayHostKind(inventoryKind)) return inventoryKind
+    const kind = inventoryHostKind(ws()?.kind)
+    if (isRelayHostKind(kind)) return kind
     // Match the inventory by directory first, then by the workspace id encoded
     // in a `workspace:<id>` ref — the split pane's `dir()` is often the id-ref
     // form, which `signedWorkspaceFromProjects` won't match as a directory.
@@ -320,13 +320,14 @@ export default function SessionPage(props: {
     if (fromDirectory) return fromDirectory
     return signedRuntimeWorkspace()?.kind
   })
-  const routeWorkspaceKind = createMemo<WorkspaceKind>(() => {
+  const routeHostKind = createMemo<WorkspaceHostKind>(() => {
     // On a fresh DRAFT nav the inventory hasn't resolved yet and the only signal
-    // is the directory-ref fallback — resolveDraftWorkspaceKind carries the ref's
-    // OWN kind through instead of collapsing every ref to "cloud" (the collapse
-    // mis-routed ws_-shaped user-hosted draft navs into the Local/Cloud picker).
-    return resolveDraftWorkspaceKind({
-      resolvedKind: resolvedWorkspaceKind(),
+    // is the directory-ref fallback — resolveDraftHostKind carries the ref's
+    // OWN kind through instead of collapsing every ref to the provisioner (the
+    // collapse mis-routed ws_-shaped machine draft navs into the environment
+    // picker).
+    return resolveDraftHostKind({
+      resolvedKind: resolvedHostKind(),
       fallbackRefKind: inventoryAwareWorkspaceRuntime()?.kind,
       // The hosted web build has no local machine behind it, so a draft that
       // resolves nothing must still default to cloud rather than to an
@@ -364,7 +365,7 @@ export default function SessionPage(props: {
     status: undefined as string | undefined,
     err: undefined as string | undefined,
     logs: [] as CloudLog[],
-    variant: "cloud" as "cloud" | "user-hosted",
+    variant: "provisioner" as RelayHostKind,
   })
   // BUG-9: A 403 from the connection mint means "you don't have access to this
   // workspace" — a terminal state, not a transient connecting one. The gate's
@@ -381,7 +382,7 @@ export default function SessionPage(props: {
       status: undefined,
       err: undefined,
       logs: [],
-      variant: "cloud",
+      variant: "provisioner",
     })
   }
   // The new-session SUBMIT flow (composer `onCloudStartup`) sets `gate.sync`
@@ -455,7 +456,7 @@ export default function SessionPage(props: {
     active: paneActive,
     signedControlPlane,
     workspaceId: replayWorkspaceId,
-    workspaceKind: resolvedWorkspaceKind,
+    hostKind: resolvedHostKind,
     sessionRef: activeSessionRef,
     onMissingSession: (sessionId, directory) => claxedoState.layout.closeDeletedSession({ sessionId, directory }),
   })
@@ -487,7 +488,7 @@ export default function SessionPage(props: {
     if (!sessionIDValue || !shouldScheduleDirectorySessionHydration({ directory, sessionID: sessionIDValue, hasSessionInfo: !!info(), sessionRef: activeSessionRef() })) return
     const cancel = scheduleDirectorySessionHydration({
       directory, sessionID: sessionIDValue,
-      getSession: createSessionInfoHydrationGetter({ claxedoServerUrl: globalSDK.url, signedControlPlane: signedControlPlane(), workspaceId: replayWorkspaceId(), workspaceKind: resolvedWorkspaceKind(), sessionRef: activeSessionRef() }),
+      getSession: createSessionInfoHydrationGetter({ claxedoServerUrl: globalSDK.url, signedControlPlane: signedControlPlane(), workspaceId: replayWorkspaceId(), hostKind: resolvedHostKind(), sessionRef: activeSessionRef() }),
     })
     onCleanup(cancel)
   })
@@ -612,7 +613,7 @@ export default function SessionPage(props: {
   const firstTurnOnboarding = createFirstTurnOnboarding({
     directory: dir,
     messages: firstTurnMessages,
-    cloud: () => resolvedWorkspaceKind() === "cloud",
+    cloud: () => resolvedHostKind() === "provisioner",
     onStartNewSession: () => navigateSession(),
     harnessRecovery: () => firstTurnHarnessRecovery(promptHarnessControllers.selection, dir(), sessionID(), sessionParams.surfaceId?.(), activeSessionRef()),
   })
@@ -652,7 +653,7 @@ export default function SessionPage(props: {
     expanded: {} as Record<string, boolean>,
     messageId: undefined as string | undefined,
     newSessionWorktree: "main",
-    newSessionWorkspaceKind: routeWorkspaceKind(),
+    newSessionHostKind: routeHostKind(),
     newSessionControlsTouched: false,
     deferRender: false,
   })
@@ -677,7 +678,7 @@ export default function SessionPage(props: {
   })
   const composerModes = createSessionComposerModes({
     directory: dir, draftId: () => sessionParams.surfaceId?.(), sessionId: sessionID, sessionRef: activeSessionRef,
-    signedControlPlane, workspaceId: signedWorkspaceId, workspaceKind: () => store.newSessionWorkspaceKind, worktree: newSessionWorktree,
+    signedControlPlane, workspaceId: signedWorkspaceId, hostKind: () => store.newSessionHostKind, worktree: newSessionWorktree,
   })
   const newSession = createMemo(() => !sessionID() || sessionID() === "new")
   const newSessionBranchSource = createNewSessionBranchSource({ enabled: newSession, directory: () => activeProject()?.worktree ?? dir(), worktree: newSessionWorktree,
@@ -693,7 +694,7 @@ export default function SessionPage(props: {
   createEffect(() => {
     if (!newSession()) return
     if (store.newSessionControlsTouched) return
-    setStore("newSessionWorkspaceKind", routeWorkspaceKind())
+    setStore("newSessionHostKind", routeHostKind())
     if (store.newSessionWorktree !== "main") setStore("newSessionWorktree", "main")
   })
   createNewSessionDeepLinkPromptSeed({
@@ -705,29 +706,29 @@ export default function SessionPage(props: {
       navigate(`${current.pathname}${search}${current.hash}`, { replace: true })
     },
   })
-  const newSessionWorkspaceState = (kind: WorkspaceKind) => {
+  const newSessionWorkspaceState = (kind: WorkspaceHostKind) => {
     const project = activeProject()
     return createNewSessionWorkspaceState({
       projectRoot: project?.worktree ?? sdk.directory,
       selectedWorktree: newSessionWorktree(),
-      workspaceKind: kind,
+      hostKind: kind,
       sandboxes: project?.sandboxes ?? [],
       workspaces: ((project as (typeof project & { workspaces?: Record<string, ProjectWorkspace> }) | undefined)?.workspaces ?? {}),
     })
   }
-  const newSessionWorkspaceOptions = (kind: WorkspaceKind) => {
+  const newSessionWorkspaceOptions = (kind: WorkspaceHostKind) => {
     return newSessionWorkspaceState(kind).options
   }
-  const setNewSessionWorkspaceKind = (value: WorkspaceKind) => {
+  const setNewSessionHostKind = (value: WorkspaceHostKind) => {
     // The web composer never offers "local" (no local machine behind the
     // renderer). Guard here too so a stale/deep-linked selection cannot route a
     // hosted web draft into an environment it can never run in.
-    if (value === "local" && platform.platform === "web" && signedControlPlane()) return
+    if (value === "self" && platform.platform === "web" && signedControlPlane()) return
     setStore("newSessionControlsTouched", true)
-    setStore("newSessionWorkspaceKind", value)
+    setStore("newSessionHostKind", value)
     if (newSessionWorktree() === "create") return
     if (newSessionWorkspaceOptions(value).includes(newSessionWorktree())) return
-    const next = newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main")
+    const next = newSessionWorkspaceOptions(value)[0] ?? (value === "provisioner" ? "create" : "main")
     newSessionBranchSource.syncWorktree(next)
     setStore("newSessionWorktree", next)
   }
@@ -1084,7 +1085,6 @@ export default function SessionPage(props: {
     ),
   )
 
-
   createEffect(
     on(
       sessionKey,
@@ -1114,7 +1114,7 @@ export default function SessionPage(props: {
 
   const queuedMessages = createQueuedMessagesController({
     active: paneActive, working: () => sessionController.activeTurn() || sessionController.status().type !== "idle", sessionID, directory: dir,
-    sessionRef: activeSessionRef, signedControlPlane, workspaceId: signedWorkspaceId, workspaceKind: resolvedWorkspaceKind,
+    sessionRef: activeSessionRef, signedControlPlane, workspaceId: signedWorkspaceId, hostKind: resolvedHostKind,
     focusComposer: focusInput,
   })
 
@@ -1227,9 +1227,9 @@ export default function SessionPage(props: {
                 <Match when={gate.open}>
                   <NewSessionDesignView
                     worktree={newSessionWorktree()}
-                    workspaceKind="cloud"
+                    hostKind="provisioner"
                     onWorktreeChange={changeNewSessionWorktree}
-                    onWorkspaceKindChange={setNewSessionWorkspaceKind}
+                    onHostKindChange={setNewSessionHostKind}
                     pickProjectFolder={pickProjectFolderWith(dialog)}
                     signedControlPlane={signedControlPlane()}
                     sandboxEnabled={config?.sandboxEnabled}
@@ -1356,10 +1356,10 @@ export default function SessionPage(props: {
                 <Match when={newSessionComposerReady()}>
                   <NewSessionDesignView
                     worktree={newSessionWorktree()}
-                    workspaceKind={store.newSessionWorkspaceKind}
+                    hostKind={store.newSessionHostKind}
                     branch={newSessionBranch()} branches={newSessionBranchSource.choices()} branchState={newSessionBranchSource.state().status} onBranchChange={newSessionBranchSource.select}
                     onWorktreeChange={changeNewSessionWorktree}
-                    onWorkspaceKindChange={setNewSessionWorkspaceKind}
+                    onHostKindChange={setNewSessionHostKind}
                     pickProjectFolder={pickProjectFolderWith(dialog)}
                     signedControlPlane={signedControlPlane()}
                     sandboxEnabled={config?.sandboxEnabled}
@@ -1383,7 +1383,7 @@ export default function SessionPage(props: {
                       newSessionWorktree={newSessionWorktree()}
                       newSessionBaseRef={newSessionBaseRef()}
                       newSessionSourceBranch={newSessionSourceBranch()}
-                      newSessionWorkspaceKind={store.newSessionWorkspaceKind}
+                      newSessionHostKind={store.newSessionHostKind}
                       onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
                       onCloudStartup={(state) => {
                         if (!state) {
@@ -1397,7 +1397,7 @@ export default function SessionPage(props: {
                           status: state.status,
                           err: state.err,
                           logs: state.logs ?? [],
-                          variant: "cloud",
+                          variant: "provisioner",
                         })
                       }}
                       system={contentIntentDefaults()?.system}
@@ -1409,7 +1409,7 @@ export default function SessionPage(props: {
                       sessionRef={activeSessionRef}
                       signedControlPlane={signedControlPlane}
                       workspaceId={signedWorkspaceId}
-                      workspaceKind={resolvedWorkspaceKind}
+                      hostKind={resolvedHostKind}
                       onSubmit={onPromptSubmit}
                     />
                   </NewSessionDesignView>
@@ -1463,7 +1463,7 @@ export default function SessionPage(props: {
               sessionRef={activeSessionRef}
               signedControlPlane={signedControlPlane}
               workspaceId={signedWorkspaceId}
-              workspaceKind={resolvedWorkspaceKind}
+              hostKind={resolvedHostKind}
               inputRef={(el) => {
                 inputRef = el
               }}

@@ -8,6 +8,7 @@ import { setSessionGoalData } from "@/features/session/store/session-goal-cache"
 import { setPromptSessionStatus, type RecordPromptSubmissionContext, type SubmitDirectory } from "../../submit/index"
 import type { Prompt } from "@/features/session/providers/prompt"
 import { resolveGoalComposerIntent } from "./goal-command"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 type GoalClient = {
   getGoalCapabilities(input: { directory: SubmitDirectory; sessionID: string }): Promise<AgentRuntimeGoalCapabilities>
@@ -44,7 +45,7 @@ export async function dispatchGoalSubmit(input: {
   serverUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   client: GoalClient
   record: RecordPromptSubmissionContext
   prepareLiveEvents?: VoidFunction | (() => Promise<void>)
@@ -84,7 +85,7 @@ export async function dispatchGoalSubmit(input: {
       serverUrl: input.serverUrl,
       signedControlPlane: input.signedControlPlane,
       workspaceId: input.workspaceId,
-      workspaceKind: input.workspaceKind,
+      hostKind: input.hostKind,
       sessionRef: input.sessionRef,
     }, { capabilities, goal })
     input.record.onSubmit?.()

@@ -298,7 +298,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (!routeBacking) return undefined
     // The canonical `/w/ws_…` route is workspace authority before project
     // inventory hydrates. Use the relay-only, non-provisioning kind until the
-    // inventory above supplies the real cloud vs user-hosted kind. A legacy
+    // inventory above supplies the real host kind. A legacy
     // filesystem route cannot resolve a runtime ref and remains local.
     return routeBacking
   })

@@ -3,6 +3,7 @@ import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
+import { backingHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type WorkspaceConnectionObserver = {
   onConnected: (info: WorkspaceConnectionInfo) => void
@@ -61,18 +62,17 @@ function workspaceConnectionRefreshUrl(input: { serverUrl?: string; workspaceId:
  * in `@claxedo/workspace-runtime`), reported by the control plane because the
  * control plane is what decided where the workspace runs. A `managed-private`
  * runtime registers every session with the control plane before it may
- * open; a `local` one (the owner's own daemon serving a user-hosted
- * workspace, and this machine's embedded runtime) is its sessions' authority.
+ * open; a `local` one (the owner's own daemon serving a workspace it is placed
+ * on, and this machine's embedded runtime) is its sessions' authority.
  *
- * The client cannot infer this from the workspace kind: "user-hosted" names who
- * owns the machine, not how the runtime composes its session authority.
+ * The client cannot infer this from the placement: which machine serves a
+ * workspace does not say how its runtime composes session authority.
  */
 export type WorkspaceSessionAuthority = "local" | "managed-private"
 
 export type WorkspaceConnectionInfo = {
-  access: "cloud" | "user-hosted"
-  backing: "local-worktree" | "cloud-vm"
-  runtimeKind?: "cloud" | "user-hosted"
+  /** The machine serving this workspace, as the control plane placed it. */
+  host: RelayHostKind
   sessionAuthority?: WorkspaceSessionAuthority
   workspaceId: string
   homeRegion?: string
@@ -150,16 +150,13 @@ function rateLimitRetryDelay(res: Response, body: unknown): number | undefined {
 
 function parseConnection(input: unknown): WorkspaceConnectionInfo {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid workspace connection response")
-  if (!("access" in input) || (input.access !== "cloud" && input.access !== "user-hosted")) throw new Error("Invalid workspace connection access")
-  if (!("backing" in input) || (input.backing !== "local-worktree" && input.backing !== "cloud-vm")) throw new Error("Invalid workspace connection backing")
+  const host = "backing" in input ? backingHostKind(input.backing) : undefined
+  if (!host) throw new Error("Invalid workspace connection backing")
   if (!("workspaceId" in input) || typeof input.workspaceId !== "string") throw new Error("Invalid workspace connection workspaceId")
   if (!("role" in input) || !isRuntimeAccessTokenRole(input.role)) throw new Error("Invalid workspace connection role")
   if (!("relayUrl" in input) || typeof input.relayUrl !== "string") throw new Error("Invalid workspace connection relayUrl")
   const directRuntimeUrl = "directRuntimeUrl" in input && typeof input.directRuntimeUrl === "string"
     ? normalized(input.directRuntimeUrl) ?? input.directRuntimeUrl
-    : undefined
-  const runtimeKind = "runtimeKind" in input && (input.runtimeKind === "cloud" || input.runtimeKind === "user-hosted")
-    ? input.runtimeKind
     : undefined
   // Absent means the control plane did not say, and the app must not decide for
   // it: the stream owner opens no workspace stream until it knows which scopes
@@ -173,9 +170,7 @@ function parseConnection(input: unknown): WorkspaceConnectionInfo {
   if (!("runtimeAccessToken" in input) || typeof input.runtimeAccessToken !== "string") throw new Error("Invalid workspace connection token")
   if (!("tokenExpiresAt" in input) || typeof input.tokenExpiresAt !== "number") throw new Error("Invalid workspace connection expiry")
   return {
-    access: input.access,
-    backing: input.backing,
-    ...(runtimeKind ? { runtimeKind } : {}),
+    host,
     ...(sessionAuthority ? { sessionAuthority } : {}),
     workspaceId: input.workspaceId,
     ...(homeRegion ? { homeRegion } : {}),

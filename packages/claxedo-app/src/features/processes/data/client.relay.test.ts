@@ -79,7 +79,7 @@ describe("process client relay transport", () => {
       directory: "/workspace",
       fetch: request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_1",
       }),
     })
@@ -192,7 +192,7 @@ describe("process client relay transport", () => {
       resolveWorkspaceRuntime: async () => null,
       resolveSignedWorkspace: (directory) =>
         directory === "/repo/user-hosted/ws_uh1-dir"
-          ? { workspaceId: "ws_uh1", kind: "user-hosted", directory }
+          ? { workspaceId: "ws_uh1", kind: "machine", directory }
           : undefined,
     })
 

@@ -60,7 +60,7 @@ const request = {
 const capabilityKey = (input: typeof request & {
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: "provisioner" | "machine"
   sessionRef?: SessionRef
 }) => sessionCapabilitiesKey({
   sessionID: input.sessionID,
@@ -68,7 +68,7 @@ const capabilityKey = (input: typeof request & {
   serverUrl: input.claxedoServerUrl,
   signedControlPlane: input.signedControlPlane,
   workspaceId: input.workspaceId,
-  workspaceKind: input.workspaceKind,
+  hostKind: input.hostKind,
   sessionRef: input.sessionRef,
 })
 
@@ -286,12 +286,12 @@ describe("session capabilities query ownership", () => {
       ...request,
       workspaceId: "ws_1",
       signedControlPlane: true,
-      workspaceKind: "cloud" as const,
+      hostKind: "provisioner" as const,
       sessionRef: {
         sessionId: request.sessionID,
         host: "workspace",
         workspaceId: "ws_1",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" },
+        toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "machine", hostId: "host_local" },
         harness: { kind: "native", harnessId: "opencode" },
       } satisfies SessionRef,
     }
@@ -304,7 +304,7 @@ describe("session capabilities query ownership", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_1",
-          hosting: "cloud",
+          hosting: "provisioner",
           hostId: "host_1",
         },
         harness: { kind: "native", harnessId: "opencode" },
@@ -325,7 +325,7 @@ describe("session capabilities query ownership", () => {
       toolSandbox: {
         kind: "workspace",
         workspaceId: "ws_authoritative",
-        hosting: "user-hosted",
+        hosting: "machine",
         hostId: "host_1",
       },
       harness: { kind: "connection", connectionId: "codex-team" },
@@ -334,13 +334,13 @@ describe("session capabilities query ownership", () => {
       ...request,
       signedControlPlane: true,
       workspaceId: "ws_authoritative",
-      workspaceKind: "user-hosted" as const,
+      hostKind: "machine" as const,
       sessionRef,
     }
     const staleRedundantFields = {
       ...complete,
       workspaceId: "stale-redundant-value",
-      workspaceKind: "cloud" as const,
+      hostKind: "provisioner" as const,
     }
 
     expect(capabilityKey(complete)).toEqual(capabilityKey(staleRedundantFields))

@@ -55,7 +55,7 @@ describe("workspace runtime request", () => {
       request,
       relayRequest: request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "user-hosted",
+        kind: "machine",
         workspaceId: "ws_user_hosted",
       }),
     })
@@ -92,7 +92,7 @@ describe("workspace runtime request", () => {
       request,
       relayRequest: request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "user-hosted",
+        kind: "machine",
         workspaceId: "ws_strip",
       }),
     })
@@ -234,7 +234,7 @@ describe("workspace runtime request", () => {
       request,
       relayRequest: request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "user-hosted",
+        kind: "machine",
         workspaceId: "ws_shared",
       }),
     })
@@ -244,7 +244,7 @@ describe("workspace runtime request", () => {
       request,
       relayRequest: request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "user-hosted",
+        kind: "machine",
         workspaceId: "ws_shared",
       }),
     })
@@ -291,14 +291,14 @@ describe("workspace runtime request", () => {
       directory: "workspace:ws_isolated",
       request,
       relayRequest: relayA,
-      resolveWorkspaceRuntime: async () => ({ kind: "cloud", workspaceId: "ws_isolated" }),
+      resolveWorkspaceRuntime: async () => ({ kind: "provisioner", workspaceId: "ws_isolated" }),
     })
     const second = createWorkspaceRuntimeRequest({
       serverUrl: "http://server.isolated.test",
       directory: "workspace:ws_isolated",
       request,
       relayRequest: relayB,
-      resolveWorkspaceRuntime: async () => ({ kind: "cloud", workspaceId: "ws_isolated" }),
+      resolveWorkspaceRuntime: async () => ({ kind: "provisioner", workspaceId: "ws_isolated" }),
     })
 
     await expect(first.fetch("/alpha?directory=workspace%3Aws_isolated").then((res) => res.json()))
@@ -341,7 +341,7 @@ describe("workspace runtime request", () => {
           })
         }) as typeof fetch,
         resolveWorkspaceRuntime: async () => ({
-          kind: "cloud",
+          kind: "provisioner",
           workspaceId: "ws_raw",
         }),
       })
@@ -368,7 +368,7 @@ describe("workspace runtime request", () => {
         return Response.json({ ok: true })
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "local",
+        kind: "self",
         workspaceId: "ws_local",
       }),
     })
@@ -429,7 +429,7 @@ describe("workspace runtime request", () => {
       sessionRef: {
         sessionId: "workspace-session",
         host: "workspace",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud" },
+        toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "provisioner" },
       },
       request,
       relayRequest: request,
@@ -454,7 +454,7 @@ describe("workspace runtime request", () => {
         return Response.json({ ok: true })
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "local",
+        kind: "self",
         workspaceId: "ws_local",
       }),
     })
@@ -477,7 +477,7 @@ describe("workspace runtime request", () => {
         return Response.json({ ok: true })
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_1",
       }),
     })
@@ -503,7 +503,7 @@ describe("workspace runtime request", () => {
         return Response.json({ ok: true })
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "local",
+        kind: "self",
         workspaceId: "ws_1",
       }),
     })
@@ -525,7 +525,7 @@ describe("workspace runtime request", () => {
         throw new Error("relay should not be called")
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_denied",
       }),
     })
@@ -547,7 +547,7 @@ describe("workspace runtime request", () => {
         return Response.json({ ok: true })
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "local",
+        kind: "self",
         workspaceId: "ws_local",
       }),
     })
@@ -571,17 +571,17 @@ describe("resolveRuntimeTarget", () => {
         sessionId: "ses_workspace",
         workspace: {
           workspaceId: "ws_right",
-          kind: "cloud",
+          kind: "provisioner",
         },
       }),
-    })).resolves.toEqual({ kind: "cloud", workspaceId: "ws_right" })
+    })).resolves.toEqual({ kind: "provisioner", workspaceId: "ws_right" })
   })
 
   test("routes local personal loopback filesystem directories to the local runtime", async () => {
     await expect(resolveRuntimeTarget({
       serverUrl: "http://127.0.0.1:3001",
       directory: "/repo/main",
-    })).resolves.toEqual({ kind: "local" })
+    })).resolves.toEqual({ kind: "self" })
   })
 
   test("does not treat filesystem directories on hosted control as local runtime", async () => {
@@ -595,21 +595,21 @@ describe("resolveRuntimeTarget", () => {
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       directory: "/repo/main",
-      workspace: { kind: "user-hosted", workspaceId: "ws_user" },
-    })).resolves.toEqual({ kind: "user-hosted", workspaceId: "ws_user" })
+      workspace: { kind: "machine", workspaceId: "ws_user" },
+    })).resolves.toEqual({ kind: "machine", workspaceId: "ws_user" })
 
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       workspaceId: "ws_cloud",
-    })).resolves.toEqual({ kind: "cloud", workspaceId: "ws_cloud" })
+    })).resolves.toEqual({ kind: "provisioner", workspaceId: "ws_cloud" })
   })
 
   test("resolves directory aliases before falling back to workspace refs", async () => {
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       directory: "workspace:ws_alias",
-      resolveWorkspaceRuntime: async () => ({ kind: "user-hosted", workspaceId: "ws_resolved" }),
-    })).resolves.toEqual({ kind: "user-hosted", workspaceId: "ws_resolved" })
+      resolveWorkspaceRuntime: async () => ({ kind: "machine", workspaceId: "ws_resolved" }),
+    })).resolves.toEqual({ kind: "machine", workspaceId: "ws_resolved" })
 
     // `resolveWorkspaceRuntime` answering nothing (no record) is exactly the
     // 404-for-user-hosted case the resolve endpoint produces — this ref is
@@ -618,14 +618,14 @@ describe("resolveRuntimeTarget", () => {
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       directory: "workspace:ws_alias",
-    })).resolves.toEqual({ kind: "user-hosted", workspaceId: "ws_alias" })
+    })).resolves.toEqual({ kind: "machine", workspaceId: "ws_alias" })
   })
 
   test("keeps local session refs on the loopback runtime without inventing a workspace id", async () => {
     await expect(resolveRuntimeTarget({
       serverUrl: "http://127.0.0.1:3001",
       sessionRef: localSessionRef({ sessionId: "ses_local", cwd: "/repo/main" }),
-    })).resolves.toEqual({ kind: "local" })
+    })).resolves.toEqual({ kind: "self" })
   })
 
   test("treats unresolved workspace session-resource refs as relay backed unless confirmed cloud", async () => {
@@ -634,14 +634,14 @@ describe("resolveRuntimeTarget", () => {
       directory: "workspace:ws_unresolved",
       workspaceId: "ws_unresolved",
       sessionResource: true,
-    })).resolves.toEqual({ kind: "user-hosted", workspaceId: "ws_unresolved" })
+    })).resolves.toEqual({ kind: "machine", workspaceId: "ws_unresolved" })
 
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       directory: "workspace:ws_cloud",
       workspaceId: "ws_cloud",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       sessionResource: true,
-    })).resolves.toEqual({ kind: "cloud", workspaceId: "ws_cloud" })
+    })).resolves.toEqual({ kind: "provisioner", workspaceId: "ws_cloud" })
   })
 })

@@ -88,7 +88,7 @@ const cloudSessionRef = (sessionId: string) => ({
   toolSandbox: {
     kind: "workspace" as const,
     workspaceId: "ws_cloud",
-    hosting: "cloud" as const,
+    hosting: "provisioner" as const,
   },
 })
 

@@ -11,6 +11,7 @@ import type {
   HostedWorkspaceCreateInput,
   HostedWorkspaceCreateResult,
 } from "@/platform/runtime/agent/workspace-create-authority"
+import type { RelayHostKind, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type FollowupDraft = {
   sessionID: string
@@ -63,13 +64,13 @@ type PromptSubmitProvisioningInput = {
   newSessionWorktree?: Accessor<string | undefined>
   newSessionBaseRef?: Accessor<string | undefined>
   newSessionSourceBranch?: Accessor<string | undefined>
-  newSessionWorkspaceKind?: Accessor<"local" | "cloud" | "user-hosted" | undefined>
+  newSessionHostKind?: Accessor<WorkspaceHostKind | undefined>
   onNewSessionWorktreeReset?: () => void
   onCloudStartup?: (state?: CloudStartupState) => void
   navigateOnCreate?: Accessor<boolean>
   signedControlPlane?: Accessor<boolean>
   workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
+  hostKind?: Accessor<RelayHostKind | undefined>
 }
 
 type PromptSubmitStatusInput = {

@@ -102,8 +102,8 @@ function createSession(input: {
   claxedoServerUrl?: string
   workspaceId?: string
   directory?: string
-  sdkWorkspace?: { workspaceId: string; kind: "cloud" | "local" | "user-hosted"; directory?: string }
-  resolveWorkspaceRuntime?: (input: { directory: string; workspaceId?: string }) => Promise<{ kind: "cloud" | "local" | "user-hosted"; workspaceId?: string } | null>
+  sdkWorkspace?: { workspaceId: string; kind: "provisioner" | "local" | "user-hosted"; directory?: string }
+  resolveWorkspaceRuntime?: (input: { directory: string; workspaceId?: string }) => Promise<{ kind: "provisioner" | "local" | "user-hosted"; workspaceId?: string } | null>
 }) {
   const sdk = createMockSDK()
   if (input.directory) sdk.directory = input.directory
@@ -118,7 +118,7 @@ function createSession(input: {
       claxedoServerUrl: input.claxedoServerUrl ?? "http://server.test",
       request: input.request,
       resolveWorkspaceRuntime: input.resolveWorkspaceRuntime ?? (async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId,
       })),
     })
@@ -192,7 +192,7 @@ describe("terminal relay lifecycle", () => {
     const { session, dispose } = createSession({
       request,
       directory: "C:\\repo",
-      resolveWorkspaceRuntime: async () => ({ kind: "local" }),
+      resolveWorkspaceRuntime: async () => ({ kind: "self" }),
     })
 
     expect(await session.new()).toBe("pty_windows")
@@ -220,7 +220,7 @@ describe("terminal relay lifecycle", () => {
         claxedoEvents: sdk.claxedoEvents,
         claxedoServerUrl: "http://server.test",
         request,
-        resolveWorkspaceRuntime: async () => ({ kind: "local" }),
+        resolveWorkspaceRuntime: async () => ({ kind: "self" }),
       })
     })
 
@@ -357,7 +357,7 @@ describe("terminal relay lifecycle", () => {
       directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
       sdkWorkspace: {
         workspaceId: "ws_selfhost",
-        kind: "user-hosted",
+        kind: "machine",
         directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
       },
       resolveWorkspaceRuntime: async () => null,
@@ -440,7 +440,7 @@ describe("terminal relay lifecycle", () => {
       directory: "/Users/yash/project",
       sdkWorkspace: {
         workspaceId: "ws_local_identity",
-        kind: "local",
+        kind: "self",
         directory: "/Users/yash/project",
       },
       resolveWorkspaceRuntime: async () => null,

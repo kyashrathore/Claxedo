@@ -8,6 +8,7 @@ import {
   workspaceIdFromRef,
 } from "@/platform/identity/legacy-resolver"
 import { isLocalPersonalScope } from "@/platform/runtime/transport"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type Placement = {
   workspaceId?: string
@@ -46,7 +47,7 @@ export function placementFor(input: {
   legacy?: {
     directory?: string
     workspaceId?: string
-    workspaceKind?: "local" | "cloud" | "user-hosted" | null
+    hostKind?: WorkspaceHostKind | null
   }
 }): Placement | undefined {
   if (!input.hasSignedAccess) return undefined
@@ -64,7 +65,7 @@ export function placementFor(input: {
   }
 
   const legacyWorkspaceId = input.legacy?.workspaceId ?? workspaceIdFromRef(input.legacy?.directory)
-  if (input.legacy?.workspaceKind === "cloud" || input.legacy?.workspaceKind === "user-hosted") {
+  if (input.legacy?.hostKind === "provisioner" || input.legacy?.hostKind === "machine") {
     if (legacyWorkspaceId) {
       return {
         workspaceId: legacyWorkspaceId,

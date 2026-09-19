@@ -187,7 +187,7 @@ describe("mock-runtime canonical route bindings", () => {
       project_id: "proj_1",
       display_name: "main",
       backing: "cloud-vm",
-      access: "cloud",
+      placement: { directory: "/workspace" },
       remote_directory: "/workspace",
       role: "owner",
     }
@@ -197,16 +197,17 @@ describe("mock-runtime canonical route bindings", () => {
       project_id: "proj_1",
       display_name: "shared",
       backing: "local-worktree",
-      access: "user-hosted",
+      placement: { host_enrollment_id: "enr_shared_host", directory: "/repo/shared" },
       remote_directory: "/repo/shared",
       role: "viewer",
-      // Only a user-hosted row carries reachability — the rail reads it as
+      // Only a machine-placed row carries reachability — the rail reads it as
       // "host offline" before any pane opens the workspace.
       host_online: false,
     }
     const workspaces = [cloud, userHosted]
 
-    // `?access=user-hosted` is the ONLY filtering value.
+    // `?access=user-hosted` is the ONLY filtering value, and it keeps the rows
+    // placed on an enrolled machine.
     expect(workspaceListResponse({ access: "user-hosted", workspaces })).toEqual({
       workspaces: [userHosted],
     })

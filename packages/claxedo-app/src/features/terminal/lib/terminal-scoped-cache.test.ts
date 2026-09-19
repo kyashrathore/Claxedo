@@ -3,7 +3,7 @@ import { terminalScopedPlacement } from "./terminal-scoped-cache"
 
 describe("terminalScopedPlacement", () => {
   test("routes a resolved non-local workspace through the relay", () => {
-    expect(terminalScopedPlacement("https://claxedo.example.test", { kind: "cloud", workspaceId: "ws_1" })).toEqual({
+    expect(terminalScopedPlacement("https://claxedo.example.test", { kind: "provisioner", workspaceId: "ws_1" })).toEqual({
       workspaceId: "ws_1",
       hosting: "workspace",
       transport: "workspace-relay",
@@ -27,7 +27,7 @@ describe("terminalScopedPlacement", () => {
       terminalScopedPlacement(
         "https://claxedo.example.test",
         null,
-        { kind: "user-hosted", workspaceId: "ws_uh1" },
+        { kind: "machine", workspaceId: "ws_uh1" },
       ),
     ).toEqual({
       workspaceId: "ws_uh1",
@@ -43,8 +43,8 @@ describe("terminalScopedPlacement", () => {
     expect(
       terminalScopedPlacement(
         "https://claxedo.example.test",
-        { kind: "cloud", workspaceId: "ws_live" },
-        { kind: "user-hosted", workspaceId: "ws_signed" },
+        { kind: "provisioner", workspaceId: "ws_live" },
+        { kind: "machine", workspaceId: "ws_signed" },
       ),
     ).toEqual({
       workspaceId: "ws_signed",

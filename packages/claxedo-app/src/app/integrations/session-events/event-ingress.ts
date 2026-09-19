@@ -506,7 +506,7 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
  * A minted `ws_*` id is self-identifying. A caller-chosen id is not: a machine
  * publishes its own LOCAL workspace under the id it already held, and the
  * control plane stores that id verbatim (`registerLocalForSharing`), so the
- * SAME uuid shape names a user-hosted workspace on one machine and a purely
+ * SAME uuid shape names a machine-placed workspace on one machine and a purely
  * local association on another. The resolved project catalog is the authority
  * for that distinction and `sessionWorkspaceRuntimeRef` is its reader: it
  * answers with the workspace's real kind, and `undefined` both for one the
@@ -528,7 +528,7 @@ function addressedWorkspaceId(value: string | undefined, projects: GlobalProject
  * prepends it, updated reconciles title and `time.updated` (and re-sorts a
  * `updated_desc` view), deleted removes it. Every source writes the same
  * `shell.sessionList` entry, so one applier covers the daemon's stream, the
- * control plane's, and a user-hosted workspace's runtime over the relay.
+ * control plane's, and a machine-placed workspace's runtime over the relay.
  */
 function applySessionEventToSessionList(input: {
   properties: unknown

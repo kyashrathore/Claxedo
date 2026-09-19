@@ -62,7 +62,7 @@ import {
   setSessionEventStreamLaneExpected,
 } from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
-import { hostAggregateDeclaration, readProjectCatalog } from "@/platform/query/control-plane"
+import { hostAggregateDeclaration, readProjectCatalog, selfHostDeclaration } from "@/platform/query/control-plane"
 import { queryKeys } from "@/platform/query/keys"
 import {
   HEARTBEAT_TIMEOUT_MS,
@@ -648,6 +648,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // self-hosted node that issues sessions runs on localhost too and serves
     // no aggregate there.
     const hostAggregate = hostAggregateDeclaration(props.serverUrl())
+    // Which machine this client is attached to, from the same boot: a
+    // control-plane row placed on it is read over loopback, not over the relay.
+    const self = selfHostDeclaration(props.serverUrl())
     // A bare `/s/<id>` route names no workspace; the pane that opened the
     // session says which, and until it has, the session's inventory row does.
     const directory = routedDirectory
@@ -661,6 +664,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       sessionID: sessionEventScopeId(),
       projects,
       hostAggregate,
+      ...(self ? { self } : {}),
       accountSigned,
       accountStream: accountStreamAvailable(accountState),
     })
@@ -670,7 +674,13 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // whichever stream it turns out to need.
     setSessionEventStreamLaneExpected(
       routedDirectory !== undefined
-      && routeAwaitsWorkspaceStream({ serverUrl: props.serverUrl(), directory, projects, hostAggregate }),
+      && routeAwaitsWorkspaceStream({
+        serverUrl: props.serverUrl(),
+        directory,
+        projects,
+        hostAggregate,
+        ...(self ? { self } : {}),
+      }),
     )
     const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
     for (const [key, connection] of connections) {
@@ -715,6 +725,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       queryKeys.controlPlane.projects(props.serverUrl()),
       queryKeys.shell.sessionInventory(props.serverUrl()),
       queryKeys.deployment.hostAggregateDeclaration(props.serverUrl()),
+      queryKeys.deployment.selfHost(props.serverUrl()),
     ]
     if (!watched.some((expected) => key.length === expected.length && expected.every((part, index) => key[index] === part))) return
     reconcileTargets()

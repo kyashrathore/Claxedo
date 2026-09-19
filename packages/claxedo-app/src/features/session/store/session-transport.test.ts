@@ -23,7 +23,7 @@ const apiFixture = createMockApi({
       return new Response(JSON.stringify({
         workspaceId: "ws_1",
         directory: "/repo",
-        kind: "cloud",
+        kind: "provisioner",
       }), {
         status: 200,
         headers: { "Content-Type": "application/json" },

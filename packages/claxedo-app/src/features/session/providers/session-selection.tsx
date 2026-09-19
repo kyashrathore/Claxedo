@@ -39,7 +39,7 @@ import {
   selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 
 type State = LocalSelectionState
 type ModelSource = "selected" | "agent"
@@ -136,7 +136,7 @@ const localContextInput = {
       if (!workspace) return {}
       return {
         workspaceId: workspace.workspaceId,
-        ...(isRelayBackedWorkspaceKind(workspace.kind) ? { workspaceKind: workspace.kind } : {}),
+        ...(isRelayHostKind(workspace.kind) ? { hostKind: workspace.kind } : {}),
       }
     }
 

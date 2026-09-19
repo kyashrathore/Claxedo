@@ -11,7 +11,7 @@ import {
   shouldReconcileBusySessionToIdle,
   sessionFirstFoldReady,
   sessionMessagesReady,
-  resolveDraftWorkspaceKind,
+  resolveDraftHostKind,
   sessionSwitchResetPlan,
   sessionUserMessages,
   shouldRenderNewSessionComposer,
@@ -569,68 +569,68 @@ describe("Claxedo session loaded-empty rendering", () => {
   })
 
   test("draft workspace kind prefers the resolved (signed-inventory) kind over the fallback ref", () => {
-    expect(resolveDraftWorkspaceKind({
-      resolvedKind: "user-hosted",
-      fallbackRefKind: "cloud",
-    })).toBe("user-hosted")
-    expect(resolveDraftWorkspaceKind({
-      resolvedKind: "cloud",
-      fallbackRefKind: "user-hosted",
-    })).toBe("cloud")
+    expect(resolveDraftHostKind({
+      resolvedKind: "machine",
+      fallbackRefKind: "provisioner",
+    })).toBe("machine")
+    expect(resolveDraftHostKind({
+      resolvedKind: "provisioner",
+      fallbackRefKind: "machine",
+    })).toBe("provisioner")
   })
 
   test("draft workspace kind falls back to the directory-ref's OWN kind, not a blanket cloud", () => {
     // A fresh draft nav to /w/:workspaceId/session for a `ws_`-shaped
-    // user-hosted id must not resolve to "cloud" just because a ref exists —
+    // a machine-placed id must not resolve to the provisioner just because a ref exists —
     // that would route the draft through the cloud sandbox picker instead of
     // the user-hosted gate.
-    expect(resolveDraftWorkspaceKind({
+    expect(resolveDraftHostKind({
       resolvedKind: undefined,
-      fallbackRefKind: "user-hosted",
-    })).toBe("user-hosted")
-    expect(resolveDraftWorkspaceKind({
+      fallbackRefKind: "machine",
+    })).toBe("machine")
+    expect(resolveDraftHostKind({
       resolvedKind: undefined,
-      fallbackRefKind: "cloud",
-    })).toBe("cloud")
+      fallbackRefKind: "provisioner",
+    })).toBe("provisioner")
   })
 
   test("draft workspace kind is local when neither the resolved kind nor a ref exists", () => {
-    expect(resolveDraftWorkspaceKind({
+    expect(resolveDraftHostKind({
       resolvedKind: undefined,
       fallbackRefKind: undefined,
-    })).toBe("local")
+    })).toBe("self")
   })
 
   // The hosted web build has no local machine behind the renderer, so the
   // unresolved fallback must not be an environment it can never run in.
   test("draft workspace kind defaults to cloud on hosted web", () => {
-    expect(resolveDraftWorkspaceKind({
+    expect(resolveDraftHostKind({
       resolvedKind: undefined,
       fallbackRefKind: undefined,
       webOnlyCloud: true,
-    })).toBe("cloud")
+    })).toBe("provisioner")
   })
 
   // The web default must not override a real resolution — a user-hosted
   // workspace opened in the browser is still user-hosted.
   test("the hosted-web default never overrides a resolved kind", () => {
-    expect(resolveDraftWorkspaceKind({
-      resolvedKind: "user-hosted",
+    expect(resolveDraftHostKind({
+      resolvedKind: "machine",
       fallbackRefKind: undefined,
       webOnlyCloud: true,
-    })).toBe("user-hosted")
-    expect(resolveDraftWorkspaceKind({
+    })).toBe("machine")
+    expect(resolveDraftHostKind({
       resolvedKind: undefined,
-      fallbackRefKind: "user-hosted",
+      fallbackRefKind: "machine",
       webOnlyCloud: true,
-    })).toBe("user-hosted")
+    })).toBe("machine")
   })
 
   test("desktop keeps the local default", () => {
-    expect(resolveDraftWorkspaceKind({
+    expect(resolveDraftHostKind({
       resolvedKind: undefined,
       fallbackRefKind: undefined,
       webOnlyCloud: false,
-    })).toBe("local")
+    })).toBe("self")
   })
 })

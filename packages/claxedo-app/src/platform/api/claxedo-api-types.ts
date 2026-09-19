@@ -1,6 +1,7 @@
 /** Browser-facing Claxedo DTOs the app reads off claxedo-server routes; the workspace runtime's own live in `@claxedo/workspace-runtime/client`. */
 
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import type { InventoryKindWord } from "@/platform/runtime/placement-wire"
 
 export type ClaxedoProject = {
   id: string
@@ -23,7 +24,17 @@ export type ClaxedoWorkspaceInventoryEntry = {
   directory?: string
   remote_directory?: string
   remoteDirectory?: string
-  kind?: "cloud" | "local" | "user-hosted"
+  kind?: InventoryKindWord
+  /**
+   * The placement the CONTROL PLANE states for this row.
+   *
+   * Present only on rows read from a control-plane workspace list. The shell
+   * and bootstrap project producers state a `kind` and no placement at all, so
+   * the key's presence — not the enrollment id's — is what says this row's host
+   * is known. A machine-placed row inside it with no `host_enrollment_id` is a
+   * workspace no host currently holds.
+   */
+  placement?: { host_enrollment_id?: string }
   /**
    * How the serving process composed the session access of the runtime behind
    * this workspace, as that process declares it. `managed-private` means

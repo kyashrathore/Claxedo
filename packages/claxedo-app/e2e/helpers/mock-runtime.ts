@@ -875,6 +875,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // Every control-plane workspace row belongs to a tenant; the authority's row
   // projection makes `org_id` non-optional. One mock tenant owns them all.
   const MOCK_ORG_ID = "org_mock_runtime"
+  // The machine the mock control plane says serves the relay-backed rows. It is
+  // never this browser, so every such row resolves to the relay wire — which is
+  // what the specs model.
+  const MOCK_HOST_ENROLLMENT_ID = "enr_mock_runtime_host"
   const createdLocalWorktrees: Array<{ directory: string; name: string; branch: string }> = []
   const localProjectRow = () => {
     // A created worktree is a workspace row of its own, with the id the app
@@ -1669,7 +1673,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         project_id: CLOUD_PROJECT_ID,
         display_name: "main",
         backing: "cloud-vm",
-        access: "cloud",
+        placement: { directory: CLOUD_WORKSPACE_ID },
         repo_name: CLOUD_PROJECT_NAME,
         remote_directory: CLOUD_WORKSPACE_ID,
         role: "owner",
@@ -1685,7 +1689,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         project_id: PROJECT_ID,
         display_name: workspace.workspace_name ?? workspaceId,
         backing: workspace.kind === "cloud" ? "cloud-vm" : "local-worktree",
-        access: workspace.kind,
+        placement: {
+          ...(workspace.kind === "cloud" ? {} : { host_enrollment_id: MOCK_HOST_ENROLLMENT_ID }),
+          directory: workspace.directory ?? directory,
+        },
         remote_directory: workspace.directory ?? directory,
         role: "owner",
         // Reachability, not authorization — and only ever asked about a machine
@@ -3074,7 +3081,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`**/api/workspace/${workspaceId}/connection**`, (r) =>
       api(r)
         ? json(r, {
-            access: "cloud",
             backing: "cloud-vm",
             // A cloud sandbox's runtime delegates to the control plane's session
             // authority, so it serves SESSION-SCOPED event streams only. The

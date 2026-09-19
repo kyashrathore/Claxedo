@@ -1,7 +1,7 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { parseShellRoute } from "@/platform/identity/route"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { isRelayBackedWorkspaceKind, USER_HOSTED_WORKSPACE_KIND, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, inventoryHostKind } from "@/platform/runtime/placement-wire"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 export type SessionIdentity = {
@@ -68,11 +68,11 @@ export function sessionSignedTransportAuthority(input: {
   serverUrl?: string
   principalHasSignedAccess: boolean
   routeWorkspaceAuthorityId?: string
-  workspaceKind?: string
+  hostKind?: string
   sessionRef?: SessionRef
 }) {
   if (input.routeWorkspaceAuthorityId) return true
-  if (input.workspaceKind === "cloud" || input.workspaceKind === USER_HOSTED_WORKSPACE_KIND) return true
+  if (input.hostKind === "cloud" || input.hostKind === "machine") return true
   if (input.sessionRef?.toolSandbox?.kind === "workspace") return true
   return input.principalHasSignedAccess && centralTransportForServer(input.serverUrl) !== "loopback"
 }
@@ -96,7 +96,7 @@ export function signedProjectWorkspaceId(input: {
   workspace?: { id?: string; workspaceId?: string; kind?: string }
 }) {
   if (input.signedWorkspace?.workspaceId) return input.signedWorkspace.workspaceId
-  if (input.workspace && isRelayBackedWorkspaceKind(workspaceKind(input.workspace.kind))) {
+  if (input.workspace && isRelayHostKind(inventoryHostKind(input.workspace.kind))) {
     return input.workspace.workspaceId ?? input.workspace.id
   }
   return undefined

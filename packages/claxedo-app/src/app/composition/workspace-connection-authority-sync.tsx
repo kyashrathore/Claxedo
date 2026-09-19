@@ -32,7 +32,7 @@ export const WorkspaceConnectionAuthoritySync: Component = () => {
     // the desktop and posts with the session cookie in the browser. Bound
     // whenever a signed account exists, on every platform — and on a loopback
     // server regardless of the browser principal: that server holds the
-    // hosted credentials itself (a user-hosted machine enrolled with
+    // hosted credentials itself (a machine enrolled with
     // `claxedo up`), so the request is its to accept or refuse.
     const loopback = centralTransportForServer(getClaxedoServerUrl()) === "loopback"
     configureWorkspaceCreateAuthority(signed || loopback ? (input) => createCloudWorkspace(input) : undefined)

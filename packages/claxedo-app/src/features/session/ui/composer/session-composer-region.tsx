@@ -22,6 +22,7 @@ import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { SessionGoalDock } from "./session-goal-dock"
 import type { PanePresentation } from "@/features/session/app-ports"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 /**
  * The rendered height of the composer container at rest, recorded from the
@@ -114,7 +115,7 @@ export function SessionComposerRegion(props: {
   sessionRef?: () => SessionRef | undefined
   signedControlPlane?: () => boolean
   workspaceId?: () => string | undefined
-  workspaceKind?: () => "cloud" | "user-hosted" | undefined
+  hostKind?: () => RelayHostKind | undefined
   navigateOnCreate?: boolean
   system?: string
   agent?: string
@@ -392,7 +393,7 @@ export function SessionComposerRegion(props: {
                       sessionRef={props.sessionRef}
                       signedControlPlane={props.signedControlPlane}
                       workspaceId={props.workspaceId}
-                      workspaceKind={props.workspaceKind}
+                      hostKind={props.hostKind}
                       navigateOnCreate={props.navigateOnCreate}
                       system={props.system}
                       agent={props.agent}

@@ -27,7 +27,7 @@ type PromptContextItem = Parameters<typeof preparePromptRequest>[0]["contextItem
 type PromptClient = Parameters<typeof sendPromptRequest>[0]["client"]
 type GlobalEvents = {
   event: {
-    setLiveSession(sessionID: string, input: { host?: "workspace"; directory: SubmitDirectory; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }): void
+    setLiveSession(sessionID: string, input: { host?: "workspace"; directory: SubmitDirectory; workspaceId?: string; hostKind?: string; sessionRef?: SessionRef }): void
     ready(): void | Promise<void>
   }
 }
@@ -163,7 +163,7 @@ export async function dispatchNormalPromptSubmit(input: {
         input.globalSDK?.event.setLiveSession(input.session.id, {
           ...(input.sessionRef?.host ? { host: input.sessionRef.host } : {}),
           directory: input.sessionDirectory,
-          ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
+          ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, hostKind: runtimeRef.kind } : {}),
           sessionRef: input.sessionRef,
         })
         return input.globalSDK?.event.ready()

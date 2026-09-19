@@ -320,7 +320,7 @@ describe("workspace display helpers", () => {
 
 describe("projectWorkspaceForRef", () => {
   const workspaces = {
-    "/Users/host/repo": { id: "ws_1", workspaceId: "ws_1", directory: "/Users/host/repo", kind: "user-hosted" as const },
+    "/Users/host/repo": { id: "ws_1", workspaceId: "ws_1", directory: "/Users/host/repo", kind: "machine" as const },
   }
 
   test("one workspace answers to every identity that names it", () => {

@@ -15,11 +15,11 @@ import type { ModelKey } from "../model-strategy"
  */
 export function cloudSubmitMissingModel(input: {
   isNewSession: boolean
-  workspaceKind: string
+  hostKind: string
   selection: HarnessSelection | undefined
   modelKey: ModelKey | undefined
 }) {
-  if (!input.isNewSession || input.workspaceKind !== "cloud") return false
+  if (!input.isNewSession || input.hostKind !== "provisioner") return false
   return !input.selection || !input.modelKey
 }
 

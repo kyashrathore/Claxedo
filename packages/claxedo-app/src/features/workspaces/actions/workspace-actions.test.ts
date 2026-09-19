@@ -260,7 +260,7 @@ describe("createWorkspaceActions", () => {
           toolSandbox: {
             kind: "workspace",
             workspaceId: "ws_cloud",
-            hosting: "cloud",
+            hosting: "provisioner",
           },
         },
         workspaceRouteId: "ws_cloud",

@@ -81,8 +81,8 @@
  *     translated) for BOTH failure shapes.
  *   The composer's new-session workspace picker (`session-new-design-view.tsx`) uses the
  *     `[data-slot="context-chip-environment"]` popover trigger over
- *     `[data-slot="list-item"][data-key="local"|"cloud"]` rows. Picking "cloud" on a
- *     project with zero existing cloud workspaces auto-selects "Create new"
+ *     `[data-slot="list-item"][data-key="self"|"provisioner"]` rows. Picking the
+ *     provisioner on a project with zero existing cloud workspaces auto-selects "Create new"
  *     (`creatingWorkspace` in `session-new-workspace-options.ts`), showing "New cloud
  *     sandbox".
  *
@@ -203,7 +203,7 @@ async function selectCloudEnvironment(page: Page) {
   const trigger = page.locator('[data-slot="context-chip-environment"]').filter({ visible: true })
   await expect(trigger).toHaveCount(1, { timeout: 20_000 })
   await trigger.click()
-  const row = page.locator('[data-slot="list-item"][data-key="cloud"]').filter({ visible: true })
+  const row = page.locator('[data-slot="list-item"][data-key="provisioner"]').filter({ visible: true })
   await expect(row).toHaveCount(1, { timeout: 20_000 })
   await expect(row).toContainText("Cloud")
   await row.click()
@@ -525,7 +525,7 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/api/workspace") {
       const access = url.searchParams.get("access")
       if (access === "cloud") {
-        return json(route, { workspaces: workspaceRegistered ? [{ workspace_id: WORKSPACE_ID, project_id: PROJECT_ID, backing: "cloud-vm", access: "cloud", display_name: "core-cloud-provisioning" }] : [] })
+        return json(route, { workspaces: workspaceRegistered ? [{ workspace_id: WORKSPACE_ID, project_id: PROJECT_ID, backing: "cloud-vm", placement: {}, display_name: "core-cloud-provisioning" }] : [] })
       }
       return json(route, { workspaces: [] })
     }
@@ -551,7 +551,6 @@ async function installCloudRuntimeMock(
     if (url.pathname === `/api/workspace/${WORKSPACE_ID}/connection` || url.pathname === `/api/workspace/${WORKSPACE_ID}/connection/refresh`) {
       if (currentStep !== "ready") return json(route, { status: "provisioning", retryAfterMs: 500 })
       return json(route, {
-        access: "cloud",
         backing: "cloud-vm",
         // A provisioned sandbox delegates to the control plane's session authority, so
         // it serves session-scoped event streams only.

@@ -92,8 +92,8 @@ describe("user-hosted startup", () => {
   })
 
   test("startupPipeline branches on variant (cloud unchanged)", () => {
-    expect(startupPipeline("cloud")).toBe(CLOUD_STARTUP_PIPELINE)
-    expect(startupPipeline("user-hosted")).toBe(USER_HOSTED_STARTUP_PIPELINE)
+    expect(startupPipeline("provisioner")).toBe(CLOUD_STARTUP_PIPELINE)
+    expect(startupPipeline("machine")).toBe(USER_HOSTED_STARTUP_PIPELINE)
   })
 
   test("normalizes user-hosted connecting steps", () => {
@@ -103,10 +103,10 @@ describe("user-hosted startup", () => {
   })
 
   test("user-hosted summaries describe connecting/offline, not sandbox startup", () => {
-    expect(cloudSummary(undefined, false, "user-hosted")).toBe(
+    expect(cloudSummary(undefined, false, "machine")).toBe(
       "Connecting to your workspace before the composer unlocks.",
     )
-    expect(cloudSummary("error", true, "user-hosted")).toBe(
+    expect(cloudSummary("error", true, "machine")).toBe(
       "Could not connect to the workspace. Review the details below.",
     )
     // Cloud variant stays byte-identical.

@@ -14,10 +14,12 @@ export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const branch = txt(workspace?.git_branch) ?? txt(workspace?.gitBranch)
   const repoUrl = txt(workspace?.repo_url) ?? txt(workspace?.repoUrl)
   const repoName = txt(workspace?.repo_name) ?? txt(workspace?.repoName)
-  // The placement, as the app still names it: a cloud VM is the provisioner's,
-  // a local worktree is on an enrolled machine, and a record with no backing at
-  // all came from a node that answers for its own directories.
-  const normalizedAccess = backing === "local-worktree"
+  const workspaceName = txt(workspace?.display_name)
+    ?? txt(workspace?.workspace_name)
+    ?? txt(workspace?.workspaceName)
+  // The placement word the project inventory is written with. A record with no
+  // backing at all came from a node that answers for its own directories.
+  const kind = backing === "local-worktree"
     ? "user-hosted"
     : backing === "cloud-vm"
       ? "cloud"
@@ -27,31 +29,21 @@ export function signedWorkspaceJson(result: unknown, workspaceId: string) {
     orgId: txt(workspace?.org_id) ?? txt(workspace?.orgId),
     projectId: txt(workspace?.project_id) ?? txt(workspace?.projectId) ?? resolvedWorkspaceId,
     directory: txt(workspace?.remote_directory) ?? txt(workspace?.remoteDirectory) ?? WORKSPACE_DIR,
-    workspaceName: txt(workspace?.display_name)
-      ?? txt(workspace?.workspace_name)
-      ?? txt(workspace?.workspaceName),
-    access: normalizedAccess,
-    backing: normalizedAccess === "cloud"
+    workspaceName,
+    backing: kind === "cloud"
       ? {
           kind: "cloud-vm" as const,
+          workspaceName,
+          projectName: txt(workspace?.project_name) ?? txt(workspace?.projectName),
           repoUrl,
           repoName,
           branch,
         }
-      : normalizedAccess === "user-hosted"
-        ? {
-            kind: "user-hosted" as const,
-            workspaceName: txt(workspace?.display_name)
-              ?? txt(workspace?.workspace_name)
-              ?? txt(workspace?.workspaceName),
-            projectName: txt(workspace?.project_name) ?? txt(workspace?.projectName),
-            branch,
-          }
-        : {
-            kind: "local-worktree" as const,
-            branch,
-          },
-    kind: normalizedAccess,
+      : {
+          kind: "local-worktree" as const,
+          branch,
+        },
+    kind,
     driver: null,
     status: "ready",
     git: {

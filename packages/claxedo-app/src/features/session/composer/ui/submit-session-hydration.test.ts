@@ -37,7 +37,7 @@ function sessionSubmit(info?: unknown) {
 
 test("a draft can send its next turn immediately after session handoff without hydrated picker metadata", async () => {
   let sessionID: string | undefined
-  let mode: ComposerMode = { kind: "draft", target: { worktree: "main", workspaceKind: "local", signedControlPlane: false, harness: PI } }
+  let mode: ComposerMode = { kind: "draft", target: { worktree: "main", hostKind: "self", signedControlPlane: false, harness: PI } }
   const submit = h.createSubmit({
     sessionID: () => sessionID,
     sessionDirectory: () => "/repo/main",

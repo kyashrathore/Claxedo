@@ -4,23 +4,23 @@ import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 
 /**
  * The control plane projects (registers, checkpoints, repairs) only the
- * sessions it holds: those of its own cloud workspaces. A user-hosted
+ * sessions it holds: those of its own cloud workspaces. A machine-placed
  * workspace's sessions live on the machine serving it, which is their
  * authority; the control plane has nothing of theirs to project.
  */
 export function sessionProjectionBacking(
   runtime: { workspaceId: string; kind: WorkspaceSessionBacking["kind"] } | undefined,
 ): WorkspaceSessionBacking | undefined {
-  if (!runtime || runtime.kind !== "cloud") return undefined
+  if (!runtime || runtime.kind !== "provisioner") return undefined
   return { workspaceId: runtime.workspaceId, kind: runtime.kind }
 }
 export function sessionProjectionWorkspaceBacking(input: {
   signedControlPlane: boolean
   workspaceId?: string
-  workspaceKind?: WorkspaceSessionBacking["kind"]
+  hostKind?: WorkspaceSessionBacking["kind"]
 }): WorkspaceSessionBacking | undefined {
-  if (!input.signedControlPlane || !input.workspaceId || !input.workspaceKind) return undefined
-  return sessionProjectionBacking({ workspaceId: input.workspaceId, kind: input.workspaceKind })
+  if (!input.signedControlPlane || !input.workspaceId || !input.hostKind) return undefined
+  return sessionProjectionBacking({ workspaceId: input.workspaceId, kind: input.hostKind })
 }
 
 export type SessionProjectionReason =

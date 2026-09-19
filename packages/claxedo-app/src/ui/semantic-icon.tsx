@@ -36,7 +36,7 @@ export const SEMANTIC_ICON = {
   isolationLocal: "folder",
   /** Session isolation — a dedicated git worktree (a forked-off working tree). */
   isolationWorktree: "worktree",
-  /** Session isolation — a remote cloud / user-hosted sandbox. */
+  /** Session isolation — a sandbox on a machine that is not this one. */
   isolationCloud: "server",
   /** A source repository hosted on GitHub. */
   repository: "github",

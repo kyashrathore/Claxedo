@@ -32,7 +32,7 @@ import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute, tasksRoute } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import {
   refreshDirectorySessionCache,
   sessionLoadMetaKey,
@@ -240,7 +240,7 @@ export function DirectoryScope(props: ParentProps<{
   directory: string
   sessionRef?: Accessor<SessionRef | undefined>
   workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<WorkspaceKind>
+  hostKind?: Accessor<WorkspaceHostKind>
   harnessType?: Accessor<string | undefined>
   harnessSelection?: Accessor<HarnessSelection | undefined>
   active?: Accessor<boolean>
@@ -266,8 +266,8 @@ export function DirectoryScope(props: ParentProps<{
   // consumer read.
   const runtimeRef = createMemo(() => {
     const workspaceId = props.workspaceId?.()
-    const kind = props.workspaceKind?.()
-    if (workspaceId && isRelayBackedWorkspaceKind(kind)) return { workspaceId, kind }
+    const kind = props.hostKind?.()
+    if (workspaceId && isRelayHostKind(kind)) return { workspaceId, kind }
     return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
   })
   // Harness-KEYED reads (agent profiles, the model store) take the pane's

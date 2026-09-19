@@ -8,6 +8,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "./mode"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
+import type { RelayHostKind, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type PromptRetryAction = (prompt?: Prompt) => unknown
 
@@ -22,7 +23,7 @@ export interface PromptInputProps {
   /** Source branch name used by cloud provisioning; distinct from a local remote-tracking ref. */
   newSessionSourceBranch?: string
   onNewSessionWorktreeChange?: (worktree: string) => void
-  newSessionWorkspaceKind?: "local" | "cloud" | "user-hosted"
+  newSessionHostKind?: WorkspaceHostKind
   onNewSessionWorktreeReset?: () => void
   onCloudStartup?: (state?: {
     open: boolean
@@ -83,7 +84,7 @@ export interface PromptInputProps {
   registerRetry?: (retry?: PromptRetryAction) => void
   /** Signed workspace runtime identity for relay-backed session sends. */
   workspaceId?: () => string | undefined
-  workspaceKind?: () => "cloud" | "user-hosted" | undefined
+  hostKind?: () => RelayHostKind | undefined
   harnessSubmitController?: HarnessSubmitController
   harnessSelectionController?: HarnessSelectionController
   /** Optimistic timeout stage supplied by the status dispatcher owner. */

@@ -22,7 +22,7 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import type { LiveSession } from "./live-session"
-import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
+import { inventoryHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
 
 export function initialRouteDirectory() {
   if (typeof window === "undefined") return undefined
@@ -40,14 +40,14 @@ export function initialRouteWorkspace(baseUrl?: string) {
     const match = Object.entries(project.workspaces ?? {})
       .find(([key, workspace]) =>
         (sameWorkspaceDirectory(key, directory) || sameWorkspaceDirectory(workspace.directory, directory)) &&
-        (workspace.kind === "cloud" || workspace.kind === USER_HOSTED_WORKSPACE_KIND)
+        isRelayHostKind(inventoryHostKind(workspace.kind))
       )
     if (!match) continue
     const [key, workspace] = match
     return {
       directory,
       workspaceId: workspace.workspaceId ?? workspace.id ?? key,
-      workspaceKind: workspace.kind ?? undefined,
+      hostKind: workspace.kind ?? undefined,
     }
   }
   return undefined

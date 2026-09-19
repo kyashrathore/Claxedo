@@ -55,7 +55,7 @@ export async function resolveSubmitDirectory(
     input.worktreeSelection,
     input.projectDirectory,
     input.fallbackDirectory,
-    input.workspaceKind,
+    input.hostKind,
   )
   if (!directory) return undefined
   const prepared = await input.prepareCloudSessionDirectory(directory)

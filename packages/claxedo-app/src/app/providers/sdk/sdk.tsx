@@ -77,13 +77,13 @@ const sDKContextInput = {
       const byDir = signedWorkspaceFromProjects(projects(), dir)
       if (byDir) return byDir
       // Last resort: a known relay workspaceId not (yet) in the inventory. Both
-      // cloud and user-hosted route through the relay, so default to the
+      // every host but this one routes through the relay, so default to the
       // non-provisioning kind for routing purposes.
       if (!wid) return undefined
       const key = `${wid}\0${dir}`
       const cached = fallbackWorkspaceCache.get(key)
       if (cached) return cached
-      const fallback = { workspaceId: wid, kind: "user-hosted" as const, directory: dir }
+      const fallback = { workspaceId: wid, kind: "machine" as const, directory: dir }
       fallbackWorkspaceCache.set(key, fallback)
       return fallback
     }

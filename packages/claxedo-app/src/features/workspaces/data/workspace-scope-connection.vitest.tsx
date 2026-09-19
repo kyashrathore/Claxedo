@@ -41,7 +41,7 @@ describe("workspace-scoped connection ownership", () => {
       <WorkspaceScopeHost workspaceIds={() => ["local-association"]}>
         <Show keyed when={sessionId()}>
           {(currentSessionId) => (
-            <WorkspaceGate workspaceId={undefined} kind="local" sessionId={currentSessionId}>
+            <WorkspaceGate workspaceId={undefined} kind="self" sessionId={currentSessionId}>
               <div>{currentSessionId}</div>
             </WorkspaceGate>
           )}
@@ -66,7 +66,7 @@ describe("workspace-scoped connection ownership", () => {
           {(currentSessionId) => (
             <WorkspaceGate
               workspaceId="ws_1"
-              kind="cloud"
+              kind="provisioner"
               directory="/workspace"
               sessionId={currentSessionId}
             >
@@ -104,7 +104,7 @@ describe("workspace-scoped connection ownership", () => {
     const [scopeIds, setScopeIds] = createSignal<readonly string[]>(["ws_owned"])
     const mounted = render(() => (
       <WorkspaceScopeHost workspaceIds={scopeIds}>
-        <WorkspaceGate workspaceId="ws_unowned" kind="cloud" directory="/workspace">
+        <WorkspaceGate workspaceId="ws_unowned" kind="provisioner" directory="/workspace">
           <div />
         </WorkspaceGate>
       </WorkspaceScopeHost>

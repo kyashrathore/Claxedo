@@ -139,7 +139,7 @@ function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
       project_id: PROJECT_ID,
       display_name: "cloud",
       backing: "cloud-vm",
-      access: "cloud",
+      placement: { directory: DIR },
       remote_directory: DIR,
       role: "owner",
     },
@@ -149,7 +149,7 @@ function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
       project_id: PROJECT_ID,
       display_name: "shared",
       backing: "local-worktree",
-      access: "user-hosted",
+      placement: { host_enrollment_id: "enr_core13_host", directory: UH_DIR },
       remote_directory: UH_DIR,
       role: "owner",
       // Listing is not reachability: the host goes offline through the health probe.
@@ -223,7 +223,6 @@ function providerCatalog() {
 
 function mintBody(workspaceId: string, kind: "cloud" | "user-hosted", mint: MintResponse) {
   return {
-    access: kind,
     backing: kind === "cloud" ? "cloud-vm" : "local-worktree",
     // A cloud sandbox delegates session authority to the control plane; the owner's
     // own daemon does not.

@@ -348,7 +348,7 @@ describe("finalizeSubmitSessionTarget", () => {
     const result = finalizeSessionTarget({
       target: { created: true },
       draftId: "draft-1",
-      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "provisioner" },
       harness: { kind: "connection", connectionId: "external-opencode" },
       promoteSession: (_directory, sessionID, config) =>
         promoted.push({ sessionID, harness: config.harness, variant: config.variant }),
@@ -387,7 +387,7 @@ describe("finalizeSubmitSessionTarget", () => {
     const result = finalizeSessionTarget({
       target: { created: true },
       draftId: "draft-1",
-      runtimeWorkspaceRef: { workspaceId: "ws_machine", kind: "user-hosted" },
+      runtimeWorkspaceRef: { workspaceId: "ws_machine", kind: "machine" },
       harness: { kind: "connection", connectionId: "opencode" },
       promoteSession: () => {},
       scheduleProjectionPull: (input) => {
@@ -420,7 +420,7 @@ describe("finalizeSubmitSessionTarget", () => {
       target: { created: true },
       sessionDirectory: "workspace:ws_1",
       provisionalTitle: "First prompt",
-      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "provisioner" },
       projects: [{ id: "proj_1", worktree: "workspace:ws_1", name: "Project", sandboxes: [] }],
       scheduleProjectionPull: () => undefined,
     })
@@ -436,7 +436,7 @@ describe("finalizeSubmitSessionTarget", () => {
 
     finalizeSessionTarget({
       target: { created: true },
-      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "provisioner" },
       scheduleProjectionPull: () => registered,
       invalidateSessionList: async () => {
         invalidations.push("registered")
@@ -454,7 +454,7 @@ describe("finalizeSubmitSessionTarget", () => {
 
     finalizeSessionTarget({
       target: { created: true },
-      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "provisioner" },
       scheduleProjectionPull: () => registered,
       invalidateSessionList: async () => {
         invalidations.push("failed")
@@ -474,7 +474,7 @@ describe("finalizeSubmitSessionTarget", () => {
         target: { created: false },
         surfaceId: "surface-1",
         claxedoState: claxedoStateWithRefs({ surfaceRef, matchingRef }),
-        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
+        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "provisioner" },
       }).sessionRef,
     ).toBe(surfaceRef)
 
@@ -483,14 +483,14 @@ describe("finalizeSubmitSessionTarget", () => {
         target: { created: false },
         surfaceId: "missing-surface",
         claxedoState: claxedoStateWithRefs({ matchingRef }),
-        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
+        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "provisioner" },
       }).sessionRef,
     ).toBe(matchingRef)
 
     expect(
       finalizeSessionTarget({
         target: { created: false },
-        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
+        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "provisioner" },
       }).sessionRef,
     ).toEqual(sessionRef("session-1", "ws_fallback"))
   })
@@ -517,7 +517,7 @@ describe("finalizeSubmitSessionTarget", () => {
         target: { created: true },
         surfaceId: "surface-1",
         claxedoState: claxedoStateWithRefs({ surfaceRef }),
-        runtimeWorkspaceRef: { workspaceId: "ws_intended", kind: "cloud" },
+        runtimeWorkspaceRef: { workspaceId: "ws_intended", kind: "provisioner" },
         scheduleProjectionPull: () => undefined,
       }).sessionRef,
     ).toEqual(sessionRef("session-1", "ws_intended"))
@@ -600,7 +600,7 @@ function sessionRef(sessionId: string, workspaceId: string): SessionRef {
     toolSandbox: {
       kind: "workspace",
       workspaceId,
-      hosting: "cloud",
+      hosting: "provisioner",
     },
   }
 }

@@ -20,7 +20,7 @@
  * the scenarios complete real turns.
  *
  * A draft navigation to `/w/:workspaceId/session` carries the ref's resolved
- * `kind` (`resolveDraftWorkspaceKind`/`routeWorkspaceKind` in
+ * `kind` (`resolveDraftHostKind`/`routeHostKind` in
  * `src/features/session/ui/{view-state,session-screen}.tsx`) instead of
  * treating every relay-backed ref as cloud; the B group depends on that.
  *

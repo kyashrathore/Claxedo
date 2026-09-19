@@ -26,7 +26,7 @@ export function opaqueWorkspaceRouteId(value: string | null | undefined) {
  * and the directory every request under that route is scoped by.
  *
  * The catalog row is the authority for both: `/w/<workspace id>` answers with
- * the row's own addressing directory, which for a cloud or user-hosted
+ * the row's own addressing directory, which for a relay-placed
  * workspace is `workspace:<id>` and never the serving host's path.
  */
 export function workspaceRouteIdentity(projects: readonly WorkspaceRouteProject[], routeKey: string | undefined) {

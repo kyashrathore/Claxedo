@@ -32,8 +32,7 @@ async function runtimeToken(input: {
 
 function connection(input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConnectionInfo {
   return {
-    access: "cloud",
-    backing: "cloud-vm",
+    host: "provisioner",
     sessionAuthority: "managed-private",
     workspaceId: "ws_1",
     role: "editor",
@@ -41,6 +40,24 @@ function connection(input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConn
     runtimeAccessToken: "rat_missing",
     tokenExpiresAt: Date.now() + 10 * 60_000,
     ...input,
+  }
+}
+
+/**
+ * The mint as the CONTROL PLANE writes it. The client reads `backing` and
+ * derives the host from it, so a refresh body built from the parsed shape
+ * would hand the parser a field the real route never sends.
+ */
+function connectionBody(input: { relayUrl: string; runtimeAccessToken: string }) {
+  const parsed = connection(input)
+  return {
+    backing: "cloud-vm",
+    sessionAuthority: parsed.sessionAuthority,
+    workspaceId: parsed.workspaceId,
+    role: parsed.role,
+    relayUrl: parsed.relayUrl,
+    runtimeAccessToken: parsed.runtimeAccessToken,
+    tokenExpiresAt: parsed.tokenExpiresAt,
   }
 }
 
@@ -104,7 +121,7 @@ describe("workspace relay connection E2E", () => {
           const text = requestUrl(url)
           if (text === "http://server.test/api/workspace/ws_1/connection/refresh") {
             refreshBodies.push(requestBodyText(init?.body))
-            return Response.json(connection({
+            return Response.json(connectionBody({
               relayUrl,
               runtimeAccessToken: refreshed,
             }))

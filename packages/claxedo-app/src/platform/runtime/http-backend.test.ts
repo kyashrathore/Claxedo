@@ -373,7 +373,7 @@ describe("http backend ports", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_explicit",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
       limit: 8,

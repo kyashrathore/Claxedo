@@ -98,19 +98,19 @@ describe("directory session-cache shell-data boundary", () => {
       refresh: (...args) => {
         calls.push(args)
       },
-      workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+      workspace: { workspaceId: "ws_signed", kind: "machine" },
     })
 
     expect(calls).toEqual([[
       "/workspace/project",
       undefined,
-      { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "user-hosted" } },
+      { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "machine" } },
     ]])
   })
 
   test("refreshes a pre-populated local cache once when signed workspace authority arrives", async () => {
     const directory = "/workspace/project"
-    const workspace = { workspaceId: "ws_signed", kind: "user-hosted" } as const
+    const workspace = { workspaceId: "ws_signed", kind: "machine" } as const
     const calls: unknown[] = []
     setDirectorySessionCache(directory, { at: 1, limit: 50, total: 0, session: [] })
     queryClient.setQueryData(sessionLoadMetaKey(directory), { limit: 50 })
@@ -126,7 +126,7 @@ describe("directory session-cache shell-data boundary", () => {
 
   test("reuses a pre-populated cache only for the exact signed workspace authority", async () => {
     const directory = "/workspace/project"
-    const workspace = { workspaceId: "ws_signed", kind: "user-hosted" } as const
+    const workspace = { workspaceId: "ws_signed", kind: "machine" } as const
     const calls: unknown[] = []
     setDirectorySessionCache(directory, { at: 1, limit: 50, total: 0, session: [] })
     queryClient.setQueryData(sessionLoadMetaKey(directory), { limit: 50, workspace })
@@ -138,14 +138,14 @@ describe("directory session-cache shell-data boundary", () => {
     })
     await ensureDirectorySessionCache({
       directory,
-      workspace: { ...workspace, kind: "cloud" },
+      workspace: { ...workspace, kind: "provisioner" },
       refresh: (...args) => calls.push(args),
     })
 
     expect(calls).toEqual([[
       directory,
       undefined,
-      { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "cloud" } },
+      { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "provisioner" } },
     ]])
   })
 

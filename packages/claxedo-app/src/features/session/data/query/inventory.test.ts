@@ -67,7 +67,7 @@ describe("signedInventoryItems", () => {
       directory: "workspace:ws_user_hosted",
       projectID: "proj_1",
       environment: {
-        kind: "user-hosted",
+        kind: "machine",
         driver: "local-worktree",
       },
       lastTurn: { status: "completed", completedAt: 3, assistantMessageId: "msg_1_r" },

@@ -27,7 +27,7 @@ describe("submit transport adapter", () => {
       signedControlPlane: () => false,
       projects: () => [],
       workspaceId: () => undefined,
-      workspaceKind: () => undefined,
+      hostKind: () => undefined,
       request: fetch,
       localRequest: async (input, init) => {
         const request = input instanceof Request ? input : new Request(String(input), init)
@@ -56,9 +56,9 @@ describe("submit transport adapter", () => {
     expect(
       submitWorkspaceBacking({
         workspaceId: "ws_explicit",
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       }),
-    ).toEqual({ workspaceId: "ws_explicit", kind: "user-hosted" })
+    ).toEqual({ workspaceId: "ws_explicit", kind: "machine" })
 
     expect(
       submitWorkspaceBacking({
@@ -68,14 +68,14 @@ describe("submit transport adapter", () => {
           toolSandbox: {
             kind: "workspace",
             workspaceId: "ws_ref",
-            hosting: "cloud",
+            hosting: "provisioner",
             hostId: "host_1",
           },
         },
         workspaceId: "ws_explicit",
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       }),
-    ).toEqual({ workspaceId: "ws_ref", kind: "cloud", hostId: "host_1" })
+    ).toEqual({ workspaceId: "ws_ref", kind: "provisioner", hostId: "host_1" })
   })
 
   test("does not synthesize cache refresh backing for local or partial identity", () => {
@@ -89,7 +89,7 @@ describe("submit transport adapter", () => {
       }),
     ).toBeUndefined()
     expect(submitWorkspaceBacking({ workspaceId: "ws_partial" })).toBeUndefined()
-    expect(submitWorkspaceBacking({ workspaceKind: "cloud" })).toBeUndefined()
+    expect(submitWorkspaceBacking({ hostKind: "provisioner" })).toBeUndefined()
   })
 
   test("session config PATCH is query-owned and dedupes identical payloads", async () => {
@@ -265,7 +265,7 @@ describe("submit transport adapter", () => {
       signedControlPlane: () => false,
       projects: () => [],
       workspaceId: () => "ws_1",
-      workspaceKind: () => undefined,
+      hostKind: () => undefined,
       sessionRef: () => ({
         sessionId: "session-central",
         host: "workspace",
@@ -312,7 +312,7 @@ describe("submit transport adapter", () => {
       signedControlPlane: () => false,
       projects: () => [],
       workspaceId: () => "ws_1",
-      workspaceKind: () => "user-hosted",
+      hostKind: () => "machine",
       request: async (input, init) => {
         const request = input instanceof Request ? input : new Request(String(input), init)
         runtimeCalls.push(`${request.method} ${request.url}`)
@@ -352,7 +352,7 @@ describe("submit transport adapter", () => {
       signedControlPlane: () => true,
       projects: () => [],
       workspaceId: () => "ws_signed",
-      workspaceKind: () => "user-hosted",
+      hostKind: () => "machine",
       request: async (input, init) => {
         const request = input instanceof Request ? input : new Request(String(input), init)
         runtimeCalls.push(`${request.method} ${request.url}`)
@@ -449,7 +449,7 @@ describe("submit transport adapter", () => {
       signedControlPlane: () => false,
       projects: () => catalog(sessionAuthority),
       workspaceId: () => undefined,
-      workspaceKind: () => undefined,
+      hostKind: () => undefined,
       request: fetch,
       localRequest: fetch,
       createClient: () => ({ session: { get: async () => ({}), prompt: async () => ({}), promptAsync: async () => ({}) } }),

@@ -2466,7 +2466,7 @@ describe("workspace runtime route audit", () => {
     expect(cacheProjection).not.toMatch(/\buseSync\b/)
     expect(cacheProjection).not.toMatch(/sync\.data/)
     expect(controller).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
-    expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*workspaceKind: input\.workspaceKind\?\.\(\)/)
+    expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*hostKind: input\.hostKind\?\.\(\)/)
     expect(controller).toMatch(/directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
     expect(text).not.toMatch(/sync\.data\.todo\[id\]/)
     expect(text).not.toMatch(/globalSync\.data\.session_todo\[id\]/)

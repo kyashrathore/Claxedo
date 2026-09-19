@@ -52,7 +52,7 @@ const HostedDeviceApprovalRoute = () => (
 /**
  * Bind the hosted workspace-startup implementation.
  *
- * Local callers (composer, session actions) wake cloud and user-hosted
+ * Local callers (composer, session actions) wake relay-placed
  * runtimes through `workspaceStartup()`. `local.tsx` binds nothing: a local
  * build has no sandbox to wake, so reaching the port throws.
  */

@@ -44,7 +44,7 @@ const sessionRef = {
   host: "workspace",
   workspaceId: "ws_1",
   harness: { kind: "native", harnessId: "codex" },
-  toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud", hostId: "host_1" },
+  toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner", hostId: "host_1" },
 } satisfies SessionRef
 
 const scope = {
@@ -58,7 +58,7 @@ const authorityScope = {
   serverUrl: "https://control.test",
   signedControlPlane: true,
   workspaceId: "ws_1",
-  workspaceKind: "cloud" as const,
+  hostKind: "provisioner" as const,
   sessionRef,
 }
 

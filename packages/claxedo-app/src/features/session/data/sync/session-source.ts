@@ -5,12 +5,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { agentRuntimeSessionListUrl } from "@/platform/runtime/agent/agent-runtime-urls"
 import { createTransport } from "@/platform/runtime/transport"
-import {
-  isUserHostedWorkspaceKind,
-  USER_HOSTED_WORKSPACE_KIND,
-  workspaceKind,
-  type WorkspaceKind,
-} from "@/platform/runtime/agent/workspace-kind"
+import { inventoryHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import type { SessionNavigationRow } from "../../ui/navigation/session-navigation"
 import type { SessionOwner } from "../query/types"
 import { controlPlaneSessionOwners, requestControlPlaneSessions } from "./control-plane-sessions"
@@ -32,30 +27,30 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
  * - `local`: the machine's own daemon, over loopback.
  * - `cloud`: the control plane's registry, which is the authority for the
  *   sessions of a workspace it provisions.
- * - `user-hosted`: the workspace's own runtime, over the relay connection the
+ * - `machine`: the workspace's own runtime, over the relay connection the
  *   app already holds — one hop, role enforced by the relay token. Own and
  *   shared workspaces are the same source; the role only gates affordances.
  *   Which sessions exist is the runtime's answer; who created one is the
  *   control plane's, joined on by `userHostedSessionOwners` below.
  *
- * The registry holds only the user-hosted sessions that were created THROUGH
+ * The registry holds only the machine-placed sessions that were created THROUGH
  * it, so asking it for that workspace's list answers a subset the client cannot
  * tell apart from an empty machine. `claxedo-server`'s session-list route now
  * refuses that read (409 `workspace_runtime_session_authority`) rather than
  * answering it.
  *
- * `composed` is not a workspace kind: it is a SECTION whose workspaces do not
- * all answer from one server — a project holding a user-hosted workspace
- * beside a local or cloud one. Its members are the per-workspace sources
+ * `composed` is not a host kind: it is a SECTION whose workspaces do not all
+ * answer from one server — a project holding a machine-placed workspace beside
+ * one this server or the provisioner serves. Its members are the per-workspace sources
  * above, and its page is their pages merged.
  */
 export type SessionSource =
-  | { kind: "local" | "cloud" }
-  | { kind: "user-hosted"; workspaceId: string; projectId?: string }
+  | { kind: "self" | "provisioner" }
+  | { kind: "machine"; workspaceId: string; projectId?: string }
   | { kind: "composed"; central: CentralSessionSource; userHosted: UserHostedSessionSource[] }
 
-type CentralSessionSource = Extract<SessionSource, { kind: "local" | "cloud" }>
-type UserHostedSessionSource = Extract<SessionSource, { kind: "user-hosted" }>
+type CentralSessionSource = Extract<SessionSource, { kind: "self" | "provisioner" }>
+type UserHostedSessionSource = Extract<SessionSource, { kind: "machine" }>
 
 /** The composed page's key for the central member's own cursor. */
 const COMPOSED_CENTRAL_MEMBER = "central"
@@ -70,17 +65,17 @@ const USER_HOSTED_SESSION_LIST_STALE_MS = 30_000
  * sessions on the daemon and a cloud workspace's in the registry.
  */
 export function centralSessionSource(input: { local: boolean }): CentralSessionSource {
-  return { kind: input.local ? "local" : "cloud" }
+  return { kind: input.local ? "self" : "provisioner" }
 }
 
 export function sessionSourceForWorkspace(input: {
-  kind: WorkspaceKind | undefined
+  kind: WorkspaceHostKind | undefined
   workspaceId: string
   projectId?: string
 }): SessionSource {
-  if (!isUserHostedWorkspaceKind(input.kind)) return { kind: input.kind === "cloud" ? "cloud" : "local" }
+  if (input.kind !== "machine") return { kind: input.kind === "provisioner" ? "provisioner" : "self" }
   return {
-    kind: USER_HOSTED_WORKSPACE_KIND,
+    kind: "machine",
     workspaceId: input.workspaceId,
     ...(input.projectId ? { projectId: input.projectId } : {}),
   }
@@ -106,7 +101,7 @@ export function projectSessionSource(input: {
   const byWorkspaceId = new Map<string, UserHostedSessionSource>()
   for (const [ref, workspace] of Object.entries(input.workspaces ?? {})) {
     const source = sessionSourceForWorkspace({
-      kind: workspaceKind(workspace.kind),
+      kind: inventoryHostKind(workspace.kind),
       // The signed id a relay-backed workspace is addressed by; the catalog's
       // own key is a directory on the HOST, which this app cannot reach.
       workspaceId: workspace.workspaceId ?? workspace.id ?? ref,
@@ -114,7 +109,7 @@ export function projectSessionSource(input: {
     })
     // One workspace is one source however many refs name it; a second read of
     // the same runtime would only duplicate its rows.
-    if (source.kind === USER_HOSTED_WORKSPACE_KIND) byWorkspaceId.set(source.workspaceId, source)
+    if (source.kind === "machine") byWorkspaceId.set(source.workspaceId, source)
   }
   if (byWorkspaceId.size === 0) return central
   return { kind: "composed", central, userHosted: [...byWorkspaceId.values()] }
@@ -154,7 +149,7 @@ async function sessionSourcePage(input: {
 }): Promise<SessionListResponse> {
   const source = input.source
   if (source.kind === "composed") return composedSessionListPage({ ...input, source })
-  if (source.kind === USER_HOSTED_WORKSPACE_KIND) {
+  if (source.kind === "machine") {
     return sessionListPage(
       await userHostedSessionRows({
         baseUrl: input.baseUrl,
@@ -255,7 +250,7 @@ function parseJson(value: string): unknown {
  */
 async function userHostedSessionRows(input: {
   baseUrl?: string
-  source: Extract<SessionSource, { kind: "user-hosted" }>
+  source: Extract<SessionSource, { kind: "machine" }>
   request?: typeof fetch
 }) {
   const serverUrl = normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl()
@@ -273,7 +268,7 @@ async function userHostedSessionRows(input: {
           workspaceId: input.source.workspaceId,
         },
         serverUrl,
-        workspace: { kind: USER_HOSTED_WORKSPACE_KIND, workspaceId: input.source.workspaceId },
+        workspace: { kind: "machine", workspaceId: input.source.workspaceId },
         ...(input.request ? { request: input.request, relayRequest: input.request } : {}),
       })
       const list = agentRuntimeSessionListUrl({ serverUrl, roots: true })
@@ -325,7 +320,7 @@ async function userHostedSessionOwners(input: {
 
 function userHostedNavigationRow(
   row: unknown,
-  source: Extract<SessionSource, { kind: "user-hosted" }>,
+  source: Extract<SessionSource, { kind: "machine" }>,
   owners: ReadonlyMap<string, SessionOwner>,
 ): SessionNavigationRow | undefined {
   const item = asRecord(row)

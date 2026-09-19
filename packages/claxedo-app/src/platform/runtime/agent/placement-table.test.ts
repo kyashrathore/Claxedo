@@ -20,7 +20,7 @@ describe("shouldUseRuntimeSessionTransport", () => {
       sessionId: "s",
       host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner" },
     }
     expect(shouldUseRuntimeSessionTransport({ directory: "/x", signed: false, sessionRef })).toBe(true)
   })
@@ -42,7 +42,7 @@ describe("resolveRuntimePlacement", () => {
       sessionId: "s",
       host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner" },
     }
     expect(resolveRuntimePlacement({ sessionRef }, SIGNED)).toEqual({
       workspaceId: "ws_1",
@@ -116,7 +116,7 @@ describe("resolveSessionResourceRoute", () => {
       signed: true,
       hasSessionRef: false,
       targetWorkspaceId: "ws_cloud_dead",
-      targetKind: "cloud",
+      targetKind: "provisioner",
       resource: "messages",
       loopback: true,
       targetReachable: false,
@@ -129,7 +129,7 @@ describe("resolveSessionResourceRoute", () => {
         signed: true,
         hasSessionRef: false,
         targetWorkspaceId: "ws_cloud",
-        targetKind: "cloud",
+        targetKind: "provisioner",
         resource: "messages",
         loopback: true,
         ...(targetReachable === undefined ? {} : { targetReachable }),
@@ -145,7 +145,7 @@ describe("resolveSessionResourceRoute", () => {
       signed: true,
       hasSessionRef: false,
       targetWorkspaceId: "ws_uh_dead",
-      targetKind: "user-hosted",
+      targetKind: "machine",
       resource: "messages",
       loopback: true,
       targetReachable: false,
@@ -181,7 +181,7 @@ describe("resolveSessionResourceRoute", () => {
       signed: true,
       hasSessionRef: false,
       targetWorkspaceId: "ws_uh",
-      targetKind: "user-hosted",
+      targetKind: "machine",
       resource: "session",
       loopback: false,
     })).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh", preferRelayOnLoopback: true })
@@ -204,7 +204,7 @@ describe("resolveSessionResourceRoute", () => {
       signed: true,
       hasSessionRef: false,
       targetWorkspaceId: "ws_cloud",
-      targetKind: "cloud",
+      targetKind: "provisioner",
       resource: "session",
       loopback: false,
     })).toEqual({ via: "control-plane" })
@@ -215,7 +215,7 @@ describe("resolveSessionResourceRoute", () => {
       signed: true,
       hasSessionRef: false,
       targetWorkspaceId: "ws_x",
-      targetKind: "local",
+      targetKind: "self",
       directoryWorkspaceId: "ws_x",
       resource: "session",
       loopback: false,

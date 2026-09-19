@@ -85,7 +85,7 @@ export function SessionPaneScope(props: ParentProps<{
   })
   const refreshDirectory: Parameters<typeof DirectoryScope>[0]["refreshDirectory"] = (directory, harnessType, options) => {
     const current = connection()
-    const workspace = current.workspaceId && current.kind !== "local"
+    const workspace = current.workspaceId && current.kind !== "self"
       ? { workspaceId: current.workspaceId, kind: current.kind }
       : undefined
     if (!workspace) {
@@ -125,7 +125,7 @@ export function SessionPaneScope(props: ParentProps<{
       harnessType={harnessType}
       harnessSelection={harnessSelection}
       workspaceId={() => connection().workspaceId}
-      workspaceKind={() => connection().kind}
+      hostKind={() => connection().kind}
       active={props.active}
       sessionId={sessionId}
       surfaceId={props.surfaceId}
@@ -172,7 +172,7 @@ export function SessionPaneScope(props: ParentProps<{
               serverUrl={globalSDK.url}
               request={platform.fetch ?? authFetch}
               relayRequest={platform.fetch ?? authFetch}
-              connectingFallback={connection().kind === "user-hosted" ? undefined : props.connectionFallback}
+              connectingFallback={connection().kind === "machine" ? undefined : props.connectionFallback}
             >
               {scopedContent()}
             </WorkspaceGate>

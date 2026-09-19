@@ -7,6 +7,7 @@ import {
 } from "@/platform/runtime/transport"
 import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { memoizeSuccessfulLoad } from "@/lib/retry"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 type Fetch = typeof globalThis.fetch
 
@@ -43,7 +44,7 @@ type Input = {
   resolveSignedWorkspace?: (directory: DirectorySelector) => SignedWorkspaceInfo | undefined
   resolveWorkspaceRuntime?: (input: {
     directory: string
-  }) => Promise<{ kind?: "local" | "cloud" | "user-hosted" | null; workspaceId?: string | null } | null>
+  }) => Promise<{ kind?: WorkspaceHostKind | null; workspaceId?: string | null } | null>
 }
 
 type Start = {
@@ -129,7 +130,7 @@ export function createProcessClient(input: Input) {
   // may hand in its own resolver (tests), otherwise the shared cache answers.
   const resolveSignedWorkspace = input.resolveSignedWorkspace ?? ((selector: string) => cachedSignedWorkspace(input.baseUrl, selector))
   const transportFor = async () => {
-    const workspace = workspaceRuntimeSnapshot(input.workspaceId ? { kind: "cloud", workspaceId: input.workspaceId } : undefined) ??
+    const workspace = workspaceRuntimeSnapshot(input.workspaceId ? { kind: "provisioner", workspaceId: input.workspaceId } : undefined) ??
       workspaceRuntimeSnapshot(resolveSignedWorkspace(input.directory)) ??
       workspaceRuntimeSnapshot(await input.resolveWorkspaceRuntime?.({ directory: input.directory }))
     const serverTransport = centralTransportForServer(input.baseUrl)
@@ -281,7 +282,7 @@ export function createProcessClient(input: Input) {
 function workspaceRuntimeSnapshot(
   input: WorkspaceRuntimeSnapshotLike | undefined,
 ): { workspaceId: string } | undefined {
-  if (input?.kind && input.kind !== "local" && input.workspaceId) {
+  if (input?.kind && input.kind !== "self" && input.workspaceId) {
     return { workspaceId: input.workspaceId }
   }
   return undefined

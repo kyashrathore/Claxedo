@@ -44,7 +44,7 @@ function mountController(input: {
           serverUrl: () => "http://127.0.0.1:3001",
           signedControlPlane: () => false,
           workspaceId: () => undefined,
-          workspaceKind: () => undefined,
+          hostKind: () => undefined,
           sessionRef: () => undefined,
           sessionCapabilities: input.capabilities,
           ...(input.refreshGoal ? { refreshGoal: input.refreshGoal } : {}),

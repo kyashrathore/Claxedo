@@ -19,6 +19,7 @@ import {
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitSessionGetClient } from "../../submit/index"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -37,7 +38,7 @@ export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["cl
    */
   readonly projects: () => readonly ProjectCatalogItem[]
   readonly workspaceId: () => string | undefined
-  readonly workspaceKind: () => "cloud" | "user-hosted" | undefined
+  readonly hostKind: () => RelayHostKind | undefined
   readonly sessionRef?: () => SessionRef | undefined
   readonly request: typeof fetch
   readonly localRequest: typeof fetch
@@ -98,7 +99,7 @@ export function signedSubmitWorkspaceId(
 export function submitWorkspaceBacking(input: {
   sessionRef?: SessionRef
   workspaceId?: string
-  workspaceKind?: WorkspaceSessionBacking["kind"]
+  hostKind?: WorkspaceSessionBacking["kind"]
 }): WorkspaceSessionBacking | undefined {
   const sandbox = input.sessionRef?.toolSandbox
   if (sandbox?.kind === "workspace") {
@@ -109,8 +110,8 @@ export function submitWorkspaceBacking(input: {
     }
   }
   const workspaceId = input.workspaceId?.trim()
-  if (!workspaceId || !input.workspaceKind) return undefined
-  return { workspaceId, kind: input.workspaceKind }
+  if (!workspaceId || !input.hostKind) return undefined
+  return { workspaceId, kind: input.hostKind }
 }
 
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
@@ -121,7 +122,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     return submitTransportForPlacement({
       serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
       ...(sessionAuthority ? { sessionAuthority } : {}),
-      workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
+      workspaceId: input.workspaceId(), hostKind: input.hostKind(),
     })
   }
 
@@ -195,7 +196,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       signedControlPlane: clientInput.signedControlPlane,
       sessionRef: clientInput.sessionRef,
       workspaceId: input.workspaceId(),
-      workspaceKind: input.workspaceKind(),
+      hostKind: input.hostKind(),
     })
     const runtimePromptClient: PromptDispatchInput["client"] = {
       session: {

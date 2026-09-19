@@ -584,7 +584,7 @@ describe("the host aggregate the desktop opens for every local runtime", () => {
     // requires, and the only one a relay-backed workspace's gate ever reaches.
     connections.setState("ws_cloud", {
       workspaceId: "ws_cloud",
-      kind: "cloud",
+      kind: "provisioner",
       status: "ready",
       logs: [],
       terminal: false,

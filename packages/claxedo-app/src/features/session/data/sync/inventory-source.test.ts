@@ -50,9 +50,9 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("workspaceHostingKind reads a resolved kind or a control-plane placement", () => {
-    expect(workspaceHostingKind({ kind: "cloud" })).toBe("cloud")
-    expect(workspaceHostingKind({ backing: "cloud-vm" })).toBe("cloud")
-    expect(workspaceHostingKind({ backing: "local-worktree" })).toBe("user-hosted")
+    expect(workspaceHostingKind({ kind: "cloud" })).toBe("provisioner")
+    expect(workspaceHostingKind({ backing: "cloud-vm" })).toBe("provisioner")
+    expect(workspaceHostingKind({ backing: "local-worktree" })).toBe("machine")
     expect(workspaceHostingKind({ kind: "local" })).toBeUndefined()
     expect(workspaceHostingKind(undefined)).toBeUndefined()
   })
@@ -122,7 +122,7 @@ describe("global sync inventory source helpers", () => {
       tags: [],
       attachments: [],
       environment: {
-        kind: "cloud",
+        kind: "provisioner",
         driver: "cloudflare",
       },
       lastTurn: {
@@ -156,7 +156,7 @@ describe("global sync inventory source helpers", () => {
       workspaceName: "User Workspace",
       projectID: "proj_456",
       environment: {
-        kind: "user-hosted",
+        kind: "machine",
         driver: "local-worktree",
       },
       time: { created: 30, updated: 40 },
@@ -178,7 +178,7 @@ describe("global sync inventory source helpers", () => {
         { kind: "url", target_id: "https://example.test" },
         { kind: "missing-target" },
       ],
-      environment: { kind: "cloud", provider: "cloudflare" },
+      environment: { kind: "provisioner", provider: "cloudflare" },
       git: { repo: "repo", branch: "dev" },
       lastTurn: {
         status: "failed",
@@ -198,7 +198,7 @@ describe("global sync inventory source helpers", () => {
         { kind: "file", targetID: "src/app.tsx" },
         { kind: "url", targetID: "https://example.test" },
       ],
-      environment: { kind: "cloud", driver: "cloudflare" },
+      environment: { kind: "provisioner", driver: "cloudflare" },
       git: { repo: "repo", branch: "dev" },
       archived: true,
       lastTurn: {
@@ -357,12 +357,12 @@ describe("global sync inventory source helpers", () => {
             workspaceId: "ws_known",
             directory: "workspace:ws_known",
             workspaceName: "Known",
-            kind: "cloud",
+            kind: "provisioner",
           }
         : undefined,
       resolveWorkspace: async () => {
         resolveCalls++
-        return { workspaceId: "ws_resolved", directory: "workspace:ws_resolved", kind: "cloud" }
+        return { workspaceId: "ws_resolved", directory: "workspace:ws_resolved", kind: "provisioner" }
       },
     })
 
@@ -385,7 +385,7 @@ describe("global sync inventory source helpers", () => {
     expect(await source.fetchSignedWorkspaceSessions({
       workspaceId: "ws_cloud",
       directory: "workspace:ws_cloud",
-      kind: "cloud",
+      kind: "provisioner",
     })).toEqual([])
   })
 
@@ -401,7 +401,7 @@ describe("global sync inventory source helpers", () => {
 
     await expect(source.fetchControlPlaneSessions("ws_down"))
       .rejects.toThrow("Control-plane session list failed with 503")
-    await expect(source.fetchControlPlaneWorkspaces("cloud"))
+    await expect(source.fetchControlPlaneWorkspaces("provisioner"))
       .rejects.toThrow("Control-plane cloud workspace list failed with 503")
   })
 
@@ -465,7 +465,7 @@ describe("global sync inventory source helpers", () => {
     // both resolve to the same workspace id and must land on one fetch.
     const [viaSessions, viaWorkspace] = await Promise.all([
       source.fetchControlPlaneSessions("ws_1"),
-      source.fetchSignedWorkspaceSessions({ workspaceId: "ws_1", directory: "workspace:ws_1", kind: "cloud" }),
+      source.fetchSignedWorkspaceSessions({ workspaceId: "ws_1", directory: "workspace:ws_1", kind: "provisioner" }),
     ])
 
     expect(requests).toBe(1)

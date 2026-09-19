@@ -17,7 +17,7 @@ describe("signed workspace lookup", () => {
       workspaceId: "ws_cached",
       directory: "/tmp/project",
       workspaceName: undefined,
-      kind: "cloud",
+      kind: "provisioner",
     })
   })
 
@@ -52,7 +52,7 @@ describe("signed workspace lookup", () => {
     }], "ws_nullable")).toEqual({
       workspaceId: "ws_nullable",
       directory: "ws_nullable",
-      kind: "user-hosted",
+      kind: "machine",
     })
   })
 

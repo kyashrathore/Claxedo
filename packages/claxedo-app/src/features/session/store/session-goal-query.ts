@@ -61,7 +61,7 @@ export function sessionGoalAuthorityScope(input: SessionGoalTransportScope): Ses
     serverUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   })
 }

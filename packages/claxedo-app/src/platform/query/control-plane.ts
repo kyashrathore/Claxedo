@@ -6,6 +6,7 @@ import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
 import { isProviderListResponse, mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
 import { asRecord } from "@/lib/record"
+import type { SelfHost } from "@/platform/runtime/placement-wire"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 
 export type { ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
@@ -82,6 +83,23 @@ export function hostAggregateDeclaration(baseUrl: string | undefined): boolean |
 /** The one writer of {@link hostAggregateDeclaration}; called by the global boot. */
 export function setHostAggregateDeclaration(baseUrl: string | undefined, declared: boolean): void {
   queryClient.setQueryData(queryKeys.deployment.hostAggregateDeclaration(baseUrl), declared)
+}
+
+/**
+ * The machine behind the server at `baseUrl`, as its bootstrap declared it
+ * (`host.enrollment`).
+ *
+ * `undefined` until that boot lands. A browser on the hosted app never gets a
+ * declaration, which is correct: no machine is behind it, so no placement can
+ * name it.
+ */
+export function selfHostDeclaration(baseUrl: string | undefined): SelfHost | undefined {
+  return queryClient.getQueryData<SelfHost>(queryKeys.deployment.selfHost(baseUrl))
+}
+
+/** The one writer of {@link selfHostDeclaration}; called by the global boot. */
+export function setSelfHostDeclaration(baseUrl: string | undefined, self: SelfHost): void {
+  queryClient.setQueryData(queryKeys.deployment.selfHost(baseUrl), self)
 }
 
 export function normalizeProjectList(data: Project[] | undefined) {

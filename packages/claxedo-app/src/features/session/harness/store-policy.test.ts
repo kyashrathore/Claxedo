@@ -130,7 +130,7 @@ describe("harness store policy", () => {
   // same tuple `session-capabilities-query.ts` keys on, from the same builder.
   test("the harness-change and session-model keys carry server, workspace and harness", () => {
     const local = { serverUrl: "http://127.0.0.1:3001", directory: "/tmp/project", sessionId: "ses_1" }
-    const cloud = { ...local, workspaceId: "ws_1", workspaceKind: "cloud" as const }
+    const cloud = { ...local, workspaceId: "ws_1", hostKind: "provisioner" as const }
 
     expect(harnessChangeKey(local, { kind: "connection", connectionId: "acp:codex" })).not.toEqual(
       harnessChangeKey(cloud, { kind: "connection", connectionId: "acp:codex" }),
@@ -163,28 +163,28 @@ describe("harness store policy", () => {
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: true,
-        workspaceKind: "local",
+        hostKind: "self",
       }),
     ).toBe(true)
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: true,
-        workspaceKind: "cloud",
+        hostKind: "provisioner",
       }),
     ).toBe(false)
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: false,
         workspaceRuntime: false,
-        workspaceKind: "local",
+        hostKind: "self",
       }),
     ).toBe(false)
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: false,
-        workspaceKind: "cloud",
+        hostKind: "provisioner",
       }),
     ).toBe(true)
     // A user-hosted workspace is a machine's workspace: its draft starts from
@@ -193,7 +193,7 @@ describe("harness store policy", () => {
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: false,
         workspaceRuntime: true,
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       }),
     ).toBe(true)
     expect(
@@ -262,7 +262,7 @@ describe("harness store policy", () => {
       shouldUseLocalHarnessConfigApi({
         baseUrl: "http://127.0.0.1:3001",
         directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       }),
     ).toBe(false)
   })
@@ -290,7 +290,7 @@ describe("harness store policy", () => {
     // user-hosted workspace and resolve to its real workspaceId.
     expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" }, projects)).toEqual({
       workspaceId: "ws_uh1",
-      kind: "user-hosted",
+      kind: "machine",
     })
   })
 

@@ -1,8 +1,10 @@
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
+
 export type WorkspaceRuntimeSnapshot = {
   workspaceId: string
   projectId?: string | null
   directory?: string
-  kind?: "local" | "cloud" | "user-hosted" | null
+  kind?: WorkspaceHostKind | null
   provider?: string | null
   sandboxId?: string | null
   status?: string | null

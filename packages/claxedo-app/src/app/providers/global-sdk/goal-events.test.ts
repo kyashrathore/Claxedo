@@ -31,7 +31,7 @@ const live = {
   sessionID: "ses_1",
   directory: "/repo/main",
   workspaceId: "ws_1",
-  workspaceKind: "cloud",
+  hostKind: "provisioner",
 }
 
 const serverUrl = "http://localhost:3001"
@@ -42,7 +42,7 @@ const readScope = sessionResourceAuthorityScope({
   serverUrl,
   signedControlPlane: false,
   workspaceId: undefined,
-  workspaceKind: undefined,
+  hostKind: undefined,
 })
 
 describe("live session Goal scope", () => {
@@ -54,7 +54,7 @@ describe("live session Goal scope", () => {
 
   test("still carries the workspace identity under the signed control plane", () => {
     const scope = liveSessionGoalScope({ live, serverUrl, signedControlPlane: true })
-    expect(scope).toMatchObject({ workspaceId: "ws_1", workspaceKind: "cloud" })
+    expect(scope).toMatchObject({ workspaceId: "ws_1", hostKind: "provisioner" })
     expect(sessionGoalKey(scope)).not.toEqual(sessionGoalKey(readScope))
   })
 

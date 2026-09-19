@@ -740,7 +740,7 @@ describe("override bootstrapDirectory", () => {
     expect(directoryProviders("https://app.claxedo.test", "pi", "workspace:ws_cloud")?.default.opencode).toBe("big-pickle")
     expect(
       queryClient.getQueryData<Command[]>(
-        queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud", undefined, "cloud:ws_cloud"),
+        queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud", undefined, "provisioner:ws_cloud"),
       )
         ?.map((item) => item.name),
     ).toEqual(["build"])
@@ -839,7 +839,7 @@ describe("override bootstrapDirectory", () => {
       workspace: {
         workspaceId: "ws_known_bootstrap",
         directory: "/tmp/cloud-alias",
-        kind: "cloud",
+        kind: "provisioner",
         status: "ready",
       },
       sdk,
@@ -946,7 +946,7 @@ describe("override bootstrapDirectory", () => {
 
     expect(urls.some((url) => url.includes("provider"))).toBe(false)
     expect(directoryProviders("https://app.claxedo.test", undefined, "workspace:ws_default")).toBeUndefined()
-    expect(agentNames("https://app.claxedo.test", "workspace:ws_default", undefined, "cloud:ws_default")).toEqual(["build"])
+    expect(agentNames("https://app.claxedo.test", "workspace:ws_default", undefined, "provisioner:ws_default")).toEqual(["build"])
   })
 
   test("raw workspace id bootstrap resolves identity before caching its native catalog", async () => {

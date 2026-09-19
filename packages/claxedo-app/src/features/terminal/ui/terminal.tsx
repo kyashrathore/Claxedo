@@ -29,7 +29,7 @@ import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-re
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-migration"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"
 import { classifyTerminalClose } from "./close"
@@ -88,7 +88,7 @@ export const Terminal = (props: TerminalProps) => {
       directory: sdk.directory,
     })
       .then((workspace) =>
-        workspace && isRelayBackedWorkspaceKind(workspace.kind) && workspace.workspaceId
+        workspace && isRelayHostKind(workspace.kind) && workspace.workspaceId
           ? workspace.workspaceId
           : undefined,
       )

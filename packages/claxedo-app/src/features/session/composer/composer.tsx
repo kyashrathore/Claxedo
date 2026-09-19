@@ -225,7 +225,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
   const selectedRemoteWorkspace = () => selectedNewSessionWorkspace({
     newSession: isNewSessionVariant(),
-    kind: props.newSessionWorkspaceKind,
+    kind: props.newSessionHostKind,
     worktree: props.newSessionWorktree,
   })
   const submitSessionDirectory = () => {
@@ -256,7 +256,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     isNewSession: newSession, harness: () => currentHarnessType(scope()), harnessPending,
     directory: submitSessionDirectory,
     serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
-    workspaceId: () => props.workspaceId?.(), workspaceKind: () => props.workspaceKind?.(),
+    workspaceId: () => props.workspaceId?.(), hostKind: () => props.hostKind?.(),
     sessionRef: () => props.sessionRef?.(),
     sessionCapabilities: () => props.goalCapabilities?.(), refreshGoal: props.refreshGoal,
     armed: prompt.goal.armed,
@@ -470,7 +470,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // so only the harness's own prompt inputs are left there.
     target: () => ({
       ...(currentHarnessType(scope()) ? { harness: currentHarnessType(scope())! } : {}),
-      workspace: !props.workspaceKind?.(),
+      workspace: !props.hostKind?.(),
     }),
   })
   const setScopedVariant = (value: string | undefined) => {
@@ -534,7 +534,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     signedControlPlane,
     workspace: () => {
       const workspaceId = props.workspaceId?.()
-      const kind = props.workspaceKind?.()
+      const kind = props.hostKind?.()
       return workspaceId && kind ? { workspaceId, kind } : undefined
     },
     sessionRef: () => props.sessionRef?.(),
@@ -587,7 +587,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     newSessionWorktree: () => props.newSessionWorktree,
     newSessionBaseRef: () => props.newSessionBaseRef,
     newSessionSourceBranch: () => props.newSessionSourceBranch,
-    newSessionWorkspaceKind: () => props.newSessionWorkspaceKind,
+    newSessionHostKind: () => props.newSessionHostKind,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     onCloudStartup: props.onCloudStartup,
     draftId: resolvedDraftId,
@@ -601,7 +601,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     bootScope: composerBootScope,
     signedControlPlane,
     workspaceId: props.workspaceId,
-    workspaceKind: props.workspaceKind,
+    hostKind: props.hostKind,
     harnessController,
     ...goalController.submitInput(props.goal, props.stopGoal),
   })

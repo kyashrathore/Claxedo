@@ -257,14 +257,14 @@ describe("global sdk stream bridge", () => {
       sessionID: "cp-cloud-1",
       directory: "ws_cloud",
       workspaceId: "ws_cloud",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     }, "cp-user-hosted-1", {
       directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
     })).toEqual({
       sessionID: "cp-user-hosted-1",
       directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
       workspaceId: undefined,
-      workspaceKind: undefined,
+      hostKind: undefined,
     })
   })
 
@@ -274,19 +274,19 @@ describe("global sdk stream bridge", () => {
       host: "workspace",
       directory: "/repo/main",
       workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     }, "runtime-session-2", {
       host: "workspace",
       directory: "/repo/main",
       workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     })).toEqual({
       next: {
         sessionID: "runtime-session-2",
         host: "workspace",
         directory: "/repo/main",
         workspaceId: "ws_signed",
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       },
       workspaceScopeChanged: false,
     })
@@ -311,7 +311,7 @@ describe("global sdk stream bridge", () => {
       sessionID: "cp-user-hosted-1",
       directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
       workspaceId: "ws_user_hosted",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     })
   })
 

@@ -297,7 +297,7 @@ export const defaultComposerMode = () => ({
   kind: "draft" as const,
   target: {
     worktree: "main",
-    workspaceKind: "local" as const,
+    hostKind: "self" as const,
     signedControlPlane: false,
   },
 })

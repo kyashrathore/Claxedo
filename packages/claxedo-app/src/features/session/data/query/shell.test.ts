@@ -56,8 +56,8 @@ describe("shell query helpers", () => {
     expect(commandListQuery({
       ...base,
       harnessType: "opencode",
-      workspace: { kind: "cloud", workspaceId: "ws_1" } as Parameters<typeof commandListQuery>[0]["workspace"],
-    }).queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws", "opencode", "cloud:ws_1"])
+      workspace: { kind: "provisioner", workspaceId: "ws_1" } as Parameters<typeof commandListQuery>[0]["workspace"],
+    }).queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws", "opencode", "provisioner:ws_1"])
   })
 
   test("commandListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {
@@ -110,7 +110,7 @@ describe("shell query helpers", () => {
       workspace: {
         workspaceId: "ws_1",
         directory: "/tmp/ws",
-        kind: "cloud",
+        kind: "provisioner",
       },
       client: {
         command: {
@@ -153,7 +153,7 @@ describe("shell query helpers", () => {
       workspace: {
         workspaceId: "ws_cloud",
         directory: "/tmp/ws",
-        kind: "cloud",
+        kind: "provisioner",
       },
       client: {
         command: {
@@ -184,7 +184,7 @@ describe("shell query helpers", () => {
       workspace: {
         workspaceId: "ws_local",
         directory: "/tmp/ws",
-        kind: "local",
+        kind: "self",
       },
       client: {
         command: {
@@ -217,7 +217,7 @@ describe("shell query helpers", () => {
         workspace: {
           workspaceId: "ws_local",
           directory: "/tmp/ws",
-          kind: "local",
+          kind: "self",
         },
         client: {
           command: {

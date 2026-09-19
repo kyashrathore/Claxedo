@@ -227,7 +227,7 @@ describe("workspace relay connection", () => {
     ])
   })
 
-  test("accepts user-hosted access backed by a local worktree", async () => {
+  test("a local-worktree backing places the workspace on a machine", async () => {
     const result = await openWorkspaceConnection("ws_uh", {
       serverUrl: "http://server.test",
       request: (async () => Response.json(connection({
@@ -238,10 +238,8 @@ describe("workspace relay connection", () => {
         workspaceId: "ws_uh",
       }))) as typeof fetch,
     })
-    expect(result.backing).toBe("local-worktree")
-    expect(result.access).toBe("user-hosted")
+    expect(result.host).toBe("machine")
     expect(result.workspaceId).toBe("ws_uh")
-    expect(result.runtimeKind).toBe("user-hosted")
     expect(result.homeRegion).toBe("eu-west")
     expect(result.role).toBe("owner")
   })

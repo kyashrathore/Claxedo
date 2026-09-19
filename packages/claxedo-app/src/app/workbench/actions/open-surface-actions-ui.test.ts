@@ -104,7 +104,7 @@ describe("createOpenSurfaceActions", () => {
           sessionId: "ses-signed",
           host: "workspace",
           workspaceId: "ws-signed",
-          toolSandbox: { kind: "workspace", workspaceId: "ws-signed", hosting: "cloud" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws-signed", hosting: "provisioner" },
         },
       },
     }))

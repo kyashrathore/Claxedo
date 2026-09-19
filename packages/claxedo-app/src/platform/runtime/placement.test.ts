@@ -10,7 +10,7 @@ describe("placementFor", () => {
     expect(placementFor({
       hasSignedAccess: false,
       serverUrl: "https://control.test",
-      legacy: { directory: "ws_1", workspaceKind: "cloud" },
+      legacy: { directory: "ws_1", hostKind: "provisioner" },
     })).toBeUndefined()
   })
 
@@ -19,7 +19,7 @@ describe("placementFor", () => {
     expect(placementFor({
       ref: workspaceBackedSessionRef({
         sessionId: "ses_1",
-        workspace: { workspaceId: "ws_hosted", kind: "user-hosted" },
+        workspace: { workspaceId: "ws_hosted", kind: "machine" },
       }),
       hasSignedAccess: true,
       serverUrl: "https://control.test",
@@ -53,7 +53,7 @@ describe("placementFor", () => {
     expect(placementFor({
       hasSignedAccess: true,
       serverUrl: "http://127.0.0.1:3001",
-      legacy: { directory: "ws_1", workspaceKind: "cloud" },
+      legacy: { directory: "ws_1", hostKind: "provisioner" },
     })).toEqual({
       workspaceId: "ws_1",
       hosting: "workspace",

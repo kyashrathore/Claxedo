@@ -229,7 +229,7 @@ describe("SessionContent", () => {
               sessionId: "ses_authz",
               host: "workspace",
               workspaceId: "ws_authz",
-              toolSandbox: { kind: "workspace", workspaceId: "ws_authz", hosting: "cloud" },
+              toolSandbox: { kind: "workspace", workspaceId: "ws_authz", hosting: "provisioner" },
             },
           },
         }}
@@ -357,7 +357,7 @@ describe("SessionContent", () => {
               sessionId: "ses_current",
               host: "workspace",
               workspaceId: "ws_cloud",
-              toolSandbox: { kind: "workspace", workspaceId: "ws_cloud", hosting: "cloud" },
+              toolSandbox: { kind: "workspace", workspaceId: "ws_cloud", hosting: "provisioner" },
             },
           },
         }}
@@ -372,7 +372,7 @@ describe("SessionContent", () => {
         sessionId: "ses_next",
         host: "workspace",
         workspaceId: "ws_cloud",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_cloud", hosting: "cloud" },
+        toolSandbox: { kind: "workspace", workspaceId: "ws_cloud", hosting: "provisioner" },
       },
     })
   })

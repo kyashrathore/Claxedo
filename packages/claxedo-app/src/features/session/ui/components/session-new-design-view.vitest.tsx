@@ -61,9 +61,9 @@ const renderView = () =>
   render(() => (
     <NewSessionDesignView
       worktree="/repo"
-      workspaceKind="local"
+      hostKind="self"
       onWorktreeChange={() => {}}
-      onWorkspaceKindChange={() => {}}
+      onHostKindChange={() => {}}
     >
       <div />
     </NewSessionDesignView>
@@ -106,9 +106,9 @@ describe("NewSessionDesignView project chip create panel", () => {
     render(() => (
       <NewSessionDesignView
         worktree="/repo"
-        workspaceKind="local"
+        hostKind="self"
         onWorktreeChange={() => {}}
-        onWorkspaceKindChange={() => {}}
+        onHostKindChange={() => {}}
         onProjectChange={onProjectChange}
       >
         <div />
@@ -127,7 +127,7 @@ describe("NewSessionDesignView branch chip", () => {
     render(() => (
       <NewSessionDesignView
         worktree="/repo"
-        workspaceKind="local"
+        hostKind="self"
         branch={{ gitRef: "main", sourceBranch: "main" }}
         branches={[
           { gitRef: "main", sourceBranch: "main" },
@@ -136,7 +136,7 @@ describe("NewSessionDesignView branch chip", () => {
         branchState="ready"
         onBranchChange={onBranchChange}
         onWorktreeChange={() => {}}
-        onWorkspaceKindChange={() => {}}
+        onHostKindChange={() => {}}
       >
         <div />
       </NewSessionDesignView>
@@ -158,11 +158,11 @@ describe("NewSessionDesignView branch chip", () => {
     render(() => (
       <NewSessionDesignView
         worktree="/repo"
-        workspaceKind="local"
+        hostKind="self"
         branchState={status}
         onBranchChange={() => {}}
         onWorktreeChange={() => {}}
-        onWorkspaceKindChange={() => {}}
+        onHostKindChange={() => {}}
       >
         <div />
       </NewSessionDesignView>
@@ -178,7 +178,7 @@ describe("NewSessionDesignView branch chip", () => {
     render(() => (
       <NewSessionDesignView
         worktree="create"
-        workspaceKind="cloud"
+        hostKind="provisioner"
         branch={{ gitRef: "local-only" }}
         branches={[
           { gitRef: "local-only" },
@@ -188,7 +188,7 @@ describe("NewSessionDesignView branch chip", () => {
         branchState="ready"
         onBranchChange={() => {}}
         onWorktreeChange={() => {}}
-        onWorkspaceKindChange={() => {}}
+        onHostKindChange={() => {}}
       >
         <div />
       </NewSessionDesignView>

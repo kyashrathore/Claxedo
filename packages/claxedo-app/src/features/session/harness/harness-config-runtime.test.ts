@@ -81,7 +81,7 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.agentRuntimeClientOptions({ directory: "workspace:ws_cloud" })).toEqual({
       request,
       workspaceId: "ws_cloud",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     })
   })
 
@@ -189,7 +189,7 @@ describe("harness config runtime", () => {
       }],
     })
 
-    expect(harnessRuntime.workspaceKind({ directory: "/repo/signed" })).toBe("cloud")
+    expect(harnessRuntime.hostKind({ directory: "/repo/signed" })).toBe("provisioner")
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/signed" })).toBe(false)
   })
 

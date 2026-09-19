@@ -136,7 +136,7 @@ describe("terminal session preview aliases", () => {
         }))
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "local",
+        kind: "self",
       }),
     })
 
@@ -186,7 +186,7 @@ describe("terminal session preview aliases", () => {
       directory: "/workspace",
       request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_1",
       }),
     })
@@ -221,7 +221,7 @@ describe("terminal session preview aliases", () => {
         throw new Error(`Unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_local",
       }),
     })

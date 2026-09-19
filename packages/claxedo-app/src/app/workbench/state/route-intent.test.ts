@@ -76,7 +76,7 @@ test("local workspace identity does not replace its filesystem transport directo
         key: "ws_local",
         workspaceId: "ws_local",
         directory: "/repo/local",
-        sessions: [{ id: "ses_local", title: "Local", environment: { kind: "local" } }],
+        sessions: [{ id: "ses_local", title: "Local", environment: { kind: "self" } }],
       },
     },
     byProject: {},
@@ -625,7 +625,7 @@ describe("state route intent", () => {
       byWorkspace: {
         ws_cloud_1: {
           workspaceId: "ws_cloud_1",
-          sessions: [{ id: "ses-loading", title: "Cloud loaded", environment: { kind: "cloud" } }],
+          sessions: [{ id: "ses-loading", title: "Cloud loaded", environment: { kind: "provisioner" } }],
         },
       },
     })
@@ -648,7 +648,7 @@ describe("state route intent", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_cloud_1",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
     }])
@@ -692,7 +692,7 @@ describe("state route intent", () => {
       byWorkspace: {
         ws_cloud_1: {
           workspaceId: "ws_cloud_1",
-          sessions: [{ id: "ses_cloud", title: "Cloud loaded", environment: { kind: "cloud" } }],
+          sessions: [{ id: "ses_cloud", title: "Cloud loaded", environment: { kind: "provisioner" } }],
         },
       },
     })
@@ -725,7 +725,7 @@ describe("state route intent", () => {
           toolSandbox: {
             kind: "workspace",
             workspaceId: "ws_cloud_1",
-            hosting: "cloud",
+            hosting: "provisioner",
           },
         },
       },
@@ -915,7 +915,7 @@ describe("state route intent", () => {
       resolveSession: async () => ({
         directory: "ws_meta_cloud",
         workspaceId: "ws_meta_cloud",
-        environment: { kind: "cloud" },
+        environment: { kind: "provisioner" },
         title: "Meta cloud session",
       }),
     })
@@ -940,7 +940,7 @@ describe("state route intent", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_meta_cloud",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
     }])
@@ -992,7 +992,7 @@ describe("state route intent", () => {
           ws_cloud_1: {
             workspaceId: "ws_cloud_1",
             directory: "/workspace/cloud",
-            sessions: [{ id: "ses-cloud", title: "Cloud session", environment: { kind: "cloud" } }],
+            sessions: [{ id: "ses-cloud", title: "Cloud session", environment: { kind: "provisioner" } }],
           },
         },
       },
@@ -1017,7 +1017,7 @@ describe("state route intent", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_cloud_1",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
     }])
@@ -1035,7 +1035,7 @@ describe("state route intent", () => {
             sessions: [{
               id: "ses-cloud",
               title: "Cloud session",
-              environment: { kind: "cloud" },
+              environment: { kind: "provisioner" },
               harness: { id: "acp:codex", access: "connection" },
             }],
           },
@@ -1059,7 +1059,7 @@ describe("state route intent", () => {
           "/workspace": {
             key: "/workspace",
             workspaceId: "ws_cloud_real",
-            sessions: [{ id: "ses-cloud", title: "Cloud session", environment: { kind: "cloud" } }],
+            sessions: [{ id: "ses-cloud", title: "Cloud session", environment: { kind: "provisioner" } }],
           },
         },
       },
@@ -1084,7 +1084,7 @@ describe("state route intent", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_cloud_real",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
     }])
@@ -1101,7 +1101,7 @@ describe("state route intent", () => {
           },
           ws_channel_spoofed: {
             workspaceId: "ws_channel_spoofed",
-            sessions: [{ id: "ses-ambiguous", title: "Duplicate session", environment: { kind: "user-hosted" } }],
+            sessions: [{ id: "ses-ambiguous", title: "Duplicate session", environment: { kind: "machine" } }],
           },
         },
       },
@@ -1177,7 +1177,7 @@ describe("state route intent", () => {
         byWorkspace: {
           ws_cloud_1: {
             workspaceId: "ws_cloud_1",
-            sessions: [{ id: "ses-cloud", title: "Cloud session", environment: { kind: "cloud" } }],
+            sessions: [{ id: "ses-cloud", title: "Cloud session", environment: { kind: "provisioner" } }],
           },
         },
       },
@@ -1202,7 +1202,7 @@ describe("state route intent", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_cloud_1",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
     }])
@@ -1279,7 +1279,7 @@ describe("state route intent", () => {
           ws_viewer_cloud: {
             workspaceId: "ws_viewer_cloud",
             directory: "/workspace/viewer-cloud",
-            sessions: [{ id: "ses-viewer", title: "Viewer session", environment: { kind: "cloud" } }],
+            sessions: [{ id: "ses-viewer", title: "Viewer session", environment: { kind: "provisioner" } }],
           },
         },
       },
@@ -1304,7 +1304,7 @@ describe("state route intent", () => {
           toolSandbox: {
             kind: "workspace",
             workspaceId: "ws_viewer_cloud",
-            hosting: "cloud",
+            hosting: "provisioner",
           },
         },
       },
@@ -1373,7 +1373,7 @@ describe("state route intent", () => {
           ws_viewer_cloud: {
             workspaceId: "ws_viewer_cloud",
             directory: "/workspace/viewer-cloud",
-            sessions: [{ id: "ses-viewer", title: "Viewer session", environment: { kind: "cloud" } }],
+            sessions: [{ id: "ses-viewer", title: "Viewer session", environment: { kind: "provisioner" } }],
           },
         },
       },
@@ -1400,7 +1400,7 @@ describe("state route intent", () => {
             toolSandbox: {
               kind: "workspace",
               workspaceId: "ws_viewer_cloud",
-              hosting: "cloud",
+              hosting: "provisioner",
             },
           },
         },
@@ -1567,7 +1567,7 @@ describe("state route intent", () => {
 
     harness.receive({
       workspaceId: "/tmp/signed-runtime",
-      workspaceBacking: { workspaceId: "ws_signed", kind: "user-hosted" },
+      workspaceBacking: { workspaceId: "ws_signed", kind: "machine" },
       sessionId: "ses-signed",
       sessionTitle: "Signed session",
     })
@@ -1585,7 +1585,7 @@ describe("state route intent", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_signed",
-          hosting: "user-hosted",
+          hosting: "machine",
         },
       },
       workspaceRouteId: "ws_main",
@@ -1635,7 +1635,7 @@ describe("state route intent", () => {
 
     harness.receive({
       workspaceId: "/tmp/signed-runtime",
-      workspaceBacking: { workspaceId: "ws_signed", kind: "cloud" },
+      workspaceBacking: { workspaceId: "ws_signed", kind: "provisioner" },
       sessionId: "ses-signed",
       sessionTitle: "Signed session",
     })
@@ -1653,7 +1653,7 @@ describe("state route intent", () => {
             sessionId: "ses-signed",
             host: "workspace",
             workspaceId: "ws_signed",
-            toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "cloud" },
+            toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "provisioner" },
           },
         },
       },

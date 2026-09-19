@@ -52,10 +52,10 @@ describe("shell control-plane events entrypoint", () => {
       expect(response.status).toBe(200)
       expect(response.headers.get("content-type")).toContain("text/event-stream")
       expect(new TextDecoder().decode((await reader.read()).value)).toContain('"type":"heartbeat"')
-      controlBus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_b", sessionId: "private_b", workspaceId: "ws_b", ts: 1 })
+      controlBus.publish({ type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_b", sessionId: "private_b", workspaceId: "ws_b", ts: 1 })
       // An issuer org claim cannot substitute for an authority-resolved org ID.
       controlBus.publish({ type: "document.changed", orgId: "org_a", projectId: "project_a", documentId: "unresolved_org", ts: 2 })
-      controlBus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_a", sessionId: "visible_a", workspaceId: "ws_a", ts: 3 })
+      controlBus.publish({ type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_a", sessionId: "visible_a", workspaceId: "ws_a", ts: 3 })
       const frame = new TextDecoder().decode((await reader.read()).value)
       expect(frame).toContain("visible_a")
       expect(frame).not.toContain("private_b")

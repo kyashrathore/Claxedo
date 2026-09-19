@@ -97,7 +97,7 @@ import { can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspaceRelayPlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
-import { isRelayBackedWorkspaceKind, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, inventoryHostKind as toHostKind, isRelayHostKind, type InventoryKindWord } from "@/platform/runtime/placement-wire"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionSurfaceStatus } from "../compact-switcher/surface-status"
@@ -212,14 +212,14 @@ const isArchive = (value: unknown): value is Archive => typeof value === "string
 
 function showCloud(input: {
   worktree: string
-  workspaces?: Record<string, { kind?: RuntimeKind }>
+  workspaces?: Record<string, { kind?: InventoryKindWord }>
   workspaceDir?: string
   local: boolean
 }) {
   const dir = input.workspaceDir ?? input.worktree
-  if (dir === input.worktree) return input.workspaces?.[dir]?.kind === "cloud" || !input.local
+  if (dir === input.worktree) return toHostKind(input.workspaces?.[dir]?.kind) === "provisioner" || !input.local
   const ws = input.workspaces?.[dir]
-  if (ws) return ws.kind === "cloud"
+  if (ws) return toHostKind(ws.kind) === "provisioner"
   return false
 }
 
@@ -340,23 +340,23 @@ function workspaceSessionBacking(
 }
 
 function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">, directory: string): RuntimeKind {
-  const environmentKind = toWorkspaceKind(session.environment?.kind)
+  const environmentKind = asHostKind(session.environment?.kind)
   if (environmentKind) return environmentKind
-  const workspaceKind = toWorkspaceKind(projectWorkspaceInfo(session.project, directory)?.kind)
-  if (workspaceKind) return workspaceKind
-  return "local"
+  const hostKind = toHostKind(projectWorkspaceInfo(session.project, directory)?.kind)
+  if (hostKind) return hostKind
+  return "self"
 }
 
 function runtimeIcon(kind: RuntimeKind): "cloud" | "server" | "monitor" {
-  if (kind === "cloud") return "cloud"
-  if (kind === "user-hosted") return "server"
+  if (kind === "provisioner") return "cloud"
+  if (kind === "machine") return "server"
   return "monitor"
 }
 
 function runtimeLabel(kind: RuntimeKind) {
-  if (kind === "cloud") return "Cloud VM"
-  if (kind === "user-hosted") return "User-hosted"
-  return "Local"
+  if (kind === "provisioner") return "Cloud environment"
+  if (kind === "machine") return "Machine"
+  return "This machine"
 }
 
 function workspaceStatusLabel(workspace: WorkspaceInfo | undefined) {
@@ -409,9 +409,9 @@ function uniq(input: string[]) {
 function title(input: string) {
   if (input === "review" || input === "page") return input[0].toUpperCase() + input.slice(1)
   if (input === "general") return "General"
-  if (input === "local") return "Local"
-  if (input === "cloud") return "Cloud"
-  if (input === "user-hosted") return "User-hosted"
+  if (input === "self") return "This machine"
+  if (input === "provisioner") return "Cloud environment"
+  if (input === "machine") return "Machine"
   return input.replace(/^repo:/, "").replace(/^branch:/, "").replace(/^provider:/, "")
 }
 
@@ -1037,13 +1037,13 @@ export function RailSidebar(props: RailSidebarProps) {
     const showWorkspace = !!workspaceLabel && (
       workspaceLabel !== "main" ||
       directory !== session.project.worktree ||
-      kind !== "local"
+      kind !== "self"
     )
     const label = [
-      kind === "local" ? undefined : runtimeLabel(kind),
+      kind === "self" ? undefined : runtimeLabel(kind),
       showWorkspace ? workspaceLabel : undefined,
     ].filter((item): item is string => !!item).join(" · ")
-    if (isRelayBackedWorkspaceKind(kind)) {
+    if (isRelayHostKind(kind)) {
       return {
         icon: runtimeIcon(kind),
         label: label || runtimeLabel(kind),
@@ -1159,7 +1159,7 @@ export function RailSidebar(props: RailSidebarProps) {
       networkQuiet = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages.start(directory, session.id, {
         bypassQuiet: true,
         sessionRef: sessionWorkbenchRef(session),
-        ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}),
+        ...(backing ? { hostKind: backing.kind, workspaceId: backing.workspaceId } : {}),
       }))
     }
     const serial = ++sessionActivationSerial
@@ -1203,7 +1203,7 @@ export function RailSidebar(props: RailSidebarProps) {
     prefetchSidebarSessionMessages.start(directory, session.id, {
       bypassQuiet: true,
       sessionRef: sessionWorkbenchRef(session),
-      ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}),
+      ...(backing ? { hostKind: backing.kind, workspaceId: backing.workspaceId } : {}),
     })
     markRendererPhase("sessionActivate.pointerPrepare.end")
   }
@@ -1725,7 +1725,7 @@ export function RailSidebar(props: RailSidebarProps) {
     // is what a session's frames off that workspace's stream are matched
     // against, and a user-hosted row carries the HOST's filesystem directory
     // rather than this section's `workspace:<id>` ref.
-    const sessionListWorkspaceId = createMemo(() => isRelayBackedWorkspaceKind(runtime())
+    const sessionListWorkspaceId = createMemo(() => isRelayHostKind(runtime())
       ? workspaceRowId(section.project, section.workspaceDir)
       : undefined)
     const sessionListQuery = createMemo<SessionListQuery>(() => ({
@@ -1962,7 +1962,7 @@ export function RailSidebar(props: RailSidebarProps) {
       baseUrl: () => globalSDK.url,
       // A project section lists the sessions of ALL its workspaces, and those
       // do not share one server: the central one answers for the local and
-      // cloud workspaces, each user-hosted workspace from its own runtime over
+      // cloud workspaces, each machine-placed workspace from its own runtime over
       // the relay.
       source: () => projectSessionSource({
         local: server.isLocal(),
@@ -1998,8 +1998,9 @@ export function RailSidebar(props: RailSidebarProps) {
     // is ready so the rail honestly shows what is reachable NOW. Clicking
     // still connects (the select handler drives the connection), and the
     // connect surface then narrates restore/resume/cold-start. Local and
-    // user-hosted entries never dim — local has nothing to connect, and
-    // user-hosted readiness is the host machine's business, reported in-pane.
+    // machine-placed entries never dim — a workspace this server holds has
+    // nothing to connect, and another machine's readiness is that machine's
+    // business, reported in-pane.
     const dimmedCloud = createMemo(() => {
       const directory = projectActionDirectory()
       if (!sectionCloud(section.project, directory)) return false

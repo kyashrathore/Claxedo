@@ -212,7 +212,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       newSessionWorktree: () => "create",
       newSessionBaseRef: () => "origin/release/next",
       newSessionSourceBranch: () => "release/next",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onNewSessionWorktreeReset: () => {
         resetCalls += 1
       },
@@ -251,7 +251,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     const submit = createSubmit({
       sessionID: () => "new",
       newSessionWorktree: () => "create",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       harnessController: { ...h.testHarnessController(), harness: () => undefined },
     })
     await submit.handleSubmit(submitEvent())
@@ -293,7 +293,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onCloudStartup: () => undefined,
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
@@ -349,7 +349,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onCloudStartup: () => undefined,
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
@@ -437,7 +437,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onCloudStartup: (state) => {
         startup.push({ status: state?.status, id: state?.id, err: state?.err })
       },
@@ -500,7 +500,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onCloudStartup: (state) => {
         startup.push({ status: state?.status, id: state?.id, err: state?.err })
       },
@@ -572,7 +572,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onCloudStartup: () => undefined,
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
@@ -609,7 +609,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
       newSessionBaseRef: () => "feature/base-ref",
-      newSessionWorkspaceKind: () => "local",
+      newSessionHostKind: () => "self",
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
     })
@@ -651,7 +651,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       sessionID: () => "new",
       sessionDirectory: () => "/repo/main",
       newSessionWorktree: () => "/repo/local-feature",
-      newSessionWorkspaceKind: () => "local",
+      newSessionHostKind: () => "self",
     })
 
     await submit.handleSubmit(submitEvent())
@@ -684,7 +684,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "main",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onCloudStartup: (state) => {
         startup.push({ status: state?.status, id: state?.id, err: state?.err })
       },
@@ -734,7 +734,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "workspace:ws_cloud",
-      newSessionWorkspaceKind: () => "cloud",
+      newSessionHostKind: () => "provisioner",
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
     })

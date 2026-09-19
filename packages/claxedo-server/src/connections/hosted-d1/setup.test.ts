@@ -45,6 +45,7 @@ const MIGRATIONS = [
   "0021_mcp_oauth_clients.sql",
   "0022_sandbox_leases.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ]
 
 const NOW = 1_900_000_000_000

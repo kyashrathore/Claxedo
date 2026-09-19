@@ -21,7 +21,14 @@ import {
 import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import {
+  inventoryHostKind,
+  isRelayHostKind,
+  placementWire,
+  type SelfHost,
+  type WorkspaceHost,
+  type WorkspaceHostKind,
+} from "@/platform/runtime/placement-wire"
 import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 
 type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
@@ -37,7 +44,7 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  * the workspace's relay connection, reached with the Runtime Access Token
  * exactly like provider, file and PTY reads — or, on a loopback surface (the
  * desktop, a local page), through the daemon's proxy: to its embedded
- * runtime for a local workspace, and for a cloud or user-hosted workspace
+ * runtime for a workspace it holds itself, and for one placed elsewhere
  * through `localWorkspaceRelayProxy` (`/workspaces/<id>/api/wr/events`),
  * where the daemon mints the owner's runtime token itself, per request, and
  * forwards the cursor. The desktop's cloud wire is that proxy, not the
@@ -72,7 +79,7 @@ export type WorkspaceEventStreamTarget = {
   scope?: undefined
   serverUrl: string
   workspaceId: string
-  workspaceKind?: "local" | "cloud" | "user-hosted"
+  hostKind?: WorkspaceHostKind
   directory?: string
   sessionID?: string
 }
@@ -85,7 +92,7 @@ export type ClaxedoEventStreamTarget =
 function* localWorkspacesInProjects(projects: ProjectCache) {
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      if (workspace.kind && workspace.kind !== "local") continue
+      if (workspace.kind && inventoryHostKind(workspace.kind) !== "self") continue
       const workspaceId = workspace.workspaceId ?? workspace.id ?? key
       if (!workspaceId) continue
       yield { workspaceId, key, directory: workspace.directory ?? undefined }
@@ -104,7 +111,7 @@ function localWorkspaceForDirectory(projects: ProjectCache, directoryOrId: strin
       sameWorkspaceDirectory(directory, directoryOrId)
     ) return {
       workspaceId,
-      kind: "local" as const,
+      kind: "self" as const,
       directory: directory ?? directoryOrId,
     }
   }
@@ -130,6 +137,20 @@ type RouteStreamDecision =
   | { stream: "scoped"; workspace: NonNullable<ReturnType<typeof routeWorkspaceRef>> }
 
 /**
+ * The wire a workspace's frames arrive over.
+ *
+ * The catalog states the host; `placementWire` answers whether that host is
+ * this machine. `unreachable` means the placement names no machine at all, and
+ * only a CATALOG row can say that: a `ws_`-shaped route the catalog has not
+ * placed yet carries no enrollment id either, and that one is optimistic
+ * rather than hostless.
+ */
+function routeWorkspaceWire(workspace: { kind: WorkspaceHostKind; host?: WorkspaceHost }, self: SelfHost) {
+  const host = workspace.host ?? (workspace.kind === "machine" ? undefined : { kind: workspace.kind })
+  return host ? placementWire({ host }, self) : undefined
+}
+
+/**
  * Which open stream carries the routed workspace's frames — the one answer
  * {@link claxedoEventStreamTargets} and {@link routeAwaitsWorkspaceStream}
  * both read, so a route can never both be handed no stream and be told it has
@@ -144,25 +165,32 @@ type RouteStreamDecision =
  *
  * With the aggregate served, a plain filesystem path rides it whether or not
  * the catalog has placed it: the daemon serves the paths on its OWN machine,
- * so a path is local by construction, and only a catalog entry that positively
- * names one cloud or user-hosted belongs to a runtime elsewhere. A `ws_`-shaped
- * route id is the opposite — the catalog may simply not have loaded yet — so it
- * stays optimistically relay-backed and keeps its own stream.
+ * so a path is on this machine by construction, and only a catalog entry that
+ * positively places a workspace elsewhere belongs to a runtime elsewhere. A
+ * `ws_`-shaped route id is the opposite — the catalog may simply not have
+ * loaded yet — so it stays optimistically relay-backed and keeps its own
+ * stream.
+ *
+ * A placement naming a host this client cannot reach at all opens nothing: the
+ * workspace's machine is offline, and a stream at it can only fail.
  */
 function routeStreamDecision(input: {
   directory?: string
   projects?: ProjectCache
   loopback: boolean
   hostAggregate: boolean | undefined
+  self: SelfHost
 }): RouteStreamDecision {
   if (input.directory === undefined) return { stream: "none" }
   if (input.loopback && input.hostAggregate === undefined) return { stream: "pending" }
   const workspace = routeWorkspaceRef(input)
+  const wire = workspace ? routeWorkspaceWire(workspace, input.self) : undefined
+  if (wire === "unreachable") return { stream: "none" }
   if (input.loopback && input.hostAggregate === true) {
     const pathOnThisMachine =
       isFilesystemDirectory(input.directory) && !signedWorkspaceFromProjects(input.projects ?? [], input.directory)
     if (!workspace) return pathOnThisMachine ? { stream: "aggregate" } : { stream: "pending" }
-    if (workspace.kind === "local" || pathOnThisMachine) return { stream: "aggregate" }
+    if (wire === "loopback" || pathOnThisMachine) return { stream: "aggregate" }
     return { stream: "scoped", workspace }
   }
   return workspace ? { stream: "scoped", workspace } : { stream: "pending" }
@@ -178,13 +206,22 @@ export function routeAwaitsWorkspaceStream(input: {
   directory?: string
   projects?: ProjectCache
   hostAggregate: boolean | undefined
+  self?: SelfHost
 }): boolean {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
   return routeStreamDecision({
     ...input,
+    self: input.self ?? NO_SELF_HOST,
     loopback: centralTransportForServer(serverUrl) === "loopback",
   }).stream === "pending"
 }
+
+/**
+ * A client attached to a server that serves no directories of its own. The
+ * default because every browser on the hosted app is one, and a server that IS
+ * a machine says so in its bootstrap.
+ */
+const NO_SELF_HOST: SelfHost = { kind: "none" }
 
 export function claxedoEventStreamTargets(input: {
   serverUrl?: string
@@ -199,6 +236,13 @@ export function claxedoEventStreamTargets(input: {
    * opened on a guess, and the route waits instead.
    */
   hostAggregate: boolean | undefined
+  /**
+   * The machine behind the server this client is attached to, as that server
+   * declared it (`host.enrollment` in its bootstrap body). It is what makes a
+   * control-plane row placed on THIS machine read as loopback instead of as
+   * another machine's relay stream.
+   */
+  self?: SelfHost
   /** Whether the account is signed in; only the signed-web deployment needs it. */
   accountSigned?: boolean
   /** A signed desktop with the Electron account bridge: the hosted control plane is reachable through it. */
@@ -229,7 +273,7 @@ export function claxedoEventStreamTargets(input: {
     : input.accountSigned === true
       ? [cp]
       : []
-  const decision = routeStreamDecision({ ...input, loopback })
+  const decision = routeStreamDecision({ ...input, self: input.self ?? NO_SELF_HOST, loopback })
   if (decision.stream !== "scoped") return base
   const workspace = decision.workspace
   const sessionID = input.sessionID?.trim()
@@ -239,7 +283,7 @@ export function claxedoEventStreamTargets(input: {
       kind: "wr",
       serverUrl,
       workspaceId: workspace.workspaceId,
-      workspaceKind: workspace.kind,
+      hostKind: workspace.kind,
       ...(sessionID && sessionID !== "new" ? { sessionID } : {}),
       ...("directory" in workspace && workspace.directory
         ? { directory: workspace.directory }
@@ -302,7 +346,7 @@ export async function eventStreamFetch(
     },
     serverUrl: target.serverUrl,
     directory: target.directory,
-    ...(target.workspaceKind ? { workspace: { kind: target.workspaceKind, workspaceId: target.workspaceId } } : {}),
+    ...(target.hostKind ? { workspace: { kind: target.hostKind, workspaceId: target.workspaceId } } : {}),
     request,
     ...(options?.relayRequest ? { relayRequest: options.relayRequest } : {}),
   }).fetch(runtimePath, init)
@@ -337,7 +381,7 @@ export type StreamFrameAddress = (hostDirectory: string) => string
 export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget): StreamFrameAddress {
   const identity: StreamFrameAddress = (hostDirectory) => hostDirectory
   if (target.kind !== "wr" || target.scope === "host") return identity
-  if (!isRelayBackedWorkspaceKind(workspaceKind(target.workspaceKind))) return identity
+  if (!isRelayHostKind(target.hostKind)) return identity
   const { workspaceId } = target
   return (hostDirectory) => sessionRowDirectory({ workspaceId, hostDirectory })
 }

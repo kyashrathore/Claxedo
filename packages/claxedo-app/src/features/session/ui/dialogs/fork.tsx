@@ -12,15 +12,16 @@ import { registeredConversationSnapshot } from "@/features/session/conversation/
 import { forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
 import { sessionRoute } from "@/platform/identity/route"
 import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
+import { inventoryHostKind, type InventoryKindWord, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
 }
 
-function managedWorkspaceKind(kind: "local" | "cloud" | "user-hosted" | undefined) {
+function managedHostKind(kind: WorkspaceHostKind | undefined) {
   switch (kind) {
-    case "cloud":
-    case "user-hosted":
+    case "provisioner":
+    case "machine":
       return true
     default:
       return false
@@ -54,13 +55,13 @@ export const DialogFork: Component = () => {
     const workspace = sdk.workspace(sdk.directory) as {
       id?: string
       workspaceId?: string
-      kind?: "local" | "cloud" | "user-hosted"
+      kind?: InventoryKindWord
     } | undefined
     forkSessionWithReservation({
       client: sdk.client.session,
       sessionId: sessionID,
       messageId: item.id,
-      managed: managedWorkspaceKind(workspace?.kind),
+      managed: managedHostKind(inventoryHostKind(workspace?.kind)),
       workspaceId: workspace?.workspaceId ?? workspace?.id,
       serverUrl: globalSDK.url,
     })

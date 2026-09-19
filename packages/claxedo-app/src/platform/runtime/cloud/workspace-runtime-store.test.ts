@@ -119,7 +119,7 @@ describe("cloud workspace startup", () => {
       onLog: (log) => logs.push(log.step),
     })
 
-    expect(result).toMatchObject({ ok: true, startup: true, workspace: { workspaceId: "ws_hosted_null", kind: "cloud" } })
+    expect(result).toMatchObject({ ok: true, startup: true, workspace: { workspaceId: "ws_hosted_null", kind: "provisioner" } })
     expect(resolved).toEqual([{ workspaceId: "ws_hosted_null", status: "acquiring_sandbox" }])
     expect(logs).toEqual(["acquiring_sandbox", "ready"])
     expect(seen).toContain("http://runtime.test/api/workspace/ws_hosted_null/connection")

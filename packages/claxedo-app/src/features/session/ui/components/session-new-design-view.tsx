@@ -36,7 +36,7 @@ import {
   repoDerivedProjectLabel,
   type ProjectWorkspace,
 } from "./session-new-workspace-options"
-import { workspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, inventoryHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { validWorktree } from "@/platform/sync/worktree"
@@ -72,9 +72,9 @@ const projectAvatarSource = (icon?: ProjectIconMeta) => {
 
 export function NewSessionDesignView(props: {
   worktree: string
-  workspaceKind: WorkspaceKind
+  hostKind: WorkspaceHostKind
   onWorktreeChange: (value: string) => void
-  onWorkspaceKindChange: (value: WorkspaceKind) => void
+  onHostKindChange: (value: WorkspaceHostKind) => void
   /** Settled Git revision/source-branch pair used when a new execution workspace is provisioned. */
   branch?: NewSessionBranchChoice
   branches?: readonly NewSessionBranchChoice[]
@@ -130,7 +130,7 @@ export function NewSessionDesignView(props: {
     createNewSessionWorkspaceState({
       projectRoot: projectRoot(),
       selectedWorktree: props.worktree,
-      workspaceKind: props.workspaceKind,
+      hostKind: props.hostKind,
       sandboxes: sandboxes(),
       workspaces: workspaces(),
     }),
@@ -182,7 +182,7 @@ export function NewSessionDesignView(props: {
   const projectDetail = (value: string) => {
     const project = findProjectForDirectory(inventoryProjects(), [value])
     const hosted = Object.values(project?.workspaces ?? {}).some(
-      (workspace) => workspace?.kind && workspace.kind !== "local",
+      (workspace) => !!workspace?.kind && inventoryHostKind(workspace.kind) !== "self",
     )
     if (!hosted) return value
     return project?.id ?? value
@@ -220,16 +220,16 @@ export function NewSessionDesignView(props: {
   // machine the route already scopes to). Prefer the inventory workspace_name,
   // fall back to the project label.
   const pinnedWorkspaceName = createMemo(() => {
-    const selfHosted = Object.values(workspaces()).find((workspace) => workspace?.kind === "user-hosted")
+    const selfHosted = Object.values(workspaces()).find((workspace) => inventoryHostKind(workspace?.kind) === "machine")
     return selfHosted?.workspace_name?.trim() || projectLabel(projectRoot())
   })
 
   // Single source for the self-hosted branch: the workspace is relay-connected
   // and already pinned by the route, so it gets a status pin instead of the
   // environment and worktree chips.
-  const selfHostedWorkspace = createMemo(() => props.workspaceKind === "user-hosted")
+  const selfHostedWorkspace = createMemo(() => props.hostKind === "machine")
 
-  const environmentLabel = (kind: WorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
+  const environmentLabel = (kind: WorkspaceHostKind) => (kind === "provisioner" ? "Cloud" : "Local")
   // The server's own account of itself: whether it runs workspaces on its
   // filesystem. That, not the platform or the URL, decides whether "Local" and
   // the folder source of "Create project…" exist here.
@@ -258,7 +258,7 @@ export function NewSessionDesignView(props: {
     if (props.onProjectChange) props.onProjectChange(checkout, project)
     else openProject(checkout)
   }
-  const createActionLabel = () => (props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree")
+  const createActionLabel = () => (props.hostKind === "provisioner" ? "New cloud sandbox" : "New local worktree")
 
   const openProject = (directory: string | undefined) => {
     if (!directory) return
@@ -355,26 +355,26 @@ export function NewSessionDesignView(props: {
     if (environmentOptions().length > 0) {
       chips.push({
         slot: "context-chip-environment",
-        icon: <Icon name={props.workspaceKind === "cloud" ? "cloud" : "monitor"} size="small" />,
-        label: environmentLabel(props.workspaceKind),
+        icon: <Icon name={props.hostKind === "provisioner" ? "cloud" : "monitor"} size="small" />,
+        label: environmentLabel(props.hostKind),
         ariaLabel: "Workspace environment",
         emptyMessage: "No environments",
-        current: props.workspaceKind,
+        current: props.hostKind,
         options: environmentOptions().map<ContextChipOption>((kind) => ({
           value: kind,
           label: environmentLabel(kind),
-          detail: kind === "cloud" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
+          detail: kind === "provisioner" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
         })),
         onSelect: (value) => {
-          const kind = workspaceKind(value)
-          if (kind) props.onWorkspaceKindChange(kind)
+          const kind = asHostKind(value)
+          if (kind) props.onHostKindChange(kind)
         },
       })
     }
     chips.push({
       slot: "context-chip-worktree",
       icon:
-        creatingWorkspace() && props.workspaceKind === "cloud" ? (
+        creatingWorkspace() && props.hostKind === "provisioner" ? (
           <Icon name="cloud-upload" size="small" />
         ) : (
           <SemanticIcon concept="isolationWorktree" size="small" />
@@ -382,7 +382,7 @@ export function NewSessionDesignView(props: {
       label: creatingWorkspace() ? createActionLabel() : currentWorktree() ? worktreeLabel(currentWorktree()) : "",
       ariaLabel: "Workspace",
       search: { placeholder: "Search workspaces" },
-      emptyMessage: props.workspaceKind === "cloud" ? "No cloud workspace" : "No local workspace",
+      emptyMessage: props.hostKind === "provisioner" ? "No cloud workspace" : "No local workspace",
       current: creatingWorkspace() ? undefined : currentWorktree(),
       options: worktreeOptions().map<ContextChipOption>((value) => ({
         value,
@@ -396,16 +396,16 @@ export function NewSessionDesignView(props: {
     if (props.onBranchChange && props.branchState !== "disabled") {
       const ready = props.branchState === "ready" && props.branch
       const selected =
-        ready && (props.workspaceKind !== "cloud" || props.branch!.sourceBranch) ? props.branch : undefined
+        ready && (props.hostKind !== "provisioner" || props.branch!.sourceBranch) ? props.branch : undefined
       const branches = ready
-        ? (props.branches ?? []).filter((choice) => props.workspaceKind !== "cloud" || !!choice.sourceBranch)
+        ? (props.branches ?? []).filter((choice) => props.hostKind !== "provisioner" || !!choice.sourceBranch)
         : []
       chips.push({
         slot: "context-chip-branch",
         icon: <Icon name="branch" size="small" />,
         label: selected
           ? (selected.sourceBranch ?? selected.gitRef)
-          : ready && props.workspaceKind === "cloud"
+          : ready && props.hostKind === "provisioner"
             ? "Default branch"
             : props.branchState === "error"
               ? "Branches unavailable"

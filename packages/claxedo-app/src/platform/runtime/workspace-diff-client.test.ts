@@ -121,7 +121,7 @@ describe("workspace diff client relay transport", () => {
       directory: "/workspace",
       request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_1",
       }),
     })

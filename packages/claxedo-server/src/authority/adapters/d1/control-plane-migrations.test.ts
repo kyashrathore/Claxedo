@@ -42,6 +42,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0032_task_attachments.sql",
   "0033_task_child_number.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(
@@ -331,6 +332,58 @@ describe("dropping the workspace access mode", () => {
       { workspace_id: "ws-machine", backing: "local-worktree", remote_directory: "/srv/app" },
       { workspace_id: "ws-vm", backing: "cloud-vm", remote_directory: null },
     ])
+  })
+})
+
+describe("session share levels", () => {
+  test("narrows every grant written before the column to follow and refuses any other value", async () => {
+    const target = await database()
+    await apply(target, CONTROL_PLANE_MIGRATIONS.slice(
+      0,
+      CONTROL_PLANE_MIGRATIONS.indexOf("0035_session_share_level.sql"),
+    ))
+    await seedOwnerAndProject(target)
+    await target.prepare(
+      "insert into users values ('user-b', 'active', 1, 1, null, null)",
+    ).run()
+    await target.prepare(
+      "insert into org_memberships (org_id, user_id, role, created_at, updated_at) values ('org-a', 'user-b', 'member', 1, 1)",
+    ).run()
+    await target.prepare(
+      `insert into workspaces (workspace_id, org_id, project_id, owner_user_id, backing, display_name, remote_directory, created_at, updated_at)
+       values ('ws-a', 'org-a', 'prj-a', 'user-a', 'local-worktree', 'ws-a', '/srv/app', 1, 1)`,
+    ).run()
+    await target.prepare(
+      `insert into session_registration_operations
+         (operation_id, session_id, workspace_id, org_id, project_id, creator_actor_id,
+          operation_kind, parent_session_id, requested_title, state, state_reason, created_at, updated_at)
+       values ('op-a', 'ses-a', 'ws-a', 'org-a', 'prj-a', 'actor-a', 'create', null, null, 'registered', null, 1, 1)`,
+    ).run()
+    await target.prepare(
+      `insert into sessions (session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
+         lifecycle_generation, title, created_at, updated_at)
+       values ('ses-a', 'op-a', 'ws-a', 'org-a', 'prj-a', 'actor-a', 1, null, 1, 1)`,
+    ).run()
+    await target.prepare(
+      `insert into session_share_grants
+         (grant_id, session_id, workspace_id, org_id, project_id, target_user_id, target_org_id,
+          target_team_id, granted_by_actor_id, granted_at, revoked_at)
+       values ('share-a', 'ses-a', 'ws-a', 'org-a', 'prj-a', 'user-b', null, null, 'actor-a', 1, null)`,
+    ).run()
+
+    await apply(target, ["0035_session_share_level.sql"])
+
+    const rows = await target
+      .prepare("select grant_id, level from session_share_grants order by grant_id")
+      .all<{ grant_id: string; level: string }>()
+    expect(rows.results).toEqual([{ grant_id: "share-a", level: "follow" }])
+
+    await target.prepare("update session_share_grants set level = 'send' where grant_id = 'share-a'").run()
+    expect((await target.prepare("select level from session_share_grants where grant_id = 'share-a'").first<{ level: string }>())?.level)
+      .toBe("send")
+    await expect(
+      target.prepare("update session_share_grants set level = 'broadcast' where grant_id = 'share-a'").run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
   })
 })
 

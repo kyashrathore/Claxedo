@@ -1416,7 +1416,7 @@ describe("live session events reach the pane that registered the session", () =>
     // target carries the workspace identity. This is the address the reader
     // publishes every frame of that workspace's stream under.
     const directory = eventStreamFrameAddress({
-      kind: "wr", serverUrl: "http://127.0.0.1:3001", workspaceId: WORKSPACE_ID, workspaceKind: "user-hosted",
+      kind: "wr", serverUrl: "http://127.0.0.1:3001", workspaceId: WORKSPACE_ID, hostKind: "machine",
     })(HOST_DIR)
     globalEvents.emit({
       name: directory,

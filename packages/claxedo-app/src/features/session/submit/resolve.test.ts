@@ -58,7 +58,7 @@ describe("resolveSubmitDirectory", () => {
     isNewSession: false,
     defaultDirectory: "/default",
     worktreeSelection: "main",
-    workspaceKind: "local",
+    hostKind: "self",
     showMissingWorkspace: () => undefined,
     resolveCloudSessionDirectory: async () => undefined,
     prepareCloudSessionDirectory: async () => true,
@@ -97,7 +97,7 @@ describe("resolveSubmitDirectory", () => {
     const result = await resolveSubmitDirectory({
       ...baseInput,
       isNewSession: true,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       resolveCloudSessionDirectory: async () => "/cloud/ws",
       prepareCloudSessionDirectory: async (dir) => {
         prepared = dir
@@ -116,7 +116,7 @@ describe("resolveSubmitDirectory", () => {
     const result = await resolveSubmitDirectory({
       ...baseInput,
       isNewSession: true,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       resolveCloudSessionDirectory: async () => "/cloud/ws",
       prepareCloudSessionDirectory: async () => false,
     })
@@ -149,7 +149,7 @@ describe("resolveSubmitDirectory pending preparation", () => {
     isNewSession: true,
     defaultDirectory: "/default",
     worktreeSelection: "main",
-    workspaceKind: "cloud",
+    hostKind: "provisioner",
     showMissingWorkspace: () => undefined,
     createLocalWorktree: async () => undefined,
   } as const

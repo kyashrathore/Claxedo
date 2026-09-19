@@ -52,7 +52,7 @@ describe("session pane cache observers", () => {
         active: () => true,
         sessionID: () => "ses_1",
         directory: () => "/repo",
-        sessionRef: () => ({ sessionId: "ses_1", host: "workspace", toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" } }),
+        sessionRef: () => ({ sessionId: "ses_1", host: "workspace", toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "machine", hostId: "host_local" } }),
         fetchSessionRow,
       })
       return <div />

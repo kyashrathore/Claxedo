@@ -561,7 +561,6 @@ async function installUserHostedRuntimeMock(
       requests.mintCount += 1
       if (opts.mintDelayMs) await wait(opts.mintDelayMs)
       return json(route, {
-        access: "user-hosted",
         backing: "local-worktree",
         workspaceId: WORKSPACE_ID,
         role: "owner",
@@ -787,6 +786,10 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/api/wr/diff/targets") return json(route, {})
       if (runtimePath === "/api/wr/diff/vcs") return json(route, [])
       if (runtimePath.startsWith("/find")) return json(route, [])
+      // The runtime answers its queue with an ARRAY. The generic `{}` below is
+      // not a smaller answer here: the transcript reads the body as a list and
+      // an object takes the whole app down through the error boundary.
+      if (runtimePath.endsWith("/queue")) return json(route, [])
       // Unmatched-but-relay-scoped path: accept generically rather than
       // faking an exact shape (e.g. a PTY create call this spec does not
       // otherwise model) — still recorded in `relayHits` above, which is what the

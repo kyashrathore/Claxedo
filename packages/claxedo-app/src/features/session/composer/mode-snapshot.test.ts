@@ -9,7 +9,7 @@ describe("composerModeSnapshot", () => {
         target: {
           directory: "/workspace/project",
           worktree: "main",
-          workspaceKind: "local",
+          hostKind: "self",
           signedControlPlane: false,
         },
       },

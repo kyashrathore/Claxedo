@@ -71,17 +71,17 @@ afterEach(() => {
 
 describe("sessionSourceForWorkspace", () => {
   test("chooses the source from the catalog kind and nothing else", () => {
-    expect(sessionSourceForWorkspace({ kind: "local", workspaceId: "/repo" })).toEqual({ kind: "local" })
-    expect(sessionSourceForWorkspace({ kind: "cloud", workspaceId: "ws_c" })).toEqual({ kind: "cloud" })
-    expect(sessionSourceForWorkspace({ kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" }))
-      .toEqual({ kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" })
+    expect(sessionSourceForWorkspace({ kind: "self", workspaceId: "/repo" })).toEqual({ kind: "self" })
+    expect(sessionSourceForWorkspace({ kind: "provisioner", workspaceId: "ws_c" })).toEqual({ kind: "provisioner" })
+    expect(sessionSourceForWorkspace({ kind: "machine", workspaceId: "ws_1", projectId: "prj_1" }))
+      .toEqual({ kind: "machine", workspaceId: "ws_1", projectId: "prj_1" })
     // No kind is not a relay-backed workspace: the app's own central answers.
-    expect(sessionSourceForWorkspace({ kind: undefined, workspaceId: "/repo" })).toEqual({ kind: "local" })
+    expect(sessionSourceForWorkspace({ kind: undefined, workspaceId: "/repo" })).toEqual({ kind: "self" })
   })
 
   test("Global Chat and the daemon's own sessions share one source", () => {
-    expect(centralSessionSource({ local: true })).toEqual({ kind: "local" })
-    expect(centralSessionSource({ local: false })).toEqual({ kind: "cloud" })
+    expect(centralSessionSource({ local: true })).toEqual({ kind: "self" })
+    expect(centralSessionSource({ local: false })).toEqual({ kind: "provisioner" })
   })
 })
 
@@ -116,7 +116,7 @@ describe("a user-hosted workspace's list", () => {
 
     const page = await sessionSourceQueryOptions({
       baseUrl: CONTROL,
-      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      source: { kind: "machine", workspaceId: "ws_1", projectId: "prj_1" },
       query: railQuery(),
       request,
     }).queryFn!({} as never) as SessionListResponse
@@ -147,7 +147,7 @@ describe("a user-hosted workspace's list", () => {
         })),
       ),
     })
-    const source = { kind: "user-hosted" as const, workspaceId: "ws_1" }
+    const source = { kind: "machine" as const, workspaceId: "ws_1" }
     const first = await sessionSourceQueryOptions({
       baseUrl: CONTROL, source, query: railQuery({ limit: 2 }), request,
     }).queryFn!({} as never) as SessionListResponse
@@ -174,7 +174,7 @@ describe("a user-hosted workspace's list", () => {
     const query = railQuery()
     const options = sessionSourceQueryOptions({
       baseUrl: CONTROL,
-      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      source: { kind: "machine", workspaceId: "ws_1", projectId: "prj_1" },
       query,
       request,
     })
@@ -218,7 +218,7 @@ describe("who owns a user-hosted row", () => {
     const { requested, request } = recordingFetch(routes)
     const page = await sessionSourceQueryOptions({
       baseUrl: CONTROL,
-      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      source: { kind: "machine", workspaceId: "ws_1", projectId: "prj_1" },
       query: railQuery(),
       request,
     }).queryFn!({} as never) as SessionListResponse
@@ -284,7 +284,7 @@ describe("a re-prompted session's place in the list", () => {
     })
     const options = sessionSourceQueryOptions({
       baseUrl: CONTROL,
-      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      source: { kind: "machine", workspaceId: "ws_1", projectId: "prj_1" },
       query: railQuery(),
       request,
     })
@@ -318,7 +318,7 @@ describe("a re-prompted session's place in the list", () => {
     })
     const options = sessionSourceQueryOptions({
       baseUrl: CONTROL,
-      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      source: { kind: "machine", workspaceId: "ws_1", projectId: "prj_1" },
       query: railQuery({ sort: "human_turn_desc" }),
       request,
     })
@@ -396,7 +396,7 @@ describe("a cloud workspace's list", () => {
 
     await sessionSourceQueryOptions({
       baseUrl: CONTROL,
-      source: { kind: "cloud" },
+      source: { kind: "provisioner" },
       query: railQuery({ workspaceId: "ws_cloud" }),
       request,
     }).queryFn!({} as never)
@@ -454,9 +454,9 @@ describe("a project's list", () => {
       local: false,
       projectId: "prj_1",
       workspaces: { "/repo/main": catalog["/repo/main"] },
-    })).toEqual({ kind: "cloud" })
+    })).toEqual({ kind: "provisioner" })
     expect(projectSessionSource({ local: true, projectId: "prj_1", workspaces: undefined }))
-      .toEqual({ kind: "local" })
+      .toEqual({ kind: "self" })
   })
 
   test("every ref the catalog keys one workspace under is still one source", () => {
@@ -469,8 +469,8 @@ describe("a project's list", () => {
       },
     })).toEqual({
       kind: "composed",
-      central: { kind: "cloud" },
-      userHosted: [{ kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" }],
+      central: { kind: "provisioner" },
+      userHosted: [{ kind: "machine", workspaceId: "ws_1", projectId: "prj_1" }],
     })
   })
 

@@ -21,6 +21,7 @@ import {
   sessionResourceAuthorityScope,
   type SessionResourceAuthorityScope,
 } from "./session-resource-authority"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type SessionCapabilitiesScope = SessionResourceAuthorityScope
 
@@ -39,7 +40,7 @@ export function createSessionPaneQueries(input: {
   serverUrl?: Accessor<string | undefined>
   signedControlPlane?: Accessor<boolean | undefined>
   workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
+  hostKind?: Accessor<RelayHostKind | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   fetchSessionRow?: (sessionID: string) => Promise<ClaxedoSession | undefined>
 }) {
@@ -79,7 +80,7 @@ export function createSessionPaneQueries(input: {
     serverUrl: input.serverUrl?.(),
     signedControlPlane: input.signedControlPlane?.() ?? false,
     workspaceId: input.workspaceId?.(),
-    workspaceKind: input.workspaceKind?.(),
+    hostKind: input.hostKind?.(),
     sessionRef: input.sessionRef?.(),
   })
   const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) =>
@@ -124,7 +125,7 @@ export function sessionTodoTransportRequestKey(input: {
   directory: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
 }) {
   return shellDataKeys.sessionId(
     input.sessionID,
@@ -132,7 +133,7 @@ export function sessionTodoTransportRequestKey(input: {
     input.directory,
     input.signedControlPlane === true ? "signed" : "local",
     input.workspaceId ?? "",
-    input.workspaceKind ?? "",
+    input.hostKind ?? "",
   )
 }
 
@@ -145,7 +146,7 @@ export function sessionTransportRequestKey(input: {
   shouldFetchSession: boolean
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
 }) {
   return shellDataKeys.sessionId(
     input.sessionID,
@@ -157,6 +158,6 @@ export function sessionTransportRequestKey(input: {
     input.shouldFetchSession ? "with-session" : "messages-only",
     input.signedControlPlane === true ? "signed" : "local",
     input.workspaceId ?? "",
-    input.workspaceKind ?? "",
+    input.hostKind ?? "",
   )
 }

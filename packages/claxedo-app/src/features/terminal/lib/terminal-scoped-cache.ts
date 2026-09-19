@@ -1,6 +1,7 @@
 import type { Placement } from "@/platform/runtime/placement"
 import { queryClient } from "@/platform/query/query-client"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 /**
  * Shared caching + transport plumbing for the two terminal-scoped fetchers
@@ -95,7 +96,7 @@ export const loadCachedEntry = <T>(input: {
 }
 
 export type ResolvedWorkspaceRuntime = {
-  kind?: "cloud" | "local" | "user-hosted" | null
+  kind?: WorkspaceHostKind | null
   workspaceId?: string | null
 } | null | undefined
 
@@ -120,10 +121,10 @@ export const terminalScopedPlacement = (
   signedWorkspace?: ResolvedWorkspaceRuntime,
 ): Placement => {
   const central = centralTransportForServer(site)
-  const resolved = signedWorkspace?.kind && signedWorkspace.kind !== "local" && signedWorkspace.workspaceId
+  const resolved = signedWorkspace?.kind && signedWorkspace.kind !== "self" && signedWorkspace.workspaceId
     ? signedWorkspace
     : workspace
-  if (resolved?.kind && resolved.kind !== "local" && resolved.workspaceId) {
+  if (resolved?.kind && resolved.kind !== "self" && resolved.workspaceId) {
     return {
       workspaceId: resolved.workspaceId,
       hosting: "workspace",

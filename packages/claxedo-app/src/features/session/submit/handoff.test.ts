@@ -121,7 +121,7 @@ describe("applyCreatedSessionTargetEffects", () => {
         sessionId: "ses_1",
         host: "workspace",
         workspaceId: "ws_runtime",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_runtime", hosting: "cloud" },
+        toolSandbox: { kind: "workspace", workspaceId: "ws_runtime", hosting: "provisioner" },
       },
       shouldAutoAccept: false,
       enableAutoAccept: () => undefined,

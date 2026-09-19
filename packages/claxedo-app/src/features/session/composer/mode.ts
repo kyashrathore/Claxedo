@@ -1,11 +1,12 @@
 import { sessionHarness, type HarnessRef, type SessionRef } from "@/platform/identity/session-ref"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
-export type DraftWorkspaceKind = "local" | "cloud" | "user-hosted"
+export type DraftHostKind = WorkspaceHostKind
 
 export type DraftTarget = {
   readonly directory?: string
   readonly worktree: string
-  readonly workspaceKind: DraftWorkspaceKind
+  readonly hostKind: DraftHostKind
   readonly workspaceId?: string
   readonly signedControlPlane: boolean
   readonly harness?: HarnessRef

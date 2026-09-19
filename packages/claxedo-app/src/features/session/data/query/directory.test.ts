@@ -104,14 +104,14 @@ describe("directory query factories", () => {
     const query = agentListQuery({
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       request: (async (input: string | URL | Request) => {
         calls.push(input instanceof Request ? input.url : String(input))
         return Response.json([])
       }) as typeof fetch,
     })
 
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", "local:ws_local"])
+    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", "self:ws_local"])
     expect(await query.queryFn()).toEqual([])
     expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws"])
   })
@@ -122,14 +122,14 @@ describe("directory query factories", () => {
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
       harnessType: "codex-acp",
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       request: (async (input: string | URL | Request) => {
         calls.push(input instanceof Request ? input.url : String(input))
         return Response.json([agent("connection-profile")])
       }) as typeof fetch,
     })
 
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", "local:ws_local"])
+    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", "self:ws_local"])
     expect(await query.queryFn()).toEqual([agent("connection-profile")])
     expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=codex-acp"])
   })
@@ -163,7 +163,7 @@ describe("directory query factories", () => {
       workspace: {
         workspaceId: "ws_1",
         directory: "/tmp/ws",
-        kind: "cloud",
+        kind: "provisioner",
       },
     })
 
@@ -190,7 +190,7 @@ describe("directory query factories", () => {
         baseUrl,
         directory,
         harnessType: "opencode",
-        workspace: { workspaceId: "ws_A", directory, kind: "cloud" },
+        workspace: { workspaceId: "ws_A", directory, kind: "provisioner" },
         request: (async (input: string | URL | Request, init?: RequestInit) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
           calls.push(req.url)
@@ -368,7 +368,7 @@ describe("directory query factories", () => {
             return Response.json({
               workspaceId: "ws_local_inventory",
               directory,
-              kind: "local",
+              kind: "self",
             })
           }
           throw new Error(`unexpected signed request: ${req.method} ${req.url}`)
@@ -405,7 +405,7 @@ describe("directory query factories", () => {
       workspace: {
         workspaceId: "ws_local",
         directory: "/tmp/ws",
-        kind: "local",
+        kind: "self",
       },
     })
 
@@ -432,7 +432,7 @@ describe("directory query factories", () => {
         workspace: {
           workspaceId: "ws_local",
           directory: "/tmp/ws",
-          kind: "local",
+          kind: "self",
         },
       })
 

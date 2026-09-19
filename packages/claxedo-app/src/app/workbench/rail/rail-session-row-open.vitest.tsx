@@ -77,7 +77,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 }))
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
-  workspacePlacement: () => undefined,
+  workspaceRelayPlacement: () => undefined,
   isWorkspaceReady: () => true,
 }))
 
@@ -241,7 +241,7 @@ describe("rail session row activation on a relay-backed workspace", () => {
       sessionRef: sessionRefForWorkspaceSession({
         sessionId: SESSION_ID,
         directory: WORKSPACE_REF,
-        workspace: { workspaceId: WORKSPACE_ID, kind: "user-hosted" },
+        workspace: { workspaceId: WORKSPACE_ID, kind: "machine" },
       }),
       workspaceRouteId: WORKSPACE_ID,
     })

@@ -27,7 +27,7 @@ import { createHarnessSubmitController } from "@/features/session/harness/contro
 import { preparePromptRequest, resolveSubmitMode, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
 import { replaceQueuedPrompt } from "./submit-queued-edit"
 import { QUEUED_MESSAGES_QUERY_KEY } from "@/features/session/queue/queued-messages-controller"
-import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
+import { cloudWorkspaceCreateInput, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-admission"
 import { createSubmitAbort } from "./submit-abort"
 import { createSubmitHarnessSelection } from "./mode-commands"
@@ -49,6 +49,7 @@ import { createSubmitBootWriter, createSubmitOptimisticTimeline } from "./submit
 import type { PromptSubmitInput } from "./submit-input"
 import { harnessSelectionValue, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create-authority"
+import { asHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type { FollowupDraft } from "./submit-input"
 
@@ -112,7 +113,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     signedControlPlane: () => input.signedControlPlane?.(),
     projects: projectCatalog,
     workspaceId: () => input.workspaceId?.(),
-    workspaceKind: () => input.workspaceKind?.(),
+    hostKind: () => input.hostKind?.(),
     sessionRef: () => input.sessionRef?.(),
     request: platform.fetch ?? authFetch,
     localRequest: authFetch,
@@ -202,7 +203,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const worktreeSelection = input.newSessionWorktree?.() || "main"
     const baseRef = input.newSessionBaseRef?.()?.trim() || undefined
     const sourceBranch = input.newSessionSourceBranch?.()?.trim() || undefined
-    const workspaceKind = input.newSessionWorkspaceKind?.() ?? "local"
+    const hostKind = input.newSessionHostKind?.() ?? "local"
     const relayWorkspaceConnectionReady = () => {
       const workspaceId =
         input.workspaceId?.() ??
@@ -210,7 +211,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return isWorkspaceReady(workspaceId)
     }
     const cloudStartup = createCloudStartupController({
-      enabled: isNewSession && workspaceKind === "cloud" && !relayWorkspaceConnectionReady(),
+      enabled: isNewSession && hostKind === "provisioner" && !relayWorkspaceConnectionReady(),
       onCloudStartup: input.onCloudStartup,
       errorMessage,
     })
@@ -239,7 +240,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ...scopeIdentity,
     })
     // A model-less cloud submit must reject BEFORE directory resolution, which provisions a real workspace — see cloudSubmitMissingModel's contract.
-    const missingCloudModel = cloudSubmitMissingModel({ isNewSession, workspaceKind, selection: selectedHarnessType(sourceScope), modelKey: harnessController.modelKeyForSubmit(sourceScope) })
+    const missingCloudModel = cloudSubmitMissingModel({ isNewSession, hostKind, selection: selectedHarnessType(sourceScope), modelKey: harnessController.modelKeyForSubmit(sourceScope) })
     if (missingCloudModel) return rejectModelRequired()
 
     const resolvedDirectory = await resolvePreparedSubmitDirectory({
@@ -249,7 +250,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       fallbackDirectory,
       defaultDirectory: sdk.directory,
       worktreeSelection,
-      workspaceKind,
+      hostKind,
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef,
       workspaceForDirectory: (directory) => typeof sdk.workspace === "function" ? sdk.workspace(directory) : undefined,
@@ -334,8 +335,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const reservationWorkspaceId = managedSessionRegistration
       ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory, projectCatalog())
       : undefined
-    const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
-    const goalWorkspaceKind = signedWorkspaceKind === "local" ? undefined : signedWorkspaceKind
+    const signedHostKind = asHostKind(hostKind)
+    const goalHostKind = isRelayHostKind(signedHostKind) ? signedHostKind : undefined
     mode = resolveSubmitMode({ mode, setMode: input.setMode })
     const harness = harnessProfile(sessionHarnessType).displayName
     const boot = (sessionID?: string) => {
@@ -435,8 +436,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       claxedoState,
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef(sessionDirectory) ?? (
-        signedWorkspaceId && signedWorkspaceKind && signedWorkspaceKind !== "local"
-          ? { workspaceId: signedWorkspaceId, kind: signedWorkspaceKind }
+        signedWorkspaceId && isRelayHostKind(signedHostKind)
+          ? { workspaceId: signedWorkspaceId, kind: signedHostKind }
           : undefined
       ),
       harness: persistedHarnessRef,
@@ -508,7 +509,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         directory: sessionDirectory,
         harnessType: harnessSelectionValue(persistedHarnessType),
         workspace: submitWorkspaceBacking({
-          sessionRef: input.sessionRef?.(), workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.(),
+          sessionRef: input.sessionRef?.(), workspaceId: input.workspaceId?.(), hostKind: input.hostKind?.(),
         }),
       })
 
@@ -617,7 +618,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         serverUrl: globalSDK?.url ?? getClaxedoServerUrl(),
         signedControlPlane,
         workspaceId: signedWorkspaceId,
-        workspaceKind: goalWorkspaceKind,
+        hostKind: goalHostKind,
         client: runtimePromptClient,
         record: recordPromptSubmissionContext,
         prepareLiveEvents: globalSDK ? async () => {
@@ -625,7 +626,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           globalSDK?.event.setLiveSession(session.id, {
             ...(sessionRef?.host ? { host: sessionRef.host } : {}),
             directory: sessionDirectory,
-            ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
+            ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, hostKind: runtimeRef.kind } : {}),
             sessionRef,
           })
           await globalSDK?.event.ready()

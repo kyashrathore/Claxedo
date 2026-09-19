@@ -46,13 +46,13 @@ describe("session projection sync-back", () => {
     expect(sessionProjectionWorkspaceBacking({
       signedControlPlane: true,
       workspaceId: "ws_signed",
-      workspaceKind: "cloud",
-    })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
+      hostKind: "provisioner",
+    })).toEqual({ workspaceId: "ws_signed", kind: "provisioner" })
   })
 
   test("projects only a cloud runtime's sessions from a resolved workspace runtime ref", () => {
-    expect(sessionProjectionBacking({ workspaceId: "ws_cloud", kind: "cloud" })).toEqual({ workspaceId: "ws_cloud", kind: "cloud" })
-    expect(sessionProjectionBacking({ workspaceId: "ws_machine", kind: "user-hosted" })).toBeUndefined()
+    expect(sessionProjectionBacking({ workspaceId: "ws_cloud", kind: "provisioner" })).toEqual({ workspaceId: "ws_cloud", kind: "provisioner" })
+    expect(sessionProjectionBacking({ workspaceId: "ws_machine", kind: "machine" })).toBeUndefined()
     expect(sessionProjectionBacking(undefined)).toBeUndefined()
   })
 
@@ -60,7 +60,7 @@ describe("session projection sync-back", () => {
     expect(sessionProjectionWorkspaceBacking({
       signedControlPlane: true,
       workspaceId: "ws_machine",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     })).toBeUndefined()
   })
 
@@ -68,7 +68,7 @@ describe("session projection sync-back", () => {
     expect(sessionProjectionWorkspaceBacking({
       signedControlPlane: false,
       workspaceId: "ws_signed",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     })).toBeUndefined()
     expect(sessionProjectionWorkspaceBacking({ signedControlPlane: true, workspaceId: "ws_signed" })).toBeUndefined()
   })

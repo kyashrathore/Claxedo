@@ -279,7 +279,7 @@ describe("composer component mode isolation", () => {
           draftId: "draft_surface",
           target: {
             worktree: "feature",
-            workspaceKind: "cloud",
+            hostKind: "provisioner",
             workspaceId: "ws_cloud",
             signedControlPlane: true,
             harness: { id: "codex-acp" },

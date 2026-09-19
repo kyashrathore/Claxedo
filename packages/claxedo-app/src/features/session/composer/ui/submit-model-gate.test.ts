@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { cloudSubmitMissingModel, resolvePromptSubmitConfig } from "./submit-model-gate"
 
 describe("submit model gate", () => {
-  const base = { isNewSession: true, workspaceKind: "cloud", selection: undefined, modelKey: undefined }
+  const base = { isNewSession: true, hostKind: "provisioner", selection: undefined, modelKey: undefined }
   test("requires a selected harness and its authoritative model key before provisioning", () => {
     const selection = { kind: "native", harnessId: "pi" } as const
     const modelKey = { providerID: "anthropic", modelID: "sonnet" }
@@ -16,7 +16,7 @@ describe("submit model gate", () => {
   })
   test("leaves existing and local sessions to their post-resolution gate", () => {
     expect(cloudSubmitMissingModel({ ...base, isNewSession: false })).toBe(false)
-    expect(cloudSubmitMissingModel({ ...base, workspaceKind: "local" })).toBe(false)
+    expect(cloudSubmitMissingModel({ ...base, hostKind: "self" })).toBe(false)
   })
 
   test("resumed sessions keep their model and agent while accepting provider effort changes", () => {

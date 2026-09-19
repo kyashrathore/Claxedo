@@ -87,7 +87,7 @@ export function bootstrapSessionRuntimeTarget(input: {
   if (input.workspace) {
     return {
       workspaceId: input.workspace.workspaceId,
-      workspaceKind: input.workspace.kind,
+      hostKind: input.workspace.kind,
       signedControlPlane: true,
     } as const
   }

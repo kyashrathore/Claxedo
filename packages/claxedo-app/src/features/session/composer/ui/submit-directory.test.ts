@@ -10,7 +10,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const handoffs: string[] = []
 
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projectDirectory: "/repo/main",
       projects: [{ id: "project-1", worktree: "/repo/main" }],
       createCloudWorkspace: async (projectId) => {
@@ -24,7 +24,7 @@ describe("resolvePreparedSubmitDirectory", () => {
       prepareWorkspaceRuntime: async (input) => {
         preparedDirectories.push(input.directory)
         input.onLog?.({ step: "ready", ts: 123 })
-        return { ok: true, startup: true, workspace: { kind: "cloud", workspaceId: "ws_1", status: "ready" } }
+        return { ok: true, startup: true, workspace: { kind: "provisioner", workspaceId: "ws_1", status: "ready" } }
       },
     })
 
@@ -40,7 +40,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const createdProjects: string[] = []
 
     const result = await resolveDirectory({
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       projectDirectory: "/repo/main",
       projects: [{ id: "project-1", worktree: "/repo/main" }],
       showToast: (toast) => toasts.push(toast),
@@ -65,11 +65,11 @@ describe("resolvePreparedSubmitDirectory", () => {
     const createdProjects: string[] = []
 
     const result = await resolveDirectory({
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       worktreeSelection: "workspace:uh_1",
       projectDirectory: "workspace:uh_1",
       runtimeWorkspaceRef: (directory) =>
-        directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "user-hosted" } : undefined,
+        directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "machine" } : undefined,
       workspaceForDirectory: (directory) =>
         directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "user-hosted" } : undefined,
       createCloudWorkspace: async (projectId) => {
@@ -91,7 +91,7 @@ describe("resolvePreparedSubmitDirectory", () => {
   test("resolves user-hosted filesystem directories through the SDK workspace inventory", async () => {
     const prepared: string[] = []
     const result = await resolveDirectory({
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       draftId: "draft_1",
       projectDirectory: "/repo/user-hosted",
       runtimeWorkspaceRef: () => undefined,
@@ -113,7 +113,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const prepared: string[] = []
     const createdProjects: string[] = []
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projectDirectory: "/repo/cloud-workspace",
       runtimeWorkspaceRef: () => undefined,
       workspaceForDirectory: (directory) => ({
@@ -129,7 +129,7 @@ describe("resolvePreparedSubmitDirectory", () => {
         return {
           ok: true,
           startup: false,
-          workspace: { kind: "cloud", workspaceId: "ws_cloud_filesystem", status: "ready" },
+          workspace: { kind: "provisioner", workspaceId: "ws_cloud_filesystem", status: "ready" },
         }
       },
     })
@@ -144,15 +144,15 @@ describe("resolvePreparedSubmitDirectory", () => {
     const states: Array<CloudStartupState | undefined> = []
 
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       worktreeSelection: "workspace:ws_1",
-      runtimeWorkspaceRef: () => ({ workspaceId: "ws_1", kind: "cloud" }),
+      runtimeWorkspaceRef: () => ({ workspaceId: "ws_1", kind: "provisioner" }),
       workspaceForDirectory: () => ({ workspaceId: "ws_1", kind: "cloud" }),
       onCloudStartup: (state) => states.push(state),
       publishCloudHandoff: (status) => handoffs.push(status),
       prepareWorkspaceRuntime: async (input) => {
         input.onLog?.({ step: "error", message: "Runtime failed", ts: 789 })
-        return { ok: false, startup: true, message: "Runtime failed", workspace: { kind: "cloud", workspaceId: "ws_1", status: "failed" } }
+        return { ok: false, startup: true, message: "Runtime failed", workspace: { kind: "provisioner", workspaceId: "ws_1", status: "failed" } }
       },
     })
 
@@ -167,7 +167,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const toasts: SubmitToast[] = []
 
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projectDirectory: "/repo/main",
       projects: [{ id: "project-1", worktree: "/repo/main" }],
       showToast: (toast) => toasts.push(toast),
@@ -189,7 +189,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const toasts: SubmitToast[] = []
 
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projectDirectory: "/repo/main",
       projects: [{ id: "project-1", worktree: "/repo/main" }],
       showToast: (toast) => toasts.push(toast),
@@ -211,7 +211,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const lifecycle: string[] = []
 
     const result = await resolveDirectory({
-      workspaceKind: "local",
+      hostKind: "self",
       worktreeSelection: "create",
       projectDirectory: "/repo/worktree-a",
       projects: [{ id: "project-1", worktree: "/repo/main", sandboxes: ["/repo/worktree-a"] }],
@@ -238,7 +238,7 @@ describe("resolvePreparedSubmitDirectory", () => {
 
   test("keeps the created worktree handoff when its inventory refresh fails", async () => {
     const result = await resolveDirectory({
-      workspaceKind: "local",
+      hostKind: "self",
       worktreeSelection: "create",
       projectDirectory: "/repo/main",
       projects: [{ id: "project-1", worktree: "/repo/main" }],
@@ -254,7 +254,7 @@ describe("resolvePreparedSubmitDirectory", () => {
   test("does not steal a remote directory from an unrelated project in the catalog", async () => {
     const prepared: string[] = []
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projectDirectory: "/repo/selected",
       defaultDirectory: "/repo/selected",
       projects: [
@@ -268,13 +268,13 @@ describe("resolvePreparedSubmitDirectory", () => {
         },
       ],
       runtimeWorkspaceRef: (directory) =>
-        directory === "ws_other" ? { workspaceId: "ws_other", kind: "cloud" } : undefined,
+        directory === "ws_other" ? { workspaceId: "ws_other", kind: "provisioner" } : undefined,
       workspaceForDirectory: (directory) =>
         directory === "ws_other" ? { workspaceId: "ws_other", kind: "cloud" } : undefined,
       createCloudWorkspace: async () => ({ workspaceId: "ws_selected" }),
       prepareWorkspaceRuntime: async (input) => {
         prepared.push(input.directory)
-        return { ok: true, startup: true, workspace: { kind: "cloud", workspaceId: input.directory, status: "ready" } }
+        return { ok: true, startup: true, workspace: { kind: "provisioner", workspaceId: input.directory, status: "ready" } }
       },
     })
 
@@ -286,7 +286,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const createdProjects: string[] = []
     const existingWorkspaceId = "ws_existing"
     const result = await resolveDirectory({
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       worktreeSelection: "create",
       projectDirectory: "/repo/main",
       defaultDirectory: existingWorkspaceId,
@@ -299,7 +299,7 @@ describe("resolvePreparedSubmitDirectory", () => {
         },
       }],
       runtimeWorkspaceRef: (directory) =>
-        directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "cloud" } : undefined,
+        directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "provisioner" } : undefined,
       workspaceForDirectory: (directory) =>
         directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "cloud" } : undefined,
       createCloudWorkspace: async (projectId) => {
@@ -309,7 +309,7 @@ describe("resolvePreparedSubmitDirectory", () => {
       prepareWorkspaceRuntime: async () => ({
         ok: true,
         startup: true,
-        workspace: { kind: "cloud", workspaceId: "ws_new", status: "ready" },
+        workspace: { kind: "provisioner", workspaceId: "ws_new", status: "ready" },
       }),
     })
 
@@ -320,7 +320,7 @@ describe("resolvePreparedSubmitDirectory", () => {
   test("remaps a local association UUID directory to the project worktree before create", async () => {
     const associationId = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
     const result = await resolveDirectory({
-      workspaceKind: "local",
+      hostKind: "self",
       defaultDirectory: associationId,
       projects: [{
         id: "project-1",
@@ -341,7 +341,7 @@ describe("resolvePreparedSubmitDirectory", () => {
     const toasts: SubmitToast[] = []
     const associationId = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
     const result = await resolveDirectory({
-      workspaceKind: "local",
+      hostKind: "self",
       defaultDirectory: associationId,
       projects: [],
       showToast: (toast) => toasts.push(toast),
@@ -364,7 +364,7 @@ function resolveDirectory(overrides: Partial<ResolveDirectoryInput>) {
     fallbackDirectory: undefined,
     defaultDirectory: "/repo/main",
     worktreeSelection: "main",
-    workspaceKind: "local",
+    hostKind: "self",
     projects: [],
     runtimeWorkspaceRef: () => undefined,
     workspaceForDirectory: () => undefined,

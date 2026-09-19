@@ -106,7 +106,7 @@ describe("surface route mirroring", () => {
           sessionId: "ses_signed",
           host: "workspace",
           workspaceId: "ws_signed",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "machine" },
         },
       },
     }
@@ -141,7 +141,7 @@ describe("surface route mirroring", () => {
               sessionId: "new",
               host: "workspace",
               workspaceId: "ws_signed",
-              toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "cloud" },
+              toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "provisioner" },
             },
           },
         },

@@ -6,6 +6,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
+import { inventoryHostKind } from "@/platform/runtime/placement-wire"
 import { asRecord, readNullableString, readString } from "@/lib/record"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
@@ -26,7 +27,7 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
  * files — bootstrap, the rail, terminals, processes, review, the session
  * composer and harness — imported a module the cloud extraction has to move.
  *
- * Provisioning a cloud sandbox or connecting a user-hosted host IS a hosted
+ * Provisioning a cloud sandbox or connecting to another machine IS a hosted
  * capability, and that half stays behind `workspace-startup-port.ts`. The line
  * between the two files is "read the record" versus "make the runtime exist".
  *
@@ -62,20 +63,18 @@ export function runtimeScope(input: { directory?: string; workspaceId?: string }
 
 export function pendingCloudRuntime(
   input: WorkspaceRuntimeSnapshot | null | undefined,
-): input is WorkspaceRuntimeSnapshot & { kind: "cloud"; status: string } {
-  return !!input && input.kind === "cloud" && !!input.status && input.status !== "ready" && input.status !== "failed"
+): input is WorkspaceRuntimeSnapshot & { kind: "provisioner"; status: string } {
+  return !!input && input.kind === "provisioner" && !!input.status && input.status !== "ready" && input.status !== "failed"
 }
 
 export function workspaceRuntimeBlocksBootstrap(input?: WorkspaceRuntimeSnapshot | null) {
   return pendingCloudRuntime(input)
 }
 
-const WORKSPACE_KINDS = ["local", "cloud", "user-hosted"] as const
-
-function workspaceKind(value: unknown): WorkspaceRuntimeSnapshot["kind"] {
+function recordHostKind(value: unknown): WorkspaceRuntimeSnapshot["kind"] {
   const kind = readNullableString(value, "kind")
   if (kind === null) return null
-  return WORKSPACE_KINDS.find((candidate) => candidate === kind)
+  return inventoryHostKind(kind)
 }
 
 /**
@@ -104,7 +103,7 @@ function workspaceRuntimeSnapshotFromWire(raw: unknown): WorkspaceRuntimeSnapsho
     workspaceId,
     projectId: readNullableString(record, "projectId"),
     directory: readString(record, "directory"),
-    kind: workspaceKind(record),
+    kind: recordHostKind(record),
     provider: readNullableString(record, "provider"),
     sandboxId: readNullableString(record, "sandboxId"),
     status: readNullableString(record, "status"),

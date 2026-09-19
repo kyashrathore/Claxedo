@@ -27,7 +27,11 @@ import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memo
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
-import type { SessionAccessPolicy } from "../session-access-policy"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessDecision,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
 
 function adapter(input: {
   onDirectory?: (directory: RuntimeDirectory) => void
@@ -2398,5 +2402,142 @@ describe("createSessionRoutes engine refusals", () => {
     const response = await app.request("http://localhost/permission")
     expect(response.status).toBe(500)
     expect(await response.text()).toBe("Internal Server Error")
+  })
+})
+
+describe("a share level reaches the runtime as the authority's answer to a write", () => {
+  /**
+   * The routes a `send` grant exists for. A follow grantee must be refused all
+   * three, and the refusal has to come from the same `write` question the
+   * prompt already asked — not from a fourth place that could drift from it.
+   */
+  function sharedRoutes(input: { authorizeWrite: () => Promise<SessionAccessDecision> }) {
+    const actions: Array<{ operation: string; write: boolean }> = []
+    const prompted: string[] = []
+    const responded: string[] = []
+    const replied: string[] = []
+    const item = adapter()
+    const routes = createSessionRoutes({
+      resolveAdapter: () => ({
+        ...item,
+        executeTurn: (binding, _prompt) => (async function* () {
+          prompted.push(binding.sessionId)
+        })(),
+        respondPermission: async (_binding, permId) => { responded.push(permId); return undefined },
+        replyQuestion: async (_binding, questionId) => { replied.push(questionId); return undefined },
+      }) as AgentHarnessAdapter,
+      resolveExecutionBinding: fixtureExecutionBinding(),
+      resolveDirectory: () => "/workspace",
+      getMessages: () => [],
+      listPermissions: async () => [{ id: "perm_1", sessionID: "session_shared" }] as AgentPermission[],
+      listQuestions: async () => [{ id: "question_1", sessionID: "session_shared", questions: [] }] as AgentQuestion[],
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
+        requireActor: true,
+        authority: {
+          authorizeSessionRead: async (value) => {
+            actions.push({ operation: value.operation, write: false })
+            return { allowed: true }
+          },
+          authorizeSessionWrite: async (value) => {
+            actions.push({ operation: value.operation, write: true })
+            return await input.authorizeWrite()
+          },
+          authorizeSessionStream: async () => ({ allowed: true, lease: "lease_1", expiresAt: Date.now() + 60_000 }),
+          registerSession: async () => ({ allowed: true }),
+          // The lease is rejected unless it names the turn the caller asked
+          // for, and the prompt route derives that from the message id.
+          acquireTurn: async (value) => ({
+            allowed: true,
+            turnId: value.turnId,
+            leaseId: "lease_1",
+            fencingToken: 1,
+            acquiredAt: 1,
+            expiresAt: Date.now() + 60_000,
+          }),
+          renewTurn: async (value) => ({
+            allowed: true,
+            turnId: value.turnId,
+            leaseId: "lease_1",
+            fencingToken: 1,
+            acquiredAt: 1,
+            expiresAt: Date.now() + 60_000,
+          }),
+          releaseTurn: async () => ({ released: true }),
+        },
+      }),
+      publishGlobal: () => {},
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        actor_id: "actor_grantee",
+        actor_kind: "human",
+        workspace_id: "ws_1",
+        org_id: "org_1",
+        role: "editor",
+      })
+      await next()
+    })
+    app.route("/", routes)
+    return { actions, app, prompted, replied, responded }
+  }
+
+  const post = (app: Hono, path: string, body: unknown) => app.request(`http://localhost${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  test("a follow grantee is refused the prompt, the permission answer and the question answer, and still reads", async () => {
+    const { actions, app, prompted, replied, responded } = sharedRoutes({
+      authorizeWrite: async () => ({
+        allowed: false,
+        status: 403,
+        code: "workspace_authorization_denied",
+        message: "denied",
+      }),
+    })
+
+    const prompt = await post(app, "/session/session_shared/message", {
+      messageID: "msg_1",
+      parts: [{ type: "text", text: "hi" }],
+    })
+    const permission = await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
+    const question = await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+    const read = await app.request("http://localhost/session/session_shared/message")
+
+    expect(prompt.status).toBe(403)
+    expect(permission.status).toBe(403)
+    expect(question.status).toBe(403)
+    expect(read.status).toBe(200)
+    expect(prompted).toEqual([])
+    expect(responded).toEqual([])
+    expect(replied).toEqual([])
+    expect(actions).toEqual([
+      { operation: "prompt", write: true },
+      { operation: "permission_response", write: true },
+      { operation: "question_response", write: true },
+      { operation: "message_read", write: false },
+    ])
+  })
+
+  test("a send grantee reaches the harness on all three", async () => {
+    const { app, prompted, replied, responded } = sharedRoutes({
+      authorizeWrite: async () => ({ allowed: true }),
+    })
+
+    const prompt = await post(app, "/session/session_shared/message", {
+      messageID: "msg_1",
+      parts: [{ type: "text", text: "hi" }],
+    })
+    const permission = await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
+    const question = await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+
+    expect(prompt.status).toBe(200)
+    expect(permission.status).toBe(200)
+    expect(question.status).toBe(200)
+    expect(prompted).toEqual(["session_shared"])
+    expect(responded).toEqual(["perm_1"])
+    expect(replied).toEqual(["question_1"])
   })
 })

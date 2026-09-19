@@ -164,7 +164,7 @@ describe("SessionPaneScope", () => {
           sessionId: "ses_1",
           host: "workspace",
           workspaceId: "ws_backing",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_backing", hosting: "cloud" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_backing", hosting: "provisioner" },
           harness: { kind: "native", harnessId: "codex" },
         })}
         sessionId={() => "fallback-session"}
@@ -184,7 +184,7 @@ describe("SessionPaneScope", () => {
     if (!refreshDirectory) throw new Error("SessionDirectoryScope never received refreshDirectory")
     await refreshDirectory("/repo/local", "opencode")
     expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", {
-      workspace: { workspaceId: "ws_backing", kind: "cloud" },
+      workspace: { workspaceId: "ws_backing", kind: "provisioner" },
     })
     expect(calls.scopeFor).toHaveBeenCalledWith("ws_backing")
   })
@@ -264,7 +264,7 @@ describe("SessionPaneScope", () => {
     ))
 
     expect(calls.workspaceGateProps?.workspaceId).toBe("ws_cloud_route")
-    expect(calls.workspaceGateProps?.kind).toBe("cloud")
+    expect(calls.workspaceGateProps?.kind).toBe("provisioner")
     expect(calls.directoryScopeProps?.workspaceReady?.()).toBe(true)
     expect(calls.scopeFor).toHaveBeenCalledWith("ws_cloud_route")
   })
@@ -351,7 +351,7 @@ describe("SessionPaneScope", () => {
     ))
 
     expect(calls.workspaceGateProps?.workspaceId).toBe("ws_cleantest1")
-    expect(calls.workspaceGateProps?.kind).toBe("user-hosted")
+    expect(calls.workspaceGateProps?.kind).toBe("machine")
     expect(calls.workspaceGateProps?.connectingFallback).toBeUndefined()
   })
 

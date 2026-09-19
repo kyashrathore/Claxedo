@@ -54,7 +54,7 @@ export function useAppShellActions(input: { shell: AppShellState; params: Params
     activeWorkspaceRouteId: input.shell.activeWorkspaceRouteId,
     activeProjectId: input.shell.activeProjectId,
     workspaceRouteId: input.shell.routeIdForDirectory,
-    workspaceKindForRoute: (routeId) => workspaceConnection(routeId)?.kind,
+    hostKindForRoute: (routeId) => workspaceConnection(routeId)?.kind,
     canUseDocuments: input.shell.canUseDocuments,
     // The server's own account of itself (local execution), read from its
     // health document; features take it as a port rather than reaching in.

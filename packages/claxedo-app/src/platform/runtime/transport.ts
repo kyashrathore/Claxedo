@@ -13,6 +13,7 @@ import {
 } from "@/platform/runtime/server-transport"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export {
   centralTransportForDeployment,
@@ -48,7 +49,7 @@ export function submitTransportForPlacement(input: {
    */
   sessionAuthority?: WorkspaceSessionAuthority
   workspaceId?: string
-  workspaceKind?: "local" | "cloud" | "user-hosted" | null
+  hostKind?: WorkspaceHostKind | null
 }) {
   const loopbackWorkspaceBridge = isLocalPersonalScope(input)
   const directoryWorkspaceId = workspaceIdFromRef(input.directory)
@@ -135,5 +136,5 @@ function workspaceRuntimeId(placement: Placement) {
 
 function workspaceRuntimeSnapshot(placement: Placement) {
   if (placement.hosting !== "workspace" || placement.transport === "signed-web" || !placement.workspaceId) return undefined
-  return { kind: "cloud" as const, workspaceId: placement.workspaceId }
+  return { kind: "provisioner" as const, workspaceId: placement.workspaceId }
 }

@@ -1,6 +1,6 @@
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { resolveRecovery, rememberRecovery } from "../workbench/pane-terminal-recovery"
 import { createTransport } from "@/platform/runtime/transport"
 import {
@@ -150,7 +150,7 @@ export type TerminalSessionPreviewOptions = {
   request?: typeof fetch
   directory?: string
   resolveWorkspaceRuntime?: (input: { directory: string }) => Promise<{
-    kind: "cloud" | "local" | "user-hosted"
+    kind: WorkspaceHostKind
     workspaceId?: string
   } | null>
 }
@@ -212,7 +212,7 @@ export const loadTerminalSessionPreview = (
         // `terminalScopedPlacement`'s own precedence between the two.
         const resolved = signedWorkspace ??
           await opts.resolveWorkspaceRuntime?.({ directory: opts.directory }).catch(() => null)
-        if (resolved && isRelayBackedWorkspaceKind(resolved.kind) && resolved.workspaceId) {
+        if (resolved && isRelayHostKind(resolved.kind) && resolved.workspaceId) {
           return fetchPreviewBody(
             terminalSessionPreviewPath(nextTarget.id),
             previewFetch(nextTarget.site, opts.directory, request, resolved, signedWorkspace),

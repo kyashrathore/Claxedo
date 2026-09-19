@@ -2,11 +2,12 @@ import { For, Match, Show, Switch, createMemo, type JSX, type ParentProps } from
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { WorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 export type CloudLog = WorkspaceRuntimeLog
 
 type StepState = "done" | "active" | "pending" | "error"
 
-export type StartupVariant = "cloud" | "user-hosted"
+export type StartupVariant = RelayHostKind
 
 export const CLOUD_STARTUP_PIPELINE = [
   { key: "acquiring_sandbox", label: "Acquiring sandbox" },
@@ -25,7 +26,7 @@ export const USER_HOSTED_STARTUP_PIPELINE = [
 ] as const
 
 export function startupPipeline(variant: StartupVariant) {
-  return variant === "user-hosted" ? USER_HOSTED_STARTUP_PIPELINE : CLOUD_STARTUP_PIPELINE
+  return variant === "machine" ? USER_HOSTED_STARTUP_PIPELINE : CLOUD_STARTUP_PIPELINE
 }
 
 const STEP_LABELS = {
@@ -72,14 +73,14 @@ export function acquiringStepLabel(status?: string | null) {
   return undefined
 }
 
-export function cloudSummary(status: string | null | undefined, hasError: boolean, variant: StartupVariant = "cloud") {
+export function cloudSummary(status: string | null | undefined, hasError: boolean, variant: StartupVariant = "provisioner") {
   if (hasError) {
-    return variant === "user-hosted"
+    return variant === "machine"
       ? "Could not connect to the workspace. Review the details below."
       : "Workspace startup failed. Review the log below."
   }
   if (!status) {
-    return variant === "user-hosted"
+    return variant === "machine"
       ? "Connecting to your workspace before the composer unlocks."
       : "Checking runtime before the composer unlocks."
   }
@@ -264,11 +265,11 @@ export function CloudStartupView(props: {
   forbidden?: boolean
   onGoToWorkspaces?: () => void
 }) {
-  const variant = () => props.variant ?? "cloud"
+  const variant = () => props.variant ?? "provisioner"
   const pipeline = () => startupPipeline(variant())
   const hasError = () => props.status === "error" || !!props.err
   const isReady = () => props.logs.some((l) => l.step === "ready")
-  const isUserHosted = () => variant() === "user-hosted"
+  const isUserHosted = () => variant() === "machine"
 
   const lastPipelineKey = () => {
     const logs = props.logs

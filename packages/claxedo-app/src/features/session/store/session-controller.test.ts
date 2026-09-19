@@ -90,7 +90,7 @@ describe("session controller helpers", () => {
       sessionId: "ses_child",
       host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "machine", hostId: "host_local" },
       harness: { kind: "native", harnessId: "pi" },
     })).not.toBe("unresolved")
   })
@@ -99,12 +99,12 @@ describe("session controller helpers", () => {
     const cloud = sessionHydrationAuthorityKey({
       sessionId: "ses_1",
       host: "workspace",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner" },
     })
     const userHosted = sessionHydrationAuthorityKey({
       sessionId: "ses_1",
       host: "workspace",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "machine" },
     })
     expect(cloud).not.toBe(userHosted)
   })

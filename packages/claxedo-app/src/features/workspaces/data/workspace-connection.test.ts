@@ -60,7 +60,7 @@ describe("workspace connection authority", () => {
 
   test("local workspaces are synthesized ready immediately (no relay backing)", () => {
     createRoot((dispose) => {
-      const handle = acquireWorkspaceConnection({ workspaceId: "ws_local", kind: "local" })
+      const handle = acquireWorkspaceConnection({ workspaceId: "ws_local", kind: "self" })
       expect(isWorkspaceReady("ws_local")).toBe(true)
       expect(workspaceConnection("ws_local")?.status).toBe("ready")
       expect(connectionPlacement("ws_local")).toEqual({ state: "role-known", workspaceId: "ws_local", role: "owner" })
@@ -81,7 +81,7 @@ describe("workspace connection authority", () => {
       // later — we only assert the SYNCHRONOUS initial state set inside acquire,
       // which is what kills the blank fall-through frame. `status` is the
       // invariant; the exact phase advances as the (real) loop emits.
-      acquireWorkspaceConnection({ workspaceId: "ws_uh", kind: "user-hosted", request: runtimeReadyFetch })
+      acquireWorkspaceConnection({ workspaceId: "ws_uh", kind: "machine", request: runtimeReadyFetch })
       const state = workspaceConnection("ws_uh")
       expect(state?.status).toBe("connecting")
       expect(connectionPlacement("ws_uh")).toEqual({ state: "role-pending", workspaceId: "ws_uh" })
@@ -93,7 +93,7 @@ describe("workspace connection authority", () => {
 
   test("relay connection info promotes role placement and refresh can change roles", () => {
     createRoot((dispose) => {
-      acquireWorkspaceConnection({ workspaceId: "ws_relay", kind: "user-hosted", request: runtimeReadyFetch })
+      acquireWorkspaceConnection({ workspaceId: "ws_relay", kind: "machine", request: runtimeReadyFetch })
       internals.applyWorkspaceConnectionInfo(relayInfo())
 
       expect(connectionPlacement("ws_relay")).toEqual({ state: "role-known", workspaceId: "ws_relay", role: "viewer" })
@@ -131,7 +131,7 @@ describe("workspace connection authority", () => {
     await createRoot(async (dispose) => {
       const handle = acquireWorkspaceConnection({
         workspaceId,
-        kind: "cloud",
+        kind: "provisioner",
         directory: "workspace:ws_cached_viewer",
         baseUrl: "http://server.cached-role.test",
         request,
@@ -173,7 +173,7 @@ describe("workspace connection authority", () => {
     await createRoot(async (dispose) => {
       const handle = acquireWorkspaceConnection({
         workspaceId,
-        kind: "user-hosted",
+        kind: "machine",
         baseUrl,
         request,
         relayRequest: request,
@@ -190,11 +190,11 @@ describe("workspace connection authority", () => {
     })
   })
 
-  test("recently ready user-hosted workspaces stay ready across reload while health revalidates", () => {
+  test("a recently ready machine-placed workspace stays ready across reload while health revalidates", () => {
     createRoot((dispose) => {
       internals.rememberRecentReady("ws_warm_uh")
 
-      acquireWorkspaceConnection({ workspaceId: "ws_warm_uh", kind: "user-hosted", request: runtimeReadyFetch })
+      acquireWorkspaceConnection({ workspaceId: "ws_warm_uh", kind: "machine", request: runtimeReadyFetch })
 
       expect(isWorkspaceReady("ws_warm_uh")).toBe(true)
       expect(workspaceConnection("ws_warm_uh")?.status).toBe("ready")
@@ -202,19 +202,19 @@ describe("workspace connection authority", () => {
     })
   })
 
-  test("refines fallback user-hosted acquires to cloud when inventory resolves later", () => {
+  test("refines a fallback machine acquire to the provisioner when inventory resolves later", () => {
     createRoot((dispose) => {
-      acquireWorkspaceConnection({ workspaceId: "ws_cloud_late", kind: "user-hosted", request: runtimeReadyFetch })
-      expect(workspaceConnection("ws_cloud_late")?.kind).toBe("user-hosted")
+      acquireWorkspaceConnection({ workspaceId: "ws_cloud_late", kind: "machine", request: runtimeReadyFetch })
+      expect(workspaceConnection("ws_cloud_late")?.kind).toBe("machine")
 
       acquireWorkspaceConnection({
         workspaceId: "ws_cloud_late",
-        kind: "cloud",
+        kind: "provisioner",
         directory: "workspace:ws_cloud_late",
         request: runtimeReadyFetch,
       })
 
-      expect(workspaceConnection("ws_cloud_late")?.kind).toBe("cloud")
+      expect(workspaceConnection("ws_cloud_late")?.kind).toBe("provisioner")
       expect(workspaceConnection("ws_cloud_late")?.phase).toBe("acquiring_sandbox")
       expect(workspaceConnection("ws_cloud_late")?.status).toBe("connecting")
       dispose()
@@ -223,9 +223,9 @@ describe("workspace connection authority", () => {
 
   test("ref-counts: N acquires share ONE entry; entry survives until last release", () => {
     createRoot((dispose) => {
-      const a = acquireWorkspaceConnection({ workspaceId: "ws_shared", kind: "local" })
-      const b = acquireWorkspaceConnection({ workspaceId: "ws_shared", kind: "local" })
-      const c = acquireWorkspaceConnection({ workspaceId: "ws_shared", kind: "local" })
+      const a = acquireWorkspaceConnection({ workspaceId: "ws_shared", kind: "self" })
+      const b = acquireWorkspaceConnection({ workspaceId: "ws_shared", kind: "self" })
+      const c = acquireWorkspaceConnection({ workspaceId: "ws_shared", kind: "self" })
       expect(workspaceConnection("ws_shared")?.refs).toBe(3)
 
       a.release()
@@ -247,10 +247,10 @@ describe("workspace connection authority", () => {
     // entry and bumps its ref count. A secondary surface whose refs stay at 1 is
     // therefore a consumer that never acquired, not a fan-in failure here.
     createRoot((dispose) => {
-      const first = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      const first = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "machine", request: runtimeReadyFetch })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(1)
 
-      const second = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      const second = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "machine", request: runtimeReadyFetch })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(2)
 
       second.release()
@@ -272,8 +272,8 @@ describe("workspace connection authority", () => {
     }) as typeof setTimeout
     globalThis.clearTimeout = ((id: number) => { pending.delete(id) }) as typeof clearTimeout
     try {
-      const first = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
-      const peer = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
+      const first = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "self" })
+      const peer = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "self" })
       first.release()
       first.release()
       expect(workspaceConnection("ws_swap")?.refs).toBe(1)
@@ -281,7 +281,7 @@ describe("workspace connection authority", () => {
       peer.release()
       expect(pending.size).toBe(1)
       const cancelled = [...pending.values()][0]
-      const second = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
+      const second = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "self" })
       expect(pending.size).toBe(0)
       cancelled()
       expect(workspaceConnection("ws_swap")?.refs).toBe(1)
@@ -289,7 +289,7 @@ describe("workspace connection authority", () => {
       expect(pending.size).toBe(1)
       ;[...pending.values()][0]()
       expect(workspaceConnection("ws_swap")).toBeUndefined()
-      const replacement = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })
+      const replacement = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "self" })
       second.release()
       expect(workspaceConnection("ws_swap")?.refs).toBe(1)
       replacement.release()
@@ -301,9 +301,9 @@ describe("workspace connection authority", () => {
   })
 
   test("a handle from a reset runtime cannot release its replacement", () => {
-    const old = acquireWorkspaceConnection({ workspaceId: "ws_replaced", kind: "local" })
+    const old = acquireWorkspaceConnection({ workspaceId: "ws_replaced", kind: "self" })
     internals.reset()
-    const replacement = acquireWorkspaceConnection({ workspaceId: "ws_replaced", kind: "local" })
+    const replacement = acquireWorkspaceConnection({ workspaceId: "ws_replaced", kind: "self" })
     old.release()
     expect(workspaceConnection("ws_replaced")?.refs).toBe(1)
     replacement.release()
@@ -332,7 +332,7 @@ describe("workspace connection authority", () => {
 
   test("workspaceOffline reads the offline reason; predicates ignore unknown ids", () => {
     createRoot((dispose) => {
-      acquireWorkspaceConnection({ workspaceId: "ws_off", kind: "user-hosted", request: runtimeReadyFetch })
+      acquireWorkspaceConnection({ workspaceId: "ws_off", kind: "machine", request: runtimeReadyFetch })
       // Inject a terminal offline state via the single-writer test seam.
       internals.setState("ws_off", "status", { offline: "forbidden" })
       internals.setState("ws_off", "terminal", true)
@@ -352,17 +352,17 @@ describe("workspace connection authority", () => {
 
   test("retry is a no-op for terminal failures, redrives for transient ones", () => {
     createRoot((dispose) => {
-      acquireWorkspaceConnection({ workspaceId: "ws_retry_t", kind: "user-hosted", request: runtimeReadyFetch })
+      acquireWorkspaceConnection({ workspaceId: "ws_retry_t", kind: "machine", request: runtimeReadyFetch })
       internals.setState("ws_retry_t", "status", { offline: "forbidden" })
       internals.setState("ws_retry_t", "terminal", true)
       retryWorkspaceConnection("ws_retry_t")
       // Terminal — retry must not redrive back to connecting.
       expect(workspaceOffline("ws_retry_t")).toBe("forbidden")
 
-      acquireWorkspaceConnection({ workspaceId: "ws_retry_x", kind: "local" })
+      acquireWorkspaceConnection({ workspaceId: "ws_retry_x", kind: "self" })
       internals.setState("ws_retry_x", "status", { offline: "unreachable" })
       internals.setState("ws_retry_x", "terminal", false)
-      internals.setState("ws_retry_x", "kind", "local")
+      internals.setState("ws_retry_x", "kind", "self")
       retryWorkspaceConnection("ws_retry_x")
       // Transient + local kind redrives to ready immediately.
       expect(isWorkspaceReady("ws_retry_x")).toBe(true)
@@ -372,7 +372,7 @@ describe("workspace connection authority", () => {
 
   test("reconnecting transitions: ready -> reconnecting -> ready (queries park, no teardown)", () => {
     createRoot((dispose) => {
-      acquireWorkspaceConnection({ workspaceId: "ws_reco", kind: "local" })
+      acquireWorkspaceConnection({ workspaceId: "ws_reco", kind: "self" })
       expect(isWorkspaceReady("ws_reco")).toBe(true)
 
       markWorkspaceReconnecting("ws_reco")
@@ -394,7 +394,7 @@ describe("workspace connection authority", () => {
 
   test("markWorkspaceReconnecting only fires from ready; reconnected only from reconnecting", () => {
     createRoot((dispose) => {
-      acquireWorkspaceConnection({ workspaceId: "ws_guard", kind: "user-hosted", request: runtimeReadyFetch })
+      acquireWorkspaceConnection({ workspaceId: "ws_guard", kind: "machine", request: runtimeReadyFetch })
       // status is "connecting" — reconnecting/reconnected are guarded no-ops.
       markWorkspaceReconnecting("ws_guard")
       expect(workspaceConnection("ws_guard")?.status).toBe("connecting")

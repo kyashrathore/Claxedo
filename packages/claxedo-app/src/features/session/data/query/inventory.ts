@@ -39,7 +39,7 @@ export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByW
         attachments: [],
         environment: {
           kind: workspaceHostingKind(row),
-          driver: asString(row?.backing) ?? asString(row?.access),
+          driver: asString(row?.backing),
         },
         ...(lastTurn ? { lastTurn } : {}),
         time: { created, updated },

@@ -21,12 +21,12 @@ import {
   type NewSessionProjectSelection,
 } from "@/features/session/ui/components/session-new-design-view"
 import { CREATE_WORKTREE, MAIN_WORKTREE } from "@/features/session/ui/components/session-new-workspace-options"
-import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { getTerminalCommands } from "@/features/terminal/core/terminal-commands"
 import { createTerminalPtyClient } from "@/features/terminal/core/terminal-connection"
 import { signedWorkspaceFromProjects, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { useServer } from "@/app/connection/server"
 import { terminalLaunchers, type TerminalLauncher } from "./terminal-launchers"
 import { useTerminalWorkspaceProvisioning } from "./terminal-workspace-provisioning"
@@ -64,7 +64,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   const server = useServer()
 
   const [worktree, setWorktree] = createSignal(MAIN_WORKTREE)
-  const [workspaceKind, setWorkspaceKind] = createSignal<WorkspaceKind>("local")
+  const [hostKind, setHostKind] = createSignal<WorkspaceHostKind>("self")
   const [selectedProject, setSelectedProject] = createSignal<NewSessionProjectSelection>()
   /** The launcher id currently starting, so only that row shows progress. */
   const [starting, setStarting] = createSignal<string | undefined>()
@@ -96,7 +96,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   const relayWorkspaceId = createMemo(() => {
     const projects = (projectsQuery.data ?? []) as WorkspaceInventoryProject[]
     const signed = signedWorkspaceFromProjects(projects, props.directory)
-    return signed && isRelayBackedWorkspaceKind(signed.kind) ? signed.workspaceId : undefined
+    return signed && isRelayHostKind(signed.kind) ? signed.workspaceId : undefined
   })
 
   /**
@@ -134,9 +134,9 @@ export function TerminalNewView(props: TerminalNewViewProps) {
     props.onRetarget(target)
   }
 
-  const changeWorkspaceKind = (value: WorkspaceKind) => {
+  const changeHostKind = (value: WorkspaceHostKind) => {
     setError(undefined)
-    setWorkspaceKind(value)
+    setHostKind(value)
     // A pending "create" selection is kind-agnostic (it just changes which of
     // worktree/sandbox gets provisioned), so it survives the switch. Anything
     // else refers to a directory that may not exist in the new kind's list.
@@ -147,7 +147,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   const changeProject = (directory: WorkspaceDirectoryRef, project: NewSessionProjectSelection) => {
     setError(undefined)
     setWorktree(MAIN_WORKTREE)
-    setWorkspaceKind("local")
+    setHostKind("self")
     setSelectedProject(project)
     props.onRetarget(directory)
   }
@@ -166,10 +166,10 @@ export function TerminalNewView(props: TerminalNewViewProps) {
         }
         const created = await provisioning.createWorkspace({
           directory: props.directory,
-          // "user-hosted" is never offered by the chip (the design view pins it
-          // instead of showing the environment picker), so anything not cloud
-          // provisions locally.
-          kind: workspaceKind() === "cloud" ? "cloud" : "local",
+          // "machine" is never offered by the chip (the design view pins it
+          // instead of showing the environment picker), so anything the
+          // provisioner does not own is created on this machine.
+          kind: hostKind() === "provisioner" ? "cloud" : "local",
         })
         // The provisioning flow raises its own toast on failure; a second error
         // line here would just duplicate it.
@@ -196,9 +196,9 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   return (
     <NewSessionDesignView
       worktree={worktree()}
-      workspaceKind={workspaceKind()}
+      hostKind={hostKind()}
       onWorktreeChange={changeWorktree}
-      onWorkspaceKindChange={changeWorkspaceKind}
+      onHostKindChange={changeHostKind}
       onProjectChange={changeProject}
       sandboxEnabled={config?.sandboxEnabled}
     >
@@ -214,7 +214,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
               action, where the consequence lands. */}
           <Show when={creatingWorkspace()}>
             <span data-slot="terminal-new-create-note" class="truncate text-xs text-v2-text-text-faint">
-              · in a new {workspaceKind() === "cloud" ? "cloud sandbox" : "worktree"}
+              · in a new {hostKind() === "provisioner" ? "cloud sandbox" : "worktree"}
             </span>
           </Show>
         </div>

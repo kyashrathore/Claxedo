@@ -57,8 +57,8 @@ function createSubject(input?: {
   state?: HarnessStoreState
   local?: boolean
   workspaceRuntime?: boolean
-  workspaceKind?: "local" | "cloud" | "user-hosted" | null
-  resolvedKind?: "local" | "cloud" | "user-hosted"
+  hostKind?: "self" | "provisioner" | "machine" | null
+  resolvedKind?: "self" | "provisioner" | "machine"
   sessionConfig?: unknown
   sessionConfigs?: unknown[]
   statusBody?: unknown
@@ -80,7 +80,7 @@ function createSubject(input?: {
     workspaceRuntime: () => input?.workspaceRuntime ?? false,
     runtime: {
       useLocalHarnessConfig: () => input?.local ?? true,
-      workspaceKind: () => input?.workspaceKind,
+      hostKind: () => input?.hostKind,
       workspace: async () => {
         calls.push("resolve-workspace")
         return input?.resolvedKind ? { kind: input.resolvedKind, workspaceId: "5f39af3e-75c4-4392-baaf-574acbbf9db9" } : undefined
@@ -150,7 +150,7 @@ describe("harness hydrator", () => {
   })
 
   test("hydrates local workspace-runtime drafts through local harness status", async () => {
-    const subject = createSubject({ workspaceRuntime: true, workspaceKind: "local" })
+    const subject = createSubject({ workspaceRuntime: true, hostKind: "self" })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
 
@@ -164,8 +164,8 @@ describe("harness hydrator", () => {
     const subject = createSubject({
       local: false,
       workspaceRuntime: false,
-      workspaceKind: undefined,
-      resolvedKind: "user-hosted",
+      hostKind: undefined,
+      resolvedKind: "machine",
       statusBody: { harness: { id: "claude", access: "native" }, activeHarness: { id: "claude", access: "native" }, activeType: "claude", status: "ready", ready: true },
     })
 
@@ -182,7 +182,7 @@ describe("harness hydrator", () => {
   })
 
   test("a draft in a filesystem directory never resolves a workspace record", async () => {
-    const subject = createSubject({ local: false, workspaceRuntime: false, workspaceKind: undefined, resolvedKind: "user-hosted" })
+    const subject = createSubject({ local: false, workspaceRuntime: false, hostKind: undefined, resolvedKind: "machine" })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
 
@@ -190,7 +190,7 @@ describe("harness hydrator", () => {
   })
 
   test("does not hydrate remote workspace-runtime drafts through local harness status", async () => {
-    const subject = createSubject({ workspaceRuntime: true, workspaceKind: "cloud" })
+    const subject = createSubject({ workspaceRuntime: true, hostKind: "provisioner" })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
 

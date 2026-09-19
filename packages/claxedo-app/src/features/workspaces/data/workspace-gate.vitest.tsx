@@ -75,7 +75,7 @@ describe("WorkspaceGate", () => {
     render(() => (
       <WorkspaceGate
         workspaceId="ws_1"
-        kind="user-hosted"
+        kind="machine"
         connectingFallback={<div data-testid="session-page-root" />}
       >
         <div data-testid="ready-session" />
@@ -93,7 +93,7 @@ describe("WorkspaceGate", () => {
     render(() => (
       <WorkspaceGate
         workspaceId="ws_1"
-        kind="user-hosted"
+        kind="machine"
         connectingFallback={<div data-testid="session-page-root" />}
       >
         <div data-testid="ready-session" />
@@ -115,7 +115,7 @@ describe("WorkspaceGate", () => {
       calls.offline.mockReturnValue(reason)
 
       render(() => (
-        <WorkspaceGate workspaceId="ws_dead" kind="cloud" sessionId="ses_stored">
+        <WorkspaceGate workspaceId="ws_dead" kind="provisioner" sessionId="ses_stored">
           <div data-testid="ready-session" />
         </WorkspaceGate>
       ))
@@ -132,7 +132,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue("unreachable")
 
     render(() => (
-      <WorkspaceGate workspaceId="ws_dead" kind="cloud" sessionId={sessionId}>
+      <WorkspaceGate workspaceId="ws_dead" kind="provisioner" sessionId={sessionId}>
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -146,7 +146,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue("no-host")
 
     render(() => (
-      <WorkspaceGate workspaceId="ws_uh" kind="user-hosted" sessionId="ses_stored">
+      <WorkspaceGate workspaceId="ws_uh" kind="machine" sessionId="ses_stored">
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -160,7 +160,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue("forbidden")
 
     render(() => (
-      <WorkspaceGate workspaceId="ws_forbidden" kind="cloud" sessionId="ses_stored">
+      <WorkspaceGate workspaceId="ws_forbidden" kind="provisioner" sessionId="ses_stored">
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -178,8 +178,8 @@ describe("WorkspaceGate", () => {
 
     render(() => (
       <>
-        <WorkspaceGate workspaceId="ws_split" kind="user-hosted"><div data-testid="pane-a" /></WorkspaceGate>
-        <WorkspaceGate workspaceId="ws_split" kind="user-hosted"><div data-testid="pane-b" /></WorkspaceGate>
+        <WorkspaceGate workspaceId="ws_split" kind="machine"><div data-testid="pane-a" /></WorkspaceGate>
+        <WorkspaceGate workspaceId="ws_split" kind="machine"><div data-testid="pane-b" /></WorkspaceGate>
       </>
     ))
 
@@ -199,7 +199,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue(undefined)
 
     render(() => (
-      <WorkspaceGate workspaceId="ws_owned" kind="cloud" directory="/workspace">
+      <WorkspaceGate workspaceId="ws_owned" kind="provisioner" directory="/workspace">
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -207,7 +207,7 @@ describe("WorkspaceGate", () => {
     expect(calls.retainConnection).toHaveBeenCalledOnce()
     expect(calls.retainConnection).toHaveBeenCalledWith({
       workspaceId: "ws_owned",
-      kind: "cloud",
+      kind: "provisioner",
       directory: "/workspace",
     })
     expect(calls.acquire).not.toHaveBeenCalled()
@@ -226,7 +226,7 @@ describe("WorkspaceGate", () => {
     calls.connection.mockReturnValue({ status: "connecting", phase: "acquiring_sandbox" })
     calls.offline.mockReturnValue(undefined)
 
-    const [kind, setKind] = createSignal<"cloud" | "user-hosted">("user-hosted")
+    const [kind, setKind] = createSignal<"provisioner" | "machine">("machine")
     render(() => (
       <WorkspaceGate
         workspaceId="ws_1"
@@ -239,16 +239,16 @@ describe("WorkspaceGate", () => {
 
     expect(calls.acquire).toHaveBeenLastCalledWith({
       workspaceId: "ws_1",
-      kind: "user-hosted",
+      kind: "machine",
       directory: "workspace:ws_1",
     })
 
-    setKind("cloud")
+    setKind("provisioner")
 
     expect(firstRelease).toHaveBeenCalledTimes(1)
     expect(calls.acquire).toHaveBeenLastCalledWith({
       workspaceId: "ws_1",
-      kind: "cloud",
+      kind: "provisioner",
       directory: "workspace:ws_1",
     })
   })

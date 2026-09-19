@@ -115,7 +115,7 @@ describe("sessionSignedTransportAuthority", () => {
     expect(sessionSignedTransportAuthority({
       serverUrl: "http://127.0.0.1:3001",
       principalHasSignedAccess: false,
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     })).toBe(true)
   })
 

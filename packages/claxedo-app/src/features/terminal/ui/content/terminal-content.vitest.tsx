@@ -273,7 +273,7 @@ describe("TerminalContent switching", () => {
 
   test("stops pending-create reconciliation after a definitive runtime rejection", async () => {
     h.ptys.splice(0)
-    let resolveWorkspace!: (workspace: { kind: "cloud"; workspaceId: string }) => void
+    let resolveWorkspace!: (workspace: { kind: "provisioner"; workspaceId: string }) => void
     h.resolveWorkspaceRuntime.mockReturnValue(new Promise((resolve) => {
       resolveWorkspace = resolve
     }))
@@ -287,7 +287,7 @@ describe("TerminalContent switching", () => {
     ))
 
     await waitFor(() => expect(screen.getByText("permission denied")).toBeTruthy())
-    resolveWorkspace({ kind: "cloud", workspaceId: "ws_denied" })
+    resolveWorkspace({ kind: "provisioner", workspaceId: "ws_denied" })
     await Promise.resolve()
     await Promise.resolve()
 

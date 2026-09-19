@@ -85,6 +85,7 @@ import {
   shouldDeferSessionTransportHydrate,
   shouldSkipSessionTransportHydrate,
 } from "./session-history-activation"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 import {
   ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
   FIRST_FOLD_SECONDARY_HYDRATION_EARLIEST_MS,
@@ -316,7 +317,7 @@ export function createSessionController(input: {
   // pane's connection authority — threaded into the session transports so
   // signed user-hosted reads divert to the relay (the central control plane
   // has no session store for them).
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
+  hostKind?: Accessor<RelayHostKind | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   onMissingSession?: (sessionID: string, cwd: string) => void
 }) {
@@ -343,7 +344,7 @@ export function createSessionController(input: {
     serverUrl: () => globalSDK.url,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
     fetchSessionRow: async (sessionID) => (await fetchSessionByTransport({
       directory: input.directory(),
@@ -351,7 +352,7 @@ export function createSessionController(input: {
       claxedoServerUrl: globalSDK.url,
       signedControlPlane: input.signedControlPlane?.() ?? false,
       workspaceId: input.signedControlPlane?.() ? input.workspaceId?.() : undefined,
-      workspaceKind: input.signedControlPlane?.() ? input.workspaceKind?.() : undefined,
+      hostKind: input.signedControlPlane?.() ? input.hostKind?.() : undefined,
       sessionRef: input.sessionRef?.(),
     })).data,
   })
@@ -461,7 +462,7 @@ export function createSessionController(input: {
     serverUrl: () => globalSDK.url,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
     source: () => settledData(goalQuery),
     suppressed: suppressedByFastSessionSwitch,
@@ -530,7 +531,7 @@ export function createSessionController(input: {
     const directory = input.directory()
     const signedControlPlane = input.signedControlPlane?.() ?? false
     const workspaceId = signedControlPlane ? input.workspaceId?.() : undefined
-    const workspaceKind = input.signedControlPlane?.() ? input.workspaceKind?.() : undefined
+    const hostKind = input.signedControlPlane?.() ? input.hostKind?.() : undefined
     // A dead CLOUD workspace keeps its transcript centrally, so the message read
     // must not divert to a relay that cannot answer (branch B of `resolveSessionResourceRoute`).
     const workspaceReachable = workspaceId ? isWorkspaceReady(workspaceId) : undefined
@@ -568,7 +569,7 @@ export function createSessionController(input: {
         claxedoServerUrl: globalSDK.url,
         signedControlPlane,
         workspaceId,
-        workspaceKind,
+        hostKind,
         sessionRef: input.sessionRef?.(),
       }),
       fetchMessages: () => fetchSessionMessagesByTransport({
@@ -578,7 +579,7 @@ export function createSessionController(input: {
         ...pageRequest,
         signedControlPlane,
         workspaceId,
-        workspaceKind,
+        hostKind,
         workspaceReachable,
         sessionRef: input.sessionRef?.(),
         signal: opts?.signal,
@@ -599,7 +600,7 @@ export function createSessionController(input: {
             shouldFetchSession,
             signedControlPlane,
             workspaceId,
-            workspaceKind,
+            hostKind,
           }),
           queryFn: transportRequest, gcTime: 0,
         }))
@@ -788,14 +789,14 @@ export function createSessionController(input: {
     const signedControlPlane = input.signedControlPlane?.() ?? false
     const workspaceId = signedControlPlane ? input.workspaceId?.() : undefined
     return queryClient.fetchQuery({
-      queryKey: sessionTodoTransportRequestKey({ sessionID, directory, signedControlPlane, workspaceId, workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined }),
+      queryKey: sessionTodoTransportRequestKey({ sessionID, directory, signedControlPlane, workspaceId, hostKind: signedControlPlane ? input.hostKind?.() : undefined }),
       queryFn: async () => (await fetchSessionTodoByTransport({
         directory,
         sessionID,
         claxedoServerUrl: globalSDK.url,
         signedControlPlane,
         workspaceId,
-        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+        hostKind: signedControlPlane ? input.hostKind?.() : undefined,
         sessionRef: input.sessionRef?.(),
       })).data ?? [],
     }).then((todo) => {
@@ -836,7 +837,7 @@ export function createSessionController(input: {
     const directory = input.directory()
     const signedControlPlane = input.signedControlPlane?.() ?? false
     const workspaceId = signedControlPlane ? input.workspaceId?.() : undefined
-    const workspaceKind = signedControlPlane ? input.workspaceKind?.() : undefined
+    const hostKind = signedControlPlane ? input.hostKind?.() : undefined
     const sessionRef = input.sessionRef?.()
     const key = sessionCapabilitiesKey({
       sessionID,
@@ -844,7 +845,7 @@ export function createSessionController(input: {
       serverUrl: globalSDK.url,
       signedControlPlane,
       workspaceId,
-      workspaceKind,
+      hostKind,
       sessionRef,
     })
     if (queryClient.getQueryData<SessionTransportCapabilities>(key) && !opts?.force) return true
@@ -855,7 +856,7 @@ export function createSessionController(input: {
         claxedoServerUrl: globalSDK.url,
         signedControlPlane,
         workspaceId,
-        workspaceKind,
+        hostKind,
         sessionRef,
       },
       currentSessionID: input.sessionID,
@@ -1085,7 +1086,7 @@ export function createSessionController(input: {
         if (!transition.settled || !sessionID || sessionID === "new") return
         const refresh = () => {
           if (input.directory() !== directory || input.sessionID() !== sessionID || input.active?.() === false) return
-          const workspace = sessionProjectionWorkspaceBacking({ signedControlPlane: input.signedControlPlane?.() ?? false, workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.() })
+          const workspace = sessionProjectionWorkspaceBacking({ signedControlPlane: input.signedControlPlane?.() ?? false, workspaceId: input.workspaceId?.(), hostKind: input.hostKind?.() })
           if (workspace) {
             void scheduleSessionProjectionPull({
               action: "checkpoint",

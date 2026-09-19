@@ -33,6 +33,7 @@ const MIGRATIONS = [
   "0019_agent_plugin_activations.sql",
   "0028_workspace_org_member_visible.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ]
 
 const PLUGIN = "claxedo/review"

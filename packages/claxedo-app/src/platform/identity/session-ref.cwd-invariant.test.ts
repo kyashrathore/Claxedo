@@ -35,12 +35,12 @@ describe("SessionRef cwd invariants", () => {
     expect(sessionRefForWorkspaceSession({
       sessionId: "ses_workspace",
       directory: "workspace:ws_1",
-      workspace: { workspaceId: "ws_1", kind: "cloud" },
+      workspace: { workspaceId: "ws_1", kind: "provisioner" },
     })).toEqual({
       sessionId: "ses_workspace",
       host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner" },
     })
   })
 

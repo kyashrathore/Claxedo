@@ -128,7 +128,7 @@ function hasCentralHistory(input: {
 }) {
   if (input.reason === "forbidden") return false
   if (!input.sessionId || input.sessionId === "new") return false
-  return input.kind === "cloud"
+  return input.kind === "provisioner"
 }
 
 export function WorkspaceGate(
@@ -222,7 +222,7 @@ export function WorkspaceGate(
           {/* connecting | reconnecting */}
           {props.connectingFallback ?? (
             <CloudStartupView
-              variant={props.kind === "user-hosted" ? "user-hosted" : "cloud"}
+              variant={props.kind === "machine" ? "machine" : "provisioner"}
               status={conn()?.phase ?? "connecting_workspace"}
               err={conn()?.err}
               logs={conn()?.logs ?? []}

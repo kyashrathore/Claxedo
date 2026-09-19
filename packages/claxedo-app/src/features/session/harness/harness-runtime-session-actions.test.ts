@@ -150,7 +150,7 @@ describe("harness runtime session actions", () => {
         clientOptions: () => ({
           request,
           workspaceId: "ws_1",
-          workspaceKind: "cloud",
+          hostKind: "provisioner",
         }),
       }),
     })
@@ -186,7 +186,7 @@ function runtime(input: {
   clientOptions?: (input?: HarnessScopeInput) => {
     request: typeof fetch
     workspaceId?: string
-    workspaceKind?: "cloud" | "user-hosted"
+    hostKind?: "cloud" | "user-hosted"
   }
 } = {}) {
   return {

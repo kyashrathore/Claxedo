@@ -21,7 +21,7 @@ import { readField, readString } from "@/lib/record"
  * The hosted implementation of `WorkspaceStartupPort`.
  *
  * Everything here needs the account-bearing transport and the Relay: waking a
- * central sandbox, connecting to a user-hosted machine, admitting a worktree on
+ * central sandbox, connecting to another machine, admitting a worktree on
  * a remote host. Local code never imports this module — it names the operation
  * through `platform/runtime/workspace-startup.ts`, and `app/entry/main.tsx`
  * binds this implementation for the hosted build.
@@ -95,7 +95,7 @@ function isHostOfflineBody(text: string) {
 }
 
 /**
- * Drive the user-hosted connecting sequence. Resolves the workspace's relay
+ * Drive the machine-placed connecting sequence. Resolves the workspace's relay
  * connection (mint) and probes the runtime health endpoint through the relay,
  * surfacing each phase via `onLog`/`onStatus`. When the host is offline the
  * relay answers `503 user_hosted_app_offline` (or the connection mint fails) —
@@ -222,7 +222,7 @@ function hostedCloudRuntimeWithoutRecord(workspaceId: string | undefined): Works
   // the composer overlay on Acquiring sandbox while session create hung.
   return {
     workspaceId,
-    kind: "cloud",
+    kind: "provisioner",
     status: "acquiring_sandbox",
   }
 }

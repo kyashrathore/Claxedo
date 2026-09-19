@@ -107,7 +107,7 @@ describe("terminal log summary", () => {
     const summary = await loadTerminalLogSummary("http://server.test", "pty_cloud", "/workspace", {
       request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_logs",
       }),
     })

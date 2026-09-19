@@ -26,6 +26,7 @@ const MIGRATIONS = [
   "0018_drop_agent_extensions.sql",
   "0023_agent_plugin_sources.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ]
 
 const active: Miniflare[] = []

@@ -17,11 +17,11 @@
   "queryMirrorEffects": 1,
   "runtimeGatewayOutsideTransport": 0,
   "sdkImportingFiles": 0,
-  "setQueryDataCalls": 69,
+  "setQueryDataCalls": 70,
   "setQueryDataFiles": 33,
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
   "untrackCalls": 17,
-  "userHostedComparisons": 39
+  "userHostedComparisons": 1
 }

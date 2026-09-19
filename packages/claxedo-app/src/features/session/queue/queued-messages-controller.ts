@@ -6,6 +6,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useLanguage } from "@/platform/i18n/provider"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export const QUEUED_MESSAGES_QUERY_KEY = "session-queued-messages"
 
@@ -40,7 +41,7 @@ export function createQueuedMessagesController(props: {
   sessionRef: Accessor<SessionRef | undefined>
   signedControlPlane: Accessor<boolean | undefined>
   workspaceId: Accessor<string | undefined>
-  workspaceKind: Accessor<"cloud" | "user-hosted" | undefined>
+  hostKind: Accessor<RelayHostKind | undefined>
   focusComposer: () => void
 }): QueuedMessagesController {
   const queryClient = useQueryClient()
@@ -49,7 +50,7 @@ export function createQueuedMessagesController(props: {
   const client = createMemo(() => createAgentRuntimeClient({
     serverUrl: getClaxedoServerUrl(),
     sessionRef: props.sessionRef(), signedControlPlane: props.signedControlPlane(),
-    workspaceId: props.workspaceId(), workspaceKind: props.workspaceKind(),
+    workspaceId: props.workspaceId(), hostKind: props.hostKind(),
   }))
   const queue = useQuery(() => ({
     queryKey: [QUEUED_MESSAGES_QUERY_KEY, getClaxedoServerUrl(), props.sessionRef(), props.workspaceId(), props.signedControlPlane(), props.directory(), props.sessionID()],

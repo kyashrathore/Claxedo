@@ -1,6 +1,7 @@
 import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/server-transport"
+import { controlPlaneListScope, type RelayHostKind } from "@/platform/runtime/placement-wire"
 import {
   WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH,
   WORKSPACE_SANDBOX_DRIVERS_PATH,
@@ -27,15 +28,15 @@ export function workspaceDefaultSandboxDriverUrl(input?: { baseUrl?: string }) {
 }
 
 /**
- * The control plane's workspace list for one access kind.
+ * The control plane's workspace list for one host kind.
  *
  * `?access` is required: without it the route answers the CENTRAL's own local
  * inventory, which is a different question from "what can this principal
- * reach". Callers that want the whole picture ask for both kinds and merge.
+ * reach". Callers that want the whole picture ask for both hosts and merge.
  */
-export function workspaceListUrl(input: { baseUrl?: string; access: "cloud" | "user-hosted" }) {
+export function workspaceListUrl(input: { baseUrl?: string; host: RelayHostKind }) {
   const url = new URL("/api/workspace", controlPlaneBaseUrl(input.baseUrl))
-  url.searchParams.set("access", input.access)
+  url.searchParams.set("access", controlPlaneListScope(input.host))
   return url
 }
 

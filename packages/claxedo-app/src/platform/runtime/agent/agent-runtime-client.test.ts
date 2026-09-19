@@ -448,7 +448,7 @@ describe("AgentRuntimeClient", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_explicit",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
       request: async (input, init) => {
@@ -647,7 +647,7 @@ describe("AgentRuntimeClient", () => {
   // A signed USER-HOSTED workspace whose `directory` is the runtime filesystem
   // path (the registration-stored remote_directory) must divert session reads
   // to the relay runtime: this shape (workspaceId set, kind unresolved, non-ws_
-  // directory) is exactly the case `workspaceKind` threading exists to steer
+  // directory) is exactly the case `hostKind` threading exists to steer
   // away from the signed-cloud contract, which 404s on
   // `/api/control/sessions/:id/messages` for it.
   it("diverts signed user-hosted message reads with a filesystem directory to the relay runtime", async () => {
@@ -656,7 +656,7 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
@@ -691,7 +691,7 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input) => {
         calls.push(requestUrl(input))
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
@@ -725,7 +725,7 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
@@ -759,7 +759,7 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       sessionRef: {
         sessionId: "runtime-session-1",
         host: "workspace",
@@ -805,7 +805,7 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
@@ -838,7 +838,7 @@ describe("AgentRuntimeClient", () => {
   // resolves it live via `/api/workspace/resolve` — but that read confirms only a
   // `workspaceId` for a user-hosted workspace addressed by its filesystem-path
   // directory, never a `kind` (the hosted control plane does not track kind for a
-  // directory it does not own). The caller-confirmed `workspaceKind` (threaded down
+  // directory it does not own). The caller-confirmed `hostKind` (threaded down
   // from the signed inventory) must still steer `listSessions` to the relay runtime
   // instead of the central sessions list, which holds nothing for user-hosted.
   it("signed user-hosted session lists use the caller-confirmed kind when the live resolve confirms only an id", async () => {
@@ -846,7 +846,7 @@ describe("AgentRuntimeClient", () => {
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/resolve")) {
@@ -931,7 +931,7 @@ describe("AgentRuntimeClient", () => {
       directory: "/repo/real",
     }))).toMatchObject({
       workspaceId: "ws_real",
-      workspace: { workspaceId: "ws_real", kind: "cloud" },
+      workspace: { workspaceId: "ws_real", kind: "provisioner" },
     })
   })
 
@@ -1001,7 +1001,7 @@ describe("AgentRuntimeClient", () => {
       request: async (input, init) => {
         if (requestUrl(input).includes("/api/workspace/resolve")) {
           seen.push(new Headers(init?.headers).get("Authorization"))
-          return ok({ workspaceId: "ws_bearer", kind: "cloud" })
+          return ok({ workspaceId: "ws_bearer", kind: "provisioner" })
         }
         if (requestUrl(input).includes("/api/workspace/ws_bearer/connection")) {
           return ok({

@@ -2,6 +2,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import { harnessSelectionKey } from "@/platform/identity/harness-selection"
 import { workspaceDirectoryAliasKey } from "@/platform/identity/legacy-resolver"
 import { normalizedAgentRuntimeServerUrl, type AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-urls"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type SessionResourceAuthorityScope = {
   sessionID: string
@@ -9,7 +10,7 @@ export type SessionResourceAuthorityScope = {
   serverUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }
 
@@ -29,7 +30,7 @@ export function sessionResourceAuthorityScope(input: {
   serverUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }): SessionResourceAuthorityScope {
   const signedControlPlane = input.signedControlPlane === true
@@ -39,7 +40,7 @@ export function sessionResourceAuthorityScope(input: {
     ...(input.serverUrl === undefined ? {} : { serverUrl: input.serverUrl }),
     signedControlPlane,
     ...(signedControlPlane && input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-    ...(signedControlPlane && input.workspaceKind ? { workspaceKind: input.workspaceKind } : {}),
+    ...(signedControlPlane && input.hostKind ? { hostKind: input.hostKind } : {}),
     ...(input.sessionRef ? { sessionRef: input.sessionRef } : {}),
   }
 }
@@ -70,7 +71,7 @@ function sessionRefAuthority(ref: SessionRef | undefined) {
 
 function workspaceAuthority(scope: SessionResourceAuthorityScope) {
   const ref = scope.sessionRef
-  if (!ref) return [scope.workspaceId ?? "", scope.workspaceKind ?? ""] as const
+  if (!ref) return [scope.workspaceId ?? "", scope.hostKind ?? ""] as const
   const sandbox = ref.toolSandbox
   if (sandbox?.kind === "workspace") return [sandbox.workspaceId, sandbox.hosting] as const
   return [ref.workspaceId ?? "", ""] as const
