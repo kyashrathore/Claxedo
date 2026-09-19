@@ -219,6 +219,46 @@ export async function loadRelayHostVerificationKeyOrJwks(
   return importSPKI(verifyPem, "EdDSA")
 }
 
+/**
+ * Verify one Relay Host Token outside a middleware.
+ *
+ * The middleware above is the relay exposure's gate: it owns the response and
+ * the `x-workspace-id`/`x-forwarded-by` checks the exposure needs. A host that
+ * serves its runtimes IN PROCESS has no such gate — it stamps a verified actor
+ * onto an in-process hop instead — and needs the same verification as a plain
+ * question. Nothing is the answer to every token this key set does not
+ * validate for this workspace and host; a caller that reads nothing as
+ * "unverified" and refuses is the whole point.
+ *
+ * The JWKS address is read per call because a machine is told it by a
+ * heartbeat ack, after its runtimes exist. One `createRemoteJWKSet` per
+ * address is kept: jose caches the fetched key set on the resolver, so
+ * rebuilding it per request would refetch the relay's keys on every request.
+ */
+export type RelayHostTokenVerifier = (input: {
+  token: string
+  workspaceId: string
+  hostId: string
+}) => Promise<RelayHostTokenClaims | undefined>
+
+export function createRelayHostTokenVerifier(jwksUrl: () => string | undefined): RelayHostTokenVerifier {
+  const keys = new Map<string, RelayKey>()
+  return async ({ token, workspaceId, hostId }) => {
+    const url = jwksUrl()?.trim()
+    if (!url) return undefined
+    let key = keys.get(url)
+    if (!key) {
+      key = createRemoteJWKSet(new URL(url))
+      keys.set(url, key)
+    }
+    try {
+      return await verifyRelayHostToken(token, key, { workspaceId, hostId })
+    } catch {
+      return undefined
+    }
+  }
+}
+
 async function audit(options: RelayHostAuthOptions, input: Omit<RelayHostAuthAuditEvent, "workspaceId" | "hostId">) {
   await options.audit?.({
     ...input,

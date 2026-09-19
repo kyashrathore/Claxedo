@@ -22,6 +22,7 @@ describe("provider-neutral private-session authority contract", () => {
       "reserveSession",
       "reserveRuntimeSession",
       "registerRuntimeSession",
+      "adoptRuntimeSession",
       "markSessionRegistrationAmbiguous",
       "beginSessionCompensation",
       "completeSessionCompensation",

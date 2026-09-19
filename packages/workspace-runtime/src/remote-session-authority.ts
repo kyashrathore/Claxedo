@@ -16,6 +16,7 @@ type AuthorityAction =
   | "write"
   | "reserve"
   | "register"
+  | "adopt"
   | "registration_ambiguous"
   | "compensation_begin"
   | "compensation_complete"
@@ -23,13 +24,48 @@ type AuthorityAction =
   | "turn_renew"
   | "turn_release"
 type HostAuthorityAction = "host_read" | "host_admin"
+
+/**
+ * Consulted when the authority refuses a session, before that refusal is
+ * returned, so a host may claim a session the plane has no row for.
+ *
+ * `adopt` and `reauthorize` are separate calls because an adoption may be
+ * shared between callers while an authorization may not: whoever ends up
+ * admitted must be admitted by a decision the authority made about THEM, not
+ * by one it made about whoever adopted first. Either answer carries its own
+ * call's status, so 503 is the authority being away and 401/403/409 is its
+ * verdict.
+ */
+export type AdoptRefusedSession = (
+  input: SessionAuthorityInput,
+  refusal: {
+    denial: Exclude<SessionAccessDecision, { allowed: true }>
+    adopt: () => Promise<SessionAccessDecision>
+    reauthorize: () => Promise<SessionAccessDecision>
+  },
+) => Promise<SessionAccessDecision>
+
 export function remoteWorkspaceSessionAccessPolicy(
   options: {
-    url?: string
+    /**
+     * A function where the address arrives after composition: a desktop daemon
+     * is handed the control plane's authority endpoint by a heartbeat ack, and
+     * its runtimes are composed before the first beat.
+     */
+    url?: string | (() => string | undefined)
     fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
     timeoutMs?: number
+    /**
+     * False where the host has a local owner: an unstamped request is that
+     * machine's own user on loopback, not an unidentified caller. Every
+     * relay-replayed request carries a verified actor regardless, because the
+     * ingress that stamps it rejects the ones it cannot verify.
+     */
+    requireActor?: boolean
+    adoptRefusedSession?: AdoptRefusedSession
   } = {},
 ) {
+  const authorityUrl = () => (typeof options.url === "function" ? options.url() : options.url)?.trim()
   /**
    * POST one authority action and let `decode` name its SUCCESS shape.
    *
@@ -46,7 +82,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     decode: (body: Record<string, unknown> | undefined) => T | AuthorityDenial,
     requestOptions?: AuthorityRequestOptions,
   ): Promise<T | AuthorityDenial> => {
-    const url = options.url?.trim()
+    const url = authorityUrl()
     if (!url || (!input.credential && !requestOptions?.lease && !requestOptions?.leaseId)) {
       return denied(503, "session_authority_unavailable")
     }
@@ -78,10 +114,19 @@ export function remoteWorkspaceSessionAccessPolicy(
       return denied(503, "session_authority_unavailable")
     }
   }
-  const authorize = (input: SessionAuthorityInput) =>
-    request(input, sessionAccessRequiresWrite(input) ? "write" : "read", decodeAllowed)
+  const authorize = async (input: SessionAuthorityInput): Promise<SessionAccessDecision> => {
+    const action = sessionAccessRequiresWrite(input) ? "write" : "read"
+    const decision = await request(input, action, decodeAllowed)
+    const adoptRefused = options.adoptRefusedSession
+    if (decision.allowed || !adoptRefused) return decision
+    return adoptRefused(input, {
+      denial: decision,
+      adopt: () => request(input, "adopt", decodeAllowed),
+      reauthorize: () => request(input, action, decodeAllowed),
+    })
+  }
   const policy = managedWorkspaceSessionAccessPolicy({
-    requireActor: true,
+    requireActor: options.requireActor ?? true,
     authority: {
       authorizeSessionRead: authorize,
       authorizeSessionWrite: authorize,
@@ -107,7 +152,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     },
   })
   policy.authorizeHost = async (input) => {
-    const url = options.url?.trim()
+    const url = authorityUrl()
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
     const action: HostAuthorityAction =
       input.minimumRole === "admin" || input.minimumRole === "owner" ? "host_admin" : "host_read"
@@ -257,7 +302,9 @@ function authorityRequestBody(
       : {}),
     ...(requestOptions?.reason ? { reason: requestOptions.reason } : {}),
     ...(requestOptions?.parentSessionId ? { parentSessionId: requestOptions.parentSessionId } : {}),
-    ...((action === "register" || action === "reserve") && input.sessionTitle ? { title: input.sessionTitle } : {}),
+    ...((action === "register" || action === "reserve" || action === "adopt") && input.sessionTitle
+      ? { title: input.sessionTitle }
+      : {}),
     ...(requestOptions?.turnId ? { turnId: requestOptions.turnId } : {}),
     ...(requestOptions?.leaseId ? { leaseId: requestOptions.leaseId } : {}),
     ...(requestOptions?.fencingToken !== undefined ? { fencingToken: requestOptions.fencingToken } : {}),

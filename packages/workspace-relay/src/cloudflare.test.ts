@@ -1088,6 +1088,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(open.headers.cookie).toBeUndefined()
     expect(open.headers["sec-websocket-protocol"]).toBeUndefined()
     expect(open.headers.authorization).toStartWith("Bearer ")
+    // The host replays this upgrade onto its own loopback listener, where it is
+    // indistinguishable from its user's by address; this marker is the only
+    // thing on it that says a remote caller is behind it.
+    expect(open.headers["x-forwarded-by"]).toBe("workspace-relay")
 
     hostSocket.message(JSON.stringify({
       type: "ws.frame",
@@ -1423,6 +1427,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
     expect(requestMessage.headers.cookie).toBeUndefined()
     expect(requestMessage.headers.authorization).toStartWith("Bearer ")
+    expect(requestMessage.headers["x-forwarded-by"]).toBe("workspace-relay")
 
     hostSocket.message(JSON.stringify({
       type: "http.response.start",

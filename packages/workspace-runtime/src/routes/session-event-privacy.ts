@@ -5,6 +5,7 @@ import type { WorkspaceRuntimeEvent } from "../bus"
 import {
   sessionAccessContext,
   sessionAccessDenied,
+  sessionRequestProvenance,
   type SessionAccessPolicy,
   type SessionAccessPolicyInput,
 } from "../session-access-policy"
@@ -37,14 +38,19 @@ export const SESSION_EVENT_STREAM_DENIED = "session_event_stream_denied"
  * holds no workspace access, only a grant on one session, so the stream is a
  * session resource for them: the session id is supplied by the caller and
  * admitted through the same verified relay identity and authority oracle as
- * the REST session routes, under a renewable lease. Unmanaged/local runtimes
- * serve the broad stream to whoever reached them.
+ * the REST session routes, under a renewable lease.
+ *
+ * Both arms are for a relay-replayed reader. A loopback-direct one is the
+ * machine's own user, who is every local session's owner, and reads the broad
+ * stream whatever the policy was composed with — as does a runtime with no
+ * managed policy at all.
  */
 export async function authorizeSessionEventScope(
   c: Context,
   policy: SessionAccessPolicy | undefined,
 ): Promise<SessionEventScope | Response> {
   if (policy?.sessionAuthority !== "managed-private") return { managed: false }
+  if (sessionRequestProvenance(c) === "loopback-direct") return { managed: false }
 
   const sessionId = c.req.query("sessionID")?.trim()
   if (!sessionId) {

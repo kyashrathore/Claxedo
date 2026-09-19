@@ -1,8 +1,13 @@
-import { describe, expect, test, vi } from "vitest"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
-import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { SessionTurnConflictError } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal, ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -502,29 +507,13 @@ describe("the owner grant as a session proof", () => {
     expect(unresolvable.authority.authorizeRuntimeSession).not.toHaveBeenCalled()
   })
 
-  test("reserves a child for the owner only after the owner can read its parent", async () => {
+  test("refuses a reservation that names no parent before any authority is asked", async () => {
     const { target, authority, grant } = await fixture()
-    const token = (await grant()).token
-    const reserved = await request(target, token, { action: "reserve", sessionId: "ses_child", parentSessionId: "ses_parent", title: "Reviewer" })
-    expect(reserved.status).toBe(200)
-    const body = await reserved.json() as { allowed: boolean; operationId: string }
-    expect(body.allowed).toBe(true)
-    expect(body.operationId).toMatch(/^session_registration_[0-9a-f-]{36}$/)
-    expect(authority.authorizeRuntimeSession).toHaveBeenCalledWith({ ...principal, sessionId: "ses_parent", workspaceId: "ws_1", action: "read" })
-    expect(authority.reserveRuntimeSession).toHaveBeenCalledWith(principal, {
-      operationId: body.operationId, sessionId: "ses_child", workspaceId: "ws_1", kind: "create", parentSessionId: "ses_parent", title: "Reviewer",
-    })
-    expect(authority.authorizeRuntimeSession.mock.invocationCallOrder[0]).toBeLessThan(authority.reserveRuntimeSession!.mock.invocationCallOrder[0])
-    expect((await request(target, token, { action: "reserve", sessionId: "ses_child" })).status).toBe(400)
-  })
 
-  test("a parent the owner cannot read refuses the reservation with the authority's own denial, and nothing is reserved", async () => {
-    const { target, authority, grant } = await fixture({
-      authorize: async () => { throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "not a participant") },
-    })
-    const refused = await request(target, (await grant()).token, { action: "reserve", sessionId: "ses_child", parentSessionId: "ses_parent" })
-    expect(refused.status).toBe(403)
-    expect(await refused.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    const refused = await request(target, (await grant()).token, { action: "reserve", sessionId: "ses_child" })
+
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_authority_request_invalid" } })
     expect(authority.reserveRuntimeSession).not.toHaveBeenCalled()
   })
 
@@ -610,5 +599,351 @@ describe("the owner grant as a session proof", () => {
     expect(ended.status).toBe(401)
     expect(await ended.json()).toMatchObject({ error: { code: "runtime_access_token_revoked" } })
     expect((await request(target, undefined, { action: "host_read", lease: sessionLease })).status).toBe(401)
+  })
+})
+
+describe("adopting a session the host already held", () => {
+  /**
+   * The two adapters reduced to what this route depends on: one row per
+   * session naming its creator, and a refusal when the caller is not it.
+   * `hostId` is the machine the request came through, which is what the real
+   * adapters read the enrollment owner from.
+   */
+  function adoptingAuthority() {
+    const creators = new Map<string, string>()
+    const adoptRuntimeSession = vi.fn(async (value: { actorId: string; sessionId: string; workspaceId: string; hostId: string }) => {
+      if (value.hostId !== "host_1") {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "This machine does not serve the workspace")
+      }
+      const held = creators.get(value.sessionId)
+      if (held && held !== value.actorId) {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session is already registered to another creator")
+      }
+      creators.set(value.sessionId, value.actorId)
+      return { adopted: !held }
+    })
+    return {
+      creators,
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => ({}),
+        authorizeRuntimeSession: vi.fn(async (value: { actorId: string; sessionId: string }) => {
+          if (creators.get(value.sessionId) !== value.actorId) {
+            throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "denied")
+          }
+        }),
+        runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
+        adoptRuntimeSession,
+      },
+    }
+  }
+
+  async function fixture() {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const { authority, creators } = adoptingAuthority()
+    const target = app({ authority, env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) } })
+    const token = (role: "owner" | "editor") =>
+      mintRelayHostToken({ ...relayInput, role, jti: `rht_${role}` }, key.privateKey, "EdDSA")
+    return { target, authority, creators, token }
+  }
+
+  test("the machine's owner claims a session the plane has no row for, once, and then reads it", async () => {
+    const { target, authority, token } = await fixture()
+    const owner = await token("owner")
+
+    const refused = await request(target, owner, { action: "read", sessionId: "ses_local" })
+    expect(refused.status).toBe(403)
+
+    const adopted = await request(target, owner, { action: "adopt", sessionId: "ses_local", title: "Before sharing" })
+    expect(adopted.status).toBe(200)
+    expect(await adopted.json()).toEqual({ allowed: true, adopted: true })
+    expect(authority.adoptRuntimeSession).toHaveBeenCalledWith({
+      principalKind: "user",
+      actorId: "actor_1",
+      actorKind: "human",
+      sessionId: "ses_local",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      title: "Before sharing",
+    })
+    // The parent access token is rechecked before anything is written.
+    expect(authority.runtimeAccessTokenActive).toHaveBeenCalledWith(expect.objectContaining({ jti: "rat_parent_1" }))
+
+    expect((await request(target, owner, { action: "read", sessionId: "ses_local" })).status).toBe(200)
+
+    const again = await request(target, owner, { action: "adopt", sessionId: "ses_local" })
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual({ allowed: true, adopted: false })
+    expect(authority.adoptRuntimeSession).toHaveBeenCalledTimes(2)
+  })
+
+  test("a member of the workspace is refused before the authority is asked", async () => {
+    const { target, authority, token } = await fixture()
+
+    const refused = await request(target, await token("editor"), { action: "adopt", sessionId: "ses_local" })
+
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_adoption_requires_host_owner" } })
+    expect(authority.adoptRuntimeSession).not.toHaveBeenCalled()
+  })
+
+  test("a session already registered to someone else stays theirs", async () => {
+    const { target, creators, token } = await fixture()
+    creators.set("ses_someone_elses", "actor_other")
+
+    const refused = await request(target, await token("owner"), { action: "adopt", sessionId: "ses_someone_elses" })
+
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(creators.get("ses_someone_elses")).toBe("actor_other")
+  })
+
+  test("neither a stream lease nor an owner grant carries adoption", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const { authority } = adoptingAuthority()
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+      CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+    }
+    const passes = memorySandboxPassRegister()
+    const target = app({
+      authority,
+      env,
+      ownerGrants: createOwnerGrantProof({
+        env,
+        passes,
+        resolveWorkspaceOwner: async () => ({ userId: "user_1", actorId: "actor_1", orgId: "org_1", projectId: "project_1" }),
+      }),
+    })
+    const relayToken = await mintRelayHostToken({ ...relayInput, role: "owner" }, key.privateKey, "EdDSA")
+    const opened = await request(target, relayToken, { action: "read", sessionId: "ses_local", stream: true })
+    expect(opened.status).toBe(403)
+
+    // A lease is only ever accepted beside `stream`, and `stream` is only ever
+    // a read or a write, so a lease has no way to reach adoption at all.
+    const withLease = await request(target, undefined, { action: "adopt", sessionId: "ses_local", lease: "anything" })
+    expect(withLease.status).toBe(400)
+    expect(await withLease.json()).toMatchObject({ error: { code: "session_authority_request_invalid" } })
+
+    const grant = await mintOwnerGrant(
+      { userId: "user_1", actorId: "actor_1", orgId: "org_1", projectId: "project_1", workspaceId: "ws_1" },
+      env,
+      { register: passes },
+    )
+    const byGrant = await request(target, grant.token, { action: "adopt", sessionId: "ses_local" })
+    expect(byGrant.status).toBe(403)
+    expect(await byGrant.json()).toMatchObject({ error: { code: "session_adoption_requires_host_owner" } })
+    expect(authority.adoptRuntimeSession).not.toHaveBeenCalled()
+  })
+
+  test("a plane that records no host enrollments answers that adoption is unavailable", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const target = app({
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => ({}),
+        authorizeRuntimeSession: async () => {},
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+    })
+    const owner = await mintRelayHostToken({ ...relayInput, role: "owner" }, key.privateKey, "EdDSA")
+
+    const answer = await request(target, owner, { action: "adopt", sessionId: "ses_local" })
+
+    expect(answer.status).toBe(503)
+    expect(await answer.json()).toMatchObject({ error: { code: "session_registration_unavailable" } })
+  })
+})
+
+/**
+ * The reservation the route sends for a child session, against a real adapter.
+ *
+ * Everything else in this file supplies the authority, so nothing else can
+ * tell whether the body the route builds is one an adapter accepts. This runs
+ * the SQLite twin, and the twins agree on the reservation input through
+ * `exerciseRuntimeForkReservationConformance`, which both adapter suites run.
+ */
+describe("reservation and adoption against a real private-session authority", () => {
+  const authorities: Array<{ close(): void }> = []
+  const directories: string[] = []
+
+  afterEach(() => {
+    for (const store of authorities.splice(0)) store.close()
+    for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true })
+  })
+
+  function auth(subject: string): SignedControlPlaneAuth {
+    return {
+      mode: "signed",
+      token: `token_${subject}`,
+      user: {
+        subject,
+        tokenIdentifier: `https://identity.example.test|${subject}`,
+        issuer: "https://identity.example.test",
+      },
+    }
+  }
+
+  async function fixture() {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+    const passes = memorySandboxPassRegister()
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-runtime-session-authority-"))
+    directories.push(directory)
+    const databasePath = path.join(directory, "authority.db")
+    const store = createSqliteWorkspaceAuthority({ path: databasePath })
+    // The host assignment adoption reads is written by an enrollment flow this
+    // route has no part in, so it is seeded through a second handle on the
+    // same file rather than stood up here.
+    const seed = openAuthorityDb({ path: databasePath })
+    authorities.push(store, seed)
+    const owner = auth("owner")
+    const member = auth("member")
+    const me = await store.usersMe(owner) as { org_id: string }
+    await store.usersMe(member)
+    await store.createCloudWorkspace(owner, { workspaceId: "ws_real", displayName: "Main" })
+    await store.grantWorkspaceShare(owner, {
+      workspaceId: "ws_real",
+      role: "editor",
+      target: { kind: "actor", actorId: member.user.tokenIdentifier },
+    })
+    const identityOf = (who: SignedControlPlaneAuth) => ({
+      userId: who.user.tokenIdentifier,
+      actorId: who.user.tokenIdentifier,
+      orgId: me.org_id,
+      projectId: "project_real",
+    })
+    const target = app({
+      authority: {
+        ...store,
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { ...env, CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+      ownerGrants: createOwnerGrantProof({
+        env,
+        passes,
+        // Both people hold this workspace outright here, so the grant's own
+        // actor is the owner it re-resolves to; the reservation is refused by
+        // the private session, not by the grant.
+        resolveWorkspaceOwner: async () => identityOf(owner),
+      }),
+    })
+    const relayToken = (who: SignedControlPlaneAuth, role: "owner" | "editor") => mintRelayHostToken({
+      principalKind: "user",
+      actorId: who.user.tokenIdentifier,
+      actorKind: "human",
+      orgId: me.org_id,
+      workspaceId: "ws_real",
+      hostId: "host_real",
+      role,
+      access: "user-hosted",
+      backing: "local-worktree",
+      jti: `rht_${role}_${who.user.subject}`,
+      parentJti: "rat_real",
+    }, key.privateKey, "EdDSA")
+    const assignHost = (who: SignedControlPlaneAuth) => {
+      seed().prepare(`
+        INSERT INTO host_workspace_assignments (
+          workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
+        ) VALUES (?, ?, ?, NULL, 1, 1, 1)
+        ON CONFLICT (workspace_id) DO UPDATE SET owner_token_identifier = excluded.owner_token_identifier
+      `).run("ws_real", "host_real", who.user.tokenIdentifier)
+    }
+    const grant = async (who: SignedControlPlaneAuth) =>
+      (await mintOwnerGrant({ ...identityOf(who), workspaceId: "ws_real" }, env, { register: passes })).token
+    const runtime = (who: SignedControlPlaneAuth) => ({
+      principalKind: "user" as const,
+      actorId: who.user.tokenIdentifier,
+      actorKind: "human" as const,
+    })
+    return { target, store, owner, member, grant, runtime, relayToken, assignHost }
+  }
+
+  test("reserves a child under a parent the owner can read, and the registration it answers with completes", async () => {
+    const { target, store, owner, member, grant, runtime } = await fixture()
+    await store.reserveSession(owner, {
+      operationId: "op_parent",
+      sessionId: "ses_parent",
+      workspaceId: "ws_real",
+      kind: "create",
+    })
+    await store.registerRuntimeSession({ ...runtime(owner), operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real" })
+
+    const reserved = await request(target, await grant(owner), {
+      action: "reserve",
+      sessionId: "ses_child",
+      parentSessionId: "ses_parent",
+      title: "Reviewer",
+    })
+
+    expect(reserved.status).toBe(200)
+    const body = await reserved.json() as { allowed: boolean; operationId: string }
+    expect(body.allowed).toBe(true)
+    expect(body.operationId).toMatch(/^session_registration_[0-9a-f-]{36}$/)
+
+    const registered = await request(target, await grant(owner), {
+      action: "register",
+      operationId: body.operationId,
+      sessionId: "ses_child",
+      title: "Reviewer",
+    })
+    expect(registered.status).toBe(200)
+    await expect(store.authorizeRuntimeSession({ ...runtime(owner), sessionId: "ses_child", workspaceId: "ws_real", action: "write" }))
+      .resolves.toBeUndefined()
+    await expect(store.authorizeRuntimeSession({ ...runtime(member), sessionId: "ses_child", workspaceId: "ws_real", action: "read" }))
+      .rejects.toThrow()
+  })
+
+  test("the machine's owner adopts a session the plane has no row for, and nobody else can", async () => {
+    const { target, store, owner, member, runtime, relayToken, assignHost } = await fixture()
+    assignHost(owner)
+
+    const refusedBefore = await request(target, await relayToken(owner, "owner"), { action: "read", sessionId: "ses_held_locally" })
+    expect(refusedBefore.status).toBe(403)
+
+    const adopted = await request(target, await relayToken(owner, "owner"), {
+      action: "adopt",
+      sessionId: "ses_held_locally",
+      title: "Before sharing",
+    })
+    expect(adopted.status).toBe(200)
+    expect(await adopted.json()).toEqual({ allowed: true, adopted: true })
+    expect((await request(target, await relayToken(owner, "owner"), { action: "read", sessionId: "ses_held_locally" })).status).toBe(200)
+    await expect(store.authorizeRuntimeSession({ ...runtime(member), sessionId: "ses_held_locally", workspaceId: "ws_real", action: "read" }))
+      .rejects.toThrow()
+
+    const again = await request(target, await relayToken(owner, "owner"), { action: "adopt", sessionId: "ses_held_locally" })
+    expect(await again.json()).toEqual({ allowed: true, adopted: false })
+
+    // A second person who holds the workspace outright still does not own the
+    // machine, and the authority is the one that says so.
+    assignHost(owner)
+    const impostor = await request(target, await relayToken(member, "owner"), { action: "adopt", sessionId: "ses_also_held_locally" })
+    expect(impostor.status).toBe(403)
+    expect(await impostor.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+  })
+
+  test("a parent the authority will not show the caller refuses the reservation as a denial, and reserves nothing", async () => {
+    const { target, store, owner, grant, runtime } = await fixture()
+
+    // Which parents a caller may fork under is the adapter's decision, proven
+    // for a second person's private session by the fork conformance both
+    // adapters run; what this asserts is that the adapter's refusal reaches
+    // the wire as its own status rather than as a fault.
+    const refused = await request(target, await grant(owner), {
+      action: "reserve",
+      sessionId: "ses_orphan_child",
+      parentSessionId: "ses_no_such_parent",
+    })
+
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    await expect(store.authorizeRuntimeSession({ ...runtime(owner), sessionId: "ses_orphan_child", workspaceId: "ws_real", action: "read" }))
+      .rejects.toThrow()
   })
 })

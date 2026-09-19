@@ -269,7 +269,17 @@ describe("@claxedo/local-server closure", () => {
     // process that hosts those runtimes can reach. It writes through the
     // runtime's own SSE writer and adds no package edge.
     // Measured: 89 modules, 27 packages.
-    expect(modules.size).toBeLessThanOrEqual(89)
+    // workspace/runtime-dispatch/ingress-provenance.ts and
+    // deployments/local/host-session-authority.ts are the two halves of
+    // admitting a RELAYED caller to a machine that also serves its own user:
+    // the first decides, per request, whether a caller is the relay replaying
+    // onto loopback or the owner at the keyboard, and the second composes the
+    // private-session policy and the relay-token verifier the first asks. Both
+    // belong to this product because only a process that hosts the runtimes
+    // has both callers. They reach the runtime's relay subpath and
+    // host-serving's identity reader, already here, and add no package edge.
+    // Measured: 91 modules, 27 packages.
+    expect(modules.size).toBeLessThanOrEqual(91)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(27)
   })

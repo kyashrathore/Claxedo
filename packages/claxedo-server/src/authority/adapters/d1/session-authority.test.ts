@@ -4,7 +4,11 @@ import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
-import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import {
+  exercisePrivateSessionAdoptionConformance,
+  exercisePrivateSessionAuthorityConformance,
+  exerciseRuntimeForkReservationConformance,
+} from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
@@ -15,11 +19,14 @@ const MIGRATIONS = [
   "0001_service_installations.sql",
   "0002_workspace_authority.sql",
   "0003_private_sessions.sql",
+  "0004_host_access_and_sharing.sql",
   "0010_session_turn_leases.sql",
   "0011_session_turn_producers.sql",
   "0013_org_team_session_sharing.sql",
+  "0014_host_workspace_assignments.sql",
   "0024_session_last_human_turn.sql",
   "0028_workspace_org_member_visible.sql",
+  "0034_drop_workspace_access.sql",
 ].map(
   (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
 )
@@ -136,7 +143,6 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
     displayName: "main",
     repoUrl: "https://github.com/acme/main.git",
     backing: "cloud-vm",
-    access: "cloud",
   })
   await input.database
     .prepare(
@@ -210,6 +216,76 @@ describe("D1 private multiplayer session authority", () => {
       lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
+    })
+  })
+
+  test("satisfies the provider-neutral runtime fork-reservation conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+
+    await expect(
+      exerciseRuntimeForkReservationConformance({
+        authority: input.sessions,
+        workspaceId: "ws_main",
+        creator: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        participant: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+        },
+      }),
+    ).resolves.toEqual({
+      forkReservedUnderAReadableParent: true,
+      registeredChildIsPrivateToItsCreator: true,
+      refusedUnderAnUnreadableParent: true,
+      refusedForAMismatchedIntent: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-adoption conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob, workspace } = await sharedWorkspace(input)
+
+    await expect(
+      exercisePrivateSessionAdoptionConformance({
+        authority: input.sessions,
+        workspaceId: "ws_main",
+        hostId: "host_alices_desktop",
+        assignHost: async () => {
+          await input.database
+            .prepare(
+              `
+            insert into host_workspace_assignments (
+              workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at
+            ) values (?, ?, ?, ?, ?, 1, 1)
+          `,
+            )
+            .bind(
+              "ws_main",
+              "host_alices_desktop",
+              workspace.org_id,
+              alice.principal!.userId,
+              alice.principal!.actorId,
+            )
+            .run()
+        },
+        owner: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        member: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+        },
+      }),
+    ).resolves.toEqual({
+      refusedBeforeAssignment: true,
+      adoptedForEnrollmentOwner: true,
+      idempotent: true,
+      refusedForMember: true,
+      refusedWhenHeldByAnotherCreator: true,
     })
   })
 
@@ -325,7 +401,6 @@ describe("D1 private multiplayer session authority", () => {
       displayName: "other",
       repoUrl: "https://github.com/acme/other.git",
       backing: "cloud-vm",
-      access: "cloud",
     })
     await expect(
       input.sessions.reserveSession(alice, {

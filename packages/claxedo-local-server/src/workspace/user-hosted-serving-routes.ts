@@ -26,9 +26,26 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { setUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
 import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
+import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
+
+/**
+ * The two addresses a relayed caller is admitted by, carried beside the
+ * credential because they arrive on the same heartbeat ack and reach this
+ * process by the same hop. Optional: an ack from a control plane that
+ * configures neither leaves the daemon verifying relayed requests against the
+ * relay's own published key set and refusing every private-session decision,
+ * which is the closed answer.
+ */
+const endpointsBody = z
+  .object({
+    relayJwksUrl: z.string().url().max(2_000).optional(),
+    sessionAuthorityUrl: z.string().url().max(2_000).optional(),
+  })
+  .strict()
 
 const servingBody = z
   .object({
+    endpoints: endpointsBody.optional(),
     credential: z
       .object({
         hostId: z.string().min(1).max(300),
@@ -54,6 +71,9 @@ export function UserHostedServingRoutes() {
         return c.json({ error: { code: "invalid_request_body", message: "serving credential failed validation" } }, 400)
       }
       const credential = parsed.data.credential
+      // Ahead of the tunnel: the first relayed request can arrive as soon as
+      // it opens, and it is verified against these.
+      setLocalHostEndpoints(credential ? parsed.data.endpoints : undefined)
       const state = await setUserHostedServing(
         credential
           ? {

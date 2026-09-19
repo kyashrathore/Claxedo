@@ -317,6 +317,227 @@ export async function exercisePrivateSessionAuthorityConformance(
   }
 }
 
+export type RuntimeForkReservationConformanceReport = {
+  forkReservedUnderAReadableParent: true
+  registeredChildIsPrivateToItsCreator: true
+  refusedUnderAnUnreadableParent: true
+  refusedForAMismatchedIntent: true
+}
+
+/**
+ * The reservation shape a runtime sends for a child session, on both adapters.
+ *
+ * A child names a parent, and an intent that names a parent is a `fork` —
+ * `sessions`' own CHECK constraint pairs them that way, so the two mismatched
+ * pairings below are refused before anything is written. The runtime-principal
+ * entrypoint is the one under test: the route reaches it with an actor it took
+ * from a verified proof, never from the request body.
+ */
+export async function exerciseRuntimeForkReservationConformance(
+  harness: Pick<PrivateSessionAuthorityConformanceHarness, "authority" | "workspaceId" | "creator" | "participant">,
+): Promise<RuntimeForkReservationConformanceReport> {
+  const { authority, workspaceId, creator, participant } = harness
+  const parentSessionId = "ses_fork_reservation_parent"
+  const sessionId = "ses_fork_reservation_child"
+
+  await authority.reserveSession(creator.auth, {
+    operationId: "op_fork_reservation_parent",
+    sessionId: parentSessionId,
+    workspaceId,
+    kind: "create",
+  })
+  await authority.registerRuntimeSession({
+    ...creator.runtime,
+    operationId: "op_fork_reservation_parent",
+    sessionId: parentSessionId,
+    workspaceId,
+  })
+
+  const reserved = await authority.reserveRuntimeSession(creator.runtime, {
+    operationId: "op_fork_reservation_child",
+    sessionId,
+    workspaceId,
+    kind: "fork",
+    parentSessionId,
+    title: "Reviewer",
+  })
+  invariant(
+    reserved.state === "reserved" && reserved.sessionId === sessionId,
+    "a fork under a readable parent was not reserved",
+  )
+  await authority.registerRuntimeSession({
+    ...creator.runtime,
+    operationId: "op_fork_reservation_child",
+    sessionId,
+    workspaceId,
+    title: "Reviewer",
+  })
+  await authority.authorizeRuntimeSession({ ...creator.runtime, sessionId, workspaceId, action: "write" })
+  invariant(
+    await rejects(() =>
+      authority.authorizeRuntimeSession({ ...participant.runtime, sessionId, workspaceId, action: "read" }),
+    ),
+    "a registered child was readable by a workspace member who is not on it",
+  )
+
+  invariant(
+    await rejects(() =>
+      authority.reserveRuntimeSession(participant.runtime, {
+        operationId: "op_fork_reservation_under_private_parent",
+        sessionId: "ses_fork_reservation_stranger",
+        workspaceId,
+        kind: "fork",
+        parentSessionId,
+      }),
+    ),
+    "a fork was reserved under a parent its creator cannot read",
+  )
+
+  invariant(
+    await rejects(() =>
+      authority.reserveRuntimeSession(creator.runtime, {
+        operationId: "op_fork_reservation_create_with_parent",
+        sessionId: "ses_fork_reservation_mismatched",
+        workspaceId,
+        kind: "create",
+        parentSessionId,
+      }),
+    ),
+    "a create intent naming a parent session was reserved",
+  )
+  invariant(
+    await rejects(() =>
+      authority.reserveRuntimeSession(creator.runtime, {
+        operationId: "op_fork_reservation_parentless_fork",
+        sessionId: "ses_fork_reservation_orphan",
+        workspaceId,
+        kind: "fork",
+      }),
+    ),
+    "a fork intent naming no parent session was reserved",
+  )
+
+  return {
+    forkReservedUnderAReadableParent: true,
+    registeredChildIsPrivateToItsCreator: true,
+    refusedUnderAnUnreadableParent: true,
+    refusedForAMismatchedIntent: true,
+  }
+}
+
+export type PrivateSessionAdoptionConformanceHarness = {
+  authority: PrivateSessionAuthority
+  workspaceId: string
+  hostId: string
+  /** Records that `hostId` serves `workspaceId` on the owner's behalf, as the adapter's own store spells it. */
+  assignHost: () => Promise<void>
+  owner: {
+    auth: SignedControlPlaneAuth
+    runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
+  }
+  /** A workspace member who may write there but does not own the machine. */
+  member: {
+    auth: SignedControlPlaneAuth
+    runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
+  }
+}
+
+export type PrivateSessionAdoptionConformanceReport = {
+  refusedBeforeAssignment: true
+  adoptedForEnrollmentOwner: true
+  idempotent: true
+  refusedForMember: true
+  refusedWhenHeldByAnotherCreator: true
+}
+
+/**
+ * The adoption contract both adapters answer: a session the host already held
+ * becomes the enrollment owner's, once, and nobody else's.
+ *
+ * Every session id here stands for a transcript created on the machine before
+ * remote access existed, so none of them is reserved first — which is the
+ * whole point, and why no other action in the port can reach this state.
+ */
+export async function exercisePrivateSessionAdoptionConformance(
+  harness: PrivateSessionAdoptionConformanceHarness,
+): Promise<PrivateSessionAdoptionConformanceReport> {
+  const { authority, workspaceId, hostId, owner, member } = harness
+  const sessionId = "ses_local_before_remote_access"
+  const adopt = (
+    who: PrivateSessionAdoptionConformanceHarness["owner"],
+    id: string,
+  ) => authority.adoptRuntimeSession({ ...who.runtime, sessionId: id, workspaceId, hostId })
+
+  invariant(
+    await rejects(() => adopt(owner, sessionId)),
+    "a host with no assignment adopted a session",
+  )
+  await harness.assignHost()
+
+  invariant(
+    await rejects(() =>
+      authority.authorizeRuntimeSession({ ...owner.runtime, sessionId, workspaceId, action: "read" }),
+    ),
+    "an unregistered session was readable before adoption",
+  )
+  const adopted = await adopt(owner, sessionId)
+  invariant(adopted.adopted, "the enrollment owner's first adoption reported no change")
+  await authority.authorizeRuntimeSession({ ...owner.runtime, sessionId, workspaceId, action: "read" })
+  await authority.authorizeRuntimeSession({ ...owner.runtime, sessionId, workspaceId, action: "write" })
+  invariant(
+    asArray(await authority.listSessions(owner.auth, { workspaceId })).some(
+      (row) => asRecord(row)?.session_id === sessionId,
+    ),
+    "an adopted session did not become visible to its creator",
+  )
+  invariant(
+    await rejects(() =>
+      authority.authorizeRuntimeSession({ ...member.runtime, sessionId, workspaceId, action: "read" }),
+    ),
+    "adoption made a private session visible to a workspace member",
+  )
+
+  const again = await adopt(owner, sessionId)
+  invariant(!again.adopted, "a repeated adoption reported a second registration")
+  invariant(
+    asArray(await authority.listSessions(owner.auth, { workspaceId })).filter(
+      (row) => asRecord(row)?.session_id === sessionId,
+    ).length === 1,
+    "a repeated adoption produced a second session row",
+  )
+
+  invariant(
+    await rejects(() => adopt(member, "ses_member_attempt")),
+    "a workspace member who does not own the machine adopted a session",
+  )
+
+  const held = "ses_created_by_the_member"
+  await authority.reserveSession(member.auth, {
+    operationId: "op_created_by_the_member",
+    sessionId: held,
+    workspaceId,
+    kind: "create",
+  })
+  await authority.registerRuntimeSession({
+    ...member.runtime,
+    operationId: "op_created_by_the_member",
+    sessionId: held,
+    workspaceId,
+  })
+  invariant(
+    await rejects(() => adopt(owner, held)),
+    "adoption claimed a session already registered to another creator",
+  )
+
+  return {
+    refusedBeforeAssignment: true,
+    adoptedForEnrollmentOwner: true,
+    idempotent: true,
+    refusedForMember: true,
+    refusedWhenHeldByAnotherCreator: true,
+  }
+}
+
 async function rejects(operation: () => Promise<unknown>) {
   try {
     await operation()

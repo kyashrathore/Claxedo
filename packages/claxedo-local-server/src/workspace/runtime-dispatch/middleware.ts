@@ -64,6 +64,7 @@ async function workspaceRuntimeProxyWithOptions(
       return await embedded(c, ws, undefined, {
         ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
         ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+        ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
       })
     }
     const hit = await resolveWorkspaceHit(ws, options)

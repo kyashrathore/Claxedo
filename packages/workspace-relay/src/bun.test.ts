@@ -1214,6 +1214,10 @@ describe("workspace relay Bun adapter", () => {
       expect(message.path).toBe("/api/wr/health?verbose=1")
       expect(message.headers.authorization?.startsWith("Bearer ")).toBe(true)
       expect(message.headers["x-workspace-id"]).toBe("ws_1")
+      // The host replays this onto its own loopback listener, where it is
+      // indistinguishable from its user's request by address; this marker is
+      // the only thing on it that says a remote caller is behind it.
+      expect(message.headers["x-forwarded-by"]).toBe("workspace-relay")
       host.send(JSON.stringify({
         type: "http.response.start",
         protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1910,6 +1914,7 @@ describe("workspace relay Bun adapter", () => {
           type: "ws.open",
           workspace_id: "ws_1",
           path: "/api/claxedo/pty/pty_1/connect",
+          headers: { "x-forwarded-by": "workspace-relay" },
         })
         await expect(clientMessage).resolves.toBe("from-host")
         client.send("from-client")

@@ -50,6 +50,8 @@ type RuntimeSessionAuthorityPort = Pick<
   }) => Promise<unknown>
   /** Absent on a plane that cannot reserve for a runtime actor; the owner grant's `reserve` then answers 503. */
   reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
+  /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
+  adoptRuntimeSession?: PrivateSessionAuthority["adoptRuntimeSession"]
 }
 
 /** The workspace's owner as the authority records them now, or nothing for a workspace that has none. */
@@ -347,6 +349,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     const { sessionId, action, lease, turnId, turnLeaseId, fencingToken } = request
     let claims: SessionStreamLeaseClaims
     let ownedTurn: TurnLeaseClaims | undefined
+    /** The workspace role the relay asserted on THIS request; a lease carries none. */
+    let relayRole: RelayHostPrivateSessionClaims["role"]
     const bearer = bearerToken(context.req.header("authorization") ?? null)
     if (bearer && options.ownerGrants?.names(bearer) && !lease && !turnLeaseId) {
       const grant = await options.ownerGrants.verify(bearer).catch(() => undefined)
@@ -363,7 +367,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         sessionId,
         action: action === "write" ? "write" : "read",
       }
-      return { claims, ownedTurn, rechecked: true }
+      return { claims, ownedTurn, relayRole, rechecked: true }
     }
     if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
       const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
@@ -414,6 +418,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         )
       }
       try {
+        relayRole = verified.role
         const proof = privateSessionRuntimeProof(verified)
         const principal: PrivateSessionRuntimePrincipal =
           proof.principalKind === "user"
@@ -439,7 +444,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }
     }
 
-    return { claims, ownedTurn, rechecked: false }
+    return { claims, ownedTurn, relayRole, rechecked: false }
   }
 
   async function applyTurnAction(
@@ -534,7 +539,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     const { sessionId, action, operationId, reason, title, stream, parentSessionId } = request
     const verified = await verifySessionProof(context, request)
     if (verified instanceof Response) return verified
-    const { claims, ownedTurn, rechecked } = verified
+    const { claims, ownedTurn, relayRole, rechecked } = verified
 
     try {
       const principal = sessionLeasePrincipal(claims)
@@ -554,21 +559,52 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
             503,
           )
         }
-        await options.authority.authorizeRuntimeSession({
-          ...principal,
-          sessionId: parentSessionId,
-          workspaceId: claims.workspaceId,
-          action: "read",
-        })
+        // An intent that names a parent is a `fork`: that is the pairing both
+        // adapters validate and the one their `sessions` CHECK constraint
+        // admits. The parent read is theirs too — they resolve it in the same
+        // statement that writes the reservation, so a parent the caller loses
+        // between the check and the write cannot be reserved under.
         const reserved = await options.authority.reserveRuntimeSession(principal, {
           operationId: `session_registration_${randomUUID()}`,
           sessionId,
           workspaceId: claims.workspaceId,
-          kind: "create",
+          kind: "fork",
           parentSessionId,
           ...(title ? { title } : {}),
         })
         return context.json({ allowed: true, operationId: reserved.operationId })
+      }
+      if (action === "adopt") {
+        // The machine asks on behalf of the person at its keyboard, over the
+        // relay, holding a token the relay minted for THIS request; a lease
+        // outlives the role it was minted under and cannot carry this.
+        if (claims.transport !== "relay-host" || relayRole !== "owner") {
+          return context.json(
+            {
+              error: {
+                code: "session_adoption_requires_host_owner",
+                message: "Only the owner of the machine serving this workspace may adopt a session it already holds",
+              },
+            },
+            403,
+          )
+        }
+        if (!options.authority.adoptRuntimeSession) {
+          return context.json(
+            { error: { code: "session_registration_unavailable", message: "Session registration is unavailable" } },
+            503,
+          )
+        }
+        const denial = rechecked ? undefined : await proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims)
+        if (denial) return context.json({ error: denial }, 401)
+        const adopted = await options.authority.adoptRuntimeSession({
+          ...principal,
+          sessionId,
+          workspaceId: claims.workspaceId,
+          hostId: claims.hostId,
+          ...(title ? { title } : {}),
+        })
+        return context.json({ allowed: true, adopted: adopted.adopted })
       }
       if (action === "register") {
         await options.authority.registerRuntimeSession({
@@ -704,6 +740,7 @@ type AuthorityAction =
   | "write"
   | "reserve"
   | "register"
+  | "adopt"
   | "registration_ambiguous"
   | "compensation_begin"
   | "compensation_complete"
@@ -722,6 +759,7 @@ function isAuthorityAction(value: unknown): value is AuthorityAction {
     || value === "write"
     || value === "reserve"
     || value === "register"
+    || value === "adopt"
     || value === "registration_ambiguous"
     || value === "compensation_begin"
     || value === "compensation_complete"

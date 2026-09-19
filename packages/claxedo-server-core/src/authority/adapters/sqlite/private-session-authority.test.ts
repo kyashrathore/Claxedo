@@ -4,7 +4,11 @@ import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import {
+  exercisePrivateSessionAdoptionConformance,
+  exercisePrivateSessionAuthorityConformance,
+  exerciseRuntimeForkReservationConformance,
+} from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
@@ -72,6 +76,85 @@ describe("SQLite private-session authority", () => {
       lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
+    })
+  })
+
+  test("satisfies the provider-neutral runtime fork-reservation conformance runner", async () => {
+    const creator = auth("creator")
+    const participant = auth("participant")
+    const store = authority()
+    await store.usersMe(participant)
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    await store.grantWorkspaceShare(creator, {
+      workspaceId: "workspace_main",
+      role: "editor",
+      target: { kind: "actor", actorId: participant.user.tokenIdentifier },
+    })
+
+    await expect(exerciseRuntimeForkReservationConformance({
+      authority: store,
+      workspaceId: "workspace_main",
+      creator: {
+        auth: creator,
+        runtime: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" },
+      },
+      participant: {
+        auth: participant,
+        runtime: { principalKind: "user", actorId: participant.user.tokenIdentifier, actorKind: "human" },
+      },
+    })).resolves.toEqual({
+      forkReservedUnderAReadableParent: true,
+      registeredChildIsPrivateToItsCreator: true,
+      refusedUnderAnUnreadableParent: true,
+      refusedForAMismatchedIntent: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-adoption conformance runner", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-adoption-"))
+    temporaryDirectories.push(directory)
+    const databasePath = path.join(directory, "authority.db")
+    const owner = auth("owner")
+    const member = auth("member")
+    const store = createSqliteWorkspaceAuthority({ path: databasePath })
+    const seed = openAuthorityDb({ path: databasePath })
+    openAuthorities.push(store, seed)
+    await store.usersMe(member)
+    await store.createCloudWorkspace(owner, { workspaceId: "workspace_main", displayName: "Main" })
+    await store.grantWorkspaceShare(owner, {
+      workspaceId: "workspace_main",
+      role: "editor",
+      target: { kind: "actor", actorId: member.user.tokenIdentifier },
+    })
+
+    await expect(exercisePrivateSessionAdoptionConformance({
+      authority: store,
+      workspaceId: "workspace_main",
+      hostId: "host_owners_desktop",
+      // The real path here is an enrollment plus `assignWorkspaceHost`; the
+      // row it writes is what adoption reads, and it is seeded directly so the
+      // two adapters answer the same suite from the same starting state.
+      assignHost: async () => {
+        seed().prepare(`
+          INSERT INTO host_workspace_assignments (
+            workspace_id, host_id, owner_token_identifier, second_device_open_at, revision, assigned_at, updated_at
+          ) VALUES (?, ?, ?, NULL, 1, 1, 1)
+        `).run("workspace_main", "host_owners_desktop", owner.user.tokenIdentifier)
+      },
+      owner: {
+        auth: owner,
+        runtime: { principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human" },
+      },
+      member: {
+        auth: member,
+        runtime: { principalKind: "user", actorId: member.user.tokenIdentifier, actorKind: "human" },
+      },
+    })).resolves.toEqual({
+      refusedBeforeAssignment: true,
+      adoptedForEnrollmentOwner: true,
+      idempotent: true,
+      refusedForMember: true,
+      refusedWhenHeldByAnotherCreator: true,
     })
   })
 

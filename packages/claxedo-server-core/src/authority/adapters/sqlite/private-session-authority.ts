@@ -5,12 +5,13 @@ import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type {
-  PrivateSessionAuthority,
-  PrivateSessionRegistrationResult,
-  PrivateSessionRuntimePrincipal,
-  ReservePrivateSessionInput,
-  TransitionPrivateSessionRegistrationInput,
+import {
+  sessionAdoptionOperationId,
+  type PrivateSessionAuthority,
+  type PrivateSessionRegistrationResult,
+  type PrivateSessionRuntimePrincipal,
+  type ReservePrivateSessionInput,
+  type TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SessionTurnConflictError,
@@ -363,22 +364,54 @@ export function createSqlitePrivateSessionAuthority(input: {
         }
         workspaceAccess(db, actor, workspaceId, "write")
         const at = now()
-        db.prepare(`
-          INSERT INTO session_history (
-            session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(sessionId, workspaceId, actor.token_identifier, operationId, title ?? null, at, at)
-        db.prepare(`
-          INSERT INTO session_participants (
-            session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at
-          ) VALUES (?, ?, ?, ?, ?)
-        `).run(sessionId, workspaceId, actor.token_identifier, actor.token_identifier, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
         db.prepare(`
           UPDATE session_registration_operations
           SET state = 'registered', state_reason = NULL, updated_at = ?
           WHERE operation_id = ? AND creator_actor_id = ? AND state IN ('reserved', 'reconciliation_required')
         `).run(at, operationId, actor.token_identifier)
         return result(registration(db, operationId)!, true)
+      })()
+    },
+    async adoptRuntimeSession(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const sessionId = required(value.sessionId, "sessionId")
+      const workspaceId = required(value.workspaceId, "workspaceId")
+      const hostId = required(value.hostId, "hostId")
+      const title = trimToUndefined(value.title)
+      const operationId = sessionAdoptionOperationId(sessionId)
+      return db.transaction(() => {
+        const assignment = db.prepare<unknown[], { owner_token_identifier: string }>(`
+          SELECT owner_token_identifier FROM host_workspace_assignments WHERE workspace_id = ? AND host_id = ?
+        `).get(workspaceId, hostId)
+        if (!assignment || assignment.owner_token_identifier !== actor.token_identifier) denied()
+        workspaceAccess(db, actor, workspaceId, "write")
+        const existing = session(db, sessionId)
+        if (existing) {
+          if (
+            existing.workspace_id !== workspaceId
+            || existing.deleted_at
+            || existing.creator_actor_id !== actor.token_identifier
+          ) {
+            denied()
+          }
+          return { adopted: false }
+        }
+        const held = db.prepare<unknown[], Pick<RegistrationRow, "state">>(`
+          SELECT state FROM session_registration_operations WHERE session_id = ?
+        `).get(sessionId)
+        if (held && held.state !== "compensated") denied()
+        const at = now()
+        db.prepare(`DELETE FROM session_registration_operations WHERE session_id = ? AND state = 'compensated'`).run(sessionId)
+        db.prepare(`
+          INSERT INTO session_registration_operations (
+            operation_id, session_id, workspace_id, creator_actor_id, operation_kind,
+            parent_session_id, requested_title, state, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'create', NULL, ?, 'registered', ?, ?)
+        `).run(operationId, sessionId, workspaceId, actor.token_identifier, title ?? null, at, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
+        return { adopted: true }
       })()
     },
     async markSessionRegistrationAmbiguous(value) {
@@ -877,6 +910,24 @@ function json(value: unknown) {
   } catch {
     throw new SqlitePrivateSessionAuthorityError("invalid_input", "Session message must be JSON serializable")
   }
+}
+
+function projectRegisteredSession(
+  db: SqliteAuthorityDb,
+  actor: AuthorityUser,
+  row: { operationId: string; sessionId: string; workspaceId: string; title?: string },
+  at: number,
+) {
+  db.prepare(`
+    INSERT INTO session_history (
+      session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(row.sessionId, row.workspaceId, actor.token_identifier, row.operationId, row.title ?? null, at, at)
+  db.prepare(`
+    INSERT INTO session_participants (
+      session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(row.sessionId, row.workspaceId, actor.token_identifier, actor.token_identifier, at)
 }
 
 function denied(): never {

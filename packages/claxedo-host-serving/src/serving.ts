@@ -207,6 +207,18 @@ export function userHostedServingState(input: Pick<UserHostedServingComposition,
   }
 }
 
+/**
+ * The machine identity and relay this process is serving under, or nothing.
+ *
+ * Narrower than {@link userHostedServingState} on purpose: a caller that has
+ * to VERIFY a relay-minted token wants only the two facts the token is bound
+ * to — the host it was issued for and the relay that signs — and must not be
+ * handed a status surface it would then have to ignore most of.
+ */
+export function userHostedServingIdentity() {
+  return active ? { hostId: active.hostId, relayUrl: active.relayUrl } : undefined
+}
+
 export function stopUserHostedServing() {
   const current = active
   active = undefined

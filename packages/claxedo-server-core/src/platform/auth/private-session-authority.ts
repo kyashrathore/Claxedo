@@ -41,6 +41,25 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
   title?: string
 }
 
+export type AdoptRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & {
+  sessionId: string
+  workspaceId: string
+  /** The machine the caller reached the session through; names the enrollment whose owner may adopt. */
+  hostId: string
+  title?: string
+}
+
+/**
+ * An adoption's registration operation, derived from the session it claims so
+ * that two concurrent first reads of the same session contend for one row
+ * instead of minting two operations for one id.
+ */
+export function sessionAdoptionOperationId(sessionId: string) {
+  return `session_adoption_${sessionId}`
+}
+
+export const SESSION_ADOPTION_OPERATION_PREFIX = "session_adoption_"
+
 export type TransitionPrivateSessionRegistrationInput = PrivateSessionRuntimePrincipal & {
   operationId: string
   sessionId: string
@@ -160,6 +179,17 @@ export type PrivateSessionAuthority = {
     input: ReservePrivateSessionInput,
   ) => Promise<PrivateSessionRegistrationResult>
   registerRuntimeSession: (input: RegisterRuntimePrivateSessionInput) => Promise<unknown>
+  /**
+   * Registers a session the host already holds and the plane has no row for,
+   * under the owner of the enrollment that serves the workspace on this host.
+   *
+   * Outside the reserve/register machine's guarantee: nothing reserved the id
+   * before the transcript existed, so the id is the host's and the plane can
+   * only refuse or accept it whole. The authority is therefore the one that
+   * names the creator — the caller cannot — and it admits only that same owner,
+   * so no member turns another person's local transcript into their own.
+   */
+  adoptRuntimeSession: (input: AdoptRuntimePrivateSessionInput) => Promise<{ adopted: boolean }>
   markSessionRegistrationAmbiguous: (
     input: TransitionPrivateSessionRegistrationInput,
   ) => Promise<PrivateSessionRegistrationResult>
@@ -227,6 +257,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "reserveSession",
   "reserveRuntimeSession",
   "registerRuntimeSession",
+  "adoptRuntimeSession",
   "markSessionRegistrationAmbiguous",
   "beginSessionCompensation",
   "completeSessionCompensation",

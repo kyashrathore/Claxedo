@@ -90,6 +90,7 @@ export {
   remoteWorkspaceSessionAccessPolicy,
   remoteWorkspaceSessionAccessPolicyFromEnv,
 } from "./remote-session-authority"
+export type { AdoptRefusedSession } from "./remote-session-authority"
 export type {
   SessionAccessActor,
   SessionAccessAuthor,

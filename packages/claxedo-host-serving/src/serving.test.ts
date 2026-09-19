@@ -226,6 +226,7 @@ function relayDeliveredHeaders(): Record<string, string> {
     "x-forwarded-for": "203.0.113.7",
     "x-forwarded-proto": "https",
     origin: "https://app.claxedo.test",
+    "x-forwarded-by": "workspace-relay",
   }
 }
 
@@ -247,6 +248,17 @@ describe("loopback replay headers", () => {
     const sanitized = loopbackReplayHeaders(relayDeliveredHeaders())
     expect(sanitized["authorization"]).toBe("Bearer runtime-access-token")
     expect(sanitized["content-type"]).toBe("application/json")
+  })
+
+  /**
+   * The replay is loopback by every measure the gate above has, so this marker
+   * is the only thing left on the request that says a remote caller is behind
+   * it. A host that serves its own user and relayed members on one listener
+   * refuses an unverifiable request on it alone; stripping it here would hand
+   * that request the machine's own user's access instead.
+   */
+  test("keeps the relay's own marker, which is what separates a replay from the machine's own user", () => {
+    expect(loopbackReplayHeaders(relayDeliveredHeaders())["x-forwarded-by"]).toBe("workspace-relay")
   })
 
   test("strips regardless of header case, since the relay preserves the caller's casing", () => {

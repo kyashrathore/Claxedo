@@ -136,6 +136,8 @@ function managedRoutes(input: {
   runtime?: AgentRuntime
   publishGlobal?: (event: CompatEnvelope) => void
   afterMessageCheckpoint?: () => void
+  /** False composes the same routes and policy for a caller the exposure stamped nothing for. */
+  stamped?: boolean
 }) {
   const routes = createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -147,6 +149,7 @@ function managedRoutes(input: {
     sessionAccessPolicy: input.policy,
     publishGlobal: input.publishGlobal ?? (() => {}),
   })
+  if (input.stamped === false) return routes
   const app = new Hono()
   app.use("*", async (context, next) => {
     ;(context as any).set("relayHostAuth", {
@@ -458,6 +461,52 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(release).toBeGreaterThan(checkpoint)
     expect(release).toBeGreaterThan(finalPublish)
   })
+
+  test("the same managed policy creates with no reservation and registers nothing for an UNSTAMPED caller", async () => {
+    // A desktop daemon mounts this policy for the org members the relay
+    // replays onto it and keeps serving its own user on the same runtimes. The
+    // ingress refuses a relayed request it cannot verify, so the absence of a
+    // stamp is that user, and the lifecycle a reservation belongs to is not
+    // theirs.
+    const registrations: unknown[] = []
+    const policy = managedPolicy({
+      registerSession: async (value) => { registrations.push(value); return { allowed: true } },
+    })
+    const fixture = { ...adapter(), getSession: async () => null }
+
+    const response = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+
+    expect(response.status).toBe(201)
+    expect(registrations).toEqual([])
+  })
+
+  test("durable turn admission is the stamped caller's: a prompt with no message id is refused for them and admitted for the machine's own user", async () => {
+    const turns: string[] = []
+    const policy = managedPolicy({
+      acquireTurn: async (input) => { turns.push(input.turnId); return { allowed: false, status: 503, code: "unreachable", message: "unreachable" } },
+    })
+    const fixture = adapter()
+
+    const stamped = await managedRoutes({ policy, adapter: fixture }).request("/session/ses_1/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
+    })
+    const direct = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session/ses_1/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
+    })
+
+    expect(stamped.status).toBe(400)
+    expect(await stamped.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
+    expect(direct.status).toBe(200)
+    expect(turns).toEqual([])
+  })
 })
 
 describe("createSessionRoutes message paging", () => {
@@ -683,7 +732,7 @@ function routes(input: {
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
-  return createSessionRoutes({
+  const created = createSessionRoutes({
     resolveAdapter: () => input.adapter,
     resolveExecutionBinding: fixtureExecutionBinding(),
     resolveDirectory: () => undefined,
@@ -701,6 +750,26 @@ function routes(input: {
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
       : undefined,
   })
+  // A managed-private policy decides the lifecycle of a RELAY-REPLAYED
+  // request, and the runtime reads that off the verified stamp the exposure
+  // sets, so a test of it has to arrive stamped. Unstamped, the same runtime
+  // answers its own machine's user and reserves nothing.
+  if (!input.sessionAccessPolicy) return created
+  const app = new Hono()
+  app.use("*", async (context, next) => {
+    ;(context as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+      principal_kind: "user",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      actor_public_id: "user_1",
+      actor_name: "Actor One",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      role: "editor",
+    })
+    await next()
+  })
+  return app.route("/", created)
 }
 
 function registrationPolicy(

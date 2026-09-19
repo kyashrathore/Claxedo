@@ -85,6 +85,7 @@ import { errorBody } from "./error-body"
 import {
   sessionAccessContext,
   sessionAccessDenied,
+  sessionRequestProvenance,
   type SessionAccessDecision,
   type SessionAccessOperation,
   type SessionAccessPolicy,
@@ -817,12 +818,19 @@ function turnAdmissionConflict(c: Ctx) {
   }, 409)
 }
 
-function managedRegistration(opts: Opts) {
+/**
+ * Whether THIS request's session lifecycle is the private one: a reservation
+ * before the create, a registered creator, and a durable turn lease.
+ *
+ * A managed-private policy is the composition's half of the answer and the
+ * request's provenance is the other. One desktop daemon serves both: the
+ * machine's own user reaches it loopback-direct and creates sessions with no
+ * control-plane round trip, while the same runtime answers a relay-replayed
+ * member only through the authority that knows who created what.
+ */
+function managedSessionLifecycle(opts: Opts, c: Ctx) {
   return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
-}
-
-function managedTurnAdmission(opts: Opts) {
-  return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
+    && sessionRequestProvenance(c) === "relay-replayed"
 }
 
 async function acquireManagedPromptLease(input: {
@@ -832,7 +840,7 @@ async function acquireManagedPromptLease(input: {
   turnId?: string
   onLost: () => Promise<void> | void
 }): Promise<{ lease?: ActiveSessionTurnLease; rejected?: Response }> {
-  if (!managedTurnAdmission(input.opts)) return {}
+  if (!managedSessionLifecycle(input.opts, input.c)) return {}
   if (!input.turnId) {
     return {
       rejected: Response.json(errorBody(
@@ -1017,7 +1025,7 @@ async function registerCreatedSession(
   | { kind: "ambiguous"; response: Response }
   | { kind: "denied"; response: Response }
 > {
-  if (!managedRegistration(opts)) return { kind: "registered" }
+  if (!managedSessionLifecycle(opts, c)) return { kind: "registered" }
   if (!operationId) {
     return {
       kind: "denied",
@@ -1326,11 +1334,11 @@ export function createSessionRoutes(opts: Opts) {
         // that reserved first, so it reserves itself as the verified actor —
         // the owner grant's identity — and the control plane decides. A root
         // create keeps needing the caller's own reservation.
-        const selfReservation = managedRegistration(opts) && !operationId && body.parentID && children
+        const selfReservation = managedSessionLifecycle(opts, c) && !operationId && body.parentID && children
           ? opts.sessionAccessPolicy?.reserveSession?.bind(opts.sessionAccessPolicy)
           : undefined
         if (selfReservation && !body.id) body.id = `ses_${randomUUID()}`
-        if (managedRegistration(opts) && (!body.id || (!operationId && !selfReservation))) {
+        if (managedSessionLifecycle(opts, c) && (!body.id || (!operationId && !selfReservation))) {
           return c.json(errorBody(
             "session_reservation_required",
             "Managed session creation requires a preassigned session id and reservation operation",
@@ -1492,7 +1500,7 @@ export function createSessionRoutes(opts: Opts) {
           try {
             await after(opts.afterCreateSession?.(c, directory, session))
           } catch (error) {
-            if (managedRegistration(opts)) {
+            if (managedSessionLifecycle(opts, c)) {
               await compensateRegistration({
                 opts,
                 c,
@@ -2007,7 +2015,7 @@ export function createSessionRoutes(opts: Opts) {
       const wire = await requestBody(c)
       const body = { id: str(wire.id), messageId: str(wire.messageId) }
       const operationId = registrationOperationId(c)
-      if (managedRegistration(opts) && (!body.id || !operationId)) {
+      if (managedSessionLifecycle(opts, c) && (!body.id || !operationId)) {
         return c.json(errorBody(
           "session_reservation_required",
           "Managed session forks require a preassigned child session id and reservation operation",
@@ -2031,7 +2039,7 @@ export function createSessionRoutes(opts: Opts) {
       try {
         await after(opts.afterCreateSession?.(c, directory, child))
       } catch (error) {
-        if (managedRegistration(opts)) {
+        if (managedSessionLifecycle(opts, c)) {
           await compensateRegistration({
             opts,
             c,

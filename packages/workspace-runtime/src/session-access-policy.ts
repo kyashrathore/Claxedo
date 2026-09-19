@@ -211,11 +211,10 @@ export type SessionAuthorityTurnReleasePredicate = (
  * can admit a request but not the live stream behind it still reports itself
  * as `managed-private`, and every managed terminal or session stream then
  * fails at the point it asks for the lease its agent callbacks renew. Turn
- * admission is the same contract's fifth capability — a `managed-private`
- * policy always turns on durable prompt admission (see `managedTurnAdmission`
- * in `routes/session-core.ts`), so the bundle carries `acquireTurn`/
- * `renewTurn`/`releaseTurn` as required members rather than an optional
- * add-on a composer can forget to wire up.
+ * admission is the same contract's fifth capability — a relay-replayed prompt
+ * on a `managed-private` policy always takes a durable turn lease, so the
+ * bundle carries `acquireTurn`/`renewTurn`/`releaseTurn` as required members
+ * rather than an optional add-on a composer can forget to wire up.
  */
 export type ManagedSessionAuthority = {
   authorizeSessionRead: SessionAuthorityPredicate
@@ -522,6 +521,32 @@ export function managedWorkspaceSessionAccessPolicy(
 type SessionAccessContextReader = {
   get(name: "relayHostAuth"): RelayHostAuthContext["relayHostAuth"]
   req?: { header(name: string): string | undefined }
+}
+
+export type SessionRequestProvenance = "loopback-direct" | "relay-replayed"
+
+type SessionRequestProvenanceReader = SessionAccessContextReader & {
+  get(name: "relayHostDirectAuth"): RelayHostAuthContext["relayHostDirectAuth"]
+}
+
+/**
+ * Who reached this runtime, read off the request rather than off the
+ * composition it was mounted with.
+ *
+ * Both marks are set only where a boundary put them there: the relay
+ * host-token middleware, the owner grant, the daemon ingress that refuses a
+ * relayed request it cannot verify rather than forwarding it unstamped, and —
+ * for the direct mark — that same middleware admitting the control plane's own
+ * injected token. The direct one names no actor, but it is still not a person
+ * at this machine's keyboard: it is a remote caller the runtime cannot
+ * attribute, so it gets the private-session lifecycle rather than the
+ * machine's own user's. Only an unmarked request is that user, and one desktop
+ * daemon can serve them the lifecycle they have always had while a relayed
+ * member gets the other — registration, turn admission and event privacy ask
+ * this, not `SessionAccessPolicy.sessionAuthority`.
+ */
+export function sessionRequestProvenance(input: SessionRequestProvenanceReader): SessionRequestProvenance {
+  return input.get("relayHostAuth") || input.get("relayHostDirectAuth") ? "relay-replayed" : "loopback-direct"
 }
 
 /** Actor identity is accepted only from the relay-host verification middleware. */

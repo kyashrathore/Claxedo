@@ -3,13 +3,15 @@ import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { ProjectRole, WorkspaceAuthority, WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
-import type {
-  PrivateSessionActor,
-  PrivateSessionAuthority,
-  PrivateSessionRegistrationState,
-  PrivateSessionRuntimePrincipal,
-  ReservePrivateSessionInput,
-  TransitionPrivateSessionRegistrationInput,
+import {
+  SESSION_ADOPTION_OPERATION_PREFIX,
+  sessionAdoptionOperationId,
+  type PrivateSessionActor,
+  type PrivateSessionAuthority,
+  type PrivateSessionRegistrationState,
+  type PrivateSessionRuntimePrincipal,
+  type ReservePrivateSessionInput,
+  type TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SessionTurnConflictError,
@@ -318,6 +320,142 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       )
     }
     return await this.registerReservation(actor, result)
+  }
+
+  /**
+   * Registers a session the host already holds, for the owner of the
+   * enrollment that serves the workspace there.
+   *
+   * No reservation preceded it: the transcript existed on the machine before
+   * remote access was turned on, so there is no intent row to match and the
+   * creator cannot come from the request. It comes from
+   * `host_workspace_assignments`, and only that owner is admitted, so a member
+   * who reaches the machine cannot register another person's transcript as
+   * their own. Both writes carry the same access predicates the ordinary
+   * reservation and registration carry.
+   */
+  async adoptRuntimeSession(
+    input: RuntimeSessionActor & {
+      sessionId: string
+      workspaceId: string
+      hostId: string
+      title?: string
+    },
+  ) {
+    const actor = await this.requireRuntimeActor(input)
+    const sessionId = requireText(input.sessionId, "sessionId", 512 - SESSION_ADOPTION_OPERATION_PREFIX.length)
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const hostId = requireText(input.hostId, "hostId")
+    const title = optionalText(input.title, "title", 2_000)
+    const operationId = sessionAdoptionOperationId(sessionId)
+    const workspace = await this.requireWorkspaceAccess(actor, workspaceId, "write")
+    const assignment = await this.database
+      .prepare(`select owner_actor_id from host_workspace_assignments where workspace_id = ? and host_id = ?`)
+      .bind(workspaceId, hostId)
+      .first<{ owner_actor_id: string }>()
+    if (!assignment || assignment.owner_actor_id !== actor.actorId) {
+      throw denied("Session adoption is reserved to the owner of the enrollment serving this workspace")
+    }
+    const existing = await this.session(sessionId)
+    if (existing) {
+      if (
+        existing.workspace_id !== workspaceId ||
+        existing.deleted_at !== null ||
+        existing.creator_actor_id !== actor.actorId
+      ) {
+        throw denied("Session is already registered to another creator")
+      }
+      return { adopted: false }
+    }
+    const now = this.now()
+    const assertionId = this.randomId("assert")
+    await this.guardedBatch(
+      [
+        this.database
+          .prepare(`delete from session_registration_operations where session_id = ? and state = 'compensated'`)
+          .bind(sessionId),
+        this.database
+          .prepare(
+            `
+        insert into session_registration_operations (
+          operation_id, session_id, workspace_id, org_id, project_id, creator_actor_id,
+          operation_kind, parent_session_id, requested_title, state, state_reason, created_at, updated_at
+        )
+        select ?, ?, w.workspace_id, w.org_id, w.project_id, ?, 'create', null, ?, 'registered', null, ?, ?
+        from workspaces w
+        where w.workspace_id = ? and w.org_id = ? and w.project_id = ? and w.deleted_at is null
+          and ${actorWorkspaceAccessSql("?", "w", 2)}
+          and exists (
+            select 1 from host_workspace_assignments assignment
+            where assignment.workspace_id = w.workspace_id and assignment.host_id = ? and assignment.owner_actor_id = ?
+          )
+        on conflict do nothing
+      `,
+          )
+          .bind(
+            operationId,
+            sessionId,
+            actor.actorId,
+            title ?? null,
+            now,
+            now,
+            workspace.workspace_id,
+            workspace.org_id,
+            workspace.project_id,
+            ...repeat(actor.actorId, 7),
+            hostId,
+            actor.actorId,
+          ),
+        this.database
+          .prepare(
+            `
+        insert into sessions (
+          session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
+          lifecycle_generation, title, created_at, updated_at, deleted_at,
+          max_event_ordinal, snapshot_generation, snapshot_hash, snapshot_token
+        )
+        select session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
+          1, requested_title, ?, ?, null, 0, 0, null, null
+        from session_registration_operations
+        where operation_id = ? and creator_actor_id = ? and state = 'registered'
+        on conflict do nothing
+      `,
+          )
+          .bind(now, now, operationId, actor.actorId),
+        this.database
+          .prepare(
+            `
+        insert into session_participants (
+          session_id, workspace_id, org_id, project_id, actor_id,
+          granted_by_actor_id, role, granted_at, revoked_at
+        )
+        select s.session_id, s.workspace_id, s.org_id, s.project_id,
+          s.creator_actor_id, s.creator_actor_id, 'participant', ?, null
+        from sessions s where s.operation_id = ? and s.creator_actor_id = ?
+        on conflict (session_id, actor_id) do update set revoked_at = null
+      `,
+          )
+          .bind(now, operationId, actor.actorId),
+        this.database
+          .prepare(
+            `
+        insert into authority_batch_assertions (assertion_id, passed)
+        values (?, case when exists (
+          select 1 from session_registration_operations r
+          join sessions s on s.operation_id = r.operation_id and s.session_id = r.session_id
+          join session_participants p on p.session_id = s.session_id and p.actor_id = s.creator_actor_id
+          where r.operation_id = ? and r.state = 'registered' and s.creator_actor_id = ?
+            and s.deleted_at is null and p.revoked_at is null
+            and ${actorSessionAccessSql("?", "s", 2)}
+        ) then 1 else 0 end)
+      `,
+          )
+          .bind(assertionId, operationId, actor.actorId, ...repeat(actor.actorId, 11)),
+        this.deleteAssertion(assertionId),
+      ],
+      "Session adoption collided with an existing registration or an authority change",
+    )
+    return { adopted: true }
   }
 
   async markSessionRegistrationAmbiguous(input: TransitionPrivateSessionRegistrationInput) {

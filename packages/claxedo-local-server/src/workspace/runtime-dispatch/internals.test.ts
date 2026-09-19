@@ -116,6 +116,10 @@ describe("the host aggregate's place in runtime dispatch", () => {
     ["a host that is not loopback", "http://192.168.1.20/api/wr/events", {}],
     ["a foreign origin", "http://127.0.0.1/api/wr/events", { origin: "https://claxedo.example" }],
     ["the relay host-auth stamp", "http://127.0.0.1/api/wr/events", { [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({ actor_id: "actor_1" }) }],
+    // The tunnel replays onto this same listener with the proxy headers gone,
+    // so the relay's own marker is the only thing on such a request that the
+    // three cases above would not see.
+    ["the relay's forwarding marker", "http://127.0.0.1/api/wr/events", { "x-forwarded-by": "workspace-relay" }],
   ])("wr/events carrying %s is refused: only a loopback-direct reader is the machine's own user", async (_name, url, headers) => {
     const { app, served } = dispatcher()
     const response = await app.request(url, { headers })

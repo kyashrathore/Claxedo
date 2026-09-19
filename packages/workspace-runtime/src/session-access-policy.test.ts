@@ -8,9 +8,11 @@ import {
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
+  sessionRequestProvenance,
   type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
 } from "./session-access-policy"
+import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
 
 /** Every managed composition supplies the whole authority bundle. */
 function allowAll(): ManagedSessionAuthority {
@@ -268,6 +270,59 @@ describe("SessionAccessPolicy", () => {
       authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
       credential: "Bearer verified-runtime-proof",
     })
+  })
+
+  test("reads a request's provenance off the same stamp, through the real embedded exposure", async () => {
+    const app = new Hono()
+    app.use("*", createWorkspaceRuntimeExposureMiddleware(embeddedWorkspaceRuntimeExposure({
+      owner: "session-access-test",
+      guard: () => true,
+    })))
+    app.get("/provenance", (c) => c.text(sessionRequestProvenance(c as never)))
+
+    const stamped = await app.request("http://runtime.test/provenance", {
+      headers: {
+        [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({
+          principal_kind: "user",
+          actor_id: "actor_alice",
+          actor_kind: "human",
+          actor_public_id: "usr_alice",
+          actor_name: "Alice",
+          workspace_id: "ws_1",
+          org_id: "org_1",
+          role: "editor",
+        }),
+      },
+    })
+    // A bearer alone is not provenance: the ingress is what verifies one, and
+    // an unstamped request reached this runtime as the machine's own user.
+    const bearerOnly = await app.request("http://runtime.test/provenance", {
+      headers: { authorization: "Bearer looks-official" },
+    })
+
+    await expect(stamped.text()).resolves.toBe("relay-replayed")
+    await expect(bearerOnly.text()).resolves.toBe("loopback-direct")
+  })
+
+  test("the control plane's own injected token is a remote caller, not the machine's user", async () => {
+    const app = new Hono()
+    app.use("*", createRelayHostAuthMiddleware({
+      // The direct-token branch answers before any signature is checked.
+      key: new Uint8Array(32),
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      trustedDirectToken: "control-plane-direct-token",
+    }))
+    app.get("/provenance", (c) => c.text(sessionRequestProvenance(c)))
+
+    const direct = await app.request("http://runtime.test/provenance", {
+      headers: { authorization: "Bearer control-plane-direct-token" },
+    })
+
+    // It names no actor, so nothing can be attributed to it — but a cloud VM
+    // has no keyboard, and the one thing holding this token is the control
+    // plane reaching in from outside.
+    await expect(direct.text()).resolves.toBe("relay-replayed")
   })
 
   test("bounds concurrent authority calls while filtering large session collections", async () => {

@@ -294,6 +294,49 @@ describe("embedded workspace runtime", () => {
     expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
   })
 
+  test("a host with a local owner declares managed-private outward and local to its own window", async () => {
+    // Two readers, two questions, and since the runtime decides the session
+    // lifecycle per request they no longer have one answer. The control plane
+    // is told how a RELAYED member is admitted, so it mints them a scoped
+    // stream; the project catalog this process publishes is read by a client
+    // on this machine's own loopback, which creates sessions with no
+    // reservation because the daemon answers its own user directly.
+    configureEmbeddedWorkspaceRuntime({
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
+        authority: {
+          authorizeSessionRead: () => true,
+          authorizeSessionWrite: () => true,
+          authorizeSessionStream: () => ({ allowed: true as const, lease: "lease", expiresAt: Date.now() + 60_000 }),
+          registerSession: () => true,
+          acquireTurn: (input) => ({
+            allowed: true,
+            turnId: input.turnId,
+            leaseId: "turn_lease_1",
+            fencingToken: 1,
+            acquiredAt: Date.now(),
+            expiresAt: Date.now() + 15_000,
+          }),
+          renewTurn: (input) => ({
+            allowed: true,
+            turnId: input.turnId,
+            leaseId: input.leaseId,
+            fencingToken: input.fencingToken + 1,
+            acquiredAt: Date.now(),
+            expiresAt: Date.now() + 15_000,
+          }),
+          releaseTurn: () => ({ released: true }),
+        },
+      }),
+      loopbackSessionAuthority: "local",
+    })
+    try {
+      expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
+      expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
+    } finally {
+      configureEmbeddedWorkspaceRuntime({})
+    }
+  })
+
   test("uses the signed composition's managed-private session authority", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-private-session-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")

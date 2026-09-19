@@ -63,7 +63,7 @@ export const localServer: Policy = {
     requiredPackages: ["@claxedo/workspace-runtime", "hono"],
   },
 
-  // Measured with `runtimeOnly` — re-run, never summed: 61 modules, 27
+  // Measured with `runtimeOnly` — re-run, never summed: 63 modules, 27
   // packages. What the desktop entry reaches beyond the composition and the
   // workspace routes, and why each owner is this product's:
   //  - the local usage pipeline (route, durable ports, scanner, pricing port,
@@ -71,6 +71,13 @@ export const localServer: Policy = {
   //    options: local workspace owners with no hosted capability package.
   //  - `embedded-relay-host-auth.ts`: the verified actor hop stamp for
   //    in-process embedded prompts (`claxedo.author` without managed authority).
+  //  - `workspace/runtime-dispatch/ingress-provenance.ts` and
+  //    `deployments/local/host-session-authority.ts`: whether a request is the
+  //    relay replaying a member onto this machine's loopback or the machine's
+  //    own user, and the private-session policy and relay-token verifier the
+  //    first consults. Only a process that serves both callers on one listener
+  //    has the question; they reach the workspace-runtime relay subpath and
+  //    host-serving's identity reader, both already here.
   //  - `workspace/user-hosted-serving-routes.ts`: the loopback control route
   //    through which Electron main hands the serving credential and the
   //    embedded runtimes' `sessionAuthority` to @claxedo/host-serving, the
@@ -125,7 +132,7 @@ export const localServer: Policy = {
   // dependency-free owner of the harness table and the credential-broker
   // error vocabulary; @claxedo/host-serving and @claxedo/egress-broker as
   // above.
-  ceilings: { modules: 61, packages: 27 },
+  ceilings: { modules: 63, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

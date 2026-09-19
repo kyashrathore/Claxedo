@@ -4,8 +4,10 @@ import { createHash } from "node:crypto"
 import { Hono } from "hono"
 import { exportJWK, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { createServer } from "node:http"
 import {
   createRelayHostAuthMiddleware,
+  createRelayHostTokenVerifier,
   loadRelayHostVerificationKeyOrJwks,
   type RelayHostAuthAuditEvent,
   type RelayHostAuthContext,
@@ -828,6 +830,83 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
         message: "Relay Host Token is invalid",
       },
     })
+  })
+})
+
+describe("relay host token verifier outside a middleware", () => {
+  const KID = "relay-host-current"
+
+  /** The relay's published key set, served the way a host reaches it. */
+  async function relayKeys() {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const jwk = { ...(await exportJWK(key.publicKey)), kid: KID, alg: "EdDSA", use: "sig" }
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ keys: [jwk] }))
+    })
+    const url = await new Promise<string>((resolve) => {
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address()
+        if (!address || typeof address === "string") throw new Error("no port")
+        resolve(`http://127.0.0.1:${address.port}/.well-known/jwks.json`)
+      })
+    })
+    const mint = (overrides: Partial<typeof tokenInput> = {}) => mintRelayHostToken({
+      ...tokenInput,
+      ...overrides,
+      access: "user-hosted",
+      backing: "local-worktree",
+      kid: KID,
+    }, key.privateKey, "EdDSA")
+    return { server, url, mint }
+  }
+
+  test("answers the claims for a token this host and workspace were issued, and nothing for every other one", async () => {
+    const relay = await relayKeys()
+    try {
+      const verify = createRelayHostTokenVerifier(() => relay.url)
+      const token = await relay.mint()
+      const otherHost = await relay.mint({ hostId: "host_other" })
+      const otherKey = await generateKeyPair("EdDSA", { extractable: true })
+      const forged = await mintRelayHostToken({
+        ...tokenInput,
+        access: "user-hosted",
+        backing: "local-worktree",
+        kid: KID,
+      }, otherKey.privateKey, "EdDSA")
+
+      const mine = await verify({ token, workspaceId: "ws_1", hostId: "host_1" })
+      const wrongWorkspace = await verify({ token, workspaceId: "ws_2", hostId: "host_1" })
+      const wrongHost = await verify({ token: otherHost, workspaceId: "ws_1", hostId: "host_1" })
+      const unsignedByRelay = await verify({ token: forged, workspaceId: "ws_1", hostId: "host_1" })
+      const garbage = await verify({ token: "not-a-token", workspaceId: "ws_1", hostId: "host_1" })
+
+      expect(mine).toMatchObject({ actor_id: "actor_1", org_id: "org_1", role: "editor", workspace_id: "ws_1" })
+      expect(wrongWorkspace).toBeUndefined()
+      expect(wrongHost).toBeUndefined()
+      expect(unsignedByRelay).toBeUndefined()
+      expect(garbage).toBeUndefined()
+    } finally {
+      await new Promise<void>((resolve) => relay.server.close(() => resolve()))
+    }
+  })
+
+  test("verifies nothing until the key set address is known, then verifies without a restart", async () => {
+    const relay = await relayKeys()
+    try {
+      let url: string | undefined
+      const verify = createRelayHostTokenVerifier(() => url)
+      const token = await relay.mint()
+
+      const beforeEndpoints = await verify({ token, workspaceId: "ws_1", hostId: "host_1" })
+      url = relay.url
+      const afterEndpoints = await verify({ token, workspaceId: "ws_1", hostId: "host_1" })
+
+      expect(beforeEndpoints).toBeUndefined()
+      expect(afterEndpoints).toMatchObject({ actor_id: "actor_1" })
+    } finally {
+      await new Promise<void>((resolve) => relay.server.close(() => resolve()))
+    }
   })
 })
 
