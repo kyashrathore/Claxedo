@@ -1,7 +1,7 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import type { SandboxDriverID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 
-export type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+export type { SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   captureSandboxCheckpoint,
   restoreSandboxCheckpoint,
@@ -15,7 +15,6 @@ export * from "./checkpoint-manager"
 export * from "./hosted-network-policy"
 
 export type SandboxRegion = string
-export type SandboxDriverId = SandboxDriverID | "fetch"
 
 export type SandboxCaptureScope = "none" | "same-resource" | "filesystem" | "directories"
 export type SandboxCaptureSourceBehavior = "not-applicable" | "preserved" | "stopped" | "deleted"

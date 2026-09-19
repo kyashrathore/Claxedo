@@ -1335,9 +1335,8 @@ describe("workspace routes signed control plane authority", () => {
       workspaceId: "ws_shared",
       projectId: "proj_shared",
       kind: "user-hosted",
-      access: "user-hosted",
       backing: {
-        kind: "user-hosted",
+        kind: "local-worktree",
         branch: "dev",
       },
     })
@@ -1476,7 +1475,6 @@ describe("workspace routes signed control plane authority", () => {
       directory: "/workspace/hosted",
       status: "ready",
       kind: "cloud",
-      access: "cloud",
       backing: {
         kind: "cloud-vm",
         repoName: "opencode",
@@ -1628,11 +1626,9 @@ describe("workspace routes signed control plane authority", () => {
       directory: "/workspace",
       workspaceName: "Shared workspace",
       kind: "user-hosted",
-      access: "user-hosted",
       backing: {
-        kind: "user-hosted",
+        kind: "local-worktree",
         branch: "dev",
-        workspaceName: "Shared workspace",
       },
       driver: null,
       status: "ready",
@@ -1818,13 +1814,11 @@ describe("workspace routes signed control plane authority", () => {
       {
         workspace_id: "ws_cloud",
         backing: "cloud-vm",
-        access: "cloud",
         role: "editor",
       },
       {
         workspace_id: "ws_shared",
         backing: "local-worktree",
-        access: "user-hosted",
         role: "viewer",
         // Reachability travels with the row: the rail says "viewer · host
         // offline" before any pane opens the workspace, so the route must not
@@ -1846,7 +1840,6 @@ describe("workspace routes signed control plane authority", () => {
         {
           workspace_id: "ws_shared",
           backing: "local-worktree",
-          access: "user-hosted",
           role: "viewer",
           host_online: false,
         },
@@ -3556,5 +3549,141 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(svc.authority?.grantWorkspaceShare).not.toHaveBeenCalled()
     expect(svc.authority?.revokeWorkspaceShare).not.toHaveBeenCalled()
+  })
+})
+
+describe("cloud workspace placement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  afterEach(() => {
+    resetWorkspaceStoreMocks()
+  })
+
+  test("a cloud row is stored on the provisioner the deployment declares", async () => {
+    const svc = services()
+    svc.sandbox.defaultDriver = "cloudflare"
+    svc.sandbox.sandboxManager = readySandboxManager().manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(mocks.ensureWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "cloud", driver: "cloudflare" }),
+    )
+  })
+
+  test("a declared provisioner this node cannot drive is refused instead of stored", async () => {
+    const svc = services()
+    svc.sandbox.defaultDriver = "fetch"
+    svc.sandbox.sandboxManager = readySandboxManager().manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "placement_unsupported",
+        message: "This control plane's sandbox provisioner is not one this node can provision",
+        driver: "fetch",
+      },
+    })
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a requested driver still wins over a provisioner this node cannot drive", async () => {
+    const svc = services()
+    svc.sandbox.defaultDriver = "fetch"
+    svc.sandbox.sandboxManager = readySandboxManager().manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", driver: "daytona" }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(mocks.ensureWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "cloud", driver: "daytona" }),
+    )
+  })
+})
+
+describe("unsigned workspace list", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  afterEach(() => {
+    resetWorkspaceStoreMocks()
+  })
+
+  test("a node with no signed identity lists its own provisioner-placed rows and no worktree", async () => {
+    mocks.workspaceRows.set("ws_cloud", {
+      id: "ws_cloud",
+      project_id: "proj_cloud",
+      workspace_name: "cloud-demo",
+      directory: "/workspace",
+      remote_directory: "/workspace",
+      kind: "cloud",
+      driver: "daytona",
+      created_at: 1,
+      updated_at: 1,
+    })
+    mocks.workspaceRows.set("ws_worktree", {
+      id: "ws_worktree",
+      project_id: "proj_worktree",
+      directory: "/tmp/checkout",
+      kind: "local",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(services())
+
+    const res = await app.request("http://localhost/?access=cloud")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      workspaces: [
+        {
+          workspace_id: "ws_cloud",
+          project_id: "proj_cloud",
+          backing: "cloud-vm",
+          display_name: "cloud-demo",
+          remote_directory: "/workspace",
+        },
+      ],
+    })
+  })
+
+  test("a node with no signed identity serves no workspace on somebody else's machine", async () => {
+    mocks.workspaceRows.set("ws_worktree", {
+      id: "ws_worktree",
+      project_id: "proj_worktree",
+      directory: "/tmp/checkout",
+      kind: "local",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(services())
+
+    const res = await app.request("http://localhost/?access=user-hosted")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ workspaces: [] })
   })
 })

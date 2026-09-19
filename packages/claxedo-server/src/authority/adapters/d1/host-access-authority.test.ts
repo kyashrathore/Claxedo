@@ -34,6 +34,7 @@ const MIGRATIONS = [
   "0030_workspace_host_assignment_revision.sql",
   "0031_normalize_user_hosted_directories.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ].map(migrationPath)
 
 function migrationPath(name: string) {

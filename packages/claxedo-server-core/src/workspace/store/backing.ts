@@ -1,4 +1,4 @@
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { SandboxProvisionerID } from "@claxedo/sandbox-contract"
 import type { Workspace } from "./index"
 import { workspacePlacement } from "./placement"
 
@@ -12,7 +12,7 @@ export type LocalWorktreeBacking = {
 
 export type CloudVmBacking = {
   kind: "cloud-vm"
-  driver?: SandboxDriverID
+  driver?: SandboxProvisionerID
   projectName?: string
   workspaceName?: string
   repoUrl?: string

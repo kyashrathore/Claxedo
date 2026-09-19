@@ -70,7 +70,7 @@ export {
   type SandboxLeaseStatus,
   type SandboxManager,
   type SandboxNetworkPolicy,
-  type SandboxDriverId,
+  type SandboxProvisionerID,
   type SandboxDriverMetadata,
   type SandboxSource,
   type SandboxTarget,

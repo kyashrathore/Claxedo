@@ -92,6 +92,39 @@ describe("ensureWorkspace requires a placement for a cloud row", () => {
     expect(await getWorkspace("ws_a")).toBeUndefined()
   })
 
+  test("refuses to re-ensure a stored cloud row that still names no driver, and leaves it stored", async () => {
+    // Rows in this shape predate the create-time refusal: the only writer that
+    // produced them spread the driver in conditionally. They load, list and
+    // resolve; what they cannot do is come back through `ensureWorkspace`
+    // without naming a machine.
+    await fs.writeFile(path.join(dir, "workspaces.json"), JSON.stringify({
+      version: 4,
+      workspaces: [{
+        id: "ws_legacy",
+        project_id: "ws_legacy",
+        workspace_name: "Legacy root",
+        directory: "/workspace",
+        remote_directory: "/workspace",
+        kind: "cloud",
+        created_at: 1,
+        updated_at: 1,
+      }],
+      projects: [],
+    }))
+
+    const stored = await getWorkspace("ws_legacy")
+    expect(stored).toMatchObject({ id: "ws_legacy", kind: "cloud" })
+    expect(stored).not.toHaveProperty("driver", expect.anything())
+
+    expect(await ensureWorkspace({
+      workspaceId: "ws_legacy",
+      kind: "cloud",
+      directory: "/workspace",
+      workspace_name: "Renamed",
+    })).toBeUndefined()
+    expect(await getWorkspace("ws_legacy")).toMatchObject({ workspace_name: "Legacy root", updated_at: 1 })
+  })
+
   test("stores a cloud row that names one, and refuses to merge a driver away", async () => {
     const created = await ensureWorkspace({
       workspaceId: "ws_b",

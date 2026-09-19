@@ -628,7 +628,7 @@ function sandboxDriverId(state: WorkspaceRuntimeState): SandboxDriverID | undefi
   // being asserted into the catalog's union.
   const targetDriver = state.sandbox_target?.driver?.id
   if (isSandboxDriverID(targetDriver)) return targetDriver
-  if (state.ws.driver) return state.ws.driver
+  if (isSandboxDriverID(state.ws.driver)) return state.ws.driver
   const leaseDriver = getSupervisorSandboxLease(state.ws.id)?.driver
   return isSandboxDriverID(leaseDriver) ? leaseDriver : undefined
 }

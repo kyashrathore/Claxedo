@@ -23,6 +23,7 @@ const CONTROL_MIGRATIONS = [
   "0013_org_team_session_sharing.sql",
   "0017_adapter_custom.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))
@@ -182,8 +183,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
   test("full-hosted composes the sandbox manager over the injected driver and lease store, and admits cloud workspaces", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     const { createMemoryLeaseStore } = await import("@claxedo/sandbox-manager/stores/memory")
-    const driver = {
-      id: "cloudflare",
+    const sandboxDriver = (id: string) => ({
+      id,
       metadata: {
         driverRunsIn: ["worker"],
         hostStopBehavior: "suspends-host",
@@ -201,7 +202,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
         },
       },
       ensureHost: async () => { throw new Error("not exercised") },
-    } as unknown as NonNullable<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0]["sandbox"]>["driver"]
+    } as unknown as NonNullable<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0]["sandbox"]>["driver"])
+    const driver = sandboxDriver("cloudflare")
     const input = {
       authDatabase,
       controlPlaneDatabase,
@@ -240,6 +242,19 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env(), sandbox })).toThrow(
       /must not configure CLAXEDO_SANDBOX_DRIVER or inject a sandbox/,
     )
+    // The fetch bridge provisions through an operator-run service instead of a
+    // catalog driver. The release pipeline certifies it, so a composition that
+    // could not declare it would refuse every cloud root on that posture.
+    const bridged = composeBetterAuthD1UserDeployedControlPlane({
+      ...input,
+      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
+      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore() },
+    })
+    expect(bridged.plane.services.sandbox.sandboxManager).toBeDefined()
+    expect(bridged.plane.services.sandbox.defaultDriver).toBe("fetch")
+    expect(await bridged.options.cloudWorkspaceAdmission({} as never)).toBeUndefined()
+    await bridged.authReady.catch(() => undefined)
+
     const plain = composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env() })
     expect(plain.plane.services.sandbox.sandboxManager).toBeUndefined()
     expect(plain.plane.services.sandbox.defaultDriver).toBeUndefined()

@@ -20,7 +20,7 @@ import type { ControlPlaneTelemetry } from "../platform/telemetry/ports"
 import type { DurableSessionLog } from "../platform/auth/durable-session-log"
 import type { SessionWriteMode } from "../platform/runtime/profile"
 import type { ClaxedoRegion } from "../platform/runtime/region/index"
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { SandboxProvisionerID } from "@claxedo/sandbox-contract"
 import type { SandboxManagerPort } from "../sandbox/manager-port"
 import type {
   CredentialHealth,
@@ -52,7 +52,7 @@ export class ControlPlaneCompositionError extends Error {
 }
 
 export type ControlPlaneSandbox = {
-  defaultDriver?: SandboxDriverID
+  defaultDriver?: SandboxProvisionerID
   sandboxManager?: SandboxManagerPort
 }
 

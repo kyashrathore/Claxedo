@@ -55,6 +55,7 @@ import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalProjectRoutes, ShellRoutes, githubCloneAuthorization } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
@@ -1701,7 +1702,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
-    ...(services.sandbox.defaultDriver ? { default_sandbox_driver: services.sandbox.defaultDriver } : {}),
+    ...(isSandboxDriverID(services.sandbox.defaultDriver)
+      ? { default_sandbox_driver: services.sandbox.defaultDriver }
+      : {}),
   })
 
   // Migrate legacy plaintext credentials into the managed secret backend.

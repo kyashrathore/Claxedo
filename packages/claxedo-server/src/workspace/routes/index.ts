@@ -127,16 +127,15 @@ function startCloudWorkspaceProvisioning(input: {
 }
 
 /**
- * The placement-scoped list for a node with no signed identity: its own store,
- * projected into the rows the signed authority branch answers with, so a
- * caller cannot tell which branch served it. This node's own worktrees are
- * absent by construction — they carry `access: "local"`, which this query never
- * asks for, and no enrolled machine serves them.
+ * The cloud list for a node with no signed identity: its own store, projected
+ * into the rows the signed authority branch answers with, so a caller cannot
+ * tell which branch served it. This node's own worktrees are absent because
+ * their placement is this machine, not a provisioner.
  */
-async function unsignedWorkspaceList(access: "cloud" | "user-hosted") {
+async function unsignedWorkspaceList() {
   return (await listWorkspaces()).flatMap((workspace) => {
     const row = workspaceResponse(workspace)
-    if (!row || row.access !== access) return []
+    if (row?.backing.kind !== "cloud-vm") return []
     return [{
       workspace_id: row.workspaceId,
       project_id: row.projectId,
@@ -275,9 +274,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             throw err
           }
         }
-        if (access === "cloud" || access === "user-hosted") {
-          return c.json({ workspaces: await unsignedWorkspaceList(access) })
-        }
+        if (access === "cloud") return c.json({ workspaces: await unsignedWorkspaceList() })
+        // A workspace on somebody else's machine is the authority's record, and
+        // a node with no signed identity has no authority to ask.
+        if (access === "user-hosted") return c.json({ workspaces: [] })
         return c.json(await listProjects())
       })
       .route("/", workspaceConnectionRoutes(services, options))
@@ -518,10 +518,27 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             400,
           )
         }
-        const id =
-          requestedId ??
-          services?.sandbox.defaultDriver ??
-          defaultSandboxDriverID(driverConfig)
+        // Which provisioner owns a cloud row is the deployment's to declare,
+        // never this route's to guess: a hosted deployment declares it at
+        // composition, a node declares it in its own sandbox configuration,
+        // and `supervisorSandboxDriverId` reads that same configuration again
+        // when it dispatches. This node provisions through the driver catalog,
+        // so a declared provisioner it cannot drive is refused rather than
+        // stored as a placement on a machine nothing here owns.
+        const declaredDriver = services?.sandbox.defaultDriver ?? defaultSandboxDriverID(driverConfig)
+        const id = requestedId ?? (isSandboxDriverID(declaredDriver) ? declaredDriver : undefined)
+        if (!id) {
+          return c.json(
+            {
+              error: apiError(
+                "placement_unsupported",
+                "This control plane's sandbox provisioner is not one this node can provision",
+                { driver: declaredDriver },
+              ),
+            },
+            400,
+          )
+        }
         const credential = await sandboxDriverCredentials(options, services)
           // Kind-scoped: unscoped, a model-provider API key under the same id
           // (`vercel` is both) satisfied this gate with no sandbox credential
