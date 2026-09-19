@@ -55,6 +55,7 @@ import {
   type SessionEventStreamLane,
   sessionEventScopeId,
   setSessionEventRouteScope,
+  setSessionEventStreamLaneExpected,
 } from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
 import { readProjectCatalog } from "@/platform/query/control-plane"
@@ -618,6 +619,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       accountSigned,
       accountStream: accountStreamAvailable(accountState),
     })
+    // The route names a workspace the catalog has not resolved yet: no `wr`
+    // target, but one is owed, and the first prompt waits for it.
+    setSessionEventStreamLaneExpected(routeDirectory(props.pathname()) !== undefined && !targets.some((target) => target.kind === "wr"))
     const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
     for (const [key, connection] of connections) {
       if (next.has(key)) continue

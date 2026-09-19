@@ -625,6 +625,20 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     expect(JSON.stringify(opened.frames)).not.toContain("ws_258")
   })
 
+  test("a scope released before the retained ring rolled past it is a gap on return, not a contiguous replay", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, sessionShareChanged("alice"))
+    // Alice opens after the first doorbell (cursor "1") and leaves; her scope
+    // is released at that retained position, and the tombstone's own rolled
+    // ring reports the hole.
+    const first = await openRoom(room, { lastEventId: "0" })
+    expect(first.frames[1]).toMatchObject({ id: "1" })
+    for (let i = 1; i <= 258; i += 1) await pushEvent(room, provisionStep(`ws_${i}`, "cloning"))
+    const back = await openRoom(room, { lastEventId: "1" })
+    expect(back.frames[1]).toMatchObject({ data: { type: "stream.replay-gap", lastEventId: "1" } })
+    expect(JSON.stringify(back.frames)).not.toContain("ws_258")
+  })
+
   test("a cursor ahead of the room's sequence is reported as a gap, never as silence", async () => {
     // What a Durable Object eviction looks like from the client's side: the
     // room is rebuilt with an empty ring while the client still holds a cursor

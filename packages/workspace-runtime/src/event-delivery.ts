@@ -263,9 +263,13 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     return await held.renewing
   }
   // Renewal re-asks the sessions this connection was GRANTED: one of them
-  // now refused is a revocation, and ends the stream. A session it was never
-  // granted — refused, or still being asked about — is not the stream's to
-  // lose: on the unscoped arm every other member's private session is one.
+  // now refused is a revocation, and ends the stream within the cadence. A
+  // session it was never granted — refused, or still being asked about — is
+  // not the stream's to lose: on the unscoped arm every other member's
+  // private session is one. The cost is one authority round trip per
+  // granted session per connection per cadence: a 15 s session lease and a
+  // 10 s renewal window leave the same 5 s between re-asks whether the
+  // cadence gates on the window or not.
   eventPolicy.renew = async (principal) => {
     // A session-scoped connection whose session is gone has nothing left to read.
     if (principal.mode !== "unmanaged-local" && principal.sessionScope && !grants.has(grantKey(principal, principal.sessionScope))) return "terminate"
@@ -404,7 +408,12 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     const sessionId = input.sessionId(event)
     const deliveries: Connection<T>[] = []
     const decided = new Set<Connection<T>>(decidedBefore)
-    let undecidable = false
+    // A frame decided while the scope has a connection on the way in
+    // (reserved, not yet attached) but none attached was decided for nobody:
+    // the newcomer catches up from the retained position at ITS open, which
+    // is past this frame. Not rung and not decided, it is a hole. The local
+    // scope decides for its replay principal and rings regardless.
+    let undecidable = !scope.replayPrincipal && scope.connections.size === 0 && scope.reservations > 0
     for (const result of decisions) {
       decided.add(result.connection)
       if (!scope.connections.has(result.connection)) continue
@@ -426,6 +435,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
       result.connection.delivered.add(event)
       deliveries.push(result.connection)
     }
+    if (undecidable) scope.holeBelow = Math.max(scope.holeBelow, Number(scope.replay.lastId() ?? "0"))
     const delivered = deliveries.length > 0 || replayDecision === "deliver"
     // A frame reaches the scope's ring once even when it was decided twice —
     // a connection's catch-up re-enqueues a frame whose first decision was

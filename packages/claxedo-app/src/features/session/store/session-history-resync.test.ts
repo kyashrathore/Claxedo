@@ -11,12 +11,12 @@ afterEach(() => {
 })
 
 describe("session history resync", () => {
-  test("a session-scoped request matches only that session in that directory", () => {
-    requestSessionHistoryResync({ directory: "/repo", sessionID: "ses_1", reason: "sse-gap" })
+  test("a workspace's request matches every session mounted for that workspace and no other's", () => {
+    requestSessionHistoryResync({ directory: "/repo", reason: "sse-gap" })
     const request = sessionHistoryResyncRequest()
-    expect(request).toMatchObject({ directory: "/repo", sessionID: "ses_1", reason: "sse-gap" })
+    expect(request).toMatchObject({ directory: "/repo", reason: "sse-gap" })
     expect(sessionHistoryResyncMatches({ request, sessionID: "ses_1", directory: "/repo" })).toBe(true)
-    expect(sessionHistoryResyncMatches({ request, sessionID: "ses_2", directory: "/repo" })).toBe(false)
+    expect(sessionHistoryResyncMatches({ request, sessionID: "ses_2", directory: "/repo" })).toBe(true)
     expect(sessionHistoryResyncMatches({ request, sessionID: "ses_1", directory: "/other" })).toBe(false)
   })
 

@@ -441,8 +441,8 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       the commit they reviewed. Progress: rounds 1–10 recorded under
       "Execution → Review rounds" with their commits (each round's full
       reports from round 7 on are kept under `docs/plans/reviews/`); no
-      round has yet returned zero findings — round 11 runs on the round-10
-      fixes.
+      round returned zero findings; the merge review's fixes landed on dev
+      with the remaining items recorded above.
 - [ ] One written account of the system exists and matches the code: the
       module comments on the two handlers, the two reader targets and
       `session-event-scope.ts` describe the same two streams, the same
@@ -951,4 +951,35 @@ Findings and fixes (the commit after this one):
   a payload throws before that read, and `evaluate`'s catch ends the
   connection); the comment and the optional reads are gone.
 
-**Round 11**: see below.
+**Merge review** (the whole diff `d94e4250d9..518a6b9e98` read as one
+piece by two reviewers after the fast-forward to dev; reports in
+`docs/plans/reviews/2026-09-19-merge-review-{server,client}.md`). Both
+verdicts GO WITH FIXES. Fixes (the commit after this one):
+
+- MAJOR (server): a frame decided while the scope had a connection on the
+  way in (reserved, not yet attached) but none attached was decided for
+  nobody and its position advanced past; the newcomer's resume read no gap.
+  Such a frame now holes the ring. Tested with the reconnect landing inside
+  the authority round trip; mutation-checked.
+- MAJOR (server, cost, NOT fixed): renewal re-asks every granted session
+  per connection per 5 s cadence. A window gate was tried and reverted — a
+  15 s lease with a 10 s window re-asks every 5 s all the same and only
+  delayed revocation (the acceptance test caught it). The cost is the
+  15 s per-session lease's; recorded on `renew`. Follow-up: a longer
+  session lease on the unscoped arm, or one lease per connection.
+- MINOR (server): the hosted room's rolled-release case was probed with a
+  regression test and already reports a gap; no code change. The
+  `user-hosted-connection.ts` comment says what the unscoped arm answers.
+- MINOR (client): the first prompt no longer dispatches before the workspace
+  stream the route is owed has opened: the reader declares the stream
+  expected while the catalog resolves, and readiness waits for it (bounded
+  by the caller's 8 s as before). Unit-tested on the scope; the reader
+  wiring is exercised by the cursor suite.
+- NIT (client): the resync request's dead `sessionID` arm is gone.
+- Recorded, not fixed: the documented desktop loss of live frames for a
+  non-routed local workspace (a product decision — see the client report),
+  the reconcile's per-switch read cost, the double-counted control-plane
+  return, the untested id pairing behind the local "Reconnecting…" line,
+  the daemon-wide pass of an unaddressed `agent.lifecycle`, and the
+  synchronous parent lookup per frame. The main tree's untracked dists
+  must be rebuilt before packaging or push.

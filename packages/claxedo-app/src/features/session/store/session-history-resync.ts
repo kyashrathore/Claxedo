@@ -19,7 +19,6 @@ import { createSignal } from "solid-js"
 export type SessionHistoryResync = {
   sequence: number
   directory?: string
-  sessionID?: string
   /** A stream reported a hole, or a workspace stream opened without a cursor. */
   reason: "sse-gap" | "stream-open"
 }
@@ -36,13 +35,13 @@ export function sessionHistoryResyncRequest() {
   return resync()
 }
 
+/** A controller answers a request for its workspace once it has a session to re-read. */
 export function sessionHistoryResyncMatches(input: {
-  request?: Pick<SessionHistoryResync, "sessionID" | "directory">
+  request?: Pick<SessionHistoryResync, "directory">
   sessionID?: string
   directory: string
 }) {
   if (!input.request || !input.sessionID) return false
-  if (input.request.sessionID !== undefined && input.request.sessionID !== input.sessionID) return false
   if (input.request.directory !== undefined && input.request.directory !== input.directory) return false
   return true
 }

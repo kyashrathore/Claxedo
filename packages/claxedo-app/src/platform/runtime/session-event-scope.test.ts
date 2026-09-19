@@ -10,6 +10,7 @@ import {
   sessionEventStreamsOpen,
   setSessionEventRouteScope,
   whenSessionEventStreamsOpen,
+  setSessionEventStreamLaneExpected,
 } from "./session-event-scope"
 
 afterEach(() => resetSessionEventScope())
@@ -106,7 +107,19 @@ describe("sessionEventScopeId retargets", () => {
 })
 
 describe("sessionEventStreamsOpen", () => {
-  test("is satisfied vacuously when no workspace stream is registered", () => {
+  test("is satisfied vacuously when no workspace stream is registered and none is owed", () => {
+    expect(sessionEventStreamsOpen("ses_1")).toBe(true)
+  })
+
+  test("waits for the workspace stream the route is owed while its catalog entry resolves", () => {
+    setSessionEventStreamLaneExpected(true)
+    expect(sessionEventStreamsOpen("ses_1")).toBe(false)
+    const release = registerSessionEventStreamLane("wr:ws_1")
+    expect(sessionEventStreamsOpen("ses_1")).toBe(false)
+    reportSessionEventStreamOpen("wr:ws_1")
+    expect(sessionEventStreamsOpen("ses_1")).toBe(true)
+    release()
+    setSessionEventStreamLaneExpected(false)
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
   })
 

@@ -3,6 +3,7 @@ import { createBus } from "./bus"
 import {
   createIdentityAwareEventSource,
   sessionEventDeliveryPolicy,
+  type EventDeliveryDecision,
   type EventDeliveryPrincipal,
   type EventDeliveryPolicy,
 } from "./event-delivery"
@@ -508,6 +509,32 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
+  test("a frame decided while the scope's only connection is still between open and attach is a hole for it", async () => {
+    const bus = createBus<Event>()
+    let release: (() => void) | undefined
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 1_000,
+      policy: () => new Promise<EventDeliveryDecision>((resolve) => { release = () => resolve("deliver") }),
+      sessionId: (event) => event.sessionId,
+    })
+    const first = source.open(participant("connection_1"))
+    await first.ready
+    const unsubscribe = first.subscribe(() => undefined)
+    bus.publish({ sessionId: "ses", value: "a" })
+    // The reconnect opens — reserving the scope, so it is not evicted — and
+    // the first connection leaves, all while the frame awaits the authority.
+    const second = source.open(participant("connection_2"))
+    unsubscribe()
+    const bootstrap = second.replay.lastId() ?? "0"
+    release?.()
+    await source.flush()
+    second.subscribe(() => undefined)
+    // Decided for nobody: the reconnect's bootstrap cursor does not resume over it.
+    expect(second.replay.hasGap(bootstrap, second.replay.lastId())).toBe(true)
+    source.close()
+  })
+
   test("a scope evicted with a hole keeps it when restored", async () => {
     const bus = createBus<Event>()
     let away = false
@@ -605,7 +632,7 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     authorizeStream: async ({ sessionId }, lease) => {
       input.calls.push(`stream ${sessionId} lease=${lease ?? "-"}`)
       return input.granted(sessionId ?? "")
-        ? { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 15_000 }
+        ? { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 8_000 }
         : { allowed: false, status: 403, code: "denied", message: "denied" }
     },
   })
@@ -661,7 +688,7 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
       authorizeStream: async ({ sessionId }) => {
         calls.push(`stream ${sessionId}`)
         if (away) return { allowed: false, status: 503, code: "authority_unavailable", message: "away" }
-        return { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 15_000 }
+        return { allowed: true, lease: `lease_${sessionId}`, expiresAt: Date.now() + 8_000 }
       },
     })
     const reader = participant("connection_4")
@@ -709,7 +736,7 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     const calls: string[] = []
     const policy = sessionEventDeliveryPolicy<Event>(sessionPolicy({ granted: () => true, calls }))
     const reader = participant("connection_5")
-    policy.holdSession?.(reader, "ses_shared", { lease: "session_lease", expiresAt: Date.now() + 15_000 })
+    policy.holdSession?.(reader, "ses_shared", { lease: "session_lease", expiresAt: Date.now() + 8_000 })
     // The first frame is delivered on the seeded grant: no round trip on the
     // request's own token, which may already have expired.
     expect(await policy({ principal: reader, event: { sessionId: "ses_shared", value: "s" }, sessionId: "ses_shared", sensitive: false })).toBe("deliver")

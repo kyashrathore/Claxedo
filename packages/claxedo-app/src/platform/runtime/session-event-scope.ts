@@ -68,9 +68,16 @@ type SessionEventScopeState = {
    */
   live?: { sessionId: string; workspaceAddress: string }
   lanes: Partial<Record<SessionEventStreamLane, LaneState>>
+  /**
+   * The route names a workspace whose stream the reader has not opened yet
+   * — its catalog entry is still resolving. Readiness waits for that stream
+   * as it would for a registered one; a prompt sent before it opens would
+   * arrive as a burst through the stream-open resync instead of streaming.
+   */
+  expectingWorkspaceLane: boolean
 }
 
-const [scopeState, setScopeState] = createStore<SessionEventScopeState>({ lanes: {} })
+const [scopeState, setScopeState] = createStore<SessionEventScopeState>({ lanes: {}, expectingWorkspaceLane: false })
 
 /**
  * The settled answer, so a reader is woken by a change of SESSION and never by
@@ -150,8 +157,14 @@ export function reportSessionEventStreamClosed(lane: SessionEventStreamLane): vo
   setScopeState("lanes", lane, "open", undefined)
 }
 
-/** True once every registered stream is open and carries `sessionId`. */
+/** Declares whether the reader still owes the route a workspace stream it has not registered. */
+export function setSessionEventStreamLaneExpected(expected: boolean): void {
+  if (scopeState.expectingWorkspaceLane !== expected) setScopeState("expectingWorkspaceLane", expected)
+}
+
+/** True once every registered stream — and the one the route is still owed — is open and carries `sessionId`. */
 export function sessionEventStreamsOpen(sessionId: string | undefined): boolean {
+  if (scopeState.expectingWorkspaceLane && !Object.values(scopeState.lanes).some((lane) => lane?.registered)) return false
   for (const lane of Object.values(scopeState.lanes)) {
     if (!lane?.registered) continue
     if (lane.open === undefined) return false
@@ -190,5 +203,5 @@ export function whenSessionEventStreamsOpen(
 
 /** Test seam: drops every stream registration, open report and published scope. */
 export function resetSessionEventScope(): void {
-  setScopeState({ held: undefined, route: undefined, live: undefined, lanes: {} })
+  setScopeState({ held: undefined, route: undefined, live: undefined, lanes: {}, expectingWorkspaceLane: false })
 }

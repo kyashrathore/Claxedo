@@ -172,9 +172,10 @@ export async function userHostedConnectionInfo(
       // embedded runtime on `managedWorkspaceSessionAccessPolicy()` with no
       // injected authority (`"local"`, serving the workspace-wide streams),
       // while a signed self-hosted host injects one
-      // (`embeddedManagedPrivateSessionPolicy`, `"managed-private"`, which
-      // answers an unscoped `/api/wr/events` with a permanent 400
-      // `session_event_scope_required`).
+      // (`embeddedManagedPrivateSessionPolicy`, `"managed-private"`, whose
+      // `/api/wr/events` admits a principal the workspace authority admits
+      // unscoped and refuses the rest with 403 `workspace_event_stream_denied`,
+      // the cue to reopen `?sessionID=`).
       //
       // A host that declared nothing yields no scope at all. The client then
       // opens no workspace stream and says why, which is the honest outcome:
