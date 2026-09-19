@@ -62,6 +62,13 @@
       "import": "./dist/sse.mjs",
       "default": "./dist/sse.mjs"
     },
+    "./provider-projection": {
+      "development": "./src/provider-projection.ts",
+      "bun": "./src/provider-projection.ts",
+      "types": "./dist/provider-projection.d.ts",
+      "import": "./dist/provider-projection.mjs",
+      "default": "./dist/provider-projection.mjs"
+    },
     "./mcp-resolver": {
       "development": "./src/mcp-resolver.ts",
       "bun": "./src/mcp-resolver.ts",

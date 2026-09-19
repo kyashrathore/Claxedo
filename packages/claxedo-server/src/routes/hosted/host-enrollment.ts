@@ -50,7 +50,7 @@ import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/a
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
 import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { providerProjectionRecord, type ProviderProjectionSource } from "@claxedo/agent-sdk-runtime"
+import { providerProjectionRecord, type ProviderProjectionSource } from "@claxedo/agent-sdk-runtime/provider-projection"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKey } from "../../platform/auth/request-guard"

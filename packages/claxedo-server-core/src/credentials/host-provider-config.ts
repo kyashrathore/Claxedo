@@ -18,7 +18,7 @@
 import {
   providerProjectionRecord,
   type ProviderProjectionSource,
-} from "@claxedo/agent-sdk-runtime"
+} from "@claxedo/agent-sdk-runtime/provider-projection"
 
 /** Bumped when the sealed shape changes; a host that cannot read a version refuses the whole revision. */
 export const HOST_PROVIDER_CONFIG_VERSION = 1
