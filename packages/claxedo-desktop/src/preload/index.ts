@@ -252,6 +252,8 @@ const api: ElectronAPI = {
       invoke("claxedo.hostConnector.share", input),
     unshare: (input: { workspaceId: string }) =>
       invoke("claxedo.hostConnector.unshare", input),
+    rename: (input: { displayName: string }) =>
+      invoke("claxedo.hostConnector.rename", input),
     onStatus: (listener: (status: unknown) => void) => {
       const handler = (_event: unknown, status: unknown) => listener(status)
       ipcRenderer.on("claxedo.hostConnector.status", handler)

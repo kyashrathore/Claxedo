@@ -73,8 +73,6 @@ export const GREENFIELD_CONTROL_PLANE_TABLE_COUNTS = Object.freeze({
   teams: 0,
   user_deployed_owner_bootstrap_claims: 0,
   users: 0,
-  workspace_direct_memberships: 0,
-  workspace_share_grants: 0,
   workspaces: 0,
 } as const)
 

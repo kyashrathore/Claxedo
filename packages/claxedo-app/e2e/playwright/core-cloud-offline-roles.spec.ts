@@ -560,7 +560,7 @@ test.describe("core cloud offline & roles @core", () => {
     await gotoDraft(page, DIR)
 
     await expect(page.getByTestId("workspace-access-denied"), debugSuffix(state)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText("You don't have access to this workspace")).toBeVisible()
+    await expect(page.getByText("This workspace is not one of yours")).toBeVisible()
     await expect(page.getByTestId("workspace-offline")).toHaveCount(0)
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
     await expect(page.getByTestId("workspace-offline-retry")).toHaveCount(0)
@@ -767,7 +767,7 @@ test.describe("core cloud offline & roles @core", () => {
     expect(state.promptAsyncHits, debugSuffix(state)).toEqual([])
 
     // Enter-submit is blocked at the SAME `handleSubmit` handler, independent of the
-    // button's `disabled` attribute: `submit-ui-state.ts` checks `roleSubmitBlocked()`
+    // button's `disabled` attribute: `submit-ui-state.ts` checks the authority block
     // first and preventDefaults before any submission work.
     await editor.click()
     await editor.fill("this should never send")

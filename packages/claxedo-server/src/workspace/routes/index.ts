@@ -37,7 +37,6 @@ import { repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/sandbox-driver-routes"
-import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
 import { hostAssignmentHandlers } from "../host-assignment-handlers"
@@ -398,7 +397,6 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           throw err
         }
       })
-      .route("/", workspaceShareRoutes(services, options))
       .delete("/:id", async (c) => {
         const id = c.req.param("id")
         // Deletion must never be reachable by an anonymous remote caller in

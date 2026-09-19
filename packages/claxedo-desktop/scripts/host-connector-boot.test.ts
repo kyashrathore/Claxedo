@@ -6,6 +6,7 @@ import { join } from "node:path"
 
 import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
+import { sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
 
 import { bundleHostConnector, HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA } from "./bundle-host-connector"
 import { runHostConnectorChild } from "./host-connector-entry"
@@ -68,6 +69,8 @@ function childHarness(options?: {
    */
   stall?: string
   controlPlane?: ReturnType<typeof createFakeControlPlane>
+  /** What main's store answers for a delivered revision; `true` unless the test says otherwise. */
+  storeProviderConfig?: () => boolean
 }) {
   const cp = options?.controlPlane ?? createFakeControlPlane()
   let receive: ((message: unknown) => void) | undefined
@@ -75,6 +78,12 @@ function childHarness(options?: {
   const accountOperations: Array<Extract<HostConnectorChildMessage, { type: "account-operation" }>> = []
   const stalled: Array<() => void> = []
   let createdIdentity: Extract<HostConnectorChildMessage, { type: "identity-created" }>["identity"] | undefined
+  let storedSealingKey: JsonWebKey | undefined
+  /** Every provider-config message main received, sealed and opened alike, in arrival order. */
+  const providerConfigs: Array<
+    | { kind: "sealed"; revision: number; sealed: string | null }
+    | { kind: "opened"; revision: number; providers: string }
+  > = []
 
   const send = (message: HostConnectorParentMessage) => receive?.(message)
   const runtime = runHostConnectorChild(
@@ -87,6 +96,25 @@ function childHarness(options?: {
         if (message.type === "identity-created") {
           createdIdentity = message.identity
           send({ type: "identity-stored", requestId: message.requestId })
+          return
+        }
+        if (message.type === "sealing-key-created") {
+          storedSealingKey = message.sealingPrivateKeyJwk
+          send({ type: "sealing-key-stored", requestId: message.requestId })
+          return
+        }
+        if (message.type === "provider-config") {
+          providerConfigs.push({ kind: "sealed", revision: message.revision, sealed: message.sealed })
+          const ok = options?.storeProviderConfig?.() ?? true
+          send(
+            ok
+              ? { type: "provider-config-stored", requestId: message.requestId, ok: true }
+              : { type: "provider-config-stored", requestId: message.requestId, ok: false, error: "safeStorage refused the write" },
+          )
+          return
+        }
+        if (message.type === "provider-config-ready") {
+          providerConfigs.push({ kind: "opened", revision: message.revision, providers: message.providers })
           return
         }
         if (message.type !== "account-operation") return
@@ -121,6 +149,8 @@ function childHarness(options?: {
     sent,
     accountOperations,
     createdIdentity: () => createdIdentity,
+    storedSealingKey: () => storedSealingKey,
+    providerConfigs,
     enrollmentId: () => [...cp.enrollments.keys()][0],
     beats: () => cp.beats(),
     release: () => stalled.splice(0).forEach((answer) => answer()),
@@ -496,5 +526,181 @@ describe("the private bootstrap protocol", () => {
       status: { status: "stopped", reason: "closed" },
     })
     child.runtime.close()
+  })
+})
+
+const PROVIDER_CONFIG = JSON.stringify({
+  version: 1,
+  providers: {
+    "claude-sdk": { baseUrl: "https://broker.test/bindings/b1", placeholder: "sk-placeholder-1", authMode: "api-key" },
+  },
+})
+const EMPTY_PROVIDER_CONFIG = '{"version":1,"providers":{}}'
+
+async function enrolled(child: ReturnType<typeof childHarness>, options: { heartbeatIntervalMs?: number } = {}) {
+  child.send({
+    type: "bootstrap",
+    requestId: "bootstrap",
+    controlPlaneUrl: CONTROL_PLANE_URL,
+    heartbeatIntervalMs: options.heartbeatIntervalMs ?? 20_000,
+  })
+  await until(
+    () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+    "enrolled status push",
+  )
+  return child.enrollmentId()
+}
+
+describe("provider configuration sealed for this machine", () => {
+  test("the first beat declares a sealing key minted with the identity, and the control plane records it", async () => {
+    const child = childHarness()
+    const enrollmentId = await enrolled(child)
+
+    const sealingPrivateKeyJwk = child.createdIdentity()?.sealingPrivateKeyJwk
+    expect(sealingPrivateKeyJwk).toHaveProperty("d")
+    const declared = JSON.stringify(sealingPublicKeyJwk(sealingPrivateKeyJwk!))
+    expect(child.beats()[0]?.body).toMatchObject({ sealingPublicKey: declared })
+    expect(child.cp.sealingPublicKey(enrollmentId)).toBe(declared)
+    // The public half is derived, never stored on its own; the private half
+    // never reaches the control plane.
+    expect(JSON.stringify(child.beats().map((beat) => beat.body))).not.toContain(sealingPrivateKeyJwk!.d)
+    child.runtime.close()
+  })
+
+  test("an identity from before machines could receive secrets gets its sealing key stored before the first beat", async () => {
+    const first = childHarness()
+    await enrolled(first)
+    const { sealingPrivateKeyJwk: _minted, ...older } = first.createdIdentity()!
+    first.runtime.close()
+
+    const restored = childHarness({ controlPlane: first.cp })
+    restored.send({ type: "bootstrap", requestId: "restored", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000, identity: older })
+    await until(
+      () => restored.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push after the restart",
+    )
+
+    const stored = restored.storedSealingKey()
+    expect(stored).toHaveProperty("d")
+    expect(restored.sent.filter((message) => message.type === "identity-created")).toEqual([])
+    // Stored before the bootstrap was even answered, so no beat can declare a
+    // key the parent has not persisted.
+    const storedAt = restored.sent.findIndex((message) => message.type === "sealing-key-created")
+    const answeredAt = restored.sent.findIndex((message) => message.type === "response")
+    expect(storedAt).toBeGreaterThanOrEqual(0)
+    expect(storedAt).toBeLessThan(answeredAt)
+    expect(restored.cp.sealingPublicKey(restored.enrollmentId())).toBe(JSON.stringify(sealingPublicKeyJwk(stored!)))
+    restored.runtime.close()
+  })
+
+  test("a pushed revision reaches the parent sealed, then opened, and is acked on the next beat", async () => {
+    const child = childHarness()
+    const enrollmentId = await enrolled(child, { heartbeatIntervalMs: 20 })
+
+    const revision = await child.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision")
+
+    const sealed = child.cp.providerConfig(enrollmentId)?.sealed
+    expect(typeof sealed).toBe("string")
+    expect(child.providerConfigs).toEqual([
+      { kind: "sealed", revision, sealed },
+      { kind: "opened", revision, providers: PROVIDER_CONFIG },
+    ])
+    // The parent held only the ciphertext until the child said "ready".
+    expect(sealed).not.toContain("sk-placeholder-1")
+    child.runtime.close()
+  })
+
+  test("a revision the parent could not store is delivered again and never acked", async () => {
+    let storeOk = false
+    const child = childHarness({ storeProviderConfig: () => storeOk })
+    const enrollmentId = await enrolled(child, { heartbeatIntervalMs: 20 })
+
+    const revision = await child.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await untilElapsed(
+      () => child.providerConfigs.filter((entry) => entry.kind === "sealed").length >= 2,
+      "the same revision delivered twice",
+    )
+
+    expect(child.cp.providerConfigAckedRevision(enrollmentId)).not.toBe(revision)
+    expect(child.providerConfigs.every((entry) => entry.kind === "sealed" && entry.revision === revision)).toBe(true)
+    expect(child.providerConfigs.some((entry) => entry.kind === "opened")).toBe(false)
+
+    storeOk = true
+    await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision")
+    expect(child.providerConfigs.at(-1)).toEqual({ kind: "opened", revision, providers: PROVIDER_CONFIG })
+    child.runtime.close()
+  })
+
+  test("a blob this machine cannot open is named in a message the parent logs, not only by a counter that stops", async () => {
+    const child = childHarness()
+    const enrollmentId = await enrolled(child, { heartbeatIntervalMs: 20 })
+    const revision = await child.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision")
+
+    // A blob sealed to a key this machine does not hold: the store succeeds
+    // (it is ciphertext either way) and the open is what fails.
+    child.cp.replayProviderConfig(enrollmentId, { revision: revision + 1, sealed: "mseal1.not.my.key" })
+    await untilElapsed(
+      () => child.sent.some((message) => message.type === "child-error"),
+      "the child reporting the stage it could not complete",
+    )
+
+    const reported = child.sent.find((message) => message.type === "child-error")
+    if (reported?.type !== "child-error") throw new Error("the child sent no child-error")
+    expect(reported.stage).toBe("provider-config")
+    expect(reported.detail).not.toBe("")
+    expect(child.cp.providerConfigAckedRevision(enrollmentId)).toBe(revision)
+    expect(child.providerConfigs.some((entry) => entry.kind === "opened" && entry.revision === revision + 1)).toBe(false)
+    child.runtime.close()
+  })
+
+  test("a withdrawal reaches the parent as an empty configuration", async () => {
+    const child = childHarness()
+    const enrollmentId = await enrolled(child, { heartbeatIntervalMs: 20 })
+    const configured = await child.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === configured, "the configured revision")
+
+    const withdrawn = await child.cp.pushProviderConfig(enrollmentId, null)
+    await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === withdrawn, "the withdrawn revision")
+
+    expect(child.providerConfigs.slice(-2)).toEqual([
+      { kind: "sealed", revision: withdrawn, sealed: null },
+      { kind: "opened", revision: withdrawn, providers: EMPTY_PROVIDER_CONFIG },
+    ])
+    child.runtime.close()
+  })
+
+  test("a restart re-opens the revision main stored, declares it held, and is not sent it again", async () => {
+    const first = childHarness()
+    const enrollmentId = await enrolled(first, { heartbeatIntervalMs: 20 })
+    const revision = await first.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await untilElapsed(() => first.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision")
+    const identity = first.createdIdentity()!
+    const stored = first.providerConfigs.find((entry) => entry.kind === "sealed")!
+    first.runtime.close()
+    const beatsBeforeRestart = first.beats().length
+
+    const restarted = childHarness({ controlPlane: first.cp })
+    restarted.send({
+      type: "bootstrap",
+      requestId: "restarted",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20,
+      identity,
+      providerConfig: { revision: stored.revision, sealed: stored.sealed },
+    })
+    await until(
+      () => restarted.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push after the restart",
+    )
+    await untilElapsed(() => restarted.beats().length > beatsBeforeRestart + 1, "a further beat")
+
+    // Opened for the daemon (which restarted too) before the first beat, and
+    // declared on it — so across two beats nothing sealed arrived again.
+    const beats = restarted.beats().slice(beatsBeforeRestart)
+    expect(beats[0]?.body).toMatchObject({ providerConfigRevision: revision })
+    expect(restarted.providerConfigs).toEqual([{ kind: "opened", revision, providers: PROVIDER_CONFIG }])
+    restarted.runtime.close()
   })
 })

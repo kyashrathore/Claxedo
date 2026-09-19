@@ -1152,7 +1152,7 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/api/claxedo/remote-access/devices") {
         return json(route, {
           devices: machine.enabled
-            ? [{ host_id: "host_1", display_name: "This machine", last_seen_at: Date.now(), workspace_ids: machine.workspaceIds }]
+            ? [{ host_id: "host_1", display_name: "Yashvardhan's MacBook Pro", last_seen_at: Date.now(), workspace_ids: machine.workspaceIds }]
             : [],
         })
       }
@@ -1192,7 +1192,7 @@ test.describe("core user-hosted workspace @core", () => {
 
     await page.getByTestId("rail-account-trigger").click()
     await page.getByRole("menuitem", { name: /settings/i }).click()
-    await page.getByRole("tab", { name: "Devices" }).click()
+    await page.getByRole("tab", { name: "Machines" }).click()
 
     // Nothing is published before the machine is enabled — the reconciler must
     // not post an assignment at a machine that is not up.

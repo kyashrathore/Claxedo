@@ -542,10 +542,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     permission,
   })
 
-  const { roleSubmitBlocked, submitBlock, submitInertBlocked, openModelPicker } =
+  const { authorityBlock, submitBlock, submitInertBlocked, openModelPicker } =
     createComposerSubmitBlockWiring({
       statusReady: props.statusReady,
       workspaceId: props.workspaceId,
+      sessionPromptAdmitted: props.sessionPromptAdmitted,
       scope,
       isHarnessMode,
       harnessReadiness,
@@ -609,10 +610,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const submitRetry = createPromptInputSubmitRetry({
     resetKey: composerBootScope,
     rawHandleSubmit,
-    roleSubmitBlocked,
-    // Clickability must never become submittability. Viewer-role hard-blocks
-    // unconditionally (via roleSubmitBlocked); every other block reason also
-    // guards the handler. Enter routes missing-model to the picker (see
+    authorityBlocked: () => !!authorityBlock(),
+    // Clickability must never become submittability. An authority refusal
+    // hard-blocks unconditionally; every other block reason also guards the
+    // handler. Enter routes missing-model to the picker (see
     // createPromptInputSubmitRetry) instead of the submit toast guard.
     submitBlocked: () => submitHardBlocked({ stoppable: stoppable(), block: submitBlock() }),
     submitBlock,
@@ -630,7 +631,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const onRetry = submitRetry.onRetry
   const designPlaceholder = () => goalArmed()
     ? language.t("prompt.goal.placeholder")
-    : promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
+    : promptDesignPlaceholder({ authorityBlock: authorityBlock(), mode: engine.mode(), shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
       rootRef={(el) => (rootEl = el)}
@@ -750,7 +751,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       submitExcludeFromTab={submitInertBlocked}
       submitBlock={submitBlock}
       onChooseModel={openModelPicker}
-      roleSubmitBlocked={roleSubmitBlocked}
+      workspaceRoleBlocked={() => authorityBlock() === "workspace-role"}
       t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       showDialog={(content) => dialog.show(content)}
     />

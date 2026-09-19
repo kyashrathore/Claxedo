@@ -516,6 +516,14 @@ export type MockRuntimeOptions = {
     projectName?: string
     /** Harness the cloud session is created/locked with. Defaults to "opencode" — independent of the local lane's `options.harness`. */
     harness?: Harness
+    /** Workspace role the connection mint hands back. Defaults to "owner". */
+    role?: "owner" | "admin" | "editor" | "viewer"
+    /**
+     * The session authority's answer to "may this reader prompt", which the
+     * runtime reports with the session's capabilities. Defaults to true; a
+     * `follow` grantee is the false case.
+     */
+    sessionPrompt?: boolean
   }
 }
 
@@ -3089,7 +3097,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
             // whole event bus silent, exactly as it would in production.
             sessionAuthority: "managed-private",
             workspaceId,
-            role: "owner",
+            role: cloud.role ?? "owner",
             relayUrl: relayOrigin,
             runtimeAccessToken: `rat_${workspaceId}`,
             tokenExpiresAt: Date.now() + 120_000,
@@ -3276,6 +3284,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         revert: true,
         unrevert: true,
         configOptions: cloudHarness !== "opencode",
+        prompt: cloud.sessionPrompt ?? true,
       }),
     )
     await page.route(`${base}/session/*/todo**`, (r) => json(r, sessionTodos))

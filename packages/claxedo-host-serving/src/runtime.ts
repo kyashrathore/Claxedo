@@ -29,9 +29,46 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import { relayHostAuthFromEnv } from "@claxedo/workspace-runtime/relay"
+import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import {
+  hostProviderConfigProjectAuth,
+  parseHostProviderConfig,
+  type HostProviderConfig,
+} from "@claxedo/server-core/credentials/host-provider-config"
+import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "host-runtime" })
+
+let pushedProviders: HostProviderConfig["providers"] = {}
+
+/**
+ * Make the owner's pushed rows this process's only credential authority. A
+ * connect host has no credential registry of its own, so there is no base
+ * answer to write the rows over; a provider the owner has not pushed resolves
+ * to nothing and the harness runs on whatever login the box holds.
+ */
+export function installHostProviderConfigAuthority() {
+  configureAgentConfig({ projectAuth: hostProviderConfigProjectAuth(undefined, () => pushedProviders) })
+}
+
+/**
+ * Replace the pushed rows with the plaintext the host opened, or with nothing
+ * when the owner withdrew them. Parsed here rather than by the caller because
+ * the CLI does not depend on `@claxedo/server-core`, and the rows themselves
+ * never leave this module. Throws on a payload this host cannot read, leaving
+ * the previous rows in place.
+ */
+export function setHostProviderConfig(plaintext: string | null): { providerIds: string[] } {
+  const providers = plaintext === null ? {} : parseHostProviderConfig(plaintext).providers
+  pushedProviders = providers
+  return { providerIds: Object.keys(providers).sort() }
+}
+
+/** The snapshot this process resolves for one workspace, applied in process: the host composes its own runtimes and needs no config route. */
+async function applyRuntimeConfig(runtime: WorkspaceRuntimeApp, target: { workspaceId: string; directory: string }) {
+  await runtime.host.apply(await createClaxedoAppliedRuntimeConfig({ workspaceDir: target.directory, workspaceId: target.workspaceId }))
+}
 
 export type HostWorkspaceRuntimeOptions = {
   workspaceId: string
@@ -61,8 +98,9 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
     WORKSPACE_RUNTIME_HOST_ID: options.hostId,
   })
   if (!relayHostAuth) throw new Error("Host workspace runtime requires a relay JWKS URL")
-  return createWorkspaceRuntimeApp({
-    target: { workspaceId: options.workspaceId, directory: options.directory },
+  const target = { workspaceId: options.workspaceId, directory: options.directory }
+  const runtime = createWorkspaceRuntimeApp({
+    target,
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({ url: options.sessionAuthorityUrl }),
     storeRoot: options.storeRoot,
@@ -70,6 +108,13 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
+  try {
+    await applyRuntimeConfig(runtime, target)
+  } catch (error) {
+    await runtime.dispose().catch(() => undefined)
+    throw error
+  }
+  return runtime
 }
 
 export type HostRuntimeListenerOptions = {
@@ -101,6 +146,12 @@ export type HostRuntimeListener = {
   /** Tear one runtime down, letting in-flight turns finish first. */
   dispose: (workspaceId: string) => Promise<void>
   workspaceIds: () => string[]
+  /**
+   * Re-resolve and apply the configuration on every live runtime, after the
+   * rows it resolves against changed. One workspace's failure is logged and
+   * the rest still move.
+   */
+  applyRuntimeConfig: () => Promise<void>
   /** Dispose every runtime and stop listening. */
   close: () => Promise<void>
 }
@@ -231,6 +282,15 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
       return entry ? disposeEntry(entry) : retiring.get(workspaceId) ?? Promise.resolve()
     },
     workspaceIds: () => [...entries.keys()].sort(),
+    applyRuntimeConfig: async () => {
+      await Promise.all([...entries.values()].map(async (entry) => {
+        try {
+          await applyRuntimeConfig(entry.runtime, entry)
+        } catch (error) {
+          log.warn("host runtime config apply failed", { workspaceId: entry.workspaceId, error })
+        }
+      }))
+    },
     close: async () => {
       await Promise.all([...entries.values()].map(disposeEntry).concat([...retiring.values()]))
       await new Promise<void>((resolve) => {

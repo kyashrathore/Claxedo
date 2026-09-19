@@ -50,8 +50,8 @@ const OFFLINE_COPY: Record<WorkspaceOfflineReason, { title: string; detail: stri
   },
   // `forbidden` is rendered by WorkspaceAccessDeniedView, never here.
   forbidden: {
-    title: "You don't have access to this workspace",
-    detail: "This workspace belongs to another account, or your access was removed.",
+    title: "This workspace is not one of yours",
+    detail: "It is a folder on someone else's machine, or it stopped being visible to your account.",
   },
 }
 
@@ -118,7 +118,7 @@ export function WorkspaceOfflineView(props: {
  *  - a DRAFT (no sessionId, or the `"new"` route sentinel): it has no stored
  *    history and its first send needs a live runtime, so the offline panel with
  *    its Retry is the honest surface.
- *  - user-hosted: the owner's machine is the only store.
+ *  - a workspace on a machine: that machine is the only store.
  *  - `forbidden`: no access means no read, for any kind.
  */
 function hasCentralHistory(input: {

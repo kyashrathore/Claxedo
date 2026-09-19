@@ -168,7 +168,19 @@ export function invitationTokenFrom(output: string) {
   return token
 }
 
-export type Machine = { display_name: string; enrollment_id: string; host_id: string; serving_generation?: number; expires_at?: number; scope?: { allowed_roots: string[] } }
+export type Machine = {
+  display_name: string
+  enrollment_id: string
+  host_id: string
+  serving_generation?: number
+  expires_at?: number
+  scope?: { allowed_roots: string[] }
+  /** The owner's latest push; 0 until one lands. */
+  provider_config_revision: number
+  /** The revision the machine last declared on a beat, after storing, opening and applying it. */
+  provider_config_acked_revision: number
+  sealing_key_declared: boolean
+}
 
 async function json<T>(response: Response, label: string): Promise<T> {
   const text = await response.text()
@@ -283,6 +295,8 @@ export type ConnectStatus = {
     run?: { pid: number; generation: number; last_beat_ok_at?: number; lease_expires_at?: number; last_beat_error?: string; served?: Array<{ workspace_id: string; revision: number; connected: boolean }> }
     scope?: { revision: number; allowed_roots: string[] }
     service?: { kind: "systemd-user" | "launchd"; unit: string; installed_at: number }
+    /** The pushed provider configuration as delivered: ciphertext, or null once withdrawn. */
+    provider_config?: { revision: number; sealed: string | null }
   } | null
   /** Whether the invitation the instance was started with is still on disk. */
   invitationTokenPresent: boolean
@@ -405,12 +419,21 @@ export const faults = {
 
 export type Teammate = { subject: string; tokenIdentifier: string; role: string; controlPlaneToken: string; name?: string }
 
-export async function teammate(fixture: RunningConnectFixture, input: { subject: string; role: "viewer" | "editor"; name: string; workspaceId: string }) {
+/**
+ * A second identity ranked at `role` on the project behind the named
+ * workspace. `joinOrg` also adds an `org_memberships` row on the fixture's
+ * organization, which a session share offered to this person requires.
+ */
+export async function teammate(
+  fixture: RunningConnectFixture,
+  input: { subject: string; role: "viewer" | "editor"; name: string; workspaceId: string; joinOrg?: boolean },
+) {
   const url = new URL(`${fixture.info.backendUrl}/__fixture/authority-identity`)
   url.searchParams.set("subject", input.subject)
   url.searchParams.set("role", input.role)
   url.searchParams.set("name", input.name)
   url.searchParams.set("workspaceId", input.workspaceId)
+  if (input.joinOrg) url.searchParams.set("joinOrg", "1")
   return await json<Teammate>(await fetch(url), `teammate ${input.subject}`)
 }
 

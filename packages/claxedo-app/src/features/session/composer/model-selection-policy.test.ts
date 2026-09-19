@@ -70,7 +70,7 @@ describe("model selection policy", () => {
 
   test("stale draft-default choose-model does not block after toolbar resolves a model", () => {
     expect(submitBlockReason({
-      roleBlocked: false,
+      authorityBlock: undefined,
       harnessMode: false,
       harnessReadiness: "ready",
       harnessConfigError: false,

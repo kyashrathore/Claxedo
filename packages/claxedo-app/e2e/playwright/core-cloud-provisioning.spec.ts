@@ -77,7 +77,7 @@
  *     proof of "composer unlocks on ready").
  *   `[data-slot="toast-title"]` / `[data-slot="toast-description"]` — create-failure
  *     toast (`@opencode-ai/ui/toast`), title is the literal string
- *     `"Failed to create cloud workspace"` (hardcoded in `submit-directory.ts`, not
+ *     `"Failed to create cloud environment"` (hardcoded in `submit-directory.ts`, not
  *     translated) for BOTH failure shapes.
  *   The composer's new-session workspace picker (`session-new-design-view.tsx`) uses the
  *     `[data-slot="context-chip-environment"]` popover trigger over
@@ -103,7 +103,7 @@
  *   6. A cloud-workspace CREATE failure — either the create request being rejected
  *      (`POST /api/workspace/create` non-2xx, causing `createCloudWorkspace` to throw)
  *      or succeeding with `200` but a body missing `workspaceId` — shows the
- *      "Failed to create cloud workspace" toast, never opens the pipeline overlay
+ *      "Failed to create cloud environment" toast, never opens the pipeline overlay
  *      (`gate.open`/`onCloudStartup` is never invoked on this path), creates zero
  *      sessions, and leaves the composer's typed text untouched. Both shapes fire
  *      EXACTLY ONE toast: `resolveCloudSessionDirectory` in
@@ -785,7 +785,7 @@ test.describe("core cloud provisioning @core", () => {
 
       // One toast: a rejected create must not also fall through to the missing-workspaceId toast.
       await expect(page.locator('[data-slot="toast-title"]')).toHaveCount(1, { timeout: 10_000 })
-      await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud workspace", { timeout: 10_000 })
+      await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud environment", { timeout: 10_000 })
       await expect(page.locator('[data-slot="toast-description"]')).toContainText("workspace creation blew up", { timeout: 10_000 })
 
       await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
@@ -830,7 +830,7 @@ test.describe("core cloud provisioning @core", () => {
     await expect(input).toContainText(promptText, { timeout: 10_000 })
     await page.locator(SELECTORS.submitControl).last().click()
 
-    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud workspace", { timeout: 10_000 })
+    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud environment", { timeout: 10_000 })
     // The response was rejected at the create API's schema boundary; the toast
     // names the missing field rather than printing the validator's issue list.
     await expect(page.locator('[data-slot="toast-description"]')).toContainText("Workspace create returned an invalid response (workspaceId:", { timeout: 10_000 })

@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  composerUsesSignedTransport,
   existingRemoteWorkspaceDirectory,
   projectForDirectory,
   resolveWorkspaceSubmitPlan,
   sessionRefForSubmitTarget,
-  signedWorkspaceForDirectory,
+  signedWorkspaceHostKind,
   selectedNewSessionWorkspace,
   submitSessionDirectory,
   workspaceForDirectory,
@@ -75,6 +76,73 @@ const projects = [
   },
 ] satisfies ProjectCatalogItem[]
 
+describe("signedWorkspaceHostKind", () => {
+  test("reads the sdk workspace's host kind without translating it as a wire word", () => {
+    expect(signedWorkspaceHostKind({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_m", kind: "machine", directory: "/repo/elsewhere" },
+    })).toBe("machine")
+    expect(signedWorkspaceHostKind({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_p", kind: "provisioner", directory: "/repo/elsewhere" },
+    })).toBe("provisioner")
+  })
+
+  test("narrows a catalog row's wire word, which the sdk's answer outranks", () => {
+    expect(signedWorkspaceHostKind({ directory: "/tmp/hosted", projects })).toBe("machine")
+    expect(signedWorkspaceHostKind({ directory: "/repo/cloud-main", projects })).toBe("provisioner")
+    expect(signedWorkspaceHostKind({
+      directory: "/tmp/hosted",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_p", kind: "provisioner" },
+    })).toBe("provisioner")
+  })
+})
+
+describe("composerUsesSignedTransport", () => {
+  const loopback = "http://127.0.0.1:3001"
+
+  test("an sdk workspace on a machine takes signed transport on a loopback server", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_m", kind: "machine", directory: "/repo/elsewhere" },
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(true)
+  })
+
+  test("an sdk workspace on the provisioner takes signed transport on a loopback server", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_p", kind: "provisioner", directory: "/repo/elsewhere" },
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(true)
+  })
+
+  test("a catalog row the sdk has not matched still takes signed transport", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/tmp/hosted",
+      projects,
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(true)
+  })
+
+  test("a directory no source places remotely stays on loopback", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/repo/main",
+      projects,
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(false)
+  })
+})
+
 describe("composer workspace resolver", () => {
   test("matches projects and workspaces by worktree, sandbox, workspace id, and normalized directory", () => {
     expect(projectForDirectory(projects, "/repo/main")?.id).toBe("proj_1")
@@ -92,11 +160,11 @@ describe("composer workspace resolver", () => {
       directory: "/repo/cloud-main",
       projects,
     })).toBe("/repo/cloud-main")
-    expect(signedWorkspaceForDirectory({
+    expect(submitSessionDirectory({
       directory: "/repo/main",
       projects,
       sdkWorkspace: { workspaceId: "ws_sdk", kind: "provisioner", directory: "/repo/sdk" },
-    })?.workspaceId).toBe("ws_sdk")
+    })).toBe("/repo/sdk")
   })
 
   test("existing sessions resolve to project, fallback, then default directory", () => {

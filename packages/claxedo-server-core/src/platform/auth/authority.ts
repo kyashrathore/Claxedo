@@ -97,11 +97,6 @@ export type WorkspaceOpenResult = {
   workspace?: WorkspaceRecord
 }
 
-export type WorkspaceShareTarget =
-  | { kind: "actor"; actorId: string }
-  | { kind: "user"; userId: string }
-  | { kind: "org"; orgId: string }
-
 /**
  * Canonical recipient identity resolved by the authority before a session
  * share is revoked. Routes use this target for recipient doorbells, including
@@ -351,7 +346,32 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { enrollmentId: string; scope: HostScopeDefinition },
   ) => Promise<HostScopeUpdateResult>
+  /**
+   * Owner only. The name the account sees for this machine on every device.
+   *
+   * A machine names itself at enrollment; this is how the owner overrides that
+   * name afterwards, and it is the only field of an enrollment a person edits.
+   */
+  renameHostEnrollment?: (
+    auth: SignedControlPlaneAuth,
+    args: { enrollmentId: string; displayName: string },
+  ) => Promise<{ enrollment_id: string; display_name: string }>
   listHostEnrollments?: (auth: SignedControlPlaneAuth) => Promise<HostEnrollmentListRow[]>
+  /**
+   * Owner only, and the whole host-management grant: the account that enrolled
+   * a machine is the only one that may read what it can be sealed to or push
+   * to it. There is no org-wide or team-wide form of either — an organization
+   * groups people and grants nothing on a machine.
+   */
+  hostProviderConfigTarget?: (
+    auth: SignedControlPlaneAuth,
+    args: { enrollmentId: string },
+  ) => Promise<HostProviderConfigTarget>
+  /** Owner only. Writes ciphertext at `revision`, or a withdrawal; never sees a secret. */
+  pushHostProviderConfig?: (
+    auth: SignedControlPlaneAuth,
+    args: HostProviderConfigPushInput,
+  ) => Promise<{ enrollment_id: string; revision: number; sealed: boolean }>
   /** The caller's non-revoked enrollment of one machine, for a reader that needs one row and not the fleet. */
   hostEnrollmentByHost?: (
     auth: SignedControlPlaneAuth,
@@ -403,22 +423,6 @@ export type WorkspaceAuthority = {
   ) => Promise<unknown>
   /** The undo of `createRuntimeCloudWorkspace`, as the same principal. */
   deleteRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<unknown>
-  grantWorkspaceShare: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      role: "viewer" | "editor" | "admin"
-      target: WorkspaceShareTarget
-    },
-  ) => Promise<unknown>
-  revokeWorkspaceShare: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      grantId?: string
-      target?: WorkspaceShareTarget
-    },
-  ) => Promise<unknown>
 
   // sessions
   authorizeSessionRead: (
@@ -751,6 +755,83 @@ export type HostMachineHeartbeatInput = {
   acks: HostAssignmentAck[]
   ttlMs?: number
   sessionAuthority?: HostSessionAuthority
+  /**
+   * The ECDH P-256 public JWK JSON this machine can be sealed to
+   * (`./machine-seal`), recorded on every beat that carries one.
+   *
+   * The enrollment's own key signs and cannot derive bits, so this is a second
+   * key and its declaration rides the one channel the machine already proves
+   * itself on. Nothing is pushable to a machine that has declared none.
+   */
+  sealingPublicKey?: string
+  /** The provider-config revision the machine has STORED; the result restates the row only when it differs. */
+  providerConfigAckedRevision?: number
+}
+
+/**
+ * The owner's provider configuration for this machine, sealed for its declared
+ * key. `sealed: null` is the withdrawal — a revision that says "hold nothing" —
+ * carried as a revision so a machine that was offline learns of it on its next
+ * beat and the control plane can tell "revoked" from "never pushed".
+ */
+export type HostProviderConfigRevision = { revision: number; sealed: string | null }
+
+/** The provider-config columns of one `host_enrollments` row, as both twins store them. */
+export type HostProviderConfigColumns = {
+  sealing_public_key_json: string | null
+  provider_config_sealed: string | null
+  provider_config_sealed_key_json: string | null
+  provider_config_revision: number
+  provider_config_acked_revision: number
+}
+
+/**
+ * Whether the machine declared a different sealing key after the push. The
+ * stored blob then opens for nobody: it is neither delivered nor ackable, and
+ * only another push replaces it. Nothing re-seals on its own, which would need
+ * the plaintext back at the control plane.
+ */
+export function hostProviderConfigRekeyed(row: HostProviderConfigColumns): boolean {
+  if (row.provider_config_sealed === null || row.provider_config_sealed_key_json === null) return false
+  return row.provider_config_sealed_key_json !== row.sealing_public_key_json
+}
+
+/**
+ * The revision a beat restates, or undefined when there is nothing to restate:
+ * nothing was ever pushed, the machine has acked what there is, or the machine
+ * re-keyed and the blob is dead. Without that last case the beat carries an
+ * unopenable payload up to the body cap on every beat, forever.
+ */
+export function pendingHostProviderConfig(row: HostProviderConfigColumns): HostProviderConfigRevision | undefined {
+  if (row.provider_config_revision === 0) return undefined
+  if (row.provider_config_revision === row.provider_config_acked_revision) return undefined
+  if (hostProviderConfigRekeyed(row)) return undefined
+  return { revision: row.provider_config_revision, sealed: row.provider_config_sealed }
+}
+
+/**
+ * One above the higher of the two counters. The machine applies only a
+ * strictly newer revision, and it re-declares what it holds on every beat, so
+ * minting against the stored revision alone would leave a control plane
+ * restored from a backup issuing revisions the machine ignores forever.
+ */
+export function nextHostProviderConfigRevision(
+  row: Pick<HostProviderConfigColumns, "provider_config_revision" | "provider_config_acked_revision">,
+): number {
+  return Math.max(row.provider_config_revision, row.provider_config_acked_revision) + 1
+}
+
+/** The stored id list; an unreadable column reads as empty rather than throwing on an owner's list call. */
+export function storedHostProviderIds(json: string | null): string[] {
+  if (json === null) return []
+  let value: unknown
+  try {
+    value = JSON.parse(json)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === "string")
 }
 
 export type HostMachineHeartbeatResult = {
@@ -760,6 +841,41 @@ export type HostMachineHeartbeatResult = {
   scope: HostEnrollmentScope | undefined
   /** Kept for the desktop's set reconciliation. */
   assigned_workspace_ids: string[]
+  /** Present only when the stored revision is not the one the beat declared. */
+  provider_config?: HostProviderConfigRevision
+}
+
+/** The machine an owner may seal for, as the push route reads it before sealing. */
+export type HostProviderConfigTarget = {
+  enrollment_id: string
+  host_id: string
+  display_name?: string
+  /** Absent until a beat declares one; a push is refused rather than sealed to nothing. */
+  sealing_public_key: string | null
+  /**
+   * What the next push will be sealed at: one above the higher of the stored
+   * revision and the one the machine says it holds. A control plane restored
+   * from a backup mints below the machine otherwise, and the machine — which
+   * applies only a strictly newer revision — would ignore every push after
+   * that, silently.
+   */
+  next_revision: number
+}
+
+export type HostProviderConfigPushInput = {
+  enrollmentId: string
+  /** `mseal1…` for THIS enrollment at `revision`, or null for the withdrawal. */
+  sealed: string | null
+  revision: number
+  /**
+   * The key the blob was sealed to, as `machineSealingPublicKey` normalized it.
+   * Re-asserted inside the write: a machine that re-keyed between the read and
+   * the write would otherwise be left holding a revision it cannot open, and
+   * an unopenable revision is acked by nobody and re-sent forever.
+   */
+  sealingPublicKey: string | null
+  /** The provider ids inside the blob, sorted; empty for the withdrawal. The only part of the plaintext the control plane keeps. */
+  providerIds: string[]
 }
 
 export type HostInvitationCreateInput = {
@@ -835,6 +951,20 @@ export type HostEnrollmentListRow = {
   assignments: HostAssignmentDescription[]
   acked: HostAssignmentAck[]
   scope: HostEnrollmentScope | undefined
+  /** 0 when the owner has never pushed; the machine's acked revision trails it until the push lands. */
+  provider_config_revision: number
+  provider_config_acked_revision: number
+  /** Whether the machine has declared a key the owner can seal for. */
+  sealing_key_declared: boolean
+  /** The providers inside the stored blob, sorted; empty after a withdrawal or before the first push. */
+  provider_config_providers: string[]
+  /**
+   * The machine declared a different sealing key after the push, so the stored
+   * blob can never be opened or acked and is no longer delivered. The owner's
+   * remedy is another push; nothing re-seals on its own, which would need the
+   * plaintext back at the control plane.
+   */
+  provider_config_rekeyed: boolean
 }
 
 export type HostInvitationErrorCode =
@@ -844,6 +974,12 @@ export type HostInvitationErrorCode =
   | "invitation_redeemed"
   | "invitation_host_conflict"
 
-export type HostMachineErrorCode = "enrollment_generation_superseded" | "host_assignment_outside_scope"
+export type HostMachineErrorCode =
+  | "enrollment_generation_superseded"
+  | "host_assignment_outside_scope"
+  /** The machine has declared no sealing key, or re-keyed between the read and the write. */
+  | "host_sealing_key_undeclared"
+  /** Another push landed between reading `next_revision` and writing it; both twins answer this, so a client reads one code. */
+  | "host_provider_config_revision_stale"
 
 export type HostConnectErrorCode = HostInvitationErrorCode | HostMachineErrorCode

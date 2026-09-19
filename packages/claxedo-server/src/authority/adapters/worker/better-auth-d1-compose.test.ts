@@ -24,6 +24,7 @@ const CONTROL_MIGRATIONS = [
   "0017_adapter_custom.sql",
   "0034_drop_workspace_access.sql",
   "0035_session_share_level.sql",
+  "0036_drop_workspace_share_role.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))

@@ -8,7 +8,7 @@ import {
   workspaceIdFromRef,
 } from "@/platform/identity/legacy-resolver"
 import { isLocalPersonalScope } from "@/platform/runtime/transport"
-import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type Placement = {
   workspaceId?: string
@@ -65,7 +65,7 @@ export function placementFor(input: {
   }
 
   const legacyWorkspaceId = input.legacy?.workspaceId ?? workspaceIdFromRef(input.legacy?.directory)
-  if (input.legacy?.hostKind === "provisioner" || input.legacy?.hostKind === "machine") {
+  if (isRelayHostKind(input.legacy?.hostKind)) {
     if (legacyWorkspaceId) {
       return {
         workspaceId: legacyWorkspaceId,

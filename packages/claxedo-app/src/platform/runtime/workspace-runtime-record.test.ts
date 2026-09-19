@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
+  requestWorkspaceRecord,
   resolveWorkspaceRuntime,
   cachedWorkspaceRuntimeRecord,
   workspaceResolveQuery,
@@ -25,6 +26,36 @@ afterEach(() => {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor)
     else Reflect.deleteProperty(globalThis, key)
   }
+})
+
+describe("requestWorkspaceRecord", () => {
+  const answering = (body: () => Response): typeof fetch => async () => body()
+
+  const record = (request: typeof fetch, directory = "/repo/relay") =>
+    requestWorkspaceRecord({ baseUrl: "https://control.example", directory, request })
+
+  test("narrows the control plane's wire word to the host kind every runtime target is named by", async () => {
+    expect(await record(answering(() =>
+      Response.json({ workspaceId: "ws_c", kind: "cloud", directory: "/repo/relay", status: "ready" }))))
+      .toMatchObject({ workspaceId: "ws_c", kind: "provisioner" })
+  })
+
+  test("a row the attached server serves itself reads as this server's directory", async () => {
+    expect(await record(
+      answering(() => Response.json({ workspaceId: "ws_l", kind: "local", directory: "/repo/main" })),
+      "/repo/main",
+    )).toMatchObject({ workspaceId: "ws_l", kind: "self" })
+  })
+
+  test("a body that is not a record, and a 404, are both no workspace for this scope", async () => {
+    expect(await record(answering(() => Response.json({ kind: "cloud" })))).toBeNull()
+    expect(await record(answering(() => new Response("", { status: 404 })))).toBeNull()
+  })
+
+  test("a failed read throws rather than reading as no workspace", async () => {
+    await expect(record(answering(() => new Response("resolve exploded", { status: 500 }))))
+      .rejects.toThrow("resolve exploded")
+  })
 })
 
 describe("workspace runtime record", () => {

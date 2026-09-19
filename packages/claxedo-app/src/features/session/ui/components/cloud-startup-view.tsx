@@ -231,9 +231,8 @@ export function WorkspaceStateButton(
   )
 }
 
-// BUG-9: Terminal "you don't have access to this workspace" state. Rendered in
-// place of the connecting pipeline when the connection mint returns 403, so the
-// user sees a clean access-denied message instead of an endless "waiting for the
+// Rendered in place of the connecting pipeline when the connection mint answers
+// 403, because the pipeline's own failure state is an endless "waiting for the
 // workspace host" spinner.
 export function WorkspaceAccessDeniedView(props: { onGoToWorkspaces?: () => void }) {
   return (
@@ -241,9 +240,9 @@ export function WorkspaceAccessDeniedView(props: { onGoToWorkspaces?: () => void
       component="workspace-access-denied"
       testId="workspace-access-denied"
       tone="critical"
-      eyebrow="Workspace access"
-      title="You don't have access to this workspace"
-      detail="This workspace belongs to another account, or your access was removed. Switch to a workspace you own to continue."
+      eyebrow="Not visible to you"
+      title="This workspace is not one of yours"
+      detail="It is a folder on someone else's machine, or it stopped being visible to your account. Open a workspace you own to continue."
       actions={
         <Show when={props.onGoToWorkspaces}>
           <WorkspaceStateButton onClick={() => props.onGoToWorkspaces?.()}>

@@ -1059,25 +1059,22 @@ if (hostMode === "embedded") built.app.get("/__fixture/mint", async (c) => {
 })
 // A teammate identity: a second control-plane JWT from the same issuer for a
 // distinct `sub` (the sqlite authority upserts one row per `token_identifier`),
-// granted a share on this fixture's workspace through `grantWorkspaceShare`,
-// the method the product's own invite flow calls.
+// ranked on the project behind this fixture's workspace at the requested
+// role. `projectMembership=0` withholds that rank.
 built.app.get("/__fixture/authority-identity", async (c) => {
   const subject = c.req.query("subject")
   const role = c.req.query("role")
   const name = c.req.query("name")?.trim()
-  const grantWorkspaceShare = c.req.query("grantWorkspaceShare") !== "0"
+  const projectMembership = c.req.query("projectMembership") !== "0"
   const joinOrg = c.req.query("joinOrg") === "1"
-  // Connect mode has no fixed workspace, so the share names the one the
-  // owner assigned; the embedded lanes keep their single workspace.
+  // Connect mode has no fixed workspace, so the rank names the project behind
+  // the one the owner assigned; the embedded lanes keep their single workspace.
   const sharedWorkspaceId = c.req.query("workspaceId") ?? workspaceId
   if (!subject) return c.json({ error: "subject is required" }, 400)
   if (role !== "viewer" && role !== "editor" && role !== "admin") {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
   }
   const tokenIdentifier = `${jwksIssuer.issuer}|${subject}`
-  // `grantWorkspaceShare` refuses unknown targets (`requireExisting: true`).
-  // Upsert the teammate first so a fresh `sub` is a real user row, the same
-  // way the product invite flow resolves the collaborator before writing the grant.
   await authority.usersMe({
     mode: "signed",
     token: "",
@@ -1088,15 +1085,19 @@ built.app.get("/__fixture/authority-identity", async (c) => {
     },
   })
   if (joinOrg) {
-    if (!collaborativeOrgName) {
-      return c.json({ error: "joinOrg requires a collaborative fixture organization" }, 400)
-    }
+    // The organization that owns the workspace, not the fixture's own: a
+    // connect host's workspace lands in the owner's personal org, and being a
+    // member of THAT org is what makes a teammate offerable a session share.
+    const owningOrg = authorityDb()
+      .prepare(`SELECT org_id FROM workspaces WHERE workspace_id = ?`)
+      .get(sharedWorkspaceId)
+    if (!owningOrg) return c.json({ error: `joinOrg found no workspace ${sharedWorkspaceId}` }, 400)
     const now = Date.now()
     authorityDb().prepare(`
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
       VALUES (?, ?, 'member', ?, ?)
       ON CONFLICT (org_id, token_identifier) DO UPDATE SET role = 'member', updated_at = excluded.updated_at
-    `).run(fixtureOrgId, tokenIdentifier, now, now)
+    `).run(owningOrg.org_id, tokenIdentifier, now, now)
   }
   if (name) {
     upsertUser(authorityDb(), {
@@ -1107,15 +1108,20 @@ built.app.get("/__fixture/authority-identity", async (c) => {
       kind: "human",
     })
   }
-  // Org→Team proofs mint Bob without a direct workspace share so access comes
-  // from team membership + team_project_grants. Casey keeps a user workspace
-  // share (default) to prove workspace access alone does not unlock sessions.
-  if (grantWorkspaceShare) {
-    await authority.grantWorkspaceShare(browserAuth, {
-      workspaceId: sharedWorkspaceId,
-      role,
-      target: { kind: "actor", actorId: tokenIdentifier },
-    })
+  // Org→Team proofs mint Bob with no rank of his own so access comes from
+  // team membership + team_project_grants. Casey keeps the project rank
+  // (default) to prove workspace access alone does not unlock sessions.
+  if (projectMembership) {
+    const now = Date.now()
+    const project = authorityDb()
+      .prepare(`SELECT project_id FROM workspaces WHERE workspace_id = ?`)
+      .get(sharedWorkspaceId)
+    if (!project?.project_id) return c.json({ error: "fixture workspace has no project" }, 500)
+    authorityDb().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (project_id, token_identifier) DO UPDATE SET role = excluded.role, updated_at = excluded.updated_at
+    `).run(project.project_id, tokenIdentifier, role, now, now)
   }
   const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })
   return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token, ...(name ? { name } : {}) })

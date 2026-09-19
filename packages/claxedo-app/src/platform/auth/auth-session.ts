@@ -76,7 +76,7 @@ export function configureAuthSession(source: ExternalAuthSource | null) {
  * resolution that will never come. Every consumer already handles it —
  * `CloudAuthGate` renders (it only gates when `authEnabled`),
  * `PrincipalProvider` yields the `local` principal, `RailAccountMenu` shows
- * "Local workspace", `browserAccountPort.state()` reports `unsigned`.
+ * "Not signed in", `browserAccountPort.state()` reports `unsigned`.
  *
  * The reads and the idempotent operations answer; the two operations that
  * require a provider refuse:

@@ -53,6 +53,11 @@ const log = Log.create({ service: "user-hosted-serving" })
 
 export type UserHostedServingCredential = {
   hostId: string
+  /**
+   * The enrollment this credential was minted for, as the control plane names
+   * it on the ack beside the token whose claim already asserts it.
+   */
+  enrollmentId: string
   relayUrl: string
   token: string
   workspaceIds: readonly string[]
@@ -108,6 +113,7 @@ type ActiveTunnel = {
 
 type ActiveServing = {
   hostId: string
+  enrollmentId: string
   relayUrl: string
   localBaseUrl: string
   token: { current: string }
@@ -219,6 +225,20 @@ export function userHostedServingIdentity() {
   return active ? { hostId: active.hostId, relayUrl: active.relayUrl } : undefined
 }
 
+/**
+ * The enrollment this process is serving under, or nothing.
+ *
+ * A client of this machine compares it against the host a control-plane
+ * workspace row names, which is the only thing on the wire that ties such a
+ * row to the server the client is already talking to. Read off the live
+ * serving arrangement rather than held separately, so it goes away with every
+ * way serving ends — a withdrawal, a stop, and the lease lapse that stops it
+ * with nothing pushed to say so.
+ */
+export function userHostedServingEnrollmentId() {
+  return active?.enrollmentId
+}
+
 export function stopUserHostedServing() {
   const current = active
   active = undefined
@@ -254,6 +274,7 @@ export async function setUserHostedServing(
   if (!active) {
     active = {
       hostId: credential.hostId,
+      enrollmentId: credential.enrollmentId,
       relayUrl,
       localBaseUrl,
       token: { current: credential.token },
@@ -267,6 +288,7 @@ export async function setUserHostedServing(
   // One token for every connection: the ack renews it for the whole set, and
   // each tunnel reads `token.current` when it dials or redials.
   serving.token.current = credential.token
+  serving.enrollmentId = credential.enrollmentId
   // Each ack renews the lease; without this the first credential's expiry
   // would stop a machine that is still beating perfectly well.
   clearTimeout(serving.lapse)

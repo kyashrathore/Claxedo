@@ -8,7 +8,7 @@ import { useClaxedoEventsOptional, type ClaxedoEvent } from "@/app/integrations/
 import { createTransport } from "@/platform/runtime/transport"
 import { terminalPtyApiPath } from "../../../features/terminal/core/terminal-connection"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { requestWorkspaceRecord } from "@/platform/runtime/workspace-runtime-record"
 import { usePermission } from "@/features/session/providers/permission"
 import { useClaxedoState } from "./provider"
 import type { ClaxedoStateApi } from "./provider"
@@ -482,18 +482,6 @@ function terminalReconnectTargets(state: AgentStatusReconcileState) {
   return targets
 }
 
-async function resolveWorkspaceRuntime(directory: string, request: typeof fetch) {
-  const res = await request(workspaceResolveUrl({
-    baseUrl: getClaxedoServerUrl(),
-    scope: directory,
-  }), {
-    headers: { Accept: "application/json" },
-  })
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
-  return await res.json()
-}
-
 /**
  * Re-reads, from the runtime, what the workspace stream would have told us
  * had it been open: which owned terminals still exist, and for those that
@@ -518,7 +506,7 @@ export async function reconcileAgentStatuses(state: AgentStatusReconcileState, r
   for (const [directory, ids] of targets) {
     const gone = new Set<string>()
     try {
-      const workspace = await resolveWorkspaceRuntime(directory, request)
+      const workspace = await requestWorkspaceRecord({ baseUrl: getClaxedoServerUrl(), directory, request })
       const workspaceId = workspace?.workspaceId
       const relayWorkspaceId = workspaceId && centralTransportForServer(getClaxedoServerUrl()) !== "loopback"
         ? workspaceId
@@ -532,7 +520,7 @@ export async function reconcileAgentStatuses(state: AgentStatusReconcileState, r
         serverUrl: getClaxedoServerUrl(),
         directory: relayWorkspaceId ? undefined : directory,
         request,
-        resolveWorkspaceRuntime: ({ directory }) => resolveWorkspaceRuntime(directory, request),
+        resolveWorkspaceRuntime: ({ directory }) => requestWorkspaceRecord({ baseUrl: getClaxedoServerUrl(), directory, request }),
       })
       // A local workspace can still have a stable workspaceId. That identity
       // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`

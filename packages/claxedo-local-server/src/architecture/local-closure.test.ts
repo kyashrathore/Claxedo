@@ -279,7 +279,14 @@ describe("@claxedo/local-server closure", () => {
     // has both callers. They reach the runtime's relay subpath and
     // host-serving's identity reader, already here, and add no package edge.
     // Measured: 91 modules, 27 packages.
-    expect(modules.size).toBeLessThanOrEqual(91)
+    // workspace/host-provider-config.ts and
+    // workspace/host-provider-config-routes.ts hold the provider rows the
+    // owner pushed to THIS machine and the loopback route Electron main
+    // installs them through; only the process whose runtimes resolve a turn's
+    // credentials can hold them. The parser and the `projectAuth` composition
+    // are server-core's `credentials/host-provider-config.ts`, already here.
+    // Measured: 93 modules, 27 packages.
+    expect(modules.size).toBeLessThanOrEqual(93)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(27)
   })

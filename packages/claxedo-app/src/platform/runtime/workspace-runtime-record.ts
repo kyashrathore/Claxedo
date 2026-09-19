@@ -94,7 +94,7 @@ function recordHostKind(value: unknown): WorkspaceRuntimeSnapshot["kind"] {
  * type-only module and every product's dependency closure is measured in
  * modules that carry code.
  */
-function workspaceRuntimeSnapshotFromWire(raw: unknown): WorkspaceRuntimeSnapshot | undefined {
+export function workspaceRuntimeSnapshotFromWire(raw: unknown): WorkspaceRuntimeSnapshot | undefined {
   const record = asRecord(raw)
   const workspaceId = readString(record, "workspaceId")
   if (!record || !workspaceId) return undefined
@@ -119,6 +119,30 @@ function workspaceRuntimeSnapshotFromWire(raw: unknown): WorkspaceRuntimeSnapsho
   }
 }
 
+/**
+ * One read of the record over a caller's own transport, outside the shared
+ * cache.
+ *
+ * The sdk scope, the submit transport and the agent-status reconcile each own
+ * a request function the cached read cannot use, and each supplies the answer
+ * `resolveRuntimeTarget` narrows. Routing all three through here is what keeps
+ * one vocabulary on that seam: `kind` arrives as the control plane's wire word
+ * and `asHostKind` rejects every one of them, so a body handed through raw
+ * names no runtime at all.
+ */
+export async function requestWorkspaceRecord(input: {
+  baseUrl?: string
+  directory: string
+  request: typeof fetch
+}): Promise<WorkspaceRuntimeSnapshot | null> {
+  const res = await input.request(workspaceResolveUrl({ baseUrl: input.baseUrl, scope: input.directory }), {
+    headers: { Accept: "application/json" },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
+  return workspaceRuntimeSnapshotFromWire(await res.json()) ?? null
+}
+
 export type WorkspaceRecordScope = {
   baseUrl?: string
   request?: typeof fetch
@@ -130,8 +154,8 @@ export type WorkspaceRecordScope = {
 /**
  * One raw read of the record. The app server owns every filesystem directory it
  * serves and every workspace it hosts, so a scope resolves there first: on the
- * machine that hosts a shared workspace, that workspace is local (the relay
- * exists for other machines). A workspace id the server disowns (404) belongs
+ * machine that hosts a shared workspace, that server serves it itself and the
+ * relay exists for other machines. A workspace id the server disowns (404) belongs
  * to the control plane, reached through the desktop AccountPort when signed
  * in; a directory never leaves the server. `null` means "no workspace for this
  * scope" anywhere; any other bad status throws, so a transient failure is

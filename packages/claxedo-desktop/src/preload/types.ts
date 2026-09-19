@@ -198,8 +198,9 @@ export type ElectronAPI = {
    * Four operations and a status subscription. None of them takes an argument,
    * which is stronger than the account bridge below and deliberately so: main
    * holds the account bearer AND a machine signing key that never expires, so
-   * there must be nothing in a message for a handler to act on. A message picks
-   * which of four things happens; it cannot describe one.
+   * a message may carry only data the user chose — a workspace id, a name —
+   * and never a route, a verb or a machine. A message picks which fixed thing
+   * happens; it cannot describe one.
    *
    * `main/host-connector/ipc.ts` is the closed set, and
    * `main/host-connector/ipc.test.ts` asserts this bridge names exactly it.
@@ -213,6 +214,8 @@ export type ElectronAPI = {
     share: (input: { workspaceId: string; displayName?: string }) => Promise<unknown>
     /** Withdraw one workspace from this machine. */
     unshare: (input: { workspaceId: string }) => Promise<unknown>
+    /** Name THIS machine. No host id crosses: main takes it from the connector. */
+    rename: (input: { displayName: string }) => Promise<unknown>
     /** Push, for the transitions the user did not cause. Returns an unsubscribe. */
     onStatus: (listener: (status: unknown) => void) => () => void
   }

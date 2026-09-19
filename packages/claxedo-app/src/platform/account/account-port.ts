@@ -112,6 +112,7 @@ export type HostedOperationName =
   | "workspace.connection.refresh"
   | "host.enrollCurrentMachine"
   | "host.enrollmentNonce"
+  | "host.renameCurrentMachine"
   | "workspace.assignHost"
   | "workspace.unassignHost"
   | "session.list"

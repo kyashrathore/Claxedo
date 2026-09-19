@@ -7,8 +7,8 @@ import {
   inventoryHostKind,
   inventoryKindWord,
   isRelayHostKind,
+  placementProvisioner,
   placementWire,
-  rowHostKind,
   type SelfHost,
 } from "./placement-wire"
 
@@ -75,18 +75,37 @@ describe("the control plane's vocabulary", () => {
     expect(controlPlaneListScope("machine")).toBe("user-hosted")
   })
 
-  test("a row states its host through either field", () => {
-    expect(rowHostKind({ kind: "cloud" })).toBe("provisioner")
-    expect(rowHostKind({ backing: "local-worktree" })).toBe("machine")
-    expect(rowHostKind({ kind: "local", backing: "cloud-vm" })).toBe("self")
-    expect(rowHostKind({})).toBeUndefined()
-  })
-
   test("only a relay host is one this client cannot serve itself", () => {
     expect(isRelayHostKind("machine")).toBe(true)
     expect(isRelayHostKind("provisioner")).toBe(true)
     expect(isRelayHostKind("self")).toBe(false)
     expect(isRelayHostKind(undefined)).toBe(false)
+  })
+})
+
+describe("placementProvisioner", () => {
+  test("a provisioner placement names its own provisioner, catalogued or not", () => {
+    expect(placementProvisioner({ backing: "cloud-vm", driver: "cloudflare" })).toBe("cloudflare")
+    expect(placementProvisioner({ kind: "cloud", backing: { kind: "cloud-vm", driver: "fly" } })).toBe("fly")
+    // A hosted deployment provisions through a bridge with no catalog entry;
+    // naming it is still the placement's own answer.
+    expect(placementProvisioner({ backing: "cloud-vm", driver: "fetch" })).toBe("fetch")
+    expect(placementProvisioner({ backing: "cloud-vm", driver: "an-operator-run-service" })).toBe("an-operator-run-service")
+  })
+
+  test("a provisioner placement that names none has none, rather than a guessed default", () => {
+    expect(placementProvisioner({ backing: "cloud-vm" })).toBeUndefined()
+  })
+
+  test("a row's own kind outranks a backing it also carries", () => {
+    expect(placementProvisioner({ kind: "local", backing: "cloud-vm", driver: "fly" })).toBeUndefined()
+  })
+
+  test("a workspace on a machine is not provisioned, so its backing is never a driver", () => {
+    expect(placementProvisioner({ backing: "local-worktree" })).toBeUndefined()
+    expect(placementProvisioner({ kind: "user-hosted", driver: "cloudflare" })).toBeUndefined()
+    expect(placementProvisioner({ kind: "local" })).toBeUndefined()
+    expect(placementProvisioner(undefined)).toBeUndefined()
   })
 })
 

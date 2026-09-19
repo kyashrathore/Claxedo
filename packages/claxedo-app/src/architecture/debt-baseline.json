@@ -23,5 +23,5 @@
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
   "untrackCalls": 17,
-  "userHostedComparisons": 1
+  "hostKindComparisons": 105
 }

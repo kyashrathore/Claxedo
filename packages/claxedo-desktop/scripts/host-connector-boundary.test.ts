@@ -127,6 +127,7 @@ test("the separately built child entry imports the connector while its main asse
   ).toEqual([
     "@claxedo/host-connector/connector",
     "@claxedo/host-connector/host-identity",
+    "@claxedo/host-connector/machine-seal",
     "@claxedo/host-connector/machine-transport",
   ])
 

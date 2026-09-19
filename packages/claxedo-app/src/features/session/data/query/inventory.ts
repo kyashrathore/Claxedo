@@ -4,6 +4,7 @@ import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../session-typ
 import { cmp } from "@/platform/query/sort"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
 import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
+import { placementProvisioner } from "@/platform/runtime/placement-wire"
 
 function workspaceDirectory(row: Record<string, unknown>) {
   const workspaceId = asString(row.workspace_id) ?? asString(row.workspaceId)
@@ -39,7 +40,7 @@ export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByW
         attachments: [],
         environment: {
           kind: workspaceHostingKind(row),
-          driver: asString(row?.backing),
+          driver: placementProvisioner(row),
         },
         ...(lastTurn ? { lastTurn } : {}),
         time: { created, updated },

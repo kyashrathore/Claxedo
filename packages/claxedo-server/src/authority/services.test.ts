@@ -103,8 +103,6 @@ function fakeAuthority(): WorkspaceAuthority {
     registerLocalForSharing: fn(),
     deleteWorkspace: fn(),
     createCloudWorkspace: fn(),
-    grantWorkspaceShare: fn(),
-    revokeWorkspaceShare: fn(),
     authorizeSessionRead: fn(),
     listSessions: fn(),
     readSessionMessages: fn(),

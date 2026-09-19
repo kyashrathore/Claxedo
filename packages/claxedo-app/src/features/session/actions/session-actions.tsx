@@ -136,7 +136,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         if (!workspace || workspace.kind !== "provisioner" || workspace.status === "ready") return
         setGate("status", workspace.status ?? "acquiring_sandbox")
         void props.dialog.show(() => (
-          <Dialog title="Preparing cloud workspace" fit>
+          <Dialog title="Preparing cloud environment" fit>
             <div class="pt-2">
               <CloudStartupView
                 status={gate.status}
@@ -161,7 +161,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       if (result.message) setGate("err", result.message)
       if (dialogOpen) props.dialog.close()
       showToast({
-        title: "Failed to prepare cloud workspace",
+        title: "Failed to prepare cloud environment",
         description: result.message ?? "Request failed",
         variant: "error",
       })

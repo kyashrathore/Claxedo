@@ -25,6 +25,22 @@ import { asRecord } from "@/lib/record"
 export type InventoryKindWord = "local" | "cloud" | "user-hosted"
 
 /**
+ * A value a wire narrower will accept: anything but a host kind this app
+ * already produced.
+ *
+ * The two vocabularies share no member, so narrowing one with the other's
+ * reader answers `undefined` and kills the branch with nothing to see at the
+ * call site. `unknown` in that position is what a raw row needs, so the
+ * exclusion is spelled here instead: `[Exclude<…>]` is non-distributive on
+ * purpose, or a `WorkspaceHostKind | undefined` — which is what every
+ * `workspace?.kind` reads as — would slip through on the `undefined` arm.
+ */
+type NotAHostKind<T> = [Exclude<T, null | undefined>] extends [WorkspaceHostKind] ? never : unknown
+
+/** The mirror: an app host kind reader will not accept a wire word. */
+type NotAWireWord<T> = [Exclude<T, null | undefined>] extends [InventoryKindWord] ? never : unknown
+
+/**
  * The machine a workspace runs on.
  *
  * `self` is the server this client is attached to serving its own directory —
@@ -90,14 +106,13 @@ export function isRelayHostKind(kind: WorkspaceHostKind | null | undefined): kin
  * plane's shell projects and the self-hosted node's signed bootstrap
  * (`user-hosted` / `cloud`).
  */
-export function inventoryHostKind(input: unknown): WorkspaceHostKind | undefined {
+export function inventoryHostKind<T>(input: T & NotAHostKind<T>): WorkspaceHostKind | undefined {
   if (input === "local") return "self"
   if (input === "cloud") return "provisioner"
   if (input === "user-hosted") return "machine"
   return undefined
 }
 
-/** The wire word a host kind is written as on a project-inventory row. */
 export function inventoryKindWord(kind: WorkspaceHostKind): InventoryKindWord {
   if (kind === "self") return "local"
   if (kind === "provisioner") return "cloud"
@@ -108,8 +123,9 @@ export function inventoryKindWord(kind: WorkspaceHostKind): InventoryKindWord {
  * A host kind that has travelled as a plain string through app-internal data —
  * a session row's `environment.kind`, a stored draft. Not a wire word.
  */
-export function asHostKind(input: unknown): WorkspaceHostKind | undefined {
-  return input === "self" || input === "machine" || input === "provisioner" ? input : undefined
+export function asHostKind<T>(input: T & NotAWireWord<T>): WorkspaceHostKind | undefined {
+  const value: unknown = input
+  return value === "self" || value === "machine" || value === "provisioner" ? value : undefined
 }
 
 /**
@@ -119,7 +135,7 @@ export function asHostKind(input: unknown): WorkspaceHostKind | undefined {
  * it: `cloud-vm` is the provisioner's machine and `local-worktree` is an
  * enrolled one. It emits no kind of its own.
  */
-export function backingHostKind(input: unknown): RelayHostKind | undefined {
+export function backingHostKind<T>(input: T & NotAHostKind<T>): RelayHostKind | undefined {
   if (input === "cloud-vm") return "provisioner"
   if (input === "local-worktree") return "machine"
   return undefined
@@ -159,13 +175,32 @@ export function controlPlaneRowPlacement(input: unknown): WorkspacePlacement | u
 }
 
 /**
+ * The provisioner a row's placement names, when one owns the machine.
+ *
+ * Only a provisioner placement has one: a machine's own worktree is not
+ * provisioned, and reporting its `local-worktree` backing as a driver names a
+ * thing that does not exist. The id is passed through as the placement wrote
+ * it — a deployment may provision through a bridge this build has no catalog
+ * entry for, and a provisioner this client cannot name is still the one that
+ * owns the machine.
+ */
+export function placementProvisioner(input: unknown): string | undefined {
+  const row = asRecord(input)
+  if (rowHostKind(row) !== "provisioner") return undefined
+  return text(row?.driver) ?? text(asRecord(row?.backing)?.driver)
+}
+
+/**
  * The host kind a raw inventory or session row reports.
  *
  * A daemon row states its own `kind`; a control-plane row states only where it
- * runs, so its `backing` is mapped. The one owner for this derivation, shared
- * by the global sync inventory reducer and the session inventory query.
+ * runs, so its `backing` is mapped. A row carrying both is answered by its own
+ * `kind`, which the serving process wrote about itself.
+ *
+ * Not the same question as `workspaceHostingKind`, which answers "which relay
+ * reaches it" and so has no answer for a row this server serves.
  */
-export function rowHostKind(input: unknown): WorkspaceHostKind | undefined {
+function rowHostKind(input: unknown): WorkspaceHostKind | undefined {
   const row = asRecord(input)
   return inventoryHostKind(row?.kind) ?? backingHostKind(row?.backing)
 }

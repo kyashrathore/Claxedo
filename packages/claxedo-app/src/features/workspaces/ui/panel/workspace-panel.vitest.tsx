@@ -149,7 +149,7 @@ describe("WorkspacePanel", () => {
     renderPanel({ ...openState, workspaceDir: "workspace:ws_cloud" })
 
     await waitFor(() => expect(screen.getByText("cloudflare · epoch 3")).toBeInTheDocument())
-    fireEvent.click(screen.getByText("Cloud workspace"))
+    fireEvent.click(screen.getByText("Cloud environment"))
     expect(screen.getByText("sandbox-1")).toBeInTheDocument()
     expect(screen.getByText(/cp_3 · epoch 3/)).toBeInTheDocument()
     expect(screen.getByText(/claxedo\/session\/session-1/)).toBeInTheDocument()
@@ -172,7 +172,7 @@ describe("WorkspacePanel", () => {
 
     renderPanel({ ...openState, workspaceDir: "workspace:ws_cloud" })
     await waitFor(() => expect(screen.getByText("vercel · epoch 2")).toBeInTheDocument())
-    fireEvent.click(screen.getByText("Cloud workspace"))
+    fireEvent.click(screen.getByText("Cloud environment"))
     fireEvent.click(screen.getByRole("button", { name: "Replace…" }))
     expect(apiMocks.post).not.toHaveBeenCalled()
     confirm.mockReturnValue(true)

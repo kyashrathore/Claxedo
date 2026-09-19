@@ -296,8 +296,8 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       }
       return item
     } catch (err) {
-      onProgress?.("error", err instanceof Error ? err.message : "Failed to create cloud workspace")
-      showToast({ title: "Failed to create cloud workspace", description: message(err), variant: "error" })
+      onProgress?.("error", err instanceof Error ? err.message : "Failed to create cloud environment")
+      showToast({ title: "Failed to create cloud environment", description: message(err), variant: "error" })
     } finally {
       if (provisionTimer) clearTimeout(provisionTimer)
       unsubProvision?.()

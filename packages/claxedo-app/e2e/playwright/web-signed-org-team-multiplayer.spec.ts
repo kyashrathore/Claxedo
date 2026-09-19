@@ -141,13 +141,13 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
     bob = await mintTeammate(fixture, "user_bob", "editor", {
       name: BOB_NAME,
       joinOrg: true,
-      // Bob's workspace authority must come only from default-team project
-      // access so this proof cannot accidentally pass through a direct share.
-      grantWorkspaceShare: false,
+      // Bob's workspace role must come only from the default team's project
+      // grant, so the team share below is the one thing that admits him.
+      projectMembership: false,
     })
     casey = await mintTeammate(fixture, "user_casey", "editor", {
       name: CASEY_NAME,
-      grantWorkspaceShare: true,
+      projectMembership: true,
     })
 
     await addTeamMember(fixture, webApp, fixture.info.defaultTeamId!, bob.tokenIdentifier)
@@ -267,7 +267,9 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
         (team) => team.team_id === fixture!.info.defaultTeamId,
       )
       expect(defaultTeam, "control-plane share list must offer the org's default team").toBeTruthy()
-      await shareSessionWithTeamViaPeopleUi(aliceCtx.page, defaultTeam!)
+      // `send`, because Bob drives the session below; a `follow` share would
+      // let him read it and refuse his prompt.
+      await shareSessionWithTeamViaPeopleUi(aliceCtx.page, defaultTeam!, "send")
       const shares = await listSessionShares(fixture!, webApp!, sessionId)
       expect(
         (shares.grants ?? []).some((grant) => grant.granted_to_team_id === fixture!.info.defaultTeamId),

@@ -60,6 +60,7 @@ function servingCredential(workspaceId: string) {
   return {
     credential: {
       hostId: "host_machine-1",
+      enrollmentId: "enr_this_machine",
       relayUrl: "https://relay.claxedo.test",
       hostTunnelToken: "host-tunnel-token-value",
       tokenExpiresAt: Date.now() + 300_000,
@@ -138,6 +139,35 @@ describe("turning remote access on and off", () => {
     } finally {
       stop()
     }
+  })
+
+  /**
+   * The wire a client takes to a workspace is its own answer to "is the
+   * machine this row names me", and this declaration is the only thing that
+   * ties a control-plane row to the server the client is already talking to.
+   * It follows the credential rather than the enrollment: a signed-out machine
+   * pushes `credential: null` and must stop claiming to be that machine.
+   */
+  test("the bootstrap declares the serving machine's enrollment, and nothing before or after it serves", async () => {
+    const workspaceId = await mountedWorkspace()
+    const enrollment = async () =>
+      ((await (await fetch(`${origin}/api/claxedo/bootstrap`)).json()) as { host?: { enrollment?: string | null } }).host?.enrollment
+
+    expect(await enrollment()).toBeNull()
+
+    await fetch(`${origin}/api/claxedo/host-serving`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(servingCredential(workspaceId)),
+    })
+    expect(await enrollment()).toBe("enr_this_machine")
+
+    await fetch(`${origin}/api/claxedo/host-serving`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ credential: null }),
+    })
+    expect(await enrollment()).toBeNull()
   })
 
   test("declares managed-private to the control plane while the catalog keeps telling this window it reserves nothing", async () => {

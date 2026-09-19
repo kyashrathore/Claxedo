@@ -22,6 +22,7 @@ import {
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
+  sessionAccessWriteClass,
   type ProcessObserver,
   type SessionAccessStreamDecision,
   type SessionAuthorityInput,
@@ -341,11 +342,13 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
           ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
         })
       } else {
+        const writeClass = sessionAccessWriteClass(input)
         await runtimeAuthority.authorizeRuntimeSession({
           ...principal,
           workspaceId: input.authority.workspaceId,
           sessionId: input.sessionId,
           action,
+          ...(writeClass ? { writeClass } : {}),
         })
       }
       return { allowed: true as const }
@@ -1017,16 +1020,6 @@ export function createSelfHostedApp(
       localTargetExists: localRelayTargetExists((services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {})),
     }),
   )
-  app.route(
-    "/",
-    BootstrapRoutes({
-      services,
-      env: process.env,
-      hostAggregateEvents: !!runtimeProxy.hostEventStream,
-      ...authRouteOptions(services),
-    }),
-  )
-  app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   const remoteAccessRelayUrl = services.relay.relayUrl ?? Object.values(services.relay.relayUrls ?? {})[0]
   const remoteAccessSigner = services.relay.hostTunnelTokenSigner
   // One machine-share owner for the whole composition: the remote-access
@@ -1063,6 +1056,20 @@ export function createSelfHostedApp(
     machineTunnelActive: hasUserHostedMachineTunnel,
     capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
   }) : undefined
+  app.route(
+    "/",
+    BootstrapRoutes({
+      services,
+      env: process.env,
+      hostAggregateEvents: !!runtimeProxy.hostEventStream,
+      // Read per request: this node enrolls, re-enrolls and is revoked while
+      // it runs, and a client reads this to tell a workspace row placed here
+      // from one it must reach over the relay.
+      hostEnrollmentId: () => remoteAccessService?.servingEnrollmentId(),
+      ...authRouteOptions(services),
+    }),
+  )
+  app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceRouteOptions(services)))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceRouteOptions(services)))
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({

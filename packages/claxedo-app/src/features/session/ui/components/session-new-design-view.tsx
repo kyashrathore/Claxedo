@@ -229,7 +229,8 @@ export function NewSessionDesignView(props: {
   // environment and worktree chips.
   const selfHostedWorkspace = createMemo(() => props.hostKind === "machine")
 
-  const environmentLabel = (kind: WorkspaceHostKind) => (kind === "provisioner" ? "Cloud" : "Local")
+  const environmentLabel = (kind: WorkspaceHostKind) =>
+    kind === "provisioner" ? "Cloud environment" : "This computer"
   // The server's own account of itself: whether it runs workspaces on its
   // filesystem. That, not the platform or the URL, decides whether "Local" and
   // the folder source of "Create project…" exist here.
@@ -357,13 +358,13 @@ export function NewSessionDesignView(props: {
         slot: "context-chip-environment",
         icon: <Icon name={props.hostKind === "provisioner" ? "cloud" : "monitor"} size="small" />,
         label: environmentLabel(props.hostKind),
-        ariaLabel: "Workspace environment",
-        emptyMessage: "No environments",
+        ariaLabel: "Session destination",
+        emptyMessage: "No destinations",
         current: props.hostKind,
         options: environmentOptions().map<ContextChipOption>((kind) => ({
           value: kind,
           label: environmentLabel(kind),
-          detail: kind === "provisioner" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
+          detail: kind === "provisioner" ? "Runs in a Claxedo sandbox" : "Runs on this computer",
         })),
         onSelect: (value) => {
           const kind = asHostKind(value)
@@ -382,7 +383,7 @@ export function NewSessionDesignView(props: {
       label: creatingWorkspace() ? createActionLabel() : currentWorktree() ? worktreeLabel(currentWorktree()) : "",
       ariaLabel: "Workspace",
       search: { placeholder: "Search workspaces" },
-      emptyMessage: props.hostKind === "provisioner" ? "No cloud workspace" : "No local workspace",
+      emptyMessage: "No workspace here yet",
       current: creatingWorkspace() ? undefined : currentWorktree(),
       options: worktreeOptions().map<ContextChipOption>((value) => ({
         value,

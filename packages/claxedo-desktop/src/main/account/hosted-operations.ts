@@ -6,7 +6,7 @@
  * The renderer supplies an operation NAME and parameters; it never supplies a
  * url, a method, or a header, because if it could, a renderer compromise would
  * be able to spend main's credential on any route the server exposes rather
- * than the sixteen the product actually uses.
+ * than the ones written down here.
  *
  * Parameters are substituted into the path by name and encoded. They cannot
  * introduce a new segment: `:id` is replaced by one `encodeURIComponent`d
@@ -282,6 +282,17 @@ export const HOSTED_OPERATIONS = {
   // enrollment needs both. Nothing after enrollment does: the machine signs
   // its own beats with its key and never spends this credential again.
   "host.enrollmentNonce": { method: "POST", path: "/api/claxedo/host/enrollments/requests", body: ["hostId"] },
+  // MAIN-ONLY, and for a narrower reason than the two above: the route renames
+  // ANY enrollment the owner holds, so a renderer that could name one could
+  // rename a machine the user is not sitting at. The only caller is the Host
+  // Connector supervisor, which fills `enrollmentId` from its own state; the
+  // renderer's route is `claxedo.hostConnector.rename`, which carries a name
+  // and no id. `RENDERER_WITHHELD_OPERATIONS` holds that.
+  "host.renameCurrentMachine": {
+    method: "PATCH",
+    path: "/api/claxedo/host/enrollments/:enrollmentId/display-name",
+    body: ["displayName"],
+  },
   // Session people (private share grants + participants). Hosted control plane
   // only — the desktop local sidecar deliberately does not mount these routes.
   "session.shares.list": {

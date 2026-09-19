@@ -55,6 +55,8 @@ import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../s
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
+import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/host-provider-config"
+import { hostProviderConfig } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
@@ -180,7 +182,10 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   })
   configureAgentConfig({
     connectionProviders,
-    projectAuth: (input) => credentialBroker.projectAuth(input),
+    // The owner's pushed rows are written over the broker's answer: a
+    // provider the owner named resolves to the owner's account, every other
+    // one to whatever this machine holds.
+    projectAuth: hostProviderConfigProjectAuth((input) => credentialBroker.projectAuth(input), hostProviderConfig),
     ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
   const stopConfigWatch = watchUserConfigFile(() => {

@@ -464,8 +464,15 @@ export const appLocal: Policy = {
   // app's one stream reader (`cp/events` and each workspace's `wr/events`),
   // with its reconnect policy in `app/providers/claxedo-events-reconnect.ts`;
   // the global-sdk provider consumes its frames and opens nothing of its own.
-  // Measured 1077 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1077, packages: 58 },
+  //
+  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // — the owner's push/clear of sealed provider credentials for one enrolled
+  // machine, rendered under each row of the Machines list by
+  // `remote-access-surface.tsx`. It reaches the control plane only through
+  // `MachineRemoteAccessPort.providerConfig`, which the HTTP binding serves
+  // and the desktop leaves absent; no new package edge. Measured 1078
+  // modules / 58 packages, with no headroom.
+  ceilings: { modules: 1078, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

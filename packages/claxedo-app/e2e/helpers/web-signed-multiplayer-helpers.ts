@@ -27,17 +27,23 @@ export type Teammate = {
   name?: string
 }
 
+/**
+ * A second control-plane identity. `projectMembership` (default true) ranks
+ * them at `role` on the project behind the fixture workspace; `joinOrg` adds
+ * them to the organization that owns it, which is what makes them offerable a
+ * session share.
+ */
 export async function mintTeammate(
   fixture: RunningRelayFixture,
   subject: string,
   role: "editor" | "viewer" | "admin",
-  opts?: { name?: string; grantWorkspaceShare?: boolean; joinOrg?: boolean },
+  opts?: { name?: string; projectMembership?: boolean; joinOrg?: boolean },
 ): Promise<Teammate> {
   const url = new URL("/__fixture/authority-identity", fixture.info.backendUrl)
   url.searchParams.set("subject", subject)
   url.searchParams.set("role", role)
   if (opts?.name) url.searchParams.set("name", opts.name)
-  if (opts?.grantWorkspaceShare === false) url.searchParams.set("grantWorkspaceShare", "0")
+  if (opts?.projectMembership === false) url.searchParams.set("projectMembership", "0")
   if (opts?.joinOrg) url.searchParams.set("joinOrg", "1")
   const response = await fetch(url)
   const body = await response.text()
@@ -249,23 +255,37 @@ export async function openRecordedPage(browser: Browser, dir: string) {
 
 
 /**
- * Drives `SessionPeopleControl`: the popover lists every team the workspace's
- * org offers with a per-team "Share with <name>" button, and a shared team
- * renders as "Shared" with a "Remove <name> from session" button.
+ * Drives `SessionPeopleControl`: the popover's "Share level" select applies to
+ * the per-team "Share with <name>" button; `send` first opens the
+ * "Sending messages shares this machine" acknowledgement, and a shared team
+ * renders with a "Remove <name> from session" button.
  */
-export async function shareSessionWithTeamViaPeopleUi(page: Page, team: { name: string }) {
+export async function shareSessionWithTeamViaPeopleUi(
+  page: Page,
+  team: { name: string },
+  level: "follow" | "send",
+) {
   await expect(page.getByText("Reconnecting…")).toHaveCount(0, { timeout: 60_000 }).catch(() => undefined)
   // SessionHeader can remount across pane/layout updates, leaving more than one
   // share trigger in the DOM; click the last visible one in the live header.
   const people = page.getByRole("button", { name: "Share session", exact: true }).filter({ visible: true }).last()
   await expect(people, "People control never appeared in the session header").toBeVisible({ timeout: 30_000 })
   await people.click()
+  const levelSelect = page.getByRole("combobox", { name: "Share level", exact: true }).filter({ visible: true }).last()
+  await expect(levelSelect, "People popover never showed the share level select").toBeVisible({ timeout: 15_000 })
+  await levelSelect.selectOption(level)
   const shareWithTeam = page
     .getByRole("button", { name: `Share with ${team.name}`, exact: true })
     .filter({ visible: true })
     .last()
   await expect(shareWithTeam, `People popover never listed the team "${team.name}"`).toBeVisible({ timeout: 15_000 })
   await shareWithTeam.click()
+  if (level === "send") {
+    const disclosure = page.getByRole("alertdialog", { name: "Sending messages shares this machine" }).last()
+    await expect(disclosure, "the send acknowledgement never opened").toBeVisible({ timeout: 15_000 })
+    await disclosure.getByRole("checkbox").check()
+    await disclosure.getByRole("button", { name: `Allow sending: ${team.name} on this session`, exact: true }).click()
+  }
   await expect(
     page.getByRole("button", { name: `Remove ${team.name} from session`, exact: true }).filter({ visible: true }).last(),
     `People popover never showed "${team.name}" as shared`,

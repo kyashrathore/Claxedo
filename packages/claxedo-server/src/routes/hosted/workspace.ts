@@ -27,7 +27,6 @@ import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
 import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
-import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
@@ -558,7 +557,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (!body.ok) return c.json({ error: body.error }, body.status)
         return connectionResponse(c, body.body.previousJti)
       })
-      .route("/", workspaceShareRoutes(services, options))
       .post("/:id/host-assignment", hostAssignment.assign)
       .delete("/:id/host-assignment", hostAssignment.unassign)
   )

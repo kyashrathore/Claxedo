@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { isLoopbackLocalRequest, loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
-import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "./serving"
+import {
+  setUserHostedServing,
+  stopUserHostedServing,
+  userHostedServingEnrollmentId,
+  userHostedServingState,
+} from "./serving"
 
 type StartedTunnel = {
   workspaceIds: readonly string[]
@@ -37,6 +42,7 @@ const WS_B = "22222222-2222-4222-8222-222222222222"
 function credential(workspaceIds: string[], overrides: { token?: string; expiresAt?: number } = {}) {
   return {
     hostId: "host_machine-1",
+    enrollmentId: "enr_this_machine",
     relayUrl: "https://relay.claxedo.test",
     token: overrides.token ?? "host-tunnel-token",
     workspaceIds,
@@ -205,6 +211,29 @@ describe("relay connection grain", () => {
 
     live()[1].onEvent({ type: "reconnecting" })
     expect(state()).toMatchObject({ connected: false, connectedWorkspaceIds: [WS_A] })
+  })
+
+  /**
+   * Read by the daemon's bootstrap, so a client can tell a control-plane row
+   * placed on this machine from one placed elsewhere. Held on the serving
+   * arrangement rather than beside it: the lease can stop serving with no
+   * caller involved, and a declaration left behind by that would name this
+   * machine to clients it can no longer reach.
+   */
+  test("the enrollment is readable while serving and gone the moment the lease lapses", async () => {
+    vi.useFakeTimers()
+    try {
+      expect(userHostedServingEnrollmentId()).toBeUndefined()
+
+      await serve([WS_A], { expiresAt: Date.now() + 60_000 })
+      expect(userHostedServingEnrollmentId()).toBe("enr_this_machine")
+
+      vi.advanceTimersByTime(61_000)
+      expect(state()).toMatchObject({ serving: false })
+      expect(userHostedServingEnrollmentId()).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test("a null credential closes every connection", async () => {

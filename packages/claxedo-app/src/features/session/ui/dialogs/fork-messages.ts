@@ -8,6 +8,22 @@
  * router or SDK, mirroring the logic/UI split used by prompt-input/history.ts.
  */
 
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
+
+/**
+ * Whether forking in this workspace must reserve the new session first.
+ *
+ * A workspace the attached server does not serve itself is behind a runtime
+ * that records every session it serves, and such a runtime answers
+ * `POST .../session` with `session_reservation_required` until the fork has
+ * been reserved. The workspace is the sdk's, so its `kind` is already a host
+ * kind — narrowing it as a control-plane wire word answers `undefined` for
+ * every relay-backed workspace and quietly forks unreserved.
+ */
+export function forkNeedsReservation(workspace: { readonly kind?: WorkspaceHostKind } | undefined) {
+  return isRelayHostKind(workspace?.kind)
+}
+
 export interface ForkableMessage {
   readonly id: string
   readonly text: string

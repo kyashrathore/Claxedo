@@ -79,6 +79,10 @@ export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
   "account.cliExchange",
   "host.enrollCurrentMachine",
   "host.enrollmentNonce",
+  // Names an enrollment id, and every enrollment the owner holds answers to
+  // it; the renderer's route is the connector's own `rename`, which carries a
+  // name only.
+  "host.renameCurrentMachine",
   // Assignments name a host id the renderer must not choose (the supervisor
   // supplies this machine's own); the renderer's route is hostConnector.share.
   "workspace.assignHost",

@@ -119,6 +119,22 @@ describe("sessionSignedTransportAuthority", () => {
     })).toBe(true)
   })
 
+  test("a workspace on the provisioner carries the same authority as one on a machine", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: false,
+      hostKind: "provisioner",
+    })).toBe(true)
+  })
+
+  test("a directory the attached server serves itself carries no authority of its own", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: false,
+      hostKind: "self",
+    })).toBe(false)
+  })
+
   test("accepts a signed principal on a hosted control plane", () => {
     expect(sessionSignedTransportAuthority({
       serverUrl: "https://control.example",

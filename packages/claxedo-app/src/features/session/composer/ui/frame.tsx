@@ -126,7 +126,7 @@ export const PromptInputFrame: Component<{
   submitExcludeFromTab: Accessor<boolean>
   submitBlock: Accessor<SubmitBlock | null>
   onChooseModel: VoidFunction
-  roleSubmitBlocked: Accessor<boolean>
+  workspaceRoleBlocked: Accessor<boolean>
   t: (key: string) => string
   showDialog: (content: () => JSX.Element) => void
 }> = (props) => {
@@ -403,7 +403,7 @@ export const PromptInputFrame: Component<{
           excludeFromTab={props.submitExcludeFromTab}
           block={props.submitBlock}
           onChooseModel={props.onChooseModel}
-          readOnlyBlocked={props.roleSubmitBlocked}
+          readOnlyBlocked={props.workspaceRoleBlocked}
           stopLabel={props.t("prompt.action.stop")}
           sendLabel={props.t("prompt.action.send")}
           readOnlyLabel={props.t("prompt.action.readOnlyWorkspace")}

@@ -132,7 +132,14 @@ export const localServer: Policy = {
   // dependency-free owner of the harness table and the credential-broker
   // error vocabulary; @claxedo/host-serving and @claxedo/egress-broker as
   // above.
-  ceilings: { modules: 63, packages: 27 },
+  //  - `workspace/host-provider-config.ts` and
+  //    `workspace/host-provider-config-routes.ts`: the provider rows the
+  //    owner pushed to THIS machine, held in memory by the process whose
+  //    runtimes resolve them, and the loopback route Electron main installs
+  //    them through. The parser and the `projectAuth` composition are
+  //    server-core's (`credentials/host-provider-config.ts`, already a
+  //    package edge), so these two cost no package. 65/27, no headroom.
+  ceilings: { modules: 65, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

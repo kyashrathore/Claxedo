@@ -247,15 +247,15 @@ export function InstallAgentPluginSheet(props: {
               <label class={optionClass(false, true)}>
                 <input type="checkbox" checked disabled />
                 <span>
-                  <span class="block text-13-medium text-text-strong">Local</span>
-                  <span class="block text-12-regular text-text-weak">This machine</span>
+                  <span class="block text-13-medium text-text-strong">Your machines</span>
+                  <span class="block text-12-regular text-text-weak">Every computer you sign into</span>
                 </span>
               </label>
               <label class={optionClass(false, true)}>
                 <input type="checkbox" checked disabled />
                 <span>
                   <span class="block text-13-medium text-text-strong">Cloud</span>
-                  <span class="block text-12-regular text-text-weak">Your cloud workspaces</span>
+                  <span class="block text-12-regular text-text-weak">Your cloud environments</span>
                 </span>
               </label>
             </div>
@@ -359,7 +359,7 @@ export function InstallAgentPluginSheet(props: {
                 <span>
                   <span class="block text-13-medium text-text-strong">Personal — only you</span>
                   <span class="block text-12-regular text-text-weak">
-                    Used in your interactive turns, on every machine and cloud workspace you sign into.
+                    Used in your interactive turns, on every machine and cloud environment you sign into.
                   </span>
                 </span>
               </label>

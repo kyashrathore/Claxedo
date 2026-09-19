@@ -99,7 +99,8 @@ describe("global sync inventory source helpers", () => {
         workspace_name: "Cloud Workspace",
         project_id: "proj_123",
         kind: "cloud",
-        backing: "cloudflare",
+        backing: "cloud-vm",
+        driver: "cloudflare",
       },
       session: {
         session_id: "ses_123",
@@ -157,10 +158,16 @@ describe("global sync inventory source helpers", () => {
       projectID: "proj_456",
       environment: {
         kind: "machine",
-        driver: "local-worktree",
       },
       time: { created: 30, updated: 40 },
     })
+    // `toMatchObject` admits extra keys, and "no driver" is the assertion.
+    expect(controlPlaneSessionToItem({
+      directory: "workspace:ws_456",
+      workspaceId: "ws_456",
+      workspace: { backing: "local-worktree" },
+      session: { sessionID: "ses_456" },
+    })?.environment).toEqual({ kind: "machine" })
   })
 
   test("toSessionInventoryRow maps SDK sessions with project fallback and filtered details", () => {

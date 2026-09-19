@@ -263,11 +263,15 @@ export const HOSTED_OPERATIONS = {
   // Unsafe: each call mints a nonce, so a retry burns one. The nonce itself is
   // public and worthless without the machine's private key.
   "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
-  // Workspace shares under machine-wide enrollment: the owner assigns a
-  // workspace to an enrolled host (pure data — the machine's consent is the
-  // Host Connector's signed heartbeat set). Main-only like the enrollment
-  // trio; the renderer's route to sharing is the data-only
-  // hostConnector.share IPC.
+  // Main-only like the enrollment pair: the route renames any enrollment the
+  // owner holds, and the renderer's route is the connector's own `rename` IPC,
+  // which carries a name and no id. Declared here because this registry and
+  // main's table are held equal by `account-port.guard.test.ts`.
+  "host.renameCurrentMachine": { safe: false, decode: withStrings("enrollment_id", "display_name") },
+  // Workspace placement under machine-wide enrollment: the owner names the
+  // host a workspace runs on (pure data — the machine's consent is the Host
+  // Connector's signed heartbeat set). Main-only like the enrollment trio;
+  // the renderer reaches it through the data-only hostConnector IPC.
   "workspace.assignHost": { safe: false, decode: object },
   "workspace.unassignHost": { safe: false, decode: object },
   // Control-plane session rows for a workspace (`{ sessions: [...] }`).

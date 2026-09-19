@@ -83,6 +83,7 @@ export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 export {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
+  sessionAccessWriteClass,
   SESSION_CORE_ROUTE_ACCESS,
 } from "./session-access-policy"
 export {
@@ -101,6 +102,7 @@ export type {
   SessionAccessPolicyInput,
   SessionAuthorityInput,
   SessionAuthorityPredicate,
+  SessionWriteClass,
   ManagedWorkspaceSessionAccessPolicyOptions,
   SessionWorkspaceAuthority,
 } from "./session-access-policy"

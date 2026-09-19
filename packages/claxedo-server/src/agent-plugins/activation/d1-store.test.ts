@@ -34,6 +34,7 @@ const MIGRATIONS = [
   "0028_workspace_org_member_visible.sql",
   "0034_drop_workspace_access.sql",
   "0035_session_share_level.sql",
+  "0036_drop_workspace_share_role.sql",
 ]
 
 const PLUGIN = "claxedo/review"
@@ -552,8 +553,8 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(refused.code).toBe("workspace_authorization_denied")
 
     await database
-      .prepare("insert into workspace_memberships (workspace_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)")
-      .bind(created.workspace_id, member.userId)
+      .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)")
+      .bind(created.project_id, member.userId)
       .run()
     await expect(store.readRuntime(runtime)).resolves.toMatchObject({ pluginInstanceId: PLUGIN, harnessId: "codex" })
   })

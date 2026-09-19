@@ -16,6 +16,7 @@
  * asserts against the bound it derives from.
  */
 import { expect, test } from "@playwright/test"
+import fs from "node:fs/promises"
 import path from "node:path"
 import { startScriptedModelServer, type ScriptedModelServer } from "../helpers/scripted-model-server"
 import { APP_DIR } from "../helpers/web-signed-relay-harness"
@@ -85,6 +86,8 @@ const TIMING: RelayTiming = {
 }
 /** The plan's outage length; it must cover a whole lease so the lease is seen lapsing and renewing. */
 const OUTAGE_MS = 2 * LEASE_TTL_MS
+/** One Pi turn on the host: a cold `pi --mode rpc` spawn, its model probe, and one scripted call. */
+const TURN_MS = 60_000
 
 const SCRIPTED_MODEL = { providerID: "pi", modelID: "openai/gpt-4" } as const
 
@@ -470,7 +473,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expectAgreement(await routability(wsApi, hostId), true, "successor serving")
   })
 
-  test("6. Alice creates A and B through the external host; shares A with Bob; Bob lists only A and is refused B on the runtime and its event stream", async () => {
+  test("6. Alice creates A and B through the external host; shares A with Bob at send; Bob lists only A and is refused B on the runtime and its event stream", async () => {
     test.setTimeout(120_000)
     const wsApi = require(state.wsApi, "the api workspace")
     state.sessionA = await createSessionThroughHost(wsApi, "A")
@@ -479,11 +482,11 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     // plane lists them without any client having attached.
     expect((await controlSessions(fixture.info.controlPlaneToken, wsApi)).sort(byText)).toEqual([state.sessionA, state.sessionB].sort(byText))
 
-    state.bob = await teammate(fixture, { subject: "user_bob", role: "editor", name: "Bob", workspaceId: wsApi })
+    state.bob = await teammate(fixture, { subject: "user_bob", role: "editor", name: "Bob", workspaceId: wsApi, joinOrg: true })
     const shared = await fetch(`${fixture.info.backendUrl}/api/control/sessions/${encodeURIComponent(state.sessionA)}/shares`, {
       method: "POST",
       headers: { authorization: `Bearer ${fixture.info.controlPlaneToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ workspaceId: wsApi, grantedToTokenIdentifier: state.bob.tokenIdentifier }),
+      body: JSON.stringify({ workspaceId: wsApi, grantedToTokenIdentifier: state.bob.tokenIdentifier, level: "send" }),
     })
     expect(shared.status, await shared.clone().text()).toBe(200)
 
@@ -511,14 +514,15 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     streamA.abort()
   })
 
-  test("5. runtime enforcement: a viewer RHT delivered to the host's write route is refused by the runtime; Bob's editor prompt on A is stored with Bob as author", async () => {
+  test("5. runtime enforcement: a workspace viewer with no session share is refused session A by the runtime; Bob's send share lets his prompt on A be stored with Bob as author", async () => {
     test.setTimeout(120_000)
     const wsApi = require(state.wsApi, "the api workspace")
     const hostId = require(state.hostId, "the host id")
     const sessionA = require(state.sessionA, "session A")
     const bob = require(state.bob, "Bob")
 
-    const viewer = await mintRht(fixture, { role: "viewer", workspaceId: wsApi, hostId, subject: bob.subject })
+    const casey = await teammate(fixture, { subject: "user_casey", role: "viewer", name: "Casey", workspaceId: wsApi })
+    const viewer = await mintRht(fixture, { role: "viewer", workspaceId: wsApi, hostId, subject: casey.subject })
     const prompt = { parts: [{ type: "text", text: "viewer write" }] }
     const refused = await tunnelDeliver(fixture, {
       instance: state.host,
@@ -529,7 +533,12 @@ test.describe("real claxedo connect host @core @tier-real", () => {
       body: prompt,
     })
     expect(refused.status, refused.text).toBe(403)
-    expect(errorCode(refused.json)).toBe("session_write_forbidden")
+    // The host asks the control plane per session and relays its answer
+    // verbatim (`workspace_authorization_denied` from the sqlite private
+    // session authority); the token's workspace role is not consulted for a
+    // session-scoped write, so Casey is refused for holding no share, not
+    // for being a viewer.
+    expect(errorCode(refused.json)).toBe("workspace_authorization_denied")
     // The same delivery with a token the relay did not sign is refused at
     // the stamp, which is what makes the 403 above the runtime's own answer.
     const tampered = await tunnelDeliver(fixture, {
@@ -570,43 +579,94 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(stored.value.claxedo?.author?.id).not.toBe(fixture.info.ownerActor.actor_public_id)
   })
 
-  // Observed: the prompt above is admitted and stored, and the turn Pi runs
-  // for it fails with `OpenAI API error (401): Incorrect API key provided:
-  // test-key` — Pi reaches api.openai.com, not the scripted endpoint. The
-  // Pi harness owns `models.json` in its profile and rewrites it from the
-  // runtime's applied `auth` projections on every config apply (since
-  // a22028ff52), so the scripted overlay only reaches a turn as a projection
-  // — the `runtime.host.apply({ auth: { openai: … } })` the fixture's cloud
-  // runtime now performs in place of the control plane's config push.
-  //
-  // No product path delivers that snapshot to a `claxedo connect` runtime:
-  //   - `packages/claxedo-host-serving/src/runtime.ts:64-72`
-  //     `createHostWorkspaceRuntime` composes `createWorkspaceRuntimeApp`
-  //     with no `managementAuth`, `managementTarget` or `configToken`, so
-  //     `POST /api/wr/config` answers 401 `runtime_config_auth_required`
-  //     (`workspace-runtime/src/routes/config.ts` `authorize`) — unlike a
-  //     sandbox, whose `workspace-relay-env.ts:141` reads
-  //     `WORKSPACE_RUNTIME_MANAGEMENT_*` from its environment;
-  //   - `packages/cli/src/connect/host.ts:282-290` `prepare()` passes no
-  //     `harness` either, so the runtime starts with no runner;
-  //   - the control plane's only push, `workspace/supervisor/config-sync.ts`
-  //     `pushRuntimeConfig`, targets a sandbox lease's `state.url`; a
-  //     connect host dials out and has no address the control plane could
-  //     push to, and nothing pushes through the host tunnel.
-  // This is the provider-credential gap plan 002 defers (host runtime
-  // section: "Provider credentials are brokered separately and are out of
-  // scope here"), so it is recorded rather than asserted.
-  test.fixme("5b. a turn started on the connect host reaches the model endpoint", async () => {
+  // A Pi turn reaches the scripted endpoint only through the `openai` row of
+  // the runtime's applied `auth`: the harness rewrites `models.json` in its
+  // profile from that map on every config apply, so a base URL written to
+  // the profile by hand is gone before the first turn. On a connect host that
+  // map is `hostProviderConfigProjectAuth` over the rows the owner pushed and
+  // the machine opened with its own sealing key; the host resolves the
+  // snapshot in process and re-applies it on every live runtime when a
+  // revision lands, so no runtime config route is involved. Pi refuses to
+  // rotate its profile while a turn is talking to the process that read it,
+  // which is why Bob's turn from item 5 is waited out before the push.
+  test("5b. the owner pushes an openai row sealed for box1; the host acks it within two beats holding only ciphertext, and Alice's next turn on A reaches the scripted endpoint", async () => {
+    test.setTimeout(150_000)
     const wsApi = require(state.wsApi, "the api workspace")
     const sessionA = require(state.sessionA, "session A")
+    const enrollmentId = require(state.enrollmentId, "the enrollment id")
     const alice = await mintConnection(fixture, wsApi)
-    const replied = await until(
-      async () => scripted.counts().chat > 0
-        ? await relayFetch(fixture.info.relayUrl, wsApi, alice.body!.runtimeAccessToken, `/session/${encodeURIComponent(sessionA)}/message`)
-        : undefined,
-      { since: Date.now(), timeoutMs: BEAT_INTERVAL_MS, message: "no turn from the connect host reached the scripted model" },
+    expect(alice.ok, alice.text).toBe(true)
+    const token = alice.body!.runtimeAccessToken
+
+    await until(
+      async () => {
+        const status = await relayFetch(fixture.info.relayUrl, wsApi, token, "/session/status")
+        const row = status.json?.[sessionA] as { type?: string } | undefined
+        return status.ok && row?.type !== "busy" ? true : undefined
+      },
+      { since: Date.now(), timeoutMs: TURN_MS, message: "session A never settled after Bob's prompt" },
     )
-    expect(replied.value.ok).toBe(true)
+
+    const before = (await machines(fixture)).find((row) => row.enrollment_id === enrollmentId)
+    expect(before, "box1 declared its sealing key on its first beat and holds no configuration yet").toMatchObject({
+      sealing_key_declared: true,
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+    })
+
+    const file = path.join(owner, "box1-providers.json")
+    await fs.writeFile(file, JSON.stringify({
+      providers: { openai: { baseUrl: scripted.url, apiPath: "/v1", placeholder: "test-key", authMode: "bearer" } },
+    }))
+    const pushedAt = Date.now()
+    const pushed = await cli("host", "push-config", "--machine", "box1", "--from-file", file)
+    expect(pushed.code, pushed.output).toBe(0)
+    expect(pushed.stdout).toContain("sealed openai (revision 1)")
+
+    // Delivered on the host's next beat; declared, and so acked, on the one
+    // after it has stored, opened and applied the revision.
+    const acked = await until(
+      async () => {
+        const row = (await machines(fixture)).find((row) => row.enrollment_id === enrollmentId)
+        return row?.provider_config_acked_revision === 1 ? row : undefined
+      },
+      { since: pushedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never acked provider configuration revision 1" },
+    )
+    timing("item 5b push → acked revision 1", { elapsedMs: acked.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
+    expect(acked.value.provider_config_revision).toBe(1)
+    const host = await connect.status(fixture, state.host)
+    expect(host.log).toContain("provider configuration revision 1: openai")
+    expect(host.state?.provider_config).toMatchObject({ revision: 1 })
+    expect(host.state?.provider_config?.sealed).toMatch(/^mseal1\./)
+    expect(JSON.stringify(host.state), "the plaintext must never reach the host's state file").not.toContain("test-key")
+    expect(JSON.stringify(host.state)).not.toContain(scripted.url)
+
+    const marker = `ALICESAYS-${Date.now().toString(36)}`
+    const messageID = Identifier.ascending("message")
+    const sentAt = Date.now()
+    const sent = await relayFetch(fixture.info.relayUrl, wsApi, token, `/session/${encodeURIComponent(sessionA)}/prompt_async`, {
+      method: "POST",
+      body: { messageID, model: SCRIPTED_MODEL, parts: [{ type: "text", text: `Reply with exactly this one token and nothing else: ${marker}` }] },
+    })
+    expect([200, 202, 204], `Alice's prompt: ${sent.status} ${sent.text}`).toContain(sent.status)
+    const reached = await until(
+      async () => scripted.requests.find((request) => request.prompt.includes(marker)),
+      { since: sentAt, timeoutMs: TURN_MS, message: "Alice's turn never reached the scripted model endpoint" },
+    )
+    timing("item 5b prompt → scripted endpoint", { elapsedMs: reached.elapsedMs, boundMs: TURN_MS, dialect: reached.value.dialect, model: reached.value.model })
+    // Pi's own openai provider speaks the Responses API; the overlay changes
+    // its base URL and key, never its wire protocol.
+    expect(reached.value.dialect).toBe("responses")
+    const replied = await until(
+      async () => {
+        const messages = await relayFetch(fixture.info.relayUrl, wsApi, token, `/session/${encodeURIComponent(sessionA)}/message`)
+        if (!messages.ok || !Array.isArray(messages.json)) return undefined
+        const rows = messages.json as Array<{ info?: { role?: string }; parts?: Array<{ type?: string; text?: string }> }>
+        return rows.find((row) => row.info?.role === "assistant" && row.parts?.some((part) => part.type === "text" && part.text?.includes(marker)))
+      },
+      { since: sentAt, timeoutMs: TURN_MS, message: "the scripted reply never landed in session A's messages on the host" },
+    )
+    timing("item 5b prompt → reply stored on the host", { elapsedMs: replied.elapsedMs, boundMs: TURN_MS })
   })
 
   test("10. two folders on one enrollment are served at once; re-pointing one leaves the other served throughout; every routability reader tracks the readiness table", async () => {

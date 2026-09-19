@@ -605,7 +605,7 @@ function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
           "bg-surface-success-strong": snapshot()?.lease?.status === "ready",
           "bg-border-base": snapshot()?.lease?.status !== "ready",
         }} />
-        Cloud workspace
+        Cloud environment
         <span class="text-11-regular text-text-weak">
           {snapshot.loading ? "Loading…" : `${snapshot()?.lease?.driver ?? "unavailable"} · epoch ${snapshot()?.lease?.epoch ?? "—"}`}
         </span>

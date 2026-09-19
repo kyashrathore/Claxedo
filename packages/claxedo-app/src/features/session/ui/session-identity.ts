@@ -1,7 +1,7 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { parseShellRoute } from "@/platform/identity/route"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { isRelayHostKind, inventoryHostKind } from "@/platform/runtime/placement-wire"
+import { isRelayHostKind, inventoryHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 export type SessionIdentity = {
@@ -68,11 +68,11 @@ export function sessionSignedTransportAuthority(input: {
   serverUrl?: string
   principalHasSignedAccess: boolean
   routeWorkspaceAuthorityId?: string
-  hostKind?: string
+  hostKind?: WorkspaceHostKind | null
   sessionRef?: SessionRef
 }) {
   if (input.routeWorkspaceAuthorityId) return true
-  if (input.hostKind === "cloud" || input.hostKind === "machine") return true
+  if (isRelayHostKind(input.hostKind)) return true
   if (input.sessionRef?.toolSandbox?.kind === "workspace") return true
   return input.principalHasSignedAccess && centralTransportForServer(input.serverUrl) !== "loopback"
 }

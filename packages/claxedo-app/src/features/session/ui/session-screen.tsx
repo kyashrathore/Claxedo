@@ -261,8 +261,8 @@ export default function SessionPage(props: {
   )
   const signedControlPlane = createMemo(() => {
     const workspaceId = routeSessionWorkspaceId()
-    const workspace = sdk.workspace(dir()) ?? ws()
-    const kind = inventoryHostKind(workspace?.kind)
+    const sdkWorkspace = sdk.workspace(dir())
+    const kind = sdkWorkspace ? sdkWorkspace.kind : inventoryHostKind(ws()?.kind)
     const cwd = dir()
     const placement = placementFor({
       // The typed ref can still be a provisional local ref while signed
@@ -347,17 +347,11 @@ export default function SessionPage(props: {
     const workspaceId = signedWorkspaceId()
     return shouldRenderNewSessionComposer({ workspaceId, workspaceReady: workspaceId ? isWorkspaceReady(workspaceId) : false })
   })
-  // Workspace cloud-vs-user-hosted resolution and the per-pane connecting gate
-  // moved to the WorkspaceConnection authority.
-  // The "is this workspace connected?" concern is now owned by the single
-  // WorkspaceConnection authority (WorkspaceGate, mounted in SessionPaneScope
-  // OUTSIDE this component). This Session only mounts inside the gate's `ready`
-  // branch, so it no longer reconstructs a pre-connect gate or runs its own
-  // mint/health/provision pre-connect effects — those duplicated the authority
-  // and caused the BUG-1 blank + double-connecting screens in split panes.
-  // The `gate` store survives only for new-session submit; sandbox provisioning reports progress
-  // through `onCloudStartup` (see the composer render below). That is a
-  // distinct, transient submit-time concern, not the workspace-connection gate.
+  // Not the workspace-connection gate: WorkspaceGate owns that, mounted in
+  // SessionPaneScope OUTSIDE this component, and a Session only mounts inside
+  // its `ready` branch. This store is the submit-time provisioning progress
+  // `onCloudStartup` reports, which is transient and new-session only. A
+  // second pre-connect gate here renders blank and double-connecting panes.
   const [gate, setGate] = createStore({
     open: false,
     sync: false,
@@ -367,12 +361,11 @@ export default function SessionPage(props: {
     logs: [] as CloudLog[],
     variant: "provisioner" as RelayHostKind,
   })
-  // BUG-9: A 403 from the connection mint means "you don't have access to this
-  // workspace" — a terminal state, not a transient connecting one. The gate's
-  // error path (user-hosted health probe / cloud resolve) carries the 403 in its
-  // message. When that is detected, render the access-denied gate variant instead
-  // of the "waiting for host" pipeline, and stop treating the gate as a retryable
-  // connecting state.
+  // A 403 from the connection mint is terminal — no access to this workspace —
+  // rather than a transient connecting state. Both host paths, the machine
+  // health probe and the provisioner resolve, carry it only inside the gate's
+  // error message, so it is read back out of there to render access-denied
+  // instead of a retryable "waiting for host" pipeline.
   const gateForbidden = createMemo(() => gate.open && isForbiddenConnectionError(gate.err))
   const resetGate = () => {
     setGate({
@@ -720,9 +713,10 @@ export default function SessionPage(props: {
     return newSessionWorkspaceState(kind).options
   }
   const setNewSessionHostKind = (value: WorkspaceHostKind) => {
-    // The web composer never offers "local" (no local machine behind the
-    // renderer). Guard here too so a stale/deep-linked selection cannot route a
-    // hosted web draft into an environment it can never run in.
+    // A hosted web renderer has no machine of its own, so the picker never
+    // offers `self` there. A stale or deep-linked selection still arrives
+    // here, and routing it would open a draft in an environment that can
+    // never run it.
     if (value === "self" && platform.platform === "web" && signedControlPlane()) return
     setStore("newSessionControlsTouched", true)
     setStore("newSessionHostKind", value)
@@ -1445,6 +1439,7 @@ export default function SessionPage(props: {
               canAbort={() => supports("abort")}
               onAbort={(sessionID) => sdk.client.session.abort({ sessionID })}
               canPrompt={() => supports("permissions")}
+              sessionPromptAdmitted={() => sessionController.capabilities()?.prompt}
               status={sessionController.status} activeTurn={sessionController.activeTurn}
               statusReady={sessionController.statusReady}
               goalController={sessionController}

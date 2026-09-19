@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises"
 
+import Database from "better-sqlite3"
 import { describe, expect, test } from "vitest"
 
 import { verifyPairedD1BackupExports } from "./verify-paired-d1-backup"
@@ -14,6 +15,24 @@ async function migrations(directory: "auth" | "control-plane", names: readonly s
       names.map((name) => readFile(new URL(`../../migrations/${directory}/${name}`, import.meta.url), "utf8")),
     )
   ).join("\n")
+}
+
+/**
+ * A D1 export carries the schema a database ended up with. Concatenating the
+ * migration files instead replays every object a later migration dropped, so
+ * the restore meets a view whose backing table is absent and an INSTEAD OF
+ * trigger whose target is a table.
+ */
+async function exportedSchema(directory: "auth" | "control-plane", names: readonly string[]) {
+  const database = new Database(":memory:")
+  try {
+    database.pragma("foreign_keys = OFF")
+    database.exec(await migrations(directory, names))
+    const objects = database.prepare(`select sql from sqlite_schema where sql is not null`).all() as Array<{ sql: string }>
+    return objects.map((object) => `${object.sql};`).join("\n")
+  } finally {
+    database.close()
+  }
 }
 
 async function exports(phase = "provider_sync") {
@@ -35,7 +54,7 @@ async function exports(phase = "provider_sync") {
     insert into "deploymentReleaseActive" values (1, '${deploymentId}', 0, '2026-08-28T00:01:00.000Z');
     insert into "deploymentRecoveryEpoch" values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`
-  const control = `${await migrations("control-plane", [
+  const control = `${await exportedSchema("control-plane", [
     "0001_service_installations.sql",
     "0002_workspace_authority.sql",
     "0003_private_sessions.sql",
@@ -54,6 +73,7 @@ async function exports(phase = "provider_sync") {
     "0016_host_session_authority.sql",
     "0018_drop_agent_extensions.sql",
     "0034_drop_workspace_access.sql",
+    "0036_drop_workspace_share_role.sql",
   ])}
     insert into control_plane_recovery_epochs values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`

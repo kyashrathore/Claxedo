@@ -32,6 +32,7 @@ const MIGRATIONS = [
   "0030_workspace_host_assignment_revision.sql",
   "0034_drop_workspace_access.sql",
   "0035_session_share_level.sql",
+  "0036_drop_workspace_share_role.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -109,11 +110,10 @@ async function signed(authority: D1CoreAuthorityBoundary, subject: string): Prom
 }
 
 describe("composed Better Auth + D1 authority", () => {
-  test("uses one canonical principal and tenant scope across workspace, session, share, and runtime-token modules", async () => {
+  test("uses one canonical principal and tenant scope across workspace, session, and runtime-token modules", async () => {
     const { authority } = await setup()
     const alice = await signed(authority, "alice")
     const bob = await signed(authority, "bob")
-    const outsider = await signed(authority, "outsider")
 
     await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
     await authority.addOrganizationMember(alice, {
@@ -128,20 +128,12 @@ describe("composed Better Auth + D1 authority", () => {
       backing: "cloud-vm",
     })
 
-    await expect(
-      authority.grantWorkspaceShare(alice, {
-        workspaceId: "ws_acme",
-        role: "editor",
-        target: { kind: "actor", actorId: outsider.principal!.actorId },
-      }),
-    ).rejects.toMatchObject({ status: 403 })
-
-    const grant = (await authority.grantWorkspaceShare(alice, {
-      workspaceId: "ws_acme",
-      role: "editor",
-      target: { kind: "actor", actorId: bob.principal!.actorId },
-    })) as { grantId: string }
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
+    await authority.addOrganizationMember(alice, {
+      orgId: "org_acme",
+      userId: bob.principal!.userId,
+      role: "admin",
+    })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "admin" })
 
     await authority.reserveSession(bob, {
       operationId: "op_bob",
@@ -212,21 +204,6 @@ describe("composed Better Auth + D1 authority", () => {
         hostId: "host_bob",
       }),
     ).toEqual({ active: true })
-
-    expect(
-      await authority.revokeWorkspaceShare(alice, {
-        workspaceId: "ws_acme",
-        grantId: grant.grantId,
-      }),
-    ).toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
-    expect(
-      await authority.runtimeAccessTokenActive({
-        jti: "jti_bob",
-        workspaceId: "ws_acme",
-        hostId: "host_bob",
-      }),
-    ).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
   })
 
   test("persists team session sharing and revokes the shared user's live authority", async () => {
@@ -455,7 +432,7 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ revoked: false })
   })
 
-  test("a channel-bound org member is refused on an owner-visibility workspace and admitted with a direct share", async () => {
+  test("a channel-bound org member is refused on an owner-visibility workspace and admitted by a rank on its project", async () => {
     const { authority, database } = await setup()
     const alice = await signed(authority, "visibility-alice")
     const bob = await signed(authority, "visibility-bob")
@@ -478,11 +455,13 @@ describe("composed Better Auth + D1 authority", () => {
       action: "read" as const,
     }
     await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
-    await authority.grantWorkspaceShare(alice, {
-      workspaceId: "ws_hidden",
-      role: "viewer",
-      target: { kind: "user", userId: bob.principal!.userId },
-    })
+    const project = await database
+      .prepare("select project_id from workspaces where workspace_id = 'ws_hidden'")
+      .first<{ project_id: string }>()
+    await database
+      .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)")
+      .bind(project!.project_id, bob.principal!.userId)
+      .run()
     expect(await authority.authorizeChannelWorkspace(request)).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
   })
 

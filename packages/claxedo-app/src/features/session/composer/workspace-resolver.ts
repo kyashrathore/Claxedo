@@ -1,4 +1,4 @@
-import { type WorkspaceInventoryEntry, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
+import { type SignedWorkspaceInfo, type WorkspaceInventoryEntry, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import {
   sessionRefForWorkspaceSession,
@@ -118,12 +118,21 @@ export function workspaceForDirectory(projects: readonly ProjectCatalogItem[], d
   return Object.entries(workspaces).find(([key, workspace]) => workspaceMatchesDirectory(key, workspace, directory))?.[1]
 }
 
-export function signedWorkspaceForDirectory(input: {
+/**
+ * The host a directory's workspace runs on, from whichever source states it.
+ *
+ * The sdk's workspace already speaks host kinds; a catalog row carries the
+ * control plane's wire word. Reading both through one name is how a branch
+ * goes dead with nothing to see at the call site, so each source is narrowed
+ * by its own reader and the sdk's answer wins where it has one.
+ */
+export function signedWorkspaceHostKind(input: {
   directory: WorkspaceDirectory | undefined
   projects: readonly ProjectCatalogItem[]
-  sdkWorkspace?: WorkspaceCatalogEntry
-}) {
-  return input.sdkWorkspace ?? workspaceForDirectory(input.projects, input.directory)
+  sdkWorkspace?: SignedWorkspaceInfo
+}): WorkspaceHostKind | undefined {
+  if (input.sdkWorkspace) return input.sdkWorkspace.kind
+  return inventoryHostKind(workspaceForDirectory(input.projects, input.directory)?.kind)
 }
 
 /**
@@ -146,15 +155,14 @@ export function composerUsesSignedTransport(input: {
   explicit?: boolean
   directory: WorkspaceDirectory
   projects: readonly ProjectCatalogItem[]
-  sdkWorkspace?: WorkspaceCatalogEntry
+  sdkWorkspace?: SignedWorkspaceInfo
   sessionRef?: SessionRef
   principalHasSignedAccess: boolean
   routeWorkspaceAuthorityId?: string
   serverUrl?: string
 }) {
   if (input.explicit !== undefined) return input.explicit
-  const workspace = signedWorkspaceForDirectory(input)
-  const hostKind = inventoryHostKind(workspace?.kind)
+  const hostKind = signedWorkspaceHostKind(input)
   const placement = placementFor({
     ref: input.sessionRef,
     hasSignedAccess: sessionSignedTransportAuthority({
@@ -173,12 +181,12 @@ export function composerUsesSignedTransport(input: {
 export function submitSessionDirectory(input: {
   directory: WorkspaceDirectory
   projects: readonly ProjectCatalogItem[]
-  sdkWorkspace?: WorkspaceCatalogEntry
+  sdkWorkspace?: SignedWorkspaceInfo
 }) {
-  const workspace = signedWorkspaceForDirectory(input)
-  const workspaceId = workspace?.workspaceId ?? workspace?.id
+  const row = input.sdkWorkspace ? undefined : workspaceForDirectory(input.projects, input.directory)
+  const workspaceId = input.sdkWorkspace?.workspaceId ?? row?.workspaceId ?? row?.id
   if (workspaceId && input.directory === workspaceId) return input.directory
-  return workspace?.directory ?? input.directory
+  return input.sdkWorkspace?.directory ?? row?.directory ?? input.directory
 }
 
 export function sessionRefForSubmitTarget(input: {

@@ -55,7 +55,7 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
 
   const load = async () => {
     if (!capability) {
-      setError("This device's diagnostics are available only in the Claxedo desktop app.")
+      setError("This computer's diagnostics are available only in the Claxedo desktop app.")
       setLoading(false)
       return
     }
@@ -219,11 +219,11 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
       transition
       flush
       class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell usage-dialog-shell claxedo-diagnostics-dialog"
-      aria-label="This device diagnostics"
+      aria-label="This computer's diagnostics"
       onEscapeKeyDown={() => dialog.close()}
     >
       <div class="workspace-page-mobile-header usage-dialog-mobile-header">
-        <span>This device</span>
+        <span>This computer</span>
         <button type="button" aria-label="Close diagnostics" onClick={() => dialog.close()}>
           <Icon name="close" size="small" />
         </button>
@@ -237,10 +237,10 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
               teammate's host has its own processes and its own memory, and
               this dialog has never been able to see them. */}
           <div class="workspace-page-title usage-dashboard-title">
-            <h2>This device</h2>
+            <h2>This computer</h2>
             <p class="text-xs text-text-weak">
-              Processes and memory on the machine running this app. Cloud and teammate-hosted
-              workspaces run elsewhere and are not measured here.
+              Processes and memory on the machine running this app. Cloud environments and
+              other machines run elsewhere and are not measured here.
             </p>
           </div>
           <div class="workspace-page-toolbar claxedo-diagnostics-toolbar">

@@ -14,7 +14,7 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
 const DIST = path.join(ROOT, "dist")
 const ENTRY = path.join(ROOT, "src/connector.ts")
-const ENTRIES = ["connector", "host-identity", "host-state", "host-state-node", "machine-transport", "bootstrap"].map(
+const ENTRIES = ["connector", "host-identity", "host-state", "host-state-node", "machine-seal", "machine-transport", "bootstrap"].map(
   (name) => path.join(ROOT, `src/${name}.ts`),
 )
 

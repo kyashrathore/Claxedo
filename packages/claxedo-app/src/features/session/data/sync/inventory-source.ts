@@ -8,7 +8,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
-import { asHostKind, controlPlaneListScope, inventoryHostKind, isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
+import { placementProvisioner, asHostKind, controlPlaneListScope, inventoryHostKind, isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
 
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -194,7 +194,7 @@ export function controlPlaneSessionToItem(input: {
     attachments: [],
     environment: {
       kind: workspaceHostingKind(workspace),
-      driver: asString(workspace?.backing),
+      driver: placementProvisioner(workspace),
     },
     ...(lastTurn ? { lastTurn } : {}),
     time: { created, updated },
@@ -268,11 +268,11 @@ export function createSignedInventorySource(input: {
     directory: ProjectDirectory
     kind?: RelayHostKind
   }) {
-    // The registry is not the authority for a user-hosted workspace's sessions
-    // — its host is, and the rail reads that workspace's list straight off the
-    // runtime over the relay (`session-source.ts`). Asking here answered a
-    // subset (only the sessions created THROUGH the control plane) and cost a
-    // round trip per shared machine on every boot.
+    // The registry is not the authority for the sessions of a workspace on
+    // another machine — that host is, and the rail reads its list straight off
+    // the runtime over the relay (`session-source.ts`). Asking here answers a
+    // subset, only the sessions created THROUGH the control plane, at a round
+    // trip per shared machine on every boot.
     if (sessionInput.kind === "machine") return []
     // This is a display read (snapshot rows, directory session lists), so it
     // shares the deduping cache: the same workspace is asked for by both the
@@ -640,8 +640,9 @@ export function shouldUseSignedSessionInventory(input: {
  *
  * Deliberately separate from `shouldUseSignedSessionInventory`: on loopback the
  * session reads stay local (Local Personal Mode), but a hosted account still has
- * to learn which cloud/user-hosted workspaces exist — otherwise the first cloud
- * workspace can never enter the project cache and the sidebar never offers it.
+ * to learn which workspaces the provisioner and other machines hold — otherwise
+ * the first one can never enter the project cache and the sidebar never offers
+ * it.
  * Signed account presence is the whole condition; the transport decides only
  * whether the snapshot becomes the authoritative list or is merged into a local
  * one.

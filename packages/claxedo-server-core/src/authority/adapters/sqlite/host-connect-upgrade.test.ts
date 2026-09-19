@@ -158,6 +158,40 @@ describe("SQLite host-connect upgrade", () => {
     expect(reopened.prepare(`SELECT * FROM host_enrollments ORDER BY enrollment_id`).all()).toEqual(before)
   })
 
+  test("a pre-connect enrollment has no sealing key and no pushed configuration, exactly as a fresh one", async () => {
+    const file = preConnectDatabase()
+    const db = openAuthorityDb({ path: file })()
+    const columns = `sealing_public_key_json, provider_config_sealed, provider_config_revision, provider_config_acked_revision, provider_config_updated_at`
+    const upgraded = db.prepare(`SELECT ${columns} FROM host_enrollments WHERE enrollment_id = 'enr_live'`).get()
+    expect(upgraded).toEqual({
+      sealing_public_key_json: null,
+      provider_config_sealed: null,
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      provider_config_updated_at: null,
+    })
+
+    const freshFile = path.join(path.dirname(file), "fresh.db")
+    const fresh = createSqliteWorkspaceAuthority({ path: freshFile })
+    const request = await fresh.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
+    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    await fresh.enrollHost(ownerAuth, {
+      hostId: "host_live",
+      publicKey: LIVE_PUBLIC_KEY,
+      requestId: request.request_id,
+      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+    })
+    expect(openAuthorityDb({ path: freshFile })().prepare(`SELECT ${columns} FROM host_enrollments WHERE host_id = 'host_live'`).get())
+      .toEqual(upgraded)
+
+    const api = createSqliteWorkspaceAuthority({ path: file })
+    expect(await api.listHostEnrollments!(ownerAuth)).toMatchObject([
+      { enrollment_id: "enr_live", provider_config_revision: 0, provider_config_acked_revision: 0, sealing_key_declared: false },
+    ])
+    expect(await api.hostProviderConfigTarget!(ownerAuth, { enrollmentId: "enr_live" }))
+      .toEqual({ enrollment_id: "enr_live", host_id: "host_live", display_name: "Laptop", sealing_public_key: null, next_revision: 1 })
+  })
+
   test("the revision counter starts at the revision a connect-era database already issued", async () => {
     // A database from before the counter existed but after assignments carried
     // revisions: its live assignment is at 4, so the next re-point must be 5.

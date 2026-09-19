@@ -82,6 +82,12 @@ export interface PromptInputProps {
   stopGoal?: () => void | Promise<unknown>
   /** Registers the mounted composer's retry action for an in-timeline recovery surface. */
   registerRetry?: (retry?: PromptRetryAction) => void
+  /**
+   * Whether the session authority admits this reader's prompt, as the session's
+   * own transport capabilities report it. A draft names no session and has
+   * none, so the composer asks the workspace role instead.
+   */
+  sessionPromptAdmitted?: () => boolean | undefined
   /** Signed workspace runtime identity for relay-backed session sends. */
   workspaceId?: () => string | undefined
   hostKind?: () => RelayHostKind | undefined

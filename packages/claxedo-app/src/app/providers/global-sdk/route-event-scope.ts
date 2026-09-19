@@ -47,7 +47,7 @@ export function initialRouteWorkspace(baseUrl?: string) {
     return {
       directory,
       workspaceId: workspace.workspaceId ?? workspace.id ?? key,
-      hostKind: workspace.kind ?? undefined,
+      hostKind: inventoryHostKind(workspace.kind),
     }
   }
   return undefined

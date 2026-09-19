@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The host side of machine-wide remote access: a signing identity, invitation redeem, durable host state, a machine-signed heartbeat and assignment discovery — with no server, no routes, and no account credential",
+  "description": "The host side of machine-wide remote access: a signing identity, invitation redeem, durable host state, a machine-signed heartbeat and assignment discovery \u2014 with no server, no routes, and no account credential",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -45,6 +45,13 @@
       "development": "./src/host-state-node.ts",
       "import": "./dist/host-state-node.mjs",
       "default": "./dist/host-state-node.mjs"
+    },
+    "./machine-seal": {
+      "types": "./src/machine-seal.ts",
+      "bun": "./src/machine-seal.ts",
+      "development": "./src/machine-seal.ts",
+      "import": "./dist/machine-seal.mjs",
+      "default": "./dist/machine-seal.mjs"
     },
     "./machine-transport": {
       "types": "./src/machine-transport.ts",

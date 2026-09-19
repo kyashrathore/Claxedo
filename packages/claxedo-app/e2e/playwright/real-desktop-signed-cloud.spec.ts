@@ -313,7 +313,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
 
     await app.page.getByTestId("rail-account-trigger").click()
     await app.page.getByRole("menuitem", { name: /settings/i }).click()
-    await app.page.getByRole("tab", { name: "Devices" }).click()
+    await app.page.getByRole("tab", { name: "Machines" }).click()
     const enable = app.page.getByRole("button", { name: "Enable remote access" })
     await expect(enable).toBeVisible()
     const startResults = await app.page.evaluate(async () => {

@@ -29,13 +29,16 @@ export type PtyInfo = {
 
 type SessionShareChangedEvent = {
   type: "session.share.changed"
-  phase: "granted" | "revoked"
   ownerUserId: string
   sessionId: string
   workspaceId: string
   orgId?: string
   ts: number
-}
+} & (
+  /** A downgrade rings `granted` at the narrower level: the share still exists. */
+  | { phase: "granted"; level: "follow" | "send" }
+  | { phase: "revoked" }
+)
 
 /** A workspace's inventory gained or lost a session in the control plane's projection; the reader re-reads it. */
 type SessionInventoryChangedEvent = {

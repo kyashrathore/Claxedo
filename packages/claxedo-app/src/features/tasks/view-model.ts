@@ -44,7 +44,7 @@ export const LOCAL_CAPABILITY_TEXT = "Use local skills and plugins"
 export const CAPABILITY_GUARANTEE: Readonly<Record<PresetPlacement, string>> = {
   local: "Uses this machine's current skills and plugins. The selection below is not enforced for local sessions.",
   cloud:
-    "Only the selected plugins and skills are installed in the isolated cloud workspace, and only their credentials are brokered. The repository, shell and network still follow the host's policy, so this limits registered capabilities, not everything the agent can reach.",
+    "Only the selected plugins and skills are installed in the isolated cloud environment, and only their credentials are brokered. The repository, shell and network still follow the host's policy, so this limits registered capabilities, not everything the agent can reach.",
 }
 
 /**

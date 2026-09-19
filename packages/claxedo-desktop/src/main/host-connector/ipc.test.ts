@@ -21,6 +21,12 @@ import type { HostConnectorSetup, HostConnectorStatus } from "./child-supervisor
  * operation REACHES, not what it returns.
  */
 
+/**
+ * The machine facts the connector's own state cannot carry. `available` is
+ * overwritten by the registration from whether a connector was passed.
+ */
+const signedContext = { available: true, signedIn: true, displayName: "macOS" }
+
 function ipcMain() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   return {
@@ -56,6 +62,7 @@ function connectorHarness(input: { bearer?: string } = {}) {
   const operations: Array<{ name: string; params?: Record<string, unknown> }> = []
   const bearer = input.bearer ?? "bearer-do-not-leak"
   let generation = 0
+  let name = "macOS"
   let state: HostConnectorStatus = { status: "not-started" }
   const connector: HostConnectorSetup = {
     status: () => state,
@@ -88,6 +95,15 @@ function connectorHarness(input: { bearer?: string } = {}) {
       }
       return state
     },
+    displayName: () => name,
+    renameMachine: async (displayName: string) => {
+      const next = displayName.trim()
+      if (!next) throw new Error("A machine needs a name")
+      if (state.status !== "enrolled") throw new Error("Remote access is not running on this machine")
+      operations.push({ name: "host.renameCurrentMachine", params: { enrollmentId: state.enrollment.enrollment_id, displayName: next } })
+      name = next
+      return { displayName: next }
+    },
     stop: () => {
       state = { status: "stopped", reason: "closed", detail: "connector closed" }
     },
@@ -105,7 +121,7 @@ describe("start reaches the connector", () => {
   test("publishes the machine through the enrollment handshake, not a sidecar route", async () => {
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
 
     const result = await ipc.invoke(hostConnectorChannel("start"))
 
@@ -121,7 +137,7 @@ describe("start reaches the connector", () => {
   test("labels the machine from main, ignoring anything the message carries", async () => {
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
 
     await ipc.invoke(hostConnectorChannel("start"), { displayName: "attacker-chosen", url: "https://evil.example" })
 
@@ -132,7 +148,7 @@ describe("start reaches the connector", () => {
   test("refuses without a signed-in account instead of failing inside the handshake", async () => {
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => false })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => ({ ...signedContext, signedIn: false }) })
 
     const result = await ipc.invoke(hostConnectorChannel("start"))
 
@@ -148,7 +164,7 @@ describe("start reaches the connector", () => {
     // as missing, and the desktop would fall back to the HTTP implementation —
     // recreating the exact bug.
     const ipc = ipcMain()
-    registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => false })
+    registerHostConnectorIpc({ ipcMain: ipc.target, context: () => ({ ...signedContext, signedIn: false }) })
 
     expect(ipc.channels().toSorted()).toEqual(HOST_CONNECTOR_OPERATIONS.map(hostConnectorChannel).toSorted())
     await expect(ipc.invoke(hostConnectorChannel("status"))).resolves.toMatchObject({ available: false })
@@ -163,7 +179,7 @@ describe("the lifecycle behind the user's hand", () => {
   test("pause stops beating and keeps the identity; a later start re-enrols", async () => {
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
 
     await ipc.invoke(hostConnectorChannel("start"))
     await expect(ipc.invoke(hostConnectorChannel("pause"))).resolves.toMatchObject({ status: "stopped" })
@@ -173,7 +189,7 @@ describe("the lifecycle behind the user's hand", () => {
   test("revoke destroys the key, so the next start enrols a new machine", async () => {
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
 
     await ipc.invoke(hostConnectorChannel("start"))
     const first = harness.operations.find((operation) => operation.name === "host.enrollCurrentMachine")?.params
@@ -195,7 +211,7 @@ describe("the lifecycle behind the user's hand", () => {
     // The connector is built at launch and must publish nothing until asked.
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
 
     await ipc.invoke(hostConnectorChannel("status"))
 
@@ -204,12 +220,13 @@ describe("the lifecycle behind the user's hand", () => {
 })
 
 describe("the closed operation set", () => {
-  test("registers exactly six channels, all under one prefix", () => {
+  test("registers exactly these channels, all under one prefix", () => {
     const ipc = ipcMain()
-    registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, context: () => signedContext })
 
     expect(ipc.channels().toSorted()).toEqual([
       "claxedo.hostConnector.pause",
+      "claxedo.hostConnector.rename",
       "claxedo.hostConnector.revoke",
       "claxedo.hostConnector.share",
       "claxedo.hostConnector.start",
@@ -230,18 +247,18 @@ describe("the closed operation set", () => {
     }
   })
 
-  test("only share and unshare declare a parameter to receive a message into", () => {
+  test("only the data-carrying operations declare a parameter to receive a message into", () => {
     // The account's rule is that a renderer may supply reviewed PARAMETERS and
-    // not a request. Four of five operations are stricter still — a handler
-    // that read the message would have to declare somewhere to put it, and
-    // they declare nothing. `share` alone receives data (a workspace id and a
-    // label), and its two-parameter listener is the ONE place a message can
-    // land; the validator inside it is what keeps that data from becoming a
-    // request description.
+    // not a request. Four of the seven operations are stricter still — a
+    // handler that read the message would have to declare somewhere to put it,
+    // and they declare nothing. `share`, `unshare` and `rename` receive data (a
+    // workspace id, a label, a name), and their two-parameter listeners are the
+    // ONLY places a message can land; the validator inside each is what keeps
+    // that data from becoming a request description.
     const ipc = ipcMain()
-    registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, context: () => signedContext })
 
-    expect(ipc.arities().toSorted((a, b) => a - b)).toEqual([0, 0, 0, 0, 2, 2])
+    expect(ipc.arities().toSorted((a, b) => a - b)).toEqual([0, 0, 0, 0, 2, 2, 2])
   })
 
   test("no operation acts on anything the message carries", async () => {
@@ -251,12 +268,12 @@ describe("the closed operation set", () => {
     // work.
     const clean = ipcMain()
     const cleanHarness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: clean.target, connector: cleanHarness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: clean.target, connector: cleanHarness.connector, context: () => signedContext })
     await clean.invoke(hostConnectorChannel("start"))
 
     const hostile = ipcMain()
     const hostileHarness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: hostile.target, connector: hostileHarness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: hostile.target, connector: hostileHarness.connector, context: () => signedContext })
     await hostile.invoke(hostConnectorChannel("start"), {
       url: "https://evil.example/api/admin",
       method: "DELETE",
@@ -276,7 +293,7 @@ describe("the closed operation set", () => {
   test("share reads exactly a workspace id and a label, nothing else", async () => {
     const ipc = ipcMain()
     const harness = connectorHarness()
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
     await ipc.invoke(hostConnectorChannel("start"))
 
     // Malformed payloads never reach the connector.
@@ -298,6 +315,33 @@ describe("the closed operation set", () => {
     const registered = harness.operations.find((operation) => operation.name === "workspace.assignHost")
     expect(registered?.params).toEqual({ workspaceId: "ws_local_1", displayName: "opencode" })
     expect(result).toMatchObject({ status: "enrolled", sharedWorkspaceIds: ["ws_local_1"] })
+  })
+
+  test("rename carries a name and names no machine", async () => {
+    const ipc = ipcMain()
+    const harness = connectorHarness()
+    // The real entry reads the name off the connector on every snapshot, which
+    // is what makes a rename visible to the panel without a second round trip.
+    registerHostConnectorIpc({
+      ipcMain: ipc.target,
+      connector: harness.connector,
+      context: () => ({ available: true, signedIn: true, displayName: harness.connector.displayName() }),
+    })
+    await ipc.invoke(hostConnectorChannel("start"))
+
+    await expect(ipc.invoke(hostConnectorChannel("rename"))).rejects.toThrow("displayName")
+    await expect(ipc.invoke(hostConnectorChannel("rename"), { displayName: 42 })).rejects.toThrow("displayName")
+    expect(harness.operations.some((operation) => operation.name === "host.renameCurrentMachine")).toBe(false)
+
+    // The enrollment renamed is the connector's own, whatever the message says.
+    const result = await ipc.invoke(hostConnectorChannel("rename"), {
+      displayName: "Studio Mac",
+      enrollmentId: "enr_someone_else",
+      hostId: "host_someone_else",
+    })
+    const renamed = harness.operations.find((operation) => operation.name === "host.renameCurrentMachine")
+    expect(renamed?.params).toEqual({ enrollmentId: "enr_1", displayName: "Studio Mac" })
+    expect(result).toMatchObject({ status: "enrolled", displayName: "Studio Mac" })
   })
 
   test("the preload bridge names exactly these operations", () => {
@@ -324,11 +368,11 @@ describe("no credential crosses IPC", () => {
     const ipc = ipcMain()
     const bearer = "sk-account-bearer-must-not-leak"
     const harness = connectorHarness({ bearer })
-    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
 
     const results = []
     for (const operation of HOST_CONNECTOR_OPERATIONS) {
-      if (operation === "share" || operation === "unshare") continue
+      if (operation === "share" || operation === "unshare" || operation === "rename") continue
       results.push(await ipc.invoke(hostConnectorChannel(operation)))
     }
     // Started, so a result exists that COULD carry an enrollment — and a
@@ -336,6 +380,7 @@ describe("no credential crosses IPC", () => {
     results.push(await ipc.invoke(hostConnectorChannel("start")))
     results.push(await ipc.invoke(hostConnectorChannel("share"), { workspaceId: "ws-leak-probe" }))
     results.push(await ipc.invoke(hostConnectorChannel("unshare"), { workspaceId: "ws-leak-probe" }))
+    results.push(await ipc.invoke(hostConnectorChannel("rename"), { displayName: "Studio Mac" }))
 
     const payload = JSON.stringify(results)
     for (const secret of [bearer, "enr_1", "host_1", "privateKey", "publicKey", "signature", "jwk"]) {

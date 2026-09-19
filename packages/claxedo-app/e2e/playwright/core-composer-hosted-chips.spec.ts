@@ -20,7 +20,7 @@
  * (`[data-slot="list-item"][data-key="<value>"]`) with no ARIA listbox roles.
  *
  *   `[data-slot="context-chip-project"]`      — project;    keys are directories
- *   `[data-slot="context-chip-environment"]`  — local/cloud; keys are "local"/"cloud"
+ *   `[data-slot="context-chip-environment"]`  — where the session runs; keys are host kinds
  *   `[data-slot="context-chip-worktree"]`     — workspace;   keys are workspace refs
  *   `[data-slot="context-chip-branch"]`       — base branch; keys are Git refs
  *
@@ -153,12 +153,13 @@ test.describe("core composer hosted chips @core", () => {
   test("the environment chip offers cloud only on web", async ({ page }) => {
     await openCloudDraft(page)
 
-    // An exact list, not "does not contain local": a chip that renders zero options is
-    // also wrong, and `toEqual` catches both.
-    expect(await chipOptionKeys(page, "context-chip-environment")).toEqual(["cloud"])
+    // An exact list, not "does not contain self": a chip that renders zero options is
+    // also wrong, and `toEqual` catches both. The key is the option's value, which
+    // `onSelect` hands back to `onHostKindChange` — a host kind, never a wire word.
+    expect(await chipOptionKeys(page, "context-chip-environment")).toEqual(["provisioner"])
 
     const trigger = await chip(page, "context-chip-environment")
-    await expect(trigger.locator('[data-slot="context-chip-label"]')).toHaveText("Cloud", { timeout: 20_000 })
+    await expect(trigger.locator('[data-slot="context-chip-label"]')).toHaveText("Cloud environment", { timeout: 20_000 })
     await trigger.click()
     await page.screenshot({ path: `${EVIDENCE}/environment-chip-cloud-only.png`, fullPage: true })
     await page.keyboard.press("Escape")
