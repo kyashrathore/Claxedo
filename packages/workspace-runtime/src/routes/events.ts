@@ -1,5 +1,5 @@
 import { streamSSE } from "hono/streaming"
-import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { isRetainedCompatEvent, type CompatEnvelope, type EventSessionDeleted } from "@claxedo/agent-sdk-runtime/compat-events"
 import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
@@ -56,7 +56,47 @@ export type WorkspaceEventGapFrame = {
   throughId?: string
 }
 
-type StreamFrame = WorkspaceEventFrame | WorkspaceEventGapFrame
+export type WorkspaceEventStreamFrame = WorkspaceEventFrame | WorkspaceEventGapFrame
+
+type StreamFrame = WorkspaceEventStreamFrame
+
+/**
+ * A verbatim copy of every frame this handler's source produces, for a host
+ * that serves several runtimes on one stream of its own. Fed from the
+ * handler's own hub and bus subscriptions, so a tap costs no second
+ * projection and can never see a different frame than the runtime's stream.
+ */
+export type WorkspaceEventFramesTap = {
+  subscribe(listener: (frame: WorkspaceEventStreamFrame) => void): () => void
+}
+
+export function createWorkspaceEventFramesTap() {
+  const listeners = new Set<(frame: WorkspaceEventStreamFrame) => void>()
+  const tap: WorkspaceEventFramesTap = {
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+  return {
+    tap,
+    // A tap is a bystander on the runtime's delivery path: a listener that
+    // throws must not cost the runtime's own stream the rest of the frame,
+    // and one that subscribes while a frame is being delivered joins at the
+    // next frame rather than seeing this one.
+    emit(frame: WorkspaceEventStreamFrame) {
+      for (const listener of Array.from(listeners)) {
+        try {
+          listener(frame)
+        } catch {
+          /* the tap's owner answers for its own failures */
+        }
+      }
+    },
+  }
+}
 
 function isGapFrame(frame: StreamFrame): frame is WorkspaceEventGapFrame {
   return "type" in frame && frame.type === "stream.replay-gap"
@@ -199,6 +239,101 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
 }
 
 
+/** What `createIdentityAwareEventSource(...).open()` hands a writer. */
+type OpenedWorkspaceEventStream = {
+  replay: SseReplayBuffer<StreamFrame>
+  subscribe(listener: (event: StreamFrame) => unknown, terminate?: () => unknown): () => void
+}
+
+/**
+ * Writes an opened event stream as SSE. The one writer behind every
+ * `wr/events` connection: a workspace runtime's own stream, and the host
+ * aggregate a process hosting several runtimes serves them behind.
+ *
+ * Resumable by SSE `Last-Event-ID`. Two rules about NOT re-applying frames a
+ * consumer has already applied:
+ *
+ *  1. A cursor-less connection is served NOTHING from the buffer — it resumes
+ *     from `replay.lastId()`, i.e. "everything from now on". The reader
+ *     applies directory events to its caches, so a full re-read would
+ *     re-upsert `permission.asked` / `question.asked` for requests the user
+ *     already answered and resurrect their docks.
+ *  2. The connection opens with a heartbeat frame carrying the cursor it is
+ *     resuming from, written BEFORE the fanout is attached so it can never
+ *     interleave ahead of replayed frames. A reader only learns a cursor by
+ *     receiving a frame, and a reader that drops before its first frame
+ *     would otherwise reconnect cursor-less forever.
+ *
+ * Periodic heartbeats carry NO id: a reader's cursor must mean "the last
+ * frame I applied", so a frame shed from a saturated pending queue is
+ * redelivered on the next reconnect instead of skipped.
+ */
+export function streamWorkspaceEventFrames(c: Context, opened: OpenedWorkspaceEventStream) {
+  return streamSSE(c, async (stream) => {
+    const heartbeat = { type: "heartbeat" } as const
+    const resumeFrom = c.req.header("last-event-id")
+    // The cursor a cursor-less connection resumes from is the ring's own id,
+    // read before the bootstrap heartbeat is written: the frames that land
+    // between it and the fanout attaching are exactly what replaying after
+    // it recovers, and nothing is missing behind it.
+    const cursor = resumeFrom ?? opened.replay.lastId() ?? "0"
+    // Decided BEFORE the fanout attaches: attaching is what marks a scope as
+    // one whose numbering this reader has seen, and a cursor from another
+    // numbering must be judged before that.
+    const gap = resumeFrom !== undefined && opened.replay.hasGap(resumeFrom, opened.replay.lastId())
+    const replay = { ...opened.replay, hasGap: () => gap }
+    await stream
+      .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
+      .catch(() => {})
+
+    await new Promise<void>((resolve) => {
+      let finished = false
+      let cleanup: () => void = () => {}
+      const finish = () => {
+        if (finished) return
+        finished = true
+        cleanup()
+        resolve()
+      }
+      cleanup = attachSseFanout<StreamFrame>({
+        subscribe: (listener) => opened.subscribe(listener, () => {
+          finish()
+          stream.abort()
+        }),
+        write: async (frame, meta) => {
+          return stream.writeSSE({
+            ...(meta?.id ? { id: meta.id } : {}),
+            data: JSON.stringify(frame),
+          })
+        },
+        heartbeat,
+        heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
+        lastEventId: cursor,
+        replay,
+        replayLive: false,
+        replayGap: ({ lastEventId, throughId }) => ({
+          type: "stream.replay-gap",
+          code: "runtime.sse_replay_gap",
+          message: "Workspace runtime event replay cursor is no longer available; refetch session state.",
+          severity: "warn",
+          ...(lastEventId ? { lastEventId } : {}),
+          ...(throughId ? { throughId } : {}),
+        }),
+      })
+      // A client already gone when this writer runs — the caller awaits its
+      // admission work and the ring's startup first — is not reported by the
+      // stream: Hono fires `onAbort` only for an abort after registration,
+      // and its writes swallow their errors. The stream's flag and the
+      // request's own signal are what a connection that never attached is
+      // released on.
+      stream.onAbort(finish)
+      const signal = c.req.raw.signal
+      signal.addEventListener("abort", finish, { once: true })
+      if (stream.aborted || signal.aborted) finish()
+    })
+  })
+}
+
 /**
  * `/api/wr/events` — the one stream a workspace runtime serves.
  *
@@ -229,25 +364,9 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
  * arm's session-less frames until the connection closes — only its session
  * grants are re-asked. The relay path ends the stream at the next renewal.
  *
- * `close()` releases the bus subscription when the runtime is disposed.
- *
- * Resumable by SSE `Last-Event-ID`. Two rules about NOT re-applying frames a
- * consumer has already applied:
- *
- *  1. A cursor-less connection is served NOTHING from the buffer — it resumes
- *     from `replay.lastId()`, i.e. "everything from now on". The reader
- *     applies directory events to its caches, so a full re-read would
- *     re-upsert `permission.asked` / `question.asked` for requests the user
- *     already answered and resurrect their docks.
- *  2. The connection opens with a heartbeat frame carrying the cursor it is
- *     resuming from, written BEFORE the fanout is attached so it can never
- *     interleave ahead of replayed frames. A reader only learns a cursor by
- *     receiving a frame, and a reader that drops before its first frame
- *     would otherwise reconnect cursor-less forever.
- *
- * Periodic heartbeats carry NO id: a reader's cursor must mean "the last
- * frame I applied", so a frame shed from a saturated pending queue is
- * redelivered on the next reconnect instead of skipped.
+ * `close()` releases the bus subscription when the runtime is disposed, and
+ * `frames` hands the same subscriptions' frames to a host serving several
+ * runtimes on one stream.
  */
 export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   const bus = options.bus ?? workspaceRuntimeBus
@@ -285,15 +404,24 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     delivery,
   )
   const owns = ownsControlFrames(options)
+  const frames = createWorkspaceEventFramesTap()
   const source = createIdentityAwareEventSource<StreamFrame>({
     subscribe: (fn) => {
-      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => fn(event))
+      const emit = (frame: StreamFrame) => {
+        // The tap is fed first: `fn` throwing reaches the hub or the bus,
+        // both of which swallow it, and a host aggregating this runtime
+        // would silently lose the frame. The tap catches its own listeners'
+        // throws, so `fn` still runs.
+        frames.emit(frame)
+        fn(frame)
+      }
+      const unsubscribeCompat = options.eventHub.subscribeGlobal((event) => emit(event))
       const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
-        for (const event of presentationEventsFromRuntimeEnvelope(envelope)) fn(event)
+        for (const event of presentationEventsFromRuntimeEnvelope(envelope)) emit(event)
       })
       const unsubscribeControl = bus.subscribe((event) => {
         if (!owns(event)) return
-        fn({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: event })
+        emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: event })
       })
       return () => {
         unsubscribeCompat()
@@ -332,69 +460,9 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     }
     const opened = source.open(principal)
     await opened.ready
-    return streamSSE(c, async (stream) => {
-      const heartbeat = { type: "heartbeat" } as const
-      const resumeFrom = c.req.header("last-event-id")
-      // The cursor a cursor-less connection resumes from is the ring's own id,
-      // read before the bootstrap heartbeat is written: the frames that land
-      // between it and the fanout attaching are exactly what replaying after
-      // it recovers, and nothing is missing behind it.
-      const cursor = resumeFrom ?? opened.replay.lastId() ?? "0"
-      // Decided BEFORE the fanout attaches: attaching is what marks a scope as
-      // one whose numbering this reader has seen, and a cursor from another
-      // numbering must be judged before that.
-      const gap = resumeFrom !== undefined && opened.replay.hasGap(resumeFrom, opened.replay.lastId())
-      const replay = { ...opened.replay, hasGap: () => gap }
-      await stream
-        .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
-        .catch(() => {})
-
-      await new Promise<void>((resolve) => {
-        let finished = false
-        let cleanup: () => void = () => {}
-        const finish = () => {
-          if (finished) return
-          finished = true
-          cleanup()
-          resolve()
-        }
-        cleanup = attachSseFanout<StreamFrame>({
-          subscribe: (listener) => opened.subscribe(listener, () => {
-            finish()
-            stream.abort()
-          }),
-          write: async (frame, meta) => {
-            return stream.writeSSE({
-              ...(meta?.id ? { id: meta.id } : {}),
-              data: JSON.stringify(frame),
-            })
-          },
-          heartbeat,
-          heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
-          lastEventId: cursor,
-          replay,
-          replayLive: false,
-          replayGap: ({ lastEventId, throughId }) => ({
-            type: "stream.replay-gap",
-            code: "runtime.sse_replay_gap",
-            message: "Workspace runtime event replay cursor is no longer available; refetch session state.",
-            severity: "warn",
-            ...(lastEventId ? { lastEventId } : {}),
-            ...(throughId ? { throughId } : {}),
-          }),
-        })
-        // A client gone during the authority round trip or the ring's startup
-        // is not reported by the stream: Hono fires `onAbort` only for an abort
-        // after registration, and its writes swallow their errors. The
-        // stream's flag and the request's own signal are what a connection
-        // that never attached is released on.
-        stream.onAbort(finish)
-        const signal = c.req.raw.signal
-        signal.addEventListener("abort", finish, { once: true })
-        if (stream.aborted || signal.aborted) finish()
-      })
-    })
+    return streamWorkspaceEventFrames(c, opened)
   }
   handler.close = () => source.close()
+  handler.frames = frames.tap
   return handler
 }

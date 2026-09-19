@@ -54,10 +54,11 @@ import {
   mountWorkspaceEvents,
   mountWorkspaceProcess,
   mountWorkspacePty,
+  type MountedWorkspaceEvents,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { firstPartyMcpAdapterConfig, firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
-import type { WorkspaceEventParents } from "../routes/events"
+import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
   managedWorkspaceSessionAccessPolicy,
@@ -626,6 +627,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   // The workspace's stream subscribes to the process-global runtime bus; a
   // disposed runtime must let that subscription go.
   let closeEvents: () => void = () => {}
+  // A host's frame tap outlives any one mount: a consumer may hold it across
+  // `mount`, and it forwards the mounted stream's own frames rather than
+  // opening a second subscription to the hub or the bus.
+  const hostFrames = createWorkspaceEventFramesTap()
   // A subagent child's frames are scoped as its parent's on the workspace
   // stream; the store that filed the child knows the parent.
   const sessionParents: WorkspaceEventParents = {
@@ -1436,8 +1441,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       ) {
         throw new Error("Managed workspace session routes require authority-backed SessionAccessPolicy")
       }
+      let events: MountedWorkspaceEvents
       if (options.core) {
-        closeEvents = mountWorkspaceCore(app, options.core.upgradeWebSocket, {
+        events = mountWorkspaceCore(app, options.core.upgradeWebSocket, {
           directory: hostOptions.target?.directory ?? workspaceDir(),
           workspaceId: hostOptions.target?.workspaceId ?? workspaceId(),
           eventHub,
@@ -1449,7 +1455,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         })
       } else {
         // A host that serves sessions serves their stream, whatever else it mounts.
-        closeEvents = mountWorkspaceEvents(app, {
+        events = mountWorkspaceEvents(app, {
           directory: hostOptions.target?.directory ?? workspaceDir(),
           workspaceId: hostOptions.target?.workspaceId ?? workspaceId(),
           eventHub,
@@ -1462,6 +1468,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
         if (options.process) mountWorkspaceProcess(app, sessionAccessPolicy)
         if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
+      }
+      // A mount replaces whatever the previous one left attached: two live
+      // forwards would put every frame on the host tap twice, and the
+      // replaced stream would keep its bus subscription for good.
+      closeEvents()
+      const detachFrames = events.frames.subscribe((frame) => hostFrames.emit(frame))
+      closeEvents = () => {
+        detachFrames()
+        events.close()
       }
       app.get("/api/wr/harness-config-options", async (c) => {
         let targetRunner: RuntimeRunner
@@ -1741,6 +1756,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)
     },
+    frames: hostFrames.tap,
     getSessionConfig: readSessionConfig,
     parentSessionIdFor(sessionId: string) {
       const session = store().getSession(sessionId) as { parentID?: string | null } | null

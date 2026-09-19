@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createRuntimeEventHub } from "../runtime-event-hub"
-import { isRetainedWorkspaceEventFrame, workspaceEventsHandler } from "./events"
+import { isRetainedWorkspaceEventFrame, workspaceEventsHandler, type WorkspaceEventStreamFrame } from "./events"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
 import { messagePartUpdated, sessionDeleted, withDir, type CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -44,7 +44,7 @@ function harness(input: {
       await next()
     })
   }
-  app.get("/api/wr/events", workspaceEventsHandler({
+  const handler = workspaceEventsHandler({
     directory: DIRECTORY,
     workspaceId: WORKSPACE_ID,
     eventHub: hub,
@@ -54,8 +54,9 @@ function harness(input: {
     ...(input.policy ? { sessionAccessPolicy: input.policy, policy: sessionEventDeliveryPolicy(input.policy) } : {}),
     ...(input.renewalIntervalMs !== undefined ? { renewalIntervalMs: input.renewalIntervalMs } : {}),
     ...(input.parents ? { sessionParents: { parentSessionIdFor: (id) => input.parents?.[id] } } : {}),
-  }))
-  return { app, hub, bus, ptys }
+  })
+  app.get("/api/wr/events", handler)
+  return { app, hub, bus, ptys, frames: handler.frames }
 }
 
 const managedPolicy = (input: {
@@ -132,6 +133,35 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("raw runtime frames stay off the wire")
     const pty = frames.find((f) => f.payload?.type === "pty.exited")
     expect(pty.directory).toBe(DIRECTORY)
+  })
+
+  test("the frame tap and the runtime's own stream are fed by one subscription: each of the three sources' frames reaches both once, verbatim", async () => {
+    const { app, hub, bus, ptys, frames } = harness({})
+    ptys.set("pty-tap", DIRECTORY)
+    const tapped: WorkspaceEventStreamFrame[] = []
+    const detach = frames.subscribe((frame) => tapped.push(frame))
+
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    // One publish per source the handler subscribes: the compat hub, the
+    // runtime hub whose envelopes it projects, and the process-global bus.
+    hub.publishGlobal(part("ses-1", "prt-tap", { status: "completed" }))
+    hub.publishRuntime({ directory: DIRECTORY, sessionId: "ses-1", payload: { type: "subagent-updated", subagentKey: "child", revision: 1, status: "running" } })
+    bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 0 })
+    const text = await readUntil(response, "pty.exited")
+    controller.abort()
+
+    const onStream = dataFrames(text).filter((frame) => frame.payload)
+    expect(onStream.map((frame) => frame.payload.type)).toEqual(["message.part.updated", "subagent.updated", "pty.exited"])
+    expect(tapped).toEqual(onStream)
+
+    // The tap is the handler's, not a connection's: a runtime nobody is
+    // reading directly still feeds the host that aggregates it.
+    bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 1 })
+    expect(tapped).toHaveLength(4)
+    detach()
+    bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 2 })
+    expect(tapped).toHaveLength(4)
   })
 
   test("the process-global bus reaches a workspace's stream only with that workspace's frames", async () => {

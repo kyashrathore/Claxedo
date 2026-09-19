@@ -55,8 +55,21 @@ export {
   from "./exposure"
 export type { WorkspaceRuntimeExposure, WorkspaceRuntimeRequestGuard }
   from "./exposure"
+export { createIdentityAwareEventSource }
+  from "./event-delivery"
 export type { EventDeliveryDecision, EventDeliveryPolicy, EventDeliveryPrincipal }
   from "./event-delivery"
+/**
+ * A host that serves several embedded runtimes behind one stream of its own
+ * reads each runtime's frames through `WorkspaceHost.frames` and keeps the
+ * runtime's rules for them: this predicate decides what its ring holds back
+ * from eviction, and this writer is the one that turns an opened source into
+ * a `wr/events` response.
+ */
+export { isRetainedWorkspaceEventFrame, streamWorkspaceEventFrames }
+  from "./routes/events"
+export type { WorkspaceEventFramesTap, WorkspaceEventStreamFrame }
+  from "./routes/events"
 /**
  * The canonical env-trim helper: reads `env[key]` (falling back to an optional
  * legacy key), trims it, and returns `undefined` for blank values. Exported so

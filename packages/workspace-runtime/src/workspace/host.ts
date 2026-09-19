@@ -5,6 +5,7 @@ import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
 import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapters"
 import type { WorkspaceRuntimeExposure } from "../exposure"
+import type { WorkspaceEventFramesTap } from "../routes/events"
 import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
@@ -62,6 +63,13 @@ export type WorkspaceCheckpointControl = {
 export type WorkspaceHost = {
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
   hasSession: (sessionId: string) => boolean
+  /**
+   * Every frame this host's `wr/events` serves, verbatim, for a process
+   * hosting several runtimes behind one stream. One object for the host's
+   * lifetime, so a consumer may subscribe across `mount`; it is fed by the
+   * mounted stream's own subscriptions and carries nothing until one exists.
+   */
+  frames: WorkspaceEventFramesTap
   /** In-process consumers read the same committed configuration as the session API. */
   getSessionConfig: (sessionId: string) => SessionConfig | undefined
   parentSessionIdFor: (sessionId: string) => string | undefined

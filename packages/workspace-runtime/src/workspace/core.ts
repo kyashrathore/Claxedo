@@ -2,7 +2,7 @@ import type { Hono } from "hono"
 import { PtyRoutes } from "../routes/pty"
 import { Pty } from "../pty/index"
 import { AgentHookRoutes } from "../routes/agent-hook"
-import { workspaceEventsHandler, type WorkspaceEventParents } from "../routes/events"
+import { workspaceEventsHandler, type WorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
 import { TranscriptRoutes } from "../routes/transcript"
 import type { TranscriptResolution, TranscriptUnavailable } from "../transcript-resolver"
 import { ProcessRoutes } from "../routes/process"
@@ -19,6 +19,11 @@ import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from ".
 
 type Socket = Parameters<typeof PtyRoutes>[0]
 
+export type MountedWorkspaceEvents = {
+  close: () => void
+  frames: WorkspaceEventFramesTap
+}
+
 export function mountWorkspacePty(
   app: Hono,
   upgradeWebSocket: Socket,
@@ -32,7 +37,11 @@ export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: Sessio
   app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes({ sessionAccessPolicy }))
 }
 
-/** Mounts the workspace's stream; the returned disposer releases its bus subscription. */
+/**
+ * Mounts the workspace's stream. `close` releases its bus subscription;
+ * `frames` is the same subscriptions' frames, for a host that serves several
+ * runtimes on one stream of its own.
+ */
 export function mountWorkspaceEvents(app: Hono, options: {
   directory: string
   workspaceId?: string
@@ -41,7 +50,7 @@ export function mountWorkspaceEvents(app: Hono, options: {
   sessionAccessPolicy?: SessionAccessPolicy
   /** The delivery policy's renewal cadence; a test shortens it to watch a lease lapse. */
   renewalIntervalMs?: number
-}): () => void {
+}): MountedWorkspaceEvents {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
   const handler = workspaceEventsHandler({
     directory: options.directory,
@@ -54,7 +63,7 @@ export function mountWorkspaceEvents(app: Hono, options: {
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
   app.get(WorkspaceRuntimeRoutes.events, handler)
-  return handler.close
+  return { close: handler.close, frames: handler.frames }
 }
 
 export type WorkspaceTranscriptRoutesOptions = {
@@ -102,13 +111,13 @@ export function mountWorkspaceCore(
     sessionAccessPolicy?: SessionAccessPolicy
     transcripts?: WorkspaceTranscriptRoutesOptions
   },
-) {
+): MountedWorkspaceEvents {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
   mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy)
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
-  const closeEvents = mountWorkspaceEvents(app, options)
+  const events = mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
   mountWorkspaceProcess(app, options.sessionAccessPolicy)
   mountWorkspaceFiles(app)
-  return closeEvents
+  return events
 }

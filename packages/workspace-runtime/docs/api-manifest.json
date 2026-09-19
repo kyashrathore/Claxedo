@@ -59,7 +59,10 @@
     "WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE",
     "WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER",
     "ownerGrantIdentity",
-    "ownerGrantIdentityFromEnv"
+    "ownerGrantIdentityFromEnv",
+    "createIdentityAwareEventSource",
+    "isRetainedWorkspaceEventFrame",
+    "streamWorkspaceEventFrames"
   ],
   "routePrefixes": [
     "/api/wr/health",
