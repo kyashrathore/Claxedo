@@ -10,7 +10,7 @@ import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { setProviderQueryData } from "@/platform/query/provider-cache"
-import { providerListQuery, projectCatalogMissingWorkspace } from "@/platform/query/control-plane"
+import { providerListQuery, projectCatalogMissingWorkspace, setHostAggregateDeclaration } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
 import { agentListQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
@@ -53,10 +53,16 @@ export type GlobalBootstrapState = {
 type Boot = {
   healthy?: boolean
   path?: Path
+  /**
+   * The server's own answer to "do you serve the host aggregate `wr/events`?".
+   * Absent from a server old enough not to declare it, which reads as "not
+   * declared" rather than as `false` — see `hostAggregateDeclaration`.
+   */
+  hostAggregate?: boolean
 }
 
 /**
- * Read the bootstrap response into the two fields this module uses.
+ * Read the bootstrap response into the fields this module uses.
  *
  * The body arrives as `unknown` and asserting it into `Boot` certifies nothing:
  * `path` is handed to `setGlobalState` and cached under `queryKeys.directory.path`
@@ -67,7 +73,11 @@ type Boot = {
 function toBoot(input: unknown): Boot | undefined {
   const data = asRecord(input)
   if (!data) return undefined
-  return { healthy: readBoolean(data, "healthy"), path: toPath(data.path) }
+  return {
+    healthy: readBoolean(data, "healthy"),
+    path: toPath(data.path),
+    hostAggregate: readBoolean(data.events, "hostAggregate"),
+  }
 }
 
 function toPath(input: unknown): Path | undefined {
@@ -240,6 +250,7 @@ export async function bootstrapGlobal(input: {
     const path = boot.path ?? EMPTY_PATH
     input.setGlobalState({ path })
     queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), path)
+    if (boot.hostAggregate !== undefined) setHostAggregateDeclaration(input.baseUrl, boot.hostAggregate)
     input.setGlobalState({ ready: true })
     return
   }

@@ -422,33 +422,42 @@ function useReconnectCleanup() {
 
   useReconnectReconciliation({
     connected: claxedoEvents.workspaceConnected,
+    reconnects: claxedoEvents.workspaceReconnects,
     reconcile: () => reconcileAgentStatuses(state, platform.fetch ?? fetch),
   })
 }
 
 /**
  * The agent statuses reconciled here are driven by `agent.lifecycle` and
- * `pty.*` frames, which ride the workspace's own stream (`wr`) — so the edge
- * is that stream's return, `workspaceConnected` (one workspace stream is
- * open at a time, so its level shows every return; see
- * `app/connection/stream-connectivity.ts`). The aggregate `connected()`
- * never drops while the control plane's stream holds it up, and a `wr`-only
- * outage across a `pty.exited` would leave a terminal pinned "busy". A
- * workspace switch is a return too, and so is the first stream of a page
- * load: the indicators persisted from before it are stale in the same way.
+ * `pty.*` frames, which ride a workspace runtime's stream (`wr`) — so the
+ * edge is that stream's return. The aggregate `connected()` never drops
+ * while the control plane's stream holds it up, and a `wr`-only outage
+ * across a `pty.exited` would leave a terminal pinned "busy". A workspace
+ * switch is a return too, and so is the first stream of a page load: the
+ * indicators persisted from before it are stale in the same way.
+ *
+ * Two `wr` streams are open at once on a signed desktop — the daemon's host
+ * aggregate and a routed relay-backed workspace's own — and the level cannot
+ * show the return of one while the other holds it up, so the per-kind edge
+ * counter is the other half of the edge. That workspace's Runtime Access
+ * Token expires every ten minutes, so its return is the routine case.
  */
 export function useReconnectReconciliation(input: {
   connected: Accessor<boolean>
+  reconnects: Accessor<number>
   reconcile: () => void | Promise<void>
 }) {
+  // `on` runs these callbacks untracked. Reconciliation synchronously snapshots
+  // metadata and terminal statuses before its first await; those reads must not
+  // turn later title/status changes into another network reconciliation while
+  // the connection remains up.
   createEffect(on(input.connected, (isConnected) => {
     if (!isConnected) return
-    // `on` runs this callback untracked. Reconciliation synchronously snapshots
-    // metadata and terminal statuses before its first await; those reads must not
-    // turn later title/status changes into another network reconciliation while
-    // the connection remains up.
     void input.reconcile()
   }))
+  // Deferred: the count's initial value is not an edge, and the level's own
+  // first reconcile above already covers the page load.
+  createEffect(on(input.reconnects, () => void input.reconcile(), { defer: true }))
 }
 
 /** What the reconciliation reads and writes: the terminals each content owns, and their indicators. */

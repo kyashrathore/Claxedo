@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import {
   claxedoEventRouteSessionID,
   claxedoEventStreamTargets,
+  routeAwaitsWorkspaceStream,
   eventStreamFetch,
   eventStreamFrameAddress,
   eventStreamTargetKey,
   WORKSPACE_EVENTS_PATH,
+  type HostAggregateEventStreamTarget,
 } from "./claxedo-event-targets"
 import {
   holdSessionEventScope,
@@ -37,28 +39,170 @@ describe("claxedoEventStreamTargets", () => {
     },
   }]
 
-  test("a loopback surface reads its daemon's cp stream and the local workspace's wr stream, signed or not", () => {
+  const loopbackCp = { kind: "cp", url: new URL("http://127.0.0.1:3001/api/cp/events"), transport: "server" }
+  const hostAggregate = { kind: "wr", scope: "host", serverUrl: "http://127.0.0.1:3001" }
+
+  test("a loopback surface reads its daemon's cp stream and the host aggregate, signed or not", () => {
+    // The daemon hosts the local runtime, so its frames are already on the
+    // aggregate: a second, directory-scoped connection would be them twice.
     for (const accountSigned of [false, true]) {
       expect(claxedoEventStreamTargets({
+        hostAggregate: true,
         serverUrl: "http://127.0.0.1:3001",
         directory: "/repo/local",
         accountSigned,
         projects: localProjects,
-      })).toEqual([
-        { kind: "cp", url: new URL("http://127.0.0.1:3001/api/cp/events"), transport: "server" },
-        {
-          kind: "wr",
-          serverUrl: "http://127.0.0.1:3001",
-          workspaceId: "ws_local",
-          workspaceKind: "local",
-          directory: "/repo/local",
-        },
-      ])
+      })).toEqual([loopbackCp, hostAggregate])
     }
+  })
+
+  test("a loopback surface with no route open still reads the aggregate", () => {
+    expect(claxedoEventStreamTargets({ hostAggregate: true, serverUrl: "http://127.0.0.1:3001" })).toEqual([loopbackCp, hostAggregate])
+  })
+
+  test.each(["cloud", "user-hosted"] as const)("a signed desktop adds the routed %s workspace's relay stream", (kind) => {
+    expect(claxedoEventStreamTargets({
+      hostAggregate: true,
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/remote",
+      accountSigned: true,
+      accountStream: true,
+      projects: [{
+        workspaces: {
+          "/repo/remote": { workspaceId: "ws_remote", kind, directory: "/repo/remote" },
+          ...localProjects[0].workspaces,
+        },
+      }],
+    })).toEqual([
+      loopbackCp,
+      { ...loopbackCp, transport: "account" },
+      hostAggregate,
+      {
+        kind: "wr",
+        serverUrl: "http://127.0.0.1:3001",
+        workspaceId: "ws_remote",
+        workspaceKind: kind,
+        directory: "/repo/remote",
+      },
+    ])
+  })
+
+  test("a signed desktop on a local route reads the aggregate and no workspace stream", () => {
+    expect(claxedoEventStreamTargets({
+      hostAggregate: true,
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/local",
+      accountSigned: true,
+      accountStream: true,
+      projects: localProjects,
+    })).toEqual([loopbackCp, { ...loopbackCp, transport: "account" }, hostAggregate])
+  })
+
+  test("a server that declares no aggregate hands the local workspace its own stream, loopback or not", () => {
+    // The self-hosted node runs its embedded issuer on localhost and mounts no
+    // aggregate when it does. Reading the URL alone would leave every local
+    // workspace with no stream at all behind a route that answers nothing.
+    const forServer = (serverUrl: string, accountSigned: boolean) => claxedoEventStreamTargets({
+      hostAggregate: false,
+      serverUrl,
+      directory: "/repo/local",
+      accountSigned,
+      projects: localProjects,
+    })
+    const localWorkspaceStream = (serverUrl: string) => ({
+      kind: "wr",
+      serverUrl,
+      workspaceId: "ws_local",
+      workspaceKind: "local",
+      directory: "/repo/local",
+    })
+
+    expect(forServer("http://127.0.0.1:3001", true)).toEqual([
+      loopbackCp,
+      localWorkspaceStream("http://127.0.0.1:3001"),
+    ])
+    expect(forServer("https://node.example.test", true)).toEqual([
+      { kind: "cp", url: new URL("https://node.example.test/api/cp/events"), transport: "server" },
+      localWorkspaceStream("https://node.example.test"),
+    ])
+    expect(forServer("https://node.example.test", false)).toEqual([localWorkspaceStream("https://node.example.test")])
+  })
+
+  test("a loopback server that has not answered yet opens no wr stream, and the route waits", () => {
+    // `false` and "not declared" are different answers. Opening the aggregate
+    // on a guess holds a permanently retrying 403 against a signed node;
+    // opening the scoped stream on a guess feeds every local frame twice once
+    // the aggregate turns out to be served.
+    const input = {
+      hostAggregate: undefined,
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/local",
+      accountSigned: true,
+      accountStream: true,
+      projects: localProjects,
+    }
+    expect(claxedoEventStreamTargets(input)).toEqual([loopbackCp, { ...loopbackCp, transport: "account" }])
+    expect(routeAwaitsWorkspaceStream(input)).toBe(true)
+    // A route naming no workspace has no frames to wait for.
+    expect(routeAwaitsWorkspaceStream({ ...input, directory: undefined })).toBe(false)
+  })
+
+  test("a filesystem path the catalog has not placed rides the aggregate rather than opening a second stream", () => {
+    // What Tier R's daemon answers before its workspace store has registered
+    // the worktree: a project with a worktree and no `workspaces` map at all.
+    // The daemon serves the paths on its OWN machine, so a path is local by
+    // construction and only a catalog entry naming one cloud or user-hosted is
+    // another machine's runtime.
+    const directory = "/private/var/folders/claxedo-tier-real-two-streams"
+    const input = {
+      hostAggregate: true,
+      serverUrl: "http://127.0.0.1:3001",
+      directory,
+      projects: [{ id: "engine-hash", worktree: directory }],
+    }
+    expect(claxedoEventStreamTargets(input)).toEqual([loopbackCp, hostAggregate])
+    expect(routeAwaitsWorkspaceStream(input)).toBe(false)
+  })
+
+  test("the aggregate is one stream of its own, whatever else is open", () => {
+    const targets = claxedoEventStreamTargets({
+      hostAggregate: true,
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "ws_cloud",
+      accountSigned: true,
+      accountStream: true,
+    })
+    expect(targets.filter((target) => eventStreamTargetKey(target) === "wr:host:http://127.0.0.1:3001")).toEqual([hostAggregate])
+    expect(new Set(targets.map((target) => eventStreamTargetKey(target))).size).toBe(targets.length)
+  })
+
+  test("a workspace the catalog lists as local rides the aggregate even under a relay-shaped id", () => {
+    // `sessionWorkspaceRuntimeRef` calls a `ws_`-shaped id optimistically
+    // relay-backed, and the daemon serves a local workspace on the
+    // relay-shaped path all the same: the scoped stream would be the
+    // aggregate's own frames a second time.
+    expect(claxedoEventStreamTargets({
+      hostAggregate: true,
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "ws_shaped_local",
+      accountSigned: true,
+      projects: [{
+        workspaces: {
+          "/repo/shaped": { workspaceId: "ws_shaped_local", kind: "local" as const, directory: "/repo/shaped" },
+        },
+      }],
+    })).toEqual([loopbackCp, hostAggregate])
+  })
+
+  test("the aggregate's key names its server, so another daemon is another stream", () => {
+    const aggregate: HostAggregateEventStreamTarget = { kind: "wr", scope: "host", serverUrl: "http://127.0.0.1:3001" }
+    expect(eventStreamTargetKey(aggregate))
+      .not.toBe(eventStreamTargetKey({ ...aggregate, serverUrl: "http://127.0.0.1:4001" }))
   })
 
   test("omits the hosted cp stream an unsigned page has no route to", () => {
     expect(claxedoEventStreamTargets({
+      hostAggregate: true,
       serverUrl: "https://control.example.test",
       accountSigned: false,
       directory: "/repo/local",
@@ -74,6 +218,7 @@ describe("claxedoEventStreamTargets", () => {
 
   test("a signed remote workspace's wr target is a relay target carrying the route's session as the fallback scope", () => {
     const targets = claxedoEventStreamTargets({
+      hostAggregate: true,
       serverUrl: "https://control.example.test",
       accountSigned: true,
       directory: "/repo/cloud",
@@ -103,10 +248,13 @@ describe("claxedoEventStreamTargets", () => {
   })
 
   test.each(["ws_cloud", "workspace:ws_cloud"])("resolves the workspace from a %s route", (directory) => {
-    for (const serverUrl of ["https://control.example.test", "http://127.0.0.1:3001"]) {
-      const targets = claxedoEventStreamTargets({ serverUrl, accountSigned: true, directory, sessionID: "session-cloud" })
+    // The loopback surface holds the aggregate between the two; the web one
+    // has no aggregate, so its pair is pinned at exactly two.
+    for (const [serverUrl, count] of [["https://control.example.test", 2], ["http://127.0.0.1:3001", 3]] as const) {
+      const targets = claxedoEventStreamTargets({ hostAggregate: true, serverUrl, accountSigned: true, directory, sessionID: "session-cloud" })
+      expect(targets).toHaveLength(count)
       expect(targets[0]).toEqual({ kind: "cp", url: new URL(`${serverUrl}/api/cp/events`), transport: "server" })
-      expect(targets[1]).toMatchObject({ kind: "wr", serverUrl, workspaceId: "ws_cloud", sessionID: "session-cloud" })
+      expect(targets.at(-1)).toMatchObject({ kind: "wr", serverUrl, workspaceId: "ws_cloud", sessionID: "session-cloud" })
     }
   })
 
@@ -118,6 +266,7 @@ describe("claxedoEventStreamTargets", () => {
     expect(draftRoute).toBeUndefined()
     setSessionEventRouteScope(draftRoute)
     expect(claxedoEventStreamTargets({
+      hostAggregate: true,
       serverUrl: "https://control.example.test",
       accountSigned: true,
       directory: "ws_cloud",
@@ -127,6 +276,7 @@ describe("claxedoEventStreamTargets", () => {
     holdSessionEventScope("ses_created")
     try {
       expect(claxedoEventStreamTargets({
+        hostAggregate: true,
         serverUrl: "https://control.example.test",
         accountSigned: true,
         directory: "ws_cloud",
@@ -141,6 +291,7 @@ describe("claxedoEventStreamTargets", () => {
     // A terminal route names no session, and the bytes a terminal renders ride
     // `pty.stream` on the workspace bus — a stream that belongs to no session.
     expect(claxedoEventStreamTargets({
+      hostAggregate: true,
       serverUrl: "https://control.example.test",
       accountSigned: true,
       directory: "ws_user_hosted",
@@ -178,6 +329,7 @@ describe("claxedoEventStreamTargets", () => {
 
   test("a signed desktop reads its daemon's cp stream AND the hosted control plane's through the account bridge", () => {
     const targets = claxedoEventStreamTargets({
+      hostAggregate: true,
       serverUrl: "http://127.0.0.1:3001",
       directory: "/repo/local",
       accountSigned: true,
@@ -190,9 +342,45 @@ describe("claxedoEventStreamTargets", () => {
     ])
     expect(new Set(targets.map((target) => eventStreamTargetKey(target))).size).toBe(targets.length)
     // Signed web has one control plane: the server's stream is the hosted one.
-    expect(claxedoEventStreamTargets({ serverUrl: "https://control.example.test", accountSigned: true, accountStream: true })).toEqual([
+    expect(claxedoEventStreamTargets({ hostAggregate: true, serverUrl: "https://control.example.test", accountSigned: true, accountStream: true })).toEqual([
       { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
     ])
+  })
+
+  // A scoped target with no workspace id does not fail loudly: on a loopback
+  // placement `workspaceRuntimeId` returns undefined for it, and the open
+  // silently becomes the daemon's own `?directory=` route — the same request
+  // the aggregate already answers, delivering every frame of that workspace
+  // twice. Only a non-loopback placement throws.
+  test("every scoped target names a workspace, whatever the route and catalog", () => {
+    type Catalog = NonNullable<Parameters<typeof claxedoEventStreamTargets>[0]["projects"]>
+    const catalogs: Catalog[] = [
+      [],
+      [{ worktree: "/repo/local" }],
+      [{ id: "5f1e4a2b-1c3d-4e5f-8a9b-0c1d2e3f4a5b", worktree: "/repo/local" }],
+      [{ workspaces: { "": { workspaceId: "", kind: "local", directory: "/repo/local" } } }],
+      [{ workspaces: { "/repo/local": { kind: "local", directory: "/repo/local" } } }],
+      [{ workspaces: { "/repo/remote": { workspaceId: "ws_remote", kind: "cloud", directory: "/repo/remote" } } }],
+      localProjects,
+    ]
+    const routes = [
+      "/repo/local", "/repo/remote", "ws_remote", "ws_unknown", "workspace:ws_remote",
+      "5f1e4a2b-1c3d-4e5f-8a9b-0c1d2e3f4a5b", "workspace:5f1e4a2b-1c3d-4e5f-8a9b-0c1d2e3f4a5b", "",
+    ]
+    const nameless: unknown[] = []
+    for (const projects of catalogs) {
+      for (const directory of routes) {
+        for (const serverUrl of ["http://127.0.0.1:3001", "https://control.example.test"]) {
+          for (const hostAggregate of [true, false, undefined]) {
+            for (const target of claxedoEventStreamTargets({ serverUrl, directory, projects, hostAggregate, accountSigned: true })) {
+              if (target.kind !== "wr" || target.scope === "host") continue
+              if (!target.workspaceId) nameless.push({ directory, serverUrl, hostAggregate, target })
+            }
+          }
+        }
+      }
+    }
+    expect(nameless).toEqual([])
   })
 })
 
@@ -356,6 +544,25 @@ describe("eventStreamFetch", () => {
     expect(seen).toEqual([{ url: "http://127.0.0.1:3001/workspaces/ws_cloud/api/wr/events", auth: null, cursor: "7" }])
   })
 
+  test("opens the host aggregate on the daemon itself, naming no workspace", async () => {
+    const seen: Array<{ url: string; cursor: string | null }> = []
+    const request = fetchDouble(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes("/connection")) throw new Error(`unexpected relay connection mint: ${url}`)
+      seen.push({ url, cursor: new Headers(init?.headers).get("Last-Event-ID") })
+      return new Response('data: {"type":"heartbeat"}\n\n', { status: 200 })
+    })
+
+    const res = await eventStreamFetch(
+      { kind: "wr", scope: "host", serverUrl: "http://127.0.0.1:3001" },
+      { headers: { Accept: "text/event-stream", "Last-Event-ID": "11" } },
+      { request },
+    )
+
+    expect(res.status).toBe(200)
+    expect(seen).toEqual([{ url: "http://127.0.0.1:3001/api/wr/events", cursor: "11" }])
+  })
+
   test("the workspace events path is the runtime's one stream", () => {
     expect(WORKSPACE_EVENTS_PATH).toBe("/api/wr/events")
   })
@@ -390,6 +597,14 @@ describe("eventStreamFrameAddress", () => {
       directory: "/repo/local",
     })
     expect(address("/repo/local")).toBe("/repo/local")
+  })
+
+  // The aggregate carries many runtimes, each stamping its own path — all of
+  // them this machine's — so there is no one workspace to re-address them to.
+  test("leaves every path the host aggregate delivers alone", () => {
+    const address = eventStreamFrameAddress({ kind: "wr", scope: "host", serverUrl: "http://127.0.0.1:3001" })
+    expect(address("/repo/one")).toBe("/repo/one")
+    expect(address("/repo/two")).toBe("/repo/two")
   })
 
   test("leaves the cp stream alone", () => {

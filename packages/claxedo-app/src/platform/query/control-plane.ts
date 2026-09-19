@@ -62,6 +62,28 @@ export function readProjectCatalog(baseUrl: string | undefined): Project[] {
   return queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? EMPTY_CATALOG
 }
 
+/**
+ * Whether the server at `baseUrl` said it serves the host aggregate
+ * `wr/events` — `events.hostAggregate` in its bootstrap body, cached by
+ * `bootstrapGlobal` beside `path`.
+ *
+ * `undefined` is a third answer, not a missing `false`: until the boot lands,
+ * the reader does not know which stream carries the routed workspace's frames,
+ * and opening one on a guess is how a page ends up holding a permanently
+ * refused connection or a doubled feed. The posture is the SERVER's to state —
+ * the URL cannot, since a signed node runs its issuer on localhost too, and
+ * the build's own auth flag describes the bundle rather than the server it
+ * reached.
+ */
+export function hostAggregateDeclaration(baseUrl: string | undefined): boolean | undefined {
+  return queryClient.getQueryData<boolean>(queryKeys.deployment.hostAggregateDeclaration(baseUrl))
+}
+
+/** The one writer of {@link hostAggregateDeclaration}; called by the global boot. */
+export function setHostAggregateDeclaration(baseUrl: string | undefined, declared: boolean): void {
+  queryClient.setQueryData(queryKeys.deployment.hostAggregateDeclaration(baseUrl), declared)
+}
+
 export function normalizeProjectList(data: Project[] | undefined) {
   return (data ?? [])
     .filter((item) => !!item?.id)

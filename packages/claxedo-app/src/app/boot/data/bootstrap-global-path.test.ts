@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { hostAggregateDeclaration } from "@/platform/query/control-plane"
 import { bootstrapGlobal } from "./bootstrap"
 
 afterEach(() => queryClient.clear())
@@ -47,6 +48,22 @@ describe("bootstrapGlobal path", () => {
     const patches = await run(globalBoot)
     expect(queryClient.getQueryData(queryKeys.directory.path(baseUrl, ""))).toEqual(globalBoot.path)
     expect(patches.find((p) => "path" in p)?.path).toEqual(globalBoot.path)
+  })
+
+  test("caches the server's host-aggregate declaration, and leaves it unanswered when the body omits it", async () => {
+    await run({ ...globalBoot, events: { hostAggregate: true } })
+    expect(hostAggregateDeclaration(baseUrl)).toBe(true)
+
+    queryClient.clear()
+    await run({ ...globalBoot, events: { hostAggregate: false } })
+    expect(hostAggregateDeclaration(baseUrl)).toBe(false)
+
+    // A server that declares nothing must not read as `false`: the client then
+    // opens the routed workspace's own stream against a daemon whose aggregate
+    // is already carrying those frames.
+    queryClient.clear()
+    await run(globalBoot)
+    expect(hostAggregateDeclaration(baseUrl)).toBeUndefined()
   })
 
   test("a path missing a member is still dropped, not padded", async () => {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createEffect, createRoot, on } from "solid-js"
 import {
+  HOST_AGGREGATE_LANE,
   holdSessionEventScope,
   registerSessionEventStreamLane,
   reportSessionEventStreamClosed,
@@ -123,6 +124,22 @@ describe("sessionEventStreamsOpen", () => {
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
   })
 
+  test("the host aggregate does not stand in for the workspace stream the route is owed", () => {
+    // It is registered on every loopback surface and carries every session it
+    // has, so counting it would answer an expectation raised for a workspace
+    // whose own runtime is another machine's.
+    const releaseHost = registerSessionEventStreamLane(HOST_AGGREGATE_LANE)
+    reportSessionEventStreamOpen(HOST_AGGREGATE_LANE)
+    setSessionEventStreamLaneExpected(true)
+    expect(sessionEventStreamsOpen("ses_1")).toBe(false)
+
+    const release = registerSessionEventStreamLane("wr:ws_1")
+    reportSessionEventStreamOpen("wr:ws_1")
+    expect(sessionEventStreamsOpen("ses_1")).toBe(true)
+    release()
+    releaseHost()
+  })
+
   test("waits for a registered stream and requires it to carry the session", () => {
     registerSessionEventStreamLane("wr:a")
     expect(sessionEventStreamsOpen("ses_1")).toBe(false)
@@ -142,6 +159,17 @@ describe("sessionEventStreamsOpen", () => {
     reportSessionEventStreamOpen("wr:b")
     expect(sessionEventStreamsOpen("ses_1")).toBe(true)
     expect(sessionEventStreamsOpen("ses_2")).toBe(true)
+  })
+
+  test("the host aggregate carries every local session, whichever workspace it belongs to", () => {
+    // On loopback the only stream a local workspace has is the daemon's
+    // aggregate, registered under one lane for all of them: readiness that
+    // waited for a per-workspace lane would never be satisfied.
+    registerSessionEventStreamLane("wr:host")
+    expect(sessionEventStreamsOpen("ses_in_repo_a")).toBe(false)
+    reportSessionEventStreamOpen("wr:host")
+    expect(sessionEventStreamsOpen("ses_in_repo_a")).toBe(true)
+    expect(sessionEventStreamsOpen("ses_in_repo_b")).toBe(true)
   })
 
   test("a released stream stops being waited for", () => {

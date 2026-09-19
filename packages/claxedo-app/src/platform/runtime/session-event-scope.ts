@@ -44,6 +44,14 @@ import { createStore, produce } from "solid-js/store"
 /** One workspace runtime's stream, keyed the way `stream-sync-status` keys it. */
 export type SessionEventStreamLane = `wr:${string}`
 
+/**
+ * The lane the daemon's host aggregate registers. It carries every local
+ * runtime rather than one workspace, and on a loopback surface it is
+ * registered from boot — so it cannot answer an expectation raised for a
+ * workspace the reader has not opened a stream for.
+ */
+export const HOST_AGGREGATE_LANE: SessionEventStreamLane = "wr:host"
+
 type LaneState = {
   /** The reader is driving this stream, so readiness waits for it. */
   registered: boolean
@@ -73,6 +81,7 @@ type SessionEventScopeState = {
    * — its catalog entry is still resolving. Readiness waits for that stream
    * as it would for a registered one; a prompt sent before it opens would
    * arrive as a burst through the stream-open resync instead of streaming.
+   * {@link HOST_AGGREGATE_LANE} does not satisfy it.
    */
   expectingWorkspaceLane: boolean
 }
@@ -164,7 +173,10 @@ export function setSessionEventStreamLaneExpected(expected: boolean): void {
 
 /** True once every registered stream — and the one the route is still owed — is open and carries `sessionId`. */
 export function sessionEventStreamsOpen(sessionId: string | undefined): boolean {
-  if (scopeState.expectingWorkspaceLane && !Object.values(scopeState.lanes).some((lane) => lane?.registered)) return false
+  if (
+    scopeState.expectingWorkspaceLane &&
+    !Object.entries(scopeState.lanes).some(([lane, state]) => state?.registered && lane !== HOST_AGGREGATE_LANE)
+  ) return false
   for (const lane of Object.values(scopeState.lanes)) {
     if (!lane?.registered) continue
     if (lane.open === undefined) return false

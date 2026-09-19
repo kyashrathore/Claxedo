@@ -1,20 +1,22 @@
 /**
  * ClaxedoEventsProvider — the app's one reader of its two event streams:
  * `cp/events` (a control plane's notices; a signed desktop reads its daemon's
- * and the hosted control plane's) and the `wr/events` of the workspace the
- * route names (that runtime's session frames and control frames). Every
- * frame enters one emitter; consumers subscribe by type or listen to all.
+ * and the hosted control plane's) and `wr/events` (a runtime's session frames
+ * and control frames). Every frame enters one emitter; consumers subscribe by
+ * type or listen to all.
  *
- * One workspace stream, the routed one: a pane of another local workspace
- * left open on the desktop gets no live `pty.*` or `agent.lifecycle` while
- * it is not routed — the daemon's control-plane stream no longer carries
- * every local workspace's frames. Every owned terminal's indicator is
- * re-read from the runtime (`reconcileAgentStatuses`: the pty list, and the
- * lifecycle it recorded for each live terminal) each time a workspace
- * stream comes up — the first of a page load and every workspace switch
- * included — so an agent that started, asked or finished there shows so on
- * the next switch. What is not recovered: the completion sound, and the tab
- * a pty's creation or exit there would have opened or closed.
+ * On loopback the daemon hosts every local runtime, so one `wr/events` — the
+ * host aggregate, named by no workspace — carries all of them, and a local
+ * workspace that is not on screen stays live. A relay-backed workspace is
+ * another machine's runtime and still gets its own stream when it is routed.
+ * On signed web every `wr` stream is a routed workspace's.
+ *
+ * What a workspace with no open stream loses is what its frames carried:
+ * `pty.*`, `agent.lifecycle`, the completion sound, the tab a pty's creation
+ * or exit opens or closes. Every owned terminal's indicator is re-read from
+ * the runtime (`reconcileAgentStatuses`) each time a workspace stream comes
+ * up, so an agent that started, asked or finished behind a dropped stream
+ * shows so once it returns.
  */
 
 import {
@@ -33,6 +35,7 @@ import {
   eventStreamFetch,
   eventStreamFrameAddress,
   eventStreamTargetKey,
+  routeAwaitsWorkspaceStream,
   routeDirectory,
   type ClaxedoEventStreamTarget,
 } from "./claxedo-event-targets"
@@ -48,6 +51,7 @@ import {
 } from "../connection/stream-sync-lifecycle"
 import { clearStreamSyncLifecycle, reportStreamSyncLifecycle, type StreamSyncStreamId } from "@/platform/runtime/stream-sync-status"
 import {
+  HOST_AGGREGATE_LANE,
   registerSessionEventStreamLane,
   reportSessionEventStreamClosed,
   reportSessionEventStreamOpen,
@@ -58,7 +62,7 @@ import {
   setSessionEventStreamLaneExpected,
 } from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
-import { readProjectCatalog } from "@/platform/query/control-plane"
+import { hostAggregateDeclaration, readProjectCatalog } from "@/platform/query/control-plane"
 import { queryKeys } from "@/platform/query/keys"
 import {
   HEARTBEAT_TIMEOUT_MS,
@@ -105,8 +109,15 @@ type ClaxedoEventsContextValue = {
    * revalidation edge for the doorbells above, each outage once.
    */
   controlPlaneReconnects: () => number
-  /** The routed workspace's stream (`wr`) is up: the one carrying `agent.lifecycle` and `pty.*`; its edge is the agent-status reconciliation's. */
+  /** A workspace runtime stream (`wr`) is up: the kind carrying `agent.lifecycle` and `pty.*`. */
   workspaceConnected: () => boolean
+  /**
+   * Counts a workspace runtime stream's return after a drop the level never
+   * showed (the host aggregate and a relay-backed workspace's own stream are
+   * both open on a signed desktop) — with `workspaceConnected`, the edge the
+   * agent-status reconciliation runs on, each outage once.
+   */
+  workspaceReconnects: () => number
 }
 
 const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue>()
@@ -132,11 +143,13 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
   const name = error instanceof Error ? error.name : typeof error
   const ctx = target.kind === "cp"
     ? { stream: "cp" as const, transport: target.transport, url: target.url }
-    : {
-        stream: "wr" as const,
-        workspaceId: target.workspaceId,
-        ...(target.directory ? { directory: target.directory } : {}),
-      }
+    : target.scope === "host"
+      ? { stream: "wr" as const, scope: "host" as const, serverUrl: target.serverUrl }
+      : {
+          stream: "wr" as const,
+          workspaceId: target.workspaceId,
+          ...(target.directory ? { directory: target.directory } : {}),
+        }
   // The control-plane mint surfaces as "Workspace connection failed: <status>"
   // (thrown) or, when the relay seam maps a failed connection to a synthetic
   // response, as "events stream failed: 502".
@@ -211,6 +224,13 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // read again, and the stream stays open.
       if (isStreamReplayGap(frame)) {
         if (target.kind === "wr") {
+          // The aggregate's hole is every local workspace's: a resync naming
+          // no directory is answered by every mounted controller.
+          if (target.scope === "host") {
+            requestSessionHistoryResync({ reason: "sse-gap" })
+            emitter.emit({ type: "stream.replay-gap", stream: "wr" })
+            return
+          }
           // Addressed the way the panes registered this workspace's sessions:
           // a relay-backed workspace's host path names nothing here.
           const directory = target.directory ? address(target.directory) : undefined
@@ -269,8 +289,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
 
     // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
-    // carries that session's events.
-    const lane: SessionEventStreamLane | undefined = target.kind === "wr" ? `wr:${target.workspaceId}` : undefined
+    // carries that session's events; the aggregate is every local workspace's,
+    // so it has one lane of its own.
+    const lane: SessionEventStreamLane | undefined = target.kind !== "wr"
+      ? undefined
+      : target.scope === "host" ? HOST_AGGREGATE_LANE : `wr:${target.workspaceId}`
     const streamId: StreamSyncStreamId = lane ?? (target.kind === "cp" && target.transport === "account" ? "cp:account" : "cp")
     // The workspace stream carries a session's live frames, so the scope owner
     // has to know whether it is open and for which session. Opened unscoped it
@@ -278,6 +301,10 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     const releaseLane = lane ? registerSessionEventStreamLane(lane) : undefined
     const reportLaneOpen = () => {
       if (!lane || target.kind !== "wr") return
+      if (target.scope === "host") {
+        reportSessionEventStreamOpen(lane)
+        return
+      }
       reportSessionEventStreamOpen(lane, state.scope === "session" ? target.sessionID : undefined)
     }
     const reportLaneClosed = () => {
@@ -350,7 +377,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // flight remembers it, since that attempt's refusal — evaluated before
     // the grant — is not the last word.
     const regranted = (sessionID: string) => {
-      if (target.kind !== "wr" || target.sessionID !== sessionID) return
+      if (target.kind !== "wr" || target.scope === "host" || target.sessionID !== sessionID) return
       if (state.scope === "refused") {
         if (state.refusedSession === sessionID) reopen()
         return
@@ -415,8 +442,10 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         headers,
         signal: attempt.signal,
       }, { scope: state.scope === "session" ? "session" : "workspace" }).then(async (res) => {
-        // Only the runtime's own refusal narrows or parks the stream.
-        if (res.status === 403 && target.kind === "wr" && state.scope === "workspace" && await streamDenied(res, "workspace")) {
+        // Only the runtime's own refusal narrows or parks the stream, and only
+        // a workspace-scoped one has a session arm to narrow to: the aggregate
+        // is loopback-direct, so a refusal there is an outage to retry.
+        if (res.status === 403 && target.kind === "wr" && target.scope !== "host" && state.scope === "workspace" && await streamDenied(res, "workspace")) {
           if (attempt.signal.aborted) return
           state.abort = null
           if (target.sessionID) {
@@ -433,7 +462,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // The session itself refused — its share revoked, or it deleted — is
         // not an outage either: nothing the runtime will serve until the
         // route names another session.
-        if (res.status === 403 && target.kind === "wr" && state.scope === "session" && await streamDenied(res, "session")) {
+        if (res.status === 403 && target.kind === "wr" && target.scope !== "host" && state.scope === "session" && await streamDenied(res, "session")) {
           if (attempt.signal.aborted) return
           state.abort = null
           park(target.sessionID)
@@ -457,15 +486,19 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // that the stream is live, so a reply that landed in that window is
         // read rather than lost. A resumed open recovers by cursor instead.
         if (target.kind === "wr" && !state.lastEventId) {
-          const directory = target.directory ? eventStreamFrameAddress(target)(target.directory) : undefined
+          const directory = target.scope !== "host" && target.directory
+            ? eventStreamFrameAddress(target)(target.directory)
+            : undefined
           requestSessionHistoryResync({ reason: "stream-open", ...(directory ? { directory } : {}) })
         }
         state.failures = 0
         // Bridge stream health → the single WorkspaceConnection authority: a
         // recovered workspace stream nudges `reconnecting → ready` (no-op unless
         // the authority had flipped to reconnecting). Readiness is owned by the
-        // authority; this stream does not infer it.
-        if (target.kind === "wr") markWorkspaceReconnected(target.workspaceId)
+        // authority; this stream does not infer it. The aggregate speaks for
+        // nobody: a connection entry exists only for a workspace a
+        // `WorkspaceGate` mounted, and a local workspace never gets one.
+        if (target.kind === "wr" && target.scope !== "host") markWorkspaceReconnected(target.workspaceId)
         resetHeartbeat()
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
@@ -525,9 +558,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           // a successful open, so a later run can escalate again.)
           console.error("[claxedo-events] stream failed", JSON.stringify(diagnostic))
           // A SUSTAINED workspace-stream outage nudges the authority
-          // `ready → reconnecting` (queries park, NO teardown) — the first-N
-          // transient failures stay quiet (BUG-8) and do NOT flip readiness.
-          if (target.kind === "wr") markWorkspaceReconnecting(target.workspaceId)
+          // `ready → reconnecting` (queries park, NO teardown) — the first
+          // transient failures stay quiet and do NOT flip readiness.
+          if (target.kind === "wr" && target.scope !== "host") markWorkspaceReconnecting(target.workspaceId)
         } else if (escalation === "quiet") {
           console.debug("[claxedo-events] stream failed (transient, retrying)", diagnostic)
         }
@@ -571,6 +604,10 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       const previous = target
       target = next
       if (next.kind !== "wr" || previous.kind !== "wr") return
+      // The aggregate carries no session scope to retarget, and its key names
+      // its server, so a daemon at another address replaces the connection
+      // rather than reaching here.
+      if (next.scope === "host" || previous.scope === "host") return
       if (state.scope === "refused") {
         // The refused session named again by the route the reader is
         // already on is the same refusal; named afresh by a navigation it
@@ -605,23 +642,36 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     const accountState = props.accountState()
     const accountSigned = accountState.status === "signed"
     const routedSession = claxedoEventRouteSessionID(props.pathname())
+    const routedDirectory = routeDirectory(props.pathname())
+    const projects = readProjectCatalog(props.serverUrl())
+    // The server's own answer, not the URL's and not the build's: a
+    // self-hosted node that issues sessions runs on localhost too and serves
+    // no aggregate there.
+    const hostAggregate = hostAggregateDeclaration(props.serverUrl())
+    // A bare `/s/<id>` route names no workspace; the pane that opened the
+    // session says which, and until it has, the session's inventory row does.
+    const directory = routedDirectory
+      ?? sessionEventScopeWorkspaceAddress(routedSession)
+      ?? (routedSession ? sessionInventoryDirectory(props.serverUrl(), routedSession) : undefined)
     const targets = claxedoEventStreamTargets({
       serverUrl: props.serverUrl(),
-      // A bare `/s/<id>` route names no workspace; the pane that opened the
-      // session says which, and until it has, the session's inventory row does.
-      directory: routeDirectory(props.pathname())
-        ?? sessionEventScopeWorkspaceAddress(routedSession)
-        ?? (routedSession ? sessionInventoryDirectory(props.serverUrl(), routedSession) : undefined),
+      directory,
       // `session-event-scope` owns which session the scoped stream must carry;
       // the route is its standing input, not a second decider.
       sessionID: sessionEventScopeId(),
-      projects: readProjectCatalog(props.serverUrl()),
+      projects,
+      hostAggregate,
       accountSigned,
       accountStream: accountStreamAvailable(accountState),
     })
-    // The route names a workspace the catalog has not resolved yet: no `wr`
-    // target, but one is owed, and the first prompt waits for it.
-    setSessionEventStreamLaneExpected(routeDirectory(props.pathname()) !== undefined && !targets.some((target) => target.kind === "wr"))
+    // Nothing carries the route's frames yet — the boot has not said whether
+    // the aggregate is served, or the catalog has not placed the workspace
+    // whose own stream would be opened — so the first prompt waits for
+    // whichever stream it turns out to need.
+    setSessionEventStreamLaneExpected(
+      routedDirectory !== undefined
+      && routeAwaitsWorkspaceStream({ serverUrl: props.serverUrl(), directory, projects, hostAggregate }),
+    )
     const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
     for (const [key, connection] of connections) {
       if (next.has(key)) continue
@@ -661,7 +711,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   createEffect(reconcileTargets)
   const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
     const key = event.query.queryKey
-    const watched = [queryKeys.controlPlane.projects(props.serverUrl()), queryKeys.shell.sessionInventory(props.serverUrl())]
+    const watched = [
+      queryKeys.controlPlane.projects(props.serverUrl()),
+      queryKeys.shell.sessionInventory(props.serverUrl()),
+      queryKeys.deployment.hostAggregateDeclaration(props.serverUrl()),
+    ]
     if (!watched.some((expected) => key.length === expected.length && expected.every((part, index) => key[index] === part))) return
     reconcileTargets()
   })
@@ -680,6 +734,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     centralConnected: connectivity.centralConnected,
     controlPlaneReconnects: connectivity.controlPlaneReconnects,
     workspaceConnected: connectivity.workspaceConnected,
+    workspaceReconnects: connectivity.workspaceReconnects,
   }
 
   return (

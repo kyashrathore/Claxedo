@@ -95,12 +95,13 @@ export type ClaxedoEvent =
    * A stream's own notice that frames between the reader's cursor and the
    * live position are gone. Raised for a rolled replay ring and for frames
    * shed under a slow consumer alike. A `wr` gap names the workspace whose
-   * sessions have to be re-read; a `cp` gap means every notice the control
-   * plane could have sent — a worktree landing, a share, a document save —
-   * has to be re-read from its source.
+   * sessions have to be re-read, or no workspace when the hole is the host
+   * aggregate's and every local workspace is behind it; a `cp` gap means
+   * every notice the control plane could have sent — a worktree landing, a
+   * share, a document save — has to be re-read from its source.
    */
   | { type: "stream.replay-gap"; stream: "cp"; transport: "server" | "account" }
-  | { type: "stream.replay-gap"; stream: "wr"; workspaceId: string; directory?: string }
+  | { type: "stream.replay-gap"; stream: "wr"; workspaceId?: string; directory?: string }
   | { type: "subagent.updated"; directory?: string; workspaceId?: string; properties: unknown }
   | { type: "goal.updated"; directory?: string; workspaceId?: string; properties: unknown }
   | { type: "goal.cleared"; directory?: string; workspaceId?: string; properties: unknown }
@@ -183,10 +184,13 @@ export function createClaxedoEventEmitter() {
 /**
  * A workspace stream's session frames belong to that workspace: the
  * session-title projection keys by it as well as by directory. A frame that
- * names its own workspace keeps it.
+ * names its own workspace keeps it. The host aggregate names no workspace —
+ * it carries every local runtime's — so its frames keep the directory they
+ * arrived with as their only address.
  */
 export function stampWorkspace(event: ClaxedoEvent, target: ClaxedoEventStreamTarget): ClaxedoEvent {
-  if (target.kind !== "wr" || !("properties" in event) || !("directory" in event)) return event
+  if (target.kind !== "wr" || target.scope === "host") return event
+  if (!("properties" in event) || !("directory" in event)) return event
   if ("workspaceId" in event && typeof event.workspaceId === "string" && event.workspaceId) return event
   return { ...event, workspaceId: target.workspaceId }
 }

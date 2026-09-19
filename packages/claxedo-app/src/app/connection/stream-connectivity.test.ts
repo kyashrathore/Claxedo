@@ -122,6 +122,46 @@ describe("createStreamConnectivity", () => {
     })
   })
 
+  test("two workspace streams: the aggregate holds the level while the relay stream returns, and that return counts", () => {
+    createRoot((dispose) => {
+      const connectivity = createStreamConnectivity()
+      const aggregate = connectivity.track("wr")
+      const relay = connectivity.track("wr")
+      aggregate(true)
+      relay(true)
+      expect(connectivity.workspaceReconnects()).toBe(0)
+
+      // The relay stream's Runtime Access Token expires and it reopens by
+      // cursor; the aggregate never drops, so the level shows nothing.
+      relay(false)
+      expect(connectivity.workspaceConnected()).toBe(true)
+      relay(true)
+      expect(connectivity.workspaceConnected()).toBe(true)
+      expect(connectivity.workspaceReconnects()).toBe(1)
+
+      // Both down: the return that lifts the level is the level's own edge.
+      aggregate(false)
+      relay(false)
+      expect(connectivity.workspaceConnected()).toBe(false)
+      aggregate(true)
+      expect(connectivity.workspaceReconnects()).toBe(1)
+      relay(true)
+      expect(connectivity.workspaceReconnects()).toBe(2)
+
+      const central = connectivity.track("cp")
+      central(true)
+      central(false)
+      central(true)
+      expect(connectivity.workspaceReconnects()).toBe(2)
+      expect(connectivity.controlPlaneReconnects()).toBe(0)
+
+      relay.release()
+      relay(true)
+      expect(connectivity.workspaceReconnects()).toBe(2)
+      dispose()
+    })
+  })
+
   test("repeated same-value reports do not double-count", () => {
     createRoot((dispose) => {
       const connectivity = createStreamConnectivity()

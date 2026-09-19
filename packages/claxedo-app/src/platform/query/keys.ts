@@ -49,6 +49,14 @@ export function workspaceQueryKey(
 }
 
 export const queryKeys = {
+  /**
+   * What a server said about ITSELF at boot, keyed per server because two
+   * servers on one machine answer differently — a desktop daemon and a signed
+   * self-hosted node both live on localhost.
+   */
+  deployment: {
+    hostAggregateDeclaration: (baseUrl?: string) => ["deployment", normalized(baseUrl), "hostAggregateDeclaration"] as const,
+  },
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,
     // A harness catalog and its provider authentication both belong to (the

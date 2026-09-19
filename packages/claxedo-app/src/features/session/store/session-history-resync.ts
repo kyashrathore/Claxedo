@@ -11,10 +11,11 @@ import { createSignal } from "solid-js"
  * is live from here on, so the store's view of a turn — part status, streamed
  * text, todo — is only repaired by reading it. The request names the
  * workspace the stream serves and no session: every controller mounted for
- * that workspace answers for its own session. The reads belong to the
- * controller (`syncSessionHistory`, `syncSessionTodo`); a request no
- * controller matches is dropped, because a later mount loads history on
- * activation anyway.
+ * that workspace answers for its own session. It names no workspace either
+ * when the stream serves more than one — the daemon's host aggregate — and
+ * then every mounted controller answers. The reads belong to the controller
+ * (`syncSessionHistory`, `syncSessionTodo`); a request no controller matches
+ * is dropped, because a later mount loads history on activation anyway.
  */
 export type SessionHistoryResync = {
   sequence: number

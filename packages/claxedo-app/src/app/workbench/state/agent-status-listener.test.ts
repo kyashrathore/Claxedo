@@ -23,6 +23,7 @@ describe("useReconnectReconciliation", () => {
     createRoot((rootDispose) => {
       dispose = rootDispose
       const [connected, updateConnected] = createSignal(true)
+      const [reconnects] = createSignal(0)
       const [metadata, updateMetadata] = createSignal("Terminal")
       const [status, updateStatus] = createSignal<"working" | "permission">("working")
       setConnected = updateConnected
@@ -31,6 +32,7 @@ describe("useReconnectReconciliation", () => {
 
       useReconnectReconciliation({
         connected,
+        reconnects,
         reconcile: () => {
           // These stand in for terminalReconnectTargets' synchronous snapshot.
           // Reading them must not subscribe the connection effect to later
@@ -58,6 +60,36 @@ describe("useReconnectReconciliation", () => {
       setStatus("permission")
       await settleEffects()
       expect(fetches).toBe(2)
+    } finally {
+      dispose?.()
+    }
+  })
+
+  test("a stream's return under a level another workspace stream holds up still reconciles", async () => {
+    let dispose: (() => void) | undefined
+    let bumpReconnects!: (count: number) => void
+    let fetches = 0
+
+    createRoot((rootDispose) => {
+      dispose = rootDispose
+      // The host aggregate never drops, so the level stays true throughout.
+      const [connected] = createSignal(true)
+      const [reconnects, updateReconnects] = createSignal(0)
+      bumpReconnects = updateReconnects
+      useReconnectReconciliation({ connected, reconnects, reconcile: () => { fetches += 1 } })
+    })
+
+    try {
+      await settleEffects()
+      expect(fetches).toBe(1)
+
+      bumpReconnects(1)
+      await settleEffects()
+      expect(fetches).toBe(2)
+
+      bumpReconnects(2)
+      await settleEffects()
+      expect(fetches).toBe(3)
     } finally {
       dispose?.()
     }
