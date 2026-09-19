@@ -983,3 +983,104 @@ verdicts GO WITH FIXES. Fixes (the commit after this one):
   the daemon-wide pass of an unaddressed `agent.lifecycle`, and the
   synchronous parent lookup per frame. The main tree's untracked dists
   must be rebuilt before packaging or push.
+
+## Follow-up: the loopback aggregate (`wr/events` for every embedded runtime)
+
+Status: specified 2026-09-19 on `feat/loopback-aggregate-stream`
+(worktree `.worktrees/loopback-aggregate`, from `dev` `9823fdd75c`).
+Resolves the "recorded, not fixed" desktop loss above.
+
+### Why
+
+On loopback the daemon is the host of every local runtime. The merge left
+the desktop opening `wr/events` for the routed workspace only, so a local
+workspace off screen went quiet: no completion sound, no rail indicator
+until the switch reconcile, no sandbox auto-tab. Before the refactor those
+frames rode the daemon's process-wide bus by accident. One `wr/events`
+connection that carries every embedded runtime restores them without a
+third stream kind, without per-workspace connections (the browser caps
+plain-HTTP connections per host at six), and without any admission
+question: a loopback-direct reader is the machine's own user.
+
+### Contract
+
+**Server (daemon only).** `GET /api/wr/events` with no workspace named —
+no `directory`, `workspaceId` or `workspace` query and no
+`x-claxedo-directory` / `x-workspace-id` header — is the HOST AGGREGATE.
+Reached only by a loopback-direct request: the relay path always names a
+workspace (`/workspaces/:id/…`), and a request carrying the embedded relay
+host-auth stamp is refused here. `?sessionID=` on the aggregate is 400.
+
+- Frames are each runtime's frames VERBATIM — the same `{directory,
+  payload}` control frames, compat envelopes and presentation frames its
+  own `wr/events` serves, fed from the same tap, so nothing is projected
+  twice. A runtime's frames already carry its directory; that is what the
+  reader addresses by on loopback.
+- One ring, one cursor space, owned by the aggregate: bootstrap heartbeat
+  carrying the cursor, `Last-Event-ID` resume, `stream.replay-gap` on a
+  rolled cursor, periodic id-less heartbeats — the same rules as a
+  runtime's stream (`routes/events.ts`), through
+  `createIdentityAwareEventSource` under the unmanaged-local principal.
+- Runtimes that start after the connection opened join it; a runtime that
+  leaves the registry keeps contributing until its disposal settles, so the
+  terminal frames an aborted turn publishes during teardown still reach the
+  reader. Nothing is buffered for a runtime that is not mounted: a workspace
+  with no live runtime has nothing live to say.
+- Served by the desktop daemon and by an UNSIGNED self-hosted node; a signed
+  self-hosted node mounts none. The serving composition DECLARES it in the
+  bootstrap body (`events.hostAggregate`) from the same value that mounts
+  it, and the app opens the aggregate only where the server declared it:
+  declared false, the routed workspace gets its own scoped stream whatever
+  its kind; not yet declared, no `wr` stream opens and the first prompt
+  waits. A build flag never decides it — every e2e bundle is built with
+  auth enabled against an unsigned backend.
+- The per-workspace `wr/events` (`?directory=`) is unchanged and stays for
+  the relay path and for tests; the desktop no longer opens it for a local
+  workspace.
+
+**Client.** The URL decides which control planes exist: on a loopback
+server `cp` (the daemon's) and `cp` over the account bridge when signed;
+elsewhere the hosted `cp` when signed. The SERVER'S bootstrap declaration
+(`events.hostAggregate`) decides the workspace stream: declared true, ONE
+host-aggregate `wr` target with no workspace, plus — when the routed
+workspace is `cloud` or `user-hosted` — that workspace's scoped `wr`
+target through the relay, and never a scoped `wr` for a local workspace or
+for a plain filesystem path; declared false, the routed workspace's own
+scoped `wr` whatever its kind; not yet declared, no `wr` and the first
+prompt waits. Signed-web target selection is unchanged.
+
+- The aggregate registers a lane (`wr:host`), reported open workspace-wide,
+  so `sessionEventStreamsOpen` counts it for every local session.
+- A gap on it requests a history resync with no directory (every mounted
+  workspace) and emits `stream.replay-gap` for the `wr` stream with no
+  workspace id. A cursor-less open resyncs the same way.
+- The aggregate's health nudges no connection authority: a local workspace
+  has no `WorkspaceConnection` entry to move (only relay-backed panes
+  acquire one), so the per-workspace nudge stays with workspace-scoped
+  targets. A relay stream's return while the aggregate is also open is a
+  `wr` reconnect EDGE the level cannot show; the agent-status reconcile
+  consumes a per-kind edge counter for it.
+- The "first prompt waits for the stream the route is owed" expectation is
+  raised exactly when the route names a workspace the catalog has not
+  placed yet (`routeAwaitsWorkspaceStream`): a placed local workspace is
+  owed nothing beyond the aggregate, a placed relay-backed one has its own
+  target. The host lane never satisfies the expectation.
+- A 403 on the aggregate is a failure with backoff, never a park: there is
+  no session arm on loopback.
+- Frames are addressed by their own directory (local identity address).
+- The round-8 switch reconcile stays; it now heals after a gap, not on
+  every switch.
+
+**DoD line change.** "Desktop local: exactly two stream connections on a
+workspace route" stays true and is re-read as `cp` + the host aggregate; a
+signed desktop with a remote workspace on screen holds one more, that
+workspace's relay stream.
+
+### Definition of done
+
+- [ ] Server: aggregate handler unit-tested with two fake runtimes — frames from both on one stream in publish order, each verbatim; a runtime mounted after open joins; a runtime that leaves the registry rides until its disposal settles; cursor resume replays; a rolled ring answers a gap; `?sessionID=` → 400; a relay-stamped request → refused; the daemon's own `?directory=` stream still serves one runtime. Progress:
+- [ ] Server: the runtime's events handler exposes its frame tap without a second subscription to the hub or bus (test: one control frame reaches both the runtime's stream and the tap once). Progress:
+- [ ] Client: target tests for loopback unsigned (cp + aggregate), loopback signed with a local route (cp, cp:account, aggregate), loopback signed with a cloud route (…+ relay wr), signed-web unchanged; reader tests for lane registration, gap → resync all, 403 → backoff; the relay stream's reconnect edge still reconciles agent status with the aggregate open; the first-prompt guard waits for the relay lane a cloud route is owed. Progress:
+- [ ] e2e: Tier M mock runtime serves the aggregate; every core spec that named a local `?directory=` stream green; Tier R `real-harness-local` stream specs green; a new Tier R case proves an agent finishing in a workspace NOT on screen updates that workspace's rail indicator without a switch. Progress:
+- [ ] Gates: per-package typecheck (workspace-runtime, local-server, app, e2e), oxlint 0 on the diff, ratchets green with measured ceilings, package suites at dev's levels with pre-existing reds listed. Progress:
+- [ ] Reviewed adversarially (server, client) with findings fixed or recorded; merged to `dev` as its own commit. Progress:
