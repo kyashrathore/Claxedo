@@ -6,6 +6,12 @@ import {
   newHostId,
   type HostKeyPair,
 } from "@claxedo/host-connector/host-identity"
+import {
+  createMachineSealingKeyPair,
+  hostMachineSealAad,
+  openMachineSeal,
+  sealingPublicKeyJwk,
+} from "@claxedo/host-connector/machine-seal"
 import { createMachineSignedTransport, type FetchLike } from "@claxedo/host-connector/machine-transport"
 
 import { readRecord, readUnknown } from "../src/shared/json-read"
@@ -17,6 +23,7 @@ import {
   type HostConnectorChildMessage,
   type HostConnectorChildState,
   type HostConnectorParentMessage,
+  type HostConnectorProviderConfig,
   type HostConnectorServingEndpoints,
   type HostEnrollmentOperation,
 } from "../src/main/host-connector/child-protocol"
@@ -51,6 +58,9 @@ function requireString(value: unknown, field: string, operation: string): string
   return value
 }
 
+/** What a withdrawal opens to: the sealed shape with no providers, so the daemon replaces rather than keeps. */
+const EMPTY_PROVIDER_CONFIG = JSON.stringify({ version: 1, providers: {} })
+
 /**
  * Run the connector against a private parent port.
  *
@@ -61,8 +71,10 @@ function requireString(value: unknown, field: string, operation: string): string
 export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch: (input, init) => fetch(input, init) }) {
   const account = new Map<string, Pending<unknown>>()
   const identityStored = new Map<string, Pending<void>>()
+  const sealingKeyStored = new Map<string, Pending<void>>()
+  const providerConfigStored = new Map<string, Pending<void>>()
   let connector: ReturnType<typeof createHostConnector> | undefined
-  let machine: { keys: HostKeyPair; hostId: string } | undefined
+  let machine: { keys: HostKeyPair; hostId: string; sealingPrivateKeyJwk: JsonWebKey } | undefined
   let bootstrapped = false
   /**
    * Workspaces the user of THIS machine asked it to serve, by id.
@@ -161,17 +173,57 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
   }
 
   const createIdentity = async (requestId: string) => {
-    const created = await createHostKeyPair()
+    const [created, sealing] = await Promise.all([createHostKeyPair(), createMachineSealingKeyPair()])
     const { privateKeyJwk, ...keys } = created
     const identity: HostConnectorBootstrapIdentity = {
       hostId: newHostId(),
       privateKeyJwk,
+      sealingPrivateKeyJwk: sealing.privateKeyJwk,
     }
     const stored = deferred<void>()
     identityStored.set(requestId, stored)
     send({ type: "identity-created", requestId, identity })
     await stored.promise.finally(() => identityStored.delete(requestId))
     return { identity, keys }
+  }
+
+  /**
+   * A sealing key for a machine enrolled before it could receive secrets.
+   * Persisted by the parent before the first beat declares it, for the same
+   * reason the host key is: a key the control plane seals for and the parent
+   * lost leaves an enrollment nobody can configure.
+   */
+  const createSealingKey = async (requestId: string) => {
+    const sealing = await createMachineSealingKeyPair()
+    const stored = deferred<void>()
+    sealingKeyStored.set(requestId, stored)
+    send({ type: "sealing-key-created", requestId, sealingPrivateKeyJwk: sealing.privateKeyJwk })
+    await stored.promise.finally(() => sealingKeyStored.delete(requestId))
+    return sealing.privateKeyJwk
+  }
+
+  /**
+   * Hand the ciphertext to the parent and wait for its store to answer. A
+   * refusal throws so the connector leaves the revision unacked and the
+   * control plane delivers it again: the ack is its evidence that this
+   * machine is configured, and the store is what makes that true.
+   */
+  const storeProviderConfig = async (config: HostConnectorProviderConfig) => {
+    const requestId = crypto.randomUUID()
+    const stored = deferred<void>()
+    providerConfigStored.set(requestId, stored)
+    send({ type: "provider-config", requestId, ...config })
+    await stored.promise.finally(() => providerConfigStored.delete(requestId))
+  }
+
+  const openProviderConfig = async (enrollmentId: string, config: HostConnectorProviderConfig) => {
+    if (!machine) throw new Error("Host Connector has no sealing key")
+    if (config.sealed === null) return EMPTY_PROVIDER_CONFIG
+    return await openMachineSeal(
+      machine.sealingPrivateKeyJwk,
+      config.sealed,
+      hostMachineSealAad({ enrollmentId, revision: config.revision }),
+    )
   }
 
   /**
@@ -192,6 +244,23 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
     const enrollmentId = await enrollMachine(identity.keys, identity.hostId, message.displayName)
     if (closed || machine !== identity) return
 
+    // The revision the parent stored before this restart, re-opened for a
+    // daemon that restarted with it. Declared to the control plane only when
+    // it opens: the AAD binds it to this enrollment, and a blob this machine
+    // cannot open must be delivered again, not acked as held.
+    let held: { revision: number; providers: string } | undefined
+    if (message.providerConfig) {
+      try {
+        held = {
+          revision: message.providerConfig.revision,
+          providers: await openProviderConfig(enrollmentId, message.providerConfig),
+        }
+      } catch {
+        held = undefined
+      }
+    }
+    if (closed || machine !== identity) return
+
     const active = createHostConnector({
       mode: "machine",
       hostId: identity.hostId,
@@ -208,6 +277,8 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
         fetch: deps.fetch,
       }),
       heartbeatIntervalMs: message.heartbeatIntervalMs,
+      sealingPublicKey: JSON.stringify(sealingPublicKeyJwk(identity.sealingPrivateKeyJwk)),
+      ...(held ? { providerConfigRevision: held.revision } : {}),
       setInterval: (fn, ms) => {
         const handle = setInterval(fn, ms)
         handle.unref?.()
@@ -218,7 +289,12 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
       // undeclared machine rather than a guessed one.
       ...(message.sessionAuthority ? { sessionAuthority: message.sessionAuthority } : {}),
       onAssignments: reconcileAssignments,
-      onError: () => {
+      onError: (stage, error) => {
+        // A stage the connector recovered from leaves the status unchanged, so
+        // the reason would otherwise exist only in this process. A sealed
+        // revision this machine cannot open is the case that matters: nothing
+        // else on the machine says why the acked revision stopped moving.
+        send({ type: "child-error", stage, detail: String(error) })
         // `createHostConnector` settles its stopped state immediately after
         // invoking this callback. Announce after that synchronous transition.
         queueMicrotask(() => {
@@ -236,6 +312,15 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
         endpoints = next.relayJwksUrl === undefined && next.sessionAuthorityUrl === undefined ? undefined : next
       },
       onServing: (tunnel) => send({ type: "serving", tunnel: tunnel ?? null, ...(endpoints ? { endpoints } : {}) }),
+      // Stored, then opened, then forwarded — as three steps on purpose. The
+      // parent's store answers on the ciphertext alone, so the plaintext is
+      // never something main has to hold to say "stored", and the artifact
+      // on disk is only ever the ciphertext.
+      onProviderConfig: async (config) => {
+        await storeProviderConfig(config)
+        const providers = await openProviderConfig(enrollmentId, config)
+        send({ type: "provider-config-ready", revision: config.revision, providers })
+      },
       // A timer-driven heartbeat renews the lease with nobody on this side
       // waiting for it — the parent's copy of the status only advances when
       // told. Push the fresh snapshot (renewed `expires_at`, reconciled acks)
@@ -245,6 +330,9 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
       },
     })
     connector = active
+    // Before the first beat: a newer revision that beat delivers is forwarded
+    // from inside it, and the restored one must not land after it.
+    if (held) send({ type: "provider-config-ready", ...held })
     await active.start()
     if (connector !== active) return
     if (closed) {
@@ -264,7 +352,8 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
     const restored = message.identity
       ? { identity: message.identity, keys: await hostKeyPairFromJwk(message.identity.privateKeyJwk) }
       : await createIdentity(message.requestId)
-    machine = { keys: restored.keys, hostId: restored.identity.hostId }
+    const sealingPrivateKeyJwk = restored.identity.sealingPrivateKeyJwk ?? (await createSealingKey(message.requestId))
+    machine = { keys: restored.keys, hostId: restored.identity.hostId, sealingPrivateKeyJwk }
     // The shares this machine held before the restart. Their assignments are
     // still the owner's, recorded at the control plane, so nothing has to be
     // re-declared: the first beat's descriptions are acked back into service.
@@ -306,6 +395,19 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
 
     if (message.type === "identity-stored") {
       identityStored.get(message.requestId)?.resolve()
+      return
+    }
+
+    if (message.type === "sealing-key-stored") {
+      sealingKeyStored.get(message.requestId)?.resolve()
+      return
+    }
+
+    if (message.type === "provider-config-stored") {
+      const pending = providerConfigStored.get(message.requestId)
+      if (!pending) return
+      if (message.ok) pending.resolve()
+      else pending.reject(new Error(`the parent did not store the provider configuration: ${message.error}`))
       return
     }
 
@@ -386,8 +488,12 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
       connector?.close()
       for (const pending of account.values()) pending.reject(new Error("Host Connector child closed"))
       for (const pending of identityStored.values()) pending.reject(new Error("Host Connector child closed"))
+      for (const pending of sealingKeyStored.values()) pending.reject(new Error("Host Connector child closed"))
+      for (const pending of providerConfigStored.values()) pending.reject(new Error("Host Connector child closed"))
       account.clear()
       identityStored.clear()
+      sealingKeyStored.clear()
+      providerConfigStored.clear()
     },
   }
 }

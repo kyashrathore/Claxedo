@@ -93,12 +93,14 @@ import { store } from "./store"
 import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
 import { readAccountConfig } from "./account/account-config"
-import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
+import { machineDisplayName } from "@claxedo/helpers/machine-name"
+import { setupElectronHostConnector } from "./host-connector/electron-child"
 import { remoteAccessFollow } from "./host-connector/account-follow"
 import { describeLocalWorkspace } from "./host-connector/local-workspace-description"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
 import type { HostConnectorServing } from "./host-connector/child-protocol"
 import { setupHostServingPush } from "./host-connector/serving-push"
+import { setupHostProviderConfigPush } from "./host-connector/provider-config-push"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
@@ -711,10 +713,12 @@ const account = setupLazyAccount({
  * file contains no `.start(` call at all.
  *
  * The machine's label is chosen HERE, not sent from the renderer. It is main
- * that signs the enrollment, so main names the thing it is signing for — and a
- * platform word rather than `os.hostname()`, because a hostname is the laptop's
- * identity on its network and `identity-store.ts` explains at length why that
- * must not travel to the control plane.
+ * that signs the enrollment, so main names the thing it is signing for, and a
+ * renderer asked to name the machine can only describe the browser it is. The
+ * derivation is `@claxedo/helpers/machine-name`, shared with the self-hosted
+ * node so one machine gets one name however it publishes itself. An owner's
+ * rename outranks it and is what `electron-child.ts` stores. Neither is the
+ * machine's identity, which is the key in `identity-store.ts`.
  */
 /**
  * The last ack's serving facts, retained so a daemon that becomes ready AFTER
@@ -732,6 +736,10 @@ const pushServing = async (serving: HostConnectorServing) => {
 }
 void serverReady.promise.then(() => {
   if (lastServing) void pushServing(lastServing)
+})
+const providerConfigPush = setupHostProviderConfigPush({
+  serverUrl: async () => (await serverReady.promise).url,
+  log: { info: (message) => logger.info(message), warn: (message) => logger.warn(message) },
 })
 
 // The signed Agent Plugins world follows the account the same way remote
@@ -764,7 +772,7 @@ hostConnector = setupElectronHostConnector({
   packaged: IS_PACKAGED,
   mainDir: MAIN_DIR,
   resourcesPath: process.resourcesPath,
-  displayName: machineDisplayName(process.platform),
+  derivedDisplayName: machineDisplayName(process.platform),
   ...(Number.isFinite(Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS)) &&
   Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS) > 0
     ? { heartbeatIntervalMs: Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS) }
@@ -776,7 +784,15 @@ hostConnector = setupElectronHostConnector({
   // because this fires from a heartbeat timer.
   onStatusChange: (state) =>
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
-  onServing: (serving) => void pushServing(serving),
+  onServing: (serving) => {
+    void pushServing(serving)
+    // Every serving beat is also when main re-checks that the daemon still
+    // holds the pushed rows: it keeps them in memory alone, so a daemon that
+    // restarted mid-session serves turns with no provider credentials while
+    // the control plane still shows the revision acked.
+    void providerConfigPush.reconcile()
+  },
+  onProviderConfig: (config) => void providerConfigPush.push(config),
   // The daemon composed this machine's workspace runtimes, so the daemon is
   // the only process that knows how they admit sessions. Read it from the
   // same loopback surface the serving credential is pushed to, and let the
@@ -798,6 +814,7 @@ function hostConnectorContext() {
   return {
     available: hostConnector !== undefined,
     signedIn: account.state().status === "signed",
+    ...(hostConnector ? { displayName: hostConnector.displayName() } : {}),
   }
 }
 
@@ -810,7 +827,7 @@ function hostConnectorContext() {
 registerHostConnectorIpc({
   ipcMain,
   connector: hostConnector,
-  signedIn: () => hostConnectorContext().signedIn,
+  context: hostConnectorContext,
   onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
 })
 logger.log("host connector", { available: true, state: hostConnector.status().status })

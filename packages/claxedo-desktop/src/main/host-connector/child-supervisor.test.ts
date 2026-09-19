@@ -7,6 +7,8 @@ import { runHostConnectorChild } from "../../../scripts/host-connector-entry"
 import type {
   HostConnectorBootstrapIdentity,
   HostConnectorParentMessage,
+  HostConnectorProviderConfig,
+  HostConnectorProviderConfigReady,
   HostConnectorServing,
   HostConnectorSharedWorkspace,
 } from "./child-protocol"
@@ -106,6 +108,9 @@ function harness(options?: {
   /** Hold every machine beat open this long, as a slow deployment would. */
   beatDelayMs?: number
   startupTimeoutMs?: number
+  heartbeatIntervalMs?: number
+  /** What main's store answers for a delivered revision; stored unless the test says otherwise. */
+  storeProviderConfig?: () => boolean
 }) {
   const cp = createFakeControlPlane()
   const beatDelayMs = options?.beatDelayMs
@@ -125,12 +130,16 @@ function harness(options?: {
   const errors: Array<{ stage: string; error: unknown }> = []
   const statuses: unknown[] = []
   const servings: HostConnectorServing[] = []
+  const providerConfigs: HostConnectorProviderConfig[] = []
+  const providerReady: HostConnectorProviderConfigReady[] = []
   let identity: HostConnectorBootstrapIdentity | undefined
+  let providerConfig: HostConnectorProviderConfig | undefined
   let clears = 0
   let loads = 0
   let stores = 0
   let spawns = 0
   let shareLoads = 0
+  let storedName: string | undefined
   const shareStores: Array<readonly HostConnectorSharedWorkspace[]> = []
   const connector = setupHostConnectorChild({
     ...(options?.describeWorkspace ? { describeWorkspace: options.describeWorkspace } : {}),
@@ -152,18 +161,32 @@ function harness(options?: {
     },
     controlPlaneUrl: CONTROL_PLANE_URL,
     ...(options?.startupTimeoutMs === undefined ? {} : { startupTimeoutMs: options.startupTimeoutMs }),
+    ...(options?.heartbeatIntervalMs === undefined ? {} : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
     loadIdentity: async () => {
       loads++
-      return { ok: true as const, ...(identity ? { identity } : {}) }
+      return { ok: true as const, ...(identity ? { identity } : {}), ...(providerConfig ? { providerConfig } : {}) }
     },
     storeIdentity: async (created) => {
       stores++
       identity = structuredClone(created)
+      providerConfig = undefined
+      return { ok: true as const }
+    },
+    storeSealingKey: async (sealingPrivateKeyJwk) => {
+      if (!identity) return { ok: false as const, detail: "no identity" }
+      identity = { ...identity, sealingPrivateKeyJwk }
+      return { ok: true as const }
+    },
+    storeProviderConfig: async (config) => {
+      providerConfigs.push(config)
+      if (!(options?.storeProviderConfig?.() ?? true)) return { ok: false as const, detail: "safeStorage refused the write" }
+      providerConfig = config
       return { ok: true as const }
     },
     clearIdentity: () => {
       clears++
       identity = undefined
+      providerConfig = undefined
     },
     runAccountOperation: async (name, input) => {
       operations.push({ name, ...(input ? { input } : {}) })
@@ -184,6 +207,9 @@ function harness(options?: {
         })
         return { assigned: true, workspace_id: String(input?.id), host_id: hostId }
       }
+      if (name === "host.renameCurrentMachine") {
+        return { enrollment_id: String(input?.enrollmentId), display_name: String(input?.displayName) }
+      }
       if (name === "workspace.unassignHost") {
         cp.unassign(String(input?.id))
         return { unassigned: true }
@@ -193,7 +219,9 @@ function harness(options?: {
     onError: (stage, error) => errors.push({ stage, error }),
     onStatusChange: (status) => statuses.push(status),
     onServing: (serving) => servings.push(serving),
-    displayName: "Work laptop",
+    onProviderConfig: (config) => providerReady.push(config),
+    displayName: () => storedName ?? "Work laptop",
+    storeDisplayName: (name: string) => { storedName = name },
     ...(options?.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
   })
   return {
@@ -204,9 +232,13 @@ function harness(options?: {
     errors,
     statuses,
     servings,
+    providerConfigs,
+    providerReady,
     identity: () => identity,
+    providerConfig: () => providerConfig,
     counts: () => ({ loads, stores, clears }),
     shareCounts: () => ({ loads: shareLoads, stores: shareStores.length }),
+    storedName: () => storedName,
     shareStores,
     bootstrapOf: (index: number) =>
       children[index]?.parentMessages.find((message) => message.type === "bootstrap"),
@@ -278,6 +310,24 @@ describe("what an ack tells the daemon", () => {
       relayJwksUrl: RELAY_JWKS_URL,
       sessionAuthorityUrl: SESSION_AUTHORITY_URL,
     })
+  })
+
+  // The daemon declares the machine to its own clients out of this credential,
+  // and a client compares that declaration against the host a control-plane
+  // workspace row names. Read off the enrollment the child actually beat
+  // under, so the two cannot agree by being written twice.
+  test("the credential names the enrollment this machine beat under", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    const started = await host.connector.start()
+    const enrollmentId = started.status === "enrolled" ? started.enrollment.enrollment_id : undefined
+    expect(enrollmentId).toBeTruthy()
+
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+    await until(() => host.servings.some((serving) => serving.tunnel !== null), "the credential push")
+
+    expect(host.servings.at(-1)?.tunnel).toMatchObject({ enrollmentId })
   })
 })
 
@@ -877,5 +927,88 @@ describe("main-side protocol guard", () => {
 
     expect(errors.find((entry) => entry.stage === "child-message")).toBeUndefined()
     expect(children[0].parentMessages.some((message) => message.type === "account-result" && message.requestId === "late")).toBe(false)
+  })
+})
+
+describe("the owner's name for this machine", () => {
+  test("renames the connector's own enrollment, and the next one re-applies it", async () => {
+    const host = harness()
+    const started = await host.connector.start()
+    expect(started.status).toBe("enrolled")
+
+    await expect(host.connector.renameMachine("  Studio Mac  ")).resolves.toEqual({ displayName: "Studio Mac" })
+
+    const rename = host.operations.find((operation) => operation.name === "host.renameCurrentMachine")
+    expect(rename?.input).toEqual({
+      enrollmentId: started.status === "enrolled" ? started.enrollment.enrollment_id : "",
+      displayName: "Studio Mac",
+    })
+    expect(host.storedName()).toBe("Studio Mac")
+    expect(host.connector.displayName()).toBe("Studio Mac")
+
+    // Every enable re-enrols and the enroll route overwrites `display_name`, so
+    // a rename that only reached the control plane would be undone here.
+    host.connector.stop()
+    await host.connector.start()
+    expect(host.bootstrapOf(1)?.displayName).toBe("Studio Mac")
+  })
+
+  test("refuses an empty name, and refuses to rename a machine that is not enrolled", async () => {
+    const host = harness()
+    await expect(host.connector.renameMachine("Studio Mac")).rejects.toThrow(/not running/)
+
+    await host.connector.start()
+    await expect(host.connector.renameMachine("   ")).rejects.toThrow(/needs a name/)
+    expect(host.operations.some((operation) => operation.name === "host.renameCurrentMachine")).toBe(false)
+  })
+})
+
+describe("provider configuration through main", () => {
+  const PROVIDER_CONFIG = JSON.stringify({
+    version: 1,
+    providers: { "claude-sdk": { baseUrl: "https://broker.test/bindings/b1", placeholder: "sk-1", authMode: "api-key" } },
+  })
+
+  test("the ciphertext is stored before the revision is acked, and the opened text reaches the daemon hand-off", async () => {
+    // Timer-driven beats: the delivery rides one, the ack rides the next.
+    const host = harness({ heartbeatIntervalMs: 20 })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+    const revision = await host.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await until(() => host.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision")
+
+    expect(host.providerConfigs).toEqual([{ revision, sealed: host.cp.providerConfig(enrollmentId)!.sealed }])
+    expect(host.providerConfig()).toEqual(host.providerConfigs[0])
+    expect(host.providerReady).toEqual([{ revision, providers: PROVIDER_CONFIG }])
+    expect(JSON.stringify(host.providerConfigs)).not.toContain("sk-1")
+
+    // A restart hands the stored revision back to the child, which re-opens it
+    // for a daemon that restarted too.
+    host.connector.stop()
+    await host.connector.start()
+    await until(() => host.providerReady.length === 2, "the re-opened revision after the restart")
+    expect(host.bootstrapOf(1)).toMatchObject({ providerConfig: { revision } })
+    expect(host.providerReady[1]).toEqual({ revision, providers: PROVIDER_CONFIG })
+    expect(host.providerConfigs).toHaveLength(1)
+    host.connector.dispose()
+  })
+
+  test("a store that fails is reported, keeps the revision unacked, and hands the daemon nothing", async () => {
+    let storeOk = false
+    const host = harness({ heartbeatIntervalMs: 20, storeProviderConfig: () => storeOk })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+    const revision = await host.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await until(() => host.providerConfigs.length >= 2, "the same revision delivered again")
+
+    expect(host.errors).toContainEqual({ stage: "provider-config-store", error: "safeStorage refused the write" })
+    expect(host.providerReady).toEqual([])
+    expect(host.providerConfig()).toBeUndefined()
+    expect(host.cp.providerConfigAckedRevision(enrollmentId)).not.toBe(revision)
+
+    storeOk = true
+    await until(() => host.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision once the store answers")
+    expect(host.providerReady).toEqual([{ revision, providers: PROVIDER_CONFIG }])
+    host.connector.dispose()
   })
 })

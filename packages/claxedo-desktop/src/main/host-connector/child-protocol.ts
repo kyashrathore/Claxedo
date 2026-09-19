@@ -34,7 +34,27 @@ export type HostEnrollmentOperation = (typeof HOST_ENROLLMENT_OPERATIONS)[keyof 
 export type HostConnectorBootstrapIdentity = {
   hostId: string
   privateKeyJwk: JsonWebKey
+  /**
+   * The ECDH half the control plane seals provider credentials for. Absent
+   * from a record written before machines could receive one; the child mints
+   * it on bootstrap and hands it back through `sealing-key-created`.
+   */
+  sealingPrivateKeyJwk?: JsonWebKey
 }
+
+/**
+ * One provider-configuration revision as the control plane delivered it:
+ * ciphertext only, or `null` for the withdrawal. Main persists this verbatim
+ * and never opens it — the sealing key lives in the child.
+ */
+export type HostConnectorProviderConfig = { revision: number; sealed: string | null }
+
+/**
+ * The same revision, opened: the plaintext JSON text of the sealed payload
+ * (`{"version":1,"providers":{...}}`), which main forwards to the daemon and
+ * never parses.
+ */
+export type HostConnectorProviderConfigReady = { revision: number; providers: string }
 
 export type HostConnectorSharedWorkspace = { workspaceId: string; displayName?: string }
 
@@ -102,10 +122,23 @@ export type HostConnectorParentMessage =
       sessionAuthority?: "local" | "managed-private"
       /** Shares to re-establish after enrollment (registration is an upsert). */
       sharedWorkspaces?: readonly HostConnectorSharedWorkspace[]
+      /**
+       * The revision main stored before the restart. The child declares it on
+       * the first beat (so the control plane does not re-send a blob the
+       * machine holds) and re-opens it for the daemon, which restarted too.
+       */
+      providerConfig?: HostConnectorProviderConfig
     }
   | { type: "share-workspace"; requestId: string; workspaceId: string; displayName?: string }
   | { type: "unshare-workspace"; requestId: string; workspaceId: string }
   | { type: "identity-stored"; requestId: string }
+  | { type: "sealing-key-stored"; requestId: string }
+  /**
+   * Whether main persisted the ciphertext. `ok: false` keeps the child from
+   * acking the revision, so the control plane delivers it again.
+   */
+  | { type: "provider-config-stored"; requestId: string; ok: true }
+  | { type: "provider-config-stored"; requestId: string; ok: false; error: string }
   | { type: "account-result"; requestId: string; ok: true; value: unknown }
   | { type: "account-result"; requestId: string; ok: false; error: string }
   | { type: "stop"; requestId: string }
@@ -122,12 +155,25 @@ export type HostConnectorChildMessage =
    */
   | ({ type: "serving" } & HostConnectorServing)
   | { type: "identity-created"; requestId: string; identity: HostConnectorBootstrapIdentity }
+  | { type: "sealing-key-created"; requestId: string; sealingPrivateKeyJwk: JsonWebKey }
+  /** A delivered revision, still sealed, for main to persist before the child acks it. */
+  | ({ type: "provider-config"; requestId: string } & HostConnectorProviderConfig)
+  /** The same revision opened, for main to forward to the daemon. */
+  | ({ type: "provider-config-ready" } & HostConnectorProviderConfigReady)
   | {
       type: "account-operation"
       requestId: string
       name: HostEnrollmentOperation
       input?: Record<string, unknown>
     }
+  /**
+   * A stage the connector reported and recovered from, so the child keeps
+   * running and the status alone says nothing about it. A sealed revision the
+   * child cannot open is the case this exists for: the control plane's acked
+   * revision simply never advances, and without this line nothing on the
+   * machine names the reason.
+   */
+  | { type: "child-error"; stage: string; detail: string }
   | { type: "status"; status: HostConnectorChildState }
   | { type: "response"; requestId: string; ok: true; status: HostConnectorChildState }
   | { type: "response"; requestId: string; ok: false; error: string }
@@ -150,7 +196,30 @@ export function isJsonWebKey(value: unknown): value is JsonWebKey {
 function identity(value: unknown): HostConnectorBootstrapIdentity | undefined {
   const input = asRecord(value)
   if (!input || !isNonEmptyString(input.hostId) || !isJsonWebKey(input.privateKeyJwk)) return undefined
-  return { hostId: input.hostId, privateKeyJwk: input.privateKeyJwk }
+  if (input.sealingPrivateKeyJwk !== undefined && !isJsonWebKey(input.sealingPrivateKeyJwk)) return undefined
+  return {
+    hostId: input.hostId,
+    privateKeyJwk: input.privateKeyJwk,
+    ...(input.sealingPrivateKeyJwk === undefined ? {} : { sealingPrivateKeyJwk: input.sealingPrivateKeyJwk }),
+  }
+}
+
+function revision(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined
+}
+
+/**
+ * `sealed` is a string or the literal `null`; anything else refuses the
+ * whole message. A missing field is not a withdrawal, and treating it as one
+ * would let a malformed delivery empty the daemon's credentials.
+ */
+export function hostConnectorProviderConfig(value: unknown): HostConnectorProviderConfig | undefined {
+  const input = asRecord(value)
+  if (!input) return undefined
+  const rev = revision(input.revision)
+  if (rev === undefined) return undefined
+  if (input.sealed !== null && typeof input.sealed !== "string") return undefined
+  return { revision: rev, sealed: input.sealed }
 }
 
 /**
@@ -244,6 +313,8 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
       ? input.sessionAuthority
       : undefined
     if (input.sessionAuthority !== undefined && sessionAuthority === undefined) return undefined
+    const held = input.providerConfig === undefined ? undefined : hostConnectorProviderConfig(input.providerConfig)
+    if (input.providerConfig !== undefined && !held) return undefined
     return {
       type: "bootstrap",
       requestId: id,
@@ -253,6 +324,7 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
       ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
       ...(sessionAuthority ? { sessionAuthority } : {}),
       ...(shares ? { sharedWorkspaces: shares } : {}),
+      ...(held ? { providerConfig: held } : {}),
     }
   }
 
@@ -274,9 +346,18 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
     return { type: "unshare-workspace", requestId: id, workspaceId: input.workspaceId }
   }
 
-  if (input.type === "identity-stored" || input.type === "stop") {
+  if (input.type === "identity-stored" || input.type === "sealing-key-stored" || input.type === "stop") {
     const id = requestId(input)
     return id ? { type: input.type, requestId: id } : undefined
+  }
+
+  if (input.type === "provider-config-stored") {
+    const id = requestId(input)
+    if (!id || typeof input.ok !== "boolean") return undefined
+    if (input.ok) return { type: "provider-config-stored", requestId: id, ok: true }
+    return typeof input.error === "string"
+      ? { type: "provider-config-stored", requestId: id, ok: false, error: input.error }
+      : undefined
   }
 
   if (input.type === "account-result") {
@@ -311,6 +392,26 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
     return id && created ? { type: "identity-created", requestId: id, identity: created } : undefined
   }
 
+  if (input.type === "sealing-key-created") {
+    const id = requestId(input)
+    return id && isJsonWebKey(input.sealingPrivateKeyJwk)
+      ? { type: "sealing-key-created", requestId: id, sealingPrivateKeyJwk: input.sealingPrivateKeyJwk }
+      : undefined
+  }
+
+  if (input.type === "provider-config") {
+    const id = requestId(input)
+    const config = hostConnectorProviderConfig(input)
+    return id && config ? { type: "provider-config", requestId: id, ...config } : undefined
+  }
+
+  if (input.type === "provider-config-ready") {
+    const rev = revision(input.revision)
+    return rev !== undefined && typeof input.providers === "string"
+      ? { type: "provider-config-ready", revision: rev, providers: input.providers }
+      : undefined
+  }
+
   if (input.type === "account-operation") {
     const id = requestId(input)
     const operation = Object.values(HOST_ENROLLMENT_OPERATIONS).find((name) => name === input.name)
@@ -322,6 +423,12 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
       name: operation,
       ...(operationInput ? { input: operationInput } : {}),
     }
+  }
+
+  if (input.type === "child-error") {
+    return isNonEmptyString(input.stage) && typeof input.detail === "string"
+      ? { type: "child-error", stage: input.stage, detail: input.detail }
+      : undefined
   }
 
   if (input.type === "status") {

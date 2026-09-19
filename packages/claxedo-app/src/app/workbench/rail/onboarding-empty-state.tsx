@@ -142,7 +142,7 @@ export function OnboardingEmptyState(props: {
       codeHostConnected: hasConnectedCodeHost(codeHostQuery.data ?? { integrations: [], connections: [] }),
       hasFirstTurn: projectSessions().some((session) => session.lastTurn?.status === "completed"),
       hasFirstCloudTurn: projectSessions().some((session) =>
-        session.lastTurn?.status === "completed" && session.environment?.kind === "cloud",
+        session.lastTurn?.status === "completed" && session.environment?.kind === "provisioner",
       ),
       hostedSignedIn: remoteAccess.status.data?.hostedSignedIn === true,
       remoteAccessEnabled: remoteAccess.status.data?.enabled === true,

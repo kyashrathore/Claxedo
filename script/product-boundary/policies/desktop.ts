@@ -110,7 +110,23 @@ export const desktopMainComposition: Policy = {
   // the only process that receives an ack and the only one that may reach the
   // daemon's loopback surface. It imports a type from `child-protocol.ts`
   // (already in this closure) and uses `fetch`, so no package edge. 91/24.
-  ceilings: { modules: 91, packages: 24 },
+  // The name this machine is known by is derived in
+  // `@claxedo/helpers/machine-name`, outside `roots`, because the self-hosted
+  // node names itself the same way and one machine may not have two names.
+  // The subpath is node-only (`node:os`, `node:fs`, `node:child_process`, all
+  // already in this closure) and `@claxedo/helpers` is already a package edge
+  // through `/string`, so it costs neither a module nor a package. Reviewed
+  // owner: Electron main still CHOOSES the name and signs the enrollment it
+  // travels on. Re-measured with no headroom: 91/24.
+  // +1 module: `main/host-connector/provider-config-push.ts`, the one owner
+  // of the hand-off from an opened provider-configuration revision to the
+  // daemon's `/api/claxedo/host-provider-config` route. Reviewed owner:
+  // Electron main, the only process that receives the child's opened text
+  // and the only one that may reach the daemon's loopback surface; it
+  // forwards the text and never parses it. Imports a type from
+  // `child-protocol.ts` (already here) and uses `fetch`, so no package edge.
+  // 92/24, no headroom.
+  ceilings: { modules: 92, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -482,8 +498,13 @@ export const desktopRendererUnsigned: Policy = {
   // — see the app-local ledger. Re-measured, no headroom.
   //
   // -4 modules (2026-09-17): the second stream reader — see the app-local
-  // ledger. Measured 1120 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1120, packages: 58 },
+  // ledger.
+  //
+  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // — see the app-local ledger. The renderer's port leaves `providerConfig`
+  // absent, so the control never renders here; the module rides in with the
+  // shared surface. Measured 1121 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1121, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

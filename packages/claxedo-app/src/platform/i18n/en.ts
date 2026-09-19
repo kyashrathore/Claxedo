@@ -286,7 +286,7 @@ export const dict = {
   "prompt.action.readOnlyWorkspace": "Read-only workspace",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} cannot take this attachment",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} has no prompt input for {{mime}}, and this session has no local workspace to keep the file in.",
+    "{{harness}} has no prompt input for {{mime}}, and this session has no workspace folder to keep the file in.",
   "prompt.toast.attachmentUnreadable.title": "Attachment could not be read",
   "prompt.toast.attachmentUnreadable.description":
     "{{filename}} could not be read from this device.",
@@ -451,7 +451,7 @@ export const dict = {
 
   "home.recentProjects": "Recent projects",
   "home.empty.title": "No recent projects",
-  "home.empty.description": "Get started by opening a local project",
+  "home.empty.description": "Get started by opening a folder from this computer",
   "home.title": "Home",
 
   "session.timeline.scrollToBottom": "Scroll to latest message",
@@ -472,6 +472,15 @@ export const dict = {
   "session.goal.status.limited": "Limited", "session.goal.status.complete": "Complete",
   "session.goal.metric.iteration": "Iteration {{count}}", "session.goal.metric.tokensUsed": "{{count}} tokens",
   "session.goal.metric.tokenBudget": "{{count}} token budget", "session.goal.metric.timeUsed": "{{seconds}}s",
+  "session.share.level.follow": "Can follow",
+  "session.share.level.send": "Can send messages",
+  // The consequence this states is not a policy the product could choose
+  // otherwise: an agent with a machine's files can read anything on it, so a
+  // translation that softens the reach — or drops the other sessions, or the
+  // advice to use a cloud environment — describes a product that does not
+  // exist. Every locale carries a full translation of it.
+  "session.share.disclosure.send":
+    "The agent runs on the workspace's machine with that machine's files. A teammate who can send messages can ask it to read anything there, including the transcripts of your other sessions in this workspace. Sharing works best for sessions on a cloud environment, where each session has a machine of its own. If this machine holds anything you would not want a teammate to reach, do not share sessions from workspaces on it.",
   "session.question.progress": "{{current}} of {{total}} questions",
   "session.question.collapse": "Collapse question",
   "session.question.expand": "Expand question",
@@ -548,7 +557,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "Admin",
   "sidebar.workspace.hostOffline": "Host offline",
   "sidebar.workspace.sharedWithYou": "Shared with you",
-  "sidebar.workspace.publishedByThisMachine": "Published by this machine",
+  "sidebar.workspace.publishedToYourAccount": "Published to your account",
 
 
 
@@ -741,8 +750,8 @@ export const dict = {
   "session.delete.button": "Delete session",
 
   "workspace.new": "New workspace",
-  "workspace.type.local": "local",
-  "workspace.type.sandbox": "sandbox",
+  "workspace.directory.project": "project",
+  "workspace.directory.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Workspace is still preparing",
   "workspace.status.checking": "Checking for unmerged changes...",
   "workspace.status.error": "Unable to verify git status.",

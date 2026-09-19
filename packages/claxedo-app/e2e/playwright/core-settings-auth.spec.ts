@@ -601,7 +601,7 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
 
       const mode = process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user"
-      const expectedLabel = mode === "local-unsigned" ? "Local workspace" : "Test User"
+      const expectedLabel = mode === "local-unsigned" ? "Not signed in" : "Test User"
       const trigger = page.getByTestId("rail-account-trigger")
       await expect(trigger).toHaveAttribute("aria-label", expectedLabel)
       await trigger.click()

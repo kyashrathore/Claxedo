@@ -50,7 +50,9 @@ import { CredentialRoutes } from "../credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
+import { userHostedServingEnrollmentId } from "@claxedo/host-serving/serving"
 import { UserHostedServingRoutes } from "../workspace/user-hosted-serving-routes"
+import { HostProviderConfigRoutes } from "../workspace/host-provider-config-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
@@ -281,7 +283,17 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     })
   }
 
-  app.route("/", BootstrapRoutes({ services, env, hostAggregateEvents: !!runtimeProxy.hostEventStream, ...authRouteOptions(services) }))
+  app.route("/", BootstrapRoutes({
+    services,
+    env,
+    hostAggregateEvents: !!runtimeProxy.hostEventStream,
+    // Read per request off the live serving arrangement, which Electron main
+    // installs through `/api/claxedo/host-serving` after this route is
+    // mounted: the daemon starts before the machine has enrolled and outlives
+    // every sign-out.
+    hostEnrollmentId: userHostedServingEnrollmentId,
+    ...authRouteOptions(services),
+  }))
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     agentUsage: readMachineAgentUsage,
@@ -352,6 +364,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/host-serving", UserHostedServingRoutes())
+  app.route("/api/claxedo/host-provider-config", HostProviderConfigRoutes())
   // Optional product route families (Agent Plugins today) arrive as
   // contributions from the composition rather than as imports here, so this
   // module keeps one mounting path and no knowledge of which products exist.

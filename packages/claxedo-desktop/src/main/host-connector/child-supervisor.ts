@@ -5,6 +5,8 @@ import {
   type HostConnectorBootstrapIdentity,
   type HostConnectorChildState,
   type HostConnectorParentMessage,
+  type HostConnectorProviderConfig,
+  type HostConnectorProviderConfigReady,
   type HostConnectorServing,
   type HostConnectorSharedWorkspace,
 } from "./child-protocol"
@@ -43,6 +45,16 @@ export type HostConnectorSetup = {
    */
   shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<HostConnectorStatus>
   unshareWorkspace(workspaceId: string): Promise<HostConnectorStatus>
+  /** The name this machine is published under: the owner's, or the derived one. */
+  displayName(): string | undefined
+  /**
+   * Rename this machine on the account, and remember the new name.
+   *
+   * Remembering it is not a cache. Every `start()` re-enrolls and the enroll
+   * route overwrites `display_name` with whatever it is handed, so a rename
+   * that only reached the control plane would be undone by the next enable.
+   */
+  renameMachine(displayName: string): Promise<{ displayName: string }>
   /** The user's pause. Keeps the identity; cancels any pending auto-resume. */
   stop(): void
   /**
@@ -136,10 +148,19 @@ export function setupHostConnectorChild(input: {
   runAccountOperation: AccountOperationRunner
   spawn: () => HostConnectorChildProcess
   loadIdentity: () => Promise<
-    | { ok: true; identity?: HostConnectorBootstrapIdentity }
+    | { ok: true; identity?: HostConnectorBootstrapIdentity; providerConfig?: HostConnectorProviderConfig }
     | { ok: false; reason: "no-secure-storage"; detail: string }
   >
   storeIdentity: (identity: HostConnectorBootstrapIdentity) => Promise<{ ok: true } | { ok: false; detail: string }>
+  /** The sealing half a pre-existing identity was minted without; stored beside it, under the same protection. */
+  storeSealingKey: (sealingPrivateKeyJwk: JsonWebKey) => Promise<{ ok: true } | { ok: false; detail: string }>
+  /**
+   * The ciphertext of one delivered revision, stored beside the identity.
+   * Answered to the child as its `provider-config-stored`, and the child acks
+   * the revision only on `ok: true` — so a store that fails here keeps the
+   * control plane re-sending rather than believing the machine configured.
+   */
+  storeProviderConfig: (config: HostConnectorProviderConfig) => Promise<{ ok: true } | { ok: false; detail: string }>
   clearIdentity: () => void
   /**
    * Shares to survive a restart. Not secrets — workspace ids and labels; they
@@ -159,6 +180,12 @@ export function setupHostConnectorChild(input: {
    * addresses a relayed caller is admitted by — for the tunnel owner.
    */
   onServing?: (serving: HostConnectorServing) => void
+  /**
+   * One opened provider-configuration revision, for the daemon. Main forwards
+   * the text and never parses it: the plaintext exists in this process only
+   * between the child's message and the loopback PUT.
+   */
+  onProviderConfig?: (config: HostConnectorProviderConfigReady) => void
   /**
    * How the DAEMON's workspace runtimes composed their session access, read
    * from the daemon itself once per launch and handed to the child with the
@@ -180,7 +207,13 @@ export function setupHostConnectorChild(input: {
    * child that would discover it after the handshake.
    */
   controlPlaneUrl?: string
-  displayName?: string
+  /**
+   * Read per start, not captured: a rename between two enrollments must be the
+   * name the second one sends.
+   */
+  displayName?: () => string | undefined
+  /** Remember the owner's rename, so the next enrollment re-applies it. */
+  storeDisplayName?: (displayName: string) => void
   heartbeatIntervalMs?: number
   /**
    * Budget for the child to exist and answer with its identity: spawn, `ready`,
@@ -274,6 +307,13 @@ export function setupHostConnectorChild(input: {
       else waiting.reject(new Error(message.error))
       return
     }
+    // The connector recovered, so no status transition carries this: without
+    // the relay a revision the child could not open would show only as an
+    // acked revision that stops advancing at the control plane.
+    if (message.type === "child-error") {
+      input.onError?.(message.stage, message.detail)
+      return
+    }
     if (message.type === "status") {
       settle(message.status)
       // `idle` is the pre-enrollment state the bootstrap reply already carried;
@@ -287,6 +327,40 @@ export function setupHostConnectorChild(input: {
     }
     if (message.type === "serving") {
       input.onServing?.({ tunnel: message.tunnel, ...(message.endpoints ? { endpoints: message.endpoints } : {}) })
+      return
+    }
+    if (message.type === "provider-config-ready") {
+      input.onProviderConfig?.({ revision: message.revision, providers: message.providers })
+      return
+    }
+    if (message.type === "provider-config") {
+      let stored: { ok: true } | { ok: false; detail: string }
+      try {
+        stored = await input.storeProviderConfig({ revision: message.revision, sealed: message.sealed })
+      } catch (error) {
+        stored = { ok: false, detail: String(error) }
+      }
+      if (!stored.ok) input.onError?.("provider-config-store", stored.detail)
+      if (child !== target) return
+      send(
+        target,
+        stored.ok
+          ? { type: "provider-config-stored", requestId: message.requestId, ok: true }
+          : { type: "provider-config-stored", requestId: message.requestId, ok: false, error: stored.detail },
+      )
+      return
+    }
+    if (message.type === "sealing-key-created") {
+      try {
+        const stored = await input.storeSealingKey(message.sealingPrivateKeyJwk)
+        if (!stored.ok) throw new Error(stored.detail)
+        if (child !== target) return
+        send(target, { type: "sealing-key-stored", requestId: message.requestId })
+      } catch (error) {
+        input.onError?.("sealing-key-store", error)
+        intentionalExit = true
+        target.kill()
+      }
       return
     }
     if (message.type === "account-operation") {
@@ -381,6 +455,7 @@ export function setupHostConnectorChild(input: {
 
     try {
       const requestId = crypto.randomUUID()
+      const displayName = input.displayName?.()
       const booted = await bounded(
         Promise.race([
           request(target, {
@@ -389,9 +464,10 @@ export function setupHostConnectorChild(input: {
             controlPlaneUrl,
             heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
             ...(restored.identity ? { identity: restored.identity } : {}),
-            ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...(displayName ? { displayName } : {}),
             ...(sessionAuthority ? { sessionAuthority } : {}),
             ...(sharedWorkspaces.length ? { sharedWorkspaces } : {}),
+            ...(restored.providerConfig ? { providerConfig: restored.providerConfig } : {}),
           }),
           cancelled,
         ]),
@@ -493,6 +569,24 @@ export function setupHostConnectorChild(input: {
   return {
     status: () => status,
     start: startConnector,
+    displayName: () => input.displayName?.(),
+    async renameMachine(displayName: string) {
+      const name = displayName.trim()
+      if (!name) throw new Error("A machine needs a name")
+      if (status.status !== "enrolled") {
+        throw new Error("Remote access is not running on this machine — enable it in Settings first")
+      }
+      await input.runAccountOperation("host.renameCurrentMachine", {
+        enrollmentId: status.enrollment.enrollment_id,
+        displayName: name,
+      })
+      try {
+        input.storeDisplayName?.(name)
+      } catch (error) {
+        input.onError?.("machine-name-store", error)
+      }
+      return { displayName: name }
+    },
     async shareWorkspace(share: { workspaceId: string; displayName?: string }) {
       const target = child
       if (!target || status.status !== "enrolled" || !identityHostId) {

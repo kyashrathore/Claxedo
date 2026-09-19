@@ -286,7 +286,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} no puede usar este adjunto",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} no tiene una entrada de prompt para {{mime}}, y esta sesión no tiene un espacio de trabajo local donde guardar el archivo.",
+    "{{harness}} no tiene una entrada de prompt para {{mime}}, y esta sesión no tiene una carpeta de espacio de trabajo donde guardar el archivo.",
   "prompt.toast.attachmentUnreadable.title": "No se pudo leer el adjunto",
   "prompt.toast.attachmentUnreadable.description":
     "No se pudo leer {{filename}} desde este dispositivo.",
@@ -442,7 +442,7 @@ export const dict = {
 
   "home.recentProjects": "Proyectos recientes",
   "home.empty.title": "Sin proyectos recientes",
-  "home.empty.description": "Empieza abriendo un proyecto local",
+  "home.empty.description": "Empieza abriendo una carpeta de este equipo",
 
   "home.title": "Inicio",
   "session.timeline.scrollToBottom": "Desplazarse al último mensaje",
@@ -480,6 +480,10 @@ export const dict = {
 
   "session.header.search.placeholder": "Buscar {{project}}",
   "session.header.searchFiles": "Buscar archivos",
+  "session.share.level.follow": "Puede seguir",
+  "session.share.level.send": "Puede enviar mensajes",
+  "session.share.disclosure.send":
+    "El agente se ejecuta en el equipo del espacio de trabajo con los archivos de ese equipo. Un compañero de equipo que pueda enviar mensajes puede pedirle que lea cualquier cosa que haya allí, incluidas las transcripciones de tus otras sesiones en este espacio de trabajo. Compartir funciona mejor con sesiones en un entorno en la nube, donde cada sesión tiene un equipo propio. Si este equipo contiene algo a lo que no querrías que llegara un compañero de equipo, no compartas sesiones de los espacios de trabajo que están en él.",
 
 
 
@@ -511,7 +515,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "Administrador",
   "sidebar.workspace.hostOffline": "Host sin conexión",
   "sidebar.workspace.sharedWithYou": "Compartido contigo",
-  "sidebar.workspace.publishedByThisMachine": "Publicado desde este equipo",
+  "sidebar.workspace.publishedToYourAccount": "Publicado en tu cuenta",
 
 
   "settings.section.desktop": "Escritorio",
@@ -696,8 +700,8 @@ export const dict = {
   "session.delete.button": "Eliminar sesión",
 
   "workspace.new": "Nuevo espacio de trabajo",
-  "workspace.type.local": "local",
-  "workspace.type.sandbox": "sandbox",
+  "workspace.directory.project": "proyecto",
+  "workspace.directory.sandbox": "sandbox",
   "workspace.error.stillPreparing": "El espacio de trabajo aún se está preparando",
   "workspace.status.checking": "Comprobando cambios no fusionados...",
   "workspace.status.error": "No se pudo verificar el estado de git.",

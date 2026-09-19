@@ -289,7 +289,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 無法使用此附件",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的本機工作區。",
+    "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的工作區資料夾。",
   "prompt.toast.attachmentUnreadable.title": "無法讀取附件",
   "prompt.toast.attachmentUnreadable.description":
     "無法從此裝置讀取 {{filename}}。",
@@ -439,7 +439,7 @@ export const dict = {
 
   "home.recentProjects": "最近專案",
   "home.empty.title": "沒有最近專案",
-  "home.empty.description": "透過開啟本地專案開始使用",
+  "home.empty.description": "透過開啟這台電腦上的資料夾開始使用",
 
   "home.title": "首頁",
   "session.timeline.scrollToBottom": "捲動到最新訊息",
@@ -475,6 +475,10 @@ export const dict = {
 
   "session.header.search.placeholder": "搜尋 {{project}}",
   "session.header.searchFiles": "搜尋檔案",
+  "session.share.level.follow": "可以關注",
+  "session.share.level.send": "可以傳送訊息",
+  "session.share.disclosure.send":
+    "代理在工作區所在的機器上執行，並使用該機器上的檔案。可以傳送訊息的團隊成員可以請它讀取該機器上的任何內容，包括你在此工作區中其他工作階段的逐字稿。共用最適合雲端環境中的工作階段，在那裡每個工作階段都有自己的機器。如果這台機器上有任何你不希望團隊成員存取的內容，請不要共用這台機器上工作區中的工作階段。",
 
 
 
@@ -505,7 +509,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "管理員",
   "sidebar.workspace.hostOffline": "主機離線",
   "sidebar.workspace.sharedWithYou": "已與你共用",
-  "sidebar.workspace.publishedByThisMachine": "由本機發布",
+  "sidebar.workspace.publishedToYourAccount": "已發布到你的帳戶",
 
   "settings.section.desktop": "桌面",
   "settings.section.workspace": "工作區",
@@ -680,8 +684,8 @@ export const dict = {
   "session.delete.button": "刪除工作階段",
 
   "workspace.new": "新增工作區",
-  "workspace.type.local": "本地",
-  "workspace.type.sandbox": "沙盒",
+  "workspace.directory.project": "專案",
+  "workspace.directory.sandbox": "沙盒",
   "workspace.error.stillPreparing": "工作區仍在準備中",
   "workspace.status.checking": "正在檢查未合併的變更...",
   "workspace.status.error": "無法驗證 git 狀態。",

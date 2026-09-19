@@ -14,7 +14,7 @@
  * plane is the authoritative producer of this credential and every hop
  * (child → Electron main → here) carries it untouched. Its shape is the
  * signer's `HostTunnelTokenSignerResult` plus the route's own additions
- * (`hostId`, `workspaceIds`, `relayUrl`); see
+ * (`hostId`, `enrollmentId`, `workspaceIds`, `relayUrl`); see
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` and the type-level
  * pin in `user-hosted-serving-routes.test.ts`. A prior draft invented its own
  * field names here (`token` for `hostTunnelToken`, no `tokenExpiresAt`/`jti`)
@@ -49,6 +49,12 @@ const servingBody = z
     credential: z
       .object({
         hostId: z.string().min(1).max(300),
+        // The machine's identity to its own clients: the bootstrap declares it
+        // so a client can tell a control-plane row placed HERE from one placed
+        // on another machine. Required, because a credential that names no
+        // enrollment would serve while this daemon told every local client it
+        // was some other machine.
+        enrollmentId: z.string().min(1).max(200),
         // Optional in the ack (a deployment without a configured relay mints
         // no URL) but required to SERVE: a credential without a relay to dial
         // is treated as invalid rather than silently unroutable.
@@ -78,6 +84,7 @@ export function UserHostedServingRoutes() {
         credential
           ? {
               hostId: credential.hostId,
+              enrollmentId: credential.enrollmentId,
               relayUrl: credential.relayUrl,
               token: credential.hostTunnelToken,
               workspaceIds: credential.workspaceIds,

@@ -338,8 +338,8 @@ export function railWorkspaceMetaLabels(input: {
   status?: string
   role?: string
   hostOnline?: boolean
-  publishedByThisMachine: boolean
-  label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedByThisMachine", role?: string) => string
+  publishedToYourAccount: boolean
+  label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedToYourAccount", role?: string) => string
 }) {
   const userHosted = input.kind === "machine"
   const granted = userHosted && !!input.role && input.role !== "owner"
@@ -349,7 +349,7 @@ export function railWorkspaceMetaLabels(input: {
     // workspace's runtime is provisioned on demand and reports its own state.
     userHosted && input.hostOnline === false ? input.label("hostOffline") : undefined,
     granted ? input.label("role", input.role) : undefined,
-    input.publishedByThisMachine ? input.label("publishedByThisMachine") : undefined,
-    granted && !input.publishedByThisMachine ? input.label("sharedWithYou") : undefined,
+    input.publishedToYourAccount ? input.label("publishedToYourAccount") : undefined,
+    granted && !input.publishedToYourAccount ? input.label("sharedWithYou") : undefined,
   ].filter((item): item is string => !!item)
 }

@@ -131,7 +131,7 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
                         </Tabs.Trigger>
                         <Tabs.Trigger value="devices">
                           <Icon name="link" />
-                          Devices
+                          Machines
                         </Tabs.Trigger>
                         <Tabs.Trigger value="orgs">
                           <Icon name="folders" />
@@ -211,6 +211,7 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
                   availability={remoteAccess.availability()}
                   identity={remoteAccess.identity()}
                   devices={remoteAccess.devices.data ?? []}
+                  thisMachine={remoteAccess.thisMachine()}
                   serving={autoShare().serving}
                   servingPending={autoShare().pending}
                   shareFailure={autoShare().failure}
@@ -224,6 +225,13 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
                   }}
                   onPause={remoteAccess.canPause() ? () => void remoteAccess.pause() : undefined}
                   onRevoke={(hostId) => void remoteAccess.revoke(hostId)}
+                  onRename={
+                    remoteAccess.canRename()
+                      ? (hostId, displayName) => void remoteAccess.rename(hostId, displayName)
+                      : undefined
+                  }
+                  servedByDesktopApp={remoteAccess.servedByDesktopApp()}
+                  providerConfig={remoteAccess.providerConfig()}
                 />
               </div>
             </Tabs.Content>

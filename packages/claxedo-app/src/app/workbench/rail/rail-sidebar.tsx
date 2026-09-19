@@ -355,8 +355,8 @@ function runtimeIcon(kind: RuntimeKind): "cloud" | "server" | "monitor" {
 
 function runtimeLabel(kind: RuntimeKind) {
   if (kind === "provisioner") return "Cloud environment"
-  if (kind === "machine") return "Machine"
-  return "This machine"
+  if (kind === "machine") return "Another machine"
+  return "This computer"
 }
 
 function workspaceStatusLabel(workspace: WorkspaceInfo | undefined) {
@@ -409,9 +409,9 @@ function uniq(input: string[]) {
 function title(input: string) {
   if (input === "review" || input === "page") return input[0].toUpperCase() + input.slice(1)
   if (input === "general") return "General"
-  if (input === "self") return "This machine"
+  if (input === "self") return "This computer"
   if (input === "provisioner") return "Cloud environment"
-  if (input === "machine") return "Machine"
+  if (input === "machine") return "Another machine"
   return input.replace(/^repo:/, "").replace(/^branch:/, "").replace(/^provider:/, "")
 }
 
@@ -1715,7 +1715,7 @@ export function RailSidebar(props: RailSidebarProps) {
         ...(workspace?.hostOnline === undefined ? {} : { hostOnline: workspace.hostOnline }),
         // The row itself is the durable record of which workspaces a phone
         // can reach — not a transient toast.
-        publishedByThisMachine: sharedWorkspacesForMeta.shared(
+        publishedToYourAccount: sharedWorkspacesForMeta.shared(
           workspaceRowId(section.project, section.workspaceDir),
         ),
         label: (key, role) => key === "role" ? language.t(workspaceRoleLabelKey(role)) : language.t(`sidebar.workspace.${key}`),

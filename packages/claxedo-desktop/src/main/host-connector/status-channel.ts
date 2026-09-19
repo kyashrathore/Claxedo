@@ -7,8 +7,8 @@
  * the Remote Access panel's whole job is showing a state the user did not
  * cause.
  *
- * READ-ONLY. Nothing here can be called; `ipc.ts` owns the four named
- * operations the renderer may ask for, and it registers them through the
+ * READ-ONLY. Nothing here can be called; `ipc.ts` owns the named operations
+ * the renderer may ask for, and it registers them through the
  * caller-guarded `ipcMain`. This file registers no `ipcMain.handle` at all and
  * so has nothing for the guard to wrap: main→renderer sends are not calls INTO
  * main. Keeping the two directions in two files is what makes "does the
@@ -54,20 +54,33 @@ export type HostConnectorStatusEvent = {
   available: boolean
   /** Whether an account is signed in. */
   signedIn: boolean
+  /**
+   * The name this machine is published under.
+   *
+   * The one fact about the machine's identity the panel does get, because it
+   * is the only one a person reads: the desktop cannot enumerate the account's
+   * machines, so without it the Machines list would be empty on the computer
+   * the user is sitting at. The host id and the enrollment id still stay
+   * behind — a rename names no machine over IPC, main takes the id from the
+   * connector's own state.
+   */
+  displayName?: string
 }
 
 /**
  * The two facts the connector's own state cannot carry.
  *
  * `available` is a property of the BUILD — whether an account client was
- * configured at all — and `signedIn` belongs to the account service. Both are
- * read by the same panel that reads the connector's state, and a panel that had
- * to combine three sources would combine them differently in each of its
- * callers.
+ * configured at all — `signedIn` belongs to the account service, and the
+ * machine's name is derived in main from this computer, or stored there from
+ * an owner's rename. All three are read by the same panel that reads the
+ * connector's state, and a panel that had to combine four sources would
+ * combine them differently in each of its callers.
  */
 export type HostConnectorContext = {
   available: boolean
   signedIn: boolean
+  displayName?: string
 }
 
 export function toStatusEvent(state: HostConnectorStatus, context: HostConnectorContext): HostConnectorStatusEvent {
@@ -86,6 +99,7 @@ export function toStatusEvent(state: HostConnectorStatus, context: HostConnector
     ...(record.sharedWorkspaceIds ? { sharedWorkspaceIds: record.sharedWorkspaceIds } : {}),
     available: context.available,
     signedIn: context.signedIn,
+    ...(context.displayName ? { displayName: context.displayName } : {}),
   }
 }
 

@@ -292,7 +292,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} bu eki kullanamıyor",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} için {{mime}} alan bir istem girişi yok ve bu oturumun dosyayı tutacak yerel bir çalışma alanı da yok.",
+    "{{harness}} için {{mime}} alan bir istem girişi yok ve bu oturumun dosyayı tutacak bir çalışma alanı klasörü de yok.",
   "prompt.toast.attachmentUnreadable.title": "Ek okunamadı",
   "prompt.toast.attachmentUnreadable.description":
     "{{filename}} bu cihazdan okunamadı.",
@@ -447,7 +447,7 @@ export const dict = {
 
   "home.recentProjects": "Son projeler",
   "home.empty.title": "Son proje yok",
-  "home.empty.description": "Yerel bir proje açarak başlayın",
+  "home.empty.description": "Bu bilgisayardan bir klasör açarak başlayın",
 
   "home.title": "Ana Sayfa",
   "session.timeline.scrollToBottom": "En son mesaja kaydır",
@@ -485,6 +485,10 @@ export const dict = {
 
   "session.header.search.placeholder": "{{project}} ara",
   "session.header.searchFiles": "Dosya ara",
+  "session.share.level.follow": "Takip edebilir",
+  "session.share.level.send": "Mesaj gönderebilir",
+  "session.share.disclosure.send":
+    "Ajan, çalışma alanının bulunduğu makinede o makinenin dosyalarıyla çalışır. Mesaj gönderebilen bir ekip arkadaşı, bu çalışma alanındaki diğer oturumlarınızın dökümleri dahil oradaki her şeyi okumasını ajandan isteyebilir. Paylaşım, her oturumun kendi makinesine sahip olduğu bulut ortamındaki oturumlar için en iyi sonucu verir. Bu makinede bir ekip arkadaşının erişmesini istemeyeceğiniz herhangi bir şey varsa, bu makinedeki çalışma alanlarından oturum paylaşmayın.",
 
 
 
@@ -516,7 +520,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "Yönetici",
   "sidebar.workspace.hostOffline": "Ana makine çevrimdışı",
   "sidebar.workspace.sharedWithYou": "Sizinle paylaşıldı",
-  "sidebar.workspace.publishedByThisMachine": "Bu makineden yayınlandı",
+  "sidebar.workspace.publishedToYourAccount": "Hesabınıza yayınlandı",
 
 
   "settings.section.desktop": "Masaüstü",
@@ -700,8 +704,8 @@ export const dict = {
   "session.delete.button": "Oturumu sil",
 
   "workspace.new": "Yeni çalışma alanı",
-  "workspace.type.local": "yerel",
-  "workspace.type.sandbox": "sandbox",
+  "workspace.directory.project": "proje",
+  "workspace.directory.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Çalışma alanı hâlâ hazırlanıyor",
   "workspace.status.checking": "Birleşmemiş değişiklikler kontrol ediliyor...",
   "workspace.status.error": "Git durumu doğrulanamadı.",

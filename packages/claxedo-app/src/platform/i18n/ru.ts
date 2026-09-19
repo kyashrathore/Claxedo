@@ -286,7 +286,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} не может использовать это вложение",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет локального рабочего пространства, где мог бы остаться файл.",
+    "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет папки рабочего пространства, где мог бы остаться файл.",
   "prompt.toast.attachmentUnreadable.title": "Не удалось прочитать вложение",
   "prompt.toast.attachmentUnreadable.description":
     "Не удалось прочитать {{filename}} с этого устройства.",
@@ -442,7 +442,7 @@ export const dict = {
 
   "home.recentProjects": "Недавние проекты",
   "home.empty.title": "Нет недавних проектов",
-  "home.empty.description": "Начните с открытия локального проекта",
+  "home.empty.description": "Начните с открытия папки с этого компьютера",
 
   "home.title": "Главная",
   "session.timeline.scrollToBottom": "Прокрутить к последнему сообщению",
@@ -478,6 +478,10 @@ export const dict = {
 
   "session.header.search.placeholder": "Поиск {{project}}",
   "session.header.searchFiles": "Поиск файлов",
+  "session.share.level.follow": "Может наблюдать",
+  "session.share.level.send": "Может отправлять сообщения",
+  "session.share.disclosure.send":
+    "Агент работает на компьютере рабочего пространства и использует файлы этого компьютера. Участник команды, который может отправлять сообщения, может попросить агента прочитать там что угодно, включая стенограммы других ваших сессий в этом рабочем пространстве. Общий доступ лучше всего подходит для сессий в облачной среде, где у каждой сессии есть собственный компьютер. Если на этом компьютере есть что-то, к чему участник команды не должен получить доступ, не делитесь сессиями из рабочих пространств на нём.",
 
 
 
@@ -509,7 +513,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "Администратор",
   "sidebar.workspace.hostOffline": "Хост не в сети",
   "sidebar.workspace.sharedWithYou": "Открыт вам доступ",
-  "sidebar.workspace.publishedByThisMachine": "Опубликовано с этого компьютера",
+  "sidebar.workspace.publishedToYourAccount": "Опубликовано в вашем аккаунте",
 
   "settings.section.desktop": "Приложение",
   "settings.section.workspace": "Рабочее пространство",
@@ -692,8 +696,8 @@ export const dict = {
   "session.delete.button": "Удалить сессию",
 
   "workspace.new": "Новое рабочее пространство",
-  "workspace.type.local": "локальное",
-  "workspace.type.sandbox": "песочница",
+  "workspace.directory.project": "проект",
+  "workspace.directory.sandbox": "песочница",
   "workspace.error.stillPreparing": "Рабочее пространство всё ещё подготавливается",
   "workspace.status.checking": "Проверка незафиксированных изменений...",
   "workspace.status.error": "Не удалось проверить статус git.",

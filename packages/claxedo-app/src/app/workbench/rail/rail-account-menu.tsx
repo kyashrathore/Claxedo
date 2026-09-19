@@ -143,7 +143,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
       return state.identity.displayName ?? state.identity.email ?? "Signed in"
     }
     if (pending()) return "Signing in…"
-    return showSignIn() ? "Sign in" : "Local workspace"
+    return showSignIn() ? "Sign in" : "Not signed in"
   })
   const image = createMemo(() => signed() && auth.status() === "signed" ? user()?.imageUrl ?? undefined : undefined)
   const authAction = createMemo(() => {

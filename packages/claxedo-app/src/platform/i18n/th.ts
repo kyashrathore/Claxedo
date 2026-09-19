@@ -286,7 +286,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ใช้ไฟล์แนบนี้ไม่ได้",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีเวิร์กสเปซในเครื่องสำหรับเก็บไฟล์",
+    "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีโฟลเดอร์พื้นที่ทำงานสำหรับเก็บไฟล์",
   "prompt.toast.attachmentUnreadable.title": "อ่านไฟล์แนบไม่ได้",
   "prompt.toast.attachmentUnreadable.description":
     "อ่าน {{filename}} จากอุปกรณ์นี้ไม่ได้",
@@ -437,7 +437,7 @@ export const dict = {
 
   "home.recentProjects": "โปรเจกต์ล่าสุด",
   "home.empty.title": "ไม่มีโปรเจกต์ล่าสุด",
-  "home.empty.description": "เริ่มต้นโดยเปิดโปรเจกต์ในเครื่อง",
+  "home.empty.description": "เริ่มต้นโดยเปิดโฟลเดอร์จากคอมพิวเตอร์เครื่องนี้",
 
   "home.title": "หน้าแรก",
   "session.timeline.scrollToBottom": "เลื่อนไปยังข้อความล่าสุด",
@@ -475,6 +475,10 @@ export const dict = {
 
   "session.header.search.placeholder": "ค้นหา {{project}}",
   "session.header.searchFiles": "ค้นหาไฟล์",
+  "session.share.level.follow": "ติดตามได้",
+  "session.share.level.send": "ส่งข้อความได้",
+  "session.share.disclosure.send":
+    "เอเจนต์ทำงานบนเครื่องของพื้นที่ทำงานโดยใช้ไฟล์ของเครื่องนั้น เพื่อนร่วมทีมที่ส่งข้อความได้สามารถขอให้เอเจนต์อ่านสิ่งใดก็ได้บนเครื่องนั้น รวมถึงบันทึกการสนทนาของเซสชันอื่น ๆ ของคุณในพื้นที่ทำงานนี้ การแชร์เหมาะที่สุดกับเซสชันในสภาพแวดล้อมคลาวด์ ซึ่งแต่ละเซสชันมีเครื่องเป็นของตัวเอง หากเครื่องนี้มีสิ่งใดที่คุณไม่ต้องการให้เพื่อนร่วมทีมเข้าถึงได้ อย่าแชร์เซสชันจากพื้นที่ทำงานบนเครื่องนี้",
 
 
 
@@ -505,7 +509,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "ผู้ดูแล",
   "sidebar.workspace.hostOffline": "โฮสต์ออฟไลน์",
   "sidebar.workspace.sharedWithYou": "แชร์กับคุณ",
-  "sidebar.workspace.publishedByThisMachine": "เผยแพร่จากเครื่องนี้",
+  "sidebar.workspace.publishedToYourAccount": "เผยแพร่ไปยังบัญชีของคุณ",
 
 
   "settings.section.desktop": "เดสก์ท็อป",
@@ -683,8 +687,8 @@ export const dict = {
   "session.delete.button": "ลบเซสชัน",
 
   "workspace.new": "พื้นที่ทำงานใหม่",
-  "workspace.type.local": "ในเครื่อง",
-  "workspace.type.sandbox": "แซนด์บ็อกซ์",
+  "workspace.directory.project": "โปรเจกต์",
+  "workspace.directory.sandbox": "แซนด์บ็อกซ์",
   "workspace.error.stillPreparing": "พื้นที่ทำงานกำลังเตรียมอยู่",
   "workspace.status.checking": "กำลังตรวจสอบการเปลี่ยนแปลงที่ไม่ได้ผสาน...",
   "workspace.status.error": "ไม่สามารถตรวจสอบสถานะ git",

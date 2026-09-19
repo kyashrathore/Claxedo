@@ -309,7 +309,7 @@ export const dict = {
   "prompt.action.readOnlyWorkspace": "只读工作区",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 无法使用此附件",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的本地工作区。",
+    "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的工作区文件夹。",
   "prompt.toast.attachmentUnreadable.title": "无法读取附件",
   "prompt.toast.attachmentUnreadable.description":
     "无法从此设备读取 {{filename}}。",
@@ -445,7 +445,7 @@ export const dict = {
 
   "home.recentProjects": "最近项目",
   "home.empty.title": "没有最近项目",
-  "home.empty.description": "通过打开本地项目开始使用",
+  "home.empty.description": "通过打开这台电脑上的文件夹开始使用",
   "home.title": "主页",
   "session.timeline.scrollToBottom": "滚动到最新消息",
 
@@ -478,6 +478,10 @@ export const dict = {
   "session.new.lastModified": "最后修改",
   "session.header.search.placeholder": "搜索 {{project}}",
   "session.header.searchFiles": "搜索文件",
+  "session.share.level.follow": "可以关注",
+  "session.share.level.send": "可以发送消息",
+  "session.share.disclosure.send":
+    "智能体在工作区所在的机器上运行，并使用该机器上的文件。可以发送消息的团队成员可以让它读取该机器上的任何内容，包括你在此工作区中其他会话的记录。共享最适合云环境中的会话，那里每个会话都拥有自己的机器。如果这台机器上有任何你不希望团队成员接触到的内容，请不要共享这台机器上工作区中的会话。",
 
 
 
@@ -509,7 +513,7 @@ export const dict = {
   "sidebar.workspace.role.admin": "管理员",
   "sidebar.workspace.hostOffline": "主机离线",
   "sidebar.workspace.sharedWithYou": "已共享给你",
-  "sidebar.workspace.publishedByThisMachine": "由本机发布",
+  "sidebar.workspace.publishedToYourAccount": "已发布到你的账户",
 
 
   "settings.section.desktop": "桌面",
@@ -684,8 +688,8 @@ export const dict = {
   "session.delete.button": "删除会话",
 
   "workspace.new": "新建工作区",
-  "workspace.type.local": "本地",
-  "workspace.type.sandbox": "沙盒",
+  "workspace.directory.project": "项目",
+  "workspace.directory.sandbox": "沙盒",
   "workspace.error.stillPreparing": "工作区仍在准备中",
   "workspace.status.checking": "正在检查未合并的更改...",
   "workspace.status.error": "无法验证 git 状态。",

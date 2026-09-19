@@ -157,7 +157,7 @@ describe("RailAccountMenu", () => {
 
     await openMenu()
     expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument()
-    expect(screen.queryByText("Local workspace")).toBeNull()
+    expect(screen.queryByText("Not signed in")).toBeNull()
   })
 
   test("shows Sign in only for auth-enabled anonymous mode", async () => {
@@ -174,14 +174,14 @@ describe("RailAccountMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
   })
 
-  test("shows Local workspace without auth commands when auth is disabled", async () => {
+  test("shows Not signed in without auth commands when auth is disabled", async () => {
     state.status = "anonymous"
     state.accountStatus = "unsigned"
     state.authEnabled = false
     state.user = {}
     renderMenu()
 
-    await openMenu("Local workspace")
+    await openMenu("Not signed in")
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
   })
@@ -208,7 +208,7 @@ describe("RailAccountMenu", () => {
     state.user = {}
     renderMenu()
 
-    await openMenu("Local workspace")
+    await openMenu("Not signed in")
 
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
   })

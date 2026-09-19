@@ -372,7 +372,7 @@ describe("railWorkspaceMetaLabels", () => {
       kind: "machine",
       role: "viewer",
       hostOnline: false,
-      publishedByThisMachine: false,
+      publishedToYourAccount: false,
       label,
     })).toEqual(["hostOffline", "role:viewer", "sharedWithYou"])
   })
@@ -382,9 +382,9 @@ describe("railWorkspaceMetaLabels", () => {
       kind: "machine",
       role: "owner",
       hostOnline: true,
-      publishedByThisMachine: true,
+      publishedToYourAccount: true,
       label,
-    })).toEqual(["publishedByThisMachine"])
+    })).toEqual(["publishedToYourAccount"])
   })
 
   test("an editor on a reachable shared workspace reads its role and nothing about the host", () => {
@@ -392,7 +392,7 @@ describe("railWorkspaceMetaLabels", () => {
       kind: "machine",
       role: "editor",
       hostOnline: true,
-      publishedByThisMachine: false,
+      publishedToYourAccount: false,
       label,
     })).toEqual(["role:editor", "sharedWithYou"])
   })
@@ -401,10 +401,10 @@ describe("railWorkspaceMetaLabels", () => {
     // A cloud workspace's runtime is provisioned on demand; an unknown host
     // state is not an offline one.
     expect(railWorkspaceMetaLabels({
-      kind: "provisioner", role: "editor", publishedByThisMachine: false, label,
+      kind: "provisioner", role: "editor", publishedToYourAccount: false, label,
     })).toEqual([])
     expect(railWorkspaceMetaLabels({
-      kind: "machine", role: "owner", publishedByThisMachine: false, label,
+      kind: "machine", role: "owner", publishedToYourAccount: false, label,
     })).toEqual([])
   })
 
@@ -414,7 +414,7 @@ describe("railWorkspaceMetaLabels", () => {
       status: "offline",
       role: "viewer",
       hostOnline: false,
-      publishedByThisMachine: false,
+      publishedToYourAccount: false,
       label,
     })).toEqual(["offline", "hostOffline", "role:viewer", "sharedWithYou"])
   })

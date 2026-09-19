@@ -4,7 +4,12 @@ import { setupHostServingPush } from "./serving-push"
 
 const JWKS = "https://relay.test/.well-known/jwks.json"
 const AUTHORITY = "https://control-plane.test/api/runtime-authority/session-authorize"
-const TUNNEL = { hostTunnelToken: "htt.1", hostId: "host_1", relayUrl: "https://relay.test" }
+const TUNNEL = {
+  hostTunnelToken: "htt.1",
+  hostId: "host_1",
+  enrollmentId: "enr_this_machine",
+  relayUrl: "https://relay.test",
+}
 
 function harness(options: { respond?: () => Response; serverUrl?: () => Promise<string> } = {}) {
   const requests: Array<{ url: string; method?: string; body: unknown }> = []
@@ -42,6 +47,16 @@ describe("the serving push", () => {
       credential: TUNNEL,
       endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY },
     })
+  })
+
+  // The daemon declares this to every local client as the machine it is, so
+  // the credential has to reach it whole rather than as the fields main reads.
+  test("hands the daemon the enrollment the ack minted the credential for", async () => {
+    const host = harness()
+
+    await host.push({ tunnel: TUNNEL })
+
+    expect((host.body() as { credential?: Record<string, unknown> }).credential?.enrollmentId).toBe("enr_this_machine")
   })
 
   test("omits the field entirely when the ack named no address", async () => {

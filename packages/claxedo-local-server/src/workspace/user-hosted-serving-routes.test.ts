@@ -2,7 +2,11 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { HostTunnelTokenSignerResult } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 import { UserHostedServingRoutes } from "./user-hosted-serving-routes"
-import { stopUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
+import {
+  stopUserHostedServing,
+  userHostedServingEnrollmentId,
+  userHostedServingState,
+} from "@claxedo/host-serving/serving"
 import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
 
 const state = () => userHostedServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })
@@ -11,7 +15,8 @@ const state = () => userHostedServingState({ sessionAuthority: embeddedWorkspace
  * The PUT body's `credential` is the heartbeat ack's `hostTunnel` object
  * VERBATIM. The control plane builds it in
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` as the signer result
- * spread plus `hostId`, `workspaceIds` and `relayUrl` — this type restates
+ * spread plus `hostId`, `enrollmentId`, `workspaceIds` and `relayUrl` — this
+ * type restates
  * that composition so a drift in `HostTunnelTokenSignerResult` fails HERE at
  * compile time instead of as a silent 400 in production. That silent 400 is
  * not hypothetical: the first version of this route validated a locally
@@ -20,6 +25,7 @@ const state = () => userHostedServingState({ sessionAuthority: embeddedWorkspace
  */
 type AckHostTunnel = HostTunnelTokenSignerResult & {
   hostId: string
+  enrollmentId: string
   workspaceIds: string[]
   relayUrl?: string
 }
@@ -30,6 +36,7 @@ function ackCredential(): AckHostTunnel {
     tokenExpiresAt: 1_788_255_486_000,
     jti: "jti-1",
     hostId: "host_machine-1",
+    enrollmentId: "enr_this_machine",
     workspaceIds: ["11111111-1111-4111-8111-111111111111"],
     relayUrl: "https://relay.claxedo.test",
   }
@@ -135,6 +142,27 @@ describe("user-hosted serving routes", () => {
   test("reports the tunnel as not connected until it opens", async () => {
     await put(ackCredential())
     expect(state()).toMatchObject({ serving: true, connected: false })
+  })
+
+  // The daemon's bootstrap reads this to tell its clients which machine they
+  // are talking to; a control-plane row naming this enrollment is then reached
+  // over loopback instead of back around through the relay.
+  test("holds the enrollment the credential names, for as long as it serves", async () => {
+    expect(userHostedServingEnrollmentId()).toBeUndefined()
+
+    await put(ackCredential())
+    expect(userHostedServingEnrollmentId()).toBe("enr_this_machine")
+
+    await put(null)
+    expect(userHostedServingEnrollmentId()).toBeUndefined()
+  })
+
+  test("a credential naming no enrollment is refused rather than served anonymously", async () => {
+    const { enrollmentId: _omitted, ...withoutEnrollment } = ackCredential()
+    const response = await put(withoutEnrollment)
+    expect(response.status).toBe(400)
+    expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
+    expect(userHostedServingEnrollmentId()).toBeUndefined()
   })
 
   test("rejects a credential without a relay to dial", async () => {

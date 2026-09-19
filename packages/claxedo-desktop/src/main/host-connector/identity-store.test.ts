@@ -8,6 +8,8 @@ import {
   loadHostConnectorIdentity,
   machineIdentityFile,
   storeHostConnectorIdentity,
+  storeHostConnectorSealingKey,
+  storeHostProviderConfig,
   type MachineIdentityFile,
 } from "./identity-store"
 
@@ -15,6 +17,7 @@ const identity = {
   hostId: "host_test",
   privateKeyJwk: { kty: "EC", crv: "P-256", x: "x", y: "y", d: "private" } satisfies JsonWebKey,
 }
+const sealingPrivateKeyJwk = { kty: "EC", crv: "P-256", x: "sx", y: "sy", d: "sealing-private" } satisfies JsonWebKey
 
 function safeStorage(overrides: Partial<SafeStorageApi> = {}) {
   const encrypted: string[] = []
@@ -126,6 +129,136 @@ describe("the canonical encrypted identity record", () => {
       expect(disk.clears()).toBe(1)
       expect(rejected).toHaveLength(1)
     }
+  })
+})
+
+describe("the sealing key and the sealed revision beside the identity", () => {
+  const platform = "darwin"
+
+  test("an identity minted with its sealing half restores with it", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+    const whole = { ...identity, sealingPrivateKeyJwk }
+
+    expect(storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity: whole })).toEqual({ ok: true })
+    expect(loadHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform })).toEqual({ ok: true, identity: whole })
+    expect(disk.contents()).not.toContain("sealing-private")
+  })
+
+  test("a sealing key is added to an identity stored without one, under the same ciphertext", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+    storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity })
+
+    expect(storeHostConnectorSealingKey({ safeStorage: storage.api, file: disk.file, platform, sealingPrivateKeyJwk })).toEqual({
+      ok: true,
+    })
+
+    expect(loadHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform })).toEqual({
+      ok: true,
+      identity: { ...identity, sealingPrivateKeyJwk },
+    })
+    expect(JSON.parse(disk.contents()!)).toEqual({ backend: "gnome_libsecret", ciphertext: expect.any(String) })
+    expect(disk.contents()).not.toContain("sealing-private")
+  })
+
+  test("a sealing key without its private scalar is refused before anything is written", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+    storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity })
+    const before = disk.contents()
+
+    expect(() =>
+      storeHostConnectorSealingKey({
+        safeStorage: storage.api,
+        file: disk.file,
+        platform,
+        sealingPrivateKeyJwk: { kty: "EC", crv: "P-256", x: "sx", y: "sy" },
+      }),
+    ).toThrow(/invalid sealing key/)
+    expect(disk.contents()).toBe(before)
+  })
+
+  test("a sealing key with no identity to sit beside is refused", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+
+    expect(storeHostConnectorSealingKey({ safeStorage: storage.api, file: disk.file, platform, sealingPrivateKeyJwk })).toMatchObject({
+      ok: false,
+      reason: "no-identity",
+    })
+    expect(disk.contents()).toBeUndefined()
+  })
+
+  test("a delivered revision is stored as ciphertext beside the identity and restored with it", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+    storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity: { ...identity, sealingPrivateKeyJwk } })
+    const providerConfig = { revision: 3, sealed: "mseal1.ephemeral.iv.ciphertext" }
+
+    expect(storeHostProviderConfig({ safeStorage: storage.api, file: disk.file, platform, providerConfig })).toEqual({ ok: true })
+
+    expect(loadHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform })).toEqual({
+      ok: true,
+      identity: { ...identity, sealingPrivateKeyJwk },
+      providerConfig,
+    })
+    // The plain file carries neither the revision nor the blob: the revision
+    // is what the machine declares as held, and a reader of the file must not
+    // be able to move it.
+    expect(disk.contents()).not.toContain("mseal1")
+    expect(disk.contents()).not.toContain("revision")
+  })
+
+  test("the withdrawal is a revision whose blob is null, and it replaces the last one", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+    storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity: { ...identity, sealingPrivateKeyJwk } })
+    storeHostProviderConfig({ safeStorage: storage.api, file: disk.file, platform, providerConfig: { revision: 3, sealed: "mseal1.a.b.c" } })
+
+    storeHostProviderConfig({ safeStorage: storage.api, file: disk.file, platform, providerConfig: { revision: 4, sealed: null } })
+
+    expect(loadHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform })).toMatchObject({
+      providerConfig: { revision: 4, sealed: null },
+    })
+  })
+
+  test("a new identity drops the revision sealed for the old one", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+    storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity: { ...identity, sealingPrivateKeyJwk } })
+    storeHostProviderConfig({ safeStorage: storage.api, file: disk.file, platform, providerConfig: { revision: 3, sealed: "mseal1.a.b.c" } })
+
+    storeHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform, identity: { ...identity, hostId: "host_next" } })
+
+    expect(loadHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform })).toEqual({
+      ok: true,
+      identity: { ...identity, hostId: "host_next" },
+    })
+  })
+
+  test("a revision with no identity to sit beside is refused", () => {
+    const storage = safeStorage()
+    const disk = memoryFile()
+
+    expect(
+      storeHostProviderConfig({ safeStorage: storage.api, file: disk.file, platform, providerConfig: { revision: 1, sealed: null } }),
+    ).toMatchObject({ ok: false, reason: "no-identity" })
+    expect(disk.contents()).toBeUndefined()
+  })
+
+  test("an unreadable revision beside a readable identity restores the identity alone", () => {
+    const storage = safeStorage()
+    const secret = JSON.stringify({ ...identity, providerConfig: { revision: "3", sealed: "mseal1.a.b.c" } })
+    const disk = memoryFile(
+      JSON.stringify({
+        backend: "gnome_libsecret",
+        ciphertext: Buffer.from(JSON.stringify({ sealed: secret })).toString("base64"),
+      }),
+    )
+
+    expect(loadHostConnectorIdentity({ safeStorage: storage.api, file: disk.file, platform })).toEqual({ ok: true, identity })
+    expect(disk.clears()).toBe(0)
   })
 })
 
