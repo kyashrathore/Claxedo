@@ -946,5 +946,9 @@ Findings and fixes (the commit after this one):
 - NIT (client): the reader's dead re-exports are gone (the two tests import
   the frames module); the Tier M spec's comment says it proves the mock's
   body, naming the reader suite that proves the parking.
+- NIT (server): the `deletedSessionParent` comment claimed a wire and a
+  protection the code does not give (frames are in-process; a frame without
+  a payload throws before that read, and `evaluate`'s catch ends the
+  connection); the comment and the optional reads are gone.
 
 **Round 11**: see below.

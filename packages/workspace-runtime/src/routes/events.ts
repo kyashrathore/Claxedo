@@ -108,10 +108,8 @@ function isSessionDeletion(frame: StreamFrame) {
   return sessionDeletion(frame) !== undefined
 }
 
-// Read as the wire may deliver it, not as the type promises: a partial frame
-// must not throw inside a decision, which would end every connection.
 function deletedSessionParent(frame: StreamFrame): string | undefined {
-  return sessionDeletion(frame)?.properties?.info?.parentID
+  return sessionDeletion(frame)?.properties.info.parentID
 }
 
 export function workspaceEventFrameSessionId(frame: StreamFrame): string | undefined {
