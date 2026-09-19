@@ -123,7 +123,7 @@ describe("Claxedo project metadata public routes", () => {
     const signed = ShellRoutes(options)
     expect((await signed.request("/project/project_a", patch({ name: "Shared name", icon: { color: "purple" }, commands: { start: "bun dev" } }, "owner"))).status).toBe(200)
     await app.request("/project/project_b", patch({ icon: { override: "private-marker" }, commands: { start: "private-command" } }))
-    const response = await BootstrapRoutes(options).request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
+    const response = await BootstrapRoutes({ ...options, hostAggregateEvents: false }).request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.project).toHaveLength(1)

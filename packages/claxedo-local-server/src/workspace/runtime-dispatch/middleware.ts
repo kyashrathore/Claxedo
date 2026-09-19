@@ -19,6 +19,7 @@ import type { Context, Next } from "hono"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   embedded,
+  hostAggregateEvents,
   noWr,
   proxy,
   requestWorkspace,
@@ -43,6 +44,12 @@ async function workspaceRuntimeProxyWithOptions(
   const pathname = new URL(c.req.url).pathname
 
   if (!runtimeOwned(pathname)) return next()
+
+  // Decided before the workspace lookup below and outside its catch: the
+  // aggregate names no workspace, so a failure on it is not "that workspace's
+  // runtime is unavailable".
+  const aggregate = hostAggregateEvents(c, pathname, options)
+  if (aggregate) return await aggregate
 
   try {
     const input = requestWorkspace(c)

@@ -264,8 +264,12 @@ describe("@claxedo/local-server closure", () => {
     // the loopback route that hands the package the embedded runtimes'
     // `sessionAuthority`; the package itself reaches server-core's log and
     // peer-address leaves and the runtime's relay subpath, all already here.
-    // Measured: 88 modules, 27 packages.
-    expect(modules.size).toBeLessThanOrEqual(88)
+    // shell/host-events.ts is the host aggregate `wr/events`: one connection
+    // carrying every embedded runtime's frames, read from the taps only a
+    // process that hosts those runtimes can reach. It writes through the
+    // runtime's own SSE writer and adds no package edge.
+    // Measured: 89 modules, 27 packages.
+    expect(modules.size).toBeLessThanOrEqual(89)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(27)
   })

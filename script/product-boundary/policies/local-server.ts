@@ -63,7 +63,7 @@ export const localServer: Policy = {
     requiredPackages: ["@claxedo/workspace-runtime", "hono"],
   },
 
-  // Measured with `runtimeOnly` — re-run, never summed: 60 modules, 27
+  // Measured with `runtimeOnly` — re-run, never summed: 61 modules, 27
   // packages. What the desktop entry reaches beyond the composition and the
   // workspace routes, and why each owner is this product's:
   //  - the local usage pipeline (route, durable ports, scanner, pricing port,
@@ -88,6 +88,11 @@ export const localServer: Policy = {
   //    configuration before any file is written.
   //  - `shell/event-stream-response.ts`: the authorized event producer over
   //    HTTP or WebSocket.
+  //  - `shell/host-events.ts`: the host aggregate `wr/events`, which serves
+  //    every embedded runtime's frames on one connection. Only a process that
+  //    hosts those runtimes can read their taps, so the handler belongs to
+  //    this product; it reaches the runtime's own event source and SSE
+  //    writer, both already here.
   //  - `app/local-documents.ts`: the shared repository/managed document
   //    backend composed for unsigned desktop editing.
   //  - `credentials/broker.ts` and @claxedo/egress-broker: the loopback
@@ -120,7 +125,7 @@ export const localServer: Policy = {
   // dependency-free owner of the harness table and the credential-broker
   // error vocabulary; @claxedo/host-serving and @claxedo/egress-broker as
   // above.
-  ceilings: { modules: 60, packages: 27 },
+  ceilings: { modules: 61, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

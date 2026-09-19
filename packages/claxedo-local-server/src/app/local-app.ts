@@ -43,6 +43,8 @@ import { AgentConfigRoutes } from "../agent-config/routes/index"
 import { SessionMetaRoutes } from "../session/routes/meta-routes"
 import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { ShellRoutes } from "../shell/routes"
+import { createHostAggregateEventsHandler } from "../shell/host-events"
+import { onEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
 import { LocalProjectRoutes } from "../workspace/routes/projects-route"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
@@ -167,6 +169,14 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   const nodeWebSocket = createNodeWebSocket({ app })
   const { upgradeWebSocket } = nodeWebSocket
   const runtimeProxyOptions = options.runtimeProxyOptions ?? {}
+  // The desktop daemon hosts every local runtime in-process and issues no
+  // sessions, so it always serves the host aggregate. The bootstrap declares
+  // this object's own `hostEventStream`, so a client cannot be told a stream
+  // the proxy below does not answer.
+  const runtimeProxy = {
+    ...runtimeProxyOptions,
+    hostEventStream: createHostAggregateEventsHandler({ observe: onEmbeddedWorkspaceRuntime }),
+  }
 
   app.use(localSecurityHeaders())
   app.use(peerAddressStamp())
@@ -271,7 +281,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     })
   }
 
-  app.route("/", BootstrapRoutes({ services, env, ...authRouteOptions(services) }))
+  app.route("/", BootstrapRoutes({ services, env, hostAggregateEvents: !!runtimeProxy.hostEventStream, ...authRouteOptions(services) }))
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     agentUsage: readMachineAgentUsage,
@@ -308,7 +318,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
 
   // Route execution traffic to the workspace runtime. `/api/wr/*` is
   // workspace-owned; `/api/cp/events` stays with the control plane.
-  app.use(createWorkspaceRuntimeProxy(runtimeProxyOptions))
+  app.use(createWorkspaceRuntimeProxy(runtimeProxy))
 
   app.route("/", ShellRoutes({
     upgradeWebSocket,

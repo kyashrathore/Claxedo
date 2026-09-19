@@ -13,6 +13,7 @@ import {
   type ProcessObserver,
   type ProcessOwnerHandle,
   type RuntimeCredentialClaims,
+  type WorkspaceEventFramesTap,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
@@ -43,8 +44,22 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "embedded-workspace-runtime" })
 
+/**
+ * What an observer of the registry is handed: the workspace a runtime serves
+ * and its `wr/events` frames. One stable object per runtime, so a listener
+ * may key its own attachment by identity and match a retirement to the mount
+ * it answered.
+ */
+export type MountedEmbeddedWorkspaceRuntime = {
+  workspace: Workspace
+  frames: WorkspaceEventFramesTap
+}
+
+export type EmbeddedWorkspaceRuntimePhase = "mounted" | "retired" | "disposed"
+
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
+  observed: MountedEmbeddedWorkspaceRuntime
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
   diagnosticsOwner?: ProcessOwnerHandle
@@ -64,6 +79,57 @@ type PtySocket = {
 const hosts = new Map<string, EmbeddedRuntime>()
 const retiring = new Map<string, Promise<void>>()
 let shutdownGeneration = 0
+
+type EmbeddedWorkspaceRuntimeListener = (
+  runtime: MountedEmbeddedWorkspaceRuntime,
+  phase: EmbeddedWorkspaceRuntimePhase,
+) => void
+
+const observers = new Set<EmbeddedWorkspaceRuntimeListener>()
+
+function notify(listener: EmbeddedWorkspaceRuntimeListener, runtime: EmbeddedRuntime, phase: EmbeddedWorkspaceRuntimePhase) {
+  try {
+    listener(runtime.observed, phase)
+  } catch (error) {
+    log.warn("an embedded workspace runtime observer threw", {
+      workspace_id: runtime.workspace.id,
+      phase,
+      error: String(error),
+    })
+  }
+}
+
+/**
+ * "mounted" and "retired" are announced from the two statements that own
+ * `hosts` membership — the `set` in {@link ensureEmbeddedWorkspaceRuntime}
+ * and the `delete` in `disposeRuntime` — so every mount is reported exactly
+ * once and paired with exactly one retirement, including the
+ * replace-while-retiring path, where the retirement is announced before the
+ * replacement is created.
+ *
+ * "disposed" follows, once the runtime's own disposal has settled. Disposal
+ * aborts the live turns, and the terminal `agent.lifecycle` and
+ * `session.lifecycle` frames that settles are published before the runtime's
+ * event stream closes; an observer serving those frames on a stream of its
+ * own has to hold on until here or lose them with no gap to show for it.
+ */
+function announce(runtime: EmbeddedRuntime, phase: EmbeddedWorkspaceRuntimePhase) {
+  for (const listener of Array.from(observers)) notify(listener, runtime, phase)
+}
+
+/**
+ * Watch this process's embedded workspace runtimes. The currently mounted
+ * ones are replayed to the new listener before it returns, so a host serving
+ * them behind one stream never has to ask the registry for a snapshot and
+ * race a mount against it.
+ */
+export function onEmbeddedWorkspaceRuntime(listener: EmbeddedWorkspaceRuntimeListener): () => void {
+  observers.add(listener)
+  for (const runtime of hosts.values()) notify(listener, runtime, "mounted")
+  return () => {
+    observers.delete(listener)
+  }
+}
 
 /** Read the active workspace's committed session config without consulting operator defaults. */
 export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionId: string) {
@@ -285,10 +351,20 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
 function disposeRuntime(runtime: EmbeddedRuntime): Promise<void> {
   const pending = retiring.get(runtime.workspace.id)
   if (pending) return pending
-  if (hosts.get(runtime.workspace.id) === runtime) hosts.delete(runtime.workspace.id)
+  if (hosts.get(runtime.workspace.id) === runtime) {
+    hosts.delete(runtime.workspace.id)
+    // From here on nothing new is routed to this runtime; what it still
+    // publishes, it publishes while being torn down.
+    announce(runtime, "retired")
+  }
   const disposed = runtime.host.dispose()
+  const settled = disposed.then(
+    () => announce(runtime, "disposed"),
+    () => announce(runtime, "disposed"),
+  )
   const done = Promise.all([
     disposed,
+    settled,
     // Config resolution and metadata projection begin outside the host's
     // request scope. Their consumers must finish before shared DB cleanup.
     Promise.allSettled([runtime.applying, runtime.reconcilingSessionMetadata]),
@@ -366,6 +442,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   const runtime: EmbeddedRuntime = {
     ...created,
     workspace: ws,
+    observed: { workspace: ws, frames: created.host.frames },
     ...(configuredProcessObserver
       ? {
           diagnosticsOwner: configuredProcessObserver.register({
@@ -384,6 +461,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
+  announce(runtime, "mounted")
   if (config === "sync") await configure(runtime)
   assertCurrent()
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })

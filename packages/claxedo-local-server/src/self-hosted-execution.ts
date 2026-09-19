@@ -20,6 +20,7 @@ export {
   configureEmbeddedWorkspaceRuntime,
   embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
+  onEmbeddedWorkspaceRuntime,
   readEmbeddedWorkspaceSessionConfig,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
@@ -36,6 +37,7 @@ export { AgentConfigRoutes } from "./agent-config/routes/index"
 export { SessionMetaRoutes } from "./session/routes/meta-routes"
 export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
 export { ShellRoutes } from "./shell/routes"
+export { createHostAggregateEventsHandler } from "./shell/host-events"
 export { LocalProjectRoutes, githubCloneAuthorization } from "./workspace/routes/projects-route"
 export { CredentialRoutes, requestOrg } from "./credentials/routes/credential"
 export { localControlPlaneCredentials } from "./credentials/machine-credentials"

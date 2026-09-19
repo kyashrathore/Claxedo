@@ -7,6 +7,8 @@ import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/gove
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {
   EMBEDDED_RELAY_HOST_AUTH_HEADER,
   embeddedRelayHostAuthFromActor,
@@ -36,7 +38,15 @@ export type RuntimeProxyOptions = {
   }) | undefined>
   /** Signed deployments must never fall back to the synthetic local owner. */
   requireRelayActor?: boolean
+  /**
+   * Answers the host aggregate `wr/events`. Only the desktop-local
+   * composition supplies one; without it a workspace-less request keeps
+   * falling through as before.
+   */
+  hostEventStream?: (c: Context) => Response | Promise<Response>
 }
+
+const WR_EVENTS = "/api/wr/events"
 
 // Cloud runtime startup can legitimately take minutes on cold sandboxes
 // while clone/install/health checks complete. Keep this proxy timeout above
@@ -56,6 +66,48 @@ export function requestWorkspace(c: Context) {
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
     directory: dir ? decodeURIComponent(dir) : undefined,
   }
+}
+
+/**
+ * `/api/wr/events` naming no workspace is the HOST AGGREGATE: the daemon
+ * hosts every local runtime in-process, so it is the one composition that can
+ * serve them all on one connection. Returns `undefined` for anything else —
+ * a workspace-scoped stream, another runtime-owned path, or a composition
+ * that mounts no aggregate — leaving the request on the dispatch path it had
+ * before.
+ *
+ * The aggregate asks no admission question and serves every workspace's
+ * frames, which only a loopback-direct reader may have: this is the module
+ * that grants that access, so it is the one that decides it, rather than
+ * inferring it from a guard composed elsewhere. Three refusals, unauthorized
+ * first: a peer that is not loopback by `isLoopbackLocalRequest`'s own
+ * measure, a request carrying the in-process relay host-auth stamp or landing
+ * on a deployment that requires a verified relay actor (the relay path always
+ * names a workspace, `/workspaces/:id/…`), and then `?sessionID=`, which has
+ * no meaning on a stream that spans workspaces — the reader opens that
+ * workspace's own stream for it.
+ */
+export function hostAggregateEvents(c: Context, pathname: string, options: RuntimeProxyOptions) {
+  if (pathname !== WR_EVENTS || !options.hostEventStream) return undefined
+  const named = requestWorkspace(c)
+  if (named.workspaceId || named.directory) return undefined
+  if (
+    !isLoopbackLocalRequest(c.req.raw) ||
+    options.requireRelayActor === true ||
+    c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER)
+  ) {
+    return c.json(errorBody(
+      "host_event_stream_denied",
+      "The host event stream is served to loopback-direct readers only",
+    ), 403)
+  }
+  if (c.req.query("sessionID")) {
+    return c.json(errorBody(
+      "host_event_stream_session_scoped",
+      "The host event stream spans every workspace; open a workspace's own stream for a session",
+    ), 400)
+  }
+  return options.hostEventStream(c)
 }
 
 export async function resolveWorkspaceRuntimeHit(c: Context, options: RuntimeProxyOptions = {}): Promise<Hit | undefined> {
@@ -145,7 +197,7 @@ export function noWr(c: Context, err?: unknown) {
 }
 
 function streaming(pathname: string, headers: Headers) {
-  if (pathname === "/api/wr/events") return true
+  if (pathname === WR_EVENTS) return true
   const type = headers.get("content-type") || ""
   return type.includes("text/event-stream")
 }
@@ -338,7 +390,7 @@ export function embeddedConfigModeForPath(
   if (
     pathname === "/api/wr/health"
     || pathname === "/api/wr/capabilities"
-    || pathname === "/api/wr/events"
+    || pathname === WR_EVENTS
     || pathname === "/vcs"
     || pathname === "/file"
     || pathname.startsWith("/file/")

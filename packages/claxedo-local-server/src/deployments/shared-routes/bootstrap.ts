@@ -23,6 +23,16 @@ type Options = {
   verifier?: ControlPlaneTokenVerifier
   services?: ControlPlaneServicesContract
   env?: Record<string, string | undefined>
+  /**
+   * Whether this composition serves the host aggregate `/api/wr/events` — the
+   * stream naming no workspace that carries every runtime this process hosts.
+   * The client cannot derive it: a self-hosted node runs its issuer on
+   * localhost too, so the server URL does not say it, and the build-time auth
+   * flag belongs to the bundle rather than to the server it happens to reach.
+   * The composition passes one value to both this route and the runtime
+   * proxy's mount, so the declaration cannot disagree with what is served.
+   */
+  hostAggregateEvents: boolean
 }
 
 
@@ -42,11 +52,16 @@ function version(options: Options) {
   return options.env?.npm_package_version || "1.0.0"
 }
 
+function events(options: Options) {
+  return { hostAggregate: options.hostAggregateEvents }
+}
+
 async function localBootstrapBody(options: Options) {
   return {
     healthy: true,
     version: version(options),
     path: bootPath(),
+    events: events(options),
     project: await listProjects(),
     provider_auth: providerAuthMethods(),
   }
@@ -57,6 +72,7 @@ async function localShellBootstrapBody(options: Options) {
     healthy: true,
     version: version(options),
     path: bootPath(),
+    events: events(options),
     project: await listProjects(),
   }
 }
@@ -129,6 +145,7 @@ async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Option
     healthy: true,
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
+    events: events(options),
     project: await Promise.all(projects.map(async (project) => ({ ...project, ...await getProjectMetadata(project.id) }))),
     provider_auth: providerAuthMethods(),
   }
@@ -156,7 +173,7 @@ async function signedBootstrapAuth(request: Request, options: Options) {
   throw new ControlPlaneAuthError(503, "signed_cloud_auth_disabled", context.reason)
 }
 
-export function BootstrapRoutes(options: Options = {}) {
+export function BootstrapRoutes(options: Options) {
   return new Hono()
     .get("/api/claxedo/bootstrap", async (c) => {
       try {

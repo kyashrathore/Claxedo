@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { BootstrapRoutes, signedBootstrapProjects } from "./bootstrap"
 
 const root = path.join(os.tmpdir(), `claxedo-bootstrap-route-${Date.now()}-${Math.random().toString(16).slice(2)}`)
@@ -23,7 +24,7 @@ afterAll(async () => {
 
 describe("BootstrapRoutes", () => {
   test("returns only Claxedo-owned bootstrap fields", async () => {
-    const response = await BootstrapRoutes({ env: { npm_package_version: "9.9.9-test" } })
+    const response = await BootstrapRoutes({ env: { npm_package_version: "9.9.9-test" }, hostAggregateEvents: true })
       .request("/api/claxedo/bootstrap")
 
     expect(response.status).toBe(200)
@@ -41,7 +42,7 @@ describe("BootstrapRoutes", () => {
   })
 
   test("shell scope omits credential presentation", async () => {
-    const response = await BootstrapRoutes({ env: {} })
+    const response = await BootstrapRoutes({ env: {}, hostAggregateEvents: true })
       .request("/api/claxedo/bootstrap?scope=shell")
 
     expect(response.status).toBe(200)
@@ -53,6 +54,7 @@ describe("BootstrapRoutes", () => {
   test("allows loopback browser bootstrap when a bearer is attached", async () => {
     const response = await BootstrapRoutes({
       authConfig: { enabled: false, mode: "local-only", reason: "local test" },
+      hostAggregateEvents: true,
     }).request("http://127.0.0.1/api/claxedo/bootstrap", {
       headers: {
         Authorization: "Bearer local-test-token",
@@ -62,6 +64,40 @@ describe("BootstrapRoutes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ healthy: true })
+  })
+
+  // The client cannot derive this from the server URL — a signed node runs its
+  // issuer on localhost too — nor from its own build flags, so a body that
+  // omits it leaves the reader opening a stream the server may refuse forever.
+  test("declares whether this composition serves the host aggregate, in the local body", async () => {
+    const served = await BootstrapRoutes({ env: {}, hostAggregateEvents: true })
+      .request("/api/claxedo/bootstrap")
+    await expect(served.json()).resolves.toMatchObject({ events: { hostAggregate: true } })
+
+    const unserved = await BootstrapRoutes({ env: {}, hostAggregateEvents: false })
+      .request("/api/claxedo/bootstrap")
+    await expect(unserved.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
+
+    const shell = await BootstrapRoutes({ env: {}, hostAggregateEvents: false })
+      .request("/api/claxedo/bootstrap?scope=shell")
+    await expect(shell.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
+  })
+
+  test("declares it in the signed body too", async () => {
+    const options = {
+      authConfig: { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" },
+      verifier: async (token: string) => ({
+        mode: "signed" as const,
+        user: { subject: token, issuer: "https://auth.test", tokenIdentifier: token },
+      }),
+      services: { authority: { listWorkspaces: async () => [] } } as unknown as ControlPlaneServicesContract,
+    }
+
+    const response = await BootstrapRoutes({ ...options, hostAggregateEvents: false })
+      .request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
   })
 })
 

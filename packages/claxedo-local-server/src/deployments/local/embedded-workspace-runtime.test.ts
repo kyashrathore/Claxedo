@@ -8,9 +8,15 @@ import {
   cursorTranscriptRoot,
   embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
+  onEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
+  type MountedEmbeddedWorkspaceRuntime,
 } from "./embedded-workspace-runtime"
+import { workspaceRuntimeBus } from "@claxedo/workspace-runtime/host"
+import { Hono } from "hono"
+import { createHostAggregateEventsHandler } from "../../shell/host-events"
+import type { WorkspaceEventStreamFrame } from "@claxedo/workspace-runtime"
 import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
@@ -409,6 +415,164 @@ describe("embedded workspace runtime", () => {
       // fresh one is created.
       expect(moved).not.toBe(first)
     } finally {
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("announces every mounted runtime to an observer, replaying what is already mounted, and holds it until its disposal settles", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-observer-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const first = await ensureEmbeddedWorkspaceRuntime(workspace("ws_observed", project), { config: "skip" })
+
+      const announced: Array<{ directory: string; phase: string }> = []
+      const observed: MountedEmbeddedWorkspaceRuntime[] = []
+      const framed: WorkspaceEventStreamFrame[] = []
+      // Reads the taps the way the host aggregate does: attach on "mounted",
+      // let go on "disposed".
+      const attached = new Map<MountedEmbeddedWorkspaceRuntime, () => void>()
+      const stop = onEmbeddedWorkspaceRuntime((runtime, phase) => {
+        announced.push({ directory: runtime.workspace.directory, phase })
+        if (phase === "retired") return
+        if (phase === "disposed") {
+          attached.get(runtime)?.()
+          attached.delete(runtime)
+          return
+        }
+        observed.push(runtime)
+        attached.set(runtime, runtime.frames.subscribe((frame) => framed.push(frame)))
+      })
+
+      expect(announced).toEqual([{ directory: project, phase: "mounted" }])
+      // The observer is handed the runtime's own tap, not a copy of it.
+      expect(observed[0].frames).toBe(first.host.frames)
+
+      const lifecycle = {
+        type: "session.lifecycle" as const,
+        phase: "created" as const,
+        directory: project,
+        sessionID: "ses_observed",
+        workspaceId: "ws_observed",
+        ts: 1,
+      }
+      workspaceRuntimeBus.publish(lifecycle)
+      expect(framed).toEqual([{ directory: project, payload: lifecycle }])
+
+      const second = path.join(root, "project-2")
+      await fs.mkdir(second, { recursive: true })
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_observed_2", second), { config: "skip" })
+      expect(announced.slice(1)).toEqual([{ directory: second, phase: "mounted" }])
+
+      // One id whose directory moved is replaced, and the replacement is
+      // announced only once the runtime it replaces has left the registry.
+      const moved = path.join(root, "project-moved")
+      await fs.mkdir(moved, { recursive: true })
+      const replacement = await ensureEmbeddedWorkspaceRuntime(workspace("ws_observed", moved), { config: "skip" })
+      expect(replacement).not.toBe(first)
+      expect(announced.slice(2)).toEqual([
+        { directory: project, phase: "retired" },
+        { directory: project, phase: "disposed" },
+        { directory: moved, phase: "mounted" },
+      ])
+
+      // Retirement is announced synchronously, before the host has aborted
+      // anything; the terminal frames an aborted turn settles are published
+      // from inside the disposal that follows, and this stream is the only
+      // one left carrying them.
+      const releasing = releaseEmbeddedWorkspaceRuntime("ws_observed_2")
+      expect(announced.at(-1)).toEqual({ directory: second, phase: "retired" })
+      const settling = {
+        type: "agent.lifecycle" as const,
+        tabId: "tab_observed_2",
+        workspaceId: "ws_observed_2",
+        eventType: "Idle" as const,
+        outcome: "cancelled" as const,
+      }
+      workspaceRuntimeBus.publish(settling)
+      await releasing
+      expect(announced.at(-1)).toEqual({ directory: second, phase: "disposed" })
+      expect(framed).toContainEqual({ directory: second, payload: settling })
+
+      stop()
+      await releaseEmbeddedWorkspaceRuntime("ws_observed")
+      expect(announced).toHaveLength(7)
+    } finally {
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("the host aggregate carries every mounted runtime's frames, and keeps carrying a workspace's across a runtime replacement", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-aggregate-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const handler = createHostAggregateEventsHandler({ observe: onEmbeddedWorkspaceRuntime })
+    const abort = new AbortController()
+
+    try {
+      const other = path.join(root, "project-other")
+      const moved = path.join(root, "project-moved")
+      await fs.mkdir(other, { recursive: true })
+      await fs.mkdir(moved, { recursive: true })
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", project), { config: "skip" })
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_b", other), { config: "skip" })
+
+      const response = await new Hono()
+        .get("/api/wr/events", handler)
+        .request("http://127.0.0.1/api/wr/events", { signal: abort.signal })
+      expect(response.status).toBe(200)
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let text = ""
+      const until = async (marker: string) => {
+        for (let i = 0; i < 40 && !text.includes(marker); i += 1) {
+          const next = await reader.read()
+          if (next.done) break
+          text += decoder.decode(next.value, { stream: true })
+        }
+        return text
+      }
+      // The bootstrap heartbeat is written before the fanout attaches; reading
+      // it is what proves the connection is attached before anything is published.
+      await until("heartbeat")
+
+      const lifecycle = (workspaceId: string, directory: string, sessionID: string) => ({
+        type: "session.lifecycle" as const,
+        phase: "created" as const,
+        directory,
+        sessionID,
+        workspaceId,
+        ts: 1,
+      })
+
+      // Both live workspaces reach one connection — the off-screen one has no
+      // connection of its own and is exactly what the aggregate exists for.
+      workspaceRuntimeBus.publish(lifecycle("ws_agg_a", project, "ses_a"))
+      workspaceRuntimeBus.publish(lifecycle("ws_agg_b", other, "ses_b"))
+      await until("ses_b")
+      expect(text).toContain("ses_a")
+      expect(text).toContain("ses_b")
+
+      // One id whose directory moved is retired and replaced while the
+      // connection stays open. The replacement's frames must reach the same
+      // connection: the aggregate follows the registry, not a snapshot of it.
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", moved), { config: "skip" })
+      workspaceRuntimeBus.publish(lifecycle("ws_agg_a", moved, "ses_a_moved"))
+      workspaceRuntimeBus.publish(lifecycle("ws_agg_b", other, "ses_b_again"))
+      await until("ses_b_again")
+      expect(text).toContain("ses_a_moved")
+
+      // A workspace with no live runtime has nothing live to say: released,
+      // its frames reach nobody, while the workspace still mounted carries on.
+      await releaseEmbeddedWorkspaceRuntime("ws_agg_b")
+      workspaceRuntimeBus.publish(lifecycle("ws_agg_b", other, "ses_b_released"))
+      workspaceRuntimeBus.publish(lifecycle("ws_agg_a", moved, "ses_a_last"))
+      await until("ses_a_last")
+      expect(text).not.toContain("ses_b_released")
+    } finally {
+      abort.abort()
+      handler.close()
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
