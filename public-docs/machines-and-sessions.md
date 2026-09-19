@@ -157,9 +157,12 @@ What a shared teammate sees and does not see:
   terminal link from the session, they are refused. The only path to other
   content is through the agent itself, which is why sending is a separate,
   disclosed grant.
-- If they also have workspace access through your organization, they still only
-  see the sessions they created or were shared. Workspace membership does not
-  open other members' private sessions.
+- Being in your organization or team changes none of this. A team is a
+  grouping of people; it grants nobody anything on your machines or folders.
+  A teammate sees exactly the sessions they created and the sessions shared
+  with them, whatever team they are in. There is no way to add a person to a
+  machine or a folder; sharing a session is the only grant that crosses
+  people.
 
 Sessions you created on your machine before you turned remote access on are
 yours: the first time you open one from the web or another device, it is
@@ -181,5 +184,10 @@ until you share it.
 - **Machine**: any place an agent can run that you own. Shown by its display
   name; you set the name when you add it.
 - **Workspace**: a folder on a machine. Shown under its machine in the sidebar.
-- **Session**: one conversation with an agent, in one workspace.
+  A workspace is a place agents run, never a group of people; nobody is added
+  to a workspace.
+- **Session**: one conversation with an agent, in one workspace. The only thing
+  you share with other people.
 - **Environment**: a cloud machine Claxedo provisions and destroys for you.
+- **Organization / team**: the people you work with. Membership decides who
+  you can share a session with, and nothing else.

@@ -161,6 +161,15 @@ Terms (proposed; only "host" is new to the product surface):
 - **Visibility**: who may see the placement exists. Unchanged from today's
   workspace access; publication of a machine's inventory stays an explicit
   machine-level switch.
+- **Organization / team** (clarified by the user 2026-09-19, binding for
+  every agent working in this repo): a grouping of PEOPLE. It is not an
+  execution environment and it grants nothing on any machine or workspace.
+  There is no concept of adding a member to a machine, a runtime or a
+  workspace folder; the ONLY cross-person grant is a session share (slice
+  2c's `follow` | `send`). Where code or copy says "workspace member" or
+  "workspace access" it means an org-scoped visibility of the placement
+  row, never a capability on the machine; slice 5 renames such copy, and
+  slice 2 already makes every runtime decision per session grant.
 
 Flows after the change, same labels:
 
@@ -252,10 +261,44 @@ are its private store and stay as they are; its only other placement is the
 provisioner's, which a stored `driver` names.
 
 Definition of done:
-- [x] Migration on D1 and SQLite with an upgrade test that converts every driverless `cloud` row into a placement on its serving host; no row left without a host. Progress: `access` is dropped by `0034_drop_workspace_access.sql` on D1 and by `dropWorkspaceAccessMode` in the SQLite authority store, each with an upgrade test that seeds pre-drop rows, applies the drop and asserts the column is gone and every row's `backing` and directory survive. The daemon's own inventory needed no migration: its only placements are this machine's worktrees and the provisioner's sandboxes, and `ensureWorkspace` now refuses a `cloud` row that names no driver, so the driverless row cannot be created. No composition ever wrote `host_enrollment_id` into that store, so the field, the injected host reader and `migrateWorkspacePlacements()` were removed rather than wired up.
-- [x] `workspaceBacking` derives `kind` from placement; a test pins `cloud-vm` vs `hosted`; no code path constructs a `cloud` row without a driver any more (grep). Progress: `workspacePlacement()` in `server-core/workspace/store/placement.ts` answers `self` or `provisioner`, and `workspaceBacking` returns `local-worktree` or `cloud-vm` — `UserHostedBacking` is gone. A source scan over every production `ensureWorkspace` cloud write fails on a conditional driver spread. `allocateOriginCloudWorkspace` refuses with `placement_unsupported` when the composition declares no driver, and the hosted Worker composition now declares one from the injected driver, which is what makes a Tasks cloud root allocatable there at all.
+- [x] Migration on D1 and SQLite with an upgrade test that drops the `access` column and leaves every row's backing and directory intact; no stored row is left naming no machine. Progress: `access` is dropped by `0034_drop_workspace_access.sql` on D1 and by `dropWorkspaceAccessMode` in the SQLite authority store, each with an upgrade test that seeds pre-drop rows, applies the drop and asserts the column is gone and every row's `backing` and directory survive. The daemon's own inventory needed no migration: its only placements are this machine's worktrees and the provisioner's sandboxes, and `ensureWorkspace` now refuses a `cloud` row that names no driver, so the driverless row cannot be created. No composition ever wrote `host_enrollment_id` into that store, so the field, the injected host reader and `migrateWorkspacePlacements()` were removed rather than wired up.
+- [x] `workspaceBacking` derives `kind` from placement; a test pins `cloud-vm` vs `hosted`; no code path constructs a `cloud` row without a driver any more (grep). Progress: `workspacePlacement()` in `server-core/workspace/store/placement.ts` answers `self` or `provisioner`, and `workspaceBacking` returns `local-worktree` or `cloud-vm` — `UserHostedBacking` is gone. A source scan over every production `ensureWorkspace` cloud write fails on a conditional driver spread. `allocateOriginCloudWorkspace` refuses with `placement_unsupported` when the composition declares no driver, and the hosted Worker composition now declares one from the injected driver, which is what makes a Tasks cloud root allocatable there at all. The self-hosted node's `POST /workspace` reads the same declaration and falls back to the node's own sandbox configuration, the declaration `supervisorSandboxDriverId` reads again at dispatch; it refuses with `placement_unsupported` when the declared provisioner is one this node cannot drive, so neither creator stores a row its own deployment cannot provision.
 - [x] Catalog, relay target resolution, `activeWorkspaceHost` and mint read the placement; the readiness table stays the one serving predicate. Progress: the public workspace JSON carries `placement: { host_enrollment_id, directory }` on D1 (assignment→enrollment join in `workspaceAccessSql`) and on SQLite (`assignedHostEnrollmentIds`), on the single-workspace read and in the catalog list on both, and no longer carries `access`. Every server-side reader of `access` now reads `backing`: the six filters in `host-access-authority.ts`, the SQLite twin, the relay-target resolvers, `runtime-target.ts`, the two connection mints, the hosted documents relay, `session/list.ts`, the hosted shell and workspace routes, and the Agent Plugins D1 store's own SQL.
 - [x] `registerUserHostedWorkspace` becomes "publish placement" with the same POST-plus-beat shape; the app-side auto-publish driver is unchanged except for the name. Progress: `publishWorkspacePlacement` / `withdrawWorkspacePlacement` in `share-workspace.ts`, same port-first path and same `POST`/`DELETE /api/workspace/:id/host-assignment`; the two stale e2e comments naming the old symbol were corrected.
+
+Recorded decisions made while executing this slice:
+
+- **Shipped migration `0031_normalize_user_hosted_directories.sql` was edited
+  in place**, its predicate changed from `access = 'user-hosted'` to
+  `backing = 'local-worktree'`. Anyone auditing what deployed 0031 contained
+  should read this note: the file on disk is not the file that ran. The two
+  predicates select an identical row set on every schema version since 0002,
+  which creates both columns: the D1 authority has one `insert into workspaces`
+  and it binds the pair, the one `UPDATE` that touches either column sets both,
+  and no migration inserts or rewrites workspace rows. Wrangler records applied
+  migrations by name with no checksum, so a database past 0031 never re-reads
+  the file and a fresh database has no workspace rows when it runs. The edit is
+  needed by one test, `d1/host-access-authority.test.ts`, which applies the full
+  schema including the 0034 drop and then replays 0031 over rows it created
+  through the real authority; that replay cannot be moved before the drop,
+  because `access` is `TEXT NOT NULL` with no default and the production insert
+  no longer binds it.
+- **The daemon store's placement migration was dropped, not written.** Its
+  `workspaces.json` is one machine's own inventory, whose only placements are a
+  worktree here and a sandbox the provisioner owns; no production path ever
+  wrote `host_enrollment_id` into it. `ensureWorkspace` refusing a `cloud` row
+  that names no driver carries the invariant instead.
+- **A placement may name the fetch bridge as its provisioner.** The release
+  pipeline certifies `fetch` alongside the catalog drivers, so a composition
+  that could not declare it would have refused every Tasks cloud root on that
+  posture. `SandboxProvisionerID` in `@claxedo/sandbox-contract` is the
+  vocabulary; the supervisor still speaks `SandboxDriverID`, because it
+  provisions through the driver catalog and the bridge is not in it.
+- **The commit that landed this slice also completed the account-heartbeat
+  retirement** begun in `ae7ddb4612`: both authorities' `heartbeatHostEnrollment`
+  and their v2 payload builders, the `"current"` revision path in `renewLease`
+  and `readinessUpsert`, and the signed browser relay fixture's move onto the
+  machine beat. The symbol has no references left repo-wide.
 
 ### Slice 4 — App: one placement resolver, kind literals deleted
 
@@ -290,16 +333,53 @@ Definition of done:
 ### Slice 2c — Share levels: follow and send
 
 A session share carries a level, `follow` or `send`, on the control plane's
-share grant (D1 and SQLite), in the Relay Host Token's per-session claims,
-and in the runtime's turn admission: a grantee at `follow` may read and
+share grant (D1 and SQLite) and in the runtime's turn admission (the runtime
+asks the authority `read` or `write` per request; the level decides `write`,
+so a downgrade takes effect on the next request rather than at a token's
+expiry, which is why the Relay Host Token carries no per-session claims): a grantee at `follow` may read and
 stream the session; at `send` may also prompt it and answer its permission
 and question prompts. The share dialog (slice 5) offers both and shows the
 disclosure from Q6 before a `send` grant is confirmed.
 
 Definition of done:
-- [ ] Grant level persisted on both adapters with an upgrade test; `session.share.changed` carries it; revocation and downgrade end the extra capability within the renewal cadence. Progress:
-- [ ] Runtime turn admission and permission/question answers refuse a `follow` grantee and admit a `send` grantee, on the daemon probe spec and on a connect host. Progress:
-- [ ] Share dialog offers the two levels; the disclosure text is shown and must be acknowledged for `send`; Playwright covers grant, downgrade and revoke. Progress:
+- [x] Grant level persisted on both adapters with an upgrade test; `session.share.changed` carries it; revocation and downgrade end the extra capability within the renewal cadence. Progress: `level` on `session_share_grants` by D1 migration `0035_session_share_level.sql` and by `addColumn` in the SQLite tenancy migration, both defaulting a pre-existing grant to `follow`; the D1 upgrade test seeds a grant before the column and asserts the narrowing and the CHECK. `exerciseSessionShareLevelConformance` runs on both twins. The doorbell is a discriminated union — `phase: "granted"` carries `level`, `phase: "revoked"` carries none. Downgrade needs no revocation: the runtime asks the authority on every write and on every turn-lease renewal, so `renewSessionTurn`'s own `write` check ends an in-flight turn.
+- [x] Runtime turn admission and permission/question answers refuse a `follow` grantee and admit a `send` grantee, on the daemon probe spec and on a connect host. Progress: the level is enforced in ONE place per twin — `actorSessionAccessSql`'s share branch on D1 and `hasPrivateAccess`'s action argument on SQLite — so `authorizeRuntimeSession`, `acquireSessionTurn` and `renewSessionTurn` inherit it. The runtime needed no new decision site: `prompt`, `permission_response` and `question_response` are already `WRITE_OPERATIONS`, which `session-core.test.ts` now pins by driving all three routes. `desktop-session-authority.test.ts` proves it on the real `startLocalServer`. Not run on a connect host: Tier R needs `CLAXEDO_TIER_REAL_E2E=1` and a signed relay fixture.
+- [x] Share dialog offers the two levels; the disclosure text is shown and must be acknowledged for `send`; Playwright covers grant, downgrade and revoke. Progress: `session-people-control.tsx` holds every `send` grant — new or raised — behind the Q6 paragraph verbatim and a checkbox; `follow` and downgrades are sent immediately. Tier M `core-session-share-levels.spec.ts` covers both levels, the gate, the downgrade and the revoke against a mock control plane that keeps one grant per recipient.
+
+### Slice 2d — A session share is the only cross-person grant
+
+The 2c review inventoried six pre-existing decision sites that admit a
+person on organization or workspace rank rather than on a session grant or
+creator/participant standing, and both stores still hold a WORKSPACE share
+role (`shareRole` / `orgShareRole` / `teamShareRole` composed by
+`workspaceRoleForUser`). Under §2's ruling those are defects. This slice
+removes them:
+
+1. `organizationAdministratorSql` (D1 `session-authority.ts`) and `isOrgAdmin`
+   (SQLite `private-session-authority.ts`): an org owner or admin has no
+   standing on a session they did not create and were not shared.
+2. The workspace-rank conjunction in `actorSessionAccessSql` (D1) and
+   `workspaceAccess` in `requireSessionAccess` (SQLite): a session decision
+   rests on creator, participant or share level alone; organization
+   membership decides only who can be OFFERED a share.
+3. `authorizeManaged`'s role-below-editor write refusal in
+   `workspace-runtime/src/session-access-policy.ts`: the runtime asks the
+   authority `write` and the share level answers.
+4. Grant time: the workspace-read precondition on `grantSessionShare` (both
+   twins) and the copy "That person needs workspace access before they can
+   be added to the session" go; the 2c stopgap that refuses a `send` grant
+   to a recipient without workspace write standing goes with them.
+5. The workspace share role and its three composers are deleted with a
+   migration on both stores, together with every UI that offered a
+   workspace share; the placement row's visibility to an organization stays
+   (it is what lets a teammate be offered a session share and see which
+   machine a shared session runs on).
+
+Definition of done:
+- [ ] The six sites and the workspace share role are gone; both adapters' conformance suites prove creator, participant and share level are the only admissions, for read, write and stream; an org admin with no grant is refused everywhere. Progress:
+- [ ] Migrations on D1 and SQLite drop the workspace share tables/columns with upgrade tests; the app's workspace-share UI and its ports are deleted (grep zero). Progress:
+- [ ] The 2c stopgap and the "needs workspace access" copy are removed; the share dialog can offer any organization member at either level. Progress:
+- [ ] Tier M/R specs that granted workspace roles to reach a session are rewritten to session shares. Progress:
 
 ### Slice 6 — Provider configuration reaches a host (carried from 09-14)
 
