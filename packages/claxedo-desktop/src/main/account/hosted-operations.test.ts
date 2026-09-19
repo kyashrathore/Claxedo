@@ -151,6 +151,33 @@ describe("resolveHostedOperation", () => {
     expect(resolved.path).toBe("/api/control/sessions/ses_1/shares?workspaceId=ws+a%26b%3Dc")
   })
 
+  test("carries the share level and both recipient spellings into the grant body", () => {
+    expect(resolveHostedOperation("session.shares.grant", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      level: "send",
+      grantedToUserId: "user_bob",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/sessions/ses_1/shares",
+      body: { workspaceId: "ws_1", level: "send", grantedToUserId: "user_bob" },
+    })
+    expect(resolveHostedOperation("session.shares.grant", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      level: "follow",
+      grantedToTokenIdentifier: "https://issuer.test|user_bob",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/sessions/ses_1/shares",
+      body: {
+        workspaceId: "ws_1",
+        level: "follow",
+        grantedToTokenIdentifier: "https://issuer.test|user_bob",
+      },
+    })
+  })
+
   test("resolves DELETE session share revoke with body fields", () => {
     expect(resolveHostedOperation("session.shares.revoke", {
       sessionId: "ses_1",

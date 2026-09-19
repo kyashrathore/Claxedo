@@ -21,6 +21,7 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
+import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import {
   authorizeWorkspaceForUser,
   workspaceByPublicId,
@@ -140,18 +141,31 @@ export function createSqlitePrivateSessionAuthority(input: {
     return row.owner_token_identifier === actorId
   }
 
-  const hasPrivateAccess = (db: SqliteAuthorityDb, actorId: string, row: SessionRow, workspace: WorkspaceRow) => {
+  /**
+   * A `follow` share carries reading and the live stream, never a write, so
+   * only a `send` grant answers a write here. Every other branch — creator,
+   * participant, org administrator — is the person's own standing and is not
+   * narrowed by the level of a share they also hold.
+   */
+  const hasPrivateAccess = (
+    db: SqliteAuthorityDb,
+    actorId: string,
+    row: SessionRow,
+    workspace: WorkspaceRow,
+    action: "read" | "write",
+  ) => {
     if (row.creator_actor_id === actorId || isOrgAdmin(db, actorId, workspace)) return true
     const participant = db.prepare(`
       SELECT 1 FROM session_participants
       WHERE session_id = ? AND workspace_id = ? AND participant_actor_id = ? AND revoked_at IS NULL
     `).get(row.session_id, row.workspace_id, actorId)
     if (participant) return true
-    const grants = db.prepare<unknown[], SessionShareTargetRow>(`
-      SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+    const grants = db.prepare<unknown[], SessionShareTargetRow & { level: string }>(`
+      SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id, level
       FROM session_share_grants WHERE session_id = ? AND workspace_id = ? AND revoked_at IS NULL
     `).all(row.session_id, row.workspace_id)
     return grants.some((grant) => {
+      if (action === "write" && storedSessionShareLevel(grant.level) !== "send") return false
       if (grant.granted_to_user_token_identifier === actorId) return true
       if (grant.granted_to_org_id && db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
@@ -171,7 +185,12 @@ export function createSqlitePrivateSessionAuthority(input: {
   ) => {
     const workspace = workspaceAccess(db, actor, workspaceId, action)
     const row = session(db, required(sessionId, "sessionId"))
-    if (!row || row.workspace_id !== workspaceId || row.deleted_at || !hasPrivateAccess(db, actor.token_identifier, row, workspace)) denied()
+    if (
+      !row
+      || row.workspace_id !== workspaceId
+      || row.deleted_at
+      || !hasPrivateAccess(db, actor.token_identifier, row, workspace, action)
+    ) denied()
     return { row, workspace }
   }
 
@@ -484,7 +503,7 @@ export function createSqlitePrivateSessionAuthority(input: {
         SELECT * FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC
       `).all(value.workspaceId)
       return rows
-        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, workspace))
+        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, workspace, "read"))
         .map((row) => publicSession(db, row, actor.token_identifier))
     },
     async resolveSession(auth, value) {

@@ -444,7 +444,8 @@ CREATE TABLE IF NOT EXISTS session_share_grants (
   granted_to_team_id TEXT,
   created_by_token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  level TEXT NOT NULL DEFAULT 'follow' CHECK (level IN ('follow', 'send'))
 );
 CREATE INDEX IF NOT EXISTS session_share_grants_by_session ON session_share_grants (session_id);
 CREATE INDEX IF NOT EXISTS session_share_grants_by_workspace ON session_share_grants (workspace_id);
@@ -612,12 +613,18 @@ CREATE TABLE IF NOT EXISTS session_share_grants (
   granted_to_team_id TEXT,
   created_by_token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  level TEXT NOT NULL DEFAULT 'follow' CHECK (level IN ('follow', 'send'))
 );
 CREATE INDEX IF NOT EXISTS session_share_grants_by_session ON session_share_grants (session_id);
 CREATE INDEX IF NOT EXISTS session_share_grants_by_workspace ON session_share_grants (workspace_id);
 CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants (granted_to_team_id);
 `)
+    // A row with no level is not a row whose sender was vetted, so it reads as
+    // `follow` and the send capability is re-granted deliberately. SQLite
+    // cannot add a CHECK to an existing table without rebuilding it; the
+    // authority refuses any other value on the way in.
+    addColumn(db, "session_share_grants", "level", "TEXT NOT NULL DEFAULT 'follow'")
     // Team target column first; CHECK rebuild waits until target_key is backfilled below.
     addColumn(db, "workspace_share_grants", "granted_to_team_id", "TEXT")
 
@@ -1280,6 +1287,7 @@ export type SessionShareGrantRow = {
   created_by_token_identifier: string
   created_at: number
   revoked_at: number | null
+  level: string
 }
 
 /**

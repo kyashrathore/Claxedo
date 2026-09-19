@@ -24,7 +24,7 @@ describe("sessionRefForActionWorkspace", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_signed",
-          hosting: "user-hosted",
+          hosting: "machine",
         },
       })
     }
@@ -36,7 +36,7 @@ describe("sessionRefForActionWorkspace", () => {
       workspaceDir: "ws_signed",
       sessionId: "new",
       workspaceRouteId: "ws_signed",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     })).toEqual({
       sessionId: "new",
       host: "workspace",
@@ -44,7 +44,7 @@ describe("sessionRefForActionWorkspace", () => {
       toolSandbox: {
         kind: "workspace",
         workspaceId: "ws_signed",
-        hosting: "cloud",
+        hosting: "provisioner",
       },
     })
   })

@@ -346,6 +346,39 @@ describe("SQLite workspace authority tenancy migration", () => {
     ])
   })
 
+  test("a session share written before levels existed reads as follow and rejects nothing else", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-level-migrate-")), "authority.db")
+    const legacy = new Database(file)
+    legacy.exec(`
+      CREATE TABLE session_share_grants (
+        grant_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        granted_to_user_token_identifier TEXT,
+        granted_to_org_id TEXT,
+        granted_to_team_id TEXT,
+        created_by_token_identifier TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      INSERT INTO session_share_grants
+        (grant_id, session_id, workspace_id, granted_to_user_token_identifier,
+         created_by_token_identifier, created_at)
+      VALUES ('ssg_before', 'ses_1', 'ws_1', 'bob', 'owner', 1);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })()
+
+    expect(database.prepare("SELECT grant_id, level FROM session_share_grants").all())
+      .toEqual([{ grant_id: "ssg_before", level: "follow" }])
+    // SQLite cannot add a CHECK to an existing table, so an upgraded database
+    // holds the column without the constraint a clean install carries. The
+    // authority is the gate on the way in; a reopen must not add one here.
+    expect(() => openAuthorityDb({ path: file })()).not.toThrow()
+    database.close()
+  })
+
   test("ambiguous legacy tenancy aborts without partially rewriting rows", () => {
     const database = new Database(":memory:")
     createLegacyAuthorityTables(database)

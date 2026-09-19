@@ -2,7 +2,17 @@ import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { ProjectRole, WorkspaceAuthority, WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
+import type {
+  ProjectRole,
+  SessionShareGrantResult,
+  SessionShareLevel,
+  WorkspaceAuthority,
+  WorkspaceVisibility,
+} from "@claxedo/server-core/platform/auth/authority"
+import {
+  requestedSessionShareLevel,
+  storedSessionShareLevel,
+} from "@claxedo/server-core/platform/auth/session-share-level"
 import {
   SESSION_ADOPTION_OPERATION_PREFIX,
   sessionAdoptionOperationId,
@@ -139,6 +149,7 @@ type SessionShareRow = {
   granted_by_actor_id: string
   granted_at: number
   revoked_at: number | null
+  level: string
 }
 
 type SessionShareTarget =
@@ -821,6 +832,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     args: {
       sessionId: string
       workspaceId: string
+      level?: SessionShareLevel
       grantedToTokenIdentifier?: string
       grantedToSubject?: string
       grantedToUserId?: string
@@ -828,8 +840,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
     },
-  ) {
+  ): Promise<SessionShareGrantResult> {
     const administrator = await this.requirePrincipal(auth)
+    const level = requestedSessionShareLevel(args.level)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
@@ -844,6 +857,18 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         if (isDenied(error)) throw sessionShareError("session_participant_workspace_access_required")
         throw error
       }
+      // A session write is admitted only where the recipient also carries write
+      // standing on the workspace, so a `send` grant to someone who lacks it
+      // would list as `send` and refuse every prompt. Refusing at grant time is
+      // what keeps the level the dialog shows equal to the level it buys.
+      if (level === "send") {
+        try {
+          await this.requireWorkspaceAccess(actor, workspaceId, "write")
+        } catch (error) {
+          if (isDenied(error)) throw sessionShareError("session_share_send_workspace_write_required")
+          throw error
+        }
+      }
     }
     if (target.kind === "org" && target.id !== session.org_id) {
       throw sessionShareError("session_share_org_mismatch")
@@ -857,7 +882,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (team.org_id !== session.org_id) throw sessionShareError("session_share_team_org_mismatch")
     }
     const existing = await this.activeShareForTarget(sessionId, target)
-    if (existing) return { grant_id: existing.grant_id }
+    if (existing) {
+      if (storedSessionShareLevel(existing.level) !== level) {
+        await this.setShareLevel(administrator, existing, sessionId, workspaceId, level)
+      }
+      return { grant_id: existing.grant_id, level }
+    }
     const grantId = this.randomId("share")
     const assertionId = this.randomId("assert")
     const now = this.now()
@@ -888,10 +918,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         insert into session_share_grants (
           grant_id, session_id, workspace_id, org_id, project_id,
           target_user_id, target_org_id, target_team_id,
-          granted_by_actor_id, granted_at, revoked_at
+          granted_by_actor_id, granted_at, revoked_at, level
         )
         select ?, s.session_id, s.workspace_id, s.org_id, s.project_id,
-          ?, ?, ?, ?, ?, null
+          ?, ?, ?, ?, ?, null, ?
         from sessions s
         where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
           and ${participantAdministratorSql("?", "s")}
@@ -905,6 +935,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               target.kind === "team" ? target.id : null,
               administrator.actorId,
               now,
+              level,
               sessionId,
               workspaceId,
               ...repeat(administrator.actorId, 9),
@@ -931,11 +962,66 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (String(error).includes("UNIQUE constraint failed")) {
         await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
         const raced = await this.activeShareForTarget(sessionId, target)
-        if (raced && raced.workspace_id === workspaceId) return { grant_id: raced.grant_id }
+        if (raced && raced.workspace_id === workspaceId) {
+          if (storedSessionShareLevel(raced.level) !== level) {
+            await this.setShareLevel(administrator, raced, sessionId, workspaceId, level)
+          }
+          return { grant_id: raced.grant_id, level }
+        }
       }
       throw error
     }
-    return { grant_id: grantId }
+    return { grant_id: grantId, level }
+  }
+
+  /**
+   * Moves a live grant between levels under the same administrator predicate
+   * the insert carries, so a downgrade cannot outlive the caller's right to
+   * make it. The recipient keeps their runtime access token: reading is still
+   * granted, and the write the token no longer buys is refused at the next
+   * authority call.
+   */
+  private async setShareLevel(
+    administrator: Principal,
+    grant: SessionShareRow,
+    sessionId: string,
+    workspaceId: string,
+    level: SessionShareLevel,
+  ) {
+    const assertionId = this.randomId("assert")
+    await this.guardedBatch(
+      [
+        this.database
+          .prepare(
+            `
+        update session_share_grants set level = ?
+        where grant_id = ? and session_id = ? and workspace_id = ? and revoked_at is null
+          and exists (
+            select 1 from sessions s
+            where s.session_id = session_share_grants.session_id
+              and s.workspace_id = session_share_grants.workspace_id
+              and s.deleted_at is null
+              and ${participantAdministratorSql("?", "s")}
+          )
+      `,
+          )
+          .bind(level, grant.grant_id, sessionId, workspaceId, ...repeat(administrator.actorId, 9)),
+        this.database
+          .prepare(
+            `
+        insert into authority_batch_assertions (assertion_id, passed)
+        values (?, case when exists (
+          select 1 from session_share_grants g
+          where g.grant_id = ? and g.session_id = ? and g.workspace_id = ?
+            and g.revoked_at is null and g.level = ?
+        ) then 1 else 0 end)
+      `,
+          )
+          .bind(assertionId, grant.grant_id, sessionId, workspaceId, level),
+        this.deleteAssertion(assertionId),
+      ],
+      "Session share level change raced with an authority change",
+    )
   }
 
   async revokeSessionShare(
@@ -1099,7 +1185,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       this.database
         .prepare(
           `
-        select grant_id, session_id, workspace_id,
+        select grant_id, session_id, workspace_id, level,
           target_user_id as granted_to_user_id,
           target_org_id as granted_to_org_id,
           target_team_id as granted_to_team_id,
@@ -2065,7 +2151,15 @@ function actorWorkspaceAccessSql(actorExpression: string, workspaceAlias: string
   )`
 }
 
+/**
+ * `rank` is the workspace role a caller needs, and it is also what tells a
+ * session read from a session write here: only a `send` share carries the
+ * second. A `follow` grantee still satisfies every other branch they qualify
+ * for on their own — creator, participant, org administrator — so the level
+ * narrows the share, not the person.
+ */
 function actorSessionAccessSql(actorExpression: string, sessionAlias: string, rank: 1 | 2) {
+  const shareLevelSql = rank === 2 ? "and share.level = 'send'" : ""
   return `exists (
     select 1 from workspaces session_workspace
     where session_workspace.workspace_id = ${sessionAlias}.workspace_id
@@ -2085,6 +2179,7 @@ function actorSessionAccessSql(actorExpression: string, sessionAlias: string, ra
         and share_actor.kind = 'human' and share_actor.state = 'active'
       join users share_user on share_user.user_id = share_actor.user_id and share_user.state = 'active'
       where share.session_id = ${sessionAlias}.session_id and share.revoked_at is null
+        ${shareLevelSql}
         and (
           share.target_user_id = share_user.user_id
           or (

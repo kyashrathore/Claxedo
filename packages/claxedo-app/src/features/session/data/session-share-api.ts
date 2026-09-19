@@ -19,10 +19,20 @@ async function json<T>(res: Response, schema: z.ZodType<T>): Promise<T> {
   return schema.parse(await res.json())
 }
 
+/**
+ * What a share grants: `follow` reads and streams, `send` also prompts the
+ * agent and answers its prompts. A grant written before the level existed
+ * reads as `follow`, which is the narrower of the two.
+ */
+export const SessionShareLevelSchema = z.enum(["follow", "send"])
+
+export type SessionShareLevel = z.infer<typeof SessionShareLevelSchema>
+
 const SessionPeopleContextSchema = z.object({
   can_manage_shares: z.boolean(),
   grants: z.array(z.object({
     grant_id: z.string(),
+    level: SessionShareLevelSchema.catch("follow"),
     granted_to_user_id: z.string().nullable().optional(),
     granted_to_org_id: z.string().nullable().optional(),
     granted_to_team_id: z.string().nullable().optional(),
@@ -55,22 +65,34 @@ export async function listSessionShares(sessionId: string, workspaceId: string):
   ))
 }
 
+/**
+ * Creates the grant, or moves a live one to `level`: the control plane keeps
+ * one active grant per (session, target), so granting an existing recipient
+ * `follow` is the downgrade control.
+ *
+ * `grantedToUserId` is how a listed grant names its recipient back to the
+ * plane that wrote it: D1 lists an internal user id and SQLite lists a token
+ * identifier, and each resolves its own spelling. `grantedToTokenIdentifier`
+ * is what a person typed.
+ */
 export async function grantSessionShare(input: {
   sessionId: string
   workspaceId: string
+  level: SessionShareLevel
   grantedToTokenIdentifier?: string
+  grantedToUserId?: string
   grantedToTeamPublicId?: string
   grantedToOrgId?: string
 }) {
+  const target = {
+    ...(input.grantedToTokenIdentifier ? { grantedToTokenIdentifier: input.grantedToTokenIdentifier } : {}),
+    ...(input.grantedToUserId ? { grantedToUserId: input.grantedToUserId } : {}),
+    ...(input.grantedToTeamPublicId ? { grantedToTeamPublicId: input.grantedToTeamPublicId } : {}),
+    ...(input.grantedToOrgId ? { grantedToOrgId: input.grantedToOrgId } : {}),
+  }
   return hostedControlCall(
     "session.shares.grant",
-    {
-      sessionId: input.sessionId,
-      workspaceId: input.workspaceId,
-      ...(input.grantedToTokenIdentifier ? { grantedToTokenIdentifier: input.grantedToTokenIdentifier } : {}),
-      ...(input.grantedToTeamPublicId ? { grantedToTeamPublicId: input.grantedToTeamPublicId } : {}),
-      ...(input.grantedToOrgId ? { grantedToOrgId: input.grantedToOrgId } : {}),
-    },
+    { sessionId: input.sessionId, workspaceId: input.workspaceId, level: input.level, ...target },
     async () => json(await authFetch(controlSessionUrl({
       baseUrl: getClaxedoServerUrl(),
       sessionID: input.sessionId,
@@ -78,12 +100,7 @@ export async function grantSessionShare(input: {
     }), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        workspaceId: input.workspaceId,
-        ...(input.grantedToTokenIdentifier ? { grantedToTokenIdentifier: input.grantedToTokenIdentifier } : {}),
-        ...(input.grantedToTeamPublicId ? { grantedToTeamPublicId: input.grantedToTeamPublicId } : {}),
-        ...(input.grantedToOrgId ? { grantedToOrgId: input.grantedToOrgId } : {}),
-      }),
+      body: JSON.stringify({ workspaceId: input.workspaceId, level: input.level, ...target }),
     }), z.unknown()),
   )
 }

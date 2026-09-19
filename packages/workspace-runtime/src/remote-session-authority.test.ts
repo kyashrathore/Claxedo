@@ -202,3 +202,75 @@ test("turn lease responses are validated and renewals send only the bound lease 
     expect(await invalid.acquireTurn!(turn)).toMatchObject({ allowed: false, code: "session_authority_invalid_response" })
   }
 })
+
+describe("a share level narrows the authority's answer, not the runtime's question", () => {
+  /**
+   * The control plane's own rule, reduced to what a runtime can observe: a
+   * `follow` grantee is refused every write action and admitted to every read
+   * one. The runtime never names a level, so this is the only shape the
+   * refusal can take.
+   */
+  function followGranteePlane() {
+    const actions: string[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_url, init) => {
+        const action = rec(fetchBodyJson(init?.body))?.action
+        actions.push(String(action))
+        if (action === "write" || String(action).startsWith("turn_")) {
+          return Response.json(
+            { error: { code: "workspace_authorization_denied", message: "denied" } },
+            { status: 403 },
+          )
+        }
+        return Response.json({ allowed: true, lease: "stream_lease", expiresAt: Date.now() + 60_000 })
+      },
+    })
+    return { actions, policy }
+  }
+
+  test("refuses the prompt and both interaction answers, and admits the read and the session stream", async () => {
+    const { actions, policy } = followGranteePlane()
+
+    expect(await policy.authorize({ ...input, operation: "prompt" }))
+      .toMatchObject({ allowed: false, status: 403, code: "workspace_authorization_denied" })
+    expect(await policy.authorize({ ...input, operation: "permission_response" }))
+      .toMatchObject({ allowed: false, status: 403 })
+    expect(await policy.authorize({ ...input, operation: "question_response" }))
+      .toMatchObject({ allowed: false, status: 403 })
+    expect(await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "turn_1" }))
+      .toMatchObject({ allowed: false, status: 403 })
+
+    expect((await policy.authorize({ ...input, operation: "message_read" })).allowed).toBe(true)
+    expect(await policy.authorizeStream!({ ...input, operation: "session_event_stream" }))
+      .toMatchObject({ allowed: true, lease: "stream_lease" })
+
+    expect(actions).toEqual(["write", "write", "write", "turn_acquire", "read", "read"])
+  })
+
+  test("a send grantee is the same runtime asking the same questions and being admitted", async () => {
+    const actions: string[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_url, init) => {
+        actions.push(String(rec(fetchBodyJson(init?.body))?.action))
+        return Response.json({
+          allowed: true,
+          turnId: "turn_1",
+          leaseId: "lease_1",
+          fencingToken: 1,
+          acquiredAt: 1,
+          expiresAt: Date.now() + 60_000,
+        })
+      },
+    })
+
+    expect((await policy.authorize({ ...input, operation: "prompt" })).allowed).toBe(true)
+    expect((await policy.authorize({ ...input, operation: "permission_response" })).allowed).toBe(true)
+    expect((await policy.authorize({ ...input, operation: "question_response" })).allowed).toBe(true)
+    expect(await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "turn_1" }))
+      .toMatchObject({ allowed: true, turnId: "turn_1", leaseId: "lease_1" })
+
+    expect(actions).toEqual(["write", "write", "write", "turn_acquire"])
+  })
+})

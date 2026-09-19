@@ -201,7 +201,8 @@ describe("two-user signed app transport", () => {
       }),
     })
     expect(shared.status).toBe(200)
-    await expect(shared.json()).resolves.toMatchObject({ grant_id: expect.any(String) })
+    const followGrant = await shared.json() as { grant_id: string; level: string }
+    expect(followGrant).toMatchObject({ grant_id: expect.any(String), level: "follow" })
 
     const bobList = await signedRequest(bob.token, "/api/control/sessions?workspaceId=ws_signed_private")
     expect(bobList.status).toBe(200)
@@ -217,6 +218,28 @@ describe("two-user signed app transport", () => {
       allowed: true,
       messages: [{ id: "msg_alice", role: "user" }],
     })
+    // A turn is how a prompt is admitted, so the level rule is what this asks
+    // about: the same reader who just read the transcript cannot open one.
+    await expect(authority.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bobIdentity.token_identifier,
+      actorKind: "human",
+      workspaceId: "ws_signed_private",
+      sessionId: "ses_signed_private",
+      turnId: "msg_bob_while_following",
+    })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+
+    const raised = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
+      method: "POST",
+      body: JSON.stringify({
+        workspaceId: "ws_signed_private",
+        grantedToTeamId: org.default_team_id,
+        level: "send",
+      }),
+    })
+    expect(raised.status).toBe(200)
+    await expect(raised.json()).resolves.toEqual({ grant_id: followGrant.grant_id, level: "send" })
+
     const bobTurn = await authority.acquireSessionTurn({
       principalKind: "user",
       actorId: bobIdentity.token_identifier,

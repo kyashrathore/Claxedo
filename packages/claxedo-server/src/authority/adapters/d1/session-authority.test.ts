@@ -8,6 +8,7 @@ import {
   exercisePrivateSessionAdoptionConformance,
   exercisePrivateSessionAuthorityConformance,
   exerciseRuntimeForkReservationConformance,
+  exerciseSessionShareLevelConformance,
 } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 
@@ -27,6 +28,7 @@ const MIGRATIONS = [
   "0024_session_last_human_turn.sql",
   "0028_workspace_org_member_visible.sql",
   "0034_drop_workspace_access.sql",
+  "0035_session_share_level.sql",
 ].map(
   (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
 )
@@ -126,6 +128,7 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
   const bob = await signed(input.workspace, "bob")
   const admin = await signed(input.workspace, "admin")
   const outsider = await signed(input.workspace, "outsider")
+  const reader = await signed(input.workspace, "reader")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
   await input.workspace.addOrganizationMember(alice, {
     orgId: "org_acme",
@@ -136,6 +139,11 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
     orgId: "org_acme",
     userId: admin.principal!.userId,
     role: "admin",
+  })
+  await input.workspace.addOrganizationMember(alice, {
+    orgId: "org_acme",
+    userId: reader.principal!.userId,
+    role: "member",
   })
   const workspace = await input.workspace.createWorkspace(alice, {
     workspaceId: "ws_main",
@@ -153,7 +161,16 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
     )
     .bind(workspace.project_id, bob.principal!.userId)
     .run()
-  return { alice, bob, admin, outsider, workspace }
+  await input.database
+    .prepare(
+      `
+    insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
+    values (?, ?, 'viewer', 1, 1, null)
+  `,
+    )
+    .bind(workspace.project_id, reader.principal!.userId)
+    .run()
+  return { alice, bob, admin, outsider, reader, workspace }
 }
 
 async function reserveAndRegister(
@@ -241,6 +258,38 @@ describe("D1 private multiplayer session authority", () => {
       registeredChildIsPrivateToItsCreator: true,
       refusedUnderAnUnreadableParent: true,
       refusedForAMismatchedIntent: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-share-level conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob, reader } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, {
+      operationId: "op_shared",
+      sessionId: "ses_shared",
+    })
+
+    await expect(
+      exerciseSessionShareLevelConformance({
+        authority: input.sessions,
+        shares: input.sessions,
+        workspaceId: "ws_main",
+        sessionId: "ses_shared",
+        creator: { auth: alice },
+        grantee: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: bob.principal!.userId },
+        },
+        readOnlyRecipient: { target: { grantedToUserId: reader.principal!.userId } },
+      }),
+    ).resolves.toEqual({
+      defaultsToFollow: true,
+      followReadsButDoesNotWrite: true,
+      sendWrites: true,
+      downgradeEndsWriting: true,
+      revokeEndsReading: true,
+      sendRefusedWhereItCouldNotBeHonoured: true,
     })
   })
 

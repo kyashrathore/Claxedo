@@ -48,6 +48,7 @@ import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
@@ -346,7 +347,10 @@ function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
     && typeof workspaceId === "string"
     && (phase === "granted" || phase === "revoked")
   ) {
-    return { type: "session.share.changed", ts, ownerUserId, sessionId, workspaceId, phase }
+    const base = { type: "session.share.changed", ts, ownerUserId, sessionId, workspaceId } as const
+    return phase === "granted"
+      ? { ...base, phase, level: storedSessionShareLevel(row.level) }
+      : { ...base, phase }
   }
   if (
     row.type === "document.changed"

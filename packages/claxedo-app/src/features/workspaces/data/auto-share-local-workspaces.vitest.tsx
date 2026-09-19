@@ -126,8 +126,8 @@ describe("localWorkspaceShareCandidates", () => {
         // The control plane's echo of this machine's own registration, and a
         // cloud workspace: both are remote representations, neither is a
         // directory this machine can publish.
-        "/code/api/hosted": { directory: "/code/api/hosted", id: "ws_hosted", kind: "user-hosted" },
-        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "cloud" },
+        "/code/api/hosted": { directory: "/code/api/hosted", id: "ws_hosted", kind: "machine" },
+        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "provisioner" },
       }),
     ])
 
@@ -205,7 +205,7 @@ describe("machine-level auto-share", () => {
     setProjects([
       project("/code/api", {
         "/code/api": { directory: "/code/api", id: "ws_api" },
-        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "cloud" },
+        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "provisioner" },
       }),
     ])
     for (let tick = 0; tick < 5; tick += 1) await Promise.resolve()

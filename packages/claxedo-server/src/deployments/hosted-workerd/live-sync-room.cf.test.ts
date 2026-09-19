@@ -146,6 +146,7 @@ const subscriber = (subject: string, internalOrgId?: string): LiveSyncSubscriber
 const sessionShareChanged = (ownerUserId: string): ControlPlaneEvent => ({
   type: "session.share.changed",
   phase: "granted",
+  level: "send",
   ownerUserId,
   sessionId: "ses_1",
   workspaceId: "ws_1",

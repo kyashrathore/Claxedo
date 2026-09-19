@@ -6,6 +6,16 @@ import type {
   PrivateSessionRuntimePrincipal,
   RegisterRuntimePrivateSessionInput,
 } from "./private-session-authority"
+import type { SessionShareLevel } from "./session-share-level"
+
+export {
+  DEFAULT_SESSION_SHARE_LEVEL,
+  isSessionShareLevel,
+  requestedSessionShareLevel,
+  SESSION_SHARE_LEVELS,
+  storedSessionShareLevel,
+  type SessionShareLevel,
+} from "./session-share-level"
 
 /**
  * Typed neutral authority port for the control plane.
@@ -110,6 +120,11 @@ export type SessionShareRevokeResult = {
   revoked: boolean
   runtime_tokens_revoked?: number
   revokedTargets: SessionShareFanoutTarget[]
+}
+
+export type SessionShareGrantResult = {
+  grant_id: string
+  level: SessionShareLevel
 }
 
 export type SessionPeopleContext = {
@@ -424,11 +439,17 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string; participantActorId: string },
   ) => Promise<{ removed: boolean }>
+  /**
+   * Creates the grant, or moves an existing one to `level`. One active grant
+   * per (session, target) is the store's unique index, so a second grant at a
+   * different level is the downgrade/upgrade control rather than a conflict.
+   */
   grantSessionShare?: (
     auth: SignedControlPlaneAuth,
     args: {
       sessionId: string
       workspaceId: string
+      level?: SessionShareLevel
       grantedToTokenIdentifier?: string
       grantedToSubject?: string
       grantedToUserId?: string
@@ -436,7 +457,7 @@ export type WorkspaceAuthority = {
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
     },
-  ) => Promise<unknown>
+  ) => Promise<SessionShareGrantResult>
   revokeSessionShare?: (
     auth: SignedControlPlaneAuth,
     args: {

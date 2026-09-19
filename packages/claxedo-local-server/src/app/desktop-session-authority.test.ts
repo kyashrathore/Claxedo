@@ -49,6 +49,12 @@ const bearers = new Map<string, typeof OWNER>([
 const authorityCalls: AuthorityCall[] = []
 /** Actors the fake control plane admits to the session named in the request. */
 let admitted = new Set<string>()
+/**
+ * Actors admitted through a SHARE, and at what level. An actor admitted by
+ * their own standing — creator, participant, org administrator — has no entry,
+ * because the level narrows the share and not the person.
+ */
+let shareLevels = new Map<string, "follow" | "send">()
 
 /** `startLocalServer` reports the port it was GIVEN, so the port is chosen here. */
 async function freePort() {
@@ -97,7 +103,11 @@ function fakeAuthority() {
         ...(body.sessionId ? { sessionId: body.sessionId } : {}),
         ...(actor ? { actorId: actor.actorId } : {}),
       })
-      const allowed = !!actor && admitted.has(actor.actorId)
+      // Both adapters refuse a `follow` grantee's write with the same 403 they
+      // raise for a session the caller has no row for at all.
+      const writing = body.action === "write" || String(body.action).startsWith("turn_")
+      const shared = actor ? shareLevels.get(actor.actorId) : undefined
+      const allowed = !!actor && admitted.has(actor.actorId) && !(writing && shared === "follow")
       response.statusCode = allowed ? 200 : 403
       response.setHeader("content-type", "application/json")
       if (!allowed) {
@@ -131,6 +141,7 @@ beforeEach(async () => {
   process.env.CLAXEDO_DATA_DIR = dataDir
   authorityCalls.length = 0
   admitted = new Set([OWNER.actorId])
+  shareLevels = new Map()
 
   authority = fakeAuthority()
   authorityUrl = `${await listen(authority)}/api/runtime-authority/session-authorize`
@@ -320,6 +331,51 @@ describe("the workspace event stream", () => {
     expect(workspaceStream.code).toBe(200)
     expect(aggregate.code).toBe(200)
     expect(authorityCalls).toEqual([])
+  })
+})
+
+describe("a share level decides what a relayed grantee may do", () => {
+  test("a follow grantee reads the session and streams it; the same grantee's prompt is refused", async () => {
+    const workspace = await resolveWorkspace()
+    admitted = new Set([OWNER.actorId, MEMBER.actorId])
+    shareLevels = new Map([[MEMBER.actorId, "follow"]])
+
+    const read = await status(`${origin}/workspaces/${workspace}/session/ses_shared`, relayed("member-token"))
+    const stream = await status(
+      `${origin}/workspaces/${workspace}/api/wr/events?sessionID=ses_shared`,
+      relayed("member-token"),
+    )
+    const prompt = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...relayed("member-token") },
+      body: JSON.stringify({ messageID: "msg_1", parts: [{ type: "text", text: "hi" }] }),
+    })
+
+    // Past the authority, the runtime answers for a session it does not hold.
+    expect(read.code).toBe(404)
+    expect(stream.code).toBe(200)
+    expect(prompt.status).toBe(403)
+    expect(await prompt.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`))
+      .toEqual([`read:${MEMBER.actorId}`, `read:${MEMBER.actorId}`, `write:${MEMBER.actorId}`])
+  })
+
+  test("the same grantee at send is admitted to the prompt and reaches the harness", async () => {
+    const workspace = await resolveWorkspace()
+    admitted = new Set([OWNER.actorId, MEMBER.actorId])
+    shareLevels = new Map([[MEMBER.actorId, "send"]])
+
+    const prompt = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...relayed("member-token") },
+      body: JSON.stringify({ messageID: "msg_1", parts: [{ type: "text", text: "hi" }] }),
+    })
+
+    // Admitted, then refused by the unconfigured harness this fixture has
+    // instead of an agent — which is as far past admission as it can get here.
+    expect(prompt.status).not.toBe(403)
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`))
+      .toEqual([`write:${MEMBER.actorId}`])
   })
 })
 

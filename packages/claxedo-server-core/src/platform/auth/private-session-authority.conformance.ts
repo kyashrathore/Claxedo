@@ -1,6 +1,8 @@
 import { asArray, asRecord } from "@claxedo/helpers/guards"
 import type { SignedControlPlaneAuth } from "./auth"
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "./private-session-authority"
+import type { WorkspaceAuthority } from "./authority"
+import { storedSessionShareLevel } from "./session-share-level"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 
 export const PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS = [
@@ -535,6 +537,134 @@ export async function exercisePrivateSessionAdoptionConformance(
     idempotent: true,
     refusedForMember: true,
     refusedWhenHeldByAnotherCreator: true,
+  }
+}
+
+export type SessionShareLevelConformanceHarness = {
+  authority: Pick<PrivateSessionAuthority, "authorizeRuntimeSession" | "listSessions">
+  /** The share-grant surface, which lives on the workspace authority in both adapters. */
+  shares: Pick<WorkspaceAuthority, "grantSessionShare" | "revokeSessionShare" | "listSessionShares">
+  workspaceId: string
+  /** A session the creator already registered, so only the share decides the grantee's access. */
+  sessionId: string
+  creator: { auth: SignedControlPlaneAuth }
+  /** A workspace member with write access there and no standing on the session. */
+  grantee: {
+    auth: SignedControlPlaneAuth
+    runtime: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
+    /** How this adapter's grant route names the grantee. */
+    target: { grantedToTokenIdentifier: string } | { grantedToUserId: string }
+  }
+  /** Someone the workspace lets read and not write, so `send` cannot be honoured for them. */
+  readOnlyRecipient: { target: { grantedToTokenIdentifier: string } | { grantedToUserId: string } }
+}
+
+export type SessionShareLevelConformanceReport = {
+  defaultsToFollow: true
+  followReadsButDoesNotWrite: true
+  sendWrites: true
+  downgradeEndsWriting: true
+  revokeEndsReading: true
+  sendRefusedWhereItCouldNotBeHonoured: true
+}
+
+/**
+ * What a share level means, on whichever store answers the runtime.
+ *
+ * The runtime never sees a level: it asks for `read` or `write` per request,
+ * and the level is what decides the second. So every case here is stated as
+ * the runtime's own question, which is what makes the two adapters comparable
+ * even though their grant tables are spelled differently.
+ */
+export async function exerciseSessionShareLevelConformance(
+  harness: SessionShareLevelConformanceHarness,
+): Promise<SessionShareLevelConformanceReport> {
+  const { authority, shares, workspaceId, sessionId, creator, grantee, readOnlyRecipient } = harness
+  // Bound rather than called through `shares`: one adapter is a class whose
+  // methods read `this`, and the port declares all three optional, so the
+  // narrowing has to survive into the closures below.
+  const grantShare = shares.grantSessionShare?.bind(shares)
+  const revokeShare = shares.revokeSessionShare?.bind(shares)
+  const listShares = shares.listSessionShares?.bind(shares)
+  invariant(
+    grantShare && revokeShare && listShares,
+    "the adapter under test does not implement session shares",
+  )
+  const grant = (level?: "follow" | "send") =>
+    grantShare(creator.auth, {
+      sessionId,
+      workspaceId,
+      ...(level ? { level } : {}),
+      ...grantee.target,
+    })
+  const runtime = (action: "read" | "write") =>
+    authority.authorizeRuntimeSession({ ...grantee.runtime, sessionId, workspaceId, action })
+  const listedLevels = async () => {
+    const context = await listShares(creator.auth, { sessionId, workspaceId })
+    return context.grants.map((row) => storedSessionShareLevel(row.level)).join()
+  }
+
+  invariant(await rejects(() => runtime("read")), "a session was readable before it was shared")
+
+  const first = await grant()
+  invariant(first.level === "follow", "a grant that named no level did not default to follow")
+  invariant(await listedLevels() === "follow", "the listed grant did not carry its level")
+  await runtime("read")
+  invariant(await rejects(() => runtime("write")), "a follow grantee was admitted to write")
+
+  const raised = await grant("send")
+  invariant(
+    raised.grant_id === first.grant_id && raised.level === "send",
+    "raising a live grant to send made a second grant",
+  )
+  invariant(await listedLevels() === "send", "the listed grant did not carry its raised level")
+  await runtime("read")
+  await runtime("write")
+
+  const lowered = await grant("follow")
+  invariant(
+    lowered.grant_id === first.grant_id && lowered.level === "follow",
+    "lowering a live grant to follow made a second grant",
+  )
+  await runtime("read")
+  invariant(await rejects(() => runtime("write")), "a downgraded grantee kept writing")
+
+  await revokeShare(creator.auth, { sessionId, workspaceId, ...grantee.target })
+  invariant(await rejects(() => runtime("read")), "a revoked grantee kept reading")
+
+  const readOnly = (level?: "follow" | "send") =>
+    grantShare(creator.auth, {
+      sessionId,
+      workspaceId,
+      ...(level ? { level } : {}),
+      ...readOnlyRecipient.target,
+    })
+  await readOnly()
+  invariant(
+    await refusesWith(() => readOnly("send"), "session_share_send_workspace_write_required"),
+    "send was granted to a recipient whose every write would be refused",
+  )
+  invariant(
+    await listedLevels() === "follow",
+    "a refused send grant still moved the recipient's stored level",
+  )
+
+  return {
+    defaultsToFollow: true,
+    followReadsButDoesNotWrite: true,
+    sendWrites: true,
+    downgradeEndsWriting: true,
+    revokeEndsReading: true,
+    sendRefusedWhereItCouldNotBeHonoured: true,
+  }
+}
+
+async function refusesWith(operation: () => Promise<unknown>, code: string) {
+  try {
+    await operation()
+    return false
+  } catch (error) {
+    return String(error instanceof Error ? error.message : error).includes(code)
   }
 }
 

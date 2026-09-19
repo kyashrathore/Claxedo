@@ -33,6 +33,15 @@ type Options = {
    * proxy's mount, so the declaration cannot disagree with what is served.
    */
   hostAggregateEvents: boolean
+  /**
+   * This machine's enrollment id at the control plane, when it has one.
+   *
+   * A client reads it to answer "is the machine that serves this workspace
+   * me": a control-plane row names its host by enrollment id, and nothing else
+   * on the wire ties that row to the server the client is already talking to.
+   * Absent means unenrolled, which still serves this machine's own directories.
+   */
+  hostEnrollmentId?: () => string | undefined
 }
 
 
@@ -56,12 +65,17 @@ function events(options: Options) {
   return { hostAggregate: options.hostAggregateEvents }
 }
 
+function machineIdentity(options: Options) {
+  return { enrollment: options.hostEnrollmentId?.() ?? null }
+}
+
 async function localBootstrapBody(options: Options) {
   return {
     healthy: true,
     version: version(options),
     path: bootPath(),
     events: events(options),
+    host: machineIdentity(options),
     project: await listProjects(),
     provider_auth: providerAuthMethods(),
   }
@@ -73,6 +87,7 @@ async function localShellBootstrapBody(options: Options) {
     version: version(options),
     path: bootPath(),
     events: events(options),
+    host: machineIdentity(options),
     project: await listProjects(),
   }
 }
@@ -122,7 +137,7 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: asString(row?.access) ?? asString(row?.backing) ?? "cloud",
+      kind: asString(row?.backing) === "local-worktree" ? "user-hosted" : "cloud",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
@@ -146,6 +161,7 @@ async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Option
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
     events: events(options),
+    host: machineIdentity(options),
     project: await Promise.all(projects.map(async (project) => ({ ...project, ...await getProjectMetadata(project.id) }))),
     provider_auth: providerAuthMethods(),
   }

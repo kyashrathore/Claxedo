@@ -83,6 +83,29 @@ describe("BootstrapRoutes", () => {
     await expect(shell.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
   })
 
+  // A client answers "is the machine serving this workspace me" by comparing a
+  // control-plane row's host to this one; nothing else on the wire ties that
+  // row to the server the client is already talking to.
+  test("states this machine's enrollment, and states its absence rather than omitting it", async () => {
+    const enrolled = await BootstrapRoutes({
+      env: {},
+      hostAggregateEvents: true,
+      hostEnrollmentId: () => "enr_this_machine",
+    }).request("/api/claxedo/bootstrap")
+    await expect(enrolled.json()).resolves.toMatchObject({ host: { enrollment: "enr_this_machine" } })
+
+    const unenrolled = await BootstrapRoutes({ env: {}, hostAggregateEvents: true })
+      .request("/api/claxedo/bootstrap")
+    await expect(unenrolled.json()).resolves.toMatchObject({ host: { enrollment: null } })
+
+    const shellScope = await BootstrapRoutes({
+      env: {},
+      hostAggregateEvents: true,
+      hostEnrollmentId: () => "enr_this_machine",
+    }).request("/api/claxedo/bootstrap?scope=shell")
+    await expect(shellScope.json()).resolves.toMatchObject({ host: { enrollment: "enr_this_machine" } })
+  })
+
   test("declares it in the signed body too", async () => {
     const options = {
       authConfig: { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" },
@@ -98,6 +121,25 @@ describe("BootstrapRoutes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
+  })
+
+  test("the signed body states the machine too", async () => {
+    const options = {
+      authConfig: { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" },
+      verifier: async (token: string) => ({
+        mode: "signed" as const,
+        user: { subject: token, issuer: "https://auth.test", tokenIdentifier: token },
+      }),
+      services: { authority: { listWorkspaces: async () => [] } } as unknown as ControlPlaneServicesContract,
+    }
+
+    const response = await BootstrapRoutes({
+      ...options,
+      hostAggregateEvents: false,
+      hostEnrollmentId: () => "enr_node",
+    }).request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
+
+    await expect(response.json()).resolves.toMatchObject({ host: { enrollment: "enr_node" } })
   })
 })
 
@@ -115,7 +157,7 @@ describe("signedBootstrapProjects", () => {
         workspace_id: "ws_1",
         project_id: "proj_1",
         workspace_name: "Main",
-        access: "user-hosted",
+        backing: "local-worktree",
         remote_directory: "/Users/host/repo",
       },
     ])).toEqual([
@@ -138,7 +180,7 @@ describe("signedBootstrapProjects", () => {
   })
 
   test("omits remote_directory when the row carries no host path", () => {
-    const [project] = signedBootstrapProjects([{ workspace_id: "ws_2", access: "cloud" }])
+    const [project] = signedBootstrapProjects([{ workspace_id: "ws_2", backing: "cloud-vm" }])
     expect(project?.workspaces.ws_2).toEqual({
       id: "ws_2",
       kind: "cloud",

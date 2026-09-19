@@ -37,6 +37,10 @@ import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
+  requestedSessionShareLevel,
+  storedSessionShareLevel,
+} from "@claxedo/server-core/platform/auth/session-share-level"
+import {
   activeOrgById,
   authorizeProjectForUser,
   authorizeWorkspaceForUser,
@@ -2470,6 +2474,7 @@ export function createSqliteWorkspaceAuthority(
     // --- sessions (the session authority) --------------------------------------
     async grantSessionShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
+      const level = requestedSessionShareLevel(args.level)
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
@@ -2508,11 +2513,18 @@ export function createSqliteWorkspaceAuthority(
       if (userTarget && !authorizeWorkspaceForUser(db, workspace, userTarget, "read")) {
         throw new Error("session_participant_workspace_access_required")
       }
+      // A session write is admitted only where the recipient also carries write
+      // standing on the workspace, so a `send` grant to someone who lacks it
+      // would list as `send` and refuse every prompt. Refusing at grant time is
+      // what keeps the level the dialog shows equal to the level it buys.
+      if (level === "send" && userTarget && !authorizeWorkspaceForUser(db, workspace, userTarget, "write")) {
+        throw new Error("session_share_send_workspace_write_required")
+      }
       if (team && team.org_id !== workspace.org_id) throw new Error("session_share_team_org_mismatch")
       if (org && workspace.org_id && org.org_id !== workspace.org_id) throw new Error("session_share_org_mismatch")
       const now = Date.now()
-      const existing = db.prepare<unknown[], IdentifiedSessionShareTargetRow>(`
-        SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+      const existing = db.prepare<unknown[], IdentifiedSessionShareTargetRow & { level: string }>(`
+        SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id, level
         FROM session_share_grants WHERE session_id = ? AND revoked_at IS NULL
       `).all(args.sessionId)
       const match = existing.filter((grant) => {
@@ -2521,7 +2533,15 @@ export function createSqliteWorkspaceAuthority(
         if (org) return grant.granted_to_org_id === org.org_id
         return false
       })
-      if (match.length === 1) return { grant_id: match[0].grant_id }
+      if (match.length === 1) {
+        // The recipient keeps their runtime access token across a downgrade:
+        // reading is still granted, and the write it no longer buys is refused
+        // at the next authority call.
+        if (storedSessionShareLevel(match[0].level) !== level) {
+          db.prepare(`UPDATE session_share_grants SET level = ? WHERE grant_id = ?`).run(level, match[0].grant_id)
+        }
+        return { grant_id: match[0].grant_id, level }
+      }
       for (const grant of match) {
         db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
       }
@@ -2529,8 +2549,8 @@ export function createSqliteWorkspaceAuthority(
       db.prepare(`
         INSERT INTO session_share_grants (
           grant_id, session_id, workspace_id, granted_to_user_token_identifier, granted_to_org_id,
-          granted_to_team_id, created_by_token_identifier, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          granted_to_team_id, created_by_token_identifier, created_at, level
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         grantId,
         args.sessionId,
@@ -2540,8 +2560,9 @@ export function createSqliteWorkspaceAuthority(
         team?.team_id ?? null,
         who.token_identifier,
         now,
+        level,
       )
-      return { grant_id: grantId }
+      return { grant_id: grantId, level }
     },
     async revokeSessionShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -2655,7 +2676,8 @@ export function createSqliteWorkspaceAuthority(
         return { can_manage_shares: false, grants: [], participants: [], teams: [] }
       }
       const grants = db.prepare<unknown[], Record<string, unknown>>(`
-        SELECT grant_id, session_id, workspace_id, granted_to_user_token_identifier AS granted_to_user_id,
+        SELECT grant_id, session_id, workspace_id, level,
+          granted_to_user_token_identifier AS granted_to_user_id,
           granted_to_org_id, granted_to_team_id, created_by_token_identifier AS created_by_user_id,
           created_at, revoked_at
         FROM session_share_grants

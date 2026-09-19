@@ -8,6 +8,7 @@ import {
   exercisePrivateSessionAdoptionConformance,
   exercisePrivateSessionAuthorityConformance,
   exerciseRuntimeForkReservationConformance,
+  exerciseSessionShareLevelConformance,
 } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
@@ -155,6 +156,61 @@ describe("SQLite private-session authority", () => {
       idempotent: true,
       refusedForMember: true,
       refusedWhenHeldByAnotherCreator: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-share-level conformance surface", async () => {
+    const creator = auth("creator")
+    const grantee = auth("grantee")
+    const reader = auth("reader")
+    const store = authority()
+    await store.usersMe(grantee)
+    await store.usersMe(reader)
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    await store.grantWorkspaceShare(creator, {
+      workspaceId: "workspace_main",
+      role: "editor",
+      target: { kind: "actor", actorId: grantee.user.tokenIdentifier },
+    })
+    await store.grantWorkspaceShare(creator, {
+      workspaceId: "workspace_main",
+      role: "viewer",
+      target: { kind: "actor", actorId: reader.user.tokenIdentifier },
+    })
+    await store.reserveSession(creator, {
+      operationId: "operation_shared",
+      sessionId: "session_shared",
+      workspaceId: "workspace_main",
+      kind: "create",
+    })
+    await store.registerRuntimeSession({
+      principalKind: "user",
+      actorId: creator.user.tokenIdentifier,
+      actorKind: "human",
+      operationId: "operation_shared",
+      sessionId: "session_shared",
+      workspaceId: "workspace_main",
+    })
+
+    await expect(exerciseSessionShareLevelConformance({
+      authority: store,
+      shares: store,
+      workspaceId: "workspace_main",
+      sessionId: "session_shared",
+      creator: { auth: creator },
+      grantee: {
+        auth: grantee,
+        runtime: { principalKind: "user", actorId: grantee.user.tokenIdentifier, actorKind: "human" },
+        target: { grantedToTokenIdentifier: grantee.user.tokenIdentifier },
+      },
+      readOnlyRecipient: { target: { grantedToTokenIdentifier: reader.user.tokenIdentifier } },
+    })).resolves.toEqual({
+      defaultsToFollow: true,
+      followReadsButDoesNotWrite: true,
+      sendWrites: true,
+      downgradeEndsWriting: true,
+      revokeEndsReading: true,
+      sendRefusedWhereItCouldNotBeHonoured: true,
     })
   })
 

@@ -30,7 +30,7 @@ describe("viewer read-only role gates", () => {
     let mounts = 0
     acquireWorkspaceConnection({
       workspaceId: "ws_readonly",
-      kind: "user-hosted",
+      kind: "machine",
       request: async () => new Response("{}", { headers: { "content-type": "application/json" } }),
     })
     internals.applyWorkspaceConnectionInfo(relayInfo("viewer"))

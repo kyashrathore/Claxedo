@@ -1,4 +1,5 @@
 import { jsonRecord } from "./json"
+import type { SessionShareLevel } from "../../auth/session-share-level"
 
 type Subscriber<T> = (event: T) => unknown
 
@@ -86,7 +87,6 @@ export type DocumentChangedEvent = {
 // Alice seeing Bob's doorbell. `eventVisibleTo` enforces that per connection.
 export type SessionShareChangedEvent = {
   type: "session.share.changed"
-  phase: "granted" | "revoked"
   /** Recipient's auth subject — visibility matches session-share scoping. */
   ownerUserId: string
   sessionId: string
@@ -94,7 +94,11 @@ export type SessionShareChangedEvent = {
   /** Authority-internal org id for hosted LiveSync room routing. */
   orgId?: string
   ts: number
-}
+} & (
+  /** A downgrade rings `granted` at the narrower level: the share still exists. */
+  | { phase: "granted"; level: SessionShareLevel }
+  | { phase: "revoked" }
+)
 
 /**
  * A workspace's session inventory gained or lost a row in the control plane's

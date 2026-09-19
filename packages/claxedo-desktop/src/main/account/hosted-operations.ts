@@ -294,7 +294,9 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/sessions/:sessionId/shares",
     body: [
       "workspaceId",
+      "level",
       "grantedToTokenIdentifier",
+      "grantedToUserId",
       "grantedToTeamPublicId",
       "grantedToOrgId",
     ],

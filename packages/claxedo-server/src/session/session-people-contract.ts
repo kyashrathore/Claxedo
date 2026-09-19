@@ -8,6 +8,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type {
   SessionShareFanoutTarget,
+  SessionShareLevel,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
@@ -67,6 +68,20 @@ function peopleAuthorityError(error: unknown): PeopleError | undefined {
       status: 403,
       code: "session_participant_workspace_access_required",
       message: "That person needs workspace access before they can be added to the session.",
+    }
+  }
+  if (hasCode(message, "session_share_send_workspace_write_required")) {
+    return {
+      status: 403,
+      code: "session_share_send_workspace_write_required",
+      message: "That person can follow this session, but they cannot be allowed to send messages on it.",
+    }
+  }
+  if (hasCode(message, "session_share_level_invalid")) {
+    return {
+      status: 400,
+      code: "session_share_level_invalid",
+      message: "A share level is either follow or send.",
     }
   }
   if (hasCode(message, "session_share_team_org_mismatch")) {
@@ -192,12 +207,11 @@ export async function resolveSessionShareRecipientSubjects(input: {
 export async function notifySessionShareChanged(input: {
   auth: SignedControlPlaneAuth
   authority: Pick<WorkspaceAuthority, "listTeamMembers" | "listTeams" | "resolveOrgId">
-  phase: SessionShareChangedEvent["phase"]
   sessionId: string
   workspaceId: string
   target: SessionShareFanoutTarget
   sink?: SessionShareChangedSink
-}): Promise<void> {
+} & ({ phase: "granted"; level: SessionShareLevel } | { phase: "revoked" })): Promise<void> {
   if (!input.sink) return undefined
   let orgId: string | undefined
   try {
@@ -223,7 +237,7 @@ export async function notifySessionShareChanged(input: {
     try {
       await input.sink({
         type: "session.share.changed",
-        phase: input.phase,
+        ...(input.phase === "granted" ? { phase: input.phase, level: input.level } : { phase: input.phase }),
         ownerUserId,
         sessionId: input.sessionId,
         workspaceId: input.workspaceId,
