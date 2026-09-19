@@ -16,6 +16,7 @@ describe("remote access over the production Node HTTP adapter", () => {
         status: vi.fn(async () => ({ enabled: false, enrolled: false, secondDeviceOpen: false })),
         devices,
         revoke: vi.fn(async () => ({ revoked: false })),
+        rename: vi.fn(async () => ({ displayName: "Renamed" })),
         markSecondDeviceOpen: vi.fn(async () => ({ recorded: false })),
       },
     })

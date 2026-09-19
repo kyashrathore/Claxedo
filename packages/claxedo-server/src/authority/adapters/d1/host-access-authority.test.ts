@@ -35,6 +35,8 @@ const MIGRATIONS = [
   "0031_normalize_user_hosted_directories.sql",
   "0034_drop_workspace_access.sql",
   "0035_session_share_level.sql",
+  "0036_drop_workspace_share_role.sql",
+  "0037_host_provider_config.sql",
 ].map(migrationPath)
 
 function migrationPath(name: string) {
@@ -260,9 +262,14 @@ async function machineBeat(
   input: Input,
   enrollmentId: string,
   acks: Array<{ workspaceId: string; revision: number }>,
-  overrides: Partial<MachinePrincipal> & { generation?: number; sessionAuthority?: "local" | "managed-private" } = {},
+  overrides: Partial<MachinePrincipal> & {
+    generation?: number
+    sessionAuthority?: "local" | "managed-private"
+    sealingPublicKey?: string
+    providerConfigRevision?: number
+  } = {},
 ) {
-  const { sessionAuthority, ...principalOverrides } = overrides
+  const { sessionAuthority, sealingPublicKey, providerConfigRevision, ...principalOverrides } = overrides
   const machine = { ...(await principal(input, enrollmentId)), ...principalOverrides }
   return await input.hostAccess.heartbeatHostEnrollmentByMachine(machine, {
     enrollmentId: machine.enrollmentId,
@@ -271,11 +278,23 @@ async function machineBeat(
     acks,
     ttlMs: 8_000,
     ...(sessionAuthority ? { sessionAuthority } : {}),
+    ...(sealingPublicKey ? { sealingPublicKey } : {}),
+    ...(providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: providerConfigRevision }),
   })
 }
 
-describe("D1 host access and workspace sharing authority", () => {
-  test("preserves direct membership data while replacing the legacy table with the grant-aware view", async () => {
+/** The ECDH key a machine declares on its beat, and the four-member text the row stores it as. */
+async function sealingKey() {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey)
+  return {
+    publicKey: JSON.stringify(jwk),
+    stored: JSON.stringify({ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y }),
+  }
+}
+
+describe("D1 host access authority", () => {
+  test("drops the membership union, its triggers and the table behind it, populated or not", async () => {
     const { database } = await emptyDatabase()
     await applyMigration(database, MIGRATIONS[0])
     await applyMigration(database, MIGRATIONS[1])
@@ -304,20 +323,20 @@ describe("D1 host access and workspace sharing authority", () => {
         insert into workspace_memberships values ('workspace-upgrade', 'user-member', 'editor', 1, 1, null)
       `),
     ])
-    await applyMigration(database, MIGRATIONS[2])
-    await applyMigration(database, MIGRATIONS[3])
+    for (const path of MIGRATIONS.slice(2)) await applyMigration(database, path)
 
     expect(await database.prepare(`
-      select role from workspace_direct_memberships
-      where workspace_id = 'workspace-upgrade' and user_id = 'user-member'
-    `).first()).toEqual({ role: "editor" })
+      select type, name from sqlite_master
+      where name in ('workspace_memberships', 'workspace_direct_memberships', 'workspace_share_grants')
+    `).all().then((result) => result.results)).toEqual([])
     expect(await database.prepare(`
-      select role from workspace_memberships
-      where workspace_id = 'workspace-upgrade' and user_id = 'user-member'
-    `).first()).toEqual({ role: "editor" })
+      select name from sqlite_master where type = 'index' and name like 'workspace_%memberships_by_user'
+    `).all().then((result) => result.results)).toEqual([])
+    // The org membership seeded beside it is untouched: what the rank is
+    // composed from now is the organization, the project and a team's grant.
     expect(await database.prepare(`
-      select name from sqlite_master where type = 'index' and name = 'workspace_direct_memberships_by_user'
-    `).first()).toEqual({ name: "workspace_direct_memberships_by_user" })
+      select role from org_memberships where org_id = 'org-upgrade' and user_id = 'user-member'
+    `).first()).toEqual({ role: "member" })
   })
 
   test("cold-registers a user-hosted workspace the first time an owner assigns it to an enrolled host", async () => {
@@ -667,37 +686,10 @@ describe("D1 host access and workspace sharing authority", () => {
     `).bind(request.request_id).first()).toBeNull()
   })
 
-  test("uses canonical share targets and revokes their runtime tokens without crossing tenants", async () => {
+  test("records runtime tokens for canonical actors only and revokes them without crossing tenants", async () => {
     const input = await setup()
     const { alice, bob, outsider } = await fixture(input)
     expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
-    await expect(input.hostAccess.grantWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      role: "editor",
-      target: { kind: "actor", actorId: outsider.principal!.actorId },
-    })).rejects.toMatchObject({ status: 403 })
-
-    const grant = await input.hostAccess.grantWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      role: "editor",
-      target: { kind: "actor", actorId: bob.principal!.actorId },
-    })
-    expect(grant).toMatchObject({ created: true, grantId: expect.any(String) })
-    expect(await input.hostAccess.grantWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      role: "editor",
-      target: { kind: "actor", actorId: bob.principal!.actorId },
-    })).toEqual({ created: false, grantId: grant.grantId })
-    await expect(input.hostAccess.revokeWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      grantId: { id: grant.grantId } as never,
-    })).rejects.toMatchObject({ code: "invalid_input" })
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "editor" })
-    await expect(input.hostAccess.grantWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      role: "admin",
-      target: { kind: "actor", actorId: bob.principal!.actorId },
-    })).rejects.toMatchObject({ code: "resource_conflict" })
 
     await input.hostAccess.recordRuntimeAccessToken(bob, {
       jti: "jti-bob",
@@ -730,29 +722,6 @@ describe("D1 host access and workspace sharing authority", () => {
       actorId: bob.principal!.actorId,
       expiresAt: 1_800_000_100_000,
     })
-
-    expect(await input.hostAccess.revokeWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      grantId: grant.grantId,
-    })).toMatchObject({ revoked: true, runtime_tokens_revoked: 2 })
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
-    expect(await input.hostAccess.runtimeAccessTokenActive({
-      jti: "jti-bob",
-      workspaceId: "ws_local",
-      hostId: "host-a",
-    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
-
-    const userGrant = await input.hostAccess.grantWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      role: "admin",
-      target: { kind: "user", userId: bob.principal!.userId },
-    })
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "admin" })
-    await input.hostAccess.revokeWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      grantId: userGrant.grantId,
-    })
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
 
     await input.hostAccess.recordRuntimeAccessToken(bob, {
       jti: "jti-current-authority",
@@ -1306,15 +1275,14 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     await expect(input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
     expect(await input.hostAccess.activeWorkspaceHost(admin, { workspaceId: "ws_local" })).toEqual({ active: false })
 
-    // A direct grant restores exactly that member's access.
-    await input.hostAccess.grantWorkspaceShare(alice, {
-      workspaceId: "ws_local",
-      role: "editor",
-      target: { kind: "user", userId: bob.principal!.userId },
-    })
+    const localProject = await input.database
+      .prepare("select project_id from workspaces where workspace_id = 'ws_local'")
+      .first<{ project_id: string }>()
+    await input.database.prepare(
+      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'editor', 1, 1, null)",
+    ).bind(localProject!.project_id, bob.principal!.userId).run()
     expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "editor" })
     expect(await input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).toEqual({ active: false })
-    // A project membership does too.
     const carol = await signed(input.workspace, "carol")
     await input.workspace.addOrganizationMember(alice, { orgId: "org_acme", userId: carol.principal!.userId, role: "member" })
     await expect(input.workspace.openWorkspace(carol, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
@@ -1336,6 +1304,34 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_open", hostId: "laptop" })
     expect(await input.workspace.openWorkspace(carol, { workspaceId: "ws_open" })).toMatchObject({ role: "viewer" })
+  })
+
+  test("the owner renames a machine, the name reaches the fleet listing, and nobody else can rename it", async () => {
+    const input = await setup()
+    const { bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"], "org"), "vps-t", await hostKey())
+
+    await expect(input.hostAccess.renameHostEnrollment(bob, {
+      enrollmentId: enrollment.enrollment_id,
+      displayName: "bob's box",
+    })).rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+
+    expect(await input.hostAccess.renameHostEnrollment(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      displayName: "  Build box  ",
+    })).toEqual({ enrollment_id: enrollment.enrollment_id, display_name: "Build box" })
+
+    const machines = await input.hostAccess.listHostEnrollments(owner)
+    expect(machines.map((machine) => machine.display_name)).toEqual(["Build box"])
+    expect(await input.database.prepare(
+      "select count(*) as n from authority_audit_events where action = 'host_enrollment.renamed'",
+    ).first()).toEqual({ n: 1 })
+
+    await expect(input.hostAccess.renameHostEnrollment(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      displayName: "   ",
+    })).rejects.toMatchObject({ code: "invalid_input", status: 400 })
   })
 
   test("tightening the roots retires the outside assignment transactionally, re-applies visibility to the rest, and the catalog drops it", async () => {
@@ -1416,6 +1412,11 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       assignments: [{ workspace_id: "ws_api", remote_directory: "/srv/api", display_name: "ws_api", revision: 1 }],
       acked: [{ workspaceId: "ws_api", revision: 1 }],
       scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: false,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
     })
     expect(machines.find((row) => row.host_id === "laptop")).toMatchObject({
       enrollment_id: laptop.enrollmentId,
@@ -1692,5 +1693,218 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     for (const hostId of ["gone", "bobs", "nope"]) {
       expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId })).toBeUndefined()
     }
+  })
+
+  async function storedProviderConfig(input: Input, enrollmentId: string) {
+    return await input.database.prepare(
+      `select sealing_public_key_json, provider_config_sealed, provider_config_sealed_key_json,
+              provider_config_provider_ids, provider_config_revision, provider_config_acked_revision
+       from host_enrollments where enrollment_id = ?`,
+    ).bind(enrollmentId).first()
+  }
+
+  test("the owner pushes ciphertext sealed to the key the machine declared, the beat carries it until the machine acks, and no other account can read the target or push", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-p", { displayName: "Push box" })
+    const key = await sealingKey()
+
+    // Nothing pushable before a beat declares a key: the target says so and the write refuses a null key outright.
+    expect(await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).toEqual({
+      enrollment_id: enrollmentId,
+      host_id: "machine-p",
+      display_name: "Push box",
+      sealing_public_key: null,
+      next_revision: 1,
+    })
+    await expect(input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c",
+      revision: 1,
+      sealingPublicKey: null,
+      providerIds: ["openai"],
+    })).rejects.toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+
+    expect(await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })).not.toHaveProperty("provider_config")
+    const target = await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })
+    expect(target.sealing_public_key).toBe(key.stored)
+    expect(target.next_revision).toBe(1)
+
+    // The grant is the owner's alone. Bob is a member of the same organization and learns nothing.
+    await expect(input.hostAccess.hostProviderConfigTarget(bob, { enrollmentId }))
+      .rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    await expect(input.hostAccess.pushHostProviderConfig(bob, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c",
+      revision: 1,
+      sealingPublicKey: key.stored,
+      providerIds: ["openai"],
+    })).rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({ provider_config_sealed: null, provider_config_revision: 0 })
+
+    expect(await input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c1",
+      revision: 1,
+      sealingPublicKey: key.stored,
+      providerIds: ["openai", "anthropic"],
+    })).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
+    expect(await storedProviderConfig(input, enrollmentId)).toEqual({
+      sealing_public_key_json: key.stored,
+      provider_config_sealed: "mseal1.e.i.c1",
+      provider_config_sealed_key_json: key.stored,
+      provider_config_provider_ids: '["anthropic","openai"]',
+      provider_config_revision: 1,
+      provider_config_acked_revision: 0,
+    })
+
+    // Carried on every beat that declares no ack or a stale one.
+    expect((await machineBeat(input, enrollmentId, [])).provider_config).toEqual({ revision: 1, sealed: "mseal1.e.i.c1" })
+    expect((await machineBeat(input, enrollmentId, [], { providerConfigRevision: 0 })).provider_config)
+      .toEqual({ revision: 1, sealed: "mseal1.e.i.c1" })
+    // The ack lands in the beat's own batch, so the beat that carries it already answers nothing.
+    expect(await machineBeat(input, enrollmentId, [], { providerConfigRevision: 1 })).not.toHaveProperty("provider_config")
+    expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
+    expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({ provider_config_acked_revision: 1 })
+    expect((await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(2)
+  })
+
+  test("a push at a stale revision or against a key the machine no longer holds writes nothing, including a re-key that lands between the read and the write", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-r")
+    const key = await sealingKey()
+    const other = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    const push = (args: { sealed: string | null; revision: number; sealingPublicKey: string }) =>
+      input.hostAccess.pushHostProviderConfig(alice, { enrollmentId, providerIds: ["openai"], ...args })
+    await push({ sealed: "mseal1.e.i.c1", revision: 1, sealingPublicKey: key.stored })
+
+    // Two owners' devices read next_revision 2 and both push: the second is refused with where the row is.
+    await expect(push({ sealed: "mseal1.e.i.stale", revision: 1, sealingPublicKey: key.stored }))
+      .rejects.toMatchObject({ code: "host_provider_config_revision_stale", status: 409, details: { provider_config_revision: 1 } })
+    await expect(push({ sealed: "mseal1.e.i.ahead", revision: 3, sealingPublicKey: key.stored }))
+      .rejects.toMatchObject({ code: "host_provider_config_revision_stale", status: 409 })
+    // Sealed to a key that is not the row's.
+    await expect(push({ sealed: "mseal1.e.i.wrong", revision: 2, sealingPublicKey: other.stored }))
+      .rejects.toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    // The machine re-keys after the owner read the target and before the write lands.
+    input.beforeNextBatch(async () => {
+      await machineBeat(input, enrollmentId, [], { sealingPublicKey: other.publicKey })
+    })
+    await expect(push({ sealed: "mseal1.e.i.rekeyed", revision: 2, sealingPublicKey: key.stored }))
+      .rejects.toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    expect(await storedProviderConfig(input, enrollmentId)).toEqual({
+      sealing_public_key_json: other.stored,
+      provider_config_sealed: "mseal1.e.i.c1",
+      provider_config_sealed_key_json: key.stored,
+      provider_config_provider_ids: '["openai"]',
+      provider_config_revision: 1,
+      provider_config_acked_revision: 0,
+    })
+    // The blob is sealed to a key the machine has replaced: it is carried on no
+    // further beat, and the listing names the cause rather than leaving the
+    // owner reading a counter that will never move.
+    expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
+    expect((await input.hostAccess.listHostEnrollments(alice)).find((row) => row.host_id === "machine-r"))
+      .toMatchObject({ provider_config_rekeyed: true, provider_config_providers: ["openai"] })
+
+    // Malformed input is refused before any batch: a blob of another format, a revision below 1.
+    await expect(push({ sealed: "not-a-seal", revision: 2, sealingPublicKey: other.stored }))
+      .rejects.toMatchObject({ code: "invalid_input", status: 400 })
+    await expect(push({ sealed: "mseal1.e.i.c2", revision: 0, sealingPublicKey: other.stored }))
+      .rejects.toMatchObject({ code: "invalid_input", status: 400 })
+    // A beat declaring a key the sealer cannot use is refused and renews nothing.
+    const before = await input.hostAccess.activeHostEnrollment(alice)
+    input.advance(1_000)
+    await expect(machineBeat(input, enrollmentId, [], { sealingPublicKey: '{"kty":"EC","crv":"P-384","x":"a","y":"b"}' }))
+      .rejects.toMatchObject({ code: "invalid_input", status: 400 })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual(before)
+    // A revoked machine is not a target.
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-r" })
+    await expect(input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId }))
+      .rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+  })
+
+  test("the next revision is one above whichever counter is higher, so a control plane restored below the machine still outruns it", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-b")
+    const key = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    const push = (args: { sealed: string | null; revision: number }) =>
+      input.hostAccess.pushHostProviderConfig(alice, { enrollmentId, sealingPublicKey: key.stored, providerIds: ["openai"], ...args })
+    await push({ sealed: "mseal1.e.i.c1", revision: 1 })
+    await push({ sealed: "mseal1.e.i.c2", revision: 2 })
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+
+    // The stored row goes back to revision 1 while the machine keeps declaring
+    // the 2 it holds. The machine applies only a strictly newer revision, so a
+    // mint against the stored counter alone would be ignored forever.
+    await input.database.prepare(
+      `update host_enrollments set provider_config_revision = 1, provider_config_sealed = 'mseal1.e.i.c1' where enrollment_id = ?`,
+    ).bind(enrollmentId).run()
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+    expect((await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(3)
+    await expect(push({ sealed: "mseal1.e.i.replay", revision: 2 }))
+      .rejects.toMatchObject({ code: "host_provider_config_revision_stale", status: 409 })
+    expect(await push({ sealed: "mseal1.e.i.c3", revision: 3 })).toEqual({ enrollment_id: enrollmentId, revision: 3, sealed: true })
+    expect((await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })).provider_config)
+      .toEqual({ revision: 3, sealed: "mseal1.e.i.c3" })
+  })
+
+  test("an empty push is the withdrawal: a new revision holding null that the beat carries, and the fleet listing reports the three counters", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-w")
+    const { enrollmentId: bare } = await enrollAccountMachine(input, alice, "machine-bare")
+    const key = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    await input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c1",
+      revision: 1,
+      sealingPublicKey: key.stored,
+      providerIds: ["openai"],
+    })
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 1 })
+
+    expect(await input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: null,
+      revision: 2,
+      sealingPublicKey: key.stored,
+      providerIds: [],
+    })).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
+    expect(await storedProviderConfig(input, enrollmentId)).toEqual({
+      sealing_public_key_json: key.stored,
+      provider_config_sealed: null,
+      provider_config_sealed_key_json: null,
+      provider_config_provider_ids: null,
+      provider_config_revision: 2,
+      provider_config_acked_revision: 0,
+    })
+    expect((await machineBeat(input, enrollmentId, [])).provider_config).toEqual({ revision: 2, sealed: null })
+
+    const listed = (hostId: string) =>
+      input.hostAccess.listHostEnrollments(alice).then((rows) => rows.find((row) => row.host_id === hostId))
+    expect(await listed("machine-w")).toMatchObject({
+      provider_config_revision: 2,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: true,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
+    })
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+    expect(await listed("machine-w")).toMatchObject({ provider_config_revision: 2, provider_config_acked_revision: 2 })
+    expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
+    expect(await listed("machine-bare")).toMatchObject({
+      enrollment_id: bare,
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: false,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
+    })
   })
 })

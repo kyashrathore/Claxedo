@@ -1,3 +1,4 @@
+import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
   HostAssignmentAck,
@@ -77,6 +78,19 @@ function errorMessage(error: unknown) {
 }
 
 /**
+ * This node's own machine: the owner-facing service, the local share seam, and
+ * the enrollment the serving loop currently holds.
+ */
+export type LocalRemoteAccessService = RemoteAccessService & LocalHostAssignments & {
+  /**
+   * The enrollment this process serves under, or nothing while it serves
+   * under none. The bootstrap declares it, which is how a client tells a
+   * workspace row placed on THIS node from one it must relay to.
+   */
+  servingEnrollmentId(): string | undefined
+}
+
+/**
  * Machine-wide remote access for the box the self-hosted Node control plane
  * runs on.
  *
@@ -133,7 +147,7 @@ export function createRemoteAccessService(input: {
   heartbeatTtlMs?: number
   heartbeatIntervalMs?: number
   capture(distinctId: string, event: string, properties?: Record<string, unknown>): void
-}): RemoteAccessService & LocalHostAssignments {
+}): LocalRemoteAccessService {
   const authority = input.authority
   const owner = hostedRemoteAccessService(authority)
   const heartbeatTtlMs = input.heartbeatTtlMs ?? DEFAULT_HEARTBEAT_TTL_MS
@@ -446,6 +460,7 @@ export function createRemoteAccessService(input: {
   }
 
   return {
+    servingEnrollmentId: () => state?.enrollmentId,
     async status(auth) {
       if (!auth) return { enrolled: false, enabled: false, secondDeviceOpen: false }
       const identity = await input.localHostIdentity()
@@ -469,14 +484,20 @@ export function createRemoteAccessService(input: {
     async enable(auth, options) {
       await authority.usersMe(auth)
       const served = state?.served ?? new Set<string>()
-      // Enable always re-enrolls: it re-proves key possession, applies the new
-      // display name, and clears a previous pause deterministically.
-      const { identity, enrollment } = await enrollMachine(auth, options.displayName)
+      // This process IS the machine, so it names itself here, through the same
+      // derivation the desktop uses: one machine, one name, however it
+      // publishes itself. A browser asking for remote access can only describe
+      // the browser, and a bare `hostname()` keeps the mDNS tail and throws on
+      // a host with no name configured.
+      const displayName = machineDisplayName(process.platform)
+      // Enable always re-enrolls: it re-proves key possession, re-applies the
+      // machine's own name, and clears a previous pause deterministically.
+      const { identity, enrollment } = await enrollMachine(auth, displayName)
       await startServing({
         auth,
         identity,
         enrollmentId: enrollment.enrollment_id,
-        ...(options.displayName ? { displayName: options.displayName } : {}),
+        displayName,
         startAtLogin: options.startAtLogin,
         served,
       })
@@ -490,6 +511,7 @@ export function createRemoteAccessService(input: {
       return result
     },
     devices,
+    rename: owner.rename,
     async revoke(auth, hostId) {
       const result = await owner.revoke(auth, hostId)
       if (!result.revoked) return result
@@ -547,15 +569,17 @@ export function createRemoteAccessService(input: {
   }
 }
 
-export function unavailableRemoteAccessService(): RemoteAccessService & LocalHostAssignments {
+export function unavailableRemoteAccessService(): LocalRemoteAccessService {
   const unavailable = async (): Promise<never> => {
     throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
   }
   return {
+    servingEnrollmentId: () => undefined,
     status: async () => ({ enrolled: false, enabled: false, secondDeviceOpen: false }),
     enable: unavailable,
     devices: unavailable,
     revoke: unavailable,
+    rename: unavailable,
     markSecondDeviceOpen: unavailable,
     hostId: unavailable,
     assignWorkspace: unavailable,

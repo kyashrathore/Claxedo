@@ -1,3 +1,4 @@
+import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { generateKeyPairSync } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -149,18 +150,25 @@ describe("remote access service", () => {
   test("enable enrolls the machine, assigns every local project, and one signed beat makes them routable", async () => {
     const { authority, service, startMachineTunnel, signSpy } = setup()
 
-    await expect(service.enable(auth, { displayName: "Yash's Mac", startAtLogin: true })).resolves.toEqual({
+    await expect(service.enable(auth, { startAtLogin: true })).resolves.toEqual({
       hostId: "host_machine",
       workspaceIds: ["ws_1", "ws_2"],
       connectionCount: 1,
     })
 
-    // The machine is enrolled once, machine-wide — not per workspace.
-    await expect(authority.activeHostEnrollment(auth)).resolves.toMatchObject({
+    // The machine is enrolled once, machine-wide — not per workspace, and it
+    // names itself through the same derivation the desktop uses: nothing in the
+    // request carried a name to enroll under, and the raw hostname (mDNS tail
+    // and all) is not what reaches the control plane.
+    const enrolled = await authority.activeHostEnrollment(auth)
+    expect(enrolled).toMatchObject({
       active: true,
       host_id: "host_machine",
-      display_name: "Yash's Mac",
+      display_name: machineDisplayName(process.platform),
     })
+    // Independent of the derivation: whatever this host is called, the mDNS
+    // tail is not part of the name the account sees.
+    expect(enrolled.active ? enrolled.display_name : "").not.toMatch(/\.local$/)
     // Routable = owner-assigned and machine-acked and live lease, verified by
     // the real authority from the signatures the service produced.
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
@@ -201,7 +209,7 @@ describe("remote access service", () => {
     // them would still satisfy a single-value test.
     for (const declared of ["local", "managed-private"] as const) {
       const { authority, service } = setup({ sessionAuthority: declared })
-      await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+      await service.enable(auth, { startAtLogin: false })
 
       await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
         active: true,
@@ -212,7 +220,7 @@ describe("remote access service", () => {
 
   test("a newly opened project is assigned and becomes routable through the workspace-change path", async () => {
     const { authority, service, startMachineTunnel, localWorkspaces, workspaceChanged } = setup()
-    await service.enable(auth, { displayName: "Mac", startAtLogin: true })
+    await service.enable(auth, { startAtLogin: true })
 
     localWorkspaces.push({ id: "ws_3", kind: "local", directory: "/repo/three", displayName: "three" })
     await workspaceChanged()
@@ -261,7 +269,7 @@ describe("remote access service", () => {
 
   test("unassignWorkspace removes routing and shrinks the machine's signed consent set", async () => {
     const { authority, service, startMachineTunnel, stopMachineTunnel } = setup()
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
 
     await expect(service.unassignWorkspace(auth, "ws_1")).resolves.toEqual({ unassigned: true })
 
@@ -287,7 +295,7 @@ describe("remote access service", () => {
     await expect(service.status(undefined)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
     await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
 
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
     await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: false })
 
     machineTunnelActive.mockReturnValue(false)
@@ -298,9 +306,26 @@ describe("remote access service", () => {
     await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: true })
   })
 
+  // The bootstrap declares this, and a client compares it against the host a
+  // workspace row names to decide whether to reach this node directly or to
+  // relay to another machine.
+  test("names the enrollment it serves under, and names none before enabling or after revoking", async () => {
+    const { authority, service } = setup()
+    expect(service.servingEnrollmentId()).toBeUndefined()
+
+    await service.enable(auth, { startAtLogin: false })
+    const active = await authority.activeHostEnrollment(auth)
+    expect(active).toMatchObject({ active: true })
+    expect(service.servingEnrollmentId()).toBe(active.active ? active.enrollment_id : undefined)
+    expect(service.servingEnrollmentId()).toBeTruthy()
+
+    await service.revoke(auth, "host_machine")
+    expect(service.servingEnrollmentId()).toBeUndefined()
+  })
+
   test("revoke revokes the machine enrollment, stops the tunnel, and empties the devices surface", async () => {
     const { authority, service, stopMachineTunnel } = setup()
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
 
     await expect(service.revoke(auth, "host_other")).resolves.toEqual({ revoked: false })
     expect(stopMachineTunnel).not.toHaveBeenCalled()
@@ -316,14 +341,14 @@ describe("remote access service", () => {
 
     // Enabling again re-proves the key and shares this machine's projects
     // afresh, reviving the retired rows.
-    const again = await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    const again = await service.enable(auth, { startAtLogin: false })
     expect(again.workspaceIds).toEqual(["ws_1", "ws_2"])
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true, host_id: "host_machine" })
   })
 
   test("revoke reaches a machine enrolled through an invitation the same way, without touching this machine", async () => {
     const { authority, service, stopMachineTunnel } = setup()
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
     const box = machineIdentity("host_box")
     const invitation = await authority.createHostInvitation!(auth, { scope: { allowed_roots: ["/srv"], visibility: "owner" } })
     const parts = invitationTokenParts(invitation.token)!
@@ -355,7 +380,7 @@ describe("remote access service", () => {
     // serving the old directory keeps saying so with the old revision, and
     // must not route until it has consented to the new one.
     const { authority, service, workspaceChanged } = setup()
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true })
 
     await authority.assignWorkspaceHost(auth, {
@@ -380,7 +405,7 @@ describe("remote access service", () => {
     const { authority, service, localWorkspaces, workspaceChanged } = setup({
       localWorkspaces: [{ id: "ws_1", kind: "local", directory: "/repo/one", displayName: "one" }],
     })
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
     await authority.assignWorkspaceHost(auth, { workspaceId: "ws_3", hostId: "host_machine" })
     localWorkspaces.push({ id: "ws_3", kind: "local", directory: "/repo/three", displayName: "three" })
 
@@ -407,11 +432,11 @@ describe("remote access service", () => {
     // readiness. The generation fences them, and the instance that lost it has
     // nothing left to retry.
     const first = setup({ heartbeatIntervalMs: 5 })
-    await first.service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await first.service.enable(auth, { startAtLogin: false })
     expect(first.stopMachineTunnel).not.toHaveBeenCalled()
 
     const second = setup({ authority: first.authority, identity: first.identity })
-    await second.service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await second.service.enable(auth, { startAtLogin: false })
 
     await vi.waitFor(() => {
       expect(first.stopMachineTunnel).toHaveBeenCalledWith("host_machine")
@@ -427,7 +452,7 @@ describe("remote access service", () => {
     // for workspaces nothing can reach and every later beat earns the same
     // refusal.
     const { authority, service, stopMachineTunnel } = setup({ heartbeatIntervalMs: 5 })
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
     expect(stopMachineTunnel).not.toHaveBeenCalled()
 
     await authority.revokeHostEnrollment(auth, { hostId: "host_machine" })
@@ -444,7 +469,7 @@ describe("remote access service", () => {
     // checked against, and this box would go on serving under a key it does
     // not hold.
     const { authority, service, identity, stopMachineTunnel } = setup({ heartbeatIntervalMs: 5 })
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
     expect(stopMachineTunnel).not.toHaveBeenCalled()
 
     await enrollKeyUnderHostId(authority, machineIdentity(identity.hostId))
@@ -460,7 +485,7 @@ describe("remote access service", () => {
       const base = createSqliteWorkspaceAuthority({ path: ":memory:" })
       const { observed, refuse } = observedBeats(base)
       const { service, stopMachineTunnel } = setup({ authority: observed, heartbeatIntervalMs: 5 })
-      await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+      await service.enable(auth, { startAtLogin: false })
       expect(stopMachineTunnel).not.toHaveBeenCalled()
 
       refuse.error = new SqliteHostConnectError(code, "refused")
@@ -481,7 +506,7 @@ describe("remote access service", () => {
       authority: observed,
       heartbeatIntervalMs: 5,
     })
-    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    await service.enable(auth, { startAtLogin: false })
 
     await base.pauseHostEnrollment(auth, { hostId: "host_machine", paused: true })
     const refused = beats.mock.calls.length
@@ -507,8 +532,8 @@ describe("remote access service", () => {
     vi.useFakeTimers()
     try {
       const { service, startMachineTunnel } = setup({ heartbeatIntervalMs: 1_000 })
-      await service.enable(auth, { displayName: "Mac", startAtLogin: false })
-      await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+      await service.enable(auth, { startAtLogin: false })
+      await service.enable(auth, { startAtLogin: false })
 
       const enabled = startMachineTunnel.mock.calls.length
       await vi.advanceTimersByTimeAsync(3_000)

@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
+import { generateKeyPairSync, sign as signData, webcrypto, type KeyObject } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/authority"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
 
 /**
  * Machine-wide enrollment, against the real SQLite authority.
@@ -792,5 +793,125 @@ describe("host_enrollment_requests retention", () => {
         ),
       }),
     ).rejects.toThrow(/Invalid host enrollment request/)
+  })
+})
+
+describe("provider configuration", () => {
+  const SECRET = "sk-ant-only-the-machine-may-read-this"
+  const PLAINTEXT = `{"version":1,"providers":{"anthropic":{"kind":"api-key","apiKey":"${SECRET}"}}}`
+
+  function fileAuthority() {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-provider-config-")), "authority.db")
+    return { api: createSqliteWorkspaceAuthority({ path: file }), reader: new Database(file, { readonly: false }) }
+  }
+
+  async function sealingPublicKey() {
+    const pair = await webcrypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+    return JSON.stringify(await webcrypto.subtle.exportKey("jwk", pair.publicKey))
+  }
+
+  async function beat(api: ReturnType<typeof authority>, hostId: string, extra: { sealingPublicKey?: string; providerConfigAckedRevision?: number } = {}) {
+    const principal = await machinePrincipal(api, hostId)
+    return api.heartbeatHostEnrollmentByMachine!(principal, {
+      enrollmentId: principal.enrollmentId,
+      hostId,
+      generation: principal.generation,
+      acks: [],
+      ...extra,
+    })
+  }
+
+  async function refusal(promise: Promise<unknown>) {
+    try {
+      await promise
+    } catch (error) {
+      return error as { code?: string; status?: number }
+    }
+    throw new Error("expected a refusal")
+  }
+
+  test("the owner's sealed push reaches the machine on its next beat, stops once acked, and the row never holds the secret", async () => {
+    const { api, reader } = fileAuthority()
+    const { enrollment, hostId } = await enroll(api)
+    const enrollmentId = enrollment.enrollment_id
+    await beat(api, hostId, { sealingPublicKey: await sealingPublicKey() })
+
+    const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
+    expect(target).toMatchObject({ enrollment_id: enrollmentId, host_id: hostId, next_revision: 1 })
+    const sealed = await sealForMachine(target.sealing_public_key!, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    expect(await api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: 1,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: ["openai"],
+    })).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
+
+    const row = reader.prepare(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId) as Record<string, unknown>
+    expect(row.provider_config_sealed).toBe(sealed)
+    expect(JSON.stringify(row)).not.toContain(SECRET)
+    expect(JSON.stringify(reader.prepare(`SELECT * FROM audit_events`).all())).not.toContain(SECRET)
+
+    expect((await beat(api, hostId)).provider_config).toEqual({ revision: 1, sealed })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 1 })).provider_config).toBeUndefined()
+    expect((await beat(api, hostId)).provider_config).toBeUndefined()
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([
+      {
+        enrollment_id: enrollmentId,
+        provider_config_revision: 1,
+        provider_config_acked_revision: 1,
+        sealing_key_declared: true,
+        provider_config_providers: ["openai"],
+        provider_config_rekeyed: false,
+      },
+    ])
+  })
+
+  test("another account can neither read the target nor push: the machine does not exist for it", async () => {
+    const { api, reader } = fileAuthority()
+    const { enrollment, hostId } = await enroll(api)
+    const enrollmentId = enrollment.enrollment_id
+    const key = await sealingPublicKey()
+    await beat(api, hostId, { sealingPublicKey: key })
+
+    expect(await refusal(api.hostProviderConfigTarget!(other, { enrollmentId })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    const sealed = await sealForMachine(key, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    expect(await refusal(api.pushHostProviderConfig!(other, { enrollmentId, sealed, revision: 1, sealingPublicKey: key, providerIds: ["openai"] })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(reader.prepare(`SELECT provider_config_revision, provider_config_sealed FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId))
+      .toEqual({ provider_config_revision: 0, provider_config_sealed: null })
+    expect((await beat(api, hostId)).provider_config).toBeUndefined()
+  })
+
+  test("a withdrawal is an empty revision the machine is told about; an undeclared key refuses every push", async () => {
+    const { api } = fileAuthority()
+    const { enrollment, hostId } = await enroll(api)
+    const enrollmentId = enrollment.enrollment_id
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ sealing_public_key: null, next_revision: 1 })
+    expect(await refusal(api.pushHostProviderConfig!(owner, { enrollmentId, sealed: null, revision: 1, sealingPublicKey: null, providerIds: [] })))
+      .toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+
+    await beat(api, hostId, { sealingPublicKey: await sealingPublicKey() })
+    const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
+    const sealed = await sealForMachine(target.sealing_public_key!, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    await api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: 1,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: ["openai"],
+    })
+    await beat(api, hostId, { providerConfigAckedRevision: 1 })
+
+    expect(await api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed: null,
+      revision: 2,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: [],
+    })).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 1 })).provider_config).toEqual({ revision: 2, sealed: null })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 2 })).provider_config).toBeUndefined()
   })
 })

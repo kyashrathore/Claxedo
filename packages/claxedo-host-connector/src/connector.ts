@@ -52,6 +52,19 @@ export type HostEndpoints = {
   authority?: { sessionAuthorityUrl: string }
 }
 
+/**
+ * The owner's provider configuration for this machine, versioned like an
+ * assignment and carried the same way.
+ *
+ * `sealed` is opaque here: it is a `mseal1` blob for this machine's sealing
+ * key (`./machine-seal`) and only the process holding that key opens it. The
+ * connector never reads it, so a change to what the owner pushes is not a
+ * change to this package. `null` is the withdrawal — a revision that says
+ * "this machine holds nothing" — and it is a revision like any other so a host
+ * that was offline when the owner revoked learns of it on its next beat.
+ */
+export type ProviderConfigRevision = { revision: number; sealed: string | null }
+
 export type HeartbeatResponse = {
   expires_at: number
   assigned_workspace_ids?: readonly string[]
@@ -59,6 +72,8 @@ export type HeartbeatResponse = {
   hostTunnel?: Record<string, unknown>
   assignments?: readonly AssignmentDescription[]
   scope?: HostScope
+  /** Present only when the control plane holds a revision this machine has not acked. */
+  providerConfig?: ProviderConfigRevision
 } & HostEndpoints
 
 /** Body v3: the request signature covers it, so it carries no payload signature. */
@@ -67,6 +82,18 @@ export type MachineHeartbeatInput = {
   acks: readonly AssignmentAck[]
   ttlMs?: number
   sessionAuthority?: HostSessionAuthority
+  /**
+   * The public half of this machine's sealing key (`./machine-seal`), declared
+   * on every beat so the control plane can seal a secret for it.
+   *
+   * Sent every time rather than once at enrollment: the enrollment handshake
+   * predates it, a re-enrolled machine mints a new pair, and one column in an
+   * UPDATE the beat already runs costs nothing. A machine that declares none
+   * can be pushed nothing, which is what a machine with no opener should get.
+   */
+  sealingPublicKey?: string
+  /** The provider-config revision this machine has STORED; the answer restates it only when it differs. */
+  providerConfigRevision?: number
 }
 
 export type MachineTransport = {
@@ -86,7 +113,7 @@ export type MachineTransport = {
   heartbeat: (input: MachineHeartbeatInput) => Promise<HeartbeatResponse>
 }
 
-export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile"
+export type ConnectorErrorStage = "heartbeat" | "acquire" | "reconcile" | "provider-config"
 
 /**
  * Where a host stands on the directory a description names.
@@ -133,6 +160,12 @@ export type ConnectorOptions = MachineDirectoryScope & {
    * the runtime does — so it is injected and carried on every beat.
    */
   sessionAuthority?: HostSessionAuthority
+  /**
+   * This machine's sealing public key (`./machine-seal`), declared on every
+   * beat. A connector built without one is a machine the owner cannot push
+   * provider configuration to.
+   */
+  sealingPublicKey?: string
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
   onError?: (stage: ConnectorErrorStage, error: unknown) => void
@@ -169,6 +202,22 @@ export type ConnectorOptions = MachineDirectoryScope & {
   /** A newer scope revision, delivered before the same beat's assignments are reconciled. */
   onScope?: (scope: HostScope) => void | Promise<void>
   onEndpoints?: (endpoints: HostEndpoints) => void | Promise<void>
+  /**
+   * A provider-config revision the control plane holds and this machine does
+   * not. The revision is acked on the next beat ONLY if this resolves: a host
+   * that could not write the blob must keep asking for it, because an ack is
+   * the control plane's evidence that the machine is configured and it stops
+   * re-sending at that point. A rejection is reported through `onError` and
+   * the same revision arrives again on the next beat.
+   */
+  onProviderConfig?: (config: ProviderConfigRevision) => void | Promise<void>
+  /**
+   * The revision this machine already held when the connector was built, from
+   * the caller's own store. Without it every restart re-downloads a blob it
+   * has on disk, and a machine whose control plane is unreachable would have
+   * no way to say it is already configured.
+   */
+  providerConfigRevision?: number
 }
 
 /** The deadline for the acquire request, below the transport's own bound. */
@@ -254,6 +303,14 @@ export function createHostConnector(options: ConnectorOptions) {
   let scopeRevision: number | undefined
   let deliveredEndpoints: string | undefined
   /**
+   * The revision the CALLER has stored, which is the only thing the control
+   * plane is told. It moves after `onProviderConfig` resolves and never
+   * before: a beat that claimed a revision the host had failed to write would
+   * stop the control plane re-delivering it, leaving a machine that believes
+   * it is configured and a control plane that agrees.
+   */
+  let providerConfigRevision = options.providerConfigRevision
+  /**
    * Set by `drain()` and never cleared: from then on `ack` is refused, the
    * timer is gone, a beat still in flight delivers nothing when it lands,
    * and the only beat left to send is the drain's own. Consent given during
@@ -317,9 +374,16 @@ export function createHostConnector(options: ConnectorOptions) {
 
   /**
    * Apply one response, in the order the control plane's own state changes:
-   * scope before assignments (a tightened root retires an assignment in the
-   * same batch, so the roots must be in force before any description is
-   * validated), then the credential, then the lease listener.
+   * scope, then the endpoints, then the provider configuration, then the
+   * assignments — a tightened root retires an assignment in the same batch, so
+   * the roots must be in force before any description is validated, and a
+   * workspace that begins serving on this beat should already hold the
+   * credentials its first turn resolves. The serving credential and the lease
+   * listener follow in `runBeat`.
+   *
+   * A provider-config delivery that the caller refuses is reported and left
+   * unacked, and the assignments still reconcile: a host that cannot write a
+   * secret must not also stop serving the folders it already serves.
    */
   const reconcile = async (result: HeartbeatResponse) => {
     if (result.scope && (scopeRevision === undefined || result.scope.revision > scopeRevision)) {
@@ -335,6 +399,21 @@ export function createHostConnector(options: ConnectorOptions) {
       if (serialized !== deliveredEndpoints) {
         deliveredEndpoints = serialized
         await options.onEndpoints?.(endpoints)
+      }
+    }
+    // Strictly newer, not merely different: a replayed older revision would
+    // reinstate a credential the owner rotated away or withdrew, and the seal
+    // cannot refuse it — that blob really was sealed at that revision, so its
+    // tag verifies. This is the only check that stops the rollback.
+    if (
+      result.providerConfig &&
+      (providerConfigRevision === undefined || result.providerConfig.revision > providerConfigRevision)
+    ) {
+      try {
+        await options.onProviderConfig?.(result.providerConfig)
+        providerConfigRevision = result.providerConfig.revision
+      } catch (error) {
+        options.onError?.("provider-config", error)
       }
     }
     if (!result.assignments) return
@@ -420,6 +499,8 @@ export function createHostConnector(options: ConnectorOptions) {
         generation,
         acks: currentAcks(),
         ...(options.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
+        ...(options.sealingPublicKey ? { sealingPublicKey: options.sealingPublicKey } : {}),
+        ...(providerConfigRevision === undefined ? {} : { providerConfigRevision }),
       })
       // The instance this beat was proving ended while it was in flight —
       // stopped, or superseded by a newer generation. Its answer describes a
@@ -459,6 +540,9 @@ export function createHostConnector(options: ConnectorOptions) {
 
     /** What this host has consented to serve, by revision. */
     acked: currentAcks,
+
+    /** The provider-config revision this host has stored, as the next beat will state it. */
+    providerConfigRevision: () => providerConfigRevision,
 
     /**
      * Consent to serve one description at one revision, and request the beat

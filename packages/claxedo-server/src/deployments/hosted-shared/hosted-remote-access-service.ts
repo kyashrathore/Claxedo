@@ -44,6 +44,18 @@ export function hostedRemoteAccessService(authority: WorkspaceAuthority): Remote
       const result = await authority.revokeHostEnrollment(auth, { hostId })
       return { revoked: result.revoked > 0 }
     },
+    async rename(auth, { hostId, displayName }) {
+      if (!authority.hostEnrollmentByHost || !authority.renameHostEnrollment) {
+        throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "This control plane does not support renaming a machine")
+      }
+      const enrollment = await authority.hostEnrollmentByHost(auth, { hostId })
+      if (!enrollment) return undefined
+      const result = await authority.renameHostEnrollment(auth, {
+        enrollmentId: enrollment.enrollment_id,
+        displayName,
+      })
+      return { displayName: result.display_name }
+    },
     async markSecondDeviceOpen(auth, workspaceId) {
       const result = await authority.markSecondDeviceOpen(auth, { workspaceId })
       return { recorded: result.recorded }

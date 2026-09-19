@@ -7,9 +7,10 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 
 const enableBody = z.object({
-  display_name: z.string().trim().min(1).max(120),
   start_at_login: z.boolean().default(false),
 }).strict()
+
+const renameBody = z.object({ display_name: z.string().trim().min(1).max(120) }).strict()
 
 const secondDeviceBody = z.object({
   source_client_id: z.string().trim().min(1).max(200),
@@ -20,7 +21,7 @@ export type RemoteAccessService = {
   status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean; secondDeviceOpen: boolean }>
   enable(
     auth: SignedControlPlaneAuth,
-    input: { displayName: string; startAtLogin: boolean },
+    input: { startAtLogin: boolean },
   ): Promise<{ hostId: string; workspaceIds: string[]; connectionCount: number }>
   devices(auth: SignedControlPlaneAuth): Promise<Array<{
     hostId: string
@@ -29,11 +30,19 @@ export type RemoteAccessService = {
     workspaceIds: string[]
   }>>
   revoke(auth: SignedControlPlaneAuth, hostId: string): Promise<{ revoked: boolean }>
+  /**
+   * Rename one machine: the owner's override of the name the machine derived
+   * for itself. Undefined when the caller owns no enrollment of that host.
+   */
+  rename(
+    auth: SignedControlPlaneAuth,
+    input: { hostId: string; displayName: string },
+  ): Promise<{ displayName: string } | undefined>
   markSecondDeviceOpen(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ recorded: boolean }>
 }
 
 /** The owner's view of their machines: what every signed control plane serves. */
-export type RemoteAccessOwnerService = Pick<RemoteAccessService, "status" | "devices" | "revoke" | "markSecondDeviceOpen">
+export type RemoteAccessOwnerService = Pick<RemoteAccessService, "status" | "devices" | "revoke" | "rename" | "markSecondDeviceOpen">
 
 export type RemoteAccessRouteOptions<Service extends RemoteAccessOwnerService> = {
   deviceLoginConfigured: boolean
@@ -101,6 +110,23 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
     })
   })
 
+  app.patch("/devices/:hostId", async (c) => {
+    const body = renameBody.safeParse(await c.req.json().catch(() => ({})))
+    if (!body.success) {
+      return c.json({ error: { code: "invalid_display_name", message: "A machine name must be 1 to 120 characters" } }, 400)
+    }
+    const auth = await authenticateRemoteAccess(options, c.req.raw)
+    if (!("user" in auth)) return auth
+    const renamed = await options.service.rename(auth, {
+      hostId: c.req.param("hostId"),
+      displayName: body.data.display_name,
+    })
+    if (!renamed) {
+      return c.json({ error: { code: "host_enrollment_not_found", message: "That machine is not enrolled" } }, 404)
+    }
+    return c.json({ display_name: renamed.displayName })
+  })
+
   app.delete("/devices/:hostId", async (c) => {
     const auth = await authenticateRemoteAccess(options, c.req.raw)
     if (!("user" in auth)) return auth
@@ -148,10 +174,7 @@ export function RemoteAccessRoutes(options: RemoteAccessRouteOptions<RemoteAcces
     if (!body.success) return c.json({ error: { code: "remote_access_invalid_body", message: "Invalid remote access settings" } }, 400)
     const auth = await authenticateRemoteAccess(options, c.req.raw)
     if (!("user" in auth)) return auth
-    const result = await options.service.enable(auth, {
-      displayName: body.data.display_name,
-      startAtLogin: body.data.start_at_login,
-    })
+    const result = await options.service.enable(auth, { startAtLogin: body.data.start_at_login })
     return c.json({
       host_id: result.hostId,
       workspace_ids: result.workspaceIds,

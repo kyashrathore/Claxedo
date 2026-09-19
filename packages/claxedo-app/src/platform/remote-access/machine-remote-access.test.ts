@@ -35,9 +35,9 @@ describe("machine remote access binding", () => {
 
   test("hands back the port the last root bound", async () => {
     configureMachineRemoteAccess(stub("first"))
-    await expect(machineRemoteAccess()?.enable({ displayName: "a", startAtLogin: false })).rejects.toThrow("first")
+    await expect(machineRemoteAccess()?.enable({ startAtLogin: false })).rejects.toThrow("first")
 
     configureMachineRemoteAccess(stub("second"))
-    await expect(machineRemoteAccess()?.enable({ displayName: "a", startAtLogin: false })).rejects.toThrow("second")
+    await expect(machineRemoteAccess()?.enable({ startAtLogin: false })).rejects.toThrow("second")
   })
 })

@@ -9,10 +9,12 @@ import {
   type ConnectorErrorStage,
   type HeartbeatResponse,
   type MachineTransport,
+  type ProviderConfigRevision,
 } from "./connector"
 import { createFakeControlPlane, enrollFakeHost, type FakeControlPlane } from "./fake-control-plane.test-support"
 import { effectiveRoots, type HostScope, type HostState } from "./host-state"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "./host-identity"
+import { createMachineSealingKeyPair, hostMachineSealAad, openMachineSeal } from "./machine-seal"
 import { createMachineSignedTransport } from "./machine-transport"
 
 /**
@@ -31,6 +33,9 @@ async function machineHost(
     /** What the caller does with each description list; defaults to acking everything it can. */
     onAssignments?: (descriptions: AssignmentDescription[], ack: (d: AssignmentDescription) => Promise<void>) => Promise<void>
     wrap?: (transport: MachineTransport) => MachineTransport
+    sealingPublicKey?: string
+    /** Stands in for the caller's store; a rejection is a host that could not write the blob. */
+    onProviderConfig?: (config: ProviderConfigRevision) => Promise<void>
   } = {},
 ) {
   const enrolled = await enrollFakeHost(cp, { allowedRoots: input.allowedRoots ?? ["/srv"], cliRoots: input.cliRoots ?? [] })
@@ -50,6 +55,7 @@ async function machineHost(
   const tunnels: Array<Record<string, unknown> | undefined> = []
   const errors: Array<{ stage: ConnectorErrorStage; error: unknown }> = []
   const ackFailures: unknown[] = []
+  const providerConfigs: ProviderConfigRevision[] = []
   let tick: (() => void) | undefined
   const connector = createHostConnector({
     mode: "machine",
@@ -79,6 +85,11 @@ async function machineHost(
     },
     onServing: (tunnel) => tunnels.push(tunnel),
     onError: (stage, error) => errors.push({ stage, error }),
+    ...(input.sealingPublicKey ? { sealingPublicKey: input.sealingPublicKey } : {}),
+    onProviderConfig: async (config) => {
+      providerConfigs.push(config)
+      await input.onProviderConfig?.(config)
+    },
   })
   const beats = () => cp.log.filter((entry) => entry.path === "/api/claxedo/host/enrollments/heartbeat")
   return {
@@ -90,6 +101,7 @@ async function machineHost(
     tunnels,
     errors,
     ackFailures,
+    providerConfigs,
     beats,
     tick: () => tick?.(),
     state: () => state,
@@ -187,6 +199,21 @@ describe("assignment discovery", () => {
     expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision }])
     expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] })
     expect(h.seen).toEqual([[{ workspaceId: "ws_1", remoteDirectory: "/srv/api", revision }]])
+  })
+
+  // The credential is handed on untouched, and a consumer that serves out of
+  // another process reads the machine's own enrollment out of it: nothing
+  // else of the enrollment crosses that boundary.
+  test("the credential reaches the caller with every field the ack wrote on it", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    await h.connector.start()
+
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+
+    expect(h.tunnels.at(-1)).toMatchObject({ enrollmentId: h.enrolled.enrollmentId })
   })
 
   test("a re-pointed directory is withdrawn, re-validated and re-acked at the new revision", async () => {
@@ -806,5 +833,180 @@ describe("with a real filesystem", () => {
     expect(String(h.ackFailures[0])).toContain("outside this host's roots")
     expect(await effectiveRoots(h.state(), (p) => realpath(p))).toEqual([])
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+  })
+})
+
+/**
+ * The owner pushes provider credentials; the machine declares a key to be
+ * sealed to, stores what arrives, and only then tells the control plane it
+ * has it. Every assertion below is against the fake's own recorded state —
+ * `cp.providerConfigAckedRevision` is exactly what the route writes.
+ */
+describe("provider configuration", () => {
+  const PLAINTEXT = JSON.stringify({
+    version: 1,
+    providers: { openai: { baseUrl: "https://model.test", placeholder: "sk-pushed", authMode: "bearer" } },
+  })
+
+  async function configuredHost(input: Parameters<typeof machineHost>[1] = {}) {
+    const cp = createFakeControlPlane()
+    const sealing = await createMachineSealingKeyPair()
+    const host = await machineHost(cp, { sealingPublicKey: sealing.publicKey, ...input })
+    await host.connector.start()
+    return { ...host, sealing }
+  }
+
+  test("the first beat declares the key the owner seals to", async () => {
+    const host = await configuredHost()
+    expect(host.cp.sealingPublicKey(host.enrolled.enrollmentId)).toBe(host.sealing.publicKey)
+    expect(host.beats()[0]?.body.sealingPublicKey).toBe(host.sealing.publicKey)
+  })
+
+  test("a machine that declares no key can be sealed nothing", async () => {
+    const cp = createFakeControlPlane()
+    const host = await machineHost(cp)
+    await host.connector.start()
+    expect(cp.sealingPublicKey(host.enrolled.enrollmentId)).toBeUndefined()
+    await expect(cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)).rejects.toMatchObject({
+      code: "host_sealing_key_undeclared",
+    })
+  })
+
+  test("a pushed revision reaches the machine sealed, opens with its own key, and is acked once", async () => {
+    const host = await configuredHost()
+    const revision = await host.cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)
+    await host.connector.beat()
+
+    expect(host.providerConfigs).toHaveLength(1)
+    const delivered = host.providerConfigs[0]
+    expect(delivered.revision).toBe(revision)
+    expect(delivered.sealed).not.toBeNull()
+    expect(delivered.sealed).not.toContain("sk-pushed")
+    expect(
+      await openMachineSeal(
+        host.sealing.privateKeyJwk,
+        delivered.sealed ?? "",
+        hostMachineSealAad({ enrollmentId: host.enrolled.enrollmentId, revision }),
+      ),
+    ).toBe(PLAINTEXT)
+
+    expect(host.connector.providerConfigRevision()).toBe(revision)
+    await host.connector.beat()
+    expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).toBe(revision)
+    // The control plane stops re-sending what the machine has said it holds.
+    expect(host.providerConfigs).toHaveLength(1)
+  })
+
+  test("a revision the host could not store is never acked and arrives again", async () => {
+    let writes = 0
+    const host = await configuredHost({
+      onProviderConfig: async () => {
+        writes++
+        if (writes === 1) throw new Error("disk full")
+      },
+    })
+    const revision = await host.cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)
+
+    await host.connector.beat()
+    expect(host.connector.providerConfigRevision()).toBeUndefined()
+    expect(host.errors.filter((entry) => entry.stage === "provider-config")).toHaveLength(1)
+    await host.connector.beat()
+    expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).not.toBe(revision)
+
+    expect(host.providerConfigs).toHaveLength(2)
+    expect(host.connector.providerConfigRevision()).toBe(revision)
+    await host.connector.beat()
+    expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).toBe(revision)
+  })
+
+  test("a store that keeps failing does not stop the machine serving what it already serves", async () => {
+    const host = await configuredHost({
+      allowedRoots: ["/srv"],
+      onProviderConfig: () => Promise.reject(new Error("read-only file system")),
+    })
+    await host.cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)
+    host.cp.assign({ enrollmentId: host.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/app" })
+    await host.connector.beat()
+    expect(host.connector.acked()).toEqual([{ workspaceId: "ws_1", revision: 1 }])
+    // The ack queues its own beat; that beat is what writes the readiness row.
+    await host.connector.beat()
+    expect(host.cp.routable(host.enrolled.enrollmentId)).toEqual(["ws_1"])
+  })
+
+  test("the owner's withdrawal is a revision like any other and lands within one beat", async () => {
+    const host = await configuredHost()
+    await host.cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)
+    await host.connector.beat()
+
+    const withdrawn = await host.cp.pushProviderConfig(host.enrolled.enrollmentId, null)
+    await host.connector.beat()
+    expect(host.providerConfigs[1]).toEqual({ revision: withdrawn, sealed: null })
+    await host.connector.beat()
+    expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).toBe(withdrawn)
+  })
+
+  test("a revision below the one the machine holds is neither applied nor acked", async () => {
+    const host = await configuredHost()
+    const withdrawn = await host.cp.pushProviderConfig(host.enrolled.enrollmentId, PLAINTEXT)
+    await host.connector.beat()
+    const replayed = host.cp.providerConfig(host.enrolled.enrollmentId)
+    expect(replayed).toEqual({ revision: withdrawn, sealed: expect.any(String) })
+
+    const rotated = await host.cp.pushProviderConfig(
+      host.enrolled.enrollmentId,
+      JSON.stringify({
+        version: 1,
+        providers: { openai: { baseUrl: "https://model.test", placeholder: "sk-rotated", authMode: "bearer" } },
+      }),
+    )
+    await host.connector.beat()
+    await host.connector.beat()
+    expect(host.providerConfigs).toHaveLength(2)
+    expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).toBe(rotated)
+
+    host.cp.replayProviderConfig(host.enrolled.enrollmentId, replayed!)
+    await host.connector.beat()
+    expect(host.providerConfigs).toHaveLength(2)
+    expect(host.connector.providerConfigRevision()).toBe(rotated)
+    await host.connector.beat()
+    expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).toBe(rotated)
+  })
+
+  test("a host that already holds a revision declares it and is sent nothing", async () => {
+    const cp = createFakeControlPlane()
+    const sealing = await createMachineSealingKeyPair()
+    const first = await machineHost(cp, { sealingPublicKey: sealing.publicKey })
+    await first.connector.start()
+    const revision = await cp.pushProviderConfig(first.enrolled.enrollmentId, PLAINTEXT)
+    await first.connector.beat()
+    await first.connector.beat()
+    first.connector.close()
+
+    // A restart: the same enrollment, the revision read back from the caller's store.
+    const restarted = await machineHost(cp, { sealingPublicKey: sealing.publicKey })
+    expect(restarted.enrolled.enrollmentId).not.toBe(first.enrolled.enrollmentId)
+    const holder = createHostConnector({
+      mode: "machine",
+      hostId: first.enrolled.state.host_id,
+      transport: createMachineSignedTransport({
+        controlPlaneUrl: cp.url,
+        keys: first.enrolled.keys,
+        enrollmentId: first.enrolled.enrollmentId,
+        hostId: first.enrolled.state.host_id,
+        fetch: cp.fetch,
+      }),
+      enrollmentId: first.enrolled.enrollmentId,
+      heartbeatIntervalMs: 25_000,
+      setInterval: () => ({ cancel: () => undefined }),
+      sealingPublicKey: sealing.publicKey,
+      providerConfigRevision: revision,
+      onProviderConfig: () => {
+        throw new Error("the control plane re-sent a revision this host already holds")
+      },
+    })
+    await holder.start()
+    expect(holder.providerConfigRevision()).toBe(revision)
+    expect(cp.providerConfigAckedRevision(first.enrolled.enrollmentId)).toBe(revision)
+    holder.close()
   })
 })

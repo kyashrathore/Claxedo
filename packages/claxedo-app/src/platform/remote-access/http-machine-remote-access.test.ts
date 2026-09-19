@@ -42,7 +42,7 @@ describe("http machine remote access", () => {
       enabled: false,
       secondDeviceOpen: false,
     })
-    await port.enable({ displayName: "Yash's Mac", startAtLogin: true })
+    await port.enable({ startAtLogin: true })
     await expect(port.devices?.()).resolves.toEqual([{
       hostId: "host_1",
       displayName: "Yash's Mac",
@@ -53,8 +53,25 @@ describe("http machine remote access", () => {
     // the same Enable button must still produce exactly this request.
     expect(script.calls).toEqual([
       { path: "/api/claxedo/remote-access", method: "GET" },
-      { path: "/api/claxedo/remote-access/enable", method: "POST", body: JSON.stringify({ display_name: "Yash's Mac", start_at_login: true }) },
+      // No name on the wire: the machine this server runs on derives its own,
+      // and a browser asked for one can only describe the browser.
+      { path: "/api/claxedo/remote-access/enable", method: "POST", body: JSON.stringify({ start_at_login: true }) },
       { path: "/api/claxedo/remote-access/devices", method: "GET" },
+    ])
+  })
+
+  test("renames a machine and reports the name the control plane kept", async () => {
+    const script = scripted([
+      { status: 200, body: { display_name: "Build box" } },
+      { status: 404, body: { error: { code: "host_enrollment_not_found", message: "That machine is not enrolled" } } },
+    ])
+    const port = httpMachineRemoteAccess({ request: script.request })
+
+    await expect(port.rename?.({ hostId: "host_1", displayName: "  Build box  " })).resolves.toEqual({ displayName: "Build box" })
+    await expect(port.rename?.({ hostId: "host_x", displayName: "Build box" })).rejects.toThrow("That machine is not enrolled")
+    expect(script.calls).toEqual([
+      { path: "/api/claxedo/remote-access/devices/host_1", method: "PATCH", body: JSON.stringify({ display_name: "  Build box  " }) },
+      { path: "/api/claxedo/remote-access/devices/host_x", method: "PATCH", body: JSON.stringify({ display_name: "Build box" }) },
     ])
   })
 
@@ -82,7 +99,7 @@ describe("http machine remote access", () => {
     ])
     const port = httpMachineRemoteAccess({ request: script.request })
 
-    await expect(port.enable({ displayName: "Mac", startAtLogin: false })).rejects.toThrow("Device sign-in is not configured")
+    await expect(port.enable({ startAtLogin: false })).rejects.toThrow("Device sign-in is not configured")
     await expect(port.revoke("host/1")).resolves.toEqual({ revoked: true })
     expect(script.calls[1]).toEqual({
       path: "/api/claxedo/remote-access/devices/host%2F1",
@@ -97,7 +114,7 @@ describe("http machine remote access", () => {
     const script = scripted([{ status: 200, body: {} }])
     const port = httpMachineRemoteAccess({ request: script.request })
 
-    await expect(port.enable({ displayName: "Mac", startAtLogin: false })).rejects.toThrow("host_id")
+    await expect(port.enable({ startAtLogin: false })).rejects.toThrow("host_id")
   })
 
   test("offers the two capabilities the HTTP product has, and no pause", async () => {
@@ -108,7 +125,108 @@ describe("http machine remote access", () => {
 
     expect(typeof port.devices).toBe("function")
     expect(typeof port.markSecondDeviceOpen).toBe("function")
+    expect(typeof port.providerConfig?.rows).toBe("function")
+    expect(typeof port.providerConfig?.push).toBe("function")
     expect(port.pause).toBeUndefined()
     expect(port.subscribe).toBeUndefined()
+  })
+
+  test("reads each machine's provider-configuration standing off the owner's enrollment list", async () => {
+    const script = scripted([
+      {
+        status: 200,
+        body: {
+          active: null,
+          machines: [
+            {
+              enrollment_id: "enr_1",
+              host_id: "host_1",
+              display_name: "Build box",
+              provider_config_revision: 3,
+              provider_config_acked_revision: 2,
+              sealing_key_declared: true,
+              provider_config_providers: ["openai", 7],
+              provider_config_rekeyed: true,
+            },
+            {
+              enrollment_id: "enr_2",
+              host_id: "host_2",
+              provider_config_revision: 0,
+              provider_config_acked_revision: 0,
+              sealing_key_declared: false,
+            },
+          ],
+        },
+      },
+      { status: 200, body: { active: null } },
+      { status: 200, body: { active: null, machines: [{ enrollment_id: "enr_3", host_id: "host_3" }] } },
+    ])
+    const port = httpMachineRemoteAccess({ request: script.request })
+
+    await expect(port.providerConfig?.rows()).resolves.toEqual([
+      // A non-string in the id list is dropped rather than shown as a provider name.
+      {
+        enrollmentId: "enr_1",
+        hostId: "host_1",
+        revision: 3,
+        ackedRevision: 2,
+        sealingKeyDeclared: true,
+        providers: ["openai"],
+        rekeyed: true,
+      },
+      {
+        enrollmentId: "enr_2",
+        hostId: "host_2",
+        revision: 0,
+        ackedRevision: 0,
+        sealingKeyDeclared: false,
+        providers: [],
+        rekeyed: false,
+      },
+    ])
+    // A control plane without an enrollment-listing authority answers the
+    // active row alone; that is no machines, not a broken list.
+    await expect(port.providerConfig?.rows()).resolves.toEqual([])
+    // A row missing its revision is a server this client does not understand,
+    // named by field, never a machine that silently reads as "nothing pushed".
+    await expect(port.providerConfig?.rows()).rejects.toThrow("machines[0].provider_config_revision")
+    expect(script.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "GET /api/claxedo/host/enrollments",
+      "GET /api/claxedo/host/enrollments",
+      "GET /api/claxedo/host/enrollments",
+    ])
+  })
+
+  test("pushes one machine's providers as the runtime's own row shape, and an empty map withdraws them", async () => {
+    const script = scripted([
+      { status: 200, body: { enrollment_id: "enr/1", revision: 4, sealed: true } },
+      { status: 200, body: { enrollment_id: "enr/1", revision: 5, sealed: false } },
+      {
+        status: 409,
+        body: {
+          error: {
+            code: "host_sealing_key_undeclared",
+            message: "The machine has not declared a sealing key; it declares one on its next heartbeat",
+          },
+        },
+      },
+    ])
+    const port = httpMachineRemoteAccess({ request: script.request })
+    const providers = {
+      anthropic: { baseUrl: "https://api.anthropic.com", placeholder: "sk-ant-secret", authMode: "api-key" as const, apiPath: "/v1" },
+    }
+
+    await expect(port.providerConfig?.push({ enrollmentId: "enr/1", providers })).resolves.toEqual({ revision: 4, sealed: true })
+    await expect(port.providerConfig?.push({ enrollmentId: "enr/1", providers: {} })).resolves.toEqual({ revision: 5, sealed: false })
+    await expect(port.providerConfig?.push({ enrollmentId: "enr_2", providers })).rejects.toThrow("has not declared a sealing key")
+    expect(script.calls).toEqual([
+      {
+        path: "/api/claxedo/host/enrollments/enr%2F1/provider-config",
+        method: "POST",
+        body: JSON.stringify({ providers }),
+      },
+      { path: "/api/claxedo/host/enrollments/enr%2F1/provider-config", method: "POST", body: JSON.stringify({ providers: {} }) },
+      { path: "/api/claxedo/host/enrollments/enr_2/provider-config", method: "POST", body: JSON.stringify({ providers }) },
+    ])
   })
 })

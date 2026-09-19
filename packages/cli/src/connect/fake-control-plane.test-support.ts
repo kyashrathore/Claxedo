@@ -68,6 +68,16 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
         visibility: body.visibility === "org" ? "org" : "owner",
       })
     }
+    const providerConfigMatch = /^\/api\/claxedo\/host\/enrollments\/([^/]+)\/provider-config$/.exec(pathname)
+    if (method === "POST" && providerConfigMatch) {
+      const enrollmentId = decodeURIComponent(providerConfigMatch[1])
+      const providers = asRecordOrEmpty(body.providers)
+      const sealed = Object.keys(providers).length > 0
+      // The route's `serializeHostProviderConfig` shape; the host opens it
+      // with `parseHostProviderConfig`, so a drift here fails the lifecycle test.
+      const revision = await cp.pushProviderConfig(enrollmentId, sealed ? JSON.stringify({ version: 1, providers }) : null)
+      return { enrollment_id: enrollmentId, revision, sealed }
+    }
     const deviceMatch = /^\/api\/claxedo\/remote-access\/devices\/([^/]+)$/.exec(pathname)
     if (method === "DELETE" && deviceMatch) {
       const enrollment = cp.enrollmentByHostId(decodeURIComponent(deviceMatch[1]))

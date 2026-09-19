@@ -4,6 +4,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import type { OnboardingFunnelEvent } from "./funnel"
+import type { RemoteAccessProviderConfig } from "./remote-access-surface"
 import {
   remoteAccessAvailability,
   remoteAccessClientId,
@@ -89,6 +90,12 @@ export function useRemoteAccessController(input: {
     enabled: status.data?.hostedSignedIn === true,
     retry: false,
   }))
+  const providerConfig = useQuery(() => ({
+    queryKey: ["claxedo", "remote-access", "provider-config", input.serverUrl] as const,
+    queryFn: async () => await port()?.providerConfig?.rows() ?? [],
+    enabled: status.data?.hostedSignedIn === true && port()?.providerConfig !== undefined,
+    retry: false,
+  }))
   const [startAtLogin, startAtLoginActions] = createResource(
     () => platform.platform === "desktop",
     async (desktop) => desktop ? await platform.getStartAtLogin?.() ?? false : false,
@@ -138,10 +145,7 @@ export function useRemoteAccessController(input: {
   async function enable() {
     const remote = port()
     if (!remote) throw new Error("This build cannot publish a machine for remote access")
-    await remote.enable({
-      displayName: navigator.platform || "This machine",
-      startAtLogin: startAtLogin() ?? false,
-    })
+    await remote.enable({ startAtLogin: startAtLogin() ?? false })
     input.emit?.({ name: "remote_access_enabled" })
     input.onMachineChanged?.()
     await Promise.all([status.refetch(), devices.refetch()])
@@ -216,6 +220,55 @@ export function useRemoteAccessController(input: {
       await remote.pause()
       input.onMachineChanged?.()
       await status.refetch()
+    },
+    /**
+     * Whether the machine this client runs on is served by the desktop app.
+     *
+     * Read from the product rather than from an enrollment: it decides whether
+     * `claxedo connect` is offered for THIS machine, and connect refuses to
+     * start beside a live desktop daemon whatever the control plane holds.
+     */
+    servedByDesktopApp: () => platform.platform === "desktop",
+    /** Absent where the product cannot rename, so the surface can omit the control. */
+    canRename: () => port()?.rename !== undefined,
+    /**
+     * The machine this client runs on, where the product can name it.
+     *
+     * On the desktop this is the only row the Machines list has: `devices` is
+     * absent there, so without it the panel would be empty on the very
+     * computer the user is sitting at. Absent on a product whose `devices`
+     * already lists this machine.
+     */
+    thisMachine: () => {
+      const machine = status.data?.machine
+      if (!machine) return undefined
+      return { ...machine, workspaceIds: status.data?.sharedWorkspaceIds ?? [] }
+    },
+    async rename(hostId: string, displayName: string) {
+      const remote = port()
+      if (!remote?.rename) throw new Error("This build cannot rename a machine")
+      await remote.rename({ hostId, displayName })
+      await Promise.all([status.refetch(), devices.refetch()])
+    },
+    /**
+     * Provider configuration per enrolled machine, or undefined where this
+     * product cannot list enrollments. The providers a push carries go
+     * straight to the port; the query holds only each machine's revisions.
+     */
+    providerConfig: (): RemoteAccessProviderConfig | undefined => {
+      const remote = port()?.providerConfig
+      if (!remote) return undefined
+      return {
+        rows: providerConfig.data ?? [],
+        async onPush(enrollmentId, providers) {
+          await remote.push({ enrollmentId, providers })
+          await providerConfig.refetch()
+        },
+        async onClear(enrollmentId) {
+          await remote.push({ enrollmentId, providers: {} })
+          await providerConfig.refetch()
+        },
+      }
     },
     async revoke(hostId: string) {
       const remote = port()

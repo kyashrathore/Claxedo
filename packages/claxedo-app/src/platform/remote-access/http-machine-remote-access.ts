@@ -1,4 +1,5 @@
 import type {
+  MachineProviderConfigRow,
   MachineRemoteAccessDevice,
   MachineRemoteAccessPort,
   MachineRemoteAccessStatus,
@@ -65,7 +66,7 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
     async enable(options) {
       const body = await json("/api/claxedo/remote-access/enable", {
         method: "POST",
-        body: JSON.stringify({ display_name: options.displayName, start_at_login: options.startAtLogin }),
+        body: JSON.stringify({ start_at_login: options.startAtLogin }),
       })
       // Checked and discarded. The port returns nothing, but a 200 carrying no
       // host id is a server that did not enroll anything, and resolving on it
@@ -88,9 +89,44 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
         }]
       })
     },
+    async rename({ hostId, displayName }) {
+      const body = await json(`/api/claxedo/remote-access/devices/${encodeURIComponent(hostId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: displayName }),
+      })
+      return { displayName: requiredString(body.display_name, "display_name") }
+    },
     async revoke(hostId: string) {
       const body = await json(`/api/claxedo/remote-access/devices/${encodeURIComponent(hostId)}`, { method: "DELETE" })
       return { revoked: body.revoked === true }
+    },
+    providerConfig: {
+      async rows(): Promise<readonly MachineProviderConfigRow[]> {
+        const body = await json("/api/claxedo/host/enrollments")
+        if (!Array.isArray(body.machines)) return []
+        return body.machines.map((value, index) => {
+          const row = asRecord(value) ?? {}
+          const field = (name: string) => `machines[${index}].${name}`
+          return {
+            enrollmentId: requiredString(row.enrollment_id, field("enrollment_id")),
+            hostId: requiredString(row.host_id, field("host_id")),
+            revision: requiredNumber(row.provider_config_revision, field("provider_config_revision")),
+            ackedRevision: requiredNumber(row.provider_config_acked_revision, field("provider_config_acked_revision")),
+            sealingKeyDeclared: row.sealing_key_declared === true,
+            providers: Array.isArray(row.provider_config_providers)
+              ? row.provider_config_providers.filter((id): id is string => typeof id === "string")
+              : [],
+            rekeyed: row.provider_config_rekeyed === true,
+          }
+        })
+      },
+      async push({ enrollmentId, providers }) {
+        const body = await json(`/api/claxedo/host/enrollments/${encodeURIComponent(enrollmentId)}/provider-config`, {
+          method: "POST",
+          body: JSON.stringify({ providers }),
+        })
+        return { revision: requiredNumber(body.revision, "revision"), sealed: body.sealed === true }
+      },
     },
     async markSecondDeviceOpen({ workspaceId, sourceClientId, currentClientId }) {
       const body = await json(`/api/claxedo/remote-access/workspaces/${encodeURIComponent(workspaceId)}/second-device-open`, {

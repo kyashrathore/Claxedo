@@ -1,6 +1,11 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { For, Show, createResource, createSignal, type Component } from "solid-js"
+import type {
+  MachineProviderBinding,
+  MachineProviderConfigRow,
+} from "@/platform/remote-access/machine-remote-access-port"
+import { MachineProviderConfig } from "./machine-provider-config"
 import {
   REMOTE_ACCESS_PHONE_COPY,
   type RemoteAccessAvailability,
@@ -14,11 +19,38 @@ export type RemoteAccessDevice = {
   workspaceIds: readonly string[]
 }
 
+/**
+ * Provider configuration per enrolled machine, keyed by host id against
+ * `devices`. Absent where the product cannot list enrollments, so a machine
+ * row shows no control rather than one that cannot name its target.
+ */
+export type RemoteAccessProviderConfig = {
+  rows: readonly MachineProviderConfigRow[]
+  onPush: (enrollmentId: string, providers: Record<string, MachineProviderBinding>) => Promise<void>
+  onClear: (enrollmentId: string) => Promise<void>
+}
+
+/**
+ * The machine this app is running on, where the product can name it.
+ *
+ * Never listed alongside `devices`: a product that enumerates the account's
+ * fleet already has this machine in it, and one that does not (the desktop,
+ * which knows only itself) has no fleet to list. So this row and that list are
+ * the two halves of the same section, never two views of one machine.
+ */
+export type RemoteAccessThisMachine = {
+  displayName: string
+  online: boolean
+  workspaceIds: readonly string[]
+}
+
 export type RemoteAccessSurfaceProps = {
   availability: RemoteAccessAvailability
   /** Whose machine this is. Absent in surfaces that only enroll it. */
   identity?: RemoteAccessIdentity
   devices: readonly RemoteAccessDevice[]
+  /** Absent where the product cannot name the machine it runs on. */
+  thisMachine?: RemoteAccessThisMachine
   showDevices?: boolean
   startAtLogin: boolean
   onStartAtLoginChange: (enabled: boolean) => void
@@ -27,6 +59,20 @@ export type RemoteAccessSurfaceProps = {
   onRevoke: (hostId: string) => void
   /** Offered only where the product can genuinely pause its own heartbeat. */
   onPause?: () => void | Promise<void>
+  /**
+   * Rename a machine. Absent where the product cannot write the name, which is
+   * a different thing from a machine whose name may not change.
+   */
+  onRename?: (hostId: string, displayName: string) => void | Promise<void>
+  providerConfig?: RemoteAccessProviderConfig
+  /**
+   * Whether the machine this surface runs on is served by the desktop app.
+   *
+   * It decides whether `claxedo connect` is offered for THIS machine: the
+   * desktop already serves it under its own enrollment and `connect` refuses to
+   * start beside a running desktop.
+   */
+  servedByDesktopApp?: boolean
   /**
    * How many workspaces this machine serves right now, straight off the
    * connector snapshot. Undefined while that is still unknown — which is a
@@ -116,6 +162,9 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
           <p class="mt-1 text-12-regular text-text-weak">
             Reach every workspace on this machine from your other devices.
           </p>
+          <p class="mt-1 text-12-regular text-text-weak" data-slot="remote-access-disclosure">
+            {REMOTE_ACCESS_PUBLICATION_DISCLOSURE}
+          </p>
           <label class="mt-3 flex items-center gap-2 text-12-regular text-text-base">
             <input
               type="checkbox"
@@ -194,8 +243,17 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
         )}
       </Show>
 
-      <Show when={props.showDevices !== false && props.devices.length > 0}>
-        <RemoteAccessDevices devices={props.devices} onRevoke={props.onRevoke} />
+      <Show when={props.showDevices !== false}>
+        <Show when={props.devices.length > 0 || props.thisMachine !== undefined}>
+          <RemoteAccessDevices
+            devices={props.devices}
+            {...(props.thisMachine ? { thisMachine: props.thisMachine } : {})}
+            onRevoke={props.onRevoke}
+            {...(props.onRename ? { onRename: props.onRename } : {})}
+            {...(props.providerConfig ? { providerConfig: props.providerConfig } : {})}
+          />
+        </Show>
+        <AddMachine servedByDesktopApp={props.servedByDesktopApp === true} />
       </Show>
     </div>
   )
@@ -211,6 +269,21 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
  * Naming it is honest; inventing a per-device list to pick from is not.
  */
 const THIS_MACHINE = "this-machine"
+
+/**
+ * What turning the switch on sends, stated on the switch.
+ *
+ * Publication is machine-level and carries the inventory itself, not just a
+ * reachability flag, so the consequence is named where the decision is taken
+ * rather than in a help page nobody opens.
+ */
+export const REMOTE_ACCESS_PUBLICATION_DISCLOSURE =
+  "Your workspace names and paths are sent to the control plane so your other devices can find them."
+
+/** Mints the single-use token, on a machine that is already signed in. */
+const INVITE_COMMAND = "claxedo host invite --name build-box --root ~/code"
+/** Run on the machine being added, with the token the invite printed. */
+const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-service"
 
 function servingLabel(serving: number | undefined) {
   if (serving === undefined) return "Serving this machine's workspaces"
@@ -290,30 +363,180 @@ const ConnectDeviceModal: Component<{
   )
 }
 
+/**
+ * One instruction per machine, and the `claxedo connect` one for the machine
+ * the user is NOT sitting at.
+ *
+ * A machine running the desktop app is already served under its own
+ * enrollment, and `connect` refuses to start beside a live desktop daemon, so
+ * offering the command there would be offering a command that fails.
+ */
+const AddMachine: Component<{ servedByDesktopApp: boolean }> = (props) => (
+  <section class="flex flex-col gap-2" aria-labelledby="add-machine-title">
+    <h3 id="add-machine-title" class="text-14-medium text-text-strong">Add a machine</h3>
+    <div class="rounded-md border border-border-weak-base p-3">
+      <h4 class="text-13-medium text-text-strong">The computer you are sitting at</h4>
+      <Show
+        when={props.servedByDesktopApp}
+        fallback={
+          <p class="mt-1 text-12-regular text-text-weak">
+            Install the Claxedo desktop app on it and sign in. It appears here under its own name.
+          </p>
+        }
+      >
+        <p class="mt-1 text-12-regular text-text-weak" data-slot="this-machine-already-added">
+          The desktop app already serves this machine under its own name. Nothing to install.
+        </p>
+      </Show>
+    </div>
+    <div class="flex flex-col gap-2 rounded-md border border-border-weak-base p-3" data-slot="add-connect-host">
+      <div>
+        <h4 class="text-13-medium text-text-strong">Another machine you own</h4>
+        <p class="mt-1 text-12-regular text-text-weak">
+          Run <code>claxedo host invite</code> on this machine for a single-use token, then run{" "}
+          <code>claxedo connect</code> on the machine you are adding.
+        </p>
+      </div>
+      <CopyableCommand command={INVITE_COMMAND} label="Copy invite command" />
+      <CopyableCommand command={CONNECT_COMMAND} label="Copy connect command" />
+    </div>
+  </section>
+)
+
+const CopyableCommand: Component<{ command: string; label: string }> = (props) => (
+  <div class="flex min-w-0 items-center gap-2">
+    <code class="min-w-0 flex-1 truncate rounded bg-surface-base px-2 py-1 text-11-regular">{props.command}</code>
+    <Button
+      size="small"
+      variant="secondary"
+      aria-label={props.label}
+      onClick={() => void navigator.clipboard.writeText(props.command)}
+    >
+      Copy
+    </Button>
+  </div>
+)
+
 export const RemoteAccessDevices: Component<{
   devices: readonly RemoteAccessDevice[]
+  thisMachine?: RemoteAccessThisMachine
   onRevoke: (hostId: string) => void
+  onRename?: (hostId: string, displayName: string) => void | Promise<void>
+  providerConfig?: RemoteAccessProviderConfig
 }> = (props) => (
   <section class="flex flex-col gap-2" aria-labelledby="remote-access-devices-title">
-    <h3 id="remote-access-devices-title" class="text-14-medium text-text-strong">Enrolled machines</h3>
+    <h3 id="remote-access-devices-title" class="text-14-medium text-text-strong">Machines</h3>
     <p class="text-12-regular text-text-weak">
-      Each machine below serves every local workspace it holds. Revoking a machine ends its remote access.
+      Each machine below serves the workspaces it holds. Revoking a machine ends its remote access.
     </p>
+    <Show when={props.thisMachine}>
+      {(here) => (
+        <MachineRow
+          device={{
+            hostId: THIS_MACHINE,
+            displayName: here().displayName,
+            online: here().online,
+            workspaceIds: here().workspaceIds,
+          }}
+          here
+          onRevoke={props.onRevoke}
+          {...(props.onRename ? { onRename: props.onRename } : {})}
+        />
+      )}
+    </Show>
     <For each={props.devices}>
       {(device) => (
-        <div class="flex items-center justify-between gap-3 rounded-md border border-border-weak-base p-3">
-          <div class="min-w-0">
-            <div class="truncate text-13-medium text-text-strong">{device.displayName}</div>
-            <div class="text-11-regular text-text-weak">
-              Last seen {new Date(device.lastSeenAt).toLocaleString()} · {device.workspaceIds.length} shared{" "}
-              {device.workspaceIds.length === 1 ? "workspace" : "workspaces"}
-            </div>
-          </div>
-          <Button size="small" variant="secondary" onClick={() => props.onRevoke(device.hostId)}>
-            Revoke {device.displayName}
-          </Button>
+        <div class="flex flex-col gap-2">
+          <MachineRow
+            device={device}
+            onRevoke={props.onRevoke}
+            {...(props.onRename ? { onRename: props.onRename } : {})}
+          />
+          <Show when={props.providerConfig}>
+            {(config) => (
+              <Show when={config().rows.find((row) => row.hostId === device.hostId)}>
+                {(row) => (
+                  <MachineProviderConfig
+                    machineName={device.displayName}
+                    row={row()}
+                    onPush={config().onPush}
+                    onClear={config().onClear}
+                  />
+                )}
+              </Show>
+            )}
+          </Show>
         </div>
       )}
     </For>
   </section>
 )
+
+/**
+ * One machine, under the name it derived for itself, and the owner's override
+ * of that name.
+ *
+ * The draft is seeded from the device on every open rather than held across
+ * renames, so a rename that lands from another device is what the next open
+ * shows.
+ */
+const MachineRow: Component<{
+  device: { hostId: string; displayName: string; lastSeenAt?: number; online?: boolean; workspaceIds: readonly string[] }
+  /** The computer the user is sitting at, whose revoke the panel above already offers. */
+  here?: boolean
+  onRevoke: (hostId: string) => void
+  onRename?: (hostId: string, displayName: string) => void | Promise<void>
+}> = (props) => {
+  const [draft, setDraft] = createSignal<string>()
+  const commit = () => {
+    const name = draft()?.trim()
+    setDraft(undefined)
+    if (!name || name === props.device.displayName) return
+    void props.onRename?.(props.device.hostId, name)
+  }
+  return (
+    <div class="flex items-center justify-between gap-3 rounded-md border border-border-weak-base p-3">
+      <div class="min-w-0 flex-1">
+        <Show
+          when={draft() !== undefined}
+          fallback={<div class="truncate text-13-medium text-text-strong">{props.device.displayName}</div>}
+        >
+          <input
+            class="w-full rounded bg-surface-base px-2 py-1 text-13-medium text-text-strong"
+            aria-label={`Name for ${props.device.displayName}`}
+            value={draft() ?? ""}
+            autofocus
+            onInput={(event) => setDraft(event.currentTarget.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commit()
+              if (event.key === "Escape") setDraft(undefined)
+            }}
+          />
+        </Show>
+        <div class="text-11-regular text-text-weak" data-slot="machine-state">
+          {props.here
+            ? `This computer · ${props.device.online ? "Remote access on" : "Remote access off"}`
+            : `Last seen ${new Date(props.device.lastSeenAt ?? 0).toLocaleString()}`}{" "}
+          · {props.device.workspaceIds.length}{" "}
+          {props.device.workspaceIds.length === 1 ? "workspace" : "workspaces"}
+        </div>
+      </div>
+      <Show when={props.onRename}>
+        <Button
+          size="small"
+          variant="secondary"
+          aria-label={`Rename ${props.device.displayName}`}
+          onClick={() => setDraft(props.device.displayName)}
+        >
+          Rename
+        </Button>
+      </Show>
+      <Show when={!props.here}>
+        <Button size="small" variant="secondary" onClick={() => props.onRevoke(props.device.hostId)}>
+          Revoke {props.device.displayName}
+        </Button>
+      </Show>
+    </div>
+  )
+}

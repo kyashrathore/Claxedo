@@ -11,7 +11,10 @@
  *   Account callers (the desktop, the panel, the CLI on the owner's account)
  *     POST /requests   → a one-use nonce. Mutates no enrollment.
  *     POST /           → verify the machine's signature, record the enrollment.
- *     POST /pause, GET /, PATCH /:id/scope
+ *     POST /pause, GET /, PATCH /:id/scope, PATCH /:id/display-name
+ *     POST /:id/provider-config → seal the owner's provider credentials to the
+ *                                 machine's declared key; the store keeps only
+ *                                 the ciphertext.
  *     and, mounted beside these, the invitation routes.
  *
  *   The machine itself, once enrolled — a `claxedo connect` host with no
@@ -42,9 +45,12 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
+import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
+import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { providerProjectionRecord, type ProviderProjectionSource } from "@claxedo/agent-sdk-runtime"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKey } from "../../platform/auth/request-guard"
@@ -67,6 +73,8 @@ const scopeBody = z
     visibility: z.enum(["owner", "org"]),
   })
   .strict()
+
+const renameBody = z.object({ displayName: z.string().trim().min(1).max(120) }).strict()
 
 const requestBody = z.object({ hostId }).strict()
 
@@ -95,7 +103,18 @@ const machineHeartbeatBody = z
     acks: z.array(z.object({ workspaceId: z.string().min(1).max(200), revision: z.number().int().min(1) }).strict()).max(200),
     ttlMs: z.number().int().positive().optional(),
     sessionAuthority: z.enum(["local", "managed-private"]).optional(),
+    sealingPublicKey: z.string().min(1).max(4_000).optional(),
+    providerConfigRevision: z.number().int().min(0).optional(),
   })
+  .strict()
+
+/**
+ * Rows are validated below with the runtime's own reader rather than typed
+ * here, so what the control plane seals is exactly what the host will accept;
+ * an empty map is the withdrawal.
+ */
+const providerConfigBody = z
+  .object({ providers: z.record(z.string().min(1).max(200), z.record(z.string(), z.unknown())) })
   .strict()
 
 const acquireBody = z.object({ enrollmentId, hostId, keyVersion: z.number().int().min(1).optional() }).strict()
@@ -190,6 +209,27 @@ const DEFAULT_INVITATION_REDEEM_WINDOW_MS = 60_000
 
 const MACHINE_BODY_LIMIT_BYTES = 16 * 1024
 const REDEEM_BODY_LIMIT_BYTES = 8 * 1024
+/**
+ * A credential set, not a heartbeat: a placeholder can be an OAuth access
+ * token of 2-4 KiB, and an owner with a dozen providers at that size needs
+ * more than the machine routes' 16 KiB. Sealing is per request and the
+ * ciphertext is stored, so the cap is also the row's size bound.
+ */
+const PROVIDER_CONFIG_BODY_LIMIT_BYTES = 32 * 1024
+
+/** The push route's own refusals; every authority refusal already carries a code and a status. */
+class HostProviderConfigError extends ClaxedoError<"invalid_provider_configuration" | "host_sealing_key_undeclared"> {}
+
+/**
+ * Decided by the runtime's own reader under the policy a host applies on
+ * arrival, so the control plane never seals a set the host would refuse whole
+ * and leave unacked forever. An empty map passes: it is the withdrawal.
+ */
+function hostReadableProviders(
+  input: Record<string, Record<string, unknown>>,
+): input is Record<string, ProviderProjectionSource> {
+  return providerProjectionRecord(input, {}, { onInvalid: "reject" }) !== undefined
+}
 
 export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   /** Overridable so tests can drive the budget without issuing ten real calls. */
@@ -403,6 +443,8 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       acks: body.acks,
       ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
       ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
+      ...(body.sealingPublicKey ? { sealingPublicKey: body.sealingPublicKey } : {}),
+      ...(body.providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: body.providerConfigRevision }),
     })
     // Exactly the set the batch just made ready: an ack at the assignment's
     // current revision. A stale ack renews the lease but earns no credential
@@ -429,6 +471,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       hostTunnel: {
         ...credential,
         hostId: caller.hostId,
+        // Restates the token's own `enrollment_id` claim. The process that
+        // declares this machine's identity to its local clients is the daemon
+        // holding the credential, and the credential is all of the enrollment
+        // it ever receives.
+        enrollmentId: caller.enrollmentId,
         workspaceIds: ready,
         ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
       },
@@ -533,6 +580,74 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.scope",
         action: "host_enrollment.scope.denied",
+      }),
+    )
+    .patch(
+      "/:id/display-name",
+      handle(renameBody, async ({ body, auth, authority, c }) => {
+        if (!authority.renameHostEnrollment) throw unsupportedError("Enrollment rename")
+        return await authority.renameHostEnrollment(auth, {
+          enrollmentId: c.req.param("id"),
+          displayName: body.displayName,
+        })
+      }, "PATCH", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.rename",
+        action: "host_enrollment.rename.denied",
+      }),
+    )
+    .post(
+      "/:id/provider-config",
+      tooLarge(PROVIDER_CONFIG_BODY_LIMIT_BYTES),
+      handle(providerConfigBody, async ({ body, auth, authority, c }) => {
+        if (!authority.hostProviderConfigTarget || !authority.pushHostProviderConfig) {
+          throw unsupportedError("Host provider configuration")
+        }
+        if (!hostReadableProviders(body.providers)) {
+          throw new HostProviderConfigError({
+            code: "invalid_provider_configuration",
+            status: 400,
+            message: "providers names a row the host could not read",
+          })
+        }
+        const providers = body.providers
+        const providerIds = Object.keys(providers).sort()
+        const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: c.req.param("id") })
+        if (target.sealing_public_key === null) {
+          throw new HostProviderConfigError({
+            code: "host_sealing_key_undeclared",
+            status: 409,
+            message: "The machine has not declared a sealing key; it declares one on its next heartbeat",
+          })
+        }
+        const enrollmentId = target.enrollment_id
+        const revision = target.next_revision
+        // The plaintext exists only as this argument. The store receives the
+        // ciphertext and the audit the provider ids; nothing below reads
+        // `providers` again.
+        const sealed = providerIds.length === 0
+          ? null
+          : await sealForMachine(
+            target.sealing_public_key,
+            serializeHostProviderConfig(providers),
+            machineSealAad({ enrollmentId, revision }),
+          )
+        const result = await authority.pushHostProviderConfig(auth, {
+          enrollmentId,
+          sealed,
+          revision,
+          sealingPublicKey: target.sealing_public_key,
+          providerIds,
+        })
+        await authority.auditAllow(auth, {
+          action: "host_provider_config.pushed",
+          metadata: { enrollmentId, revision: result.revision, providerIds },
+        })
+        return { enrollment_id: result.enrollment_id, revision: result.revision, sealed: result.sealed }
+      }, "POST", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.provider-config",
+        action: "host_provider_config.push.denied",
       }),
     )
     .get(

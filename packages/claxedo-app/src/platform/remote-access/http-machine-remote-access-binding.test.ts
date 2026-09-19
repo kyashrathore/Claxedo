@@ -12,7 +12,7 @@ describe("HTTP machine remote-access binding", () => {
       return Response.json({ host_id: "h", connection_count: 0 })
     })
 
-    await machineRemoteAccess()?.enable({ displayName: "Mac", startAtLogin: false })
+    await machineRemoteAccess()?.enable({ startAtLogin: false })
 
     expect(calls).toEqual(["POST /api/claxedo/remote-access/enable"])
   })

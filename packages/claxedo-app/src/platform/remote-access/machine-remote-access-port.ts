@@ -67,6 +67,16 @@ export type MachineRemoteAccessStatus = {
    * forbids.
    */
   sharedWorkspaceIds?: readonly string[]
+  /**
+   * THIS machine, named and reachable or not.
+   *
+   * A capability, not a convenience: present where the product runs ON the
+   * machine and derives its name there — the desktop — and ABSENT on the HTTP
+   * product, whose account-wide `devices` list already contains this machine
+   * and is the authority for every row. A product that has both would render
+   * the same machine twice.
+   */
+  machine?: { displayName: string; online: boolean }
 }
 
 /** One enrolled machine, as the account sees it. */
@@ -75,6 +85,49 @@ export type MachineRemoteAccessDevice = {
   displayName: string
   lastSeenAt: number
   workspaceIds: readonly string[]
+}
+
+/**
+ * One provider row the owner pushes to a machine: the exact shape the
+ * machine's runtime reads as a `ProviderProjectionSource`, so the control plane
+ * seals what the host will accept and nothing translates in between.
+ */
+export type MachineProviderBinding = {
+  baseUrl: string
+  /**
+   * The credential value. The runtime calls this field `placeholder` because in
+   * a sandbox it holds a stand-in the egress broker swaps for the real key; on
+   * an enrolled machine there is no broker, so the value pushed here IS the
+   * key and the UI labels it that way.
+   */
+  placeholder: string
+  authMode: "api-key" | "bearer"
+  apiPath?: string
+}
+
+/** Where one enrolled machine stands with the owner's pushed provider configuration. */
+export type MachineProviderConfigRow = {
+  enrollmentId: string
+  hostId: string
+  /** 0 until the owner has pushed once; each push, including a withdrawal, is the next revision. */
+  revision: number
+  /** The revision the machine has stored; trails `revision` until its next heartbeat. */
+  ackedRevision: number
+  /** False until the machine's connector has declared a sealing key on a heartbeat; a push is refused before then. */
+  sealingKeyDeclared: boolean
+  /** The providers the machine was last pushed, sorted; empty after a withdrawal or before the first push. */
+  providers: readonly string[]
+  /** The machine replaced its sealing key after the push, so nothing was delivered and the owner must push again. */
+  rekeyed: boolean
+}
+
+export type MachineProviderConfigPort = {
+  rows: () => Promise<readonly MachineProviderConfigRow[]>
+  /** An empty `providers` is the withdrawal: a new revision that clears the machine's rows. */
+  push: (input: {
+    enrollmentId: string
+    providers: Record<string, MachineProviderBinding>
+  }) => Promise<{ revision: number; sealed: boolean }>
 }
 
 export type MachineRemoteAccessPort = {
@@ -91,11 +144,22 @@ export type MachineRemoteAccessPort = {
    *
    * `startAtLogin` is carried because the HTTP product has no other channel for
    * it; the desktop sets its login item through the platform descriptor and
-   * ignores this field. `displayName` is the label shown in the device list.
+   * ignores this field. No name is carried: a machine derives its own, and a
+   * client asked to supply one can only describe itself.
    */
-  enable: (input: { displayName: string; startAtLogin: boolean }) => Promise<void>
+  enable: (input: { startAtLogin: boolean }) => Promise<void>
   /** Stop publishing a machine for good. */
   revoke: (hostId: string) => Promise<{ revoked: boolean }>
+  /**
+   * Rename one machine, as the account sees it on every device.
+   *
+   * `hostId` names the machine on the HTTP product, which can enumerate the
+   * account's fleet. The desktop ignores it and renames the enrollment its own
+   * connector holds: a desktop that could name an arbitrary host id would be
+   * spending main's credential on a machine the user is not sitting at, and
+   * the only id it could be handed is this machine's own.
+   */
+  rename?: (input: { hostId: string; displayName: string }) => Promise<{ displayName: string }>
   /**
    * Publish one workspace from this machine.
    *
@@ -112,9 +176,20 @@ export type MachineRemoteAccessPort = {
    *
    * Absent on the desktop: enumerating the account's machines is an
    * authenticated read of a route that is not in the desktop's closed operation
-   * set, and the connector knows only about itself.
+   * set, and the connector knows only about itself — which it reports as
+   * `status().machine` instead.
    */
   devices?: () => Promise<readonly MachineRemoteAccessDevice[]>
+  /**
+   * Push provider credentials to one enrolled machine, and read where each
+   * machine stands with them.
+   *
+   * Present with `devices` and absent with it: the push names an enrollment
+   * id, and only a product that can list the account's enrollments has one to
+   * name. The desktop knows only its own connector, which holds its enrollment
+   * id in main and exposes no channel to push to it.
+   */
+  providerConfig?: MachineProviderConfigPort
   /**
    * Stop publishing this machine, keeping its identity for a later `enable`.
    *

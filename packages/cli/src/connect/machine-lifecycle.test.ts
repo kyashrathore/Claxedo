@@ -3,6 +3,10 @@ import fs from "node:fs/promises"
 import http from "node:http"
 import os from "node:os"
 import path from "node:path"
+import type { HostStateStore } from "@claxedo/host-connector/host-state"
+import { sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
+import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/host-serving/runtime"
+import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
 import { connect, type ConnectDeps } from "../commands/connect"
 import { processAlive, statusLines } from "../commands/status"
 import { desktopDaemonDiscoveryFiles, liveDesktopDaemon } from "./desktop-daemon"
@@ -341,5 +345,246 @@ describe("claxedo connect on a simulated machine", () => {
     expect(await connect(["--uninstall-service"], m.deps)).toBe(0)
     expect(await fs.readFile(m.unitFile, "utf8").catch(() => "gone")).toBe("gone")
     expect((await m.state())?.service).toBeUndefined()
+  }, 30_000)
+})
+
+/**
+ * The same host loop in this process, where the state store's writes are a
+ * seam: the proof that a revision is acked only once it is on disk needs a
+ * write that fails, and a child process has no way to be told to fail one.
+ * Beats are driven by hand through the interval seam, one at a time.
+ */
+async function inProcessHost() {
+  const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-inproc-")))
+  const root = path.join(home, "srv")
+  await fs.mkdir(path.join(root, "api"), { recursive: true })
+  const relay = relayStub()
+  const cp = createFakeConnectControlPlane({ relayUrl: relay.url })
+  const lines: string[] = []
+  const store = connectStateStore(home)
+  const faults = {
+    /** The next save carrying this `provider_config.revision` fails once, as a full disk would. */
+    failSaveOfRevision: undefined as number | undefined,
+  }
+  const saves: Array<{ sealingKey: boolean; beatsBefore: number }> = []
+  const failingStore: HostStateStore = {
+    ...store,
+    save: async (state) => {
+      saves.push({ sealingKey: state.sealing_private_key_jwk !== undefined, beatsBefore: cp.beats().length })
+      if (faults.failSaveOfRevision !== undefined && state.provider_config?.revision === faults.failSaveOfRevision) {
+        faults.failSaveOfRevision = undefined
+        throw new Error("ENOSPC: no space left on device")
+      }
+      await store.save(state)
+    },
+  }
+  let tick: (() => void) | undefined
+  let stop: ((signal: string) => void) | undefined
+  let listener: HostRuntimeListener | undefined
+  // Strictly increasing, so the run record each beat writes afterwards is
+  // distinguishable from the previous beat's even inside one millisecond.
+  let clock = 0
+  const deps: ConnectDeps = {
+    host: {
+      ...defaultHostDeps(),
+      fetch: cp.fetch,
+      now: () => {
+        clock = Math.max(clock + 1, Date.now())
+        return clock
+      },
+      createListener: async () => {
+        listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 500 })
+        return listener
+      },
+      openCodeRuntime: () => undefined,
+      setServing: setUserHostedServing,
+      servingState: userHostedServingState,
+      stopServing: stopUserHostedServing,
+      setInterval: (fn) => {
+        tick = fn
+        return { cancel: () => undefined }
+      },
+      onStopSignal: (fn) => {
+        stop = fn
+        return () => undefined
+      },
+      sleep: async () => undefined,
+      log: (line) => lines.push(line),
+    },
+    service: () => {
+      throw new Error("no service manager in this harness")
+    },
+    store: failingStore,
+    paths: connectPaths(home),
+    controlPlaneUrl: cp.url,
+    displayName: "build-box",
+    removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
+    desktopDaemon: async () => undefined,
+  }
+  let running: Promise<number> | undefined
+  const stateText = () => fs.readFile(connectPaths(home).stateFile, "utf8")
+  const lastBeatAt = async () => (await store.load())?.run?.last_beat_ok_at ?? 0
+  /** Resolves once the host has reconciled the ack and written the run record that follows it. */
+  const beatReconciled = async (since: number, what: string) => {
+    const exited = running!.then((code) => {
+      throw new Error(`connect exited ${code} while waiting for ${what}; it said: ${lines.join(" | ")}`)
+    })
+    await Promise.race([until(async () => (await lastBeatAt()) > since, what), exited])
+  }
+  return {
+    cp,
+    lines,
+    saves,
+    faults,
+    root,
+    listener: () => listener!,
+    state: () => store.load(),
+    stateText,
+    enrollmentId: () => [...cp.enrollments.keys()][0],
+    /** Enroll and run; resolves once the first beat has been sent. */
+    start: async () => {
+      const since = await lastBeatAt()
+      let argv = ["--foreground"]
+      if (!(await store.load())?.enrollment) {
+        const invitation = await cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [root], visibility: "owner" } })
+        const tokenFile = path.join(home, "invite.txt")
+        await fs.writeFile(tokenFile, invitation.token)
+        argv = ["--token-file", tokenFile, "--root", root]
+      }
+      running = connect(argv, deps)
+      await beatReconciled(since, "the first beat")
+    },
+    /** One beat, reconciled; returns what the request declared. */
+    beat: async () => {
+      const since = await lastBeatAt()
+      tick?.()
+      await beatReconciled(since, "a beat")
+      return cp.beats().at(-1)!.body
+    },
+    stop: async () => {
+      stop?.("SIGTERM")
+      const code = await running
+      running = undefined
+      return code
+    },
+    close: async () => {
+      if (running) stop?.("SIGTERM")
+      await running
+      await relay.stop()
+      await fs.rm(home, { recursive: true, force: true })
+    },
+  }
+}
+
+const SECRET = "sk-owner-secret-0123456789abcdef"
+const providerConfig = (placeholder: string) =>
+  JSON.stringify({ version: 1, providers: { "claude-sdk": { baseUrl: "https://broker.example/b/1", placeholder, authMode: "bearer" } } })
+
+describe("provider configuration on a running claxedo connect host", () => {
+  let h: Awaited<ReturnType<typeof inProcessHost>>
+  const previousDataDir = process.env.CLAXEDO_DATA_DIR
+  afterEach(async () => {
+    await h?.close()
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  })
+
+  test("the sealing key is on disk before the first beat declares it; a push is stored sealed, acked only once stored, applied to the live runtime, and withdrawn by a null revision", async () => {
+    h = await inProcessHost()
+    process.env.CLAXEDO_DATA_DIR = path.join(h.root, "..", "data")
+    await h.start()
+    const id = h.enrollmentId()
+
+    // 1. The key the control plane recorded is derived from the private JWK on disk, written before any beat.
+    const enrolled = await h.state()
+    expect(enrolled?.sealing_private_key_jwk?.d).toBeDefined()
+    expect(h.cp.sealingPublicKey(id)).toBe(JSON.stringify(sealingPublicKeyJwk(enrolled!.sealing_private_key_jwk!)))
+    expect(h.saves.find((save) => save.sealingKey)?.beatsBefore).toBe(0)
+    expect(h.cp.beats()[0]?.body.providerConfigRevision, "nothing stored, nothing declared").toBeUndefined()
+
+    // A served folder, so a live runtime exists to re-apply to.
+    h.cp.assign({ hostId: enrolled!.host_id, workspaceId: "ws_api", remoteDirectory: path.join(h.root, "api") })
+    await h.beat()
+    await until(() => h.listener().workspaceIds().includes("ws_api"), "the runtime for ws_api")
+    const served = await h.state()
+    const runtime = await h.listener().ensure({
+      workspaceId: "ws_api",
+      directory: path.join(h.root, "api"),
+      hostId: served!.host_id,
+      relay: { jwksUrl: served!.relay!.jwksUrl },
+      sessionAuthorityUrl: served!.authority!.sessionAuthorityUrl,
+      storeRoot: path.join(served!.storage_root, "ws_api"),
+    })
+    expect(runtime.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
+
+    // 2. The push lands sealed: the file holds the blob and never the secret.
+    const first = await h.cp.pushProviderConfig(id, providerConfig(SECRET))
+    await h.beat()
+    await until(async () => (await h.state())?.provider_config?.revision === first, "revision 1 on disk")
+    const text = await h.stateText()
+    expect(text).toContain('"sealed": "mseal1.')
+    expect(text).not.toContain(SECRET)
+    expect(h.lines).toContain("provider configuration revision 1: claude-sdk")
+    expect(h.lines.join("\n")).not.toContain(SECRET)
+    await until(() => runtime.host.detail().configApply.revision === 2, "the live runtime to re-apply")
+    expect(runtime.host.detail().configApply.state).toBe("applied")
+
+    // 3. The next beat declares what is stored, and the control plane stops re-sending it.
+    expect((await h.beat()).providerConfigRevision).toBe(first)
+    expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
+
+    // 4. A write that fails is not acked: the same revision is delivered again and stored on the retry.
+    const second = await h.cp.pushProviderConfig(id, providerConfig(`${SECRET}-rotated`))
+    h.faults.failSaveOfRevision = second
+    await h.beat()
+    expect(h.faults.failSaveOfRevision, "the failing write was the provider-config one").toBeUndefined()
+    expect((await h.beat()).providerConfigRevision, "the beat after the failed write still declares the old revision").toBe(first)
+    expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
+    expect(h.lines.some((line) => line.startsWith("provider-config failed: ") && line.includes("ENOSPC"))).toBe(true)
+    // That beat re-delivered the revision and this time the write held.
+    expect(h.lines.filter((line) => line === "provider configuration revision 2: claude-sdk")).toHaveLength(1)
+    expect((await h.beat()).providerConfigRevision, "re-delivered, stored, then declared").toBe(second)
+    expect(h.cp.providerConfigAckedRevision(id)).toBe(second)
+    expect(await h.stateText()).not.toContain(SECRET)
+    await until(() => runtime.host.detail().configApply.revision === 3, "the rotated placeholder to reach the runtime")
+
+    // 5. Withdrawal is a revision whose blob is null.
+    const third = await h.cp.pushProviderConfig(id, null)
+    await h.beat()
+    await until(async () => (await h.state())?.provider_config?.revision === third, "the withdrawal on disk")
+    expect((await h.state())?.provider_config).toEqual({ revision: third, sealed: null })
+    expect(h.lines).toContain(`provider configuration revision ${third}: withdrawn; harnesses run on this machine's own logins`)
+    expect((await h.beat()).providerConfigRevision).toBe(third)
+    expect(h.cp.providerConfigAckedRevision(id)).toBe(third)
+    await until(() => runtime.host.detail().configApply.revision === 4, "the withdrawal to reach the runtime")
+
+    expect(await h.stop()).toBe(0)
+  }, 30_000)
+
+  test("a restart declares the stored revision under the same sealing key, and applies what the owner pushed while it was down", async () => {
+    h = await inProcessHost()
+    process.env.CLAXEDO_DATA_DIR = path.join(h.root, "..", "data")
+    await h.start()
+    const id = h.enrollmentId()
+    const key = h.cp.sealingPublicKey(id)
+    const first = await h.cp.pushProviderConfig(id, providerConfig(SECRET))
+    await h.beat()
+    await until(async () => (await h.state())?.provider_config?.revision === first, "revision 1 on disk")
+    await h.beat()
+    expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
+    expect(await h.stop()).toBe(0)
+
+    const second = await h.cp.pushProviderConfig(id, providerConfig(`${SECRET}-while-down`))
+    h.lines.length = 0
+    await h.start()
+
+    expect(h.cp.beats().at(-1)?.body.providerConfigRevision, "the boot beat declares what is on disk").toBe(first)
+    expect(h.cp.sealingPublicKey(id), "the key is not re-minted").toBe(key)
+    expect(h.lines).toContain("provider configuration revision 1: claude-sdk")
+    await until(async () => (await h.state())?.provider_config?.revision === second, "the missed revision on disk")
+    expect(h.lines).toContain("provider configuration revision 2: claude-sdk")
+    expect((await h.beat()).providerConfigRevision).toBe(second)
+    expect(await h.stateText()).not.toContain(SECRET)
+    expect(await h.stop()).toBe(0)
   }, 30_000)
 })

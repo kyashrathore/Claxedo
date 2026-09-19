@@ -108,6 +108,10 @@ describe("store", () => {
   })
 })
 
+/** Every required field present; each case below adds exactly the member under test. */
+const SEALING_BASE =
+  '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[]'
+
 describe("parseHostState", () => {
   test.each([
     ["{}", /host_id/],
@@ -123,8 +127,26 @@ describe("parseHostState", () => {
       '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"bootstrap":{"invitation_id":"a"}}',
       /bootstrap/,
     ],
+    [`${SEALING_BASE},"sealing_private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y"}}`, /sealing_private_key_jwk.d/],
+    [`${SEALING_BASE},"provider_config":{"sealed":"mseal1.a.b.c"}}`, /provider_config.revision/],
+    [`${SEALING_BASE},"provider_config":{"revision":1,"sealed":7}}`, /provider_config.sealed/],
   ])("names the missing field in %s", (text, message) => {
     expect(() => parseHostState(text)).toThrow(message)
+  })
+
+  test("carries the sealing key and the sealed configuration back unchanged", () => {
+    const state = parseHostState(
+      `${SEALING_BASE},"sealing_private_key_jwk":{"kty":"EC","crv":"P-256","x":"sx","y":"sy","d":"sd"},"provider_config":{"revision":4,"sealed":"mseal1.a.b.c"}}`,
+    )
+    expect(state.sealing_private_key_jwk).toEqual({ kty: "EC", crv: "P-256", x: "sx", y: "sy", d: "sd" })
+    expect(state.provider_config).toEqual({ revision: 4, sealed: "mseal1.a.b.c" })
+  })
+
+  test("a recorded withdrawal is a revision with no blob, not an absent record", () => {
+    expect(parseHostState(`${SEALING_BASE},"provider_config":{"revision":9,"sealed":null}}`).provider_config).toEqual({
+      revision: 9,
+      sealed: null,
+    })
   })
 })
 

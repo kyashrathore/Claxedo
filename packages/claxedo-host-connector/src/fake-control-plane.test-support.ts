@@ -33,6 +33,7 @@ import {
   publicKeyJwk,
 } from "./host-identity"
 import { createHostStateStore, isPlainRecord, newHostState, normalizeAbsolutePath, pathWithinRoots, type HostStateFs } from "./host-state"
+import { hostMachineSealAad, sealForHostMachine } from "./machine-seal"
 import type { FetchLike } from "./machine-transport"
 
 const SKEW_MS = 60_000
@@ -51,6 +52,15 @@ export type FakeEnrollment = {
   fingerprint: string
   key_version: number
   serving_generation: number
+  /**
+   * The ECDH public key the machine declares on its beats, and what the owner
+   * has pushed for it. Absent until a beat declares one, which is what makes a
+   * push to a machine that has never beaten refusable here as it is at the
+   * control plane.
+   */
+  sealing_public_key?: string
+  provider_config?: { revision: number; sealed: string | null }
+  provider_config_acked_revision?: number
   /** Absent for a machine the owner enrolled through their account: that path grants no roots. */
   scope?: FakeScope
   expires_at: number
@@ -172,7 +182,7 @@ export function createFakeControlPlane(
       .map((assignment) => assignment.workspace_id)
       .sort()
 
-  /** The real route's shape: the signer's result plus `hostId`, `workspaceIds`, `relayUrl`, with a decodable claim. */
+  /** The real route's shape: the signer's result plus `hostId`, `enrollmentId`, `workspaceIds`, `relayUrl`, with a decodable claim. */
   const hostTunnel = (enrollment: FakeEnrollment) => {
     const workspaceIds = routable(enrollment)
     if (workspaceIds.length === 0) return undefined
@@ -182,6 +192,7 @@ export function createFakeControlPlane(
       tokenExpiresAt: now() + TUNNEL_TOKEN_TTL_MS,
       jti: nextId("jti"),
       hostId: enrollment.host_id,
+      enrollmentId: enrollment.enrollment_id,
       workspaceIds,
       relayUrl,
     }
@@ -250,7 +261,7 @@ export function createFakeControlPlane(
     return { generation: enrollment.serving_generation, generation_acquired_at: now() }
   }
 
-  const heartbeat = (enrollment: FakeEnrollment, body: Record<string, unknown>) => {
+  const heartbeat = async (enrollment: FakeEnrollment, body: Record<string, unknown>) => {
     if (typeof body.generation !== "number" || body.generation > enrollment.serving_generation) {
       throw new FakeRefusal(400, "invalid_input")
     }
@@ -279,6 +290,18 @@ export function createFakeControlPlane(
     }
     enrollment.expires_at = now() + LEASE_MS
     enrollment.last_seen_at = now()
+    if (typeof body.sealingPublicKey === "string" && body.sealingPublicKey) {
+      enrollment.sealing_public_key = body.sealingPublicKey
+    }
+    if (typeof body.providerConfigRevision === "number") {
+      enrollment.provider_config_acked_revision = body.providerConfigRevision
+    }
+    const pushed = enrollment.provider_config
+    // Restated only while the machine's stored revision differs, exactly as
+    // the route decides it: a machine that has acked is told nothing.
+    const providerConfig = pushed && pushed.revision !== enrollment.provider_config_acked_revision
+      ? { revision: pushed.revision, sealed: pushed.sealed }
+      : undefined
     const credential = hostTunnel(enrollment)
     return {
       expires_at: enrollment.expires_at,
@@ -292,6 +315,7 @@ export function createFakeControlPlane(
       ...(enrollment.scope ? { scope: enrollment.scope } : {}),
       assigned_workspace_ids: mine.map((assignment) => assignment.workspace_id).sort(),
       ...(credential ? { hostTunnel: credential } : {}),
+      ...(providerConfig ? { provider_config: providerConfig } : {}),
       ...endpoints(),
     }
   }
@@ -396,7 +420,7 @@ export function createFakeControlPlane(
         return json(200, acquire(await verifyMachine(request)))
       }
       if (target.pathname === "/api/claxedo/host/enrollments/heartbeat") {
-        return json(200, heartbeat(await verifyMachine(request), body))
+        return json(200, await heartbeat(await verifyMachine(request), body))
       }
       if (!options.owner) throw new FakeRefusal(404, "not_found")
       return json(200, await options.owner({ method, url: target, headers, body }))
@@ -535,6 +559,45 @@ export function createFakeControlPlane(
       return assignment.revision
     },
     unassign,
+    /**
+     * The owner's push, sealing exactly as the route does: read the key the
+     * machine declared, seal for it at the NEW revision, store the ciphertext.
+     * Nothing here keeps the plaintext, so a test that reaches into this fake
+     * for a secret finds only what the machine can open.
+     *
+     * `null` is the revocation: a revision whose blob is absent.
+     */
+    pushProviderConfig: async (enrollmentId: string, plaintext: string | null) => {
+      const enrollment = enrollments.get(enrollmentId)
+      if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
+      const revision = (enrollment.provider_config?.revision ?? 0) + 1
+      if (plaintext === null) {
+        enrollment.provider_config = { revision, sealed: null }
+        return revision
+      }
+      const key = enrollment.sealing_public_key
+      if (!key) throw new FakeRefusal(409, "host_sealing_key_undeclared")
+      enrollment.provider_config = {
+        revision,
+        sealed: await sealForHostMachine(key, plaintext, hostMachineSealAad({ enrollmentId, revision })),
+      }
+      return revision
+    },
+    /**
+     * A control plane restored from an older backup, or one an attacker has
+     * rolled back: the stored row becomes a revision the machine has already
+     * passed, blob and all. The blob's tag still verifies — it really was
+     * sealed at that revision — so only the machine's own monotonic check
+     * refuses it.
+     */
+    replayProviderConfig: (enrollmentId: string, pushed: { revision: number; sealed: string | null }) => {
+      const enrollment = enrollments.get(enrollmentId)
+      if (!enrollment) throw new FakeRefusal(404, "host_enrollment_not_found")
+      enrollment.provider_config = { ...pushed }
+    },
+    providerConfig: (enrollmentId: string) => enrollments.get(enrollmentId)?.provider_config,
+    providerConfigAckedRevision: (enrollmentId: string) => enrollments.get(enrollmentId)?.provider_config_acked_revision,
+    sealingPublicKey: (enrollmentId: string) => enrollments.get(enrollmentId)?.sealing_public_key,
     /** Replace the roots; assignments outside them are retired, as the control plane's scope update does. */
     setScope: (enrollmentId: string, scope: Omit<FakeScope, "revision">) => {
       const enrollment = enrollments.get(enrollmentId)

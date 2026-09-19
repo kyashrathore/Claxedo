@@ -42,6 +42,12 @@ function authority(overrides: Record<string, unknown> = {}): Record<string, Retu
     enrollHost: vi.fn(async () => ({ enrollment_id: "enr_1", host_id: "host_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
     pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
     activeHostEnrollment: vi.fn(async () => ({ active: true, host_id: "host_1", enrollment_id: "enr_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
+    hostProviderConfigTarget: vi.fn(async () => ({ enrollment_id: "enr_1", host_id: "host_1", sealing_public_key: null, next_revision: 1 })),
+    pushHostProviderConfig: vi.fn(async (_auth: unknown, input: { enrollmentId: string; revision: number; sealed: string | null }) => ({
+      enrollment_id: input.enrollmentId,
+      revision: input.revision,
+      sealed: input.sealed !== null,
+    })),
     ...overrides,
   }
 }
@@ -450,10 +456,61 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         tokenExpiresAt: NOW + 300_000,
         jti: "jti_htt",
         hostId: "host_1",
+        enrollmentId: "enr_1",
         workspaceIds: ["ws_1"],
         relayUrl: "https://relay.test/",
       },
     })
+  })
+
+  // The daemon that holds this credential declares the machine's identity to
+  // its own clients, and a client compares it against the host a control-plane
+  // workspace row names. The body states what the token already claims.
+  test("names the enrollment the credential was minted for", async () => {
+    const key = await machineKey()
+    const { signedCall } = await mountedRoutes(machineAuthority(enrollmentRow(key)), {
+      hostTunnelTokenSigner: signer,
+      relayUrl: "https://relay.test/",
+    })
+
+    const body = await (await signedCall(key, "/heartbeat", beat())).json() as { hostTunnel?: Record<string, unknown> }
+
+    expect(body.hostTunnel?.enrollmentId).toBe("enr_1")
+  })
+
+  test("carries the machine's sealing key and acked revision to the authority, and the ack relays the pending provider configuration", async () => {
+    const key = await machineKey()
+    const api = machineAuthority(enrollmentRow(key), {
+      heartbeatHostEnrollmentByMachine: vi.fn(async () => ({
+        expires_at: NOW + 8_000,
+        last_seen_at: NOW,
+        assignments: [],
+        scope: undefined,
+        assigned_workspace_ids: [],
+        provider_config: { revision: 2, sealed: "mseal1.e.i.c" },
+      })),
+    })
+    const { signedCall } = await mountedRoutes(api)
+    const sealingPublicKey = '{"kty":"EC","crv":"P-256","x":"x","y":"y"}'
+
+    const response = await signedCall(key, "/heartbeat", beat({ acks: [], sealingPublicKey, providerConfigRevision: 1 }))
+
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sealingPublicKey, providerConfigAckedRevision: 1 }),
+    )
+    expect(await response.json()).toMatchObject({ provider_config: { revision: 2, sealed: "mseal1.e.i.c" } })
+    // A revision of 0 is a declaration too: "I hold nothing".
+    await signedCall(key, "/heartbeat", beat({ acks: [], providerConfigRevision: 0 }))
+    expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ providerConfigAckedRevision: 0 }),
+    )
+    expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({ sealingPublicKey: expect.anything() }),
+    )
   })
 
   test("uses a configured relay JWKS URL over the derived one and omits endpoints it does not know", async () => {
@@ -721,6 +778,31 @@ describe("PATCH /:id/scope and GET / machines", () => {
     expect((await call("/enr_1/scope", { method: "PATCH", headers: { authorization: "" }, body: "{}" })).status).toBe(401)
   })
 
+  test("display-name PATCH carries the trimmed name, refuses an empty one, and is 503 without a renaming authority", async () => {
+    const { api, call } = routes({
+      renameHostEnrollment: vi.fn(async () => ({ enrollment_id: "enr_1", display_name: "Build box" })),
+    })
+    const response = await call("/enr_1/display-name", {
+      method: "PATCH",
+      body: JSON.stringify({ displayName: "  Build box  " }),
+    })
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(api.renameHostEnrollment).toHaveBeenCalledWith(expect.anything(), {
+      enrollmentId: "enr_1",
+      displayName: "Build box",
+    })
+    expect(await response.json()).toEqual({ enrollment_id: "enr_1", display_name: "Build box" })
+    expect((await call("/enr_1/display-name", { method: "PATCH", body: JSON.stringify({ displayName: "" }) })).status).toBe(400)
+    expect((await call("/enr_1/display-name", { method: "PATCH", body: JSON.stringify({ name: "Build box" }) })).status).toBe(400)
+    expect((await call("/enr_1/display-name", { method: "PATCH", headers: { authorization: "" }, body: "{}" })).status).toBe(401)
+
+    const { call: unsupported } = routes()
+    expect((await unsupported("/enr_1/display-name", {
+      method: "PATCH",
+      body: JSON.stringify({ displayName: "Build box" }),
+    })).status).toBe(503)
+  })
+
   test("an unknown or foreign enrollment is 404 host_enrollment_not_found", async () => {
     const { call } = routes({
       updateHostEnrollmentScope: vi.fn(async () => {
@@ -749,6 +831,165 @@ describe("PATCH /:id/scope and GET / machines", () => {
       created_at: 1,
       machines: [{ ...machines[0], scope: undefined }, machines[1]],
     })
+  })
+})
+
+/**
+ * The owner's push. What only this layer decides: the rows are validated with
+ * the runtime's own reader before anything is read or sealed, the plaintext
+ * reaches exactly one call (`sealForMachine`) and nothing stored, answered or
+ * audited carries it, and a machine with no declared key is a 409 before any
+ * write. Openability of the blob is pinned by the vector tests on both sides
+ * of the format; this package has no opener.
+ */
+describe("POST /:id/provider-config", () => {
+  const SECRET = "sk-live-0xdeadbeefcafef00d-do-not-leak"
+  const providers = {
+    openai: { baseUrl: "https://api.openai.com", placeholder: SECRET, authMode: "bearer", apiPath: "/v1" },
+    anthropic: { baseUrl: "https://api.anthropic.com", placeholderEnv: "ANTHROPIC_PLACEHOLDER", authMode: "api-key" },
+  }
+
+  async function sealingPublicKey() {
+    const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+    return JSON.stringify(await crypto.subtle.exportKey("jwk", pair.publicKey))
+  }
+
+  async function pushRoutes(overrides: Record<string, unknown> = {}) {
+    const key = await sealingPublicKey()
+    const target = { enrollment_id: "enr_1", host_id: "host_1", display_name: "Laptop", sealing_public_key: key, next_revision: 4 }
+    const built = routes({ hostProviderConfigTarget: vi.fn(async () => target), ...overrides })
+    return { ...built, key }
+  }
+
+  test("seals the rows to the target's key at its next revision, stores only ciphertext, and audits the provider ids and never the secret", async () => {
+    const { api, post, key } = await pushRoutes()
+
+    const response = await post("/enr_1/provider-config", { providers })
+
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(api.hostProviderConfigTarget).toHaveBeenCalledWith(expect.anything(), { enrollmentId: "enr_1" })
+    expect(api.pushHostProviderConfig).toHaveBeenCalledTimes(1)
+    const pushed = api.pushHostProviderConfig.mock.calls[0]?.[1] as {
+      enrollmentId: string
+      sealed: string
+      revision: number
+      sealingPublicKey: string
+      providerIds: string[]
+    }
+    expect(pushed).toMatchObject({
+      enrollmentId: "enr_1",
+      revision: 4,
+      sealingPublicKey: key,
+      providerIds: ["anthropic", "openai"],
+    })
+    expect(pushed.sealed.split(".")).toHaveLength(4)
+    expect(pushed.sealed.startsWith("mseal1.")).toBe(true)
+    expect(pushed.sealed).not.toContain(SECRET)
+    expect(pushed.sealed).not.toContain("api.openai.com")
+    const body = await response.text()
+    expect(JSON.parse(body)).toEqual({ enrollment_id: "enr_1", revision: 4, sealed: true })
+    expect(body).not.toContain(SECRET)
+    expect(api.auditAllow).toHaveBeenCalledWith(expect.anything(), {
+      action: "host_provider_config.pushed",
+      metadata: { enrollmentId: "enr_1", revision: 4, providerIds: ["anthropic", "openai"] },
+    })
+    expect(JSON.stringify(api.auditAllow.mock.calls)).not.toContain(SECRET)
+    // Two pushes of the same rows never produce the same blob: the ephemeral key and iv are fresh per seal.
+    await post("/enr_1/provider-config", { providers })
+    const again = api.pushHostProviderConfig.mock.calls[1]?.[1] as { sealed: string }
+    expect(again.sealed).not.toBe(pushed.sealed)
+  })
+
+  test("an empty map is the withdrawal: nothing is sealed, the store receives null, and the audit names no provider", async () => {
+    const { api, post } = await pushRoutes()
+
+    const response = await post("/enr_1/provider-config", { providers: {} })
+
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(await response.json()).toEqual({ enrollment_id: "enr_1", revision: 4, sealed: false })
+    expect(api.pushHostProviderConfig).toHaveBeenCalledWith(expect.anything(), {
+      enrollmentId: "enr_1",
+      sealed: null,
+      revision: 4,
+      sealingPublicKey: expect.any(String),
+      providerIds: [],
+    })
+    expect(api.auditAllow).toHaveBeenCalledWith(expect.anything(), {
+      action: "host_provider_config.pushed",
+      metadata: { enrollmentId: "enr_1", revision: 4, providerIds: [] },
+    })
+  })
+
+  test("a row the host could not read is 400 invalid_provider_configuration before the target is read, as is an unknown field", async () => {
+    const { api, post } = await pushRoutes()
+
+    const unreadable = await post("/enr_1/provider-config", {
+      providers: { ...providers, cursor: { baseUrl: "https://api.cursor.sh", placeholder: "x", authMode: "cookie" } },
+    })
+    expect(unreadable.status).toBe(400)
+    expect(await unreadable.json()).toEqual({
+      error: { code: "invalid_provider_configuration", message: "providers names a row the host could not read" },
+    })
+    expect((await post("/enr_1/provider-config", { providers, extra: true })).status).toBe(400)
+    expect((await post("/enr_1/provider-config", {})).status).toBe(400)
+    expect((await post("/enr_1/provider-config", { providers: { openai: "sk-..." } })).status).toBe(400)
+    expect(api.hostProviderConfigTarget).not.toHaveBeenCalled()
+    expect(api.pushHostProviderConfig).not.toHaveBeenCalled()
+    expect(api.auditAllow).not.toHaveBeenCalled()
+  })
+
+  test("a machine that has declared no sealing key is 409 host_sealing_key_undeclared and nothing is pushed", async () => {
+    const { api, post } = routes()
+
+    const response = await post("/enr_1/provider-config", { providers })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "host_sealing_key_undeclared" } })
+    expect(api.pushHostProviderConfig).not.toHaveBeenCalled()
+    expect(api.auditAllow).not.toHaveBeenCalled()
+  })
+
+  test("an enrollment the caller does not own is the target read's 404 and nothing is sealed or pushed", async () => {
+    const { api, post } = await pushRoutes({
+      hostProviderConfigTarget: vi.fn(async () => {
+        throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
+      }),
+    })
+
+    const response = await post("/enr_theirs/provider-config", { providers })
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: { code: "host_enrollment_not_found", message: "Host enrollment not found" } })
+    expect(api.pushHostProviderConfig).not.toHaveBeenCalled()
+    expect(api.auditAllow).not.toHaveBeenCalled()
+  })
+
+  test("the adapter's refusal of a moved revision or a replaced key reaches the caller with its code, unaudited", async () => {
+    const refusals = [["host_provider_config_revision_stale", 409], ["host_sealing_key_undeclared", 409]] as const
+    for (const [code, status] of refusals) {
+      const { api, post } = await pushRoutes({
+        pushHostProviderConfig: vi.fn(async () => {
+          throw new D1HostAccessAuthorityError(code, `refused: ${code}`)
+        }),
+      })
+      const response = await post("/enr_1/provider-config", { providers })
+      expect(response.status, code).toBe(status)
+      expect(await response.json()).toEqual({ error: { code, message: `refused: ${code}` } })
+      expect(api.auditAllow).not.toHaveBeenCalled()
+    }
+  })
+
+  test("requires a signed owner, caps the body at 32 KiB, and is 503 without a provider-config authority", async () => {
+    const { api, call, post } = await pushRoutes()
+    expect((await call("/enr_1/provider-config", { method: "POST", headers: { authorization: "" }, body: "{}" })).status).toBe(401)
+    const huge = await post("/enr_1/provider-config", {
+      providers: { openai: { baseUrl: "https://api.openai.com", placeholder: "x".repeat(33 * 1024), authMode: "bearer" } },
+    })
+    expect(huge.status).toBe(413)
+    expect(api.hostProviderConfigTarget).not.toHaveBeenCalled()
+
+    const { post: unsupported } = routes({ hostProviderConfigTarget: undefined, pushHostProviderConfig: undefined })
+    expect((await unsupported("/enr_1/provider-config", { providers })).status).toBe(503)
   })
 })
 

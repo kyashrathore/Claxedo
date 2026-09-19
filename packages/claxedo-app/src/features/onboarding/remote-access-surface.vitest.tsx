@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { RemoteAccessSurface, type RemoteAccessSurfaceProps } from "./remote-access-surface"
 
@@ -189,8 +189,138 @@ describe("who this machine is, and how to stop it", () => {
     expect(onRevoke).toHaveBeenCalledWith("host_1")
   })
 
-  test("no enrolled-machines section where there is nothing to enumerate", () => {
+  test("no machines section where there is nothing to enumerate", () => {
     mount({ serving: 1, devices: [] })
-    expect(screen.queryByText("Enrolled machines")).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Machines" })).not.toBeInTheDocument()
+  })
+
+  test("a machine is renamed in place, and Escape leaves the name alone", () => {
+    const onRename = vi.fn()
+    mount({
+      serving: 1,
+      onRename,
+      devices: [{ hostId: "host_1", displayName: "Yash's Mac", lastSeenAt: 10, workspaceIds: ["ws_1"] }],
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Yash's Mac" }))
+    const field = screen.getByRole("textbox", { name: "Name for Yash's Mac" })
+    fireEvent.input(field, { target: { value: "  Build box  " } })
+    fireEvent.keyDown(field, { key: "Enter" })
+    expect(onRename).toHaveBeenCalledWith("host_1", "Build box")
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Yash's Mac" }))
+    fireEvent.input(screen.getByRole("textbox", { name: "Name for Yash's Mac" }), { target: { value: "Discarded" } })
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name for Yash's Mac" }), { key: "Escape" })
+    expect(onRename).toHaveBeenCalledTimes(1)
+  })
+
+  test("a product that knows only its own machine still shows one row, named", () => {
+    mount({
+      serving: 2,
+      devices: [],
+      thisMachine: { displayName: "Yashvardhan's MacBook Pro", online: true, workspaceIds: ["ws_1", "ws_2"] },
+    })
+
+    expect(screen.getByRole("heading", { name: "Machines" })).toBeInTheDocument()
+    const row = screen.getByText("Yashvardhan's MacBook Pro").closest("div[class*='justify-between']")
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain("This computer · Remote access on")
+    expect(row?.textContent).toContain("2 workspaces")
+    // The panel's own Revoke covers this machine; a second one on the row
+    // would be two controls for one action.
+    expect(screen.queryByRole("button", { name: /^Revoke Yashvardhan/ })).not.toBeInTheDocument()
+  })
+
+  test("its own row is renamed through the control every machine row has", () => {
+    const onRename = vi.fn()
+    mount({
+      serving: 0,
+      onRename,
+      devices: [],
+      thisMachine: { displayName: "Yashvardhan's MacBook Pro", online: false, workspaceIds: [] },
+    })
+
+    expect(screen.getByText(/This computer · Remote access off/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Rename Yashvardhan's MacBook Pro" }))
+    const field = screen.getByRole("textbox", { name: "Name for Yashvardhan's MacBook Pro" })
+    fireEvent.input(field, { target: { value: "Studio Mac" } })
+    fireEvent.keyDown(field, { key: "Enter" })
+    expect(onRename).toHaveBeenCalledWith("this-machine", "Studio Mac")
+  })
+
+  test("a product that cannot rename offers no rename control", () => {
+    mount({
+      serving: 1,
+      devices: [{ hostId: "host_1", displayName: "Yash's Mac", lastSeenAt: 10, workspaceIds: ["ws_1"] }],
+    })
+    expect(screen.queryByRole("button", { name: "Rename Yash's Mac" })).not.toBeInTheDocument()
+  })
+})
+
+describe("provider configuration on a machine row", () => {
+  const devices = [
+    { hostId: "host_1", displayName: "Build box", lastSeenAt: 10, workspaceIds: ["ws_1"] },
+    { hostId: "host_2", displayName: "Studio Mac", lastSeenAt: 10, workspaceIds: [] },
+  ]
+
+  test("each machine carries its own standing, and a push names that machine's enrollment", async () => {
+    const onPush = vi.fn(async () => undefined)
+    mount({
+      serving: 1,
+      devices,
+      providerConfig: {
+        rows: [
+          { enrollmentId: "enr_1", hostId: "host_1", revision: 0, ackedRevision: 0, sealingKeyDeclared: true, providers: [], rekeyed: false },
+          { enrollmentId: "enr_2", hostId: "host_2", revision: 0, ackedRevision: 0, sealingKeyDeclared: false, providers: [], rekeyed: false },
+        ],
+        onPush,
+        onClear: async () => undefined,
+      },
+    })
+
+    expect(screen.getByText("No provider configuration pushed")).toBeInTheDocument()
+    expect(screen.getByText(/declares its sealing key on its next heartbeat/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Configure providers on Studio Mac" })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure providers on Build box" }))
+    fireEvent.input(screen.getByLabelText("Provider id"), { target: { value: "anthropic" } })
+    fireEvent.input(screen.getByLabelText("Base URL"), { target: { value: "https://api.anthropic.com" } })
+    fireEvent.input(screen.getByLabelText("API key"), { target: { value: "sk-ant-1" } })
+    fireEvent.click(screen.getByRole("button", { name: "Push to Build box" }))
+    await waitFor(() => expect(onPush).toHaveBeenCalledWith("enr_1", {
+      anthropic: { baseUrl: "https://api.anthropic.com", placeholder: "sk-ant-1", authMode: "api-key" },
+    }))
+  })
+
+  test("a product that cannot list enrollments shows no provider control at all", () => {
+    mount({ serving: 1, devices })
+    expect(document.querySelector('[data-slot="provider-config"]')).toBeNull()
+  })
+})
+
+describe("adding a machine", () => {
+  test("the connect one-liner is offered for another machine, never for one the desktop app serves", () => {
+    mount({ serving: 1, servedByDesktopApp: true })
+
+    expect(screen.getByText(/the desktop app already serves this machine/i)).toBeInTheDocument()
+    const connectBlock = document.querySelector('[data-slot="add-connect-host"]')
+    expect(connectBlock?.textContent).toContain("claxedo connect")
+    expect(screen.queryByText(/install the claxedo desktop app on it/i)).not.toBeInTheDocument()
+  })
+
+  test("a machine the desktop app does not serve is told to install the app, and still gets the one-liner for others", () => {
+    mount({ serving: 1 })
+
+    expect(screen.getByText(/install the claxedo desktop app on it/i)).toBeInTheDocument()
+    expect(screen.queryByText(/the desktop app already serves this machine/i)).not.toBeInTheDocument()
+    expect(document.querySelector('[data-slot="add-connect-host"]')?.textContent).toContain("claxedo connect")
+  })
+
+  test("the enable switch states what publication sends before it is pressed", () => {
+    mount({ availability: { state: "ready-to-enable" } })
+
+    expect(screen.getByText(
+      "Your workspace names and paths are sent to the control plane so your other devices can find them.",
+    )).toBeInTheDocument()
   })
 })
