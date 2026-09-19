@@ -6,10 +6,12 @@ import { Hono } from "hono"
 import { createSelfHostedApp } from "./app"
 import { DuplicateRouteOwner, withRouteOwnership } from "../route-ownership"
 import { createControlPlaneServices } from "../../authority/services"
+import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
+import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/local-server/self-hosted-execution"
 
 /**
  * Who owns what in the self-hosted composition.
@@ -43,7 +45,7 @@ afterEach(() => {
   rmSync(dataDir, { recursive: true, force: true })
 })
 
-function selfHosted(options: Parameters<typeof createSelfHostedApp>[1] = {}) {
+function selfHosted(options: Parameters<typeof createSelfHostedApp>[1] = {}, signed = false) {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
   return createSelfHostedApp(
     createControlPlaneServices(
@@ -51,7 +53,22 @@ function selfHosted(options: Parameters<typeof createSelfHostedApp>[1] = {}) {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      {
+        authority: testManagedSessionAuthority(),
+        localExecution: { enabled: true },
+        telemetry: { capture: () => {} },
+        ...(signed
+          ? {
+              auth: customVerifierAuthAdapter({
+                issuer: "https://idp.example.test",
+                verifier: async (token, config) => ({
+                  mode: "signed" as const,
+                  user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer },
+                }),
+              }),
+            }
+          : {}),
+      },
     ),
     options,
   )
@@ -193,6 +210,75 @@ describe("the guard on the composed app", () => {
     expect(await (await built.app.request("/api/claxedo/health")).json()).toMatchObject({ ok: true })
     built.app.route("/api/claxedo/probe", new Hono() as never)
     expect(built.routeOwnership.owner("/api/claxedo/probe")).toBe("self-hosted-node")
+  })
+})
+
+describe("the host aggregate on the self-hosted node", () => {
+  // This node hosts its local workspaces' runtimes in-process, so a browser on
+  // it opens one `wr/events` naming no workspace and expects every mounted
+  // runtime's frames on it. Mounted through the runtime proxy rather than as a
+  // route, so the stream-route ledger below still sees only `/api/cp/events`.
+  test("answers a loopback-direct wr/events naming no workspace", async () => {
+    const built = selfHosted()
+    const abort = new AbortController()
+    const response = await built.app.request("http://127.0.0.1/api/wr/events", { signal: abort.signal })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toMatch(/text\/event-stream/)
+
+    // The bootstrap heartbeat carries the resume cursor and is written before
+    // the fanout attaches, so it arrives with no runtime mounted.
+    const reader = response.body!.getReader()
+    const first = new TextDecoder().decode((await reader.read()).value)
+    abort.abort()
+    await reader.cancel().catch(() => {})
+
+    expect(first).toContain('data: {"type":"heartbeat"}')
+    // The id is the ring's own position, numbered from the clock so a cursor
+    // from a previous process reads as a gap rather than as a position here.
+    expect(first).toMatch(/\nid: \d+\n/)
+  })
+
+  test("refuses a relay-stamped wr/events: the aggregate is a loopback-direct reader's", async () => {
+    const built = selfHosted()
+    const response = await built.app.request("http://127.0.0.1/api/wr/events", {
+      headers: { [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({ actor_id: "actor_1" }) },
+    })
+
+    expect(response.status).toBe(403)
+    expect((await response.json() as { error: { code: string } }).error.code).toBe("host_event_stream_denied")
+  })
+
+  test("a signed node mounts no aggregate: the request falls through instead of 403ing forever", async () => {
+    const built = selfHosted({}, true)
+    const response = await built.app.request("http://127.0.0.1/api/wr/events")
+
+    expect(response.headers.get("content-type")).not.toMatch(/text\/event-stream/)
+    expect(response.status).toBe(404)
+  })
+
+  // The browser cannot tell the two postures apart from the URL — this node's
+  // issuer runs on localhost as well — so the bootstrap states it. Read from
+  // the composed app rather than from the flag, because a declaration computed
+  // beside the mount and a declaration computed from the same expression twice
+  // are not the same guarantee.
+  test("the bootstrap declares exactly what the runtime proxy serves, in both postures", async () => {
+    for (const signed of [false, true]) {
+      const built = selfHosted({}, signed)
+
+      const bootstrap = await built.app.request("http://127.0.0.1/api/claxedo/bootstrap")
+      expect(bootstrap.status).toBe(200)
+      const declared = (await bootstrap.json() as { events?: { hostAggregate?: boolean } }).events?.hostAggregate
+
+      const abort = new AbortController()
+      const stream = await built.app.request("http://127.0.0.1/api/wr/events", { signal: abort.signal })
+      const served = /text\/event-stream/.test(stream.headers.get("content-type") ?? "")
+      abort.abort()
+      await stream.body?.cancel().catch(() => {})
+
+      expect(served, `signed=${signed}`).toBe(declared)
+      expect(declared, `signed=${signed}`).toBe(!signed)
+    }
   })
 })
 

@@ -68,7 +68,9 @@ import {
 } from "../../workspace/supervisor"
 import {
   configureEmbeddedWorkspaceRuntime,
+  createHostAggregateEventsHandler,
   ensureEmbeddedWorkspaceRuntime,
+  onEmbeddedWorkspaceRuntime,
   readEmbeddedWorkspaceSessionConfig,
   shutdownEmbeddedWorkspaceRuntimes,
   verifyEmbeddedRuntimeCredential,
@@ -897,7 +899,23 @@ export function createSelfHostedApp(
     ...authRouteOptions(services),
   })
   const nodeWebSocket = createNodeWebSocket({ app })
-  const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxyOptions)
+  // This node hosts its local workspaces' runtimes in-process, so an unsigned
+  // one answers the host aggregate `/api/wr/events` the way the desktop daemon
+  // does, with `unsignedLocalRequestGuard` below denying every non-loopback
+  // request. A signed node sets `requireRelayActor` above, which the aggregate
+  // refuses unconditionally; mounting it there would serve a permanent 403 to
+  // a browser on the node itself, so it is left unmounted and every workspace
+  // keeps its own scoped stream. The relay proxy beside it always names a
+  // workspace, so it is handed no aggregate either. The bootstrap declares this
+  // object's own `hostEventStream`, so a client cannot be told a stream the
+  // proxy does not answer.
+  const runtimeProxy = {
+    ...runtimeProxyOptions,
+    ...(services.auth.config.enabled
+      ? {}
+      : { hostEventStream: createHostAggregateEventsHandler({ observe: onEmbeddedWorkspaceRuntime }) }),
+  }
+  const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxy)
   const localWorkspaceRelayProxy = createLocalWorkspaceRelayProxy(runtimeProxyOptions)
 
   app.use(
@@ -1003,6 +1021,7 @@ export function createSelfHostedApp(
     BootstrapRoutes({
       services,
       env: process.env,
+      hostAggregateEvents: !!runtimeProxy.hostEventStream,
       ...authRouteOptions(services),
     }),
   )
