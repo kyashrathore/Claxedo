@@ -313,7 +313,7 @@ follow-up, if landed, keys on the same answer.
 Definition of done:
 - [ ] `grep -rn '"user-hosted"\|workspaceKind\|isRelayBackedWorkspaceKind' packages/claxedo-app/src` outside the resolver and its tests returns zero; the literal count is recorded before and after. Progress:
 - [ ] Resolver tests: enrolled desktop + own placement → loopback; enrolled desktop + other host → relay; unenrolled desktop → loopback for own directories only; web → relay always; a placement whose host is unknown → no stream, no request, a visible "machine offline" state. Progress:
-- [ ] Event targets, runtime request path and placement code have one call site each into the resolver; the three copies of the branch are gone. Progress:
+- [ ] Event targets, runtime request path and placement code have one call site each into the resolver; the three copies of the branch are gone. Progress: 2026-09-20 — event targets call `placementWire`; the runtime request path (`workspace-runtime-request.ts`) and `placement.ts` still carry their own loopback-vs-relay branch re-expressed in the host vocabulary, because neither has a placement with an enrollment id nor the server's `SelfHost` at hand; slice 4b supplies the self declaration and slice 7 closes the two copies or records why they must stay. UNMET for two of three paths.
 - [ ] Tier R: `real-harness-local`, `real-user-hosted-relay`, `real-desktop-signed-cloud` green; e2e mock routes bound to the slice 3 contract. Progress:
 
 ### Slice 5 — Product surface: one "This machine"
@@ -381,6 +381,36 @@ Definition of done:
 - [ ] The 2c stopgap and the "needs workspace access" copy are removed; the share dialog can offer any organization member at either level. Progress:
 - [ ] Tier M/R specs that granted workspace roles to reach a session are rewritten to session shares. Progress:
 
+### Slice 2e — The runtime token follows the session share
+
+Slice 2d proved both authorities and the runtime admit a `send` grantee who
+holds no workspace rank, and that such a grantee still cannot reach the
+session: the browser's Runtime Access Token is minted by
+`userHostedConnectionInfo` after `authority.openWorkspace`, which both
+adapters answer from the workspace role alone, and the app's composer gate
+(`role-gate.ts`) locks on that role. This slice makes the share the only
+grant on the wire too:
+
+1. `openWorkspace` / `recordUserRuntimeToken` / `runtimeAccessTokenActive`
+   on both adapters admit a runtime token for an actor who holds an active
+   session share in that workspace, scoped to a `viewer` role on the
+   workspace (the placement stays readable) and carrying nothing else; the
+   session's own answer decides read and write.
+2. The composer gate moves off the workspace role onto the session's
+   authorization answer, so a `send` grantee can prompt and a `follow`
+   grantee sees a read-only composer with the reason.
+3. Decision Q7 (2026-09-20, orchestrator under the user's ruling, reversible):
+   revoking a person's organization membership ends every grant they hold in
+   that organization's workspaces, shares and creator standing alike; a
+   session they created stays in the workspace, readable to the owner and to
+   whoever is shared it. Slice 2d's D1 test that pins an offboarded creator
+   still reading their own session is rewritten to pin the refusal.
+
+Definition of done:
+- [ ] Shared conformance: a `send` grantee with no workspace rank obtains a runtime token and completes a turn through the daemon probe spec; a `follow` grantee obtains a token and is refused the turn; an offboarded creator is refused read, write and token. Progress:
+- [ ] Composer gate reads the session's authorization; Tier M share spec covers the send grantee prompting. Progress:
+- [ ] Tier R `web-signed-org-team-multiplayer` or the connect-host spec proves the token path over a real relay. Progress:
+
 ### Slice 6 — Provider configuration reaches a host (carried from 09-14)
 
 A host, desktop or connect, receives provider credentials from the control
@@ -388,11 +418,77 @@ plane over the tunnel under a host-management grant, so agent turns on a
 connect host do not depend on the machine's own harness logins. Sequenced
 last because slices 1–2 give the desktop the machine principal this needs.
 
-Definition of done:
-- [ ] Host-management grant defined at the control plane; only the owner can push provider config to a host; pushed config is stored encrypted at rest on the host with the machine key. Progress:
-- [ ] Tier R connect spec 5b un-fixme'd: a session on a connect host runs a turn with a provider configured only in the control plane. Progress:
+The enrollment's own key signs and cannot derive bits, so a machine carries a
+SECOND key pair (ECDH P-256), declares its public half on every beat, and the
+control plane seals for that. The format (`mseal1`) lives in two copies, one
+per side of the boundary the host package must not cross, pinned to one
+literal ciphertext by both packages' tests, with the host copy carrying the
+`host` prefix `host-connect-contract.ts` already uses for this seam.
 
-## 4. Cross-cutting acceptance (run at the end of slices 2, 4, 5)
+Definition of done:
+- [x] Host-management grant defined at the control plane; only the owner can push provider config to a host; pushed config is stored encrypted at rest on the host with the machine key. Progress: `POST /api/claxedo/host/enrollments/:id/provider-config`, owner-only on both twins (`hostProviderConfigTarget` + `pushHostProviderConfig`, compare-and-set on the revision AND the declared key), audited, delivered as `provider_config {revision, sealed}` on the beat and acked like an assignment. The host stores the CIPHERTEXT verbatim — `HostState.provider_config` on a connect box, Electron main's identity store on the desktop — and acks a revision only after that write returns. `hostProviderConfigProjectAuth` puts the pushed rows ahead of the machine's own at the one credential seam, `configureAgentConfig({projectAuth})`. A second account can neither read the target nor push: proven discriminating on both twins.
+- [x] Tier R connect spec 5b un-fixme'd: a session on a connect host runs a turn with a provider configured only in the control plane. Progress: `real-connect-host.spec.ts` item 5b runs live. The owner pushes an `openai` row naming the scripted endpoint with `claxedo host push-config --machine box1 --from-file`; the machines list shows `sealing_key_declared` before the push and `provider_config_acked_revision: 1` 38.0s after it (bound 43.0s, two beats plus slack); the host's state file holds `mseal1.…` and neither the key nor the endpoint URL in the clear; Alice's next turn on session A reaches the scripted model in 0.52s speaking the Responses dialect, and its reply is stored on the host 0.54s in. The whole suite ran 13/13 in 6.4 minutes.
+- [ ] Follow-up (owner: the credential broker on a connect host, its own slice): a pushed credential is registered in the host's credential registry and projected as a broker binding, so no vendor key reaches a harness profile in the clear (today it lands there at 0600 like any non-brokered credential); until then the push UI claims only "sealed for this machine". The first DoD line's "encrypted at rest on the host" holds for the config store, not for the harness profile. Progress: the UI now says exactly that and no more; the review's item 13.
+
+Review round (GO WITH FIXES, `.lane-reports/REVIEW-slice6.md`), all twelve landed:
+the host applies a provider-config revision only when it is strictly newer, so a
+replayed older revision cannot reinstate a rotated or withdrawn credential, and
+both twins mint one above the higher of the stored and acked counters so a
+control plane restored from a backup is not a wedge; a machine that re-keys
+stops being sent the blob it can no longer open and the fleet row says why; the
+daemon's loopback install route refuses a revision below the held one and states
+in its docblock what a local caller can do with it; the pushed provider ids ride
+the fleet row so the push form can say it replaces the whole set; main re-pushes
+the held revision when the daemon's rows go missing, and a blob the child cannot
+open crosses to main as its own message instead of only stalling a counter.
+
+### Slice 7 — Residue audit: no trace of the retired model
+
+Hard requirement (user, 2026-09-19): when a way the software used to work
+is removed, replaced or retired, no trace of it remains. A blanket rename is
+not enough. "Trace" means code, tests, fakes, mocks, fixtures, comments,
+docs, i18n, scripts and configuration that were written under the old
+assumption, even where they still compile and pass, because a green test
+that models a producer that no longer exists proves nothing (the slice-4
+review found exactly this: fakes speaking the old vocabulary hid eight
+wrong sites).
+
+The retired models this branch must leave no trace of:
+
+1. Workspace KINDS `local` / `cloud` / `user-hosted` as a property of a
+   workspace, and the derivation of `user-hosted` from a missing driver.
+2. The stored `access` column and `WorkspaceBacking.kind: "user-hosted"`.
+3. The account heartbeat (v2 payload, `host.enrollmentHeartbeat`, the
+   connector's account mode, `shareWorkspace` on the connector).
+4. Runtime-wide `sessionAuthority` as the decider of registration, turn
+   admission or event privacy (it is a declaration only).
+5. Organization or workspace membership as a capability on a session, a
+   machine or a folder; the workspace share role (slice 2d).
+6. "This machine" as a label; "user-hosted", "hosted workspace", "local
+   workspace" as workspace types in copy.
+7. The URL or a build flag as the decider of loopback, the aggregate, or
+   the self placement (the server declares all three).
+8. Session sharing as read-only (there are two levels now).
+
+Method, per package, by lanes with disjoint ownership: (a) a grep pass for
+every identifier, string and comment fragment of each retired model,
+recorded with counts before and after; (b) a READ pass of every module the
+grep touches and every module that imports it, asking "was this written
+assuming the old model?" and fixing the logic, not the word; (c) every
+test fake, mock and e2e fixture re-derived from the current producer's
+real shape (the mock-runtime contract bindings test is the pattern);
+(d) docs/tech-docs and public-docs rewritten from the code, never edited
+sentence by sentence; (e) an adversarial reviewer per package who tries to
+find one surviving assumption; the slice is done when a review returns
+none.
+
+Definition of done:
+- [ ] Per retired model 1–8: grep counts before/after recorded, every survivor either deleted or justified in one line as a wire word parsed at a boundary. Progress:
+- [ ] Every test fake/mock/fixture that models a retired producer is rewritten to the current one, with at least one mutation proof per package that the rewritten fake catches a regression the old one hid. Progress:
+- [ ] docs/tech-docs, public-docs, AGENTS.md/CLAUDE.md fragments and plan cross-references describe only the current model; the 09-14 plans are marked superseded where this branch replaced them. Progress:
+- [ ] One adversarial review per package (app, desktop, local-server, workspace-runtime, claxedo-server, server-core, host-connector, cli, e2e) returns zero surviving assumptions. Progress:
+
+## 4. Cross-cutting acceptance (run at the end of slices 2, 4, 5, 7)
 
 - [ ] Signed-out desktop: every flow works with no network; no request leaves the machine (proxy capture). Progress:
 - [ ] Signed desktop, remote access off: nothing is published; the web sees no "This machine". Progress:
@@ -412,6 +508,7 @@ reversed before slice 5 ships.
 - **Q3. Self-hosted server with auth on localhost.** Today treated as signed web. Under the resolver it is "host is not me" unless the server declares its enrollment as this machine's. DECIDED: keep signed-web behaviour; no special case.
 - **Q4. The word for the user's other machines.** DECIDED: "machine" everywhere, "host" only in code.
 - **Q5. Machine naming.** DECIDED 2026-09-19 (user): a machine is shown by a name derived on the machine itself from the account name and the computer name, for example "Yashvardhan's Mac", identical on desktop, web and every other device. "This machine" is never a label; slice 5 renders the name and offers a rename.
+- **Q8. What `send` buys.** DECIDED 2026-09-20 (orchestrator under Q6 and §2, reversible): a `send` share admits exactly four session-scoped operations — prompt, permission response, question response, abort. Every other session-scoped write (shell, permission mode, delete, fork, revert/unrevert, command, summarize, config and title edits, goal transitions, worktree writes) is the CREATOR's and a participant's, never a share grantee's and never a workspace rank's. Workspace rank on the Relay Host Token gates only workspace-level reads and the workspace-scoped surfaces (terminals, processes, git) it always gated. The disclosure copy stays as written because it describes the agent's reach, not the grantee's.
 - **Q6. Share levels.** DECIDED 2026-09-19 (user): a session share has two levels, follow (read, live) and send messages (prompt the agent, answer its prompts). Granting send shows a disclosure before confirmation: the agent runs with the workspace machine's files, so a sender can have it read anything on that machine, including other sessions' transcripts in the workspace; sharing works best for sessions on a per-session cloud environment, and sessions from a workspace on a machine holding anything a teammate must not reach should not be shared. The session authority's `write` action admits a share grantee only at the send level; slice 5 owns the dialog, slice 2c (new) owns the grant level on the control plane and the runtime's turn admission.
 
 ## 6. Risks
@@ -441,7 +538,7 @@ adjacent comment and raise to the measured value only.
 
 ## 8. Definition of done for the whole plan
 
-- [ ] Slices 1–5 merged to `dev` with their per-slice checklists complete and their commands and counts recorded. Progress:
+- [ ] Slices 1–5, 2d and 7 merged to `dev` with their per-slice checklists complete and their commands and counts recorded. Progress:
 - [ ] Slice 6 either merged or explicitly deferred with the unmet requirement, evidence, blocker and owner named. Progress:
 - [ ] Q1–Q4 answered in this document with the date. Progress:
 - [ ] `2026-09-14-003` P7 marked superseded by slices 1–2 here. Progress:

@@ -250,10 +250,33 @@ exists. Stream authorization and lease minting have one owner,
 `packages/claxedo-server/src/routes/runtime-session-authority.ts`; the remote
 route and the embedded managed policy both call it, and a
 `SessionStreamLeaseBinding` names how the holder proved identity so a renewal
-re-checks the right thing. Workspace shares (`workspace/routes/share-routes.ts`,
-mounted by every hosted composition) grant viewer, editor or admin roles; the
-relay token carries the role, and a viewer's writes and PTY requests are
-refused by the runtime.
+re-checks the right thing.
+
+A person's workspace role is computed, never granted directly to a workspace by
+another person. On the self-hosted authority `workspaceRoleForUser`
+(`packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority-store.ts`)
+answers `owner` for the workspace's owner and otherwise the highest of three
+readings: the `project_memberships` row, the org standing (an org owner or
+admin reads as workspace `admin`, an org member as `viewer` unless the
+workspace's `org_member_visible` is 0), and the best `team_project_grants` row
+of any team the person is on in that org. There is no per-workspace membership
+row: a workspace folder is not a thing a person is added to. The hosted
+authority's `workspaceAccessSql`
+(`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`)
+takes the same `max` in one query, and lists a workspace only for the org's
+owner or a person with an `org_memberships` row. The relay token carries that
+role; `denyWorkspaceViewers` (`packages/workspace-runtime/src/routes/workspace-role.ts`)
+refuses a viewer's PTY, process and Git write requests, and a write that names no
+session (a checkpoint freeze, a session create) is refused below editor with
+`workspace_write_forbidden`.
+
+The role stops at the session. The only grant one person makes to another is a
+session share (`POST /api/control/sessions/:id/shares`, level `follow` or
+`send`), and it is the whole admission: a session is reachable by its creator,
+a participant, or a share holder, and a session-scoped write is admitted only
+for the creator, a participant, or a `send` share, whatever the workspace role
+on the token. Only the session's creator may grant or revoke its shares, and
+only to a member of the session's organization.
 
 ## I. How it is proven
 

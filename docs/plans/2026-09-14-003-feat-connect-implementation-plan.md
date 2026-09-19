@@ -773,6 +773,16 @@ Definition of done:
 
 ## Open gap carried out of the first slice: provider configuration on a connect host
 
+CLOSED by slice 6 of `2026-09-19-001-refactor-host-is-a-machine.md`, and not
+the way this section guessed: the host composes its own runtime, so it applies
+`createClaxedoAppliedRuntimeConfig` in process and `POST /api/wr/config` is not
+on the path at all. The owner pushes with
+`POST /api/claxedo/host/enrollments/:id/provider-config`; the control plane
+seals for the machine's declared ECDH key and stores only ciphertext; the beat
+carries `provider_config {revision, sealed}`; the host stores the ciphertext,
+opens it with its own key and answers `projectAuth` from it ahead of the box's
+own harness logins. What follows is the gap as it stood.
+
 A `claxedo connect` runtime receives no configuration snapshot from the
 control plane: `createHostWorkspaceRuntime` composes no management auth, so
 `POST /api/wr/config` answers 401 unconditionally, and the control plane's

@@ -16,19 +16,21 @@ the relay; you never pick a transport.
 
 All three show up in the same list, under **Settings → Machines**, and every
 workspace on them appears in the sidebar the same way. Every machine has a name.
-The desktop app names its own machine from the account name on that computer
-and the computer's own name, so it reads the same on every device: on the
-desktop, on the web, on your phone it is "Yashvardhan's Mac". A workspace is
-never labelled "local" or "user-hosted"; it is labelled by the machine it is on.
+The desktop app names its own machine from the computer's own name and the full
+name on the account you sign into that computer with, so it reads the same on
+every device: on the desktop, on the web, on your phone it is "Yashvardhan's
+Mac". A workspace is never labelled "local" or "user-hosted"; it is labelled by
+the machine it is on.
 
 ## Add a machine
 
 ### The computer you are sitting at
 
 Install the desktop app and sign in. Your machine appears in the list under its
-own name immediately, and every project you open in the app runs on it. You can
-rename it in Settings → Machines; the name is what teammates and your other
-devices see.
+own name immediately, and every project you open in the app runs on it. Once
+remote access is on you can rename it in Settings → Machines; the name is what
+teammates and your other devices see, and it survives turning remote access off
+and on again.
 
 If you want to reach this machine from the web app or from another device, turn
 on **Enable remote access** in Settings → Machines. From then on every workspace

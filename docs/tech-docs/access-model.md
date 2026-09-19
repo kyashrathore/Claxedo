@@ -31,35 +31,56 @@ org; workspace transfer is an explicit future billing operation.
 ## Roles and authority
 
 Org roles are `member`, `admin`, and `owner`. Team roles are `member`, `admin`,
-and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. Org
-owner/admin authority projects to workspace admin; an org member projects to
-workspace viewer unless narrowed by team project grants. Direct workspace,
-project, team-project, and share grants combine additively, with the highest
-effective role winning.
+and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. A
+workspace role is computed from membership, never handed to one person by
+another: the workspace's owner is `owner`, and everyone else holds the highest
+of their `project_memberships` row, their org standing (org owner or admin
+reads as workspace `admin`, org member as `viewer` unless the workspace
+withholds org-member visibility), and the best
+`team_project_grants` row of a team they are on in that org
+(`workspaceRoleForUser` on SQLite, `workspaceAccessSql` on D1). A workspace
+folder is not a thing a person is added to, so there is no membership row of
+its own.
 
-Session authority is conjunctive:
+The workspace role stops at the session. A session share, at level `follow` or
+`send`, is the only grant one person makes to another, and it is the whole
+admission:
 
 ```text
-may access a private session
-  = has the required workspace authority
-  AND is the session creator, an active participant,
-      a user- or team-targeted session share grant (evaluate-time),
-      or an org admin
+may read a private session
+  = is the session creator, an active participant,
+    or the holder of a user-, org- or team-targeted session share (evaluate-time)
+
+may drive its agent (prompt, answer a permission or a question, abort)
+  = is the session creator, an active participant,
+    or the holder of a `send` share
+
+may control the session (shell, permission mode, delete, fork, revert,
+  unrevert, command, summarize, title and config edits, goal transitions,
+  worktree writes)
+  = is the session creator or an active participant
 ```
 
-The creator is enrolled when the session is created. The creator, an org admin,
-or a team admin for an in-scope project may add and remove participants and
-session share grants; a participant cannot enroll others. Read and write checks
-live in both the managed route policy and the storage authority so alternate
-clients cannot bypass the rule. Private sessions are not hidden from org
-admins (support/compliance).
+Org admin standing and workspace role rank admit no one to a session, for read
+or for write; `follow` carries reading and the live stream and stops there, and
+a `send` share carries the agent's turn and never control of the session.
+The runtime names which of the two a write is (`sessionAccessWriteClass` in
+`packages/workspace-runtime/src/session-access-policy.ts`) and the authority
+answers it. The
+creator is enrolled when the session is created, and only the creator may add
+or remove participants and session shares (`session_share_admin_required`
+otherwise); a share may be offered only to a member of the session's
+organization (`session_share_target_outside_organization`). Read and write
+checks live in both the managed route policy and the storage authority so
+alternate clients cannot bypass the rule.
 
 Session privacy protects transcript-derived content: metadata, messages,
 prompts, tool activity, questions, permissions, checkpoints, and live or
 replayed session events. Files and working-tree edits remain governed by
-workspace access and are visible to workspace members. Sharing a user-hosted
-workspace is a distinct consent action because it exposes the working tree and
-execution surface.
+workspace access and are visible to workspace members; a `send` share on a
+user-hosted workspace's session is the consent that exposes that machine's
+execution surface to the grantee, which is why the People control asks the
+granter to acknowledge it.
 
 ## Actor identity and attribution
 
