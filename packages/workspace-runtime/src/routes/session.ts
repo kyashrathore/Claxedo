@@ -383,7 +383,6 @@ export function SessionRoutes(
     getStatus: options?.getStatus
       ? (c, directory) => options.getStatus!(c, requiredDirectory(directory))
       : undefined,
-    sessionBus: workspaceRuntimeBus,
     publishGlobal: (event) => {
       eventHub.publishGlobal(event)
       bridgeLifecycleEvent(event)

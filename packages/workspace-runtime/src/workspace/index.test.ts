@@ -63,7 +63,7 @@ async function readUntil(response: Response, expected: string) {
 }
 
 describe("workspace module wiring", () => {
-  test("a managed session-scoped wr/events closes after renewal denial", async () => {
+  test("a managed session-scoped wr/events closes when its lapsed lease is refused renewal", async () => {
     const eventHub = createRuntimeEventHub()
     const accessPolicy = managedPolicy()
     let authorizations = 0
@@ -76,11 +76,13 @@ describe("workspace module wiring", () => {
     const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: accessPolicy })
     const app = new Hono()
     verifiedRelay(app)
-    host.mount(app, { exposure: loopbackExposure })
+    host.mount(app, { exposure: loopbackExposure, renewalIntervalMs: 50 })
 
     const response = await app.request("http://localhost/api/wr/events?sessionID=session-a")
     const reader = response.body!.getReader()
     const connected = await reader.read()
+    // The lease lapses; the next renewal re-asks the authority, which
+    // refuses, and a granted session refused is a revocation.
     const ended = await Promise.race([
       reader.read().then((result) => result.done),
       new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
@@ -90,7 +92,7 @@ describe("workspace module wiring", () => {
     expect(connected.done).toBe(false)
     expect(new TextDecoder().decode(connected.value)).toContain("heartbeat")
     expect(ended).toBe(true)
-    expect(authorizations).toBe(2)
+    expect(authorizations).toBeGreaterThanOrEqual(2)
   })
 
   test("a managed runtime without workspace authority requires a session, and scopes replay by it", async () => {

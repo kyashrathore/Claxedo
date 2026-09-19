@@ -461,7 +461,6 @@ describe("two-user signed runtime transport acceptance", () => {
       getSession: (_c, directory, sessionId) => runtime.sessions.get(sessionId, directory),
       getMessages: (_c, _directory, sessionId) => fixture.adapter.getMessages(fixture.binding(sessionId)),
       sessionAccessPolicy: policy,
-      sessionBus,
       publishGlobal: () => {},
     }))
     // The workspace's one stream: a share grantee reads it session-scoped

@@ -10,7 +10,7 @@ export type { WorkspaceEventParents } from "./routes/events"
 export { TranscriptRoutes } from "./routes/transcript"
 export { AgentHookRoutes } from "./routes/agent-hook"
 export { createSessionRoutes } from "./routes/session-core"
-export type { RuntimeSessionBusEvent, SessionLifecycleEvent } from "./routes/session-core"
+export type { SessionLifecycleEvent } from "./routes/session-core"
 export {
   managedWorkspaceSessionAccessPolicy,
   SESSION_CORE_ROUTE_ACCESS,

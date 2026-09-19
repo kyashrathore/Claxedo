@@ -492,10 +492,11 @@ async function resolveWorkspaceRuntime(directory: string, request: typeof fetch)
  * Only the routed workspace's stream is open, so a terminal in another
  * workspace whose agent started, asked or finished meanwhile is healed
  * here, on the next return of a workspace stream. Each directory is read
- * and applied on its own: a workspace whose host is away keeps its
- * indicators as they were rather than clearing every other workspace's,
- * and a slow one does not hold a fast one's answer. A reconcile started
- * later supersedes this one, so a stale read never lands over a fresher.
+ * on its own, and each live terminal applied as its record arrives: a
+ * workspace whose host is away keeps its indicators as they were rather
+ * than clearing every other workspace's, a slow one does not hold a fast
+ * one's answer, and a live frame that lands during a read outranks the
+ * record read before it. A reconcile started later supersedes this one.
  * A heal writes the indicator only — a completion it reveals plays no
  * sound, and a live Idle's "done" mark (`seen`) is left as the live path
  * leaves it; only a terminal that is gone loses it.
@@ -507,7 +508,6 @@ export async function reconcileAgentStatuses(state: AgentStatusReconcileState, r
 
   for (const [directory, ids] of targets) {
     const gone = new Set<string>()
-    const outcomes = new Map<string, TerminalAgentStatus>()
     try {
       const workspace = await resolveWorkspaceRuntime(directory, request)
       const workspaceId = workspace?.workspaceId
@@ -543,12 +543,19 @@ export async function reconcileAgentStatuses(state: AgentStatusReconcileState, r
           gone.add(id)
           continue
         }
+        // Read against the indicator as it was when the read began: a live
+        // frame landing meanwhile is newer than what the runtime recorded
+        // before it, and keeps its say.
+        const before = state.terminal.agentStatus(id)
         const recorded = await transport
           .json(terminalSessionPreviewPath(id, relayWorkspaceId ? undefined : directory), { headers: { Accept: "application/json" } })
           .then(parseTerminalSessionPreview)
           .catch(() => null)
+        if (generation !== reconcileGeneration) return
         const status = terminalAgentStatusFromEventType(recorded?.eventType)
-        if (status) outcomes.set(id, status)
+        if (status && state.terminal.agentStatus(id) === before && status !== before) {
+          untrack(() => state.terminal.setAgentStatus(id, status))
+        }
       }
     } catch {
       continue
@@ -559,9 +566,6 @@ export async function reconcileAgentStatuses(state: AgentStatusReconcileState, r
         for (const id of gone) {
           if (state.terminal.agentStatus(id) !== "idle") state.terminal.setAgentStatus(id, "idle")
           state.terminal.clearSeen(id)
-        }
-        for (const [id, status] of outcomes) {
-          if (state.terminal.agentStatus(id) !== status) state.terminal.setAgentStatus(id, status)
         }
       })
     })

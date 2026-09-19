@@ -658,12 +658,6 @@ describe("session prompt route", () => {
       }),
       resolveDirectory: async () => directory,
       sessionAccessPolicy: policy,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     })
     const app = new Hono()
@@ -735,12 +729,6 @@ describe("session prompt route", () => {
         calls.push({ sessionId: input?.sessionId })
         return directory
       },
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     })
 
@@ -758,12 +746,6 @@ describe("session prompt route", () => {
         updateSession: async () => null,
       }),
       resolveDirectory: async () => directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     })
 
@@ -942,7 +924,6 @@ describe("session prompt route", () => {
         },
       }),
       resolveDirectory: () => directory,
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal: (event) => {
         seen.push(event.payload.type)
         eventHub.publishGlobal(event)
@@ -993,7 +974,6 @@ describe("session prompt route", () => {
         getMessages: () => messages,
       }),
       resolveDirectory: () => directory,
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
       flushSessionDocuments: async () => { throw new Error("write-back unavailable") },
       afterMessageCheckpoint: (_c, _directory, _sessionId, next) => { checkpoints.push(next) },
@@ -1190,12 +1170,6 @@ describe("session prompt route", () => {
         }),
       }),
       resolveDirectory: async (_c, input) => input?.sessionId ? `${directory}/session` : directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     })
 
@@ -1229,12 +1203,6 @@ describe("session prompt route", () => {
     const commands = [{ name: "review", description: "Review current changes" }]
     const base = {
       resolveDirectory: async () => directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     }
     const standalone = createSessionRoutes({
@@ -1584,12 +1552,6 @@ describe("session prompt route", () => {
         }),
       }),
       resolveDirectory: async () => directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal(event) {
         seen.push(event.payload)
       },
@@ -1640,12 +1602,6 @@ describe("session prompt route", () => {
       }) as unknown as AgentRuntime,
       resolveDirectory: async () => directory,
       publishGlobal() {},
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
     })
 
     const res = await app.request(`http://localhost/session/s1/abort?directory=${encodeURIComponent(directory)}`, {
@@ -2026,12 +1982,6 @@ describe("session prompt route", () => {
           },
         }),
       resolveDirectory: async () => directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal(event) {
         seen.push(event.payload)
       },
@@ -2079,12 +2029,6 @@ describe("session prompt route", () => {
         },
       }),
       resolveDirectory: async () => directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal(event) {
         seen.push(event.payload)
       },
@@ -2121,7 +2065,6 @@ describe("session prompt route", () => {
         },
       }),
       resolveDirectory: async () => directory,
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
 
@@ -2145,12 +2088,6 @@ describe("session prompt route", () => {
         listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
       }),
       resolveDirectory: async () => directory,
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal(event) {
         seen.push(event.payload)
       },
@@ -2199,12 +2136,6 @@ describe("session prompt route", () => {
             headers: { "Content-Type": "application/json" },
           })
         },
-        sessionBus: {
-          publish() {},
-          subscribe() {
-            return () => {}
-          },
-        },
         publishGlobal() {},
       })
 
@@ -2240,12 +2171,6 @@ describe("session prompt route", () => {
         admissions.push(input)
         return new Response(JSON.stringify({ ok: false }), { status: 403, headers: { "Content-Type": "application/json" } })
       },
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     })
 
@@ -2273,12 +2198,6 @@ describe("session prompt route", () => {
       listQuestions: async () => [{ id: "q1", sessionID: "s9", questions: [] }],
       beforeSessionOperation: (_c, input) => {
         admissions.push(input)
-      },
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
       },
       publishGlobal() {},
     })
@@ -2317,7 +2236,6 @@ describe("session prompt route", () => {
         beforeSessionOperation: (_c, input) => {
           admissions.push(input.sessionId)
         },
-        sessionBus: { publish() {}, subscribe: () => () => {} },
         publishGlobal() {},
       })
 
@@ -2360,7 +2278,6 @@ describe("session prompt route", () => {
       beforeSessionOperation: (_c, input) => {
         admissions.push(input.sessionId)
       },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
 
@@ -2393,12 +2310,6 @@ describe("session prompt route", () => {
       listQuestions: async () => [{ id: "q1", sessionID: "s9", questions: [] }],
       beforeSessionOperation: () =>
         new Response(JSON.stringify({ ok: false }), { status: 403, headers: { "Content-Type": "application/json" } }),
-      sessionBus: {
-        publish() {},
-        subscribe() {
-          return () => {}
-        },
-      },
       publishGlobal() {},
     })
 

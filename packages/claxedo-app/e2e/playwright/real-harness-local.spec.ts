@@ -2071,6 +2071,12 @@ setTimeout(() => process.exit(2), 60000).unref();
       await page.screenshot({ path: testInfo.outputPath("tool-settled-after-reconnect.png") })
       await page.reload({ waitUntil: "domcontentloaded" })
       await expectAssistantReplyVisible(page, marker)
+      // A cold open folds a settled turn: the tool sits behind "Worked for…"
+      // until opened, which is itself the row saying the tool settled.
+      const fold = page.getByRole("button", { name: /^Worked for/ })
+      await expect(fold.or(status)).toBeVisible()
+      if (await fold.isVisible()) await fold.click()
+      await expect(status).toBeVisible()
       await expect(status).not.toContainText("Running")
       expect((await readTools())[0]?.state).toMatchObject({ status: "completed", output: expect.stringContaining(marker) })
     } finally {

@@ -130,6 +130,31 @@ describe("reconcileAgentStatuses", () => {
     expect(terminal.agentStatus("pty_away")).toBe("working")
   })
 
+  test("a live frame landing during a terminal's read outranks the record read before it", async () => {
+    const terminal = terminalSlice()
+    // Shown as asking; the runtime's record says the agent had resumed.
+    terminal.setAgentStatus("pty_x", "permission")
+    terminal.own("tab_x", "pty_x")
+    const contents = [terminalContent("tab_x", "/repo/a", "pty_x")]
+    const state: AgentStatusReconcileState = { terminal, meta: { all: () => contents, get: (id: string) => contents.find((content) => content.id === id) } }
+    let release: (() => void) | undefined
+    const stalled = new Promise<void>((resolve) => { release = resolve })
+    const request: typeof fetch = async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (url.pathname.endsWith("/workspace/resolve")) return Response.json({ kind: "local" })
+      if (url.pathname.endsWith("/api/wr/pty")) return Response.json([{ id: "pty_x" }])
+      await stalled
+      return Response.json({ success: true, source: "runtime", terminalId: "pty_x", session: { terminalId: "pty_x", eventType: "Busy" } })
+    }
+    const reconcile = reconcileAgentStatuses(state, request)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The agent finished while the record was in flight: the live path idled it.
+    terminal.setAgentStatus("pty_x", "idle")
+    release?.()
+    await reconcile
+    expect(terminal.agentStatus("pty_x")).toBe("idle")
+  })
+
   test("a reconcile started later supersedes one still reading, so a stale record never lands over a fresher", async () => {
     const terminal = terminalSlice()
     terminal.own("tab_x", "pty_x")

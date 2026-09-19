@@ -28,9 +28,6 @@ import {
 } from "../compat-events"
 import { arr, bool, rec, str } from "../json-value"
 
-export type RuntimeSessionBusEvent =
-  | { type: "process.status"; directory: string; configId: string; status: string }
-
 export type ActiveTurnScope = {
   signal?: AbortSignal
   dispose?: () => void

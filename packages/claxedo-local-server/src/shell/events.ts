@@ -109,7 +109,14 @@ export function createControlPlaneEventsHandler(
     retainedCursor?: string
     tail: Promise<void>
     pending: boolean
-    unknownSequence: boolean
+    /**
+     * The ring position at the scope's last hole: for a ring that continues
+     * no tombstone, the position before its start (a cursor below it came
+     * from another numbering); for a restore the retained ring rolled past,
+     * the restored ring's start itself. A cursor at or below it is a gap,
+     * whoever presents it and however many connections attached since.
+     */
+    holeBelow: number
     sharedRetained: boolean
   }
   // Numbered from the origin (the clock) so a cursor from a previous daemon
@@ -159,10 +166,9 @@ export function createControlPlaneEventsHandler(
     }
     // Rung before it is pushed: the fanout reads a live frame's id from this
     // ring as it writes it.
-    if (visible && !scope.sharedRetained && scope.replay.idFor(frame) === undefined) {
-      scope.replay.push(frame)
-      scope.retainedCursor = retained.idFor(frame) ?? scope.retainedCursor
-    }
+    if (visible && !scope.sharedRetained && scope.replay.idFor(frame) === undefined) scope.replay.push(frame)
+    // Decided, visible or not: what a restore has to re-decide starts after it.
+    if (!scope.sharedRetained) scope.retainedCursor = retained.idFor(frame) ?? scope.retainedCursor
     for (const connection of deliveries) void Promise.resolve(connection.push(frame)).catch(() => undefined)
     // A connection that attached while this frame's visibility was pending
     // was not decided for it, and its bootstrap cursor sits before the id the
@@ -235,23 +241,26 @@ export function createControlPlaneEventsHandler(
     const tombstone = tombstones.get(key)
     tombstones.delete(key)
     const sharedRetained = subscription.identity.mode === "unmanaged-local"
+    const initialSequence = tombstone?.sequence ?? sequenceOrigin()
+    // Restored from a tombstone, the scope continues its numbering only
+    // while the retained ring still holds everything since the position it
+    // had decided up to; past that the restored ring is contiguous over a
+    // hole, and a tombstone naming no position cannot say.
+    const continues = !!tombstone && tombstone.retainedCursor !== undefined && !retained.hasGap(tombstone.retainedCursor)
     const scope: Scope = {
       key,
       replay: sharedRetained
         ? retained
         : createSseReplayBuffer<ControlPlaneFrame>({
             isTerminal: isTerminalControlPlaneFrame,
-            initialSequence: tombstone?.sequence ?? sequenceOrigin(),
+            initialSequence,
           }),
       connections: new Set(),
       reservations: 0,
       ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
       tail: Promise.resolve(),
       pending: false,
-      // Restored from a tombstone, the scope continues its numbering only
-      // while the retained ring still holds everything since the tombstone's
-      // cursor; past that the restored ring is contiguous over a hole.
-      unknownSequence: !sharedRetained && (!tombstone || retained.hasGap(tombstone.retainedCursor)) && retained.lastId() !== undefined,
+      holeBelow: sharedRetained || continues || retained.lastId() === undefined ? 0 : tombstone ? initialSequence : initialSequence - 1,
       sharedRetained,
     }
     scopes.set(key, scope)
@@ -262,8 +271,8 @@ export function createControlPlaneEventsHandler(
         (tail, retainedFrame) => tail.then(async () => {
           if (await Promise.resolve(subscription.visible(retainedFrame.payload)).catch(() => false)) {
             scope.replay.push(retainedFrame.payload)
-            scope.retainedCursor = retainedFrame.id
           }
+          scope.retainedCursor = retainedFrame.id
         }),
         Promise.resolve(),
       )
@@ -298,7 +307,8 @@ export function createControlPlaneEventsHandler(
       // sentinel must be one stable object.
       const heartbeat = { type: "heartbeat" } as const
       const cursor = lastEventId ?? scope.replay.lastId() ?? "0"
-      const replay = scope.unknownSequence && Number(lastEventId ?? "0") > 0
+      const presented = Number(lastEventId ?? "0")
+      const replay = presented > 0 && presented <= scope.holeBelow
         ? { ...scope.replay, hasGap: () => true }
         : scope.replay
 
@@ -311,8 +321,6 @@ export function createControlPlaneEventsHandler(
           const close = () => stream.abort()
           const connection: Connection = { subscription, push: listener, close, delivered: new WeakSet() }
           scope.connections.add(connection)
-          // A cursor presented from here on is this scope's own numbering.
-          scope.unknownSequence = false
           scope.reservations -= 1
           for (const retainedFrame of retained.replayAfter(retainedCursor)) enqueue(scope, retainedFrame.payload)
           return () => {

@@ -152,6 +152,58 @@ describe("cp/events — the control plane's notice stream", () => {
     expect(replayed).toContain('"name":"missed"')
   })
 
+  test("a subscriber that saw no visible notice before it dropped is told a gap once the ring rolled past its absence", async () => {
+    const bus = createBus<ControlPlaneEvent>()
+    // The clock origin, as in production: the bootstrap cursor names the
+    // ring's start, which is a position of its own, not "no cursor".
+    const handler = createControlPlaneEventsHandler(bus, {
+      sequenceOrigin: () => 1_000,
+      resolveSubscription: () => ({
+        identity: { mode: "verified", connectionId: crypto.randomUUID(), actorId: "user_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", role: "editor" },
+        visible: () => true,
+      }),
+    })
+    const app = mount(handler)
+    const first = await connect(app)
+    const opened = await first.until((seen) => seen.includes('"type":"heartbeat"'), "did not open")
+    const cursor = bootstrapId(opened) ?? "0"
+    expect(cursor).toBe("1000")
+    first.close()
+    // The abort reaches the handler on a later tick; the scope is evicted then.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    for (let index = 0; index < 300; index += 1) bus.publish(worktree(`roll${index}`))
+    const second = await connect(app, cursor)
+    const text = await second.until((seen) => seen.includes("stream.replay-gap") || seen.includes('"name":"roll299"'), "no frame arrived")
+    second.close()
+    expect(text).toContain("cp.sse_replay_gap")
+  })
+
+  test("a subscriber's own bootstrap cursor on a fresh ring resumes without a gap; a cursor from before the ring's start is one", async () => {
+    const bus = createBus<ControlPlaneEvent>()
+    const handler = createControlPlaneEventsHandler(bus, {
+      sequenceOrigin: () => 1_000,
+      resolveSubscription: () => ({
+        identity: { mode: "verified", connectionId: crypto.randomUUID(), actorId: "user_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", role: "editor" },
+        visible: () => true,
+      }),
+    })
+    const app = mount(handler)
+    const first = await connect(app)
+    const cursor = bootstrapId(await first.until((seen) => seen.includes('"type":"heartbeat"'), "did not open"))
+    expect(cursor).toBe("1000")
+    // Still attached: a second tab resumes at the bootstrap cursor and
+    // receives what followed, no gap; a cursor from another numbering does not.
+    bus.publish(worktree("after-start"))
+    const second = await connect(app, cursor)
+    const text = await second.until((seen) => seen.includes('"name":"after-start"'), "the frame after the start did not arrive")
+    expect(text).not.toContain("stream.replay-gap")
+    const stranger = await connect(app, "7")
+    expect(await stranger.until((seen) => seen.includes("stream.replay-gap"), "no gap for a foreign cursor")).toContain("cp.sse_replay_gap")
+    first.close()
+    second.close()
+    stranger.close()
+  })
+
   test("emits a replay-gap notice when the cursor has fallen out of the retention window", async () => {
     const { bus, app } = harness()
     for (let i = 1; i <= 300; i += 1) bus.publish(provision("ws_1", "cloning"))

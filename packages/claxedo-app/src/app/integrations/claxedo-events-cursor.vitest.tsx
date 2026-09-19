@@ -304,6 +304,66 @@ describe("the workspace stream's two arms", () => {
     expect(opens().filter((session) => session === "ses_a")).toHaveLength(3)
   })
 
+  test("a re-grant that lands while the session-scoped attempt is in flight outranks that attempt's refusal", async () => {
+    const refusedSession = () => Response.json({ error: { code: "session_event_stream_denied", message: "revoked", cause: "session_private" } }, { status: 403 })
+    const notice = { type: "session.share.changed", phase: "granted", ownerUserId: "u", sessionId: "ses_a", workspaceId: "ws_shared", ts: 1 }
+    let cp: ReturnType<typeof openStream> | undefined
+    let releaseFirst: (() => void) | undefined
+    const held = new Promise<void>((resolve) => { releaseFirst = resolve })
+    let scopedOpens = 0
+    transport.request.mockImplementation(async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (url.pathname.endsWith("/api/cp/events")) {
+        cp = openStream(init?.signal)
+        return cp.response
+      }
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      if (!url.searchParams.has("sessionID")) return refusedAtWorkspaceLevel()
+      scopedOpens += 1
+      if (scopedOpens > 1) return quiet()
+      // The first scoped attempt is answered only after the grant notice landed.
+      await held
+      return refusedSession()
+    })
+    mountRoute(() => "/w/ws_shared/session/ses_a")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(scopedOpens).toBe(1)
+    cp?.send(notice)
+    await vi.advanceTimersByTimeAsync(0)
+    releaseFirst?.()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))).toEqual([null, "ses_a", "ses_a"])
+  })
+
+  test("a hole in the control plane's stream asks the runtime once more for a parked session", async () => {
+    let granted = false
+    const refusedSession = () => Response.json({ error: { code: "session_event_stream_denied", message: "revoked", cause: "session_private" } }, { status: 403 })
+    let cp: ReturnType<typeof openStream> | undefined
+    transport.request.mockImplementation(async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      if (url.pathname.endsWith("/api/cp/events")) {
+        cp = openStream(init?.signal)
+        return cp.response
+      }
+      if (!url.pathname.endsWith("/api/wr/events")) return quiet()
+      if (!url.searchParams.has("sessionID")) return refusedAtWorkspaceLevel()
+      return granted ? quiet() : refusedSession()
+    })
+    mountRoute(() => "/w/ws_shared/session/ses_a")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const opens = () => workspaceRequests().map(({ url }) => url.searchParams.get("sessionID"))
+    expect(opens()).toEqual([null, "ses_a"])
+    // The grant notice fell into the hole; the gap frame is what the reader has.
+    granted = true
+    cp?.send({ type: "stream.replay-gap", code: "cp.sse_replay_gap", message: "", severity: "warn" })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(opens()).toEqual([null, "ses_a", "ses_a"])
+  })
+
   test("a 403 minted elsewhere on the path is retried unscoped, not narrowed to the session", async () => {
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)

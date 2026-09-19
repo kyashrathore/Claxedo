@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
+import { createSessionRoutes, type SessionLifecycleEvent } from "./session-core"
 import type {
   AgentHarnessFactory,
   AgentMessage,
@@ -145,7 +145,6 @@ function managedRoutes(input: {
     ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
     ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
     sessionAccessPolicy: input.policy,
-    sessionBus: { publish() {}, subscribe: () => () => {} },
     publishGlobal: input.publishGlobal ?? (() => {}),
   })
   const app = new Hono()
@@ -482,7 +481,6 @@ describe("createSessionRoutes message paging", () => {
         calls.push({ sessionId, page, directory })
         return { messages: [first, second], nextCursor: "journal:opaque/next" }
       },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
 
@@ -553,7 +551,6 @@ describe("createSessionRoutes message paging", () => {
         routeFullReads += 1
         return [first, second]
       },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
     const response = await app.request("http://localhost/session/session-1/message?limit=1")
@@ -594,7 +591,6 @@ describe("createSessionRoutes message paging", () => {
         pageCalls += 1
         return { messages: [second], nextCursor: "must-not-leak" }
       },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
 
@@ -621,7 +617,6 @@ describe("createSessionRoutes message paging", () => {
         return adapter()
       },
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
 
@@ -646,7 +641,6 @@ describe("createSessionRoutes message paging", () => {
       resolveAdapter: () => adapter(),
       resolveDirectory: () => "/workspace",
       getMessagePage: () => { throw new AgentMessagePageError(404, "session was not found") },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
     const adapterErrorApp = routes({
@@ -682,7 +676,6 @@ describe("createSessionRoutes message paging", () => {
 function routes(input: {
   adapter: AgentHarnessAdapter
   events?: CompatEnvelope[]
-  busEvents?: RuntimeSessionBusEvent[]
   lifecycle?: SessionLifecycleEvent[]
   getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
   getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessage[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessage[]; maxEventOrdinal?: number } | undefined
@@ -694,10 +687,6 @@ function routes(input: {
     resolveAdapter: () => input.adapter,
     resolveExecutionBinding: fixtureExecutionBinding(),
     resolveDirectory: () => undefined,
-    sessionBus: {
-      publish: (event) => input.busEvents?.push(event),
-      subscribe: () => () => {},
-    },
     publishGlobal: (event) => input.events?.push(event),
     publishSessionLifecycle: (event) => input.lifecycle?.push(event),
     getMessages: input.getMessages ? (_c, directory, sessionId) => input.getMessages?.(directory, sessionId) : undefined,
@@ -974,7 +963,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         { id: "question_hidden", sessionID: "session_hidden", questions: [] },
       ] as AgentQuestion[],
       sessionAccessPolicy: policy,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     })
     const app = new Hono()
@@ -1037,7 +1025,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         },
       } as unknown as AgentRuntime),
       resolveDirectory: () => undefined,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     })
     const app = new Hono()
@@ -1166,10 +1153,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         calls.push({ directory, parentSessionId })
         return [{ subagentKey: "child_1", revision: 3, status: "running" }]
       },
-      sessionBus: {
-        publish: () => {},
-        subscribe: () => () => {},
-      },
       publishGlobal: () => {},
     })
     const res = await app.request("http://localhost/session/parent_1/subagents")
@@ -1182,10 +1165,8 @@ describe("createSessionRoutes directory-less sessions", () => {
 
   test("rejects a binding without its required machine directory before publishing prompt events", async () => {
     const events: CompatEnvelope[] = []
-    const busEvents: RuntimeSessionBusEvent[] = []
     const res = await routes({
       events,
-      busEvents,
       adapter: adapter({
         events: [
           messageUpdated({
@@ -1230,12 +1211,10 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     expect(res.status).toBe(500)
     expect(events).toEqual([])
-    expect(busEvents).toEqual([])
   })
 
   test("can run message turns through the agent runtime facade", async () => {
     const events: CompatEnvelope[] = []
-    const busEvents: RuntimeSessionBusEvent[] = []
     const messages: AgentMessage[] = [{
       info: {
         id: "assistant_1",
@@ -1295,10 +1274,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveRuntime: () => runtime,
       resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => undefined,
-      sessionBus: {
-        publish: (event) => busEvents.push(event),
-        subscribe: () => () => {},
-      },
       publishGlobal: (event) => events.push(event),
     })
 
@@ -1323,7 +1298,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       permissionMode: "winner-mode",
     }])
     expect(events.map((event) => event.payload.type)).toEqual(["message.updated", "session.idle"])
-    expect(busEvents).toEqual([])
   })
 
   test("preserves the cause instead of flattening a failed turn to 'Stream error'", async () => {
@@ -1343,7 +1317,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveAdapter: () => adapter(),
       resolveRuntime: () => runtime,
       resolveDirectory: () => undefined,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
     })
 
@@ -1392,7 +1365,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveRuntime: () => runtime,
       resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => undefined,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
     })
     const request = () => ({
@@ -1416,7 +1388,6 @@ describe("createSessionRoutes directory-less sessions", () => {
     const unsupported = await createSessionRoutes({
       resolveAdapter: () => ({ ...adapter(), executeCommand: undefined }) as unknown as AgentHarnessAdapter,
       resolveDirectory: () => undefined,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     }).request("http://localhost/session/session_1/command", {
       method: "POST",
@@ -1436,7 +1407,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         },
       }),
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     })
 
@@ -1472,7 +1442,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         shell: async (_id: string, input: unknown) => { calls.push(input) },
       }),
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     })
 
@@ -1509,7 +1478,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         shell: undefined,
       }) as unknown as AgentHarnessAdapter,
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     }).request("http://localhost/session/session_1/shell", {
       method: "POST",
@@ -1526,7 +1494,6 @@ describe("createSessionRoutes directory-less sessions", () => {
     const response = await createSessionRoutes({
       resolveAdapter: () => ({ ...adapter(), shell: undefined }) as unknown as AgentHarnessAdapter,
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     }).request("http://localhost/session/session_1/shell", {
       method: "POST",
@@ -1549,7 +1516,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         },
       }),
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     })
 
@@ -1575,7 +1541,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         summarize: async (_id: string, input: unknown) => { calls.push(input) },
       }),
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     })
 
@@ -1612,7 +1577,6 @@ describe("createSessionRoutes directory-less sessions", () => {
         summarize: undefined,
       }) as unknown as AgentHarnessAdapter,
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     }).request("http://localhost/session/session_1/summarize", {
       method: "POST",
@@ -1629,7 +1593,6 @@ describe("createSessionRoutes directory-less sessions", () => {
     const response = await createSessionRoutes({
       resolveAdapter: () => ({ ...adapter(), summarize: undefined }) as unknown as AgentHarnessAdapter,
       resolveDirectory: () => "/workspace",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     }).request("http://localhost/session/session_1/summarize", {
       method: "POST",
@@ -1659,7 +1622,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveAdapter: () => adapter(),
       resolveRuntime: () => runtime,
       resolveDirectory: () => undefined,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
       promptAsyncAdmissionAckTimeoutMs: 30,
     })
@@ -1700,7 +1662,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveAdapter: () => adapter(),
       resolveRuntime: () => runtime,
       resolveDirectory: () => undefined,
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: () => {},
     }).request("http://localhost/session/session_1/prompt_async", {
       method: "POST",
@@ -1769,7 +1730,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveRuntime: () => runtime,
       resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => "/work",
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
       createActiveTurnScope: () => {
         activeScopes++
@@ -1856,7 +1816,6 @@ describe("createSessionRoutes directory-less sessions", () => {
           completeDisposal()
         },
       }),
-      sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
     })
     const client = new AbortController()
@@ -1884,7 +1843,6 @@ for (const operation of ["reply", "reject"] as const) {
       resolveDirectory: () => "/work",
       listQuestions: async () => [],
       resolveAdapter: () => { resolved++; throw new Error("No default harness configured") },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
     app.onError(() => new Response("unexpected harness resolution", { status: 500 }))
@@ -1906,7 +1864,6 @@ test("question listing filters the authoritative workspace inventory without res
     resolveAdapter: () => { throw new Error("must not select a harness from an unverified session query") },
     resolveDirectory: () => "/repo",
     listQuestions: async () => rows,
-    sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
   })
   const selected = await app.request("http://localhost/question?sessionId=session_first")
@@ -1935,7 +1892,6 @@ test("delete publishes the removed identity only after durable deletion succeeds
       resolveDirectory: () => "/workspace",
       resolveExecutionBinding: fixtureExecutionBinding("ws"),
       afterDeleteSession: () => { order.push("store"); if (fail) throw new Error("store deletion failed") },
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal: (event) => { order.push("event"); events.push(event) },
     })
     const result = await app.request("http://localhost/session/deleted", { method: "DELETE" })
@@ -1951,7 +1907,6 @@ test("late approval is not found without resolving a retired harness", async () 
     resolveAdapter: () => { resolved = true; throw new Error("retired harness") },
     resolveDirectory: () => "/workspace",
     listPermissions: async () => [],
-    sessionBus: { publish() {}, subscribe: () => () => {} },
     publishGlobal() {},
   })
   const result = await app.request("http://localhost/session/deleted/permissions/expired", {
@@ -2033,7 +1988,6 @@ describe("createSessionRoutes session instructions", () => {
       resolveAdapter: () => fixture,
       resolveDirectory: () => "/workspace",
       resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal(event) {
         events.push(event)
         notify()
@@ -2218,7 +2172,6 @@ describe("createSessionRoutes session model group", () => {
       resolveAdapter: () => fixture,
       resolveDirectory: () => "/workspace",
       resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
     return { app, creates }
@@ -2324,7 +2277,6 @@ describe("GET /session/capabilities effort levels", () => {
       resolveAdapter: () => fixture,
       resolveDirectory: () => "/workspace",
       resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
-      sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
   }

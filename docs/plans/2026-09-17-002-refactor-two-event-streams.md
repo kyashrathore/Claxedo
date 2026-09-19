@@ -438,10 +438,10 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       brief above. Round 1 findings fixed; round 2 on the fixed tree;
       further rounds until a round returns zero findings. Each round's
       findings, fixes and the zero-finding report are recorded here with
-      the commit they reviewed. Progress: rounds 1–9 recorded under
+      the commit they reviewed. Progress: rounds 1–10 recorded under
       "Execution → Review rounds" with their commits (each round's full
       reports from round 7 on are kept under `docs/plans/reviews/`); no
-      round has yet returned zero findings — round 10 runs on the round-9
+      round has yet returned zero findings — round 11 runs on the round-10
       fixes.
 - [ ] One written account of the system exists and matches the code: the
       module comments on the two handlers, the two reader targets and
@@ -460,9 +460,9 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       watchdog on heartbeat, gap → resync); route-ownership snapshot;
       `bun run test:architecture-ratchets` with the closure ceilings
       LOWERED to the measured values. Progress: `routes/events.test.ts`
-      (23), `event-delivery.test.ts` (25), local `shell/events.test.ts` (11)
+      (23), `event-delivery.test.ts` (28), local `shell/events.test.ts` (13)
       + `event-stream-response.test.ts`; reader suite
-      `claxedo-events-cursor.vitest.tsx` (16) + `claxedo-event-targets.test.ts`;
+      `claxedo-events-cursor.vitest.tsx` (18) + `claxedo-event-targets.test.ts`;
       ceilings lowered in `2c10b5aaa4` (app-local 1077, renderer 1120,
       self-hosted 124, desktop main 90) and unchanged since.
 
@@ -911,4 +911,40 @@ and fixes (the commit after this one):
   re-exports them), and `batch-autotab.ts` subscribes to the emitter itself
   instead of through a `{name, details}` relay in `route-bridge.tsx`.
 
-**Round 10**: see below.
+**Round 10** (tree `1270592b2c`, the branch rebased onto dev `d94e4250d9`;
+two reviewers; reports in `docs/plans/reviews/2026-09-17-002-round10-{server,client}.md`).
+Findings and fixes (the commit after this one):
+
+- MAJOR (server): a scope that had rung no frame before it was evicted
+  wrote a tombstone naming no retained position, and `hasGap(undefined)`
+  is never a gap — so a grantee who opened on an idle session and dropped
+  was restored as continuing after the retained ring rolled, and its
+  bootstrap cursor resumed over everything that rolled out with no notice.
+  The tombstone now records the retained position the scope had DECIDED
+  through (delivered or omitted; not past a frame the authority could not
+  decide) and carries its hole; a tombstone naming no position does not
+  continue. The local `cp/events` handler had the same hole and takes the
+  same rule; its attach-reset `unknownSequence` flag is the same watermark
+  round 9 gave `wr/events`, so a second tab at the same cursor reads the
+  gap too. Tests at both handlers, mutation-checked.
+- NIT (server): a fresh ring's own start — the bootstrap cursor a reader is
+  handed on an empty ring — resumed as a gap; only cursors below the start
+  are foreign now. A restore that does not continue keeps its start over
+  the hole, since that start IS the cursor its readers hold.
+- MINOR (server): `createSessionRoutes` lost its `sessionBus` option, read
+  by nothing since round 2, with `RuntimeSessionBusEvent` and the two
+  tests asserting an empty bus.
+- MINOR (client): a live `agent.lifecycle` frame landing during a
+  terminal's recorded read was overwritten by the older record; each live
+  terminal is now applied as its record arrives and only if its indicator
+  did not move during the read.
+- MINOR (client): a re-grant notice arriving while a session-scoped
+  attempt was in flight was ignored and the attempt's stale 403 parked the
+  target; the notice is remembered and the refusal reopens once instead. A
+  control-plane gap re-probes every parked target once, since the notice
+  may have fallen into the hole. Both tested, mutation-checked.
+- NIT (client): the reader's dead re-exports are gone (the two tests import
+  the frames module); the Tier M spec's comment says it proves the mock's
+  body, naming the reader suite that proves the parking.
+
+**Round 11**: see below.

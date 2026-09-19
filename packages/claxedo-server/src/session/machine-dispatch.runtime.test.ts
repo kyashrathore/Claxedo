@@ -104,7 +104,6 @@ describe("machine dispatch against the workspace runtime it reads", () => {
       }),
       getSession: (_c, directory, sessionId) => runtime.sessions.get(sessionId, directory),
       getMessages: () => adapter.getMessages({} as never),
-      sessionBus: bus,
       publishGlobal: (event) => hub.publishGlobal(event),
     }))
     const events = workspaceEventsHandler({ directory: "/workspace", eventHub: hub, bus })

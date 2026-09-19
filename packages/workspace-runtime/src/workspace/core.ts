@@ -39,6 +39,8 @@ export function mountWorkspaceEvents(app: Hono, options: {
   eventHub: RuntimeEventHub
   sessionParents?: WorkspaceEventParents
   sessionAccessPolicy?: SessionAccessPolicy
+  /** The delivery policy's renewal cadence; a test shortens it to watch a lease lapse. */
+  renewalIntervalMs?: number
 }): () => void {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
   const handler = workspaceEventsHandler({
@@ -49,6 +51,7 @@ export function mountWorkspaceEvents(app: Hono, options: {
     policy,
     sessionAccessPolicy: options.sessionAccessPolicy,
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
+    ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
   app.get(WorkspaceRuntimeRoutes.events, handler)
   return handler.close

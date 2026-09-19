@@ -102,7 +102,6 @@ function routes(runtime: AgentRuntime, queuedPrompts?: QueuedPromptHost, publish
     resolveAdapter: () => adapter(),
     resolveRuntime: () => runtime,
     resolveDirectory: () => undefined,
-    sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: (event) => { published.push(event) },
     ...(queuedPrompts ? { queuedPrompts } : {}),
   })

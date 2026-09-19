@@ -23,6 +23,8 @@ export type RuntimeConfigApplyStatus = {
 }
 
 export type WorkspaceHostMountOptions = {
+  /** The stream's renewal cadence; a test shortens it to watch a lease lapse. */
+  renewalIntervalMs?: number
   exposure: WorkspaceRuntimeExposure
   /** When provided, also mounts the workspace core routes (file, diff,
    *  PTY, process, tunnel, agent hooks, events, capabilities) as a

@@ -1455,6 +1455,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           eventHub,
           sessionAccessPolicy,
           sessionParents: hostOptions.sessionParents ?? sessionParents,
+          ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
         })
         if (options.pty) {
           mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy)

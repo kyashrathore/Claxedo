@@ -56,7 +56,6 @@ import {
   sessionTurnRefusal,
   type ActiveTurnScope,
   type AdmittedSessionPromptTurn,
-  type RuntimeSessionBusEvent,
   parseSessionPromptBody,
   type QueuedPromptAction,
   type SessionPromptBody,
@@ -98,7 +97,6 @@ import { SessionRollbackError } from "../session-rollback-error"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { asRecord } from "@claxedo/helpers/guards"
 
-export type { RuntimeSessionBusEvent } from "../session/service"
 
 /**
  * Extract a human-safe headline from a turn/stream failure without discarding the cause.
@@ -126,11 +124,6 @@ export type SessionLifecycleEvent = {
   info?: unknown
   message?: string
   ts: number
-}
-
-type SessionBus = {
-  publish: (event: RuntimeSessionBusEvent) => void
-  subscribe: (fn: (event: unknown) => void) => () => void
 }
 
 type MessageSnapshot = {
@@ -493,7 +486,6 @@ type Opts = {
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
   exposeCommandRoute?: boolean
-  sessionBus: SessionBus
   publishGlobal: (event: CompatEnvelope) => void
   publishSessionLifecycle?: (event: SessionLifecycleEvent) => void
   resolveWorkspaceId?: (c: Ctx, directory: RuntimeDirectory) => Promise<string | undefined> | string | undefined

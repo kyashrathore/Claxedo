@@ -341,6 +341,10 @@ describe("createIdentityAwareEventSource", () => {
     expect(stranger.replay.hasGap("2", stranger.replay.lastId())).toBe(true)
     stranger.subscribe(() => undefined)
     expect(stranger.replay.hasGap("2", stranger.replay.lastId())).toBe(true)
+    // The ring's own start — the bootstrap cursor a reader was handed on it
+    // — resumes; nothing was issued between it and the first frame.
+    expect(stranger.replay.hasGap("1000", stranger.replay.lastId())).toBe(false)
+    expect(stranger.replay.hasGap("999", stranger.replay.lastId())).toBe(true)
     bus.publish({ sessionId: "ses", value: "d" })
     await source.flush()
     // The new scope's own numbering resumes.
@@ -455,6 +459,79 @@ describe("createIdentityAwareEventSource", () => {
     expect(freshEvents).toEqual(["before_revocation", "after_revocation"])
     expect(oldTerminated).toBe(true)
     expect(freshTerminated).toBe(false)
+    source.close()
+  })
+
+  test("a scope that rang nothing before it was evicted does not resume over a retained ring that rolled since", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 1_000,
+      policy: () => "deliver",
+      sessionId: (event) => event.sessionId,
+    })
+    // A grantee opens on an idle session: the bootstrap cursor is the ring's
+    // start, nothing is ever rung, and the connection drops.
+    const idle = source.open(participant("connection_idle"))
+    await idle.ready
+    const bootstrap = idle.replay.lastId() ?? "0"
+    idle.subscribe(() => undefined)()
+    // Meanwhile a turn streams past the retained ring's size.
+    for (let index = 0; index < 300; index += 1) bus.publish({ sessionId: "ses", value: `f${index}` })
+    await source.flush()
+    const back = source.open(participant("connection_back"))
+    await back.ready
+    expect(back.replay.hasGap(bootstrap, back.replay.lastId())).toBe(true)
+    source.close()
+  })
+
+  test("frames a scope omitted count as decided: its restore is not a gap while the retained ring still holds them", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 1_000,
+      policy: ({ event }) => (event.sessionId === "ses_private" ? "omit" : "deliver"),
+      sessionId: (event) => event.sessionId,
+    })
+    const first = source.open(participant("connection_1"))
+    await first.ready
+    const bootstrap = first.replay.lastId() ?? "0"
+    const release = first.subscribe(() => undefined)
+    for (let index = 0; index < 10; index += 1) bus.publish({ sessionId: "ses_private", value: `p${index}` })
+    await source.flush()
+    release()
+    bus.publish({ sessionId: "ses_private", value: "p10" })
+    await source.flush()
+    const second = source.open(participant("connection_2"))
+    await second.ready
+    expect(second.replay.hasGap(bootstrap, second.replay.lastId())).toBe(false)
+    source.close()
+  })
+
+  test("a scope evicted with a hole keeps it when restored", async () => {
+    const bus = createBus<Event>()
+    let away = false
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      sequenceOrigin: () => 1_000,
+      policy: () => (away ? "terminate" : "deliver"),
+      sessionId: (event) => event.sessionId,
+    })
+    const first = source.open(participant("connection_1"))
+    first.subscribe(() => undefined)
+    bus.publish({ sessionId: "ses", value: "a" })
+    await source.flush()
+    const cursor = first.replay.lastId()!
+    away = true
+    bus.publish({ sessionId: "ses", value: "b" })
+    await source.flush()
+    // Terminated and evicted; the plane is back for the restore, so the
+    // undecidable frame is re-decided and delivered — but a cursor from
+    // before the hole is still a gap, not a replay of one frame.
+    away = false
+    const second = source.open(participant("connection_2"))
+    await second.ready
+    expect(second.replay.hasGap(cursor, second.replay.lastId())).toBe(true)
     source.close()
   })
 

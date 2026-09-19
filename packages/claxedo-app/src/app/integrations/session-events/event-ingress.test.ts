@@ -16,7 +16,7 @@ import {
   reconcileAuthorizedSessionPersistence,
 } from "./event-ingress"
 import type { RoutableEvent } from "./event-router"
-import { createClaxedoEventEmitter, type ClaxedoEvent } from "../claxedo-events"
+import { createClaxedoEventEmitter, type ClaxedoEvent } from "../claxedo-event-frames"
 import type { SessionTitleProjectionApi } from "@/features/session/store/session-title-projection"
 import {
   clearConversationChatRegistryForTest,

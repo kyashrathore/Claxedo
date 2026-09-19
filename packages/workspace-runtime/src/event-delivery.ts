@@ -63,12 +63,18 @@ type Scope<T extends object> = {
   /**
    * The ring position at the scope's last hole: a frame the ring never rang
    * (one the authority could not decide) or, for a ring that continues no
-   * tombstone, the position it started at. A cursor at or below it names a
-   * frame the reader may have missed, and reads as a gap whoever presents
-   * it, however many connections have attached since.
+   * tombstone, the position before its start. A cursor at or below it names
+   * a frame the reader may have missed, and reads as a gap whoever presents
+   * it, however many connections have attached since. The start itself is
+   * the ring's own: the bootstrap cursor a reader is handed on an empty ring.
    */
   holeBelow: number
   reservations: number
+  /**
+   * The retained ring position this scope has decided up to — delivered or
+   * omitted — so a restore re-decides only what came after it. Not advanced
+   * over a frame the authority could not decide, which a restore re-asks.
+   */
   retainedCursor?: string
   tail: Promise<void>
   pending: boolean
@@ -358,7 +364,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
   const replayConcurrency = input.replayConcurrency ?? 8
   const replayStartupDeadlineMs = input.replayStartupDeadlineMs ?? 10_000
   const scopes = new Map<string, Scope<T>>()
-  const tombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
+  const tombstones = new Map<string, { sequence: number; holeBelow: number; retainedCursor?: string }>()
   const retained = createSseReplayBuffer<T>(input.isTerminal ? { isTerminal: input.isTerminal } : {})
 
   const decision = (principal: EventDeliveryPrincipal, event: T) => input.policy({
@@ -376,6 +382,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     tombstones.delete(scope.key)
     tombstones.set(scope.key, {
       sequence: Number(scope.replay.lastId() ?? "0"),
+      holeBelow: scope.holeBelow,
       ...(scope.retainedCursor ? { retainedCursor: scope.retainedCursor } : {}),
     })
     while (tombstones.size > 256) tombstones.delete(tombstones.keys().next().value!)
@@ -397,6 +404,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     const sessionId = input.sessionId(event)
     const deliveries: Connection<T>[] = []
     const decided = new Set<Connection<T>>(decidedBefore)
+    let undecidable = false
     for (const result of decisions) {
       decided.add(result.connection)
       if (!scope.connections.has(result.connection)) continue
@@ -404,6 +412,7 @@ export function createIdentityAwareEventSource<T extends object>(input: {
         // The frame is not rung for this scope's ring (it may be one the
         // connection was never allowed), so the numbering runs on over a
         // hole: no reconnect with a cursor from before it may resume through.
+        undecidable = true
         scope.holeBelow = Math.max(scope.holeBelow, Number(scope.replay.lastId() ?? "0"))
         disconnect(scope, result.connection)
         continue
@@ -422,10 +431,8 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     // a connection's catch-up re-enqueues a frame whose first decision was
     // still awaiting the policy when that connection attached, so that
     // connection is decided for it too.
-    if (delivered && scope.replay.idFor(event) === undefined) {
-      scope.replay.push(event)
-      scope.retainedCursor = retained.idFor(event) ?? scope.retainedCursor
-    }
+    if (delivered && scope.replay.idFor(event) === undefined) scope.replay.push(event)
+    if (!undecidable) scope.retainedCursor = retained.idFor(event) ?? scope.retainedCursor
     for (const connection of deliveries) void Promise.resolve(connection.push(event)).catch(() => undefined)
     // A connection that attached while this frame was awaiting the policy was
     // not decided for it, and its bootstrap cursor sits before the id the
@@ -542,23 +549,31 @@ export function createIdentityAwareEventSource<T extends object>(input: {
     // from some other numbering — a scope this process evicted long ago, or
     // another process's — and only LOOKS resumable: the ring's own hole check
     // reads a cursor at its start as "nothing to replay", and the frames
-    // behind it would be lost silently. So the ring's start is a hole: every
-    // cursor at or below it is a gap, and only a cursor this ring issued
-    // resumes. A scope restored from a tombstone continues its numbering
+    // behind it would be lost silently. So everything before the ring's
+    // start is a hole: a cursor below it is a gap, and only a cursor this
+    // ring issued — its start, handed out as the bootstrap cursor, included
+    // — resumes. A scope restored from a tombstone continues its numbering
     // only while the retained ring still holds everything since the
     // tombstone's cursor; once that ring has rolled past it, the restored
     // ring is contiguous over a hole and the reader's cursor is a gap all the
     // same. The local scope and a runtime that has published nothing yet have
     // no numbering a cursor could have come from.
-    const continues = (!!tombstone && !retained.hasGap(tombstone.retainedCursor)) || key === "local" || retained.lastId() === undefined
+    // A tombstone names the retained position its scope had decided up to;
+    // one that names none (its first retained frame was undecidable) cannot
+    // say what rolled out since, and `hasGap(undefined)` is not a gap — so
+    // it does not continue, and every cursor it issued reads as a gap.
+    const continues = (!!tombstone && tombstone.retainedCursor !== undefined && !retained.hasGap(tombstone.retainedCursor))
+      || key === "local" || retained.lastId() === undefined
     const created: Scope<T> = {
       key,
       ...(key === "local" ? { replayPrincipal: principal } : {}),
       replay,
       connections: new Set(),
-      holeBelow: continues ? 0 : initialSequence,
+      // A restore that does not continue numbers on from the tombstone, so
+      // the cursor its readers hold IS the start and lies over the hole.
+      holeBelow: continues ? tombstone?.holeBelow ?? 0 : tombstone ? initialSequence : initialSequence - 1,
       reservations: 0,
-      ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
+      retainedCursor: tombstone?.retainedCursor ?? retained.lastId(),
       tail: Promise.resolve(),
       pending: false,
       queued: 0,
@@ -594,19 +609,21 @@ export function createIdentityAwareEventSource<T extends object>(input: {
             results[index] = await decideBeforeDeadline(retainedEvents[index].payload)
           }
         }))
-        for (let index = 0; index < retainedEvents.length; index += 1) {
-          if (results[index] !== "deliver") continue
-          replay.push(retainedEvents[index].payload)
-          created.retainedCursor = retainedEvents[index].id
-        }
         // A frame the authority could not decide — away, or past the startup
         // deadline — is not in this ring and not known to be nobody's: the
         // ring is holed up to here, so a cursor from before it reads as a gap
         // and the reader re-reads, rather than resuming over a frame it never
-        // saw.
-        if (results.some((result) => result === "terminate")) {
-          created.holeBelow = Math.max(created.holeBelow, Number(replay.lastId() ?? "0"))
+        // saw; a later restore re-asks from that frame on.
+        let decidedThrough: string | undefined
+        let holed = false
+        for (let index = 0; index < retainedEvents.length; index += 1) {
+          if (results[index] === "terminate") holed = true
+          if (!holed) decidedThrough = retainedEvents[index].id
+          if (results[index] !== "deliver") continue
+          replay.push(retainedEvents[index].payload)
         }
+        created.retainedCursor = decidedThrough ?? tombstone?.retainedCursor
+        if (holed) created.holeBelow = Math.max(created.holeBelow, Number(replay.lastId() ?? "0"))
       })()
       void created.tail.finally(() => {
         created.pending = false

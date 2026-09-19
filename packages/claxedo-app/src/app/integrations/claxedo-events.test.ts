@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isStreamReplayGap, normalizeClaxedoStreamEvent } from "./claxedo-events"
+import { isStreamReplayGap, normalizeClaxedoStreamEvent } from "./claxedo-event-frames"
 
 
 describe("normalizeClaxedoStreamEvent", () => {

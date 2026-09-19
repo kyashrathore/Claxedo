@@ -75,14 +75,7 @@ import {
   type Handler,
 } from "./claxedo-event-frames"
 
-export {
-  createClaxedoEventEmitter,
-  isStreamReplayGap,
-  normalizeClaxedoStreamEvent,
-  type ClaxedoDirectoryEvent,
-  type ClaxedoEvent,
-  type PtyInfo,
-} from "./claxedo-event-frames"
+export type { ClaxedoEvent } from "./claxedo-event-frames"
 import { errorMessage } from "@/lib/server-errors"
 import { accountStreamAvailable } from "@/platform/account/account-stream-fetch"
 
@@ -198,8 +191,10 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   type Connection = {
     retarget: (target: ClaxedoEventStreamTarget) => void
     close: () => void
-    /** The share notice for a session this target was parked on. */
+    /** The share notice for a session this target was parked on, or is being refused. */
     regranted: (sessionId: string) => void
+    /** A hole in the control plane's stream: a parked target asks the runtime once more. */
+    reprobe: () => void
   }
   const connections = new Map<string, Connection>()
   let stopped = false
@@ -223,6 +218,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           return
         }
         emitter.emit({ type: "stream.replay-gap", stream: "cp", transport: target.transport })
+        for (const connection of connections.values()) connection.reprobe()
         return
       }
       const event = normalizeClaxedoStreamEvent(frame, address)
@@ -258,6 +254,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       scope: "workspace" as "workspace" | "session" | "refused",
       /** The session the runtime refused, while `scope` is `refused`; the route naming another reopens. */
       refusedSession: undefined as string | undefined,
+      /** A share notice for the routed session that landed while an attempt was in flight: its refusal, if any, predates the grant. */
+      regrantedSession: undefined as string | undefined,
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
       reconnectTimer: null as ReturnType<typeof setTimeout> | null,
@@ -342,19 +340,38 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     const reopen = () => {
       state.scope = "session"
       state.refusedSession = undefined
+      state.regrantedSession = undefined
       state.lastEventId = null
       connect()
     }
-    // The share notice for the refused session: the runtime will serve it
-    // now, so the target reopens where it stands.
+    // The share notice for the routed session: the runtime will serve it
+    // now. A parked target reopens where it stands; one with an attempt in
+    // flight remembers it, since that attempt's refusal — evaluated before
+    // the grant — is not the last word.
     const regranted = (sessionID: string) => {
-      if (state.scope !== "refused" || state.refusedSession !== sessionID || target.kind !== "wr" || target.sessionID !== sessionID) return
+      if (target.kind !== "wr" || target.sessionID !== sessionID) return
+      if (state.scope === "refused") {
+        if (state.refusedSession === sessionID) reopen()
+        return
+      }
+      if (state.scope === "session") state.regrantedSession = sessionID
+    }
+    // A parked target asked again, once: the control plane's stream had a
+    // hole, so the grant notice may have fallen into it.
+    const reprobe = () => {
+      if (state.scope !== "refused" || !state.refusedSession) return
       reopen()
     }
     // Refused by the runtime with nothing to reopen for: no retry, no
     // escalation, no "Reconnecting…"; the next navigation that names a
     // session the runtime may serve reopens.
     const park = (session: string | undefined) => {
+      if (session && state.regrantedSession === session) {
+        state.regrantedSession = undefined
+        state.lastEventId = null
+        connect()
+        return
+      }
       state.scope = "refused"
       state.refusedSession = session
       state.lastEventId = null
@@ -580,7 +597,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       connect()
     }
 
-    return { retarget, close, regranted }
+    return { retarget, close, regranted, reprobe }
   }
 
   const reconcileTargets = () => {
