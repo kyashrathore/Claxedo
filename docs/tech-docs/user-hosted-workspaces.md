@@ -16,11 +16,14 @@ daemon's own loopback page), the signed desktop, and the web client.
 
 **A.1 Desktop** — `packages/claxedo-desktop/src/main/host-connector/*`.
 `hostConnector.start()` enrolls the machine with the control plane through the
-host connector child (`child-supervisor.ts`, `host-connector-entry.ts`). The
-connector's heartbeat carries the workspace ids the machine serves and, outside
-the consent signature, `sessionAuthority` — the composition of the runtime the
-machine serves. The desktop reads that declaration from its daemon's
-`GET /api/claxedo/host-serving` (`packages/claxedo-local-server/src/workspace/user-hosted-serving-routes.ts`,
+host connector child (`child-supervisor.ts`, `host-connector-entry.ts`): the
+owner's account signs the enrollment, and from the `enrollment_id` onward the
+child signs its own requests with the machine key, exactly as a `claxedo
+connect` host does. The beat carries the revisions of the assignments this
+machine has consented to serve and, outside that consent, `sessionAuthority` —
+the composition of the runtime the machine serves. The desktop reads that
+declaration from its daemon's `GET /api/claxedo/host-serving`
+(`packages/claxedo-local-server/src/workspace/user-hosted-serving-routes.ts`,
 over the shared serving loop in `packages/claxedo-host-serving/src/serving.ts`),
 which reports `embeddedWorkspaceRuntimeSessionAuthority()` from
 `deployments/local/embedded-workspace-runtime.ts`: the same expression the
@@ -35,7 +38,16 @@ composes `embeddedManagedPrivateSessionPolicy` and passes the same
 declares `managed-private`.
 
 **A.3 Control plane** — `packages/claxedo-server/src/routes/hosted/host-enrollment.ts`
-records the beat through `WorkspaceAuthority.heartbeatHostEnrollment`. Each
+records a machine-signed beat through
+`WorkspaceAuthority.heartbeatHostEnrollmentByMachine`. The self-hosted node's
+in-process service calls the same method with a principal read from its own
+enrollment row: it holds the authority in-process, so there is no wire for a
+machine signature to authenticate across. It compares the row's stored key
+against its own before it beats, which is the possession the signature would
+otherwise carry, and it stops its loop and drops its tunnel on a refusal every
+later beat would earn again — revoked, owner ineligible, key version replaced,
+generation superseded. A pause keeps retrying, because the owner lifts it from
+the route that set it. Each
 authority adapter (`authority/adapters/d1`, `claxedo-server-core/.../sqlite`)
 stores `session_authority` on the host enrollment
 row; `activeWorkspaceHost` returns it. The latest beat assigns the value: a host
