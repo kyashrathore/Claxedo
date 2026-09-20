@@ -235,6 +235,46 @@ describe("Pty lifecycle cleanup", () => {
   })
 })
 
+describe("Pty agent hook access", () => {
+  const hookAccess = (token: string) => ({
+    token,
+    context: {
+      actor: { actorId: "actor_1", actorKind: "human" as const },
+      authority: { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const },
+    },
+    sessionId: "ses_1",
+    authorityLease: "lease_1",
+    authorityExpiresAt: Date.now() + 60_000,
+  })
+
+  test("lookup resolves the correct token and rejects incorrect and different-length tokens", async () => {
+    const { Pty } = await import("./index")
+    const token = "01234567-89ab-cdef-0123-456789abcdef"
+    const info = await Pty.create({ cwd: tmpDir, title: "hook" }, undefined, hookAccess(token))
+
+    expect(Pty.agentHookAccessForToken(token)).toMatchObject({ terminalId: info.id, sessionId: "ses_1" })
+    expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdee")).toBeUndefined()
+    expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdeff")).toBeUndefined()
+    expect(Pty.agentHookAccessForToken("short")).toBeUndefined()
+  })
+
+  test("renewal updates the correct token's lease and rejects incorrect and different-length tokens", async () => {
+    const { Pty } = await import("./index")
+    const token = "01234567-89ab-cdef-0123-456789abcdef"
+    const info = await Pty.create({ cwd: tmpDir, title: "hook-renew" }, undefined, hookAccess(token))
+
+    expect(Pty.renewAgentHookAccess(token, { authorityLease: "lease_2", authorityExpiresAt: 42 })).toBe(true)
+    expect(Pty.agentHookAccessForToken(token)).toMatchObject({
+      terminalId: info.id,
+      authorityLease: "lease_2",
+      authorityExpiresAt: 42,
+    })
+    expect(Pty.renewAgentHookAccess("01234567-89ab-cdef-0123-456789abcdee", { authorityLease: "lease_3", authorityExpiresAt: 43 })).toBe(false)
+    expect(Pty.renewAgentHookAccess("shorter", { authorityLease: "lease_3", authorityExpiresAt: 43 })).toBe(false)
+    expect(Pty.agentHookAccessForToken(token)).toMatchObject({ authorityLease: "lease_2", authorityExpiresAt: 42 })
+  })
+})
+
 /**
  * A `WSContext` double, with a plain counter for the one thing tests assert on.
  *

@@ -5,6 +5,7 @@
  */
 
 import { type IPty } from "@lydell/node-pty"
+import { timingSafeEqualStrings } from "@claxedo/helpers"
 import z from "zod/v3"
 import { Log } from "../log"
 import * as fs from "fs"
@@ -561,17 +562,20 @@ export namespace Pty {
     if (!token) return undefined
     for (const [terminalId, session] of sessions) {
       if (session.exited || session.removed) continue
-      if (session.agentHookAccess?.token !== token) continue
-      return { terminalId, ...session.agentHookAccess }
+      const binding = session.agentHookAccess
+      if (!binding || !timingSafeEqualStrings(binding.token, token)) continue
+      return { terminalId, ...binding }
     }
     return undefined
   }
 
   export function renewAgentHookAccess(token: string, lease: { authorityLease: string; authorityExpiresAt: number }) {
     for (const session of sessions.values()) {
-      if (session.exited || session.removed || session.agentHookAccess?.token !== token) continue
-      session.agentHookAccess.authorityLease = lease.authorityLease
-      session.agentHookAccess.authorityExpiresAt = lease.authorityExpiresAt
+      if (session.exited || session.removed) continue
+      const binding = session.agentHookAccess
+      if (!binding || !timingSafeEqualStrings(binding.token, token)) continue
+      binding.authorityLease = lease.authorityLease
+      binding.authorityExpiresAt = lease.authorityExpiresAt
       return true
     }
     return false
