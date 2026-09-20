@@ -32,8 +32,8 @@ export type { ControlPlaneTelemetry }
 
 /**
  * Relay wiring: the Relay provider, the runtime access-token signers, and
- * the storage adapter's answer to "which enrolled host serves this user-hosted
- * workspace" that the relay resolver routes by. It is the one field the shared
+ * the storage adapter's answer to "which enrolled host serves this workspace"
+ * that the relay resolver routes by. It is the one field the shared
  * contract leaves out.
  */
 export type ControlPlaneRelay = ControlPlaneRelayPort & {

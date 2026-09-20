@@ -1157,7 +1157,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const session = await this.requireSessionAccess(who, sessionId, workspaceId, "read").catch(async (err) => {
       // A session the control plane does not hold — one a machine created in
-      // a user-hosted workspace and never registered — has no shares here and
+      // a workspace it serves and never registered — has no shares here and
       // none to manage. There is no standing on it to ask about, so the
       // definite empty answer goes to the organization that owns the
       // workspace, which is also who a share could have been offered to.

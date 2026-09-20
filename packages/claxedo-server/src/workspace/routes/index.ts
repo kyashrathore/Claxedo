@@ -39,6 +39,7 @@ import { workspaceConnectionRoutes } from "../../connections/routes/connection-r
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/sandbox-driver-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
+import { controlPlaneListRow } from "@claxedo/server-core/workspace/store/response"
 import { hostAssignmentHandlers } from "../host-assignment-handlers"
 
 const createBody = z
@@ -133,15 +134,8 @@ function startCloudWorkspaceProvisioning(input: {
  */
 async function unsignedWorkspaceList() {
   return (await listWorkspaces()).flatMap((workspace) => {
-    const row = workspaceResponse(workspace)
-    if (row?.backing.kind !== "cloud-vm") return []
-    return [{
-      workspace_id: row.workspaceId,
-      project_id: row.projectId,
-      backing: row.backing.kind,
-      ...(row.workspaceName ? { display_name: row.workspaceName } : {}),
-      ...(row.directory ? { remote_directory: row.directory } : {}),
-    }]
+    const row = controlPlaneListRow(workspace)
+    return row.backing === "cloud-vm" ? [row] : []
   })
 }
 
@@ -314,7 +308,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
         if (ws.kind !== "local") {
           return c.json({
-            error: apiError("host_assignment_local_workspace_required", "Only local workspaces can be assigned for user-hosted sharing"),
+            error: apiError("host_assignment_local_workspace_required", "Only a workspace this machine serves can be assigned to a machine"),
           }, 400)
         }
         const parsed = parsedBody(hostAssignmentBody, rawBody)
@@ -399,10 +393,8 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       })
       .delete("/:id", async (c) => {
         const id = c.req.param("id")
-        // Deletion must never be reachable by an anonymous remote caller in
-        // signed mode — previously only cloud workspaces were gated, so any
-        // anonymous remote caller could delete local/user-hosted workspaces.
-        // Tokenless loopback clients pass straight through as before.
+        // Signed mode admits no anonymous remote deletion, whatever the
+        // workspace's placement; a tokenless loopback request still passes.
         const accessResult = await signedOrError(c.req.raw, signedAccessOptions(c.req.raw, options), services)
         if ("error" in accessResult) return c.json(accessResult.error, accessResult.status)
         const ws = await resolveWorkspace({ workspaceId: id })
@@ -565,9 +557,9 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         }
 
         // Same generator as the hosted Worker route (`newWorkspaceId` is
-        // Web-Crypto-only, so one module serves both runtimes). Timestamp
-        // prefix + 80 bits of randomness: the old bare-timestamp id was
-        // guessable inside any plausible creation window.
+        // Web-Crypto-only, so one module serves both runtimes): a timestamp
+        // prefix plus 80 bits of randomness, so an id is not guessable from
+        // its creation window.
         const workspaceId = newWorkspaceId()
         const projectId = body.projectId?.trim() || workspaceId
         const rawWorkspaceName = body.workspaceName?.trim()

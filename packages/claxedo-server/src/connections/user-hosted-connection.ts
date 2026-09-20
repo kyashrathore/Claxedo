@@ -30,7 +30,7 @@ export async function userHostedConnectionInfo(
   if (authz) return authz
   if (result.workspace?.backing !== "local-worktree") {
     return {
-      error: apiError("workspace_relay_user_hosted_required", "Workspace Relay user-hosted connection is only available for shared local workspaces"),
+      error: apiError("workspace_relay_user_hosted_required", "Workspace Relay machine connection is only available for a workspace shared from a machine"),
       status: 400,
     } as const
   }
@@ -164,7 +164,7 @@ export async function userHostedConnectionInfo(
       // and `activeWorkspaceHost` hands back what it declared.
       //
       // The control plane does not decide this and cannot derive it. A
-      // user-hosted workspace runs on the owner's machine, and that machine
+      // machine-placed workspace runs on the owner's machine, and that machine
       // composes either flavour: an unsigned desktop daemon leaves its
       // embedded runtime on `managedWorkspaceSessionAccessPolicy()` with no
       // injected authority (`"local"`, serving the workspace-wide streams),

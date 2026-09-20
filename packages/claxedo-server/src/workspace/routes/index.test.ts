@@ -250,7 +250,6 @@ function services(): ControlPlaneServices {
           org_id: "org_1",
           project_id: "project_1",
           backing: "cloud-vm" as const,
-          access: "cloud" as const,
         },
       })),
       listWorkspaces: vi.fn(async () => [{ workspace_id: "ws_1", role: "owner" }]),
@@ -441,11 +440,13 @@ describe("workspace routes signed control plane authority", () => {
     expect(json).toMatchObject({
       workspaceId: "ws_1",
       directory: "/workspace",
-      access: "cloud",
       backing: {
         kind: "cloud-vm",
       },
     })
+    // The placement is the only statement of where the workspace runs; the
+    // scope word derived from it belongs to the `?access=` query, not the body.
+    expect(json).not.toHaveProperty("access")
     expect(JSON.stringify(json)).not.toContain("/tmp/claxedo-workspace-route-test")
     expect(verify).toHaveBeenCalledWith("user_1", authConfig)
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "control_plane.auth.signed", {
@@ -1314,7 +1315,6 @@ describe("workspace routes signed control plane authority", () => {
         workspace_id: "ws_shared",
         project_id: "proj_shared",
         backing: "local-worktree" as const,
-        access: "user-hosted" as const,
         display_name: "Shared workspace",
         repo_name: "opencode",
         git_branch: "dev",
@@ -1414,7 +1414,6 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toMatchObject({
       workspaceId: "ws_1",
       directory: "/workspace",
-      access: "cloud",
       backing: {
         kind: "cloud-vm",
       },
@@ -1436,7 +1435,6 @@ describe("workspace routes signed control plane authority", () => {
       {
         workspace_id: "ws_hosted",
         project_id: "proj_hosted",
-        access: "cloud",
         backing: "cloud-vm",
         remote_directory: "/workspace/hosted",
         display_name: "Hosted workspace",
@@ -1450,7 +1448,6 @@ describe("workspace routes signed control plane authority", () => {
       workspace: {
         workspace_id: "ws_hosted",
         project_id: "proj_hosted",
-        access: "cloud",
         backing: "cloud-vm",
         remote_directory: "/workspace/hosted",
         display_name: "Hosted workspace",
@@ -1492,8 +1489,8 @@ describe("workspace routes signed control plane authority", () => {
   test("signed directory resolve rejects a runtime path shared by multiple workspaces", async () => {
     const svc = services()
     svc.authority!.listWorkspaces = vi.fn(async () => [
-      { workspace_id: "ws_cloud_a", access: "cloud", backing: "cloud-vm", remote_directory: "/workspace" },
-      { workspace_id: "ws_cloud_b", access: "cloud", backing: "cloud-vm", remote_directory: "/workspace" },
+      { workspace_id: "ws_cloud_a", backing: "cloud-vm", remote_directory: "/workspace" },
+      { workspace_id: "ws_cloud_b", backing: "cloud-vm", remote_directory: "/workspace" },
     ])
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
@@ -1521,7 +1518,6 @@ describe("workspace routes signed control plane authority", () => {
       workspace: {
         workspace_id: "ws_signed",
         project_id: "proj_signed",
-        access: "cloud",
         backing: "cloud-vm",
         remote_directory: "/workspace/signed",
       },
@@ -1602,7 +1598,6 @@ describe("workspace routes signed control plane authority", () => {
         workspace_id: "ws_shared",
         project_id: "proj_shared",
         backing: "local-worktree" as const,
-        access: "user-hosted" as const,
         display_name: "Shared workspace",
         repo_name: "opencode",
         git_branch: "dev",
@@ -2304,7 +2299,6 @@ describe("workspace routes signed control plane authority", () => {
       workspace: {
         workspace_id: "ws_shared",
         backing: "local-worktree" as const,
-        access: "user-hosted" as const,
       },
     }))
     const app = WorkspaceRoutes(svc, {
@@ -2378,7 +2372,7 @@ describe("workspace routes signed control plane authority", () => {
 
   test("signed user-hosted connection mints the stream scope its HOST declared, for either composition", async () => {
     // A constant `sessionAuthority: "local"` here would be wrong for half the
-    // hosts: a user-hosted workspace whose runtime injected a session
+    // hosts: a machine-placed workspace whose runtime injected a session
     // authority composes `managed-private` and answers an unscoped
     // `/api/wr/events` with a permanent 400 `session_event_scope_required`.
     // The machine declares its composition on its heartbeat and the mint
@@ -2393,7 +2387,6 @@ describe("workspace routes signed control plane authority", () => {
         workspace: {
           workspace_id: "ws_shared",
           backing: "local-worktree" as const,
-          access: "user-hosted" as const,
         },
       }))
       svc.authority!.activeWorkspaceHost = vi.fn(async () => ({
@@ -2482,7 +2475,6 @@ describe("workspace routes signed control plane authority", () => {
       workspace: {
         workspace_id: "ws_shared",
         backing: "local-worktree" as const,
-        access: "user-hosted" as const,
       },
     }))
     svc.authority!.runtimeAccessTokenActive = vi.fn(async () => ({
@@ -2534,7 +2526,7 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed user-hosted connection fails closed when Local Host Link is offline or paused", async () => {
+  test("signed machine connection fails closed when no machine is actively serving the workspace", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
     const svc = services()
     svc.authority!.openWorkspace = vi.fn(async () => ({
@@ -2543,7 +2535,6 @@ describe("workspace routes signed control plane authority", () => {
       workspace: {
         workspace_id: "ws_shared",
         backing: "local-worktree" as const,
-        access: "user-hosted" as const,
       },
     }))
     svc.authority!.activeWorkspaceHost = vi.fn(async () => ({ active: false as const }))
@@ -3076,7 +3067,7 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toEqual({
       error: {
         code: "host_assignment_local_workspace_required",
-        message: "Only local workspaces can be assigned for user-hosted sharing",
+        message: "Only a workspace this machine serves can be assigned to a machine",
       },
     })
     expect(assignments.assignWorkspace).not.toHaveBeenCalled()

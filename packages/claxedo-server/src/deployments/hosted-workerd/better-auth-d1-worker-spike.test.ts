@@ -34,6 +34,7 @@ import {
   BETTER_AUTH_REFRESH_TOKEN_PREFIX,
   betterAuthOAuthTokenHash,
 } from "../../platform/auth/better-auth-token-hash"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 
 const API_ORIGIN = "https://api.claxedo.test"
 const APP_ORIGIN = "https://app.claxedo.test"
@@ -44,27 +45,7 @@ const EVIDENCE_MIGRATION_PATH = fileURLToPath(
   new URL("../../../migrations/auth/0003_authentication_evidence.sql", import.meta.url),
 )
 const WORKER_PATH = fileURLToPath(new URL("./better-auth-d1-worker-spike.cf.ts", import.meta.url))
-// The control-plane tables the D1 authority + relay-target resolver read:
-// identities/orgs/workspaces (0002), host access + sharing (0004), and the
-// machine-wide grain — enrollments plus owner assignments (0012–0014).
-const CONTROL_PLANE_MIGRATION_PATHS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0005_agent_extensions_and_audit.sql",
-  "0012_cold_local_host_challenges.sql",
-  "0013_org_team_session_sharing.sql",
-  "0014_host_workspace_assignments.sql",
-  "0015_drop_local_host_links.sql",
-  "0016_host_session_authority.sql",
-  "0028_workspace_org_member_visible.sql",
-  "0029_host_connect.sql",
-  "0030_workspace_host_assignment_revision.sql",
-  "0034_drop_workspace_access.sql",
-  "0035_session_share_level.sql",
-  "0036_drop_workspace_share_role.sql",
-].map((name) => fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url)))
+const CONTROL_PLANE_MIGRATION_PATHS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 
 function body(input: Record<string, string>) {
   return new URLSearchParams(input).toString()
@@ -1113,7 +1094,6 @@ describe("Better Auth + D1 inside Workerd", () => {
       })
     }
 
-    // Enrolled but not yet assigned: nothing routes.
     expect(await relayTarget(workspaceId)).toEqual({ active: false })
 
     // 2. Owner assignment cold-registers the workspace and mints the Host

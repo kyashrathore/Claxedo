@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -16,26 +15,9 @@ import {
   D1SignedAgentPluginActivationStore,
   type AgentPluginActivationAuthority,
 } from "./d1-store"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 
-// The store reads and writes canonical authority rows, so the harness applies
-// the same control-plane migrations a hosted deployment runs and builds real
-// identities, organizations, projects, and workspaces through the authority.
-const MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0004_host_access_and_sharing.sql",
-  "0013_org_team_session_sharing.sql",
-  "0014_host_workspace_assignments.sql",
-  "0017_adapter_custom.sql",
-  "0018_drop_agent_extensions.sql",
-  "0019_agent_plugin_activations.sql",
-  "0028_workspace_org_member_visible.sql",
-  "0034_drop_workspace_access.sql",
-  "0035_session_share_level.sql",
-  "0036_drop_workspace_share_role.sql",
-]
+const MIGRATIONS = controlPlaneMigrations()
 
 const PLUGIN = "claxedo/review"
 const OTHER_PLUGIN = "claxedo/triage"
@@ -59,7 +41,7 @@ function identity(subject: string): AuthIdentity {
 
 async function migrate(database: D1Database) {
   for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
+    const path = controlPlaneMigrationPath(name)
     const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
     for (const statement of migration
       .split(/;\s*\n\s*\n/)
@@ -164,14 +146,14 @@ async function workspace(input: {
   auth: SignedControlPlaneAuth
   orgId: string
   workspaceId: string
-  access: "cloud" | "user-hosted"
+  backing: "cloud-vm" | "local-worktree"
 }) {
   return await input.authority.createWorkspace(input.auth, {
     workspaceId: input.workspaceId,
     orgId: input.orgId,
     displayName: input.workspaceId,
     repoUrl: `https://github.com/claxedo/${input.workspaceId}.git`,
-    backing: input.access === "cloud" ? "cloud-vm" : "local-worktree",
+    backing: input.backing,
   })
 }
 
@@ -232,7 +214,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     const store = new D1SignedAgentPluginActivationStore({ database, authority: counting })
     const auth = await signed(authority, identity("alice"))
     const { orgId } = await principalOf(authority, auth)
-    const project = await workspace({ authority, auth, orgId, workspaceId: "ws-one", access: "cloud" })
+    const project = await workspace({ authority, auth, orgId, workspaceId: "ws-one", backing: "cloud-vm" })
 
     // One catalog read's worth of calls against the same auth object.
     await store.revision(auth)
@@ -250,7 +232,6 @@ describe("D1 signed Agent Plugins activation store", () => {
     await store.revision(next)
     expect(calls.usersMe).toBe(2)
 
-    // A denied project is not remembered as an answer.
     await expect(store.authorizeProject(next, "prj_missing")).rejects.toThrow()
     await expect(store.authorizeProject(next, "prj_missing")).rejects.toThrow()
     expect(calls.authorizeProject).toBe(3)
@@ -292,8 +273,8 @@ describe("D1 signed Agent Plugins activation store", () => {
     const { authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { orgId } = await principalOf(authority, auth)
-    const first = await workspace({ authority, auth, orgId, workspaceId: "ws-one", access: "cloud" })
-    const second = await workspace({ authority, auth, orgId, workspaceId: "ws-two", access: "cloud" })
+    const first = await workspace({ authority, auth, orgId, workspaceId: "ws-one", backing: "cloud-vm" })
+    const second = await workspace({ authority, auth, orgId, workspaceId: "ws-two", backing: "cloud-vm" })
 
     await store.mutateUser(auth, {
       pluginInstanceId: PLUGIN,
@@ -330,7 +311,7 @@ describe("D1 signed Agent Plugins activation store", () => {
       auth: other,
       orgId,
       workspaceId: "ws-foreign",
-      access: "cloud",
+      backing: "cloud-vm",
     })
 
     const failure = await denial(store.mutateUser(auth, {
@@ -501,7 +482,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     const auth = await signed(authority, identity("alice"))
     const outsider = await signed(authority, identity("mallory"))
     const { userId, orgId } = await principalOf(authority, auth)
-    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-one", access: "cloud" })
+    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-one", backing: "cloud-vm" })
     await store.mutateUser(auth, {
       pluginInstanceId: PLUGIN,
       harnessIds: ["codex"],
@@ -537,7 +518,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     const { database, authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { orgId } = await principalOf(authority, auth)
-    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-hidden", access: "user-hosted" })
+    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-hidden", backing: "local-worktree" })
     // The column an owner-visibility host assignment writes.
     await database.prepare("update workspaces set org_member_visible = 0 where workspace_id = ?").bind(created.workspace_id).run()
     const member = await plainMember({ database, authority, subject: "bob", orgId })
@@ -559,12 +540,12 @@ describe("D1 signed Agent Plugins activation store", () => {
     await expect(store.readRuntime(runtime)).resolves.toMatchObject({ pluginInstanceId: PLUGIN, harnessId: "codex" })
   })
 
-  test("serves the runtime world of a cloud workspace and refuses a user-hosted one", async () => {
+  test("serves the runtime world of a cloud workspace and refuses a machine-placed one", async () => {
     const { authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { userId, orgId } = await principalOf(authority, auth)
-    const cloud = await workspace({ authority, auth, orgId, workspaceId: "ws-cloud", access: "cloud" })
-    const local = await workspace({ authority, auth, orgId, workspaceId: "ws-local", access: "user-hosted" })
+    const cloud = await workspace({ authority, auth, orgId, workspaceId: "ws-cloud", backing: "cloud-vm" })
+    const local = await workspace({ authority, auth, orgId, workspaceId: "ws-local", backing: "local-worktree" })
     await store.mutateUser(auth, {
       pluginInstanceId: PLUGIN,
       harnessIds: ["codex"],
@@ -596,7 +577,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     const { authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { userId, orgId } = await principalOf(authority, auth)
-    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-one", access: "cloud" })
+    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-one", backing: "cloud-vm" })
     await store.mutateUser(auth, {
       pluginInstanceId: PLUGIN,
       harnessIds: ["codex"],

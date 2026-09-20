@@ -592,7 +592,6 @@ export type WorkspaceAuthority = {
     args: { workspaceId: string },
   ) => Promise<unknown>
 
-  // audit
   auditDeny: (
     auth: SignedControlPlaneAuth | undefined,
     args: {

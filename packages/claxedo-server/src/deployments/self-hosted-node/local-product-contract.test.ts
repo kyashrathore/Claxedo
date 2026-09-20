@@ -212,6 +212,7 @@ describe("desktop-local product contract", () => {
       "/api/channels/whatsapp/*",
       "/api/claxedo/host/enrollments",
       "/api/claxedo/host/enrollments/:id/display-name",
+      "/api/claxedo/host/enrollments/:id/provider-config",
       "/api/claxedo/host/enrollments/:id/scope",
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
@@ -337,8 +338,8 @@ describe("desktop-local product contract", () => {
       local: { fetch: async (path, init) => await app.request(path, init), workspace: { workspaceId: shared.id } },
       controlPlane: { fetch: async (path, init) => await app.request(path, init) },
     })
-    expect((await client.workspaces()).map((row) => ({ id: row.id, kind: row.kind, name: row.name })))
-      .toEqual([{ id: shared.id, kind: "cloud", name: "shared box" }])
+    expect((await client.workspaces()).map((row) => ({ id: row.id, host: row.host, name: row.name })))
+      .toEqual([{ id: shared.id, host: "provisioner", name: "shared box" }])
   })
 
   test("resolves the profile root from the product data directory, not the package location", async () => {

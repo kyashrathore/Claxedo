@@ -590,7 +590,6 @@ describe("invitations", () => {
       public_key_fingerprint: await publicKeyFingerprint(JSON.parse(keys.publicKey)),
       scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
     }])
-    // The machine can now speak for itself.
     expect(await verify(api, keys, { enrollmentId: result.enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
       .toMatchObject({ ok: true, machine: { ownerUserId: owner.user.tokenIdentifier, scope: { revision: 1 } } })
   })

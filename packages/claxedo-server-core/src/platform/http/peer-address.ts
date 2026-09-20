@@ -34,11 +34,9 @@ function incomingRemoteAddress(incoming: unknown): string | undefined {
 const requestPeerAddresses = new WeakMap<Request, string>()
 /**
  * Headers that describe an ORIGINAL client behind a proxy. Their presence is
- * what disqualifies a request from unsigned-local trust below — exported so
- * the one component that legitimately replays a remote request onto loopback
- * (the machine's relay host tunnel, see
- * `claxedo-local-server/src/workspace/user-hosted-serving.ts`) strips exactly
- * this set instead of keeping a second copy that can drift from the gate.
+ * what disqualifies a request from unsigned-local trust below, so the replay
+ * set beneath is built from this one rather than kept as a second list that
+ * can drift from the gate.
  */
 export const FORWARDED_CLIENT_HEADERS = [
   "forwarded",
@@ -69,11 +67,10 @@ export const FORWARDED_CLIENT_HEADERS = [
  * module's own registration and route-ownership guards, not the socket the
  * request arrived on.
  *
- * It lives beside the gate it has to satisfy because every host that replays
- * has the same obligation: `claxedo-local-server`'s `user-hosted-serving` (the
- * daemon serving `claxedo up`) and `claxedo-server`'s `user-hosted-tunnel`
- * (the server serving its own local workspaces) both hand it to
- * `startWorkspaceRelayHostTunnel`'s `localReplayHeaders`.
+ * It lives beside the gate it has to satisfy: every replaying host has the
+ * same obligation and hands this to `startWorkspaceRelayHostTunnel`'s
+ * `localReplayHeaders`, so a host that kept its own copy would drift from the
+ * gate silently — its requests would simply stop being trusted.
  */
 const REPLAY_STRIPPED_HEADERS = [...FORWARDED_CLIENT_HEADERS, "origin", "host"] as const
 

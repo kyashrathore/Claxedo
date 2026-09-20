@@ -79,7 +79,7 @@ export type D1HostAccessAuthorityOptions = {
   now?: () => number
   randomId?: (prefix: "request" | "enrollment" | "grant" | "assert" | "invitation" | "audit") => string
   randomNonce?: () => string
-  /** The statements that cold-register a user-hosted workspace, run inside the assignment's own batch. */
+  /** The statements that cold-register a machine-placed workspace, run inside the assignment's own batch. */
   localWorkspaceRegistration?: D1WorkspaceAuthority["localWorkspaceRegistration"]
   /** The caller's current organization, recorded on an invitation when it is created. */
   resolveOrgId?: WorkspaceAuthority["resolveOrgId"]
@@ -166,19 +166,6 @@ type InvitationRow = {
   revoked_at: number | null
 }
 
-type RuntimeTokenRow = {
-  jti: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  host_id: string
-  minted_for_user_id: string
-  minted_for_actor_id: string
-  expires_at: number
-  revoked_at: number | null
-  created_at: number
-}
-
 const DEFAULT_TTL_MS = 60_000
 /** A signed heartbeat payload must stay small; 200 shares per machine is generous. */
 const MAX_ACKED_WORKSPACES = 200
@@ -249,7 +236,7 @@ export class D1HostAccessAuthorityError extends ClaxedoError<D1HostAccessErrorCo
  * `now`.
  *
  * `activeWorkspaceHost` answers it for one workspace, the workspace list
- * stamps it on every user-hosted row (`D1WorkspaceAuthority.listWorkspaces`),
+ * stamps it on every machine-placed row (`D1WorkspaceAuthority.listWorkspaces`),
  * the relay target resolver routes on it and the tunnel credential is minted
  * for it; all four must mean the same thing. A re-pointed directory (new
  * revision) or a superseded instance (new generation) therefore stops routing
@@ -380,7 +367,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * the workspace row exactly as the retired per-workspace registration did.
    *
    * The owner's rank is decided against the record as it stands — a retired
-   * user-hosted row included, since assigning it is what revives it — so a
+   * machine-placed row included, since assigning it is what revives it — so a
    * refused request writes nothing. The cold registration, the revival, the
    * directory and the next assignment revision then land in one batch guarded
    * on the workspace counter and the enrollment's scope revision this call
@@ -1311,7 +1298,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       `).bind(who.actorId, hostId ?? null, hostId ?? null),
       this.database.prepare(`
         update runtime_access_tokens set revoked_at = ?
-        where minted_for_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
+        where deployment_id = ? and actor_id = ? and (? is null or host_id = ?) and revoked_at is null
           and exists (
             select 1 from host_enrollments enrollment
             where enrollment.owner_actor_id = ? and (? is null or enrollment.host_id = ?)
@@ -1319,6 +1306,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           )
       `).bind(
         now,
+        this.options.deploymentId,
         who.actorId,
         hostId ?? null,
         hostId ?? null,
@@ -1329,128 +1317,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ),
     ])
     return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[4]) }
-  }
-
-  async recordRuntimeAccessToken(
-    auth: SignedControlPlaneAuth,
-    args: { jti: string; workspaceId: string; hostId: string; expiresAt: number },
-  ) {
-    return await this.recordRuntimeTokenForActor(await this.requirePrincipal(auth), args)
-  }
-
-  async recordRuntimeAccessTokenForActor(args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    actorId: string
-    expiresAt: number
-  }) {
-    return await this.recordRuntimeTokenForActor(await this.requireRuntimeActor(args.actorId), args)
-  }
-
-  async runtimeAccessTokenActive(args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    minimumRole?: "viewer" | "editor" | "admin" | "owner"
-  }) {
-    const jti = requireText(args.jti, "jti")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = requireText(args.hostId, "hostId")
-    const row = await this.database.prepare(`select * from runtime_access_tokens where jti = ?`)
-      .bind(jti).first<RuntimeTokenRow>()
-    if (!row) return inactiveToken("runtime_access_token_unknown", "Runtime Access Token has not been recorded")
-    if (row.revoked_at !== null) return inactiveToken("runtime_access_token_revoked", "Runtime Access Token has been revoked")
-    if (row.workspace_id !== workspaceId || row.host_id !== hostId) {
-      return inactiveToken("runtime_access_token_mismatch", "Runtime Access Token does not match workspace or host")
-    }
-    if (row.expires_at <= this.now()) return inactiveToken("runtime_access_token_expired", "Runtime Access Token has expired")
-    try {
-      const access = await this.requireWorkspaceAccess(await this.requireRuntimeActor(row.minted_for_actor_id), workspaceId, "read")
-      if (args.minimumRole && access.role_rank < hostRoleRank(args.minimumRole)) {
-        return inactiveToken("runtime_access_token_revoked", "Runtime Access Token no longer has the required workspace role")
-      }
-    } catch (error) {
-      if (isDenied(error)) {
-        return inactiveToken("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
-      }
-      throw error
-    }
-    return { active: true }
-  }
-
-  async revokeRuntimeAccessToken(
-    auth: SignedControlPlaneAuth,
-    args: { jti: string; workspaceId: string },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const jti = requireText(args.jti, "jti")
-    const now = this.now()
-    await this.requireWorkspaceAccess(who, workspaceId, "read")
-    await this.database.prepare(`
-      ${workspaceAccessCte(1)}
-      update runtime_access_tokens set revoked_at = ?
-      where jti = ? and workspace_id = ? and revoked_at is null
-        and exists (select 1 from authorized_workspace)
-    `).bind(who.actorId, workspaceId, now, jti, workspaceId).run()
-    return { ok: true }
-  }
-
-  async revokeRuntimeAccessTokensForWorkspaceUser(
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const now = this.now()
-    await this.requireWorkspaceAccess(who, workspaceId, "read")
-    const result = await this.database.prepare(`
-      ${workspaceAccessCte(1)}
-      update runtime_access_tokens set revoked_at = ?
-      where workspace_id = ? and minted_for_user_id = ? and revoked_at is null
-        and exists (select 1 from authorized_workspace)
-    `).bind(who.actorId, workspaceId, now, workspaceId, who.userId).run()
-    return { revoked: changes(result) }
-  }
-
-  private async recordRuntimeTokenForActor(
-    actor: Principal,
-    args: { jti: string; workspaceId: string; hostId: string; expiresAt: number },
-  ) {
-    const jti = requireText(args.jti, "jti")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = requireText(args.hostId, "hostId")
-    const expiresAt = requireFutureTimestamp(args.expiresAt, this.now())
-    await this.requireWorkspaceAccess(actor, workspaceId, "read")
-    const now = this.now()
-    try {
-      await this.database.prepare(`
-        ${workspaceAccessCte(1)}
-        insert into runtime_access_tokens (
-          jti, workspace_id, org_id, project_id, host_id,
-          minted_for_user_id, minted_for_actor_id, expires_at, revoked_at, created_at
-        )
-        select ?, workspace_id, org_id, project_id, ?, ?, ?, ?, null, ?
-        from authorized_workspace
-      `).bind(
-        actor.actorId,
-        workspaceId,
-        jti,
-        hostId,
-        actor.userId,
-        actor.actorId,
-        expiresAt,
-        now,
-      ).run()
-    } catch (error) {
-      if (isUniqueFailure(error)) {
-        throw new D1HostAccessAuthorityError("resource_conflict", "Runtime Access Token JTI is already recorded")
-      }
-      throw error
-    }
-    if (!await this.database.prepare(`select 1 from runtime_access_tokens where jti = ?`).bind(jti).first()) throw denied()
-    return { ok: true }
   }
 
   private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
@@ -1481,20 +1347,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
     }
     return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
-  }
-
-  private async requireRuntimeActor(actorIdInput: string): Promise<Principal> {
-    const actorId = requireText(actorIdInput, "actorId")
-    const row = await this.database.prepare(`
-      select a.actor_id, a.user_id, a.kind as actor_kind, a.state as actor_state,
-        u.state as user_state
-      from actors a left join users u on u.user_id = a.user_id
-      where a.actor_id = ?
-    `).bind(actorId).first<PrincipalRow>()
-    if (!row || !row.user_id || row.actor_state !== "active" || row.user_state !== "active") {
-      throw denied("Canonical active runtime actor is required")
-    }
-    return { userId: row.user_id, actorId, actorKind: row.actor_kind }
   }
 
   private async requireWorkspaceAccess(
@@ -1811,12 +1663,9 @@ class SqlJson {
   constructor(readonly sql: string, readonly bind: unknown[]) {}
 }
 
-function hostRoleRank(role: "viewer" | "editor" | "admin" | "owner") {
-  return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
-}
 
 /**
- * `revivable` admits a retired user-hosted row: its assignment is what
+ * `revivable` admits a retired machine-placed row: its assignment is what
  * revives it, so the owner's rank is decided against the record as it is
  * before anything is written. Every other reader sees live rows only.
  */
@@ -2045,9 +1894,6 @@ function enrollmentJson(row: EnrollmentRow): HostEnrollment {
   }
 }
 
-function inactiveToken(code: string, reason: string) {
-  return { active: false, code, reason }
-}
 
 function normalizedTtl(input: number | undefined) {
   if (input === undefined) return DEFAULT_TTL_MS
@@ -2055,12 +1901,6 @@ function normalizedTtl(input: number | undefined) {
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
 }
 
-function requireFutureTimestamp(value: number, now: number) {
-  if (!Number.isSafeInteger(value) || value <= now) {
-    throw new D1HostAccessAuthorityError("invalid_input", "expiresAt must be a future safe-integer timestamp")
-  }
-  return value
-}
 
 function optionalText(value: string | undefined, name: string, max = 512) {
   if (value === undefined) return undefined
@@ -2140,9 +1980,6 @@ function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
-function isDenied(error: unknown) {
-  return error instanceof ControlPlaneAuthError && error.status === 403
-}
 
 function isUniqueFailure(error: unknown) {
   const text = String(error)

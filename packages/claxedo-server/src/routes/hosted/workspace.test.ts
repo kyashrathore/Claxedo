@@ -49,7 +49,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     openWorkspace: vi.fn(async () => ({
       allowed: true,
       role: "owner",
-      workspace: { workspace_id: "ws_1", access: "user-hosted", backing: "local-worktree" },
+      workspace: { workspace_id: "ws_1", backing: "local-worktree" },
     })),
     activeWorkspaceHost: vi.fn(async () => ({
       active: true,
@@ -60,7 +60,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
       // What this machine declared on its last heartbeat. A `claxedo up` host
       // against a hosted control plane injects a session authority into its
       // embedded runtime and is therefore managed-private — which is why no
-      // assumption about "every user-hosted workspace runs an unbound local
+      // assumption about "every machine-placed workspace runs an unbound local
       // policy" can stand in for the declaration.
       session_authority: "managed-private" as const,
     })),
@@ -351,7 +351,7 @@ describe("the retired per-workspace user-hosted routes are gone", () => {
 })
 
 describe("hosted connection", () => {
-  test("mints a Runtime Access Token for a user-hosted workspace", async () => {
+  test("mints a Runtime Access Token for a machine-placed workspace", async () => {
     const { app, authority, capture } = buildApp({})
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
@@ -397,7 +397,6 @@ describe("hosted connection", () => {
         role: "owner",
         workspace: {
           workspace_id: "ws_1",
-          access: "user-hosted",
           backing: "local-worktree",
           home_region: "eu-west",
         },
@@ -441,7 +440,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "apac-south" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "apac-south" },
       })),
     })
     const sandboxManager = {
@@ -484,7 +483,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "editor",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "eu-west" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "eu-west" },
       })),
     })
     const sandboxManager = {
@@ -567,7 +566,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "eu-west" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "eu-west" },
       })),
     })
     const sandboxManager = {
@@ -609,7 +608,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm" },
       })),
     })
     const { app } = buildApp({ authority: authority })
@@ -647,7 +646,7 @@ describe("hosted connection rate limiting (mint-only)", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "us-east" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
       })),
     })
   }
@@ -693,11 +692,9 @@ describe("hosted connection rate limiting (mint-only)", () => {
     for (let i = 0; i < 3; i++) {
       expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     }
-    // Two real mints consume the budget…
     expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     expect(authority!.recordRuntimeAccessToken).toHaveBeenCalledTimes(2)
-    // …and the third mint attempt is rejected at the cap.
     const limited = await app.fetch(get("/ws_1/connection"))
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "runtime_access_token_rate_limited" } })

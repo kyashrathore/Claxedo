@@ -30,7 +30,7 @@ import {
   shutdownWorkspaceSupervisor,
 } from "./workspace/supervisor/index.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
-import { ensureWorkspace, updateWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   startUserHostedWorkspaceTunnel,
   stopAllUserHostedWorkspaceTunnels,
@@ -115,8 +115,8 @@ if (scriptedModelUrl) {
 // fixture hosts, so `startCloudRuntime` selects the same harness directly.
 await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "native", harnessId: "pi" } })
 
-// A user-hosted tunnel and the control-plane Local Host Link are two views of
-// the same machine identity. Use the product's canonical persisted identity
+// The relay host tunnel and the control plane's host enrollment are two views
+// of the same machine identity. Use the product's canonical persisted identity
 // for both; a fixture-only host id creates a live relay tunnel that
 // `GET /api/workspace/:id/connection` correctly refuses as unregistered.
 const fixtureLocalHostIdentity = access === "cloud" || hostMode === "connect" ? undefined : await localHostIdentity()
@@ -537,8 +537,7 @@ const workspace = hostMode === "connect" ? undefined : await ensureWorkspace({
   workspace_name: "Signed Browser Relay",
   // Cloud mode needs this on the row for the loopback relay proxy to mint a
   // runtime access token (`runtime-dispatch/internals.ts`'s `ensureCloudRuntime`
-  // gates on `relayProvider && ws.org_id`). Set at CREATE time:
-  // `updateWorkspace`'s patch type does not include `org_id`.
+  // gates on `relayProvider && ws.org_id`).
   ...(access === "cloud" ? { org_id: fixtureOrgId } : {}),
 })
 if (!workspace && hostMode === "embedded") throw new Error("Signed browser relay workspace was not stored")
@@ -552,10 +551,16 @@ if (hostMode === "connect") {
     relayHostPublicKey: relayHost.publicKey,
     controlPlaneUrl: backendUrl,
   })
-  const cloudWorkspace = await updateWorkspace(workspaceId, {
+  // Through `ensureWorkspace` rather than `updateWorkspace`: the store refuses
+  // a cloud row with no driver, and `updateWorkspace`'s patch carries neither
+  // `kind` nor `driver`, so the untyped `.mjs` call would have written the one
+  // shape the store exists to reject.
+  const cloudWorkspace = await ensureWorkspace({
+    workspaceId,
+    directory: workspaceDir,
     kind: "cloud",
+    driver: "cloudflare",
     status: "ready",
-    sandbox_id: hostId,
   })
   effectiveWorkspace = cloudWorkspace ?? workspace
   recordSupervisorSandboxLeaseReady({
@@ -581,15 +586,15 @@ if (hostMode === "connect") {
     projectId,
     displayName: "Signed Browser Relay",
     // Real filesystem directory the embedded workspace-runtime actually
-    // serves — `routes/bootstrap.ts`'s `signedBootstrapProjects()` reads
-    // `remote_directory`, and the client's `sessionWorkspaceRuntimeRef`
-    // inventory match needs this to agree with the real directory. NOTE:
+    // serves. The signed bootstrap inventory projects `remote_directory`, and
+    // the client's `sessionWorkspaceRuntimeRef` match needs it to agree with
+    // the directory on disk. NOTE:
     // `createCloudWorkspace` (used above for `access === "cloud"`) has NO
     // `remoteDirectory` parameter on the real `WorkspaceAuthority` port
     // (`platform/auth/authority.ts:158-172`) — this is a genuine gap in the
     // real port, not something this fixture can route around; cloud-mode
     // routing already gets its directory from the SEPARATE `workspace/store`
-    // row (`ensureWorkspace`/`updateWorkspace`, above), which is unaffected.
+    // row (`ensureWorkspace`, above), which is unaffected.
     remoteDirectory: workspaceDir,
     repoName: "claxedo",
     gitBranch: "main",

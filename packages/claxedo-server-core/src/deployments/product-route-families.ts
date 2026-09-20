@@ -5,8 +5,7 @@
  * machine publication (`@claxedo/host-connector`).
  *
  * `self-hosted-node/local-product-contract.test.ts` fails a route mounted
- * without a family or under the wrong owner; `@claxedo/local-server`'s
- * user-hosted surface names families by these ids.
+ * without a family or under the wrong owner.
  */
 
 export type RouteFamilyOwner =
@@ -18,7 +17,7 @@ export type RouteFamilyOwner =
   | "host-connector"
 
 export type RouteFamily = {
-  /** Stable family ID used by the contract tests and the user-hosted surface. */
+  /** Stable family ID the contract test names. */
   id: string
   owner: RouteFamilyOwner
   /** What the family serves, in product terms. */
@@ -31,9 +30,8 @@ export type RouteFamily = {
 }
 
 /**
- * Ordered most-specific-first. `/api/claxedo/agent-config/` must be tested
- * before a hypothetical `/api/claxedo/` catch-all would be, and
- * `/api/workspace/:id/user-hosted/` before `/api/workspace/`.
+ * Ordered most-specific-first: `/api/claxedo/agent-config/` must be tested
+ * before a hypothetical `/api/claxedo/` catch-all would be.
  */
 export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   // ── Desktop-local: the closure Electron's sidecar must reproduce ──────────

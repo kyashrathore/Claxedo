@@ -45,7 +45,7 @@ function plane(): HostedControlPlane {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { backing: "cloud-vm", access: "cloud", home_region: "us-east" },
+        workspace: { backing: "cloud-vm", home_region: "us-east" },
       })),
       auditAllow: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => ({})),
@@ -277,7 +277,6 @@ describe("resource-closed hosted core app", () => {
       resource: "https://core.test/api/claxedo/mcp",
       authorization_servers: ["https://auth.test"],
     })
-    // No endpoint, nothing to describe.
     expect((await createHostedCoreApp(plane(), options).fetch(new Request(metadataUrl!))).status).toBe(404)
 
     const signed = await initialize({ authorization: "Bearer user-1" })
@@ -447,7 +446,6 @@ describe("resource-closed hosted core app", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBe("https://app.test")
     expect(preflight.headers.get("access-control-allow-credentials")).toBe("true")
 
-    // The app may read resource timing for an admitted origin.
     const read = await app.fetch(new Request("https://core.test/api/claxedo/auth/descriptor", {
       headers: { origin: "https://app.test" },
     }))
@@ -616,7 +614,7 @@ describe("hosted-core session-list", () => {
     const base = plane()
     const services = base.services as unknown as { authority: Record<string, unknown> }
     services.authority = {
-      openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { access: "cloud", backing: "cloud-vm" } })),
+      openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { backing: "cloud-vm" } })),
       ...services.authority,
       ...authority,
     }
@@ -654,22 +652,21 @@ describe("hosted-core session-list", () => {
   })
 
   /**
-   * A user-hosted workspace's sessions live on its HOST. The registry only ever
-   * receives the ones created THROUGH the control plane, so this route names
-   * the runtime as their authority instead of answering a subset the client
-   * cannot tell apart from an empty machine — the client reads that list
-   * straight off the runtime over the relay, in one hop.
+   * The sessions of a workspace placed on a machine live on that machine, and
+   * the registry receives only the ones created THROUGH the control plane. So
+   * this route names the runtime as their authority rather than answering a
+   * subset a client cannot tell apart from an empty machine; the client reads
+   * the list off the runtime over the relay in one hop.
    *
-   * This also replaces the old "host offline" answer: the route no longer
-   * probes the host at all, so the refusal is the same whether or not a live
+   * The route probes no host, so the refusal is the same whether or not a live
    * enrollment is serving the workspace.
    */
-  test("names the workspace runtime as the authority for a user-hosted workspace", async () => {
+  test("names the workspace runtime as the authority for a workspace placed on a machine", async () => {
     const listSessions = vi.fn(async () => [])
     const response = await core({
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
+        workspace: { backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
       })),
       activeWorkspaceHost: vi.fn(async () => ({
         active: true, host_id: "host_laptop", workspace_id: "ws_1",
@@ -683,16 +680,16 @@ describe("hosted-core session-list", () => {
     expect(await response.json()).toEqual({
       error: { code: "workspace_runtime_session_authority", message: expect.any(String) },
     })
-    expect(listSessions, "the registry is not the source for a user-hosted workspace").not.toHaveBeenCalled()
+    expect(listSessions, "the registry is not the source for a machine-placed workspace").not.toHaveBeenCalled()
   })
 
   /**
-   * The composer's harness status for a user-hosted workspace comes from the
+   * The composer's harness status for a machine-placed workspace comes from the
    * host's runtime through the relay, in the shape the daemon's own status
    * route reports. The route and its probe both existed on this root while the
    * probe was never composed, so the app saw 404 and defaulted to opencode.
    */
-  test("answers a user-hosted workspace's harness status from the host through the relay", async () => {
+  test("answers a machine-placed workspace's harness status from the host through the relay", async () => {
     const base = plane()
     const services = base.services as unknown as {
       authority: Record<string, unknown>
@@ -702,7 +699,7 @@ describe("hosted-core session-list", () => {
       ...services.authority,
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
+        workspace: { backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
       })),
       activeWorkspaceHost: vi.fn(async () => ({
         active: true, host_id: "host_laptop", workspace_id: "ws_1",

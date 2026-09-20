@@ -1,22 +1,10 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 import { createD1UserHostedTargetResolver } from "./user-hosted-relay-target"
 
-const MIGRATIONS = [
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0014_host_workspace_assignments.sql",
-  "0015_drop_local_host_links.sql",
-  "0016_host_session_authority.sql",
-  "0028_workspace_org_member_visible.sql",
-  "0029_host_connect.sql",
-  "0030_workspace_host_assignment_revision.sql",
-  "0034_drop_workspace_access.sql",
-].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
+const MIGRATIONS = controlPlaneMigrations()
 const active: Miniflare[] = []
 
 afterEach(async () => {
@@ -32,15 +20,7 @@ async function database() {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const migrationPath of MIGRATIONS) {
-    const migration = (await readFile(migrationPath, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
+  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
   await database.batch([
     database.prepare("insert into users values (?, 'active', ?, ?, null, null)").bind("user-1", 1, 1),
     database.prepare("insert into actors values (?, ?, 'human', 'active', ?, ?, null)").bind("actor-1", "user-1", 1, 1),

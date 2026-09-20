@@ -342,7 +342,7 @@ async function verifyHostSignature(input: {
  * an `assignment`/`enrollment` join, and binding exactly one value — `now`.
  *
  * `activeWorkspaceHost` answers it for one workspace; `listWorkspaces` stamps
- * it on every user-hosted row so the rail can say "host offline" before any
+ * it on every machine-placed row so the rail can say "host offline" before any
  * pane opens the workspace; the relay resolver's `user-hosted-relay-target.ts`
  * routes by it with no principal — all three must mean the same thing.
  * Mirrors the D1 adapter's `HOST_SERVING_WORKSPACE_SQL`. A re-pointed
@@ -636,7 +636,7 @@ function retireUserHostedWorkspaceSql(where: string) {
 
 function refuseCloudWorkspace(workspace: { backing?: unknown }) {
   if (workspace.backing === "cloud-vm") {
-    throw new Error("workspace_backing_conflict: cannot attach a local host link to a cloud workspace")
+    throw new Error("workspace_backing_conflict: cannot assign a machine to a cloud workspace")
   }
 }
 
@@ -878,7 +878,6 @@ export function createSqliteWorkspaceAuthority(
     close() {
       database.close()
     },
-    // --- identity (users, orgs, projects) ------------------------------------
     async usersMe(auth: SignedControlPlaneAuth) {
       const db = database()
       const who = user(auth)
@@ -1316,7 +1315,6 @@ export function createSqliteWorkspaceAuthority(
       return { revoked: latest?.token_identifier === who.token_identifier }
     },
 
-    // --- workspaces ----------------------------------------------------------
     async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args) {
       if (!args.orgId) return
       const db = database()
@@ -1389,7 +1387,7 @@ export function createSqliteWorkspaceAuthority(
       if (existing) {
         if (!authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
         if (existing.backing === "cloud-vm") {
-          throw new Error("workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace")
+          throw new Error("workspace_backing_conflict: cannot place a cloud workspace on a machine")
         }
         if (!existing.org_id || !existing.project_id) throw new Error("workspace_tenant_missing")
         const projectId = ensureProject(db, {
@@ -1790,7 +1788,7 @@ export function createSqliteWorkspaceAuthority(
       // Cold registration makes this method a two-write operation, and the two
       // writes are not independent: the workspace row exists only to be
       // assigned. Letting the first commit while the second fails leaves an
-      // owned, user-hosted workspace that no machine serves and no caller
+      // owned, machine-placed workspace that no machine serves and no caller
       // asked for — it shows up in the workspace list as a share that does not
       // work, and the retry cannot recreate it (the row is now `existing`, so
       // the second attempt takes the authorize branch instead).
@@ -1811,7 +1809,7 @@ export function createSqliteWorkspaceAuthority(
         }
         const scope = enrollmentScope(enrollment)
         const existing = workspaceByPublicId(db, args.workspaceId)
-        // A retired user-hosted row is the same workspace coming back, so it
+        // A retired machine-placed row is the same workspace coming back, so it
         // is authorized as live; any other deleted row stays gone. Nothing is
         // written until every refusal below has had its chance.
         const revivable = existing !== undefined && existing.deleted_at !== null && existing.backing === "local-worktree"
@@ -2407,7 +2405,6 @@ export function createSqliteWorkspaceAuthority(
       return { recorded: result.changes > 0, second_device_open_at: now }
     },
 
-    // --- sessions (the session authority) --------------------------------------
     async grantSessionShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const level = requestedSessionShareLevel(args.level)
@@ -2614,7 +2611,6 @@ export function createSqliteWorkspaceAuthority(
       }))
       return { can_manage_shares: true, grants, participants, teams }
     },
-    // --- runtime tokens ------------------------------------------------------
     async resolveRuntimeMachineAccess(actorId, workspaceId) {
       const db = database()
       const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId)
@@ -2761,7 +2757,6 @@ export function createSqliteWorkspaceAuthority(
       return { revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [who.token_identifier]) }
     },
 
-    // --- audit ---------------------------------------------------------------
     async auditDeny(auth, args) {
       const db = database()
       db.prepare(`

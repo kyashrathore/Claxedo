@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -18,25 +17,9 @@ import { buildSessionListResponse, parseSessionListQuery } from "../../../sessio
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0006_channel_identity_and_canonical_runtime.sql",
-  "0010_session_turn_leases.sql",
-  "0011_session_turn_producers.sql",
-  "0013_org_team_session_sharing.sql",
-  "0014_host_workspace_assignments.sql",
-  "0024_session_last_human_turn.sql",
-  "0028_workspace_org_member_visible.sql",
-  "0034_drop_workspace_access.sql",
-  "0035_session_share_level.sql",
-  "0036_drop_workspace_share_role.sql",
-].map(
-  (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
-)
+const MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 
 const active: Miniflare[] = []
 

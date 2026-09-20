@@ -10,17 +10,11 @@ import type { RelayToken, RelayTokenInput } from "@claxedo/server-core/adapters/
  *   - `recordRuntimeAccessTokenForService(…)` records the control plane's own
  *     service token and refuses every other actor.
  *
- * Both hosted compositions bound the relay provider to the SERVICE path only.
- * Every user-principal mint through the provider — the session pull, the
- * runtime transport — was therefore refused with "Only the configured
- * control-plane service actor may mint service runtime tokens", while the
- * workspace connection route minted the same user's token fine through the
- * other path. The control plane could not read a single session off a
- * user-hosted machine on its own behalf, so its registry stayed empty for
- * those workspaces and the web app listed nothing.
- *
- * One binding, chosen by `principalKind`, shared by both compositions so
- * they cannot drift apart again.
+ * Binding the relay provider to the SERVICE path alone refuses every
+ * user-principal mint that reaches it — the session pull and the runtime
+ * transport — and the control plane then reads no session off a machine on its
+ * own behalf. `principalKind` chooses the path, in one binding both hosted
+ * compositions share so they cannot drift apart.
  */
 export async function recordRelayRuntimeToken(
   authority: Pick<WorkspaceAuthority, "recordRuntimeAccessToken" | "recordRuntimeAccessTokenForService" | "recordChannelRuntimeAccessToken" | "recordActorRuntimeAccessToken">,

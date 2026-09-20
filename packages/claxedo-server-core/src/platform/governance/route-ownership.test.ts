@@ -7,9 +7,9 @@ describe("routeOwnership", () => {
    * `/global/health` is the daemon's own liveness probe on its ROOT surface
    * and is rightly classified central here. On the workspace-scoped
    * `/workspaces/:id/*` surface the same path is the runtime's identity probe
-   * instead — `user-hosted-surface.ts` (claxedo-local-server) admits it there
-   * directly rather than asking this root-surface table, which has no way to
-   * answer that question for a surface it does not model.
+   * instead — `@claxedo/host-serving`'s `surface.ts` admits it there directly
+   * rather than asking this root-surface table, which has no way to answer
+   * that question for a surface it does not model.
    */
   test("classifies the runtime identity probe central on the root surface", () => {
     expect(routeOwnership(WORKSPACE_RUNTIME_IDENTITY_PATH).handler).toBe(RouteHandler.CentralServer)

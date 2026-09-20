@@ -219,7 +219,7 @@ describe("hostedHarnessRuntimeStatus — the production relay call", () => {
   test("resolves the workspace, verifies runtime identity, and shapes /api/wr/health", async () => {
     const openWorkspace = vi.fn(async () => ({
       role: "editor",
-      workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1" },
+      workspace: { backing: "local-worktree", org_id: "org_1" },
     }))
     const services = fakeServices({ openWorkspace: openWorkspace as never })
     const runtimeFetch = vi.fn(async (input: { path: string }) => {
@@ -271,7 +271,7 @@ describe("hostedHarnessRuntimeStatus — the production relay call", () => {
     const services = fakeServices({
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1" },
+        workspace: { backing: "local-worktree", org_id: "org_1" },
       })) as never,
     })
     // The relay answers for a DIFFERENT workspace than the one requested —

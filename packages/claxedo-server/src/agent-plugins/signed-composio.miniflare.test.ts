@@ -1,7 +1,6 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { Hono } from "hono"
@@ -23,6 +22,7 @@ import {
 } from "./runtime/provision"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
 import { userHostedConnectionInfo } from "../connections/user-hosted-connection"
@@ -422,7 +422,6 @@ describe("signed Composio Gmail on Miniflare", () => {
             workspace_id: "ws_local_mint",
             org_id: USER.organizationId,
             backing: "local-worktree",
-            access: "user-hosted",
             home_region: "us-east",
           },
         })),
@@ -476,7 +475,6 @@ describe("signed Composio Gmail on Miniflare", () => {
             workspace_id: "ws_cloud_mint",
             org_id: USER.organizationId,
             backing: "cloud-vm",
-            access: "cloud",
             home_region: "us-east",
           },
         })),
@@ -542,21 +540,7 @@ describe("signed Composio Gmail on Miniflare", () => {
 const DCR_ISSUER = "https://connect.composio.dev"
 const DCR_REGISTRATION = "https://login.composio.dev/oauth2/register"
 const DCR_TOKEN = "https://connect.composio.dev/api/v3/s/mcp/token"
-const DCR_MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0013_org_team_session_sharing.sql",
-  "0017_adapter_custom.sql",
-  "0018_drop_agent_extensions.sql",
-  "0019_agent_plugin_activations.sql",
-  "0020_hosted_connections.sql",
-  "0021_mcp_oauth_clients.sql",
-  "0022_sandbox_leases.sql",
-  "0034_drop_workspace_access.sql",
-  "0035_session_share_level.sql",
-]
+const DCR_MIGRATIONS = controlPlaneMigrations()
 
 const disposable: Miniflare[] = []
 
@@ -573,13 +557,7 @@ async function controlPlaneDatabase(): Promise<D1Database> {
   })
   disposable.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of DCR_MIGRATIONS) {
-    const file = fileURLToPath(new URL(`../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await fs.readFile(file, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
+  for (const name of DCR_MIGRATIONS) await applyControlPlaneMigration(target, name)
   return target
 }
 
@@ -815,13 +793,10 @@ describe("Composio MCP through RFC 7591 dynamic client registration", () => {
           integrationId: scope.integrationId,
           capability: "mcp",
         })
-        // PRE-EXISTING GAP, not something this flow introduced: the kit's OAuth
-        // token path returns `{ token, tokenType }` with no `fields`
-        // (packages/claxedo-connections/src/tokens.ts:133), while the gateway
-        // refuses anything whose `fields.resource` does not equal the
-        // authorized resource (mcp/routes.ts:38). The canonical fields ARE on
-        // the row, so they are read from it here; without that the gateway
-        // answers 409 for every OAuth MCP connection.
+        // The kit's OAuth token path answers `{ token, tokenType }` and no
+        // `fields`, while the gateway refuses a capability whose
+        // `fields.resource` is not the authorized resource. The canonical
+        // fields are on the row, so they are read from there.
         return resolved.ok ? { ...resolved, fields: rowFields } : resolved
       },
       fetch: async (_url, init) => {

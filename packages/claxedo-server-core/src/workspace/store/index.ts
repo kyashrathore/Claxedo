@@ -803,7 +803,6 @@ export async function listProjects() {
   return list.sort((a, b) => b.time.updated - a.time.updated)
 }
 
-// ── Projects ────────────────────────────────────────────────────────────────
 
 export async function listProjectRecords(): Promise<Project[]> {
   await boot()

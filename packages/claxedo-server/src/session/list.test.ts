@@ -24,12 +24,12 @@ describe("signedSessionList", () => {
    * authority rather than answer a truncated list the client cannot tell apart
    * from an empty workspace.
    */
-  test("refuses a user-hosted workspace with the runtime named as the session authority", async () => {
+  test("refuses a machine-placed workspace with the runtime named as the session authority", async () => {
     const listSessions = vi.fn(async () => [])
     const svc = services({
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1" },
+        workspace: { backing: "local-worktree", org_id: "org_1" },
       })),
       listSessions,
     })
@@ -41,7 +41,7 @@ describe("signedSessionList", () => {
     expect(error).toMatchObject({
       status: 409,
       code: "workspace_runtime_session_authority",
-      message: "Sessions of user-hosted workspace ws_1 are listed by its runtime",
+      message: "Sessions of workspace ws_1 are listed by the machine that serves it",
     })
     expect(listSessions).not.toHaveBeenCalled()
     expect(sessionListErrorResponse(error)?.status).toBe(409)
@@ -51,7 +51,7 @@ describe("signedSessionList", () => {
     const svc = services({
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
+        workspace: { backing: "cloud-vm", org_id: "org_1" },
       })),
       listSessions: vi.fn(async () => [
         { session_id: "ses_cloud", title: "cloud", created_at: 1, updated_at: 2 },
@@ -95,8 +95,8 @@ describe("signedSessionList", () => {
   test("keeps the authority's last human turn as the project union's order", async () => {
     const svc = services({
       listWorkspaces: vi.fn(async () => [
-        { workspace_id: "ws_one", project_id: "prj_1", access: "cloud" },
-        { workspace_id: "ws_two", project_id: "prj_1", access: "cloud" },
+        { workspace_id: "ws_one", project_id: "prj_1", backing: "cloud-vm" },
+        { workspace_id: "ws_two", project_id: "prj_1", backing: "cloud-vm" },
       ]),
       listSessions: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => [
         args.workspaceId === "ws_one"

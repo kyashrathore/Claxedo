@@ -372,7 +372,7 @@ describe("workspace assignments", () => {
     expect(again.find((w) => w.workspace_id === "ws_desc")).toMatchObject({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
   })
 
-  test("a user-hosted workspace lives exactly as long as its host assignment", async () => {
+  test("a machine-placed workspace lives exactly as long as its host assignment", async () => {
     const api = authority()
     const { hostId } = await enroll(api, { displayName: "Laptop B" })
     const listed = async () => (await api.listWorkspaces(owner) as Array<{ workspace_id: string }>)
@@ -467,7 +467,7 @@ describe("workspace assignments", () => {
 
   test("a machine that declared no composition routes with none, rather than a default", async () => {
     // The failure this replaces was a control plane that answered "local" for
-    // every user-hosted workspace. Silence must stay silence all the way to
+    // every machine-placed workspace. Silence must stay silence all the way to
     // the mint: a caller that reads a value here would be reading a guess.
     const api = authority()
     const { hostId } = await enroll(api)
@@ -515,7 +515,7 @@ describe("workspace assignments", () => {
     // Cold registration makes assigning a two-write operation, and the writes
     // are not independent: the workspace row exists only to be assigned. If
     // the first commits while the second fails, the owner is left with a
-    // user-hosted workspace no machine serves — visible in the workspace list
+    // machine-placed workspace no machine serves — visible in the workspace list
     // as a share that does not work, and unreachable by retry, because the
     // second attempt now finds an `existing` row and takes the authorize
     // branch instead of re-registering.
@@ -605,7 +605,6 @@ describe("workspace assignments", () => {
     const dangling = reader.prepare(`SELECT COUNT(*) AS n FROM host_workspace_assignments`).get() as { n: number }
     expect(dangling.n).toBe(0)
     expect(await api.activeHostEnrollment(owner)).toEqual({ active: false, reason: "revoked" })
-    // The machine's workspaces go with it.
     await expect(api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).rejects.toThrow("Workspace not found")
     expect(await api.listWorkspaces(owner)).toEqual([])
   })

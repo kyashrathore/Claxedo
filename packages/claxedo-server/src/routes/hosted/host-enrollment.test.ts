@@ -737,7 +737,6 @@ describe("POST /redeem", () => {
     const statuses: number[] = []
     for (let attempt = 0; attempt < 7; attempt += 1) statuses.push((await post(redeemBody({ secret: `guess-${attempt}` }))).status)
     expect(statuses).toEqual([403, 403, 403, 403, 403, 429, 429])
-    // Another invitation id has its own budget.
     expect((await post(redeemBody({ invitationId: "invitation_2" }))).status).toBe(403)
     expect(api.redeemHostInvitation).toHaveBeenCalledTimes(6)
   })

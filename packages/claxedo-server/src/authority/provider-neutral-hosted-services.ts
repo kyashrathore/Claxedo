@@ -11,7 +11,7 @@
  * The Worker fails closed if any required hosted dependency is missing: signed
  * auth, workspace authority, relay URL, resolver token, and a token signing key.
  *
- * Adapter entrypoints inject authority, native-auth state, user-hosted target,
+ * Adapter entrypoints inject authority, native-auth state, machine target,
  * and optional sandbox driver/lease boundaries. This module names no provider
  * implementation and therefore stays in every selected Worker closure.
  */
@@ -106,14 +106,12 @@ function safetyLimits(env: HostedWorkerEnv): HostedSafetyLimits {
  * Route the sandbox manager's egress-unenforced warning into ops telemetry,
  * without giving up the console line.
  *
- * The gap this closes is a DEPLOYMENT one, and it is silent by construction:
- * a selected cloudflare driver declares `egressControl: "none"`, and since
- * the 2026-07-28 directive ("enforce where
- * we can and document where we can't") such a deployment boots fine and creates
- * fine — every hosted sandbox just comes up able to reach any host on the
- * internet. The manager already warns at composition, but `console.warn` inside
- * a Worker isolate reaches only whoever is tailing logs at that moment, which
- * is nobody on the day the driver is switched.
+ * The gap is a DEPLOYMENT one and silent by construction: a cloudflare driver
+ * declares `egressControl: "none"`, so such a deployment boots and provisions
+ * normally while every hosted sandbox comes up able to reach any host on the
+ * internet. The manager warns at composition, but `console.warn` inside a
+ * Worker isolate reaches only whoever is tailing logs at that moment, which is
+ * nobody on the day the driver is switched.
  *
  * So the event also becomes a queryable ops fact. Deliberately NOT a hard
  * `HostedWorkerCompositionError`: refusing composition would take the entire
@@ -224,7 +222,7 @@ export type HostedControlPlane = {
   resolverToken: string
   safetyLimits: HostedSafetyLimits
   /**
-   * The ONE composed relay target lookup (cloud lease + user-hosted host link),
+   * The ONE composed relay target lookup (cloud lease + machine host link),
    * consumed by both the relay provider and the internal relay resolver route.
    */
   relayTargetLookup: RelayTargetLookup

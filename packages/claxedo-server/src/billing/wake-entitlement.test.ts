@@ -21,7 +21,7 @@ const auth = {
 
 function services(
   ensure: ReturnType<typeof vi.fn>,
-  workspace: Record<string, unknown> = { backing: "cloud-vm", access: "cloud", home_region: "us-east" },
+  workspace: Record<string, unknown> = { backing: "cloud-vm", home_region: "us-east" },
 ) {
   return {
     authority: {
@@ -93,7 +93,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
     expect(result).toMatchObject({ connection: { status: "provisioning" } })
   })
 
-  test("a user-hosted local worktree is never billed for a cloud sandbox it does not use", async () => {
+  test("a machine-placed worktree is never billed for a cloud sandbox it does not use", async () => {
     // The hook is composed for the whole hosted product, so the guard on which
     // workspaces reach it is in this function, not in the composition.
     const ensure = vi.fn()
@@ -103,7 +103,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
     }))
 
     const result = await hostedConnectionInfo(
-      services(ensure, { backing: "local-worktree", access: "user-hosted" }),
+      services(ensure, { backing: "local-worktree" }),
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_local",

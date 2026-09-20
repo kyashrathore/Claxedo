@@ -177,6 +177,7 @@ import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-serv
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
+import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
@@ -786,7 +787,7 @@ export function createSelfHostedApp(
       ? {
           resolveRelayActor: async (request: Request, workspaceId: string) => {
             // Loopback browser traffic may carry a control-plane JWT; relay-forwarded
-            // user-hosted traffic carries a Runtime Access Token (audience
+            // machine traffic carries a Runtime Access Token (audience
             // `workspace-relay`). A RAT is a first-class actor proof: verifying it as a
             // control-plane bearer throws `invalid_bearer_token`, which would 503 every
             // `/workspaces/:id/*` session route.
@@ -817,7 +818,7 @@ export function createSelfHostedApp(
             if (!match?.[1]) return undefined
             const token = match[1]
 
-            // Relay-forwarded user-hosted hops carry a Relay Host Token
+            // Relay-forwarded machine hops carry a Relay Host Token
             // (audience `workspace-host-service`). Direct loopback clients may
             // still present a Runtime Access Token (`workspace-relay`).
             const relayHostJwk = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK?.trim()
@@ -1476,9 +1477,8 @@ export function createDefaultLocalControlPlaneServices() {
   const trust = deploymentMode(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
   if (trust === "hosted") {
-    // Hosted mode moved to the Better Auth + D1 worker; the Node self-host
-    // entrypoint no longer boots a hosted composition. Fail closed with a
-    // human-actionable error instead of silently running local-only.
+    // This entrypoint composes no hosted control plane, so hosted mode fails
+    // closed here: running local-only under it would look like it worked.
     throw new ControlPlaneCompositionError(
       "hosted_composition_removed",
       "CLAXEDO_DEPLOYMENT_MODE=hosted is not supported by the self-hosted Node entrypoint; deploy the Better Auth + D1 worker instead",
@@ -1614,7 +1614,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
     reader: usageRevisionStore,
-    currentFilter: (fact) => fact.location === "local" || fact.location === "user-hosted",
+    currentFilter: (fact) => usageLocation(fact.location) === "local",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
       const [meta, host] = await Promise.all([

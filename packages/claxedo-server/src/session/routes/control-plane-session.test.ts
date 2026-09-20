@@ -42,7 +42,7 @@ function services(): ControlPlaneServices {
 
 /** A cloud workspace: the list read looks at the kind before choosing its source. */
 function cloudWorkspaceOpen() {
-  return vi.fn(async () => ({ role: "owner", workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" } }))
+  return vi.fn(async () => ({ role: "owner", workspace: { backing: "cloud-vm", org_id: "org_1" } }))
 }
 
 function servicesWithWorkspaceOpenAuthorization(

@@ -79,7 +79,6 @@ describe("hosted session pull", () => {
       openWorkspace: vi.fn(async () => ({
         role: "editor",
         workspace: {
-          access: "cloud",
           backing: "cloud-vm",
           org_id: "org_1",
         },
@@ -139,7 +138,7 @@ describe("hosted session pull", () => {
     })
   })
 
-  test("pulls a user-hosted workspace through its active authority host link", async () => {
+  test("pulls a machine-placed workspace through its active authority host link", async () => {
     const svc = services()
     const mintRuntimeAccessToken = vi.fn(async () => ({ token: "relay-runtime-token" }))
     const getRelayEndpoint = vi.fn(async () => "https://relay.eu.test")
@@ -158,7 +157,6 @@ describe("hosted session pull", () => {
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
-          access: "user-hosted",
           backing: "local-worktree",
           org_id: "org_1",
           home_region: "eu-west",
@@ -223,7 +221,7 @@ describe("hosted session pull", () => {
     })
   })
 
-  test("fails closed when a user-hosted workspace has no active host link", async () => {
+  test("fails closed when a machine-placed workspace has no active host link", async () => {
     const svc = services()
     const mintRuntimeAccessToken = vi.fn()
     svc.relay.provider = {
@@ -235,7 +233,6 @@ describe("hosted session pull", () => {
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
-          access: "user-hosted",
           backing: "local-worktree",
           org_id: "org_1",
         },
@@ -288,7 +285,7 @@ describe("hosted session pull", () => {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
+        workspace: { backing: "cloud-vm", org_id: "org_1" },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -344,7 +341,7 @@ describe("hosted session pull", () => {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
+        workspace: { backing: "cloud-vm", org_id: "org_1" },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
       syncSessionMessages,

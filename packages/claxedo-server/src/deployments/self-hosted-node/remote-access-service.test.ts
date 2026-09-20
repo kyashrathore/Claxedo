@@ -273,7 +273,7 @@ describe("remote access service", () => {
 
     await expect(service.unassignWorkspace(auth, "ws_1")).resolves.toEqual({ unassigned: true })
 
-    // A user-hosted workspace lives exactly as long as its host assignment
+    // A machine-placed workspace lives exactly as long as its host assignment
     // (commit 9b88098572): unassigning ws_1 retires the workspace row itself,
     // not just its routing, so it 404s rather than reporting `active: false`.
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).rejects.toThrow("Workspace not found")

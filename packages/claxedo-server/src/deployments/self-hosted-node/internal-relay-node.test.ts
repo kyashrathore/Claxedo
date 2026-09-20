@@ -55,7 +55,7 @@ describe("local relay target lookup", () => {
     await expect(localRelayTargetExists()({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toBe(false)
   })
 
-  test("a user-hosted workspace resolves to the serving host over the tunnel, and only to that host", async () => {
+  test("a machine-placed workspace resolves to the serving host over the tunnel, and only to that host", async () => {
     const lookup = localRelayTargetLookup({
       userHostedResolver: async (workspaceId) =>
         workspaceId === "ws_api" ? { active: true, hostId: "host_box", backing: "local-worktree" } : { active: false },

@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { Miniflare } from "miniflare"
@@ -16,6 +14,7 @@ import {
   HOSTED_ATTEMPT_TTL_MS,
 } from "./attempts"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 import {
   createHostedCapabilityAuthFailureReporter,
   createHostedCapabilityConnectionResolver,
@@ -25,28 +24,7 @@ import {
   type HostedD1ConnectionsSetupInput,
 } from "./setup"
 
-// The authority migrations (as `workspace-authority.test.ts` applies them) plus
-// the two Agent Plugins ones, so the applied order matches production. 0018 and
-// 0019 are inert for this suite — 0018's `drop ... if exists` targets 0005's
-// tables, which this slice does not create, and nothing here reads an
-// activation row — but running them proves 0020 composes after them. 0022 is
-// inert here for the same reason and is applied for the same one: it proves the
-// sandbox lease table composes after the connections tables.
-const MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0013_org_team_session_sharing.sql",
-  "0017_adapter_custom.sql",
-  "0018_drop_agent_extensions.sql",
-  "0019_agent_plugin_activations.sql",
-  "0020_hosted_connections.sql",
-  "0021_mcp_oauth_clients.sql",
-  "0022_sandbox_leases.sql",
-  "0034_drop_workspace_access.sql",
-  "0035_session_share_level.sql",
-]
+const MIGRATIONS = controlPlaneMigrations()
 
 const NOW = 1_900_000_000_000
 const active: Miniflare[] = []
@@ -64,13 +42,7 @@ async function database(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
+  for (const name of MIGRATIONS) await applyControlPlaneMigration(target, name)
   return target
 }
 
@@ -414,7 +386,6 @@ describe("hosted D1 Connections setup", () => {
       .all<{ owner_user_id: string | null; integration_id: string }>()
     expect(stored.results).toEqual([{ owner_user_id: test.ownerUserId, integration_id: "composio" }])
 
-    // A fabricated state settles nothing.
     expect((await next.request("/callback?state=not-an-attempt&code=grant-code")).status).toBe(400)
   })
 
@@ -544,7 +515,6 @@ describe("hosted D1 Connections setup", () => {
         .prepare(`select state, status from hosted_connection_attempts`)
         .all<{ state: string; status: string }>()).results
 
-    // The connect's own sweep had nothing to retire.
     expect(await rows()).toEqual([{ state: attempt.attemptId, status: "pending" }])
 
     test.advance(HOSTED_ATTEMPT_TTL_MS)
@@ -593,7 +563,6 @@ describe("hosted D1 Connections setup", () => {
 
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({ ok: false, code: "connection_exists" })
-    // The winner's row is untouched and still the only one.
     const stored = await test.database
       .prepare(`select connection_id, integration_id from hosted_connections`)
       .all<{ connection_id: string; integration_id: string }>()

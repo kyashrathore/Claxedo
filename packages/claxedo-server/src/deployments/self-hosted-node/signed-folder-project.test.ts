@@ -119,7 +119,7 @@ describe("a folder project on the signed self-hosted server", () => {
       workspaceId: Object.keys(projects[0].workspaces)[0],
       projectId: project.id,
       directory,
-      access: "user-hosted",
+      backing: { kind: "local-worktree" },
     })
   })
 

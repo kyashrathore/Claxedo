@@ -108,7 +108,7 @@ export function sandboxRelayTargetLookup(input: {
         }
       }
     }
-    // User-hosted workspaces have no sandbox lease; resolve the registered
+    // A machine-placed workspace has no sandbox lease; resolve the registered
     // host link.
     const userHosted = await resolveUserHosted(args)
     if (userHosted) return userHosted

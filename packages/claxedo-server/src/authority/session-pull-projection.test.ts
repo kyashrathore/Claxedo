@@ -82,7 +82,7 @@ function presentAuthority() {
     })),
     openWorkspace: vi.fn(async () => ({
       role: "owner",
-      workspace: { org_id: "org_1", access: "cloud", backing: "cloud-vm" },
+      workspace: { org_id: "org_1", backing: "cloud-vm" },
     })),
     authorizeSessionWrite: vi.fn(async () => {}),
     upsertSessionVisibility: vi.fn(async () => ({})),

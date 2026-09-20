@@ -8,24 +8,10 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
 const ROOT = path.resolve(import.meta.dirname, "../../../..")
-const CONTROL_MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0005_agent_extensions_and_audit.sql",
-  "0006_channel_identity_and_canonical_runtime.sql",
-  "0007_paired_recovery_epoch.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0012_cold_local_host_challenges.sql",
-  "0013_org_team_session_sharing.sql",
-  "0017_adapter_custom.sql",
-  "0034_drop_workspace_access.sql",
-  "0035_session_share_level.sql",
-  "0036_drop_workspace_share_role.sql",
-].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
+const CONTROL_MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))
 

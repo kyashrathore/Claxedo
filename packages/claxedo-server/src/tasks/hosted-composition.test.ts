@@ -969,7 +969,6 @@ describe("hosted Tasks cloud start from inside a session", () => {
         signingEnv,
       )
 
-    // The owner marks a cloud preset for agents from the app.
     const preset = await command(app, "alice", "owner-preset", {
       ...CLOUD_PRESET,
       input: { ...CLOUD_PRESET.input, agentStartable: true },

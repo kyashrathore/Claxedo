@@ -36,7 +36,7 @@ export async function hostedConnectionInfo(
   }
   if (result.workspace?.backing !== "cloud-vm") {
     return {
-      error: apiError("workspace_relay_unsupported", "Workspace connection is only available for user-hosted or cloud workspaces"),
+      error: apiError("workspace_relay_unsupported", "Workspace connection is only available for a workspace placed on a machine or in the cloud"),
       status: 400,
     } as const
   }

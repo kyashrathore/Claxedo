@@ -37,7 +37,7 @@ function subject(order: string[]) {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
       })),
       recordRuntimeAccessToken: vi.fn(async () => undefined),
       auditAllow: vi.fn(async () => undefined),
@@ -194,7 +194,6 @@ function userHostedSubject(order: string[]) {
           workspace_id: "ws_local",
           org_id: "org_1",
           backing: "local-worktree",
-          access: "user-hosted",
           home_region: "us-east",
         },
       })),

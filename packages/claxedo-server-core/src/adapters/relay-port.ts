@@ -94,7 +94,7 @@ export type RelayTargetResult =
     }
 
 /**
- * Which enrolled host currently serves a user-hosted workspace, read on the
+ * Which enrolled host currently serves a workspace, read on the
  * service side with no end-user principal: the relay resolver asks it for a
  * `(workspaceId, hostId)` pair. The concrete resolver is a storage adapter
  * (D1 in `@claxedo/server`, SQLite in this package); the route module only

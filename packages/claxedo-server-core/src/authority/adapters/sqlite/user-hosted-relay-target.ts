@@ -3,7 +3,7 @@ import { HOST_SERVING_WORKSPACE_SQL } from "./workspace-authority"
 import { openAuthorityDb, type SqliteWorkspaceAuthorityOptions } from "./workspace-authority-store"
 
 /**
- * Service-side relay lookup for SQLite-backed user-hosted workspaces, the
+ * Service-side relay lookup for SQLite-backed machine-placed workspaces, the
  * twin of the D1 adapter's `createD1UserHostedTargetResolver`.
  *
  * The internal resolver has machine authority, not an end-user principal, so

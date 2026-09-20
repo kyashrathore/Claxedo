@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest"
 import { signedShellProjects } from "./shell"
 
 describe("signedShellProjects", () => {
-  test("a workspace's kind is the placement its row states", () => {
+  test("a workspace carries the backing its row states, and no kind of its own", () => {
     const projects = signedShellProjects(
       [
         {
@@ -32,14 +32,15 @@ describe("signedShellProjects", () => {
 
     expect(projects).toHaveLength(1)
     expect(projects[0]?.workspaces).toMatchObject({
-      ws_cloud: { id: "ws_cloud", kind: "cloud", directory: "workspace:ws_cloud", remote_directory: "/workspace" },
-      ws_shared: { id: "ws_shared", kind: "user-hosted", directory: "workspace:ws_shared" },
+      ws_cloud: { id: "ws_cloud", backing: "cloud-vm", directory: "workspace:ws_cloud", remote_directory: "/workspace" },
+      ws_shared: { id: "ws_shared", backing: "local-worktree", directory: "workspace:ws_shared" },
     })
+    expect(Object.values(projects[0].workspaces)).not.toContainEqual(expect.objectContaining({ kind: expect.anything() }))
   })
 
   test("a row that states no placement is the provisioner's, never the reader's own machine", () => {
     const projects = signedShellProjects([{ workspace_id: "ws_bare", project_id: "proj_bare" }], 1_800_000_000_000)
 
-    expect(projects[0]?.workspaces).toMatchObject({ ws_bare: { kind: "cloud" } })
+    expect(projects[0]?.workspaces).toMatchObject({ ws_bare: { backing: "cloud-vm" } })
   })
 })

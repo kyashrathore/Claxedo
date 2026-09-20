@@ -4,6 +4,7 @@ import Database from "better-sqlite3"
 import { describe, expect, test } from "vitest"
 
 import { verifyPairedD1BackupExports } from "./verify-paired-d1-backup"
+import { controlPlaneMigrations } from "../../src/test-support/control-plane-migrations"
 
 const deploymentId = "deployment-backup-0001"
 const releaseId = "release-backup-0001"
@@ -54,27 +55,7 @@ async function exports(phase = "provider_sync") {
     insert into "deploymentReleaseActive" values (1, '${deploymentId}', 0, '2026-08-28T00:01:00.000Z');
     insert into "deploymentRecoveryEpoch" values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`
-  const control = `${await exportedSchema("control-plane", [
-    "0001_service_installations.sql",
-    "0002_workspace_authority.sql",
-    "0003_private_sessions.sql",
-    "0004_host_access_and_sharing.sql",
-    "0005_agent_extensions_and_audit.sql",
-    "0006_channel_identity_and_canonical_runtime.sql",
-    "0007_paired_recovery_epoch.sql",
-    "0008_user_deployed_owner_bootstrap.sql",
-    "0009_optional_service_deployment.sql",
-    "0010_session_turn_leases.sql",
-    "0011_session_turn_producers.sql",
-    "0012_cold_local_host_challenges.sql",
-    "0013_org_team_session_sharing.sql",
-    "0014_host_workspace_assignments.sql",
-    "0015_drop_local_host_links.sql",
-    "0016_host_session_authority.sql",
-    "0018_drop_agent_extensions.sql",
-    "0034_drop_workspace_access.sql",
-    "0036_drop_workspace_share_role.sql",
-  ])}
+  const control = `${await exportedSchema("control-plane", controlPlaneMigrations())}
     insert into control_plane_recovery_epochs values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`
   return { auth: new TextEncoder().encode(auth), control: new TextEncoder().encode(control) }
