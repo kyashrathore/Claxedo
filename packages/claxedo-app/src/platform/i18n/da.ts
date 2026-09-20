@@ -474,10 +474,6 @@ export const dict = {
 
   "session.header.search.placeholder": "Søg {{project}}",
   "session.header.searchFiles": "Søg efter filer",
-  "session.share.level.follow": "Kan følge med",
-  "session.share.level.send": "Kan sende beskeder",
-  "session.share.disclosure.send":
-    "Agenten kører på arbejdsområdets maskine med den maskines filer. En kollega, der kan sende beskeder, kan bede den om at læse hvad som helst dér, herunder udskrifterne af dine andre sessioner i dette arbejdsområde. Deling fungerer bedst for sessioner i et cloudmiljø, hvor hver session har sin egen maskine. Hvis denne maskine indeholder noget, du ikke ønsker, at en kollega skal kunne nå, så del ikke sessioner fra arbejdsområder på den.",
 
 
 
@@ -503,12 +499,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projekter og sessioner",
   "sidebar.settings": "Indstillinger",
   "sidebar.help": "Hjælp",
-  "sidebar.workspace.role.viewer": "Læser",
-  "sidebar.workspace.role.editor": "Redaktør",
-  "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Maskinen er offline",
-  "sidebar.workspace.sharedWithYou": "Delt med dig",
-  "sidebar.workspace.publishedToYourAccount": "Udgivet til din konto",
 
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Arbejdsområde",
@@ -686,8 +676,6 @@ export const dict = {
   "session.delete.button": "Slet session",
 
   "workspace.new": "Nyt arbejdsområde",
-  "workspace.directory.project": "projekt",
-  "workspace.directory.sandbox": "sandkasse",
   "workspace.error.stillPreparing": "Arbejdsområdet er stadig ved at blive klargjort",
   "workspace.status.checking": "Tjekker for uflettede ændringer...",
   "workspace.status.error": "Kunne ikke bekræfte git-status.",

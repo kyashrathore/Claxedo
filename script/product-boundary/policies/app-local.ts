@@ -479,9 +479,16 @@ export const appLocal: Policy = {
   // one: a loopback daemon is the deployment that declares it issues NO
   // sessions, and that answer is what keeps this build's sign-in gate open and
   // its identity provider unstarted. Both reach only `platform/query`, already
-  // in this closure; no new package edge. Measured 1080 modules / 58 packages,
-  // with no headroom.
-  ceilings: { modules: 1080, packages: 58 },
+  // in this closure; no new package edge.
+  //
+  // +17 modules (2026-09-20): `platform/i18n/machines/<locale>.ts`, one per
+  // locale in `platform/i18n/locales.ts`. The machine, placement and
+  // session-sharing copy split out of the base dictionaries so `en.ts` stays
+  // inside the 800-line size budget, following `source-control/` and
+  // `provider-settings/`. The i18n manifest owns them, it already imports both
+  // sibling directories, and a dictionary reaches nothing; no new package
+  // edge. Measured 1097 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1097, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

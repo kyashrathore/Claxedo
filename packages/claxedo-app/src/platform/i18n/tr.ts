@@ -485,10 +485,6 @@ export const dict = {
 
   "session.header.search.placeholder": "{{project}} ara",
   "session.header.searchFiles": "Dosya ara",
-  "session.share.level.follow": "Takip edebilir",
-  "session.share.level.send": "Mesaj gönderebilir",
-  "session.share.disclosure.send":
-    "Ajan, çalışma alanının bulunduğu makinede o makinenin dosyalarıyla çalışır. Mesaj gönderebilen bir ekip arkadaşı, bu çalışma alanındaki diğer oturumlarınızın dökümleri dahil oradaki her şeyi okumasını ajandan isteyebilir. Paylaşım, her oturumun kendi makinesine sahip olduğu bulut ortamındaki oturumlar için en iyi sonucu verir. Bu makinede bir ekip arkadaşının erişmesini istemeyeceğiniz herhangi bir şey varsa, bu makinedeki çalışma alanlarından oturum paylaşmayın.",
 
 
 
@@ -515,12 +511,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projeler ve oturumlar",
   "sidebar.settings": "Ayarlar",
   "sidebar.help": "Yardım",
-  "sidebar.workspace.role.viewer": "Görüntüleyici",
-  "sidebar.workspace.role.editor": "Düzenleyici",
-  "sidebar.workspace.role.admin": "Yönetici",
-  "sidebar.workspace.hostOffline": "Makine çevrimdışı",
-  "sidebar.workspace.sharedWithYou": "Sizinle paylaşıldı",
-  "sidebar.workspace.publishedToYourAccount": "Hesabınıza yayınlandı",
 
 
   "settings.section.desktop": "Masaüstü",
@@ -704,8 +694,6 @@ export const dict = {
   "session.delete.button": "Oturumu sil",
 
   "workspace.new": "Yeni çalışma alanı",
-  "workspace.directory.project": "proje",
-  "workspace.directory.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Çalışma alanı hâlâ hazırlanıyor",
   "workspace.status.checking": "Birleşmemiş değişiklikler kontrol ediliyor...",
   "workspace.status.error": "Git durumu doğrulanamadı.",

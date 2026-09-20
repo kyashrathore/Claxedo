@@ -479,10 +479,6 @@ export const dict = {
 
   "session.header.search.placeholder": "Pretraži {{project}}",
   "session.header.searchFiles": "Pretraži datoteke",
-  "session.share.level.follow": "Može pratiti",
-  "session.share.level.send": "Može slati poruke",
-  "session.share.disclosure.send":
-    "Agent radi na uređaju radnog prostora s datotekama tog uređaja. Član tima koji može slati poruke može ga zamoliti da pročita bilo šta na njemu, uključujući transkripte vaših drugih sesija u ovom radnom prostoru. Dijeljenje najbolje funkcionira za sesije u cloud okruženju, gdje svaka sesija ima vlastiti uređaj. Ako se na ovom uređaju nalazi bilo šta što ne biste željeli da član tima dosegne, nemojte dijeliti sesije iz radnih prostora na njemu.",
 
 
 
@@ -509,12 +505,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projekti i sesije",
   "sidebar.settings": "Postavke",
   "sidebar.help": "Pomoć",
-  "sidebar.workspace.role.viewer": "Gledalac",
-  "sidebar.workspace.role.editor": "Urednik",
-  "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Mašina je offline",
-  "sidebar.workspace.sharedWithYou": "Podijeljeno s vama",
-  "sidebar.workspace.publishedToYourAccount": "Objavljeno na vaš račun",
 
 
   "settings.section.desktop": "Desktop",
@@ -695,8 +685,6 @@ export const dict = {
   "session.delete.button": "Izbriši sesiju",
 
   "workspace.new": "Novi radni prostor",
-  "workspace.directory.project": "projekat",
-  "workspace.directory.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Radni prostor se još priprema",
   "workspace.status.checking": "Provjera neobjedinjenih promjena...",
   "workspace.status.error": "Nije moguće provjeriti git status.",
