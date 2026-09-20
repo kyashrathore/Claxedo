@@ -2,7 +2,9 @@
 
 Claxedo registers external agents through provider-owned connections. ACP is one
 possible provider; it is not a special route, identity format, or browser
-configuration shape.
+configuration shape. This page is the reference for the descriptor, the routes
+and the runtime's rules; [Using an ACP Agent](./using-agent-connections.md) is
+the walkthrough.
 
 Connections are trusted operator configuration. The browser receives only a
 sanitized discovery record and never receives provider keys, commands,
@@ -57,8 +59,15 @@ header name to a provider secret name. That name must have a matching
 `secretRefs` entry. The host resolves it immediately before adapter creation;
 the descriptor and browser projection never contain the resolved value.
 
-There is no v1/v2 decoder, ACP map importer, built-in OpenCode row, or fallback
+A v1 or v2 file is migrated to v3 once, with the original kept beside it as
+`user-agent-config.legacy-vN.json`; a legacy ACP identity in that file is
+dropped, not translated. There is no built-in OpenCode row and no fallback
 connection.
+
+`config.connection.supportsMcpServers: false` stops Claxedo from handing its
+configured MCP servers and its own per-session server to the agent on
+`session/new`, `session/fork` and `session/resume`; by default they are all
+forwarded.
 
 ### Where the file lives
 
@@ -93,6 +102,11 @@ The agent's stdout is the protocol stream; its stderr is logged by the server,
 and its last stderr line is attached to a failed handshake so a binary that
 refuses to start says why.
 
+The process is started in the server's own working directory; the workspace or
+worktree path reaches the agent as the `cwd` of every `session/new`,
+`session/resume`, `session/load` and `session/fork` request, and one process
+serves one directory (the process key includes it).
+
 ### Turn timeouts
 
 A turn has no wall-clock limit. The only bound is the agent going quiet: a
@@ -107,34 +121,73 @@ queued on the same process fails with the same reason.
 | --- | --- | --- |
 | `CLAXEDO_ACP_PROMPT_TIMEOUT_MS` | 300000 | Silence inside a turn |
 | `CLAXEDO_ACP_IDLE_TIMEOUT_MS` | 300000 | A process with no turn running |
-| `CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS` | 10000 | `session/new`, `session/load`, mode changes |
+| `CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS` | 10000 | `session/new`, `session/resume`, `session/load`, mode changes, the per-turn session sync |
 | `CLAXEDO_ACP_INITIALIZE_TIMEOUT_MS` | same as new-session | The `initialize` handshake |
 | `CLAXEDO_ACP_PROBE_TIMEOUT_MS` | same as new-session | Config-option discovery |
+| `CLAXEDO_ACP_RPC_STALL_LOG_MS` | 5000 | Log-only: a warning when one request has waited this long |
+
+`CLAXEDO_ACP_IDLE_TIMEOUT_MS` is read once when the server starts; the others
+are read per adapter.
+
+After a server restart the first turn on a session asks the agent for
+`session/resume`, or `session/load` when only that is advertised. An agent that
+advertises neither fails that turn; only a "Resource not found" answer makes
+Claxedo create a fresh agent session and rebind. Claxedo's own transcript is
+never replayed into the agent on resume; the only transcript replay is the
+harness handoff.
 
 ### What an ACP connection cannot do
 
 The adapter advertises the capabilities the protocol gives it and nothing
 more. Compared with the native harnesses, an ACP connection has:
 
-- no reconnect: a process that exits mid-turn fails the turn and is replaced
-  on the next one;
-- no questions, todos, slash commands, revert, or subagents;
+- no reconnect: a process that exits mid-turn fails the turn with the agent's
+  last stderr line, marks every session bound to that process as recovering,
+  and is replaced on the next turn;
+- no questions, slash commands, revert, or subagents as controls; the
+  transcript still renders a `plan` update as a todo list and shows an
+  `available_commands_update`;
+- fork only when the agent advertises `sessionCapabilities.fork` (the browser
+  projection reports `fork: false` regardless; the runtime reports the live
+  value);
 - one turn at a time per process: sessions that share a workspace share the
   process and queue behind each other;
-- instructions delivered as a prefix of the prompt, not as a system channel;
-- model selection marked `optional`, with whatever `session/new` returns as
-  the model list.
+- instructions delivered as the first content block of the prompt, annotated
+  for the assistant, not as a system channel;
+- the runtime treats model selection as optional; the browser projection
+  carries whatever `config.modelSelection` the operator wrote, and omits the
+  field when unset. The model list is the agent's `model` config option or its
+  `availableModels` channel, cached per process, and selecting a model restarts
+  the connection's processes;
+- attachments are written to `<workspace>/.claxedo/attachments/` and named in
+  the prompt; images go inline when the agent negotiated inline images,
+  other files inline when it negotiated embedded context, otherwise as a
+  resource link. An agent that negotiated neither and shares no filesystem
+  makes the turn fail rather than dropping the attachment;
+- Goal mode only when the agent negotiates the Goal extension on
+  `session/new` (`_meta.goal`, version 1, at least get/start/stop).
 
 ### Permissions
 
-Every `session/request_permission` is shown as a permission prompt. The
-protocol carries no command or path patterns, only the agent's `title`, so
-that title is what the prompt shows and what an "always" answer remembers: the
-next request with the same tool kind and the same title is answered with the
-agent's allow option without asking. Agents that keep their own allowlist
-still receive `allow_always` when they offer it. A compound shell command is a
-new title each time it changes, so a per-program allowlist has to come from the
-agent.
+A `session/request_permission` is shown as a permission prompt carrying the
+agent's `title`, the command for an `execute` request or the reason otherwise,
+and the `locations` the agent named as path patterns. An "always" answer is
+remembered per session, keyed by tool kind and the exact title, on the
+session's stored permission state, so it survives a process or app restart and
+is cleared when the session changes harness; the next matching request is
+answered without a prompt and recorded only as replied. A request with no
+title is never remembered. Agents that keep their own allowlist still receive
+`allow_always` when they offer it. A compound shell command is a new title each
+time it changes, so a per-program allowlist has to come from the agent.
+
+Two answers never reach the user: a remembered "always", and the app's own
+"Approve for me" allowlist, which auto-approves `search`, `think` and `edit`
+requests and asks for everything else.
+
+Permission modes come from the agent, either a `mode` config option or ACP
+session modes, and apply from the next turn; a turn fails when the agent keeps
+a different mode than the one selected. Cancelling a turn answers every
+outstanding request as cancelled.
 
 ### Already-running OpenCode server
 
@@ -226,7 +279,10 @@ type HarnessConnectionRef = {
 
 The Connections settings screen lists this projection and can remove a
 connection. Provider-specific add/edit payloads remain an authenticated
-operator action rather than a raw-secret browser form.
+operator action rather than a raw-secret browser form. Both shipped providers
+report `readiness: "ready"` for an enabled descriptor and `"disabled"` for a
+disabled one; `"unavailable"` is in the type and reachable by no provider
+today.
 
 ## Selection and model policy
 
@@ -243,8 +299,13 @@ The picker follows the advertised `modelSelection` policy:
 - `unsupported`: the agent owns model selection and the UI does not fabricate a
   model row.
 
-Until a runtime endpoint accepts the discriminated target, the app must leave a
-connection unselectable. It must not install a compatibility string encoding.
+The composer lists every enabled connection beside the native harnesses.
+Session creation takes `connectionId=` or `nativeHarness=` (never both, never
+a legacy `harness` string), and `PATCH /session/:id/config?connectionId=` hands
+an idle session to another harness, replaying the transcript so far as a
+system block. `POST /api/claxedo/agent-config/harness` writes the global
+default (`defaultConnectionId` or `defaultHarness`) and ignores `directory`;
+the per-workspace choice for new drafts is the browser's own memory.
 
 ## Secret and lifecycle rules
 

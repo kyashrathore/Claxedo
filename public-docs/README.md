@@ -77,6 +77,9 @@ artifacts, and projection are product features, not public runtime-package APIs.
   facade, first-party stores, and supported harness factories.
 - [Agent Event Runtime](./agent-event-runtime.md): event normalization and
   projections.
+- [Using an ACP Agent](./using-agent-connections.md): add an external agent
+  such as Cursor over ACP, choose when it runs, what a turn carries, what it
+  cannot do, and what each error means.
 - [Agent Connections](./acp-connections.md): configure provider-owned agent
   runtimes without exposing trusted descriptors or secrets to the browser.
 - [Relay And Deployment](./relay-and-deployment.md): local, private VM,
