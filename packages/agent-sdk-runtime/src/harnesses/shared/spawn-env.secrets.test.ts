@@ -47,7 +47,6 @@ describe("harness spawn env never carries internal secrets", () => {
   })
 
   test("the specific keys-to-the-kingdom names are denied", () => {
-    // Called out individually so a regression names the actual consequence.
     for (const name of [
       "WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN", // full runtime access on every route
       "WORKSPACE_RUNTIME_CONFIG_TOKEN",
