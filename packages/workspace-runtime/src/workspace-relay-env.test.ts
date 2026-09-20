@@ -82,7 +82,7 @@ describe("workspace relay runtime env", () => {
     })
   })
 
-  test("uses the trusted supervisor direct token for user-hosted runtime config pushes", async () => {
+  test("uses the trusted supervisor direct token when one is configured", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const env = {
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",

@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/host-serving/runtime"
-import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
+import { setHostServing, stopHostServing, hostServingState } from "@claxedo/host-serving/serving"
 import { parseConnectArgs } from "../connect/args"
 import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlPlane } from "../connect/fake-control-plane.test-support"
 import { BEAT_INTERVAL_MS, servingCredential, transientBootstrapFailure, withBootstrapRetry, type HostDeps } from "../connect/host"
@@ -122,9 +122,9 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
       return listener
     },
     openCodeRuntime: () => undefined,
-    setServing: setUserHostedServing,
-    servingState: userHostedServingState,
-    stopServing: stopUserHostedServing,
+    setServing: setHostServing,
+    servingState: hostServingState,
+    stopServing: stopHostServing,
     resolvePath: (target) => fs.realpath(target),
     setInterval: (fn) => {
       tick = fn
@@ -183,7 +183,7 @@ describe("claxedo connect", () => {
     h = await harness()
   })
   afterEach(async () => {
-    stopUserHostedServing()
+    stopHostServing()
     await h.relay.stop()
     await fs.rm(h.home, { recursive: true, force: true })
     await fs.rm(h.root, { recursive: true, force: true })
@@ -241,7 +241,7 @@ describe("claxedo connect", () => {
     expect(await running).toBe(0)
     expect((await h.deps.store.load())?.run).toBeUndefined()
     await until(() => socket.closed, "the tunnel to close on drain")
-    expect(userHostedServingState({ sessionAuthority: () => "managed-private" }).serving).toBe(false)
+    expect(hostServingState({ sessionAuthority: () => "managed-private" }).serving).toBe(false)
     // The drain's last request withdrew readiness, so the control plane
     // stopped routing this machine before the process was gone.
     expect(h.cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
@@ -596,7 +596,6 @@ describe("claxedo connect", () => {
       h.stop()
       expect(await recycled).toBe(0)
 
-      // A daemon whose port nothing answers on is stale too.
       await fs.writeFile(discovery, daemon.record({ port: daemon.port + 1 }))
       const beatsBefore = h.cp.beats().length
       const gone = connect([], h.deps)
@@ -604,7 +603,6 @@ describe("claxedo connect", () => {
       h.stop()
       expect(await gone).toBe(0)
 
-      // Beside a live daemon, only when told to; the unit carries the choice.
       await fs.writeFile(discovery, daemon.record())
       expect(await connect(["--install-service", "--alongside-desktop"], h.deps)).toBe(0)
       const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
@@ -652,7 +650,6 @@ describe("claxedo connect", () => {
     expect(status).toContain("  roots        none (nothing is servable)")
     expect(status.some((line) => line.startsWith(`  refused      ${projects} now resolves to ${victim}`))).toBe(true)
 
-    // The same scope revision on every boot's first beat keeps the pin.
     h.stop()
     expect(await running).toBe(0)
     const rebooted = connect([], h.deps)
@@ -664,7 +661,6 @@ describe("claxedo connect", () => {
     h.stop()
     expect(await rebooted).toBe(0)
 
-    // The operator resets: the next resolution records the root where it resolves now.
     expect(await connect(["--reset-roots"], h.deps)).toBe(0)
     expect(h.lines.slice(-3)).toEqual([
       "Forgot where these roots first resolved:",
@@ -681,8 +677,6 @@ describe("claxedo connect", () => {
     h.stop()
     expect(await reset).toBe(0)
 
-    // A new scope revision from the owner re-records as well: the symlink is
-    // removed and the folder recreated in place, and the owner re-scopes.
     await fs.unlink(projects)
     await fs.mkdir(path.join(projects, "app"), { recursive: true })
     const rescoped = connect([], h.deps)

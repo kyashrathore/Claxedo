@@ -1,18 +1,17 @@
 import { describe, expect, test } from "vitest"
 
-import { userHostedSurface } from "./surface"
+import { hostServingSurface } from "./surface"
 
 const WORKSPACE_ID = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
 const OTHER_WORKSPACE_ID = "22222222-2222-4222-8222-222222222222"
 const LOCAL_BASE_URL = "http://127.0.0.1:2593"
 
 function surface(path: string) {
-  return userHostedSurface({ localBaseUrl: LOCAL_BASE_URL, workspaceId: WORKSPACE_ID, path })
+  return hostServingSurface({ localBaseUrl: LOCAL_BASE_URL, workspaceId: WORKSPACE_ID, path })
 }
 
 describe("deny — the daemon's own families never cross the tunnel", () => {
   test.each([
-    // The exact 403 verified live: relayed host-serving administration.
     "/api/claxedo/host-serving",
     "/api/claxedo/health",
     "/api/cp/events",
@@ -36,10 +35,9 @@ describe("deny — the daemon's own families never cross the tunnel", () => {
     expect(surface(path)).toEqual({ kind: "deny" })
   })
 
-  test("does not deny the daemon's liveness probe by matching a query-bearing sibling", () => {
-    // Regression guard for a naive substring match: `/health` must not deny
-    // `/healthcheck` (no such route exists, but the matcher must not treat a
-    // shared prefix as a family boundary).
+  test("does not deny a path that merely shares `/health` as a prefix", () => {
+    // A shared prefix is not a family boundary; `/healthcheck` names no route,
+    // which is what makes it the probe for a substring match.
     expect(surface("/healthcheck")).not.toEqual({ kind: "deny" })
   })
 })

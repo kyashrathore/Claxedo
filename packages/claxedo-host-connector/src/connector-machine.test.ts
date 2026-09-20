@@ -224,9 +224,6 @@ describe("assignment discovery", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
 
-    // The owner moves the workspace to another folder. The readiness row still
-    // names revision 1, so the credential in the very beat that delivers
-    // revision 2 no longer covers the workspace.
     const moved = cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api-v2" })
     const beatsBefore = h.beats().length
     let ackedAtDelivery: unknown
@@ -313,7 +310,6 @@ describe("assignment discovery", () => {
     const perBeat: number[] = []
     for (let beat = 1; beat <= 15; beat++) perBeat.push(await deliveriesAfter())
 
-    // Beats 1–5 each deliver the pending description again; 6–14 do not; 15 does.
     expect(perBeat).toEqual([1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6])
     expect(h.ackFailures).toHaveLength(6)
     expect(String(h.ackFailures[0])).toContain("cannot be resolved")
@@ -327,7 +323,6 @@ describe("assignment discovery", () => {
 
     expect(h.seen).toHaveLength(7)
     expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision: 1 }])
-    // Acked: nothing is pending, so a further beat delivers nothing.
     await h.connector.beat()
     await h.connector.beat()
     expect(h.seen).toHaveLength(7)
@@ -403,8 +398,6 @@ describe("assignment discovery", () => {
     await vi.waitFor(() => expect(cp.readiness.get("ws_1")).toMatchObject({ revision: 2 }))
     const reconciliations = h.seen.length
 
-    // A response carrying the revision-1 snapshot lands after revision 2 was
-    // applied and acked.
     replayStale = true
     await h.connector.beat()
 
@@ -662,7 +655,6 @@ describe("consent, withdrawal and drain", () => {
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
     expect(h.tunnels.at(-1)).toBeUndefined()
     expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "closed" })
-    // Stopped: a second drain sends nothing.
     await h.connector.drain()
     expect(cp.log.length).toBe(requests + 1)
   })
@@ -693,7 +685,6 @@ describe("consent, withdrawal and drain", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_fast"]))
 
-    // SIGTERM lands while ws_slow's runtime is still being prepared inside a beat.
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_slow", remoteDirectory: "/srv/slow" })
     h.tick()
     await vi.waitFor(() => expect(releasePreparation).toBeDefined())
@@ -739,8 +730,6 @@ describe("consent, withdrawal and drain", () => {
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
-    // The next timer beat is held open at the transport; the owner re-points
-    // the folder while it is out, so its answer carries a new description.
     h.tick()
     await vi.waitFor(() => expect(releaseBeat).toBeDefined())
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api-v2" })
@@ -893,7 +882,6 @@ describe("provider configuration", () => {
     expect(host.connector.providerConfigRevision()).toBe(revision)
     await host.connector.beat()
     expect(host.cp.providerConfigAckedRevision(host.enrolled.enrollmentId)).toBe(revision)
-    // The control plane stops re-sending what the machine has said it holds.
     expect(host.providerConfigs).toHaveLength(1)
   })
 
@@ -982,7 +970,6 @@ describe("provider configuration", () => {
     await first.connector.beat()
     first.connector.close()
 
-    // A restart: the same enrollment, the revision read back from the caller's store.
     const restarted = await machineHost(cp, { sealingPublicKey: sealing.publicKey })
     expect(restarted.enrolled.enrollmentId).not.toBe(first.enrolled.enrollmentId)
     const holder = createHostConnector({

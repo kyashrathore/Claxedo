@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdirSync, realpathSync } from "fs"
+import { execFileSync } from "child_process"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -23,6 +24,20 @@ const { putSessionMeta, sessionMeta, listSessionMetas } = await import("@claxedo
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { SessionMetaRoutes } = await import("./meta-routes")
 ClaxedoDB.Drizzle()
+
+/**
+ * A directory on THIS machine, stored the only way the store will store one.
+ *
+ * `ensureWorkspace` refuses a row it cannot place: a worktree needs a repo to
+ * key on, and a provisioner row needs the driver that names the machine it
+ * runs on. A row seeded without either is silently absent and the route under
+ * test then answers about nothing.
+ */
+async function worktree(directory: string) {
+  await fs.mkdir(directory, { recursive: true })
+  execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+  return directory
+}
 
 const authConfig = {
   enabled: true,
@@ -71,7 +86,6 @@ function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesC
         workspace: {
           workspace_id: "ws_1",
           backing: "cloud-vm" as const,
-          access: "cloud" as const,
         },
       })),
     } as unknown as ControlPlaneServicesContract["authority"],
@@ -148,13 +162,11 @@ describe("session metadata routes", () => {
   })
 
   test("refreshes a resolved workspace snapshot before serving its first session list", async () => {
-    const directory = path.join(root, `local-refresh-${randomUUID()}`)
-    await fs.mkdir(directory, { recursive: true })
+    const directory = await worktree(path.join(root, `local-refresh-${randomUUID()}`))
     const workspaceId = `ws_local_refresh_${randomUUID()}`
     const resolvedWorkspace = await ensureWorkspace({
       workspaceId,
       directory,
-      kind: "cloud",
     })
     if (!resolvedWorkspace) throw new Error("test workspace was not created")
     const refreshSessionProjection = vi.fn(async () => {
@@ -169,12 +181,49 @@ describe("session metadata routes", () => {
     )
 
     expect(res.status).toBe(200)
+    // A workspace on this machine is addressed by its directory, not by its id.
     await expect(res.json()).resolves.toMatchObject({
-      items: [expect.objectContaining({ sessionId: "local_refresh_1", sessionRef: `workspace:${workspaceId}:session:local_refresh_1` })],
+      items: [expect.objectContaining({ sessionId: "local_refresh_1", sessionRef: `local:${directory}:session:local_refresh_1` })],
     })
     expect(refreshSessionProjection).toHaveBeenCalledWith(expect.objectContaining({
       id: workspaceId,
       directory,
+      kind: "local",
+    }))
+  })
+
+  // The other arm of the same producer: a provisioner row has no directory on
+  // this machine, so its sessions are addressed by workspace id.
+  test("addresses a provisioner-placed workspace's sessions by id", async () => {
+    const workspaceId = `ws_cloud_refresh_${randomUUID()}`
+    const resolvedWorkspace = await ensureWorkspace({
+      workspaceId,
+      directory: `workspace:${workspaceId}`,
+      remote_directory: "/workspace",
+      kind: "cloud",
+      driver: "daytona",
+    })
+    if (!resolvedWorkspace) throw new Error("test workspace was not created")
+    const refreshSessionProjection = vi.fn(async () => {
+      await putSessionMeta("cloud_refresh_1", {
+        ws: resolvedWorkspace,
+        title: "Cloud row",
+      })
+    })
+
+    const res = await SessionMetaRoutes({ refreshSessionProjection }).request(
+      `http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${encodeURIComponent(workspaceId)}&limit=10`,
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      items: [expect.objectContaining({
+        sessionId: "cloud_refresh_1",
+        sessionRef: `workspace:${workspaceId}:session:cloud_refresh_1`,
+      })],
+    })
+    expect(refreshSessionProjection).toHaveBeenCalledWith(expect.objectContaining({
+      id: workspaceId,
       kind: "cloud",
     }))
   })
@@ -267,20 +316,18 @@ describe("session metadata routes", () => {
   })
 
   test("signed project-scoped session lists authorize ws-shaped project identities", async () => {
-    const directory = path.join(root, `signed-navigation-${randomUUID()}`)
-    await fs.mkdir(directory, { recursive: true })
+    const directory = await worktree(path.join(root, `signed-navigation-${randomUUID()}`))
     await ensureWorkspace({
       workspaceId: "ws_signed_navigation",
       project_id: "ws_signed_navigation",
       directory,
-      kind: "cloud",
     })
     await putSessionMeta("signed_navigation_1", {
       ws: {
         id: "ws_signed_navigation",
         project_id: "ws_signed_navigation",
         directory,
-        kind: "cloud",
+        kind: "local",
         created_at: 1,
         updated_at: 1,
       },
@@ -310,20 +357,18 @@ describe("session metadata routes", () => {
   })
 
   test("signed project-scoped session lists resolve canonical project identities", async () => {
-    const directory = path.join(root, `signed-project-${randomUUID()}`)
-    await fs.mkdir(directory, { recursive: true })
+    const directory = await worktree(path.join(root, `signed-project-${randomUUID()}`))
     await ensureWorkspace({
       workspaceId: "ws_signed_project",
       project_id: "proj_signed_project",
       directory,
-      kind: "cloud",
     })
     await putSessionMeta("signed_project_1", {
       ws: {
         id: "ws_signed_project",
         project_id: "proj_signed_project",
         directory,
-        kind: "cloud",
+        kind: "local",
         created_at: 1,
         updated_at: 1,
       },
@@ -351,20 +396,16 @@ describe("session metadata routes", () => {
     const projectId = `proj_signed_siblings_${randomUUID()}`
     const allowedWorkspaceId = `ws_allowed_${randomUUID()}`
     const deniedWorkspaceId = `ws_denied_${randomUUID()}`
-    const allowedDirectory = path.join(root, allowedWorkspaceId)
-    const deniedDirectory = path.join(root, deniedWorkspaceId)
-    await Promise.all([
-      fs.mkdir(allowedDirectory, { recursive: true }),
-      fs.mkdir(deniedDirectory, { recursive: true }),
-    ])
-    await ensureWorkspace({ workspaceId: allowedWorkspaceId, project_id: projectId, directory: allowedDirectory, kind: "cloud" })
-    await ensureWorkspace({ workspaceId: deniedWorkspaceId, project_id: projectId, directory: deniedDirectory, kind: "cloud" })
+    const allowedDirectory = await worktree(path.join(root, allowedWorkspaceId))
+    const deniedDirectory = await worktree(path.join(root, deniedWorkspaceId))
+    await ensureWorkspace({ workspaceId: allowedWorkspaceId, project_id: projectId, directory: allowedDirectory })
+    await ensureWorkspace({ workspaceId: deniedWorkspaceId, project_id: projectId, directory: deniedDirectory })
     await putSessionMeta(`ses_${allowedWorkspaceId}`, {
-      ws: { id: allowedWorkspaceId, project_id: projectId, directory: allowedDirectory, kind: "cloud", created_at: 1, updated_at: 1 },
+      ws: { id: allowedWorkspaceId, project_id: projectId, directory: allowedDirectory, kind: "local", created_at: 1, updated_at: 1 },
       title: "Allowed sibling",
     })
     await putSessionMeta(`ses_${deniedWorkspaceId}`, {
-      ws: { id: deniedWorkspaceId, project_id: projectId, directory: deniedDirectory, kind: "cloud", created_at: 1, updated_at: 1 },
+      ws: { id: deniedWorkspaceId, project_id: projectId, directory: deniedDirectory, kind: "local", created_at: 1, updated_at: 1 },
       title: "Denied sibling",
     })
     const svc = services({ workspaces: [{
@@ -389,11 +430,10 @@ describe("session metadata routes", () => {
     const projectId = `proj_signed_allowed_siblings_${randomUUID()}`
     const workspaceIds = [`ws_first_${randomUUID()}`, `ws_second_${randomUUID()}`]
     for (const [index, workspaceId] of workspaceIds.entries()) {
-      const directory = path.join(root, workspaceId)
-      await fs.mkdir(directory, { recursive: true })
-      await ensureWorkspace({ workspaceId, project_id: projectId, directory, kind: "cloud" })
+      const directory = await worktree(path.join(root, workspaceId))
+      await ensureWorkspace({ workspaceId, project_id: projectId, directory })
       await putSessionMeta(`ses_${workspaceId}`, {
-        ws: { id: workspaceId, project_id: projectId, directory, kind: "cloud", created_at: index + 1, updated_at: index + 1 },
+        ws: { id: workspaceId, project_id: projectId, directory, kind: "local", created_at: index + 1, updated_at: index + 1 },
         title: `Allowed sibling ${index + 1}`,
       })
     }
@@ -505,13 +545,11 @@ describe("session metadata routes", () => {
   })
 
   test("signed writes resolve directory and authorize workspace through the authority", async () => {
-    const dir = path.join(root, "repo")
-    await fs.mkdir(dir, { recursive: true })
+    const dir = await worktree(path.join(root, "repo"))
     await ensureWorkspace({
       workspaceId: "ws_1",
       project_id: "proj_1",
       directory: dir,
-      kind: "cloud",
     })
     const { app, svc } = buildApp()
     const res = await app.request(`http://localhost/api/claxedo/session/sess_write/meta?workspaceId=ws_1&directory=${encodeURIComponent(dir)}`, {

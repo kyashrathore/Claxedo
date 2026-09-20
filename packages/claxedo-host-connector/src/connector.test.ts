@@ -295,12 +295,9 @@ describe("a beat still in flight when its era ends", () => {
     // ever reads zero entries, the assertions below are measuring nothing.
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
 
-    // The control plane revokes the machine and a restart learns of it first.
     h.cp.revoke(h.enrollmentId)
     expect(await h.connector.start()).toMatchObject({ status: "stopped", reason: "revoked" })
 
-    // Now the older request finally answers, successfully. It was issued
-    // against a generation the control plane has since refused.
     gate.pending[0]?.release()
     await early
 

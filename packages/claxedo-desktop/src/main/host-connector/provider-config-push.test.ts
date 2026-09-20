@@ -111,7 +111,6 @@ describe("the provider-config push", () => {
     await host.push({ revision: 4, providers: PLAINTEXT })
     expect(host.requests).toHaveLength(1)
 
-    // The daemon still holds it: the beat's reconcile reads and stops there.
     await host.reconcile()
     expect(host.requests.map((request) => request.method)).toEqual(["PUT", undefined])
 

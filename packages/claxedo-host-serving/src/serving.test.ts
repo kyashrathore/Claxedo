@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { isLoopbackLocalRequest, loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
 import {
-  setUserHostedServing,
-  stopUserHostedServing,
-  userHostedServingEnrollmentId,
-  userHostedServingState,
+  setHostServing,
+  stopHostServing,
+  hostServingEnrollmentId,
+  hostServingState,
 } from "./serving"
 
 type StartedTunnel = {
@@ -53,27 +53,26 @@ function credential(workspaceIds: string[], overrides: { token?: string; expires
 const composition = { localBaseUrl: "http://127.0.0.1:2593", sessionAuthority: () => "local" as const }
 
 const serve = (workspaceIds: string[], overrides?: { token?: string; expiresAt?: number }) =>
-  setUserHostedServing(credential(workspaceIds, overrides), composition)
+  setHostServing(credential(workspaceIds, overrides), composition)
 
-const state = () => userHostedServingState(composition)
+const state = () => hostServingState(composition)
 
 const live = () => started.filter((entry) => !entry.closed)
 
 /**
  * The relay's rooms are per workspace and it enforces that at the gateway,
  * before authentication: `/host-tunnels/<host>` naming more than one workspace
- * is refused with `host_tunnel_single_workspace_required`. Verified against the
- * deployed relay — two `workspaceId` params answered 400 with that code, one
- * answered 426 `websocket_upgrade_required`.
+ * is refused with 400 `host_tunnel_single_workspace_required`; one workspace
+ * reaches the handshake's 426 `websocket_upgrade_required`.
  *
- * The machine is still enrolled as a machine and still holds one Host Tunnel
- * Token; only the transport is per workspace. Getting this wrong reproduces
- * the phone's "workspace host is offline" symptom: the daemon dials once for
- * the whole set, the relay rejects every attempt, and no socket ever exists.
+ * The machine is enrolled as a machine and holds one Host Tunnel Token; only
+ * the transport is per workspace. A daemon that dials once for the whole set
+ * is refused on every attempt, no socket ever exists, and every client is told
+ * the workspace host is offline.
  */
 describe("relay connection grain", () => {
   afterEach(() => {
-    stopUserHostedServing()
+    stopHostServing()
     started.length = 0
   })
 
@@ -107,13 +106,11 @@ describe("relay connection grain", () => {
 
   /**
    * The workspace surface, the daemon's OpenCode-compat root, and an outright
-   * deny are three different verdicts (`surface.ts`), and a
-   * relayed request must land on the right one. `/provider?harness=opencode`
-   * is the runtime's own catalog — THE 403 the hosted app hit when the old
-   * guard (an allow-list built from the daemon's ROOT-surface ownership
-   * table) called `/provider` central instead. Provider auth and OAuth
-   * connect are a desktop capability with no other owner, so a remote client
-   * gets them too, through the daemon's root — never the daemon's own
+   * deny are three different verdicts (`surface.ts`), and a relayed request
+   * must land on the right one. `/provider?harness=opencode` is the runtime's
+   * own catalog, not a control-plane route. Provider auth and OAuth connect
+   * are a desktop capability with no other owner, so a remote client gets
+   * them too, through the daemon's root — never the daemon's own
    * host-serving/remote-access administration.
    */
   test("lets the relay reach the workspace catalog, provider auth/OAuth via the daemon root, and nothing of the daemon's own", async () => {
@@ -122,10 +119,10 @@ describe("relay connection grain", () => {
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider?harness=opencode" })?.pathname).toBe(
       `/workspaces/${WS_A}/provider`,
     )
-    // The runtime's identity probe. The control plane verifies every read
-    // with it, and the root-surface classifier calls it central because the
-    // daemon's own liveness probe shares the path. Through the tunnel it is
-    // the runtime's, and refusing it made a connected host list no sessions.
+    // The runtime's identity probe, which the control plane verifies every
+    // read with. The daemon's own liveness probe shares the path, so a
+    // root-surface classifier calls it central; through the tunnel it is the
+    // runtime's, and a host that refuses it lists no sessions.
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/global/health" })?.pathname).toBe(
       `/workspaces/${WS_A}/global/health`,
     )
@@ -142,24 +139,19 @@ describe("relay connection grain", () => {
     expect(oauth?.searchParams.get("directory")).toBe(WS_A)
 
     // The daemon's own families never cross the tunnel, whichever verdict
-    // they would otherwise get close to: host-serving administration reached
-    // this same `/api/claxedo` family the old allow-list also refused.
+    // they would otherwise get close to.
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/health" })).toBeUndefined()
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/host-serving" })).toBeUndefined()
   })
 
   /**
-   * The previous guard was an ALLOW-list built from the daemon's root-surface
-   * ownership table, so any workspace-runtime route that table had never
-   * heard of was refused with a 403 the runtime never asked for — verified
-   * against the running daemon: `/path`, `/api/wr/worktrees`,
-   * `/api/wr/checkpoint/*`, `/api/wr/subagent-transcripts`, `/api/wr/file*`,
-   * and `/api/wr/find/*` all answer on the workspace surface but were refused
-   * through the tunnel. `surface.ts` inverts the shape to a
-   * DENY-list, so an unlisted runtime route reaches the runtime and gets an
-   * honest 404 for what it does not implement, not a 403 from a stale list.
+   * `surface.ts` is a DENY-list: a runtime route it does not name reaches the
+   * runtime, which answers 404 for what it does not implement. An allow-list
+   * built from the daemon's root-surface ownership table would refuse every
+   * runtime route that table has never heard of with a 403 the runtime never
+   * asked for.
    */
-  test("reaches workspace-runtime routes the old allow-list had never heard of", async () => {
+  test("reaches every workspace-runtime route the deny list does not name", async () => {
     await serve([WS_A])
     const first = live()[0]
     for (const path of [
@@ -223,14 +215,14 @@ describe("relay connection grain", () => {
   test("the enrollment is readable while serving and gone the moment the lease lapses", async () => {
     vi.useFakeTimers()
     try {
-      expect(userHostedServingEnrollmentId()).toBeUndefined()
+      expect(hostServingEnrollmentId()).toBeUndefined()
 
       await serve([WS_A], { expiresAt: Date.now() + 60_000 })
-      expect(userHostedServingEnrollmentId()).toBe("enr_this_machine")
+      expect(hostServingEnrollmentId()).toBe("enr_this_machine")
 
       vi.advanceTimersByTime(61_000)
       expect(state()).toMatchObject({ serving: false })
-      expect(userHostedServingEnrollmentId()).toBeUndefined()
+      expect(hostServingEnrollmentId()).toBeUndefined()
     } finally {
       vi.useRealTimers()
     }
@@ -238,7 +230,7 @@ describe("relay connection grain", () => {
 
   test("a null credential closes every connection", async () => {
     await serve([WS_A, WS_B])
-    await setUserHostedServing(null, composition)
+    await setHostServing(null, composition)
     expect(started.every((entry) => entry.closed)).toBe(true)
     expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
   })

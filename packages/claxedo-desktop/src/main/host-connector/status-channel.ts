@@ -68,7 +68,7 @@ export type HostConnectorStatusEvent = {
 }
 
 /**
- * The two facts the connector's own state cannot carry.
+ * The facts the connector's own state cannot carry.
  *
  * `available` is a property of the BUILD — whether an account client was
  * configured at all — `signedIn` belongs to the account service, and the

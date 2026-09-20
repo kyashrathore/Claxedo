@@ -15,7 +15,6 @@ import {
 } from "./session-access-policy"
 import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
 
-/** Every managed composition supplies the whole authority bundle. */
 function allowAll(): ManagedSessionAuthority {
   return {
     authorizeSessionRead: () => true,

@@ -134,6 +134,11 @@ export const desktopMainComposition: Policy = {
     requiredModules: [
       `${DESKTOP}/main/index.ts`,
       `${DESKTOP}/main/account/lazy-account.ts`,
+      // The closed operation table and its IPC registration, eager so that an
+      // unsigned launch answers every account channel without constructing the
+      // credential-bearing adapter.
+      `${DESKTOP}/main/account/account-ipc.ts`,
+      `${DESKTOP}/main/account/hosted-operations.ts`,
       `${DESKTOP}/main/host-connector/electron-child.ts`,
       `${DESKTOP}/main/host-connector/child-supervisor.ts`,
     ],
@@ -203,14 +208,22 @@ export const desktopAccountComposition: Policy = {
   // is `@claxedo/helpers/claxedo-credentials`, the file's shape and path —
   // already a package edge of this closure. Re-measured, no headroom: 20/7.
   ceilings: { modules: 20, packages: 7 },
+  // The emitted list names the credential-bearing half only. `hosted-operations.ts`
+  // and `account-ipc.ts` are reached from the base entry through
+  // `lazy-account.ts`, so Rollup places them in `index.js`, and
+  // `desktopMainComposition` requires them there: the closed channel set is
+  // registered at startup precisely so signing in is what loads the adapter.
+  // Measured at 12 modules / 2 chunks, no headroom.
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
-    minModules: 10,
-    minChunks: 1,
+    minModules: 12,
+    minChunks: 2,
     requiredModules: [
       `${DESKTOP}/main/account/index.ts`,
-      `${DESKTOP}/main/account/hosted-operations.ts`,
       `${DESKTOP}/main/account/credential-store.ts`,
+      `${DESKTOP}/main/account/oauth-flow.ts`,
+      `${DESKTOP}/main/account/desktop-native-auth.ts`,
+      `${DESKTOP}/main/account/account-service.ts`,
     ],
   },
 }

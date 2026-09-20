@@ -1,27 +1,24 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { HostTunnelTokenSignerResult } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
-import { UserHostedServingRoutes } from "./user-hosted-serving-routes"
+import { HostServingRoutes } from "./host-serving-routes"
 import {
-  stopUserHostedServing,
-  userHostedServingEnrollmentId,
-  userHostedServingState,
+  stopHostServing,
+  hostServingEnrollmentId,
+  hostServingState,
 } from "@claxedo/host-serving/serving"
 import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
 
-const state = () => userHostedServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })
+const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })
 
 /**
  * The PUT body's `credential` is the heartbeat ack's `hostTunnel` object
  * VERBATIM. The control plane builds it in
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` as the signer result
  * spread plus `hostId`, `enrollmentId`, `workspaceIds` and `relayUrl` — this
- * type restates
- * that composition so a drift in `HostTunnelTokenSignerResult` fails HERE at
- * compile time instead of as a silent 400 in production. That silent 400 is
- * not hypothetical: the first version of this route validated a locally
- * invented shape (`token` instead of `hostTunnelToken`, no metadata fields)
- * and rejected every real ack while every unit in the chain stayed green.
+ * type restates that composition so a drift in `HostTunnelTokenSignerResult`
+ * fails HERE at compile time. A locally invented shape would reject every
+ * real ack with a 400 while every unit in the chain stayed green.
  */
 type AckHostTunnel = HostTunnelTokenSignerResult & {
   hostId: string
@@ -43,16 +40,16 @@ function ackCredential(): AckHostTunnel {
 }
 
 async function put(credential: unknown) {
-  return UserHostedServingRoutes().request("/", {
+  return HostServingRoutes().request("/", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ credential }),
   })
 }
 
-describe("user-hosted serving routes", () => {
+describe("host serving routes", () => {
   afterEach(() => {
-    stopUserHostedServing()
+    stopHostServing()
   })
 
   test("accepts the heartbeat ack's hostTunnel shape verbatim and serves its set", async () => {
@@ -73,11 +70,11 @@ describe("user-hosted serving routes", () => {
     // event-stream scope from that declaration and infers nothing. It has to
     // be answerable BEFORE anything is served, because the connector's first
     // beat happens before the serving credential comes back from it.
-    const idle = await UserHostedServingRoutes().request("/")
+    const idle = await HostServingRoutes().request("/")
     expect(await idle.json()).toEqual({ serving: false, sessionAuthority: "local" })
 
     await put(ackCredential())
-    const serving = await UserHostedServingRoutes().request("/")
+    const serving = await HostServingRoutes().request("/")
     expect(await serving.json()).toMatchObject({ serving: true, sessionAuthority: "local" })
   })
 
@@ -88,7 +85,7 @@ describe("user-hosted serving routes", () => {
     expect(await response.json()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 
-  test("rejects the previous locally-invented field names", async () => {
+  test("rejects a body whose field names are not the producer's", async () => {
     const response = await put({
       hostId: "host_machine-1",
       relayUrl: "https://relay.claxedo.test",
@@ -100,10 +97,9 @@ describe("user-hosted serving routes", () => {
   })
 
   /**
-   * The live failure this closes: the connector child exited silently, no ack
-   * renewed the credential, the control plane expired the enrollment and
-   * answered 409 — while the daemon went on reporting `serving: true` and the
-   * desktop kept showing "Serving 2 workspaces".
+   * When the connector child dies, no ack renews the credential and the
+   * control plane expires the enrollment and answers 409; without the lease
+   * this daemon would go on reporting `serving: true` to the desktop.
    */
   test("stops serving when the credential lapses without a renewing ack", async () => {
     vi.useFakeTimers()
@@ -133,11 +129,10 @@ describe("user-hosted serving routes", () => {
   })
 
   /**
-   * `serving` is intent plus a live credential. It is NOT reachability, and
-   * reading it as reachability is how this surface lied: verified live with
-   * `lsof`, the daemon reported `serving: true` with ZERO established
-   * connections to the relay, while every client was correctly told the host
-   * was offline. `connected` is the tunnel's own account of the socket.
+   * `serving` is intent plus a live credential, not reachability: a daemon can
+   * hold a fresh token with no established connection to the relay while every
+   * client is told the host is offline. `connected` is the tunnel's own
+   * account of the socket.
    */
   test("reports the tunnel as not connected until it opens", async () => {
     await put(ackCredential())
@@ -148,13 +143,13 @@ describe("user-hosted serving routes", () => {
   // are talking to; a control-plane row naming this enrollment is then reached
   // over loopback instead of back around through the relay.
   test("holds the enrollment the credential names, for as long as it serves", async () => {
-    expect(userHostedServingEnrollmentId()).toBeUndefined()
+    expect(hostServingEnrollmentId()).toBeUndefined()
 
     await put(ackCredential())
-    expect(userHostedServingEnrollmentId()).toBe("enr_this_machine")
+    expect(hostServingEnrollmentId()).toBe("enr_this_machine")
 
     await put(null)
-    expect(userHostedServingEnrollmentId()).toBeUndefined()
+    expect(hostServingEnrollmentId()).toBeUndefined()
   })
 
   test("a credential naming no enrollment is refused rather than served anonymously", async () => {
@@ -162,7 +157,7 @@ describe("user-hosted serving routes", () => {
     const response = await put(withoutEnrollment)
     expect(response.status).toBe(400)
     expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
-    expect(userHostedServingEnrollmentId()).toBeUndefined()
+    expect(hostServingEnrollmentId()).toBeUndefined()
   })
 
   test("rejects a credential without a relay to dial", async () => {

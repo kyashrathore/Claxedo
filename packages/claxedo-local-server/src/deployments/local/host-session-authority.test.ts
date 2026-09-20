@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { setUserHostedServing, stopUserHostedServing } from "@claxedo/host-serving/serving"
+import { setHostServing, stopHostServing } from "@claxedo/host-serving/serving"
 import {
   localHostRelayActor,
   localHostSessionAccessPolicy,
@@ -21,7 +21,7 @@ vi.mock("@claxedo/workspace-runtime/relay", async (importOriginal) => ({
 const WS = "11111111-1111-4111-8111-111111111111"
 
 function serve() {
-  return setUserHostedServing(
+  return setHostServing(
     {
       hostId: "host_machine-1",
       enrollmentId: "enr_this_machine",
@@ -39,7 +39,7 @@ function request(headers: Record<string, string> = {}) {
 }
 
 afterEach(() => {
-  stopUserHostedServing()
+  stopHostServing()
   setLocalHostEndpoints(undefined)
 })
 

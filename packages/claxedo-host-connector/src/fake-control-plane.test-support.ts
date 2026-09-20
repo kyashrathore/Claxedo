@@ -1,6 +1,7 @@
 /**
- * A control plane that enforces the P1 contracts, for this package's tests
- * and, through the `./test-support` entry, for every consumer's.
+ * A control plane that enforces the machine-route contracts, for this
+ * package's tests and, through the `./test-support` entry, for every
+ * consumer's.
  *
  * Strict on purpose: it refuses a reused nonce, a stale timestamp, a bad
  * signature, a superseded generation, a stale ack revision, an occupied host

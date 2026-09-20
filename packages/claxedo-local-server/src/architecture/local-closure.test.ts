@@ -203,6 +203,27 @@ describe("@claxedo/local-server closure", () => {
     //  - `usage/adapters/token-tracker-usage-limits.ts` — the plan probe for
     //    every agent installed on this machine, which only a server running on
     //    that machine can ask.
+    //  - `tasks/` — the route composition and the session bridge it hands the
+    //    kit; the kit itself is reached through server-core's tasks-host
+    //    owners, and nothing outside `src/tasks/` imports either module.
+    //  - `shell/host-events.ts` — the host aggregate `wr/events`: one
+    //    connection carrying every embedded runtime's frames, read from the
+    //    taps only a process that hosts those runtimes can reach.
+    //  - `workspace/host-serving-routes.ts` — the loopback route that hands
+    //    `@claxedo/host-serving` the embedded runtimes' `sessionAuthority`.
+    //  - `workspace/runtime-dispatch/ingress-provenance.ts` and
+    //    `deployments/local/host-session-authority.ts` — the two halves of
+    //    admitting a RELAYED caller to a machine that also serves its own
+    //    user: the first decides, per request, whether a caller is the relay
+    //    replaying onto loopback or the owner at the keyboard; the second
+    //    composes the private-session policy and the relay-token verifier the
+    //    first asks. Only a process that hosts the runtimes has both callers.
+    //  - `workspace/host-provider-config.ts` and
+    //    `workspace/host-provider-config-routes.ts` — the provider rows the
+    //    owner pushed to THIS machine and the loopback route Electron main
+    //    installs them through; only the process whose runtimes resolve a
+    //    turn's credentials can hold them. The parser and the `projectAuth`
+    //    composition are server-core's `credentials/host-provider-config.ts`.
     //
     // And the packages: `@claxedo/opencode-server-adapter` is the isolated
     // HTTP/SSE provider, with no embedded engine or generated client;
@@ -214,80 +235,13 @@ describe("@claxedo/local-server closure", () => {
     // this product reads rather than restating — the harness/provider-id table
     // the credential routes, the reaper and the agent-config auth route all
     // key on, and the login-document claim readers the provider-auth exchange
-    // uses. It was already in this closure through `@claxedo/egress-broker`;
-    // the edge is direct now because the copies it replaced had drifted.
+    // uses; `@claxedo/host-serving` owns the serving half of remote access —
+    // the one relay loop for the assigned∩acked set and the per-workspace
+    // surface a relayed request may reach — for this daemon and a
+    // `claxedo connect` host alike, and reaches only server-core's log and
+    // peer-address leaves and the runtime's relay subpath.
     const { modules, packages } = closure({ runtimeOnly: true })
-    // The merged dev tree also publishes agent-plugins/discovery/skills.ts,
-    // the restored machine-installed skill reader (82 modules at HEAD).
-    // shell/event-stream-response.ts adds the `cp/events` SSE-or-WebSocket writer;
-    // the published closure now measures exactly 83 modules / 24 packages.
-    // app/local-documents adds the desktop composition of shared Documents;
-    // the published closure measures 84 modules / 24 packages.
-    // credentials/broker.ts is the desktop's credential authority, which
-    // derives a binding per active registry row and hands the loopback broker
-    // its handler. Its one new package edge is @claxedo/egress-broker, the
-    // request policy, header injection and runtime-token verification behind
-    // that handler; it reaches only `jose` and `@hono/node-server`, both
-    // already here. The table naming each provider's vendor host, allowed
-    // methods and paths and header shape is a fact about the vendor rather
-    // than about this machine, so it is owned by server-core, where the cloud
-    // delivery adapter reads the same rows; it adds no package edge here.
-    // credentials/machine-credentials.ts is the credential port for a server
-    // running on the machine the harnesses live on. Asking a CLI what it is
-    // signed in as, and withdrawing the stored mark so a harness runs on that
-    // login, have no referent on a host where no harness is installed, so they
-    // are composed here rather than in the shared default.
-    // credentials/operations/drop-copied-harness-logins.ts is the one-time
-    // delete of the harness logins an older Claxedo copied off this machine. It
-    // belongs to this product because this is the process that ran that scan.
-    // Both reach only the registry and the machine-login reader, which this
-    // closure already holds.
-    // usage/adapters/token-tracker-usage-limits.ts is the plan probe for every
-    // agent installed on this machine, which only a server running on that
-    // machine can ask. It reaches tokentracker-cli and this package's JSON
-    // narrowing, both already here, so it adds no package edge — the history
-    // adapter beside it already carries that dependency.
-    // Tasks adds its two feature-owned modules -- the route composition and
-    // the session bridge it hands the kit. The kit itself is reached through
-    // server-core's tasks-host owners, and this package's only direct import
-    // of `@claxedo/tasks` is a type, so it adds no package edge here. Nothing
-    // outside `src/tasks/` imports either module, so a product entry that does
-    // not mount the composition carries neither.
-    // @claxedo/agent-runtime-contract is the dependency-free data owner of the
-    // harness table and the credential-broker error vocabulary; the desktop
-    // server reads both, so it is a package of this closure in its own right.
-    // Measured: 90 modules, 26 packages.
-    // @claxedo/host-serving owns the serving half of remote access — the one
-    // relay loop for the assigned∩acked set and the per-workspace surface a
-    // relayed request may reach — for this daemon and a `claxedo connect`
-    // host alike. This package keeps only `workspace/user-hosted-serving-routes.ts`,
-    // the loopback route that hands the package the embedded runtimes'
-    // `sessionAuthority`; the package itself reaches server-core's log and
-    // peer-address leaves and the runtime's relay subpath, all already here.
-    // shell/host-events.ts is the host aggregate `wr/events`: one connection
-    // carrying every embedded runtime's frames, read from the taps only a
-    // process that hosts those runtimes can reach. It writes through the
-    // runtime's own SSE writer and adds no package edge.
-    // Measured: 89 modules, 27 packages.
-    // workspace/runtime-dispatch/ingress-provenance.ts and
-    // deployments/local/host-session-authority.ts are the two halves of
-    // admitting a RELAYED caller to a machine that also serves its own user:
-    // the first decides, per request, whether a caller is the relay replaying
-    // onto loopback or the owner at the keyboard, and the second composes the
-    // private-session policy and the relay-token verifier the first asks. Both
-    // belong to this product because only a process that hosts the runtimes
-    // has both callers. They reach the runtime's relay subpath and
-    // host-serving's identity reader, already here, and add no package edge.
-    // Measured: 91 modules, 27 packages.
-    // workspace/host-provider-config.ts and
-    // workspace/host-provider-config-routes.ts hold the provider rows the
-    // owner pushed to THIS machine and the loopback route Electron main
-    // installs them through; only the process whose runtimes resolve a turn's
-    // credentials can hold them. The parser and the `projectAuth` composition
-    // are server-core's `credentials/host-provider-config.ts`, already here.
-    // Measured: 93 modules, 27 packages.
     expect(modules.size).toBeLessThanOrEqual(93)
-    // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(27)
   })
 })

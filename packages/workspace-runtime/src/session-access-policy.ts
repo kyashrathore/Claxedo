@@ -115,7 +115,11 @@ export type SessionReservationDecision =
   | Exclude<SessionAccessDecision, { allowed: true }>
 
 export type SessionAccessPolicy = {
-  /** Composition marker: non-loopback managed hosts require private-session authority. */
+  /**
+   * What the composition was given, not who is asking: `managed-private`
+   * means an authority bundle is wired. The private-session lifecycle also
+   * needs `sessionRequestProvenance` to say `relay-replayed`.
+   */
   sessionAuthority: "local" | "managed-private"
   authorize(input: SessionAccessPolicyInput): Promise<SessionAccessDecision> | SessionAccessDecision
   filterSessions(
@@ -403,10 +407,10 @@ const turnActorRequired = {
 }
 
 /**
- * Workspace policy with an injectable creator/participant authority boundary.
- * Managed session-specific operations fail closed when the authority callbacks
- * are absent. Loopback composition may use the same object as an explicit local
- * policy; non-loopback hosts require the managed-private composition marker.
+ * Without an authority bundle the policy declares `local` and refuses any
+ * session-scoped request that arrives with relay claims
+ * (`session_authority_required`); with one it declares `managed-private` and
+ * every session-scoped decision is the bundle's.
  */
 export function managedWorkspaceSessionAccessPolicy(
   options: ManagedWorkspaceSessionAccessPolicyOptions = {},
@@ -568,23 +572,27 @@ type SessionRequestProvenanceReader = SessionAccessContextReader & {
  * Who reached this runtime, read off the request rather than off the
  * composition it was mounted with.
  *
- * Both marks are set only where a boundary put them there: the relay
- * host-token middleware, the owner grant, the daemon ingress that refuses a
- * relayed request it cannot verify rather than forwarding it unstamped, and —
- * for the direct mark — that same middleware admitting the control plane's own
- * injected token. The direct one names no actor, but it is still not a person
- * at this machine's keyboard: it is a remote caller the runtime cannot
- * attribute, so it gets the private-session lifecycle rather than the
- * machine's own user's. Only an unmarked request is that user, and one desktop
- * daemon can serve them the lifecycle they have always had while a relayed
- * member gets the other — registration, turn admission and event privacy ask
- * this, not `SessionAccessPolicy.sessionAuthority`.
+ * Both marks are set only where a boundary verified the caller: the relay
+ * host-token middleware, the owner grant, and the embedded exposure the
+ * daemon ingress stamps after refusing every relayed request it cannot
+ * verify. The direct mark is that middleware admitting a bearer it trusts
+ * without a relay identity: the credential this runtime minted for the
+ * harness it launched, its own config token on health, an agent hook
+ * callback, and the token the control plane injects. None of them names an
+ * actor, so the request cannot be attributed to the person at this machine's
+ * keyboard and gets the private-session lifecycle instead. Only an unmarked
+ * request is the machine's own user. Registration, turn admission and event
+ * privacy ask this, not `SessionAccessPolicy.sessionAuthority`.
  */
 export function sessionRequestProvenance(input: SessionRequestProvenanceReader): SessionRequestProvenance {
   return input.get("relayHostAuth") || input.get("relayHostDirectAuth") ? "relay-replayed" : "loopback-direct"
 }
 
-/** Actor identity is accepted only from the relay-host verification middleware. */
+/**
+ * Actor identity is read off the `relayHostAuth` mark alone, never off a
+ * header the caller could write; only a boundary that verified the caller
+ * sets the mark.
+ */
 export function sessionAccessContext(input: SessionAccessContextReader):
   Pick<SessionAccessPolicyInput, "actor" | "authority" | "credential"> & { author?: SessionAccessAuthor } {
   const auth = input.get("relayHostAuth")

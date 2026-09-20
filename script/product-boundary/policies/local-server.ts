@@ -78,7 +78,7 @@ export const localServer: Policy = {
   //    first consults. Only a process that serves both callers on one listener
   //    has the question; they reach the workspace-runtime relay subpath and
   //    host-serving's identity reader, both already here.
-  //  - `workspace/user-hosted-serving-routes.ts`: the loopback control route
+  //  - `workspace/host-serving-routes.ts`: the loopback control route
   //    through which Electron main hands the serving credential and the
   //    embedded runtimes' `sessionAuthority` to @claxedo/host-serving, the
   //    reviewed owner of the serving half of remote access (one relay loop for

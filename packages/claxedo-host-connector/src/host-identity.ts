@@ -99,7 +99,7 @@ export async function hostSha256Hex(text: string) {
 }
 
 /**
- * The bytes a machine-signed request is signed over (P1.1). Every field is a
+ * The bytes a machine-signed request is signed over. Every field is a
  * header or the body of the same request, so the verifier rebuilds this string
  * from what arrived and nothing else; a body edited in transit changes the
  * hash, a replayed header set is caught by the single-use nonce.

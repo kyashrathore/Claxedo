@@ -134,12 +134,8 @@ export type SandboxDriverMetadata = {
 export type SandboxEgressControl = "none" | "hosts" | "hosts-and-cidrs"
 
 /**
- * What the manager does with a caller's `net` for a given driver.
- *
- * Owner directive (2026-07-28): *"for egress in sandbox enforce where we can
- * and document where we cant."* That replaces the previous fail-closed refusal
- * for drivers with no egress control at all — provisioning now proceeds, and
- * the gap is made loud instead of fatal.
+ * What the manager does with a caller's `net` for a given driver: enforce
+ * where the driver can, and say so loudly rather than refuse where it cannot.
  *
  *  - `"enforce"` — the driver gets the policy verbatim and contains the
  *    sandbox. Also the answer when the caller asked for no containment
@@ -186,9 +182,8 @@ export function sandboxEgressDisposition(
 
 /**
  * Emitted whenever a restricted egress policy is withheld because the composed
- * driver declares no egress control. This is the "document where we can't" half
- * of the directive expressed at runtime: an unrestricted sandbox that nobody
- * was told about is the original finding, so the degrade is never silent.
+ * driver declares no egress control: an unrestricted sandbox that nobody was
+ * told about is the exposure, so the degrade is never silent.
  *
  * Two phases, because a per-create line is easy to miss in request logs:
  *  - `"composition"` — once per `createSandboxManager` per driver, at boot.
@@ -977,16 +972,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // Egress disposition, decided BEFORE a lease is acquired.
       //
       // A caller that hands us a restricted policy is stating that this sandbox
-      // must not reach the open internet. Per the 2026-07-28 owner directive
-      // ("enforce where we can and document where we cant") that request is
-      // honoured where the driver can honour it, and made LOUD — not fatal —
-      // where it cannot: refusing the create outright would take the most
-      // likely production driver (cloudflare, preferred by
-      // `defaultSandboxDriverName`) offline entirely.
+      // must not reach the open internet. That is honoured where the driver can
+      // honour it and made LOUD — not fatal — where it cannot: refusing the
+      // create outright would take the most likely production driver
+      // (cloudflare, preferred by `defaultSandboxDriverName`) offline entirely.
       //
-      // The withholding itself happens in `ensureHostInput`; this is where the
-      // gap gets said out loud, at the same point the old refusal lived, so it
-      // fires exactly once per create rather than once per driver retry.
+      // The withholding itself happens in `ensureHostInput`; the warning is
+      // raised here so it fires exactly once per create rather than once per
+      // driver retry.
       const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
       if (egress.action === "withhold" && input.net) {
         reportEgressUnenforced({ workspaceId, requested: input.net })
@@ -994,8 +987,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       if (egress.action === "refuse") {
         // Still fail-closed, and deliberately so: this driver DOES enforce
         // egress, it just cannot express this policy's encoding. Degrading an
-        // enforcing driver to "unrestricted" would weaken the half of the
-        // directive that says enforce where we can. Not a provisioning failure
+        // enforcing driver to "unrestricted" would weaken the path that does
+        // enforce. Not a provisioning failure
         // either — a composition mistake must not burn a lease epoch or enter
         // retry backoff.
         return { status: "unavailable", error: egress.reason, homeRegion: input.homeRegion }

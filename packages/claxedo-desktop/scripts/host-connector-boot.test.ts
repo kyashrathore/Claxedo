@@ -61,11 +61,9 @@ async function untilElapsed(condition: () => boolean, description: string, budge
  */
 function childHarness(options?: {
   /**
-   * Withhold this operation's answer until `release()`.
-   *
-   * Stands in for the edge behaviour that produced the live defect: a
-   * control-plane POST whose response is held on a warm connection for longer
-   * than the supervisor's bootstrap budget.
+   * Withhold this operation's answer until `release()`: a control-plane POST
+   * whose response is held on a warm connection for longer than the
+   * supervisor's bootstrap budget.
    */
   stall?: string
   controlPlane?: ReturnType<typeof createFakeControlPlane>
@@ -238,10 +236,9 @@ describe("the private bootstrap protocol", () => {
       "bootstrap response",
     )
 
-    // The nonce POST is still open — the exact shape of the live failure, where
-    // the edge withheld it for ~12s against a 10s bootstrap budget — and the
-    // reply has already landed. It does not depend on that call at all, so no
-    // stall length can push it past the budget.
+    // The nonce POST is still open (live, the edge holds it ~12s against a 10s
+    // bootstrap budget) and the reply has already landed. It does not depend
+    // on that call at all, so no stall length can push it past the budget.
     expect(child.accountOperations.map((message) => message.name)).toEqual(["host.enrollmentNonce"])
     expect(child.sent.find((message) => message.type === "response")).toMatchObject({
       ok: true,
@@ -282,11 +279,11 @@ describe("the private bootstrap protocol", () => {
   })
 
   test("pushes a fresh status after a timer-driven heartbeat, not just after enrollment", async () => {
-    // Observed live: the desktop reported the lease expired 645s ago while the
-    // control plane had it live with 41s left and an 18s-old heartbeat ack —
-    // because nothing pushed a status update for a heartbeat nobody was
-    // waiting on. `heartbeatIntervalMs` is small here so a real timer tick
-    // fires inside the test without a fake clock.
+    // A heartbeat nobody is waiting on renews the lease; without a push for it
+    // the parent's copy of `expires_at` stays where enrollment left it and
+    // reads as expired while the control plane holds the lease live.
+    // `heartbeatIntervalMs` is small here so a real timer tick fires inside the
+    // test without a fake clock.
     const child = childHarness()
     child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20 })
     await until(

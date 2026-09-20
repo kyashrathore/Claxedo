@@ -6,7 +6,7 @@ import path from "node:path"
 import type { HostStateStore } from "@claxedo/host-connector/host-state"
 import { sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
 import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/host-serving/runtime"
-import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
+import { setHostServing, stopHostServing, hostServingState } from "@claxedo/host-serving/serving"
 import { connect, type ConnectDeps } from "../commands/connect"
 import { processAlive, statusLines } from "../commands/status"
 import { desktopDaemonDiscoveryFiles, liveDesktopDaemon } from "./desktop-daemon"
@@ -217,7 +217,6 @@ describe("claxedo connect on a simulated machine", () => {
     expect(unit).toContain(`ExecStart="${process.execPath}" "${CHILD_ENTRY}" "connect" "--foreground"`)
     expect(unit).toContain(`Environment=CLAXEDO_HOME="${m.claxedoHome}"`)
 
-    // The manager parsed that unit and is running its ExecStart.
     const first = m.manager.service()
     expect(first).toMatchObject({ enabled: true, running: true, state: "active/running", restarts: 0 })
     expect(first.pid).toBe(m.manager.child()!.pid)
@@ -234,8 +233,6 @@ describe("claxedo connect on a simulated machine", () => {
     expect(status).toContain(`service      systemd-user ${m.unitFile}`)
     expect(status).toContain("Served folders: none")
 
-    // The owner assigns the folder user-data created; the host learns it on
-    // its next beat and acks on the one it requests right after.
     const api = path.join(m.root, "api")
     const beatsBefore = m.cp.beats().length
     const assignedAt = Date.now()
@@ -250,9 +247,6 @@ describe("claxedo connect on a simulated machine", () => {
     status = await m.status()
     expect(status).toContain("ws_api  revision 1  connected")
 
-    // Power loss and a boot. Nothing but the manager acts: the unit is enabled
-    // on disk, its process reads the state file, acquires the next generation
-    // and re-acks what the beat delivers.
     const requestsBeforeReboot = m.cp.log.length
     const { bootedAt } = await m.manager.reboot()
     await until(() => socket.closed, "the dead process's tunnel to close at the relay")
@@ -275,9 +269,6 @@ describe("claxedo connect on a simulated machine", () => {
     expect(m.manager.journal()).not.toContain("Resumed as")
     expect(await m.status()).toContain("ws_api  revision 1  connected")
 
-    // The owner revokes. The next beat is 403 enrollment_revoked, the process
-    // exits 78, and the unit's RestartPreventExitStatus keeps the manager
-    // from starting it again.
     const callsBeforeRevoke = m.manager.calls.length
     const revokedAt = Date.now()
     m.cp.revoke(enrollmentIdOf(m))
@@ -397,9 +388,9 @@ async function inProcessHost() {
         return listener
       },
       openCodeRuntime: () => undefined,
-      setServing: setUserHostedServing,
-      servingState: userHostedServingState,
-      stopServing: stopUserHostedServing,
+      setServing: setHostServing,
+      servingState: hostServingState,
+      stopServing: stopHostServing,
       setInterval: (fn) => {
         tick = fn
         return { cancel: () => undefined }
@@ -495,7 +486,6 @@ describe("provider configuration on a running claxedo connect host", () => {
     await h.start()
     const id = h.enrollmentId()
 
-    // 1. The key the control plane recorded is derived from the private JWK on disk, written before any beat.
     const enrolled = await h.state()
     expect(enrolled?.sealing_private_key_jwk?.d).toBeDefined()
     expect(h.cp.sealingPublicKey(id)).toBe(JSON.stringify(sealingPublicKeyJwk(enrolled!.sealing_private_key_jwk!)))
@@ -517,7 +507,6 @@ describe("provider configuration on a running claxedo connect host", () => {
     })
     expect(runtime.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
 
-    // 2. The push lands sealed: the file holds the blob and never the secret.
     const first = await h.cp.pushProviderConfig(id, providerConfig(SECRET))
     await h.beat()
     await until(async () => (await h.state())?.provider_config?.revision === first, "revision 1 on disk")
@@ -529,11 +518,9 @@ describe("provider configuration on a running claxedo connect host", () => {
     await until(() => runtime.host.detail().configApply.revision === 2, "the live runtime to re-apply")
     expect(runtime.host.detail().configApply.state).toBe("applied")
 
-    // 3. The next beat declares what is stored, and the control plane stops re-sending it.
     expect((await h.beat()).providerConfigRevision).toBe(first)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
 
-    // 4. A write that fails is not acked: the same revision is delivered again and stored on the retry.
     const second = await h.cp.pushProviderConfig(id, providerConfig(`${SECRET}-rotated`))
     h.faults.failSaveOfRevision = second
     await h.beat()
@@ -541,14 +528,12 @@ describe("provider configuration on a running claxedo connect host", () => {
     expect((await h.beat()).providerConfigRevision, "the beat after the failed write still declares the old revision").toBe(first)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
     expect(h.lines.some((line) => line.startsWith("provider-config failed: ") && line.includes("ENOSPC"))).toBe(true)
-    // That beat re-delivered the revision and this time the write held.
     expect(h.lines.filter((line) => line === "provider configuration revision 2: claude-sdk")).toHaveLength(1)
     expect((await h.beat()).providerConfigRevision, "re-delivered, stored, then declared").toBe(second)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(second)
     expect(await h.stateText()).not.toContain(SECRET)
     await until(() => runtime.host.detail().configApply.revision === 3, "the rotated placeholder to reach the runtime")
 
-    // 5. Withdrawal is a revision whose blob is null.
     const third = await h.cp.pushProviderConfig(id, null)
     await h.beat()
     await until(async () => (await h.state())?.provider_config?.revision === third, "the withdrawal on disk")

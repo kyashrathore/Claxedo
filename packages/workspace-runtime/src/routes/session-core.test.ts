@@ -22,8 +22,6 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-// These fixtures carry only the fields the routes under test read; the cast
-// keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
@@ -1402,7 +1400,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       }),
     })
 
-    // prompt_async is fire-and-forget: the route acknowledges immediately.
     expect(res.status).toBe(204)
     // Let the detached turn run its catch/finally and publish its failure.
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1412,10 +1409,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     for (const event of sessionErrors) {
       const error = (event.payload as { properties: { error: { data?: { message?: string; firstTurnErrorClass?: string } } } })
         .properties.error
-      // The real cause survives — never the literal "Stream error".
       expect(error.data?.message).not.toBe("Stream error")
       expect(error.data?.message).toContain("thread not found")
-      // And it now classifies (a lost thread → session recovery, not the old workspace fallback).
       expect(error.data?.firstTurnErrorClass).toBe("session")
     }
   })
@@ -2147,9 +2142,8 @@ describe("createSessionRoutes session instructions", () => {
     expect(creates).toEqual([])
   })
 
-  // The prompt names agent, model and variant: that combination once skipped
-  // the config read entirely, which is the door the retained block arrives
-  // through.
+  // Naming agent, model and variant is the one prompt shape that could skip
+  // the config read, and the retained block arrives through that read.
   test("a later turn carries the retained block even when the caller named agent, model and variant", async () => {
     const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)

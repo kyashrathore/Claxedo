@@ -320,17 +320,15 @@ describe("resolveHostedOperation", () => {
   })
 
   test("refuses a non-scalar parameter instead of sending [object Object]", () => {
-    // A path segment, a query value and a header all used to be built with
-    // `String(value)`, so an object parameter became the literal
-    // `[object Object]` and travelled to the control plane as if the caller
-    // had meant it.
+    // A path segment, a query value and a header are all built from the
+    // parameter as text; `String(value)` on an object would send the literal
+    // `[object Object]` as if the caller had meant it.
     expect(() =>
       resolveHostedOperation("workspace.lifecycle", { id: { evil: true }, operation: "start" }),
     ).toThrow(MissingOperationParameter)
     expect(() => resolveHostedOperation("session.list", { workspaceId: { evil: true } })).toThrow(
       MissingOperationParameter,
     )
-    // A number is still a legitimate parameter.
     expect(resolveHostedOperation("workspace.lifecycle", { id: 7, operation: "start" }).path).toBe(
       "/api/workspace/7/lifecycle/start",
     )

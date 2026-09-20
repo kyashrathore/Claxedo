@@ -16,8 +16,8 @@ import { setLocalHostEndpoints } from "../deployments/local/host-session-authori
  * user at the keyboard, and any org member the control plane lets through the
  * relay. The relay REPLAYS a member's request onto this machine's loopback
  * listener with the proxy headers stripped, so the two are indistinguishable
- * by address — and before the ingress stamped provenance the daemon answered
- * both as the owner, handing every session on the box to the whole org.
+ * by address — a daemon that answered both as the owner would hand every
+ * session on the box to the whole org.
  *
  * So every case below is the same request twice, once with the relay's marks
  * and once without, against `startLocalServer` with its real routes, its real
@@ -85,7 +85,7 @@ function listen(server: Server) {
 
 /**
  * The control plane's `/api/runtime-authority/session-authorize`, reduced to
- * the one rule this slice depends on: a session is reachable by the actors it
+ * the one rule this file depends on: a session is reachable by the actors it
  * was registered or shared to, and by nobody else. Its refusal is the 403 the
  * real adapters raise for a session the caller has no row for — which is the
  * same answer they give for a session that does not exist at all.

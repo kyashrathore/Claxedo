@@ -1,7 +1,13 @@
 # Desktop hosted-operation matrix
 
 Status: **reviewed baseline**. Enforced by
-`packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`.
+`packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`
+(owners, non-account routes, no laptop target) and
+`packages/claxedo-desktop/src/main/account/hosted-operations.test.ts`, which
+holds every entry of `HOSTED_OPERATIONS` in
+`packages/claxedo-desktop/src/main/account/hosted-operations.ts` equal to a
+row here by name, method and path. The table in that file is the authority
+for the rows; this document is what a reviewer reads.
 
 ## Why this document exists
 
@@ -41,9 +47,10 @@ Two consequences worth stating plainly:
 - Tunnelling Runtime bytes through Electron IPC would serialize every terminal
   keystroke and token through the main process. It would also put a second
   credential path in front of traffic that already has one.
-- `userHostedConnectionInfo` intentionally returns `relayUrl` and no
-  `directRuntimeUrl`. The laptop is never a direct client target, so no matrix
-  row may return a laptop address.
+- `userHostedConnectionInfo` (`claxedo-server/src/connections/user-hosted-connection.ts`,
+  the `local-worktree` branch of the connection mint) returns `relayUrl` and a
+  Runtime Access Token, and no address of the machine itself. The laptop is
+  never a direct client target, so no matrix row may return a laptop address.
 
 Also excluded from AccountPort (intentional non-rows):
 
@@ -55,10 +62,13 @@ Also excluded from AccountPort (intentional non-rows):
   spend the Hosted Server bearer on them.
 - **Machine pause / second-device-open** — desktop reaches these through Host
   Connector IPC; browser self-hosted uses the page session over HTTP. The
-  enrollment handshake itself is the `host.enroll*` rows below, and
-  request / enroll are Host-Connector-child rows in the machine remote access
-  section; the beat that follows is machine-signed and no account operation.
-- **Retired** `GET /documents/events` — editors now use the
+  enrollment handshake itself is the `host.enrollmentNonce` and
+  `host.enrollCurrentMachine` rows below, performed by main for the Host
+  Connector child; everything after the enroll response is machine-signed.
+  There is no `host.enrollmentHeartbeat` row: the beat is
+  `POST /api/claxedo/host/enrollments/heartbeat` in the machine-signed table
+  below, and no account credential reaches it.
+- `GET /documents/events` is not a mounted route; editors use the
   `document.changed` doorbell on `controlPlane.events`.
 - **Machine-signed and invitation routes** — a `claxedo connect` host has no
   account on the box, so nothing below is an AccountPort operation. Listed here
@@ -134,8 +144,8 @@ is the authoritative source for this column.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `workspace.list.cloud` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=cloud` | unary | safe | The access kind is fixed in the path, not a parameter — see below. |
-| `workspace.list.userHosted` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=user-hosted` | unary | safe | The laptop rows. A caller wanting the whole picture runs both operations and merges, which is what `controlPlaneCatalog` already does. |
+| `workspace.list.cloud` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=cloud` | unary | safe | The provisioner's workspaces (`backing: cloud-vm`). The list scope is fixed in the path, not a parameter — see below. |
+| `workspace.list.userHosted` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=user-hosted` | unary | safe | Workspaces placed on an enrolled machine: the hosted handler filters the authority's rows to `backing: local-worktree`. A caller wanting the whole picture runs both operations and merges, which is what `controlPlaneCatalog` already does. The `?access=` query word these two rows carry is the route's own and is under review in the server lane; this document records what the table states today. |
 | `workspace.resolve` | `platform/runtime/workspace-runtime-record.ts` | `GET /api/workspace/resolve` | unary | safe | Optional query: `workspaceId`, `directory`, `create`. Desktop signed mode calls through AccountPort. |
 | `workspace.create` | `features/workspaces/data/workspace-create-api.ts`, `platform/runtime/agent/workspace-create-authority.ts` (bound in `app/composition/workspace-connection-authority-sync.tsx`) | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. TWO owners today, which is the open question on this row: the create authority (composer + cloud-project dialog) reaches AccountPort only, and `workspace-create-api.ts` (project actions) prefers AccountPort and falls back to HTTP so it also serves unsigned and browser callers. Either way the connected-repository source travels as the declared `repoFullName` scalar and main re-nests it into `repo: { fullName }`. |
 | `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
@@ -150,30 +160,32 @@ is the authoritative source for this column.
 (`claxedo-server/src/routes/hosted/workspace.ts`) requires a signed caller,
 reaches the authority, and answers rows only when `access` is `cloud` or
 `user-hosted`. Every other value — including absent — falls through to
-`{ workspaces: [] }`. A single access-less `workspace.list` row therefore
-returned an empty list for its whole life, which no test noticed because an
-empty envelope decodes perfectly.
+`{ workspaces: [] }`, so a single query-less row would return an empty list
+for its whole life, and an empty envelope decodes perfectly.
 
-The fix could have been an `access` PARAMETER, and the desktop table could
-express one: its `:name` substitution fills a query string as readily as a path
-segment. It is two operations instead because nothing picks a kind at runtime —
-the one caller wants both and merges them — and because the two properties this
-document exists for are per-name. The set of requests main can make stays
-readable in the table rather than depending on what the renderer passes, and
-`RENDERER_WITHHELD_OPERATIONS` can withhold one access kind without withholding
-the other. So where a row carries a query, that query is written out in full and
+The table could express a query PARAMETER: its `:name` substitution fills a
+query string as readily as a path segment. It is two operations instead
+because nothing picks a scope at runtime — the one caller wants both and
+merges them — and because the two properties this document exists for are
+per-name. The set of requests main can make stays readable in the table
+rather than depending on what the renderer passes, and
+`RENDERER_WITHHELD_OPERATIONS` can withhold one scope without withholding the
+other. So where a row carries a query, that query is written out in full and
 contains no `:name`; `hosted-operations.test.ts` enforces it.
 
-### Machine remote access (user-hosted)
+### Machine remote access
 
-Unit 6 moves the laptop side of this into Host Connector. The rows below are the
-**client** side that a signed desktop or browser still calls.
+The machine side lives in the Host Connector (the child that holds the
+machine key and beats machine-signed). The rows below are the **account**
+side: the two enrollment calls main performs for the child, the owner's
+assignment of a workspace to this machine, and the owner's rename. All five
+are withheld from the renderer (see "Withheld from the renderer" below).
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 | `workspace.assignHost` | `src/main/host-connector/child-supervisor.ts` | `POST /api/workspace/:id/host-assignment` | unary | idempotency-key | The OWNER's declaration that this host serves the workspace — pure data, an upsert on workspace_id. No challenge and no machine signature: liveness is the enrollment lease and consent is the heartbeat's acked set; routing needs all three. **Main-only**: the host id must be THIS machine's, which only the supervisor knows, so `RENDERER_WITHHELD_OPERATIONS` refuses the account channel and the renderer's route is the data-only `claxedo.hostConnector.share` IPC. |
 | `workspace.unassignHost` | `src/main/host-connector/child-supervisor.ts` | `DELETE /api/workspace/:id/host-assignment` | unary | safe | Withdraws the owner's assignment; routing refuses immediately (intent AND consent). Main-only for the same reason as assign. |
-| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Enrolls the MACHINE once, with no workspace in the path — the successor of the retired per-workspace host-link registration. The key is the machine identity and it is a real one — `enrollForUser` patches the existing row for the same `host_id` rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
+| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Enrolls the MACHINE once, with no workspace in the path — the successor of the retired per-workspace host-link registration. The key is the machine identity and it is a real one — `enrollHost` upserts on (owner, `host_id`), so a repeat enrollment rewrites that machine's row rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
 | `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. Main-only, like the enrollment it precedes: a renderer able to mint nonces holds step one of the handshake, and the account channel is refused. |
 | `host.renameCurrentMachine` | `platform/remote-access/machine-remote-access-port.ts` | `PATCH /api/claxedo/host/enrollments/:enrollmentId/display-name` | unary | idempotent (same name, same result) | The owner's name for a machine, as every device sees it. **Main-only.** The route renames any enrollment the owner holds, so a caller that supplies `enrollmentId` can rename a machine the user is not sitting at. The only caller is the Host Connector supervisor, which reads that id from its own enrolled state; the renderer reaches the feature through `claxedo.hostConnector.rename`, which carries a display name and nothing that names a machine, and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. The name is stored on this machine too, because every enable re-enrolls and the enroll route overwrites `display_name`. |
 
@@ -191,7 +203,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `session.projection.repair` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/repair` | unary | unsafe | |
 | `controlPlane.events` | `app/integrations/claxedo-event-targets.ts` | `GET /api/cp/events` | stream | safe | The control plane's notice stream (provision steps, worktree readiness, document doorbells, share grants, inventory changes) — never a session's frames, which are the workspace runtime's `/api/wr/events` on the RAT data plane. Resumes via declared `Last-Event-ID` header param. |
 | `session.shares.list` | `features/session/data/session-share-api.ts` | `GET /api/control/sessions/:sessionId/shares` | unary | safe | `workspaceId` is a declared query parameter (not a free-form `:name` in the path). |
-| `session.shares.grant` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants private-session visibility to a person, team, or org. |
+| `session.shares.grant` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants a session share to a person, team, or org at a declared `level`: `follow` (read and stream) or `send` (also prompt the agent and answer its permission and question prompts). The share is the only cross-person grant; no workspace or organization rank admits anyone to a session. |
 | `session.shares.revoke` | `features/session/data/session-share-api.ts` | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
 | `session.participants.add` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/participants` | unary | unsafe | |
 
@@ -270,6 +282,28 @@ see "What is deliberately NOT an account operation". Cloud create listens for
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 
+## Withheld from the renderer
+
+`RENDERER_WITHHELD_OPERATIONS` in
+`packages/claxedo-desktop/src/main/account/account-ipc.ts` is the list of
+names main performs but the renderer may not ask for. Their IPC channels stay
+registered and answer with a refusal before any request is made, so the
+channel inventory still equals the operation table. The list, and the reason
+each is on it:
+
+| Operation ID | Why the renderer may not call it |
+|---|---|
+| `account.cliExchange` | The result is a credential (a CLI access + refresh pair). |
+| `host.enrollCurrentMachine` | `publicKey` and `signature` are the machine identity; the route stores whatever key it is handed and re-enrolling a known `host_id` overwrites the honest key and clears a revocation. The renderer's route is `claxedo.hostConnector.start`. |
+| `host.enrollmentNonce` | Step one of the same handshake. |
+| `host.renameCurrentMachine` | Names an enrollment id, and every enrollment the owner holds answers to it. The renderer's route is `claxedo.hostConnector.rename`, which carries a name only. |
+| `workspace.assignHost` | Names a host id the renderer must not choose; the supervisor supplies this machine's own. The renderer's route is `claxedo.hostConnector.share`. |
+| `workspace.unassignHost` | Same reason as assign. |
+| `agentPlugins.runtimeSelf` | The answer carries MCP gateway bearer credentials; main hands it to the daemon, never to a page. |
+
+Adding a name here narrows and needs no matrix change. Removing one means a
+renderer surface is about to reach an operation main was reserving.
+
 ## Operations that are not yet platform-neutral
 
 Unit 1 is allowed to conclude that an operation cannot be platform-neutral,
@@ -294,7 +328,8 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
    transport, so retired rows do not accumulate.
 3. Every path in this file is a route the hosted app actually mounts, or is
    explicitly recorded as local-only.
-4. No row claims a `directRuntimeUrl` or a laptop address.
+4. No row promises a runtime target on the machine itself: a machine-placed
+   workspace is reached at the relay, under the Runtime Access Token.
 5. Every machine-signed, invitation and relay-fence route is recorded in the
    "not an account operation" section, and none of them appears as an
    AccountPort row.

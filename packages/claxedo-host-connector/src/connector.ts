@@ -76,7 +76,7 @@ export type HeartbeatResponse = {
   providerConfig?: ProviderConfigRevision
 } & HostEndpoints
 
-/** Body v3: the request signature covers it, so it carries no payload signature. */
+/** The request signature covers the whole body, so it carries no payload signature of its own. */
 export type MachineHeartbeatInput = {
   generation: number
   acks: readonly AssignmentAck[]
@@ -347,27 +347,14 @@ export function createHostConnector(options: ConnectorOptions) {
     // path applies to a late answer.
     if (startedIn !== era) return
     options.onError?.("heartbeat", error)
-    // A beat can fail for two completely different reasons, and treating
-    // them alike is what made remote access fragile.
-    //
-    // A decision — the control plane no longer recognises this machine
-    // (revoked, paused past expiry, enrolled elsewhere, or a newer instance
-    // acquired the generation) — must stop the connector. Acquiring again
-    // would be overruling the user.
-    //
-    // A disruption — the control plane briefly unreachable, or mid
-    // release — must not revoke. Deploying the control plane can make it
-    // answer `503 deployment_candidate_unavailable` for the seconds
-    // between the upload and the phase opening; treating that as
-    // revocation would stop the machine permanently even while its
-    // credential lease has not expired and its relay sockets are still
-    // open — the same "Workspace host is offline" symptom as a genuine
-    // revocation, with none of the same cause.
-    //
-    // So a disruption keeps the enrollment and lets the next beat retry.
-    // The lease is the backstop: if the control plane really is gone, the
-    // enrollment expires there on its own and stops routing without this
-    // side having to guess.
+    // A decision (revoked, paused past expiry, enrolled elsewhere, a newer
+    // instance holds the generation) stops the connector: acquiring again
+    // would overrule the user. A disruption keeps the enrollment for the next
+    // beat to retry: a control plane mid-deploy answers
+    // `503 deployment_candidate_unavailable` for the seconds between the
+    // upload and the phase opening, and stopping on that would leave a
+    // machine with a live lease and open relay sockets permanently offline.
+    // If the control plane really is gone, the lease expires there on its own.
     if (transientHeartbeatFailure(error)) return
     stop("revoked", String(error))
   }

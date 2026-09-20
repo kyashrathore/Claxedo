@@ -13,12 +13,8 @@ import type { HostConnectorSetup, HostConnectorStatus } from "./child-supervisor
  * The trigger the Remote Access surface presses, and the two properties that
  * make it safe to expose at all.
  *
- * The regression this closes: "Enable remote access" performed
- * `POST /api/claxedo/remote-access/enable` over the desktop sidecar. That route
- * left the sidecar when machine publication moved to the Host Connector
- * (`local-product-contract.test.ts` freezes the five paths as host-connector's),
- * and nothing reconnected the button. So the tests below assert what the start
- * operation REACHES, not what it returns.
+ * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route, so the
+ * tests below assert what the start operation REACHES, not what it returns.
  */
 
 /**
@@ -125,8 +121,7 @@ describe("start reaches the connector", () => {
 
     const result = await ipc.invoke(hostConnectorChannel("start"))
 
-    // The whole regression, stated as the operations the account actually
-    // performed. Nothing here is `/api/claxedo/remote-access/enable`.
+    // The operations the account performed; none is a sidecar route.
     expect(harness.operations.map((operation) => operation.name)).toEqual([
       "host.enrollmentNonce",
       "host.enrollCurrentMachine",
@@ -161,8 +156,8 @@ describe("start reaches the connector", () => {
   test("answers available:false rather than leaving the channel unregistered", async () => {
     // A build with no account client. An absent channel would leave
     // `window.api.hostConnector` half-built, the renderer would read the bridge
-    // as missing, and the desktop would fall back to the HTTP implementation —
-    // recreating the exact bug.
+    // as missing, and the desktop would fall back to an HTTP call its sidecar
+    // does not serve.
     const ipc = ipcMain()
     registerHostConnectorIpc({ ipcMain: ipc.target, context: () => ({ ...signedContext, signedIn: false }) })
 
@@ -285,7 +280,6 @@ describe("the closed operation set", () => {
     const names = (operations: Array<{ name: string }>) => operations.map((operation) => operation.name)
     expect(names(hostileHarness.operations)).toEqual(names(cleanHarness.operations))
     expect(names(hostileHarness.operations)).toEqual(["host.enrollmentNonce", "host.enrollCurrentMachine"])
-    // The hostile body did not reach the enrollment either.
     const enroll = hostileHarness.operations.find((operation) => operation.name === "host.enrollCurrentMachine")
     expect(enroll?.params?.hostId).not.toBe("someone-else")
   })
@@ -296,7 +290,6 @@ describe("the closed operation set", () => {
     registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, context: () => signedContext })
     await ipc.invoke(hostConnectorChannel("start"))
 
-    // Malformed payloads never reach the connector.
     await expect(ipc.invoke(hostConnectorChannel("share"))).rejects.toThrow("workspaceId")
     await expect(ipc.invoke(hostConnectorChannel("share"), { workspaceId: 42 })).rejects.toThrow("workspaceId")
     // A label of the wrong type rejects the share instead of being dropped.
@@ -305,7 +298,6 @@ describe("the closed operation set", () => {
     ).rejects.toThrow("workspaceId")
     expect(harness.operations.some((operation) => operation.name === "workspace.assignHost")).toBe(false)
 
-    // A hostile payload is reduced to the two reviewed fields.
     const result = await ipc.invoke(hostConnectorChannel("share"), {
       workspaceId: "ws_local_1",
       displayName: "opencode",
@@ -333,7 +325,6 @@ describe("the closed operation set", () => {
     await expect(ipc.invoke(hostConnectorChannel("rename"), { displayName: 42 })).rejects.toThrow("displayName")
     expect(harness.operations.some((operation) => operation.name === "host.renameCurrentMachine")).toBe(false)
 
-    // The enrollment renamed is the connector's own, whatever the message says.
     const result = await ipc.invoke(hostConnectorChannel("rename"), {
       displayName: "Studio Mac",
       enrollmentId: "enr_someone_else",
@@ -413,8 +404,8 @@ describe("wiring in the real entry", () => {
   })
 
   test("still starts nothing at launch", () => {
-    // The trigger now exists, so this matters more than it did: the ONLY caller
-    // of `start()` must be the IPC operation the user's click reaches.
+    // The ONLY caller of `start()` must be the IPC operation the user's click
+    // reaches.
     expect(code).toContain("setupElectronHostConnector({")
     expect(code).not.toMatch(/hostConnector[?.]*\.start\(/)
   })

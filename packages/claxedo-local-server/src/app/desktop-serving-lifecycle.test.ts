@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
-import { stopUserHostedServing } from "@claxedo/host-serving/serving"
+import { stopHostServing } from "@claxedo/host-serving/serving"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import {
   onEmbeddedWorkspaceRuntime,
@@ -82,7 +82,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  stopUserHostedServing()
+  stopHostServing()
   await server?.stop()
   server = undefined
   ClaxedoDB.close()
@@ -133,7 +133,6 @@ describe("turning remote access on and off", () => {
       expect(disable.status).toBe(200)
       expect(await disable.json()).toMatchObject({ serving: false })
       expect(phases).toEqual([])
-      // Still the same runtime, still serving its own machine.
       const health = await fetch(`${origin}/workspaces/${workspaceId}/api/wr/health`)
       expect(health.status).toBe(200)
     } finally {

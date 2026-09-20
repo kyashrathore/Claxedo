@@ -30,10 +30,10 @@ export function setupHostServingPush(input: {
         }),
       })
       const body = await response.text()
-      // The daemon rejecting the body (or the ack carrying no credential) must
-      // be visible: this hop failing silently cost a full acceptance run to
-      // find. The endpoints are named, not printed — which two arrived is the
-      // fact that decides whether a relayed caller can be admitted.
+      // The daemon rejecting the body, or the ack carrying no credential, is
+      // visible nowhere else. The endpoints are named, not printed — which two
+      // arrived is the fact that decides whether a relayed caller can be
+      // admitted.
       input.log.info(
         `[host-serving] pushed credential=${serving.tunnel ? "present" : "null"} `
           + `endpoints=${serving.endpoints ? Object.keys(serving.endpoints).sort().join(",") : "none"}`

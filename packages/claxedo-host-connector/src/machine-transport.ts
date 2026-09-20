@@ -1,7 +1,7 @@
 /**
  * A `claxedo connect` host talks to the control plane with its key alone:
  * every request carries the four machine headers and is signed over method,
- * path, body hash, timestamp, nonce and enrollment id (P1.1). No bearer
+ * path, body hash, timestamp, nonce and enrollment id. No bearer
  * exists on the box, so nothing here can be re-used by an account caller.
  */
 

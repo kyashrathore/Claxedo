@@ -376,8 +376,8 @@ describe("operations whose result is a credential", () => {
 describe("operations whose parameters are a machine identity", () => {
   /**
    * The enrollment handshake as an attacker's renderer would send it: its own
-   * public key and signature under a real `hostId`, which `enrollForUser` would
-   * patch onto the existing row (overwriting `public_key`, clearing
+   * public key and signature under a real `hostId`, which `enrollHost` would
+   * upsert onto the existing row (overwriting `public_key`, clearing
    * `revoked_at`). Real field names, so the value scan below checks what the
    * route reads.
    */

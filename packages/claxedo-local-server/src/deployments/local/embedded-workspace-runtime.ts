@@ -181,7 +181,6 @@ let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] =
 let configuredProcessObserver: ProcessObserver | undefined
 let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
 let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
-// Canonical WorkspaceRuntime events are the sole local execution-event source.
 let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
@@ -239,7 +238,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   resolveConnectionSecrets?: ConnectionSecretResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
-  /** Signed hosts inject their managed-private authority; unsigned desktop leaves this local. */
+  /** The policy every runtime is mounted with; absent, the unbound `managedWorkspaceSessionAccessPolicy()`, whose marker is `local`. */
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
   /** Declared where the policy's loopback arm is the local owner's; otherwise the marker answers. */
   loopbackSessionAuthority?: HostSessionAuthority

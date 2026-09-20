@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import type { RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
-import { createHash } from "node:crypto"
 import { Hono } from "hono"
 import { exportJWK, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
@@ -558,7 +557,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     })
   })
 
-  // P-shared.5: integration test for the TokenVerifier override.
   test("uses the injected TokenVerifier when set, bypassing the JWT key path", async () => {
     const { createStaticTokenVerifier } = await import("@claxedo/workspace-relay-protocol")
     const staticVerifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
@@ -793,9 +791,10 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_static",
             role: "editor",
-            // Deliberately mismatched: the contract pairs `cloud` with
-            // `cloud-vm` and `user-hosted` with `local-worktree`. This token is
-            // named "bad-pair" because the middleware must reject exactly this.
+            // `access`/`backing` are the claim pair the control plane mints;
+            // `isRelayClaimPair` admits only `cloud`+`cloud-vm` and
+            // `user-hosted`+`local-worktree`, so the cast keeps the pair the
+            // middleware must reject.
             access: "cloud",
             backing: "local-worktree",
             iat: Math.floor(Date.now() / 1000),
@@ -909,6 +908,3 @@ describe("relay host token verifier outside a middleware", () => {
     }
   })
 })
-
-// Reference createHash for test sanity
-void createHash

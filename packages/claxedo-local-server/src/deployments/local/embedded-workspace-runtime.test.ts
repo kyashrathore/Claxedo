@@ -245,12 +245,12 @@ describe("embedded workspace runtime", () => {
   })
 
   test("reports the composition its runtimes are actually mounted with", async () => {
-    // A host that shares these runtimes must DECLARE this to the control
+    // A host that serves these runtimes must DECLARE this to the control
     // plane, which mints every client's event-stream scope from the
     // declaration and infers nothing. Read from the configured policy rather
     // than restated, so the declaration cannot drift from what is mounted:
-    // an unsigned desktop leaves the unbound local policy in place, a signed
-    // host injects an authority and becomes managed-private.
+    // with nothing configured the unbound policy is local, and a configured
+    // authority is managed-private.
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
     // Same answer through the port shared modules read it by: importing this
     // module installs the declaration, so the project catalog this process
@@ -295,9 +295,9 @@ describe("embedded workspace runtime", () => {
   })
 
   test("a host with a local owner declares managed-private outward and local to its own window", async () => {
-    // Two readers, two questions, and since the runtime decides the session
-    // lifecycle per request they no longer have one answer. The control plane
-    // is told how a RELAYED member is admitted, so it mints them a scoped
+    // Two readers, two questions: the runtime decides the session lifecycle
+    // per request, so the two need not share an answer. The control plane is
+    // told how a RELAYED member is admitted, so it mints them a scoped
     // stream; the project catalog this process publishes is read by a client
     // on this machine's own loopback, which creates sessions with no
     // reservation because the daemon answers its own user directly.
@@ -343,9 +343,9 @@ describe("embedded workspace runtime", () => {
     const authorityCalls: string[] = []
     const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy({
       requireActor: true,
-      // The authority is ONE bundle, so a composition cannot answer reads and
-      // writes while leaving the stream capability unanswered — which is what
-      // made every managed terminal 503 `terminal_capability_authority_unavailable`.
+      // The authority is ONE bundle: a composition that answered reads and
+      // writes but not the stream capability would 503 every managed terminal
+      // with `terminal_capability_authority_unavailable`.
       authority: {
         authorizeSessionRead: (input) => {
           authorityCalls.push(`${input.actor.actorId}:read:${input.sessionId}:${input.credential}`)
@@ -448,14 +448,11 @@ describe("embedded workspace runtime", () => {
       const ws = workspace("ws_cache", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       const second = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
-      // Same workspace id + same directory → the cached runtime is reused.
       expect(second).toBe(first)
 
       const movedProject = path.join(root, "project-2")
       await fs.mkdir(movedProject, { recursive: true })
       const moved = await ensureEmbeddedWorkspaceRuntime(workspace("ws_cache", movedProject), { config: "skip" })
-      // Same id but a different directory → the old runtime is disposed and a
-      // fresh one is created.
       expect(moved).not.toBe(first)
     } finally {
       await shutdownTestRuntimes()
@@ -633,7 +630,6 @@ describe("embedded workspace runtime", () => {
       const synced = await ensureEmbeddedWorkspaceRuntime(workspace("ws_sync", sync.project), { config: "sync" })
       expect(synced.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
 
-      // ...and neither mode leaves generated state in the user's checkout.
       expect(await workspaceIsClean(skip.project)).toEqual([])
       expect(await workspaceIsClean(sync.project)).toEqual([])
     } finally {
@@ -673,13 +669,10 @@ describe("embedded workspace runtime", () => {
       const ws = workspace("ws_configure", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
-      // Reconfiguring process-level options affects new runtimes only; an
-      // already-cached runtime is not recreated.
       configureEmbeddedWorkspaceRuntime({ routeContributions: [] })
       const afterConfigure = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(afterConfigure).toBe(first)
 
-      // A brand-new workspace created after reconfiguring gets its own runtime.
       const freshProject = project + "-new"
       await fs.mkdir(freshProject, { recursive: true })
       const fresh = await ensureEmbeddedWorkspaceRuntime(workspace("ws_configure_new", freshProject), {
@@ -704,8 +697,6 @@ describe("embedded workspace runtime", () => {
 
       await shutdownEmbeddedWorkspaceRuntimes()
 
-      // After shutdown the cache is empty, so the next ensure builds a fresh
-      // runtime rather than returning the disposed one.
       const rebuilt = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(rebuilt).not.toBe(first)
     } finally {
@@ -843,7 +834,7 @@ describe("embedded workspace runtime", () => {
 })
 
 describe("embedded runtime route ownership", () => {
-  test("does not expose the removed OpenCode provider proxy", async () => {
+  test("serves no /provider proxy of its own", async () => {
     const { root, project } = await makeWorkspaceRoot("embedded-provider-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     try {

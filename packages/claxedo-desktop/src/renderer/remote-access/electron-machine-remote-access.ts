@@ -7,10 +7,10 @@ import { isRecord, readUnknown } from "../../shared/json-read"
 /**
  * The port over Electron IPC, where the Host Connector lives.
  *
- * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route — those
- * paths belong to the Host Connector now, and the connector is in Electron
- * main because that is where the machine key and the account credential are.
- * So this renderer performs no request at all: it names one of a closed set of
+ * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route. The
+ * Host Connector owns machine publication, and it lives in Electron main
+ * because that is where the machine key and the account credential are. So
+ * this renderer performs no request at all: it names one of a closed set of
  * operations and receives a snapshot back.
  *
  * ## Why the bridge is a closed set and not a request
@@ -24,7 +24,9 @@ import { isRecord, readUnknown } from "../../shared/json-read"
  * closed, reviewable, and takes no request shape from this process.
  *
  * Nothing here ever receives a token. `HostConnectorSnapshot` is a projection
- * of the connector's state — a status word, an id, an expiry, a reason — and
+ * of the connector's state — a status word, an expiry, a reason, the ids of
+ * the workspaces it publishes and the name it is published under; no host id
+ * and no enrollment id — and
  * `claxedo-desktop/src/main/host-connector/status-channel.ts` is the single
  * place that builds it.
  */

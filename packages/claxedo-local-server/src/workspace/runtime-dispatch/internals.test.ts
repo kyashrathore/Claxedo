@@ -96,7 +96,7 @@ describe("the host aggregate's place in runtime dispatch", () => {
     expect(bare.status).toBe(404)
   })
 
-  test("a composition that mounts no aggregate leaves wr/events where it was", async () => {
+  test("a composition that mounts no aggregate leaves a workspace-less wr/events on the workspace dispatch path", async () => {
     const { app } = dispatcher({ aggregate: false })
     const response = await app.request("http://127.0.0.1/api/wr/events")
     expect(response.status).toBe(404)

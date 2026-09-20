@@ -184,7 +184,6 @@ describe("claxedo host", () => {
     const workspaceId = [...cp.assignments.keys()][0]
     expect(lines.at(-1)).toBe(`build-box will serve /srv/api as ${workspaceId} (API); it acks on its next beat`)
 
-    // The same folder on the same machine re-points the same workspace.
     await host(["assign", "--machine", machine.enrollmentId, "/srv/api"], deps)
     expect(cp.assignments.size).toBe(1)
     expect(cp.assignments.get(workspaceId)).toMatchObject({ revision: 2, display_name: "API" })
@@ -268,7 +267,6 @@ describe("claxedo host", () => {
     expect(cp.assignments.get(ws2)).toMatchObject({ host_id: box2.hostId, remote_directory: "/srv/api", revision: 1 })
     await box2.ackAll()
 
-    // box2 cannot retire what box1 serves, and only retires its own.
     await host(["unassign", "--machine", "box2", "/srv/api"], deps)
     expect([...cp.assignments.keys()]).toEqual([ws1])
     await expect(host(["unassign", "--machine", "box2", "/srv/api"], deps)).rejects.toThrow("box2 is not assigned /srv/api")

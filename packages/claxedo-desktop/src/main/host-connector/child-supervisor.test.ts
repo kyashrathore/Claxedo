@@ -329,6 +329,42 @@ describe("what an ack tells the daemon", () => {
 
     expect(host.servings.at(-1)?.tunnel).toMatchObject({ enrollmentId })
   })
+
+  test("every stop withdraws the credential instead of leaving it to the lease", async () => {
+    for (const stop of ["pause", "revoke", "quit"] as const) {
+      const host = harness({
+        describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+      })
+      await host.connector.start()
+      await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+      await until(() => host.servings.some((serving) => serving.tunnel !== null), `the credential push (${stop})`)
+
+      if (stop === "pause") host.connector.stop()
+      if (stop === "revoke") host.connector.revoke()
+      if (stop === "quit") host.connector.dispose()
+
+      expect(host.servings.at(-1)).toEqual({ tunnel: null })
+    }
+  })
+
+  test("a lapse suspension withdraws the credential, and the resumed machine restores it", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+    await until(() => host.servings.some((serving) => serving.tunnel !== null), "the credential push")
+
+    expect(host.connector.suspendForAuthLapse()).toBe(true)
+    expect(host.servings.at(-1)).toEqual({ tunnel: null })
+
+    await host.connector.resumeAfterAuthLapse()
+    await until(
+      () => host.servings.at(-1)?.tunnel !== null && host.servings.at(-1)?.tunnel !== undefined,
+      "the credential push after the resume",
+    )
+    expect(host.servings.at(-1)?.tunnel).toMatchObject({ workspaceIds: ["ws_1"] })
+  })
 })
 
 describe("Electron-main child lifecycle", () => {
@@ -631,9 +667,8 @@ describe("Electron-main child lifecycle", () => {
       runAccountOperation: async (name, input) => {
         const hostId = String(input?.hostId)
         if (name === "host.enrollmentNonce") {
-          // The live defect, scaled to a test clock: the edge withheld this
-          // POST for ~12s against a 10s bootstrap budget. Three times the
-          // budget here is the same relationship without the wall time.
+          // A nonce POST held open longer than the bootstrap budget: 750ms
+          // against 250ms here; live, ~12s against 10s.
           await Bun.sleep(750)
           return { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
         }
@@ -735,18 +770,12 @@ describe("Electron-main child lifecycle", () => {
 })
 
 /**
- * The live defect these cover.
- *
- * A ~2s control-plane redeploy answered the auth descriptor with 503. The
- * account left "signed", main stopped the connector (correctly — never beat
- * with a credential the deployment may have revoked), the 60s enrollment lease
- * expired, and every client was told this machine was offline. Nothing ever
- * resumed, because a transient lapse and "the user turned remote access off"
- * were the same event to this supervisor.
- *
- * Both halves are load-bearing and both are asserted here: the stop still
- * happens, AND a stop nobody chose is undone exactly once when the account
- * returns.
+ * A ~2s control-plane redeploy answers the auth descriptor with 503. The
+ * account leaves "signed" and main stops the connector — correctly: never beat
+ * with a credential the deployment may have revoked — so the 60s enrollment
+ * lease expires and every client is told this machine is offline. Both halves
+ * are asserted here: the stop happens, AND a stop nobody chose is undone
+ * exactly once when the account returns.
  */
 describe("auth-lapse suspension", () => {
   const shares = [{ workspaceId: "ws_1", displayName: "Repo" }] as const
@@ -782,9 +811,9 @@ describe("auth-lapse suspension", () => {
     // routing that survived the stop.
     expect(resumed).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: enrollmentId } })
     expect(host.children).toHaveLength(2)
-    // The point of the fix: the machine comes back publishing what it was
-    // publishing, from the list the supervisor already keeps. One load, at
-    // construction — a second store would mean a second source of truth.
+    // The machine comes back publishing what it was publishing, from the list
+    // the supervisor already keeps. One load, at construction — a second store
+    // would mean a second source of truth.
     expect(host.bootstrapOf(1)?.sharedWorkspaces).toEqual(shares)
     expect(host.shareCounts()).toEqual({ loads: 1, stores: 1 })
     // The resume acquires a new serving generation, and the control plane

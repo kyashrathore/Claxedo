@@ -39,8 +39,8 @@ export type RuntimeProxyOptions = {
   verifyRelayIngress?: boolean
   /**
    * Answers the host aggregate `wr/events`. Only the desktop-local
-   * composition supplies one; without it a workspace-less request keeps
-   * falling through as before.
+   * composition supplies one; without it a workspace-less request falls
+   * through to the next handler like any other unresolvable workspace.
    */
   hostEventStream?: (c: Context) => Response | Promise<Response>
 }
@@ -253,19 +253,14 @@ export async function proxy(c: Context, hit: Hit, options?: {
   // causing Z_DATA_ERROR (incorrect header check) during decompression.
   // Requesting identity encoding avoids the mismatch entirely.
   headers.set("accept-encoding", "identity")
-  // SECURITY — actor-bearing signed traffic must resolve its caller before
-  // this branch. Only explicit unsigned-local composition uses the separate
-  // control-plane service principal.
-  // `localWorkspaceRelayProxy` serves browser-originated traffic on a
-  // loopback server URL (`workspace-runtime-request.ts:223`). The thing
-  // standing between a local process and that unsigned owner-role token is
-  // `isLoopbackLocalRequest` (`local-only-projection.ts`), checked at the top of
-  // `localWorkspaceRelayProxyWithOptions` — it fails closed on forwarded
-  // headers and verifies peer address, host, and origin. That gate is
-  // load-bearing for this mint, not just for the local projections it was
-  // written for: weakening it (e.g. trusting a forwarded client claim here)
-  // hands out owner tokens. `localWorkspaceRelayProxy denies a forwarded-client
-  // request before minting` in proxy.test.ts pins the ordering.
+  // A caller with no verified actor is minted the control-plane service
+  // principal at owner role. The only thing between a local process and that
+  // token is `isLoopbackLocalRequest` (`platform/http/peer-address`), checked
+  // at the top of `localWorkspaceRelayProxyWithOptions` before this runs: it
+  // fails closed on forwarded headers and verifies peer address, host and
+  // origin. Trusting a forwarded client claim here would hand out owner
+  // tokens; a signed composition sets `requireRelayActor` so no request
+  // reaches the fallback at all.
   if (hit.relay && options?.relayProvider) {
     const actor = requireRuntimeProxyActor(
       await options.resolveRelayActor?.(c.req.raw, hit.workspaceId),
@@ -423,27 +418,19 @@ export function embeddedConfigModeForPath(
 }
 
 /**
- * The URL the embedded runtime sees for a dispatched request.
+ * The URL the embedded runtime sees for a dispatched request: the CALLER's
+ * origin, never a synthetic one.
  *
- * This hop reuses the CALLER's origin rather than a synthetic one. The runtime
- * derives real behaviour from this URL — PTY creation reads its port via
- * `requestPort` and injects it as `CLAXEDO_PORT` / `CLAXEDO_SERVER_PORT`, which
- * is where terminal agent hooks post their lifecycle events. Dispatching from a
- * synthetic `http://embedded-workspace-runtime.local` (no port) made
- * `requestPort` fall through to the http default, so every terminal was told
- * the server lived on port 80: `notify.sh` posted to
- * `http://127.0.0.1:80/api/wr/hook/agent-lifecycle`, got nothing, and — because
- * it backgrounds its curl and discards the response — failed silently. The
- * symptom was a coding agent in a terminal that never showed working/permission
- * status, with no error anywhere. Verified by spawning a PTY that printed its
- * own env: `CLAXEDO_PORT=[80]` against a server on 3001.
- *
- * The synthetic host only ever bought a recognisable marker in traces, and
- * nothing routes on it. Fabricating an origin for a request that HAS one just
- * invents values the runtime then trusts, so the in-process hop is identified
- * by the `x-workspace-id` / `x-claxedo-directory` headers set below instead.
- * (The other synthetic-base call sites construct requests with no caller at
- * all, so they legitimately need one.)
+ * The runtime reads this URL's port (`requestPort`) into `CLAXEDO_PORT` /
+ * `CLAXEDO_SERVER_PORT` for every PTY it creates, and that is where a
+ * terminal agent's hooks post their lifecycle events. A synthetic origin with
+ * no port falls through to http's default, so `notify.sh` posts to
+ * `127.0.0.1:80`, and because it backgrounds its curl and discards the
+ * response the loss is silent: a terminal agent that never shows working or
+ * permission status, with no error anywhere. The in-process hop is identified
+ * by the `x-workspace-id` / `x-claxedo-directory` headers instead. Call sites
+ * that construct a request with no caller at all are the ones that need a
+ * synthetic base.
  */
 export function embeddedRuntimeTargetUrl(requestUrl: URL, targetPath: string): URL {
   return new URL(targetPath + requestUrl.search, requestUrl)

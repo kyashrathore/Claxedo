@@ -90,7 +90,7 @@ describe("Claxedo client-presentation session route inventory", () => {
     expect(Object.values(SESSION_CORE_ROUTE_ACCESS).every((decision) => decision.kind !== undefined)).toBe(true)
   })
 
-  test("requires workspace write authority for every mutating route", () => {
+  test("sends every mutating route to the session authority as a write", () => {
     const mutating = Object.entries(SESSION_CORE_ROUTE_ACCESS)
       .filter(([route]) => MUTATING_METHODS.has(route.split(" ")[0]))
 

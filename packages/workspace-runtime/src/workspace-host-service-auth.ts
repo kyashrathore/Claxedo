@@ -16,11 +16,8 @@ import { numberClaim } from "@claxedo/helpers/guards"
 
 export type RelayHostAuthOptions = {
   /**
-   * Either a single static public key (PEM env-var fallback path) or a
-   * JWKS resolver function (the new JWKS-aware path produced by
-   * `loadRelayHostVerificationKeyOrJwks`). `verifyRelayHostToken` accepts
-   * both via the `RelayKey` union — when a function is passed, jose
-   * dispatches to JWKS-by-`kid`.
+   * A static public key or a JWKS resolver; `verifyRelayHostToken` takes
+   * either, and jose dispatches by `kid` when given the resolver.
    */
   key: RelayKey
   workspaceId: string
@@ -33,18 +30,9 @@ export type RelayHostAuthOptions = {
   }) => boolean | Promise<boolean>
   audit?: (event: RelayHostAuthAuditEvent) => void | Promise<void>
   /**
-   * P-shared.2: optional override for Relay Host Token verification.
-   *
-   * When set, supersedes `key` and routes verification through the
-   * unified `TokenVerifier` interface from
-   * `@claxedo/workspace-relay-protocol`. The verifier returns
-   * `{ scopes, claims }`; we hydrate the existing
-   * `RelayHostTokenClaims` shape from `claims` so workspace/host
-   * mismatches keep their original error semantics.
-   *
-   * Use a `StaticTokenVerifier` for tests; an `HttpTokenVerifier` for
-   * remote introspection; or a custom impl for hosted-control-plane
-   * deployments.
+   * Supersedes `key` when set. The claims it vouches for are re-validated
+   * against this workspace and host here, so a mismatch answers with the
+   * same codes as the key path.
    */
   verifier?: TokenVerifier<RelayHostVerifierClaims>
 }
@@ -56,8 +44,11 @@ export type RelayHostAuthContext = {
 
 /**
  * Verified actor identity stamped by the in-process local-server boundary.
- * This is deliberately not a Relay Host Token: it has no signature lifecycle,
- * issuer, audience, or token identifiers to synthesize.
+ * Deliberately not a Relay Host Token: it has no signature lifecycle, issuer,
+ * audience, or token identifiers to synthesize. `access` and `backing` are
+ * the claim pair the control plane mints on a Relay Host Token, carried here
+ * verbatim when the stamping boundary has them; nothing on this side derives
+ * them.
  */
 export type EmbeddedRelayHostIdentity = {
   principal_kind: "user" | "service"
@@ -182,27 +173,20 @@ function validateRelayHostVerifierClaims(
   return claims
 }
 
-/**
- * Resolve the verification key (or JWKS resolver) for Relay Host Tokens.
- *
- * Precedence:
- *   1. `WORKSPACE_RUNTIME_RELAY_JWKS_URL` — resolved via
- *      `jose.createRemoteJWKSet`, allowing the relay's host-token signing key to
- *      rotate without restarting the workspace host.
- *   2. `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` —
- *      a single static SPKI PEM, imported as an Ed25519 public key.
- *
- * Fails closed when neither is set: there is no acceptable default — a
- * mis-configured workspace host that accepts any token (or refuses all of
- * them silently) is worse than refusing to boot.
- *
- * Exported for tests.
- */
 export type LoadRelayHostVerificationKeyEnv = {
   WORKSPACE_RUNTIME_RELAY_JWKS_URL?: string | undefined
   WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM?: string | undefined
 }
 
+/**
+ * `WORKSPACE_RUNTIME_RELAY_JWKS_URL` wins over
+ * `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM`: a remote key set lets the relay
+ * rotate its signing key without a host restart, a PEM is one Ed25519 key
+ * for the process's life.
+ *
+ * Throws when neither is set. A host that accepts any token, or refuses
+ * every one silently, is worse than one that will not boot.
+ */
 export async function loadRelayHostVerificationKeyOrJwks(
   env: LoadRelayHostVerificationKeyEnv,
 ): Promise<RelayKey> {
@@ -308,8 +292,6 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
     }
 
     try {
-      // P-shared.2: prefer injected `verifier` when configured; fall
-      // back to the legacy `key`-based JWT path otherwise.
       const claims = options.verifier
         ? validateRelayHostVerifierClaims((await options.verifier.verify(token)).claims, {
             workspaceId: options.workspaceId,
@@ -345,9 +327,11 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
           "Relay request workspace is not hosted by this Workspace Host Service",
         ), 404)
       }
-      // Cloud and user-hosted RHTs only ever arrive through the workspace-relay,
-      // which stamps `x-forwarded-by` on every forwarded request. Local-access
-      // tokens bypass the relay and take the `trustedDirectToken` branch above.
+      // `access` is a claim the control plane mints and `isRelayClaimPair`
+      // admits only these two values, so this covers every token the verifier
+      // accepts: the relay stamps `x-forwarded-by` on each request it
+      // forwards, and a valid token arriving without it was replayed around
+      // the relay. The control plane's own token took the direct branch above.
       if (claims.access === "cloud" || claims.access === "user-hosted") {
         if (c.req.header("x-forwarded-by") !== "workspace-relay") {
           await audit(options, {

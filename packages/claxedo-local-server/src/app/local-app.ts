@@ -50,8 +50,8 @@ import { CredentialRoutes } from "../credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
-import { userHostedServingEnrollmentId } from "@claxedo/host-serving/serving"
-import { UserHostedServingRoutes } from "../workspace/user-hosted-serving-routes"
+import { hostServingEnrollmentId } from "@claxedo/host-serving/serving"
+import { HostServingRoutes } from "../workspace/host-serving-routes"
 import { HostProviderConfigRoutes } from "../workspace/host-provider-config-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
@@ -291,7 +291,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     // installs through `/api/claxedo/host-serving` after this route is
     // mounted: the daemon starts before the machine has enrolled and outlives
     // every sign-out.
-    hostEnrollmentId: userHostedServingEnrollmentId,
+    hostEnrollmentId: hostServingEnrollmentId,
     ...authRouteOptions(services),
   }))
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
@@ -363,7 +363,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/workspace", localWorkspaceRoutes)
   app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
-  app.route("/api/claxedo/host-serving", UserHostedServingRoutes())
+  app.route("/api/claxedo/host-serving", HostServingRoutes())
   app.route("/api/claxedo/host-provider-config", HostProviderConfigRoutes())
   // Optional product route families (Agent Plugins today) arrive as
   // contributions from the composition rather than as imports here, so this

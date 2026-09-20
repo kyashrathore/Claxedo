@@ -16,15 +16,15 @@
  * signer's `HostTunnelTokenSignerResult` plus the route's own additions
  * (`hostId`, `enrollmentId`, `workspaceIds`, `relayUrl`); see
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` and the type-level
- * pin in `user-hosted-serving-routes.test.ts`. A prior draft invented its own
- * field names here (`token` for `hostTunnelToken`, no `tokenExpiresAt`/`jti`)
- * and the strict parser silently rejected every real ack in production —
- * validate the producer's shape, never a local rendition of it.
+ * pin in `host-serving-routes.test.ts`. The parser is strict, so a field
+ * name that is not the producer's rejects every real ack with a 400 that
+ * nothing in the chain reports: validate the producer's shape, never a local
+ * rendition of it.
  */
 
 import { Hono } from "hono"
 import { z } from "zod"
-import { setUserHostedServing, userHostedServingState } from "@claxedo/host-serving/serving"
+import { setHostServing, hostServingState } from "@claxedo/host-serving/serving"
 import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
 import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
 
@@ -68,9 +68,9 @@ const servingBody = z
   })
   .strict()
 
-export function UserHostedServingRoutes() {
+export function HostServingRoutes() {
   return new Hono()
-    .get("/", (c) => c.json(userHostedServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })))
+    .get("/", (c) => c.json(hostServingState({ sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority })))
     .put("/", async (c) => {
       const parsed = servingBody.safeParse(await c.req.json().catch(() => undefined))
       if (!parsed.success) {
@@ -80,7 +80,7 @@ export function UserHostedServingRoutes() {
       // Ahead of the tunnel: the first relayed request can arrive as soon as
       // it opens, and it is verified against these.
       setLocalHostEndpoints(credential ? parsed.data.endpoints : undefined)
-      const state = await setUserHostedServing(
+      const state = await setHostServing(
         credential
           ? {
               hostId: credential.hostId,

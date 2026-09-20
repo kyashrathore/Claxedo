@@ -54,10 +54,8 @@ export type HostedOperation = {
 export const HOSTED_OPERATIONS = {
   "account.mode": { method: "GET", path: "/api/claxedo/mode" },
   "account.compatibility": { method: "GET", path: "/api/claxedo/compatibility" },
-  // No idempotency key. The app registry says "the idempotency key for that
-  // lives in main"; it does not — nothing in this process, for any operation,
-  // has ever had one, and this table has no way to express one. The route
-  // dedupes nothing either: `POST /api/auth/cli/exchange`
+  // No idempotency key: this table has no way to express one, and the route
+  // dedupes nothing either — `POST /api/auth/cli/exchange`
   // (`routes/hosted/device-auth.ts`) mints from the BEARER and never reads the
   // body at all, so `code` is declared here and ignored there, and every call
   // is a fresh, separately-revocable session pair. Harmless only because the
@@ -157,26 +155,23 @@ export const HOSTED_OPERATIONS = {
   },
   // `projectName`/`workspaceName`, not `displayName`. The create body is a
   // strict schema, so an undeclared field is a 400 for the whole request rather
-  // than a field the server ignores — `displayName` made this operation
-  // unusable from the day it was written.
+  // than a field the server ignores.
   //
   // Connected-repository create needs `connectionId` + `repo: { fullName }`.
   // Parameters here stay scalars (`repoFullName`); `resolveHostedOperation`
   // nests that into the `repo` object the hosted schema requires.
   //
-  // NO IDEMPOTENCY KEY, and one cannot be added from this side. The matrix once
-  // classified this row `idempotency-key`; there is no key anywhere. This table
+  // NO IDEMPOTENCY KEY, and one cannot be added from this side: this table
   // expresses a request as method + path + declared body — there is no header
   // seam — and the route's body schema is `.strict()` with no idempotency field
   // (`createCloudBody`, `routes/hosted/workspace.ts`), so a key declared here
-  // would 400 every create rather than dedupe a retry. That is the same failure
-  // `displayName` caused above. Until the route accepts one, this operation is
-  // genuinely `unsafe`: an uncertain response must be surfaced, never retried,
-  // because a retry provisions a second billable sandbox. Nothing retries it
-  // today — `account-service.run` performs exactly one fetch, and the composer
-  // surfaces an uncertain response rather than provisioning again.
-  // `isSafeOperation` in the app registry already answers false for it, and
-  // that is the property a retry loop must consult.
+  // would 400 every create rather than dedupe a retry. Until the route accepts
+  // one, this operation is `unsafe`: an uncertain response must be surfaced,
+  // never retried, because a retry provisions a second billable sandbox.
+  // `account-service.run` performs exactly one fetch and the composer surfaces
+  // an uncertain response rather than provisioning again; `isSafeOperation` in
+  // the app registry answers false for it, and that is the property a retry
+  // loop must consult.
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
@@ -259,22 +254,21 @@ export const HOSTED_OPERATIONS = {
   // legitimate caller is the Host Connector child. Electron brokers this
   // fixed named operation and the child fills these from the key bootstrapped
   // by `host-connector/identity-store.ts`; the renderer reaches the same
-  // feature through the connector's own zero-argument IPC. That refusal is
-  // enforced by `RENDERER_WITHHELD_OPERATIONS` in `account-ipc.ts`, which is
-  // where the whole argument is written down.
+  // feature through the connector's own IPC, which carries no key material.
+  // That refusal is enforced by `RENDERER_WITHHELD_OPERATIONS` in
+  // `account-ipc.ts`, which is where the whole argument is written down.
   //
   // Retry IS idempotent, and by the machine identity rather than a key the
-  // caller invents: `enrollForUser` patches the existing row for the same
-  // `host_id` instead of inserting a second one.
+  // caller invents: `enrollHost` upserts on (owner, `host_id`) instead of
+  // inserting a second row.
   "host.enrollCurrentMachine": {
     method: "POST",
     path: "/api/claxedo/host/enrollments",
     body: ["hostId", "publicKey", "requestId", "signature", "displayName"],
   },
-  // `enrollmentNonce`, not `enrollmentRequest`: an operation name ending in
-  // "Request" trips the generic-passthrough guard, which is watching for
-  // exactly the `proxyRequest`/`hostedFetch` shape this whole table exists to
-  // prevent. The guard was right and "nonce" is the more accurate word.
+  // `enrollmentNonce`, not `enrollmentRequest`: `hosted-operations.test.ts`
+  // refuses any name matching `/fetch|proxy|request$/i`, the shape of the
+  // generic passthrough this table exists to prevent.
   //
   // The nonce the machine signs. Signed-only, so the connector reaches it
   // through the account rather than holding a bearer of its own — the machine
@@ -536,9 +530,9 @@ export class MissingOperationParameter extends Error {}
 
 /**
  * Every operation parameter ends up in a URL path segment, a query value or a
- * header, so it has to be a scalar. Passing an object used to stringify to the
- * literal `[object Object]` and travel to the control plane as if that were
- * the caller's intent; it is a caller bug and is refused as one.
+ * header, so it has to be a scalar. An object would stringify to the literal
+ * `[object Object]` and travel to the control plane as if that were the
+ * caller's intent; it is a caller bug and is refused as one.
  */
 function operationParameter(name: string, key: string, value: unknown): string {
   if (typeof value === "string") return value
@@ -639,7 +633,6 @@ export function resolveHostedOperation(
   return { method, path, body, ...extra }
 }
 
-/** The IPC channel a named operation travels on. One per operation, by name. */
 /** Whether a channel-supplied string names one of the reviewed operations. */
 export function isHostedOperationName(value: string): value is HostedOperationName {
   return Object.hasOwn(HOSTED_OPERATIONS, value)
@@ -651,6 +644,7 @@ export function isHostedOperationName(value: string): value is HostedOperationNa
  */
 export const HOSTED_OPERATION_NAMES: HostedOperationName[] = Object.keys(HOSTED_OPERATIONS).filter(isHostedOperationName)
 
+/** The IPC channel a named operation travels on. One per operation, by name. */
 export function hostedOperationChannel(name: HostedOperationName) {
   return `claxedo.account.operation:${name}`
 }

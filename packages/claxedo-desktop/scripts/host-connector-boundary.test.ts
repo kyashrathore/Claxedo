@@ -64,7 +64,11 @@ function walk(entry: string): Closure {
         // Asset imports carry a bundler query (`...template.sh?raw`); the file
         // on disk is the specifier without it.
         const base = path.resolve(path.dirname(file), specifier.replace(/[?#].*$/, ""))
-        const candidate = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}.js`].find(
+        // A NodeNext package spells its own siblings `./broker.js` and ships
+        // `broker.ts`; without the swap the walk reports the whole package
+        // unresolved and every negative assertion below becomes vacuous.
+        const swapped = base.replace(/\.jsx?$/, (extension) => (extension === ".jsx" ? ".tsx" : ".ts"))
+        const candidate = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}.js`, swapped].find(
           (option) => fs.existsSync(option) && fs.statSync(option).isFile(),
         )
         if (candidate) pending.push(candidate)

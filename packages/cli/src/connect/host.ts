@@ -21,10 +21,10 @@ import {
   type HostWorkspaceRuntimeOptions,
 } from "@claxedo/host-serving/runtime"
 import {
-  setUserHostedServing,
-  stopUserHostedServing,
-  userHostedServingState,
-  type UserHostedServingCredential,
+  setHostServing,
+  stopHostServing,
+  hostServingState,
+  type HostServingCredential,
 } from "@claxedo/host-serving/serving"
 import { createWorkspaceOpenCodeRuntime } from "@claxedo/workspace-runtime"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -39,9 +39,9 @@ export type HostDeps = {
   fetch: FetchLike
   createListener: () => Promise<HostRuntimeListener>
   openCodeRuntime: (directory: string) => OwnedOpenCodeRuntime | undefined
-  setServing: typeof setUserHostedServing
-  servingState: typeof userHostedServingState
-  stopServing: typeof stopUserHostedServing
+  setServing: typeof setHostServing
+  servingState: typeof hostServingState
+  stopServing: typeof stopHostServing
   resolvePath: (target: string) => Promise<string>
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
   setTimeout: (fn: () => void, ms: number) => { cancel: () => void }
@@ -61,9 +61,9 @@ export function defaultHostDeps(): HostDeps {
     fetch: (input, init) => fetch(input, init),
     createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
     openCodeRuntime: (directory) => createWorkspaceOpenCodeRuntime(directory),
-    setServing: setUserHostedServing,
-    servingState: userHostedServingState,
-    stopServing: stopUserHostedServing,
+    setServing: setHostServing,
+    servingState: hostServingState,
+    stopServing: stopHostServing,
     resolvePath: (target) => fs.realpath(target),
     setInterval: (fn, ms) => {
       const handle = setInterval(fn, ms)
@@ -162,7 +162,7 @@ async function drainWithin(drain: Promise<void>, deps: Pick<HostDeps, "setTimeou
 }
 
 /** The heartbeat ack's `hostTunnel` verbatim from the control plane, or nothing serveable. */
-export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | undefined): UserHostedServingCredential | null {
+export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | undefined): HostServingCredential | null {
   const row = asRecordOrEmpty(tunnel)
   const hostId = trimToUndefined(row.hostId)
   const enrollmentId = trimToUndefined(row.enrollmentId)
@@ -176,7 +176,7 @@ export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | un
   return { hostId, enrollmentId, relayUrl, token, workspaceIds, expiresAt }
 }
 
-function credentialWithout(credential: UserHostedServingCredential | null, workspaceId: string) {
+function credentialWithout(credential: HostServingCredential | null, workspaceId: string) {
   if (!credential) return null
   const workspaceIds = credential.workspaceIds.filter((id) => id !== workspaceId)
   return workspaceIds.length ? { ...credential, workspaceIds } : null
@@ -265,9 +265,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const listener = await deps.createListener()
   const composition = { localBaseUrl: listener.url, sessionAuthority: () => "managed-private" as const }
   const owned = new Map<string, { directory: string; runtime: OwnedOpenCodeRuntime | undefined }>()
-  let credential: UserHostedServingCredential | null = null
+  let credential: HostServingCredential | null = null
 
-  const serve = async (next: UserHostedServingCredential | null) => {
+  const serve = async (next: HostServingCredential | null) => {
     credential = next
     try {
       await deps.setServing(next, composition)

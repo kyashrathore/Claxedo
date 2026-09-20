@@ -8,13 +8,11 @@ import {
 } from "./electron-machine-remote-access"
 
 /**
- * The desktop-owned half of the port: the regression, and the constraints on
- * the fix.
+ * The desktop-owned half of the port.
  *
- * The regression is that "Enable remote access" performed an HTTP POST to
- * `/api/claxedo/remote-access/enable`, a path the desktop's sidecar
- * (`@claxedo/local-server`) does not serve. So every test that matters here
- * watches the TRANSPORT, not the return value.
+ * The desktop's sidecar (`@claxedo/local-server`) serves no
+ * `/api/claxedo/remote-access/*` path, so every test that matters here watches
+ * the TRANSPORT, not the return value.
  */
 
 function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnectorSnapshot>> = {}) {
@@ -56,10 +54,9 @@ type LeakySnapshot = HostConnectorSnapshot & Record<string, unknown>
 
 describe("enabling remote access on the desktop", () => {
   test("reaches the connector by name and issues no request at all", async () => {
-    // THE regression. Before the port, this call was
-    // `fetch("/api/claxedo/remote-access/enable")` against a sidecar that
-    // serves no such route. `fetch` is replaced for the duration so that a
-    // reintroduced HTTP call fails loudly instead of 404-ing quietly.
+    // `fetch` is replaced for the duration so that an HTTP call to
+    // `/api/claxedo/remote-access/enable` — a route the sidecar does not
+    // serve — fails loudly instead of 404-ing quietly.
     const connector = bridge({ start: enrolled })
     const requests: string[] = []
     const original = globalThis.fetch

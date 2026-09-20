@@ -2,11 +2,10 @@
  * The Host Connector's IPC surface: a closed set of named operations, and
  * nothing else.
  *
- * The renderer's Remote Access panel needs to DO something — the desktop's
- * sidecar stopped serving `/api/claxedo/remote-access/*` when machine
- * publication moved here, so "Enable remote access" has no route to call and
- * must reach the connector instead. `status-channel.ts` is the other half of
- * that conversation and stays push-only; this is the half that comes IN.
+ * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route, so the
+ * renderer's Remote Access panel reaches the connector through this surface.
+ * `status-channel.ts` is the other half of that conversation and stays
+ * push-only; this is the half that comes IN.
  *
  * ## Why this is named operations and not one request
  *
@@ -19,11 +18,12 @@
  * here for the same reason and more sharply, and `ipc.test.ts` asserts the
  * shape rather than trusting this paragraph.
  *
- * Stronger than the account's version, in fact: no operation below takes an id.
- * `share`, `unshare` and `rename` carry DATA — a workspace id the user picked,
- * a name the user typed — and nothing else: there is no route to substitute
- * into, no body to fill and no machine to choose. A message picks which fixed
- * thing happens and, at most, to which of this machine's own workspaces.
+ * Stronger than the account's version, in fact: no operation below names a
+ * machine. `share`, `unshare` and `rename` carry DATA — a workspace id the
+ * user picked, a name the user typed — and nothing else: there is no route to
+ * substitute into, no body to fill and no machine to choose. A message picks
+ * which fixed thing happens and, at most, to which of this machine's own
+ * workspaces.
  *
  * ## What each operation means
  *
@@ -37,6 +37,9 @@
  *     when its TTL runs out, and a later `start` re-enrolls the same machine.
  *   - `revoke` — stop, and destroy the key. Nothing can heartbeat as this
  *     machine again; a later `start` enrolls an honest new one.
+ *   - `share` / `unshare` — publish or withdraw one of this machine's own
+ *     workspaces: the owner's assignment with the account, then the machine's
+ *     ack on a beat.
  *   - `rename` — the owner's name for THIS machine. The enrollment it renames
  *     is the connector's own, read from its state here; the message carries a
  *     name and nothing that names a machine.
@@ -114,7 +117,7 @@ export function registerHostConnectorIpc(input: {
    * says so. An unregistered channel would leave `window.api.hostConnector`
    * half-built, the renderer would treat the bridge as missing, and a desktop
    * would silently fall back to the browser implementation — a `fetch` to a
-   * route its sidecar does not serve, which is the bug this replaces.
+   * route its sidecar does not serve.
    */
   connector?: MachinePublication
   /**

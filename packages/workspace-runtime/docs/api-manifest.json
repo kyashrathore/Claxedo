@@ -50,6 +50,7 @@
     "runtimeCredentialWorkspaceId",
     "runtimeEnvText",
     "sessionAccessRequiresWrite",
+    "sessionAccessWriteClass",
     "startServer",
     "startWorkspaceRuntime",
     "waitForWorkspaceRuntimeServerPort",

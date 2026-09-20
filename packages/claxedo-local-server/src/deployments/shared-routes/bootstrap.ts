@@ -98,13 +98,15 @@ function localBootstrap(url: string, options: Options) {
 }
 
 /**
- * The project inventory a SIGNED bootstrap answers with — the self-hosted twin
- * of the hosted control plane's `signedShellProjects` (claxedo-server
- * routes/hosted/shell.ts). Exported for the same reason that one is: this
- * grouping decides which directories the app shell treats as relay-backed, and
- * that decision is worth pinning directly rather than through a whole route.
+ * The `project` array a SIGNED bootstrap body carries: the authority's
+ * workspace rows grouped by project.
+ *
+ * The hosted control plane answers the same shape from its own copy,
+ * `signedShellProjects`. This module cannot be shared into the Worker bundle
+ * — it reaches the fs-backed workspace store and agent config — so the two
+ * are changed together or one client meets two shapes.
  */
-export function signedBootstrapProjects(workspaces: unknown[]) {
+function signedBootstrapProjects(workspaces: unknown[]) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -115,15 +117,13 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     const row = asRecord(workspace)
     const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
     if (!workspaceId) continue
-    // A workspace served elsewhere is ADDRESSED by its id; the host's own path
-    // is location metadata. Every row here comes from the signed control plane,
-    // so every one of them is relay-backed — a local workspace never reaches
-    // this body. Stating the host's path as `directory` made the client resolve
-    // a `/w/<id>` route to a path on ANOTHER machine
-    // (`workspaceRouteIdentity`), so its panes registered that path as their
-    // scope while both event lanes publish under `workspace:<id>` and every
-    // live frame of an attached turn was dropped for the mismatch. Same shape
-    // the hosted control plane already serves (`signedShellProjects`).
+    // A control-plane row is ADDRESSED by its id; the serving host's path is
+    // placement metadata. The client resolves a `/w/<id>` route through
+    // `workspaceRouteIdentity` and registers its panes under what this says,
+    // while both event lanes publish under `workspace:<id>`: a filesystem path
+    // here would put every live frame of an attached turn on a scope nothing
+    // publishes to. Same shape the hosted control plane serves
+    // (`signedShellProjects`).
     const directory = `workspace:${workspaceId}`
     const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
     const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
@@ -137,7 +137,11 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: asString(row?.backing) === "local-worktree" ? "user-hosted" : "cloud",
+      // The row's own placement, passed through rather than restated: the app
+      // narrows this word once, in `placement-wire.ts`. A row naming no backing
+      // is the provisioner's, never the reader's own machine — defaulting the
+      // other way would put somebody else's workspace on this one.
+      backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),

@@ -3,8 +3,8 @@
  * from, decided once, from facts this boundary can verify.
  *
  * A composition that serves ONE kind of caller reads only the stamp: a
- * verified actor or none, exactly as before. The refusals below belong to a
- * composition that serves two — see `verifyRelayIngress`.
+ * verified actor or none. The refusals below belong to a composition that
+ * serves two — see `verifyRelayIngress`.
  *
  * The daemon cannot read provenance off the socket. A request the relay
  * forwards over this machine's host tunnel is REPLAYED as a fetch the machine

@@ -13,8 +13,8 @@ import {
 } from "./machine-transport"
 
 /**
- * The transport against a control plane that enforces P1.1. Each refusal
- * below is one the fake really issues — a transport that sent a stale
+ * The transport against a control plane that enforces the machine-request
+ * signature contract. Each refusal below is one the fake really issues — a transport that sent a stale
  * timestamp or reused a nonce would fail here, not on a real host.
  */
 
@@ -169,7 +169,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
 })
 
 describe("heartbeat", () => {
-  test("sends body v3 and decodes the control plane's snake_case answer", async () => {
+  test("sends the signed beat body and decodes the control plane's snake_case answer", async () => {
     const { cp, enrolled, transport } = await host()
     const { generation } = await transport.acquire()
     const revision = cp.assign({

@@ -125,9 +125,9 @@ export const appLocal: Policy = {
   // Cloudflare-deployable flow adds the service-contribution catalog,
   // bootstrap-owner route, and canonical private-session reservation client.
   // `@claxedo/service-contract` is their dependency-neutral vocabulary owner.
-  // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + its loopback control
-  // routes — the machine's ONE relay serving connection under machine-wide
-  // enrollment (reviewed owner: local-server workspace domain).
+  // +2 `workspace/host-serving-routes.ts` and its loopback control routes —
+  // the machine's ONE relay serving connection (reviewed owner: the
+  // local-server workspace domain).
   // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`.
   // Remote access is machine level, so the published set is reconciled against
   // this machine's local workspace inventory instead of a per-workspace tick
@@ -220,8 +220,8 @@ export const appLocal: Policy = {
   // matter how many call sites migrate. Re-measured after the test-quality
   // audit merge, which retired the per-file readers those sites replaced:
   // 958 modules, 38 packages, no headroom.
-  // +1 module / 0 packages (2026-09-07): the rail's user-hosted rows now carry
-  // the session's creator, which only the control plane knows. Reviewed owner:
+  // +1 module / 0 packages: a rail row for a workspace on another machine
+  // carries the session's creator, which only the control plane knows. Reviewed owner:
   // features/session/data/sync/control-plane-sessions.ts — the one reader of
   // `GET /api/control/sessions`, extracted from `inventory-source.ts` so the
   // rail's owner join and the flat inventory share it instead of each spelling

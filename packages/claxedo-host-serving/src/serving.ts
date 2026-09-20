@@ -1,14 +1,13 @@
 /**
  * This machine's relay connection — the SERVING half of remote access.
  *
- * Registration was never serving: a share is routable only while this machine
- * holds an outbound tunnel to the relay for it. Under machine-wide enrollment
- * the credential arrives on every heartbeat ack (ONE Host Tunnel Token whose
- * claim is exactly the assigned∩acked workspace set) and reaches the process
- * that owns the workspace runtimes — on the desktop it travels connector child
- * → Electron main → the local-server daemon's `/api/claxedo/host-serving`
- * route; a `claxedo connect` host holds it in-process — and this module turns
- * it into relay connections for that set.
+ * A workspace is routable only while this machine holds an outbound tunnel to
+ * the relay for it. The credential arrives on every heartbeat ack (ONE Host
+ * Tunnel Token whose claim is exactly the assigned∩acked workspace set) and
+ * reaches the process that owns the workspace runtimes — on the desktop it
+ * travels connector child → Electron main → the local-server daemon's
+ * `/api/claxedo/host-serving` route; a `claxedo connect` host holds it
+ * in-process — and this module turns it into relay connections for that set.
  *
  * ONE CONNECTION PER WORKSPACE, one credential for all of them. The machine is
  * enrolled as a machine and holds a single Host Tunnel Token, but the relay's
@@ -16,10 +15,10 @@
  * so a socket lives in exactly one room and can serve exactly one workspace.
  * The relay says so itself, before any authentication: a `/host-tunnels/<host>`
  * connect naming more than one workspace is refused with
- * `host_tunnel_single_workspace_required` (verified live against the deployed
- * relay: two ids → 400, one id → 426 "upgrade required"). A machine-wide
- * tunnel is therefore not something this side can choose; it would need the
- * relay to key rooms by host and proxy client traffic between rooms.
+ * `host_tunnel_single_workspace_required` (400; one id reaches the 426
+ * "upgrade required" of the WebSocket handshake). A machine-wide tunnel is
+ * therefore not something this side can choose; it would need the relay to
+ * key rooms by host and proxy client traffic between rooms.
  *
  * The token is shared across those connections because its claim is the whole
  * set and the relay checks membership, not equality
@@ -32,10 +31,8 @@
  * credential (nothing routable, remote access stopped) closes everything.
  *
  * The relay may only reach workspace-runtime routes on workspaces in the
- * CURRENT set — the same two-guard shape the self-host node's tunnel runner
- * uses (`claxedo-server/src/user-hosted-tunnel.ts`): membership first, then
- * route ownership, so a malicious relay cannot ask a laptop for a
- * CentralServer-owned path.
+ * CURRENT set: membership is checked first, then route ownership, so a relay
+ * that has been taken over cannot ask a laptop for a control-plane-owned path.
  */
 
 import {
@@ -46,12 +43,12 @@ import {
 } from "@claxedo/workspace-runtime/relay"
 import type { SessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { userHostedSurface } from "./surface"
+import { hostServingSurface } from "./surface"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
-const log = Log.create({ service: "user-hosted-serving" })
+const log = Log.create({ service: "host-serving" })
 
-export type UserHostedServingCredential = {
+export type HostServingCredential = {
   hostId: string
   /**
    * The enrollment this credential was minted for, as the control plane names
@@ -74,7 +71,7 @@ export type UserHostedServingCredential = {
  * imported, and a host that serves both kinds would otherwise declare the
  * composition it had at first call forever.
  */
-export type UserHostedServingComposition = {
+export type HostServingComposition = {
   localBaseUrl: string
   sessionAuthority: () => SessionAccessPolicy["sessionAuthority"]
 }
@@ -89,23 +86,13 @@ type ActiveTunnel = {
    */
   status: {
     /**
-     * Whether this workspace's relay connection is actually OPEN, as the
-     * tunnel reports it.
+     * Whether this workspace's relay connection is OPEN, as the tunnel reports
+     * it through `open` / `reconnecting` / `closed` / `auth-failed`.
      *
-     * Holding a fresh credential is not the same as being reachable, and
-     * conflating them is how this surface lied twice. First it kept reporting
-     * `serving: true` after the credential stopped being renewed (fixed by the
-     * lease). Then it reported `serving: true` with NO socket to the relay at
-     * all — verified with `lsof`: zero established connections to the relay's
-     * addresses while this said it was serving, and every client was correctly
-     * told the host was offline. (The cause of that second lie was the
-     * multi-workspace connect the relay rejects outright — see the file
-     * header.)
-     *
-     * The tunnel already emits `open` / `reconnecting` / `closed` /
-     * `auth-failed`. Recording them means the state can answer the question
-     * that actually matters — can a request reach this machine right now —
-     * instead of the question it happened to know the answer to.
+     * A fresh credential is not reachability: with no socket to the relay,
+     * every client is told the host is offline while this process still holds
+     * a live token, so a status surface that answers from the credential alone
+     * says `serving: true` for a machine nothing can reach.
      */
     connected: boolean
   }
@@ -130,20 +117,16 @@ let active: ActiveServing | undefined
  *
  * Every heartbeat ack renews the credential, so a machine that is still
  * beating always replaces this before it fires. If beats stop — the connector
- * child dies, the account goes away, the network drops — the control plane
- * expires the enrollment and refuses to route, and a tunnel left open here
- * would keep this process reporting `serving: true` while the workspace is
- * unreachable. Observed live: the child exited silently, the lease lapsed,
- * and the desktop kept claiming "Serving 2 workspaces" while the phone was
- * correctly told the host was offline.
- *
- * Stopping on lapse makes `serving: true` mean what it says: this machine
- * holds a credential the control plane has renewed recently.
+ * child dies, the network drops — the control plane expires the enrollment and
+ * refuses to route, and a tunnel left open here would keep this process
+ * reporting `serving: true` while the workspace is unreachable. Stopping on
+ * lapse makes `serving: true` mean what it says: this machine holds a
+ * credential the control plane has renewed recently.
  */
 function armLapse(expiresAt: number, context: { hostId: string; relayUrl: string }) {
   return setTimeout(() => {
-    log.warn("user-hosted serving credential lapsed; stopping the relay tunnel", { ...context, expiresAt })
-    stopUserHostedServing()
+    log.warn("host serving credential lapsed; stopping the relay tunnel", { ...context, expiresAt })
+    stopHostServing()
   }, Math.max(0, expiresAt - Date.now()))
 }
 
@@ -163,11 +146,11 @@ function logTunnelEvent(
   event: WorkspaceRelayHostTunnelEvent,
 ) {
   if (event.type === "auth-failed") {
-    log.error("user-hosted serving tunnel auth failed", { ...context, attempt: event.attempt, error: event.error })
+    log.error("host serving tunnel auth failed", { ...context, attempt: event.attempt, error: event.error })
     return
   }
   if (event.type === "reconnecting") {
-    log.warn("user-hosted serving tunnel reconnecting", {
+    log.warn("host serving tunnel reconnecting", {
       ...context,
       attempt: event.attempt,
       delayMs: event.delayMs,
@@ -176,7 +159,7 @@ function logTunnelEvent(
     return
   }
   if (event.type === "closed") {
-    log.info("user-hosted serving tunnel closed", { ...context, reason: event.reason })
+    log.info("host serving tunnel closed", { ...context, reason: event.reason })
   }
 }
 
@@ -191,7 +174,7 @@ function logTunnelEvent(
  * only one that knows the answer — which is why it is passed in here rather
  * than looked up.
  */
-export function userHostedServingState(input: Pick<UserHostedServingComposition, "sessionAuthority">) {
+export function hostServingState(input: Pick<HostServingComposition, "sessionAuthority">) {
   const sessionAuthority = input.sessionAuthority()
   if (!active) return { serving: false as const, sessionAuthority }
   const workspaceIds = [...active.tunnels.keys()].sort()
@@ -216,12 +199,12 @@ export function userHostedServingState(input: Pick<UserHostedServingComposition,
 /**
  * The machine identity and relay this process is serving under, or nothing.
  *
- * Narrower than {@link userHostedServingState} on purpose: a caller that has
+ * Narrower than {@link hostServingState} on purpose: a caller that has
  * to VERIFY a relay-minted token wants only the two facts the token is bound
  * to — the host it was issued for and the relay that signs — and must not be
  * handed a status surface it would then have to ignore most of.
  */
-export function userHostedServingIdentity() {
+export function hostServingIdentity() {
   return active ? { hostId: active.hostId, relayUrl: active.relayUrl } : undefined
 }
 
@@ -235,11 +218,11 @@ export function userHostedServingIdentity() {
  * way serving ends — a withdrawal, a stop, and the lease lapse that stops it
  * with nothing pushed to say so.
  */
-export function userHostedServingEnrollmentId() {
+export function hostServingEnrollmentId() {
   return active?.enrollmentId
 }
 
-export function stopUserHostedServing() {
+export function stopHostServing() {
   const current = active
   active = undefined
   if (!current) return
@@ -247,13 +230,13 @@ export function stopUserHostedServing() {
   for (const entry of current.tunnels.values()) entry.tunnel.close()
 }
 
-export async function setUserHostedServing(
-  credential: UserHostedServingCredential | null,
-  input: UserHostedServingComposition,
+export async function setHostServing(
+  credential: HostServingCredential | null,
+  input: HostServingComposition,
 ) {
   if (!credential || credential.workspaceIds.length === 0) {
-    stopUserHostedServing()
-    return userHostedServingState(input)
+    stopHostServing()
+    return hostServingState(input)
   }
   const relayUrl = normalized(credential.relayUrl)
   const localBaseUrl = normalized(input.localBaseUrl)
@@ -267,7 +250,7 @@ export async function setUserHostedServing(
       || active.relayUrl !== relayUrl
       || active.localBaseUrl !== localBaseUrl)
   ) {
-    stopUserHostedServing()
+    stopHostServing()
   }
 
   const context = { hostId: credential.hostId, relayUrl }
@@ -297,24 +280,24 @@ export async function setUserHostedServing(
 
   // Reconcile the difference only. A workspace that was already being served
   // keeps its open socket — re-dialling every workspace on every heartbeat ack
-  // would drop live sessions twenty times a minute.
+  // would drop live sessions every 20 s.
   const wanted = new Set(workspaceIds)
   for (const [workspaceId, entry] of serving.tunnels) {
     if (wanted.has(workspaceId)) continue
     serving.tunnels.delete(workspaceId)
     entry.tunnel.close()
-    log.info("user-hosted serving tunnel stopped for workspace", { ...context, workspaceId })
+    log.info("host serving tunnel stopped for workspace", { ...context, workspaceId })
   }
   for (const workspaceId of workspaceIds) {
     if (serving.tunnels.has(workspaceId)) continue
     serving.tunnels.set(workspaceId, openWorkspaceTunnel({ serving, workspaceId, context }))
-    log.info("user-hosted serving tunnel started for workspace", {
+    log.info("host serving tunnel started for workspace", {
       ...context,
       workspaceId,
       expiresAt: credential.expiresAt,
     })
   }
-  return userHostedServingState(input)
+  return hostServingState(input)
 }
 
 /** The machine's relay connection FOR ONE WORKSPACE — the relay's room grain. */
@@ -342,7 +325,7 @@ function openWorkspaceTunnel(input: {
       // outright, its OpenCode-compat root family for provider auth/OAuth/
       // project metadata, everything else the workspace runtime itself
       // (`surface.ts` for the full design).
-      const target = userHostedSurface({ localBaseUrl: serving.localBaseUrl, workspaceId, path })
+      const target = hostServingSurface({ localBaseUrl: serving.localBaseUrl, workspaceId, path })
       if (target.kind === "deny") return undefined
       return target.url
     },

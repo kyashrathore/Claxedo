@@ -245,7 +245,6 @@ describe("root pinning", () => {
     const first = await resolveRoots({ cli_roots: [], scope: scope(["/srv/projects", "/srv/other"]) }, filesystem({}))
     expect(first.roots).toEqual(["/srv/other", "/srv/projects"])
 
-    // `/srv/projects` is created as a symlink to a home directory the owner never scoped.
     const later = await resolveRoots(
       { cli_roots: [], scope: scope(["/srv/projects", "/srv/other"]), roots_canonical: first.canonical },
       filesystem({ "/srv/projects": "/home/victim" }),

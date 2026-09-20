@@ -55,12 +55,12 @@ const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
  * `publicKey` and `signature` from the caller and the route stores whatever
  * key it is handed (`enrollBody` in `routes/hosted/host-enrollment.ts`), so a
  * renderer holding this channel could enroll its own keypair under the owner's
- * account and — because `enrollForUser` patches the row for an existing
- * `host_id`, overwriting `public_key` and clearing `paused_at`/`revoked_at` —
- * take over or un-revoke an honest machine. `host.enrollmentNonce` is step one
- * of the same handshake. These stay in the table because main brokers them for
- * the Host Connector child, which fills the key fields itself; the renderer's
- * route to the feature is the connector's zero-argument IPC
+ * account and — because `enrollHost` upserts on (owner, `host_id`),
+ * overwriting `public_key` and clearing `paused_at`/`revoked_at` — take over
+ * or un-revoke an honest machine. `host.enrollmentNonce` is step one of the
+ * same handshake. These stay in the table because main brokers them for the
+ * Host Connector child, which fills the key fields itself; the renderer's
+ * route to the feature is the connector's own `start`, which takes nothing
  * (`host-connector/ipc.ts`). Withheld rather than re-shaped because `account/`
  * must not read the machine key and the child must not see the account
  * credential (`host-connector/child-supervisor.ts`).
@@ -72,8 +72,8 @@ const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
  * Adding a name here narrows and needs no matrix change. Removing one means a
  * renderer surface is about to reach an operation main was reserving: for a
  * result credential, expose the field the surface needs, not the body; for a
- * parameter credential, add a zero-argument operation on the Host Connector's
- * IPC where main supplies the identity.
+ * parameter credential, add an operation on the Host Connector's IPC that
+ * carries data only, where main supplies the identity.
  */
 export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
   "account.cliExchange",

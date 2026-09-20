@@ -27,7 +27,7 @@ import {
   type SessionAccessDecision,
 } from "@claxedo/workspace-runtime"
 import { createRelayHostTokenVerifier } from "@claxedo/workspace-runtime/relay"
-import { userHostedServingIdentity } from "@claxedo/host-serving/serving"
+import { hostServingIdentity } from "@claxedo/host-serving/serving"
 import type { RuntimeProxyOptions } from "../../workspace/runtime-dispatch/internals"
 import { embeddedWorkspaceRuntimeHoldsSession } from "./embedded-workspace-runtime"
 
@@ -53,7 +53,7 @@ export function setLocalHostEndpoints(next: LocalHostEndpoints | undefined) {
 function relayKeySetUrl() {
   const declared = endpoints.relayJwksUrl?.trim()
   if (declared) return declared
-  const serving = userHostedServingIdentity()
+  const serving = hostServingIdentity()
   return serving ? `${serving.relayUrl.replace(/\/+$/, "")}/.well-known/jwks.json` : undefined
 }
 
@@ -80,7 +80,7 @@ export const localHostRelayActor: NonNullable<RuntimeProxyOptions["resolveRelayA
   request,
   workspaceId,
 ) => {
-  const serving = userHostedServingIdentity()
+  const serving = hostServingIdentity()
   if (!serving) return undefined
   const token = relayBearer(request.headers.get("authorization"))
   if (!token) return undefined

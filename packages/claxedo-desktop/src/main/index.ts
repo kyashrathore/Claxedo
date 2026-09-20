@@ -659,18 +659,17 @@ const account = setupLazyAccount({
     agentPluginsSync?.follow(next)
     // Remote access follows the account, in BOTH directions.
     //
-    // Stopping on auth loss is the fail-closed half and stays exactly as
-    // strict: the moment the account is not signed, this machine stops
-    // beating with a credential the deployment may have revoked.
+    // Stopping on auth loss is the fail-closed half: the moment the account is
+    // not signed, this machine stops beating with a credential the deployment
+    // may have revoked.
     //
-    // The other half is what a two-second control-plane blip cost. A descriptor
-    // 503 puts the account in `unavailable`, the connector stopped, the 60s
-    // enrollment lease expired, and every client was told this machine was
-    // offline — with nothing in `main.log`, nothing in the panel, and no way
-    // back short of the user finding the toggle. `suspendForAuthLapse` records
-    // that the stop was not a decision so the return trip can undo it, and only
-    // it: a user pause or revoke clears that flag inside the supervisor, so
-    // "the user turned it off" is never auto-undone by a later sign-in.
+    // The other half covers a control-plane blip. A descriptor 503 of a couple
+    // of seconds puts the account in `unavailable`, the connector stops, the
+    // 60s enrollment lease expires, and every client is told this machine is
+    // offline. `suspendForAuthLapse` records that the stop was not a decision
+    // so the return trip can undo it, and only it: a user pause or revoke
+    // clears that flag inside the supervisor, so "the user turned it off" is
+    // never auto-undone by a later sign-in.
     const follow = remoteAccessFollow(previous, next)
     if (follow === "suspend") {
       if (hostConnector?.suspendForAuthLapse()) {
@@ -697,29 +696,6 @@ const account = setupLazyAccount({
   },
 })
 
-/**
- * Machine remote access, constructed but NOT started.
- *
- * Constructing mints no key, writes nothing and sends no traffic — that all
- * happens in `start()`. So an unsigned launch, which is most launches, enrolls
- * nothing and leaves no machine identity on disk.
- *
- * This file still never calls `start()`, and that is the point rather than an
- * omission: enrolling because an account happens to be signed in would be the
- * desktop deciding to publish the user's laptop for them. The trigger now
- * exists, and it is `registerHostConnectorIpc` below — one named operation that
- * only runs when the user presses Enable in the Remote Access surface.
- * `ipc-caller-guard.wiring.test.ts` holds the entry to that: it asserts this
- * file contains no `.start(` call at all.
- *
- * The machine's label is chosen HERE, not sent from the renderer. It is main
- * that signs the enrollment, so main names the thing it is signing for, and a
- * renderer asked to name the machine can only describe the browser it is. The
- * derivation is `@claxedo/helpers/machine-name`, shared with the self-hosted
- * node so one machine gets one name however it publishes itself. An owner's
- * rename outranks it and is what `electron-child.ts` stores. Neither is the
- * machine's identity, which is the key in `identity-store.ts`.
- */
 /**
  * The last ack's serving facts, retained so a daemon that becomes ready AFTER
  * the first ack still starts serving immediately — with the addresses that ack
@@ -756,6 +732,28 @@ void account.ready.then(() => agentPluginsSync?.follow(account.state()))
 
 const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig))
 
+/**
+ * Machine remote access, constructed but NOT started.
+ *
+ * Constructing mints no key, writes nothing and sends no traffic — that all
+ * happens in `start()`. So an unsigned launch, which is most launches, enrolls
+ * nothing and leaves no machine identity on disk.
+ *
+ * Nothing in this file calls `start()`: enrolling because an account happens
+ * to be signed in would be the desktop deciding to publish the user's laptop
+ * for them. The only trigger is `registerHostConnectorIpc` below — one named
+ * operation that runs when the user presses Enable in the Remote Access
+ * surface. `ipc-caller-guard.wiring.test.ts` asserts this file contains no
+ * `.start(` call.
+ *
+ * The machine's label is chosen HERE, not sent from the renderer. It is main
+ * that signs the enrollment, so main names the thing it is signing for, and a
+ * renderer asked to name the machine can only describe the browser it is. The
+ * derivation is `@claxedo/helpers/machine-name`, shared with the self-hosted
+ * node so one machine gets one name however it publishes itself. An owner's
+ * rename outranks it and is what `electron-child.ts` stores. Neither is the
+ * machine's identity, which is the key in `identity-store.ts`.
+ */
 hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name, params),
   // The machine beats with its own key from the enrollment onward, so the
@@ -809,7 +807,7 @@ hostConnector = setupElectronHostConnector({
   },
 })
 
-/** The two facts the connector's own state cannot carry. See `status-channel.ts`. */
+/** The facts the connector's own state cannot carry. See `status-channel.ts`. */
 function hostConnectorContext() {
   return {
     available: hostConnector !== undefined,

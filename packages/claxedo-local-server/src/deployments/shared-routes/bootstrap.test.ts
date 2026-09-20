@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
-import { BootstrapRoutes, signedBootstrapProjects } from "./bootstrap"
+import { BootstrapRoutes } from "./bootstrap"
 
 const root = path.join(os.tmpdir(), `claxedo-bootstrap-route-${Date.now()}-${Math.random().toString(16).slice(2)}`)
 const previous = {
@@ -21,6 +21,29 @@ afterAll(async () => {
   else process.env.CLAXEDO_STATE_DIR = previous.CLAXEDO_STATE_DIR
   await fs.rm(root, { recursive: true, force: true })
 })
+
+const signedAuth = {
+  authConfig: { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" },
+  verifier: async (token: string) => ({
+    mode: "signed" as const,
+    user: { subject: token, issuer: "https://auth.test", tokenIdentifier: token },
+  }),
+}
+
+async function signedBootstrap(input: {
+  workspaces?: unknown[]
+  hostAggregateEvents?: boolean
+  hostEnrollmentId?: () => string | undefined
+} = {}) {
+  return await BootstrapRoutes({
+    ...signedAuth,
+    hostAggregateEvents: input.hostAggregateEvents ?? false,
+    ...(input.hostEnrollmentId ? { hostEnrollmentId: input.hostEnrollmentId } : {}),
+    services: {
+      authority: { listWorkspaces: async () => input.workspaces ?? [] },
+    } as unknown as ControlPlaneServicesContract,
+  }).request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
+}
 
 describe("BootstrapRoutes", () => {
   test("returns only Claxedo-owned bootstrap fields", async () => {
@@ -107,83 +130,68 @@ describe("BootstrapRoutes", () => {
   })
 
   test("declares it in the signed body too", async () => {
-    const options = {
-      authConfig: { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" },
-      verifier: async (token: string) => ({
-        mode: "signed" as const,
-        user: { subject: token, issuer: "https://auth.test", tokenIdentifier: token },
-      }),
-      services: { authority: { listWorkspaces: async () => [] } } as unknown as ControlPlaneServicesContract,
-    }
-
-    const response = await BootstrapRoutes({ ...options, hostAggregateEvents: false })
-      .request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
+    const response = await signedBootstrap()
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ events: { hostAggregate: false } })
   })
 
   test("the signed body states the machine too", async () => {
-    const options = {
-      authConfig: { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" },
-      verifier: async (token: string) => ({
-        mode: "signed" as const,
-        user: { subject: token, issuer: "https://auth.test", tokenIdentifier: token },
-      }),
-      services: { authority: { listWorkspaces: async () => [] } } as unknown as ControlPlaneServicesContract,
-    }
-
-    const response = await BootstrapRoutes({
-      ...options,
-      hostAggregateEvents: false,
-      hostEnrollmentId: () => "enr_node",
-    }).request("http://control.example/api/claxedo/bootstrap", { headers: { authorization: "Bearer owner" } })
+    const response = await signedBootstrap({ hostEnrollmentId: () => "enr_node" })
 
     await expect(response.json()).resolves.toMatchObject({ host: { enrollment: "enr_node" } })
   })
 })
 
-describe("signedBootstrapProjects", () => {
-  // Every row a SIGNED bootstrap answers with is a control-plane workspace, so
-  // it is relay-backed and is ADDRESSED by its id. The serving host's path is
-  // location metadata about another machine: stating it as `directory` makes
-  // `workspaceRouteIdentity` resolve a `/w/<id>` route to a path this app
-  // cannot reach, its panes register that path as their scope, and every live
-  // frame — which both event lanes publish under `workspace:<id>` — is dropped
+describe("the signed bootstrap project inventory", () => {
+  // A control-plane row is ADDRESSED by its id; the serving host's path is
+  // placement metadata. Stated as `directory`, it would make
+  // `workspaceRouteIdentity` resolve a `/w/<id>` route to a filesystem path,
+  // the panes would register that path as their scope, and every live frame —
+  // which both event lanes publish under `workspace:<id>` — would be dropped
   // for the mismatch.
-  test("addresses a relay-backed workspace by id and keeps the host path as remote_directory", () => {
-    expect(signedBootstrapProjects([
-      {
-        workspace_id: "ws_1",
-        project_id: "proj_1",
-        workspace_name: "Main",
-        backing: "local-worktree",
-        remote_directory: "/Users/host/repo",
-      },
-    ])).toEqual([
-      {
-        id: "proj_1",
-        name: "proj_1",
-        worktree: "ws_1",
-        sandboxes: ["ws_1"],
-        workspaces: {
-          ws_1: {
-            id: "ws_1",
-            kind: "user-hosted",
-            workspace_name: "Main",
-            directory: "workspace:ws_1",
-            remote_directory: "/Users/host/repo",
+  test("addresses a control-plane row by id and keeps the host path as remote_directory", async () => {
+    const response = await signedBootstrap({
+      workspaces: [
+        {
+          workspace_id: "ws_1",
+          project_id: "proj_1",
+          workspace_name: "Main",
+          backing: "local-worktree",
+          remote_directory: "/Users/host/repo",
+        },
+      ],
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      project: [
+        {
+          id: "proj_1",
+          name: "proj_1",
+          worktree: "ws_1",
+          sandboxes: ["ws_1"],
+          workspaces: {
+            ws_1: {
+              id: "ws_1",
+              backing: "local-worktree",
+              workspace_name: "Main",
+              directory: "workspace:ws_1",
+              remote_directory: "/Users/host/repo",
+            },
           },
         },
-      },
-    ])
+      ],
+    })
   })
 
-  test("omits remote_directory when the row carries no host path", () => {
-    const [project] = signedBootstrapProjects([{ workspace_id: "ws_2", backing: "cloud-vm" }])
-    expect(project?.workspaces.ws_2).toEqual({
+  test("omits remote_directory when the row carries no host path", async () => {
+    const response = await signedBootstrap({ workspaces: [{ workspace_id: "ws_2", backing: "cloud-vm" }] })
+
+    const body = await response.json() as { project: Array<{ workspaces: Record<string, unknown> }> }
+    expect(body.project[0]?.workspaces.ws_2).toEqual({
       id: "ws_2",
-      kind: "cloud",
+      backing: "cloud-vm",
       workspace_name: "ws_2",
       directory: "workspace:ws_2",
     })

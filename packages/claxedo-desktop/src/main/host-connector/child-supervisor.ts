@@ -258,11 +258,11 @@ export function setupHostConnectorChild(input: {
   /**
    * The one launch waiting for its child to finish enrolling.
    *
-   * The bootstrap reply now means "alive, with an identity", so the enrollment
-   * outcome arrives later on the push channel. This is where `launch` parks
-   * until the child's first non-idle status — enrolled, or stopped with the
-   * connector's own detail — so `start()` still resolves on a decided machine
-   * rather than on a spawned process.
+   * The bootstrap reply means "alive, with an identity"; the enrollment
+   * outcome arrives later on the push channel. `launch` parks here until the
+   * child's first non-idle status — enrolled, or stopped with the connector's
+   * own detail — so `start()` resolves on a decided machine rather than on a
+   * spawned process.
    */
   let enrolling: { target: HostConnectorChildProcess; waiting: PendingRequest } | undefined
 
@@ -512,6 +512,13 @@ export function setupHostConnectorChild(input: {
         target.kill()
       }
       if (child === target) child = undefined
+      // The child is killed in the same breath as the stop it was posted, so
+      // it never drains a final beat and the control plane never withdraws
+      // the credential. Without this the daemon keeps dialing the relay and
+      // answering relayed reads until the Host Tunnel Token's lease lapses —
+      // up to `CLAXEDO_HOST_TUNNEL_TOKEN_TTL_SECONDS`, bounded at 30 minutes —
+      // after a sign-out, a pause or a revoke.
+      input.onServing?.({ tunnel: null })
     }
     rejectPending(new Error(detail))
     settle({ status: "stopped", reason, detail })

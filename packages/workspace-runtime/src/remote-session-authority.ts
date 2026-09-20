@@ -75,8 +75,7 @@ export function remoteWorkspaceSessionAccessPolicy(
    * response, an unreadable success body — is an `AuthorityDenial`, and that is
    * a member of all four decision types the policy hooks return. Only the
    * success shape varies by action, so the caller supplies the decoder for it
-   * and the return type comes out exact. Previously one function returned the
-   * union of all four and nine call sites asserted their way back out of it.
+   * and the return type comes out exact instead of a union of all four.
    */
   const request = async <T>(
     input: AuthorityRequestInput,
@@ -203,8 +202,8 @@ export function remoteWorkspaceSessionAccessPolicy(
 /**
  * What a transport call actually reads: the session it is about plus the proof,
  * cancellation and registration fields. Narrower than `SessionAuthorityInput`
- * on purpose — the registration hooks carry no `actor`, and typing the request
- * as if they did is what forced three `as SessionAuthorityInput` casts.
+ * on purpose: the registration hooks carry no `actor`, so typing the request
+ * with it would put a cast at each of them.
  */
 type AuthorityRequestInput = SessionAccessPolicyInput & { sessionId: string }
 

@@ -34,13 +34,22 @@ Org roles are `member`, `admin`, and `owner`. Team roles are `member`, `admin`,
 and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. A
 workspace role is computed from membership, never handed to one person by
 another: the workspace's owner is `owner`, and everyone else holds the highest
-of their `project_memberships` row, their org standing (org owner or admin
-reads as workspace `admin`, org member as `viewer` unless the workspace
-withholds org-member visibility), and the best
+of their `project_memberships` row, their org role (an org member's `viewer`
+is withheld when the workspace's `org_member_visible` is 0), and the best
 `team_project_grants` row of a team they are on in that org
-(`workspaceRoleForUser` on SQLite, `workspaceAccessSql` on D1). A workspace
-folder is not a thing a person is added to, so there is no membership row of
-its own.
+(`workspaceRoleForUser` in
+`packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority-store.ts`,
+`workspaceAccessSql` in
+`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`).
+
+What that role is FOR: seeing that the workspace's placement exists (which
+machine it runs on, its directory there), the workspace-scoped surfaces
+the Relay Host Token has always gated (files, terminals, processes, git),
+and being offerable a session share. An organization is a grouping of
+people. It is not an execution environment and it grants nothing on any
+machine, runtime or workspace folder: there is no concept of adding a
+member to a machine or a folder, no membership row on a workspace, and no
+rank on an organization or a workspace that admits a person to a session.
 
 The workspace role stops at the session. A session share, at level `follow` or
 `send`, is the only grant one person makes to another, and it is the whole
@@ -76,11 +85,11 @@ alternate clients cannot bypass the rule.
 
 Session privacy protects transcript-derived content: metadata, messages,
 prompts, tool activity, questions, permissions, checkpoints, and live or
-replayed session events. Files and working-tree edits remain governed by
-workspace access and are visible to workspace members; a `send` share on a
-user-hosted workspace's session is the consent that exposes that machine's
-execution surface to the grantee, which is why the People control asks the
-granter to acknowledge it.
+replayed session events. Files and working-tree edits remain governed by the
+workspace role; a `send` share on a session whose workspace is placed on a
+machine is the consent that exposes that machine's execution surface to the
+grantee (the agent runs with that machine's files), which is why the People
+control asks the granter to acknowledge it before a `send` grant.
 
 ## Actor identity and attribution
 
@@ -124,10 +133,23 @@ derives actor and workspace only from signed claims. An expired proof terminates
 the stream before its next session-derived event. The client reconnects with a
 fresh RAT/RHT and resumes through `Last-Event-ID`.
 
-Self-hosted caller-owned embedded runtimes are the explicit local policy scope:
-they preserve unsigned single-user behavior and do not become a managed
-multiplayer boundary. Relay- and private-network-exposed runtimes require the
-authority-backed policy and fail closed when the oracle is unavailable.
+A runtime's `sessionAuthority` marker (`local` or `managed-private`,
+`packages/workspace-runtime/src/session-access-policy.ts`) is a declaration
+of how it was composed, carried on the host's heartbeat and read by clients
+to know whether a session must be reserved first. It decides nothing about a
+request. What decides registration, turn admission and event privacy is the
+request's provenance, `sessionRequestProvenance`: `loopback-direct` is the
+machine's own user and gets the local-owner lifecycle; `relay-replayed` is a
+caller the relay verified and gets the private-session lifecycle through the
+control plane's authority, which fails closed when that authority is
+unavailable. A desktop daemon that publishes its workspaces mounts one policy
+for both (`localHostSessionAccessPolicy`,
+`packages/claxedo-local-server/src/deployments/local/host-session-authority.ts`)
+and stamps provenance at ingress
+(`workspace/runtime-dispatch/ingress-provenance.ts`): a request that claims
+to have come through the relay but cannot be verified is refused, never
+treated as local. A cloud sandbox's runtime admits nobody without a verified
+actor.
 
 ## Client authority continuity
 
@@ -136,8 +158,9 @@ placement returned by the managed boundary:
 
 - a central session carries an explicit `central:<session-id>` reference plus
   its authoritative workspace id;
-- workspace-runtime sessions keep their signed workspace backing, while local
-  sessions keep their filesystem transport directory;
+- a session on a workspace another host serves keeps its signed workspace
+  backing (`workspace:<id>`), while a session on a directory the attached
+  server serves itself keeps that filesystem directory;
 - direct-route resolution opens an explicit central session through the central
   transport instead of reclassifying it from a tool-sandbox directory;
 - session resource and hydration keys include transport authority so cached
@@ -191,12 +214,17 @@ notices only (provision, worktree readiness, document and session-share
 doorbells, a workspace's inventory change), never a session's content; hosted, `eventVisibleTo` filters each
 notice per subscriber by the authority-internal org id and, for share
 doorbells, the recipient. A workspace runtime's `GET /api/wr/events` carries
-that runtime's session frames: a principal the workspace authority admits reads
-it unscoped and the session authority decides per session what reaches it (the
-workspace's owner is not special); a principal it refuses is answered 403 and
-reopens one session under a lease. On a loopback local daemon the workspace
-stream is unmanaged and follows the explicit local policy described above;
-that local boundary is not presented as private multiplayer isolation.
+that runtime's session frames, and the arm is decided per request
+(`authorizeSessionEventScope`,
+`packages/workspace-runtime/src/routes/session-event-privacy.ts`): a
+`loopback-direct` request reads the whole stream, because it is the
+machine's own user; a `relay-replayed` principal the workspace authority
+admits reads it unscoped and the session authority decides per session what
+reaches it (the workspace's owner is not special); one it refuses is
+answered 403 `workspace_event_stream_denied` and reopens one session under a
+lease. The daemon's host aggregate (`wr/events` with no workspace named,
+declared in its bootstrap body as `events.hostAggregate`) refuses any reader
+that is not loopback-direct.
 
 Invite and accept UI, org and team switching, personal-to-org workspace transfer,
 participant and session-share management UI, and presence UI are tracked product
