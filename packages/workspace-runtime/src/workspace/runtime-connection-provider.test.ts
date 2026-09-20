@@ -48,6 +48,22 @@ function adapter(): AgentHarnessAdapter {
   }
 }
 
+function nativeAdapter(harnessId: string): AgentHarnessAdapter {
+  return {
+    ...adapter(),
+    async createSession(directory: string, title?: string, id?: string) {
+      return { id: id ?? "native-session", ...(title ? { title } : {}), directory, time: { created: 10, updated: 10 } }
+    },
+    async getSessionConfig() { return { harness: { id: harnessId, access: "native" as const }, variant: null, agent: null } },
+    async updateSessionConfig(_binding: AgentExecutionBinding, update: { harness?: { id: string; access: "native" | "connection" } }) {
+      return { harness: update.harness ?? { id: harnessId, access: "native" as const }, variant: null, agent: null }
+    },
+    readHarnessCapabilities() {
+      return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none" as const, harness: harnessId }
+    },
+  }
+}
+
 describe("WorkspaceRuntime generic connection selection", () => {
   test("concurrent duplicate resolutions await rejected loser teardown without returning the cached adapter", async () => {
     const root = await mkdtemp(join(tmpdir(), "workspace-runtime-loser-"))
@@ -232,6 +248,48 @@ describe("WorkspaceRuntime generic connection selection", () => {
     expect(createdWith).toEqual(["lease-one", "lease-two"])
     expect(disposed).toContain("lease-one")
     await host.dispose()
+  })
+
+  test("a connection default handed at creation applies its first snapshot and still serves a native session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-creation-default-"))
+    roots.push(root)
+    const provider: ConnectionProvider<Record<string, never>> = {
+      providerKey: "fixture",
+      validateConfig: () => ({}),
+      project: () => ({ label: "Fixture", readiness: "ready", capabilities }),
+      resolve: () => ({ config: {} }),
+      createAdapter: adapter,
+    }
+    const target = { workspaceId: "ws-creation-default", directory: root }
+    const host = createWorkspaceHost({
+      target,
+      storeRoot: join(root, "store"),
+      connectionProviders: [provider],
+      harness: { kind: "connection", connectionId: "fixture-primary" },
+      harnesses: [{ match: (runner) => runner.access === "native", create: ({ runner }) => nativeAdapter(runner.id) }],
+    })
+    const app = new Hono()
+    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
+    try {
+      await host.apply({
+        version: 4,
+        mcp: {},
+        auth: {},
+        connections: [{ connectionId: "fixture-primary", providerKey: "fixture", configRevision: 1, enabled: true, config: {} }],
+        defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
+      })
+      expect(host.detail()).toMatchObject({
+        state: "ready",
+        harness: { kind: "connection", connectionId: "fixture-primary" },
+        configApply: { state: "applied" },
+      })
+      const created = await withWorkspaceTarget(target, () => app.request(
+        `http://runtime.test/session?directory=${encodeURIComponent(root)}&nativeHarness=codex`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "native-one" }) },
+      ))
+      expect(created.status, await created.clone().text()).toBe(201)
+      expect(await created.json()).toMatchObject({ id: "native-one" })
+    } finally { await host.dispose() }
   })
 
   test("leaves default selection unresolved when policy omits it", async () => {

@@ -653,7 +653,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         subagentStore().markPublished(parentSessionId, observationId),
     },
   }
-  let runner = options.harness ? runnerForSelection(options.harness) : undefined
+  // Only a native selection is runnable on its own. A connection's provider,
+  // command and revision live in a descriptor that arrives with a snapshot, so
+  // a connection default stays a selection until `applySnapshot` resolves it.
+  let runner = options.harness?.kind === "native" ? runnerForSelection(options.harness) : undefined
   let state: "ready" | "applying" | "error" = "ready"
   let err = ""
   let enabled = false
