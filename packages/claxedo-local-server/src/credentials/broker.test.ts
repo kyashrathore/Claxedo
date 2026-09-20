@@ -712,6 +712,87 @@ describe("local binding authority", () => {
     }
   })
 
+  /**
+   * The projected row is what a runtime compares to decide whether its config
+   * moved at all, and an apply that finds it moved restarts the harness
+   * processes under it. A placeholder minted per call differs across every
+   * wall-clock second — the token's `iat` and `exp` are whole seconds — so
+   * every dispatched request looked like a credential change and took any
+   * session whose harness had not written its file yet down with it.
+   */
+  test("a projection within the placeholder's life hands back the row already in the harness", async () => {
+    await activeRow("sk-ant-api03-stable")
+    let clock = Date.now()
+    const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    clock += 1_000
+    const nextSecond = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    clock += 29 * 60_000
+    const later = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    expect(nextSecond).toEqual(first)
+    expect(later).toEqual(first)
+  })
+
+  test("a placeholder past half its life is re-minted, and the one the harness holds spends until then", async () => {
+    await activeRow("sk-ant-api03-half-life")
+    let clock = Date.now()
+    const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    clock += 31 * 60_000
+    const renewed = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    expect(renewed.placeholder).not.toBe(first.placeholder)
+    expect(renewed.expiresAt).toBe(clock + 60 * 60 * 1000)
+    expect(renewed.baseUrl).toBe(first.baseUrl)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      // A replacement reaches the harness at its next turn boundary, so a turn
+      // already running on the previous placeholder has to keep spending it.
+      const turn = (placeholder: string) => local.handler(new Request(`${first.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": placeholder },
+      }))
+      expect((await turn(first.placeholder)).status).toBe(200)
+      expect((await turn(renewed.placeholder)).status).toBe(200)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a switch re-mints inside the placeholder's life and refuses the one it replaces", async () => {
+    await activeRow("sk-ant-api03-stable-switch-first")
+    let clock = Date.now()
+    const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    await activeRow("sk-ant-api03-stable-switch-second")
+    clock += 1_000
+    const switched = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    expect(switched.placeholder).not.toBe(first.placeholder)
+    const realFetch = globalThis.fetch
+    const spent: string[] = []
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      spent.push(new Headers(init?.headers).get("x-api-key") ?? "")
+      return new Response("{}")
+    }) as typeof fetch
+    try {
+      const turn = (placeholder: string) => local.handler(new Request(`${first.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": placeholder },
+      }))
+      expect((await turn(first.placeholder)).status).toBe(403)
+      expect((await turn(switched.placeholder)).status).toBe(200)
+      expect(spent).toEqual(["sk-ant-api03-stable-switch-second"])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   test("each workspace's lease moves on once per switch, so re-projecting one leaves another's new placeholder valid", async () => {
     await activeRow("sk-ant-api03-lease-first")
     const local = broker()
