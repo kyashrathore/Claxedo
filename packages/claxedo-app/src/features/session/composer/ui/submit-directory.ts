@@ -297,14 +297,13 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
   }
 
   let logs: NonNullable<CloudStartupState["logs"]> = []
-  // `overlay: false` suppresses the submit-time cloud-startup overlay
-  // (`onCloudStartup`) while still remembering the last state for the harness
-  // handoff (`onPublish`). User-hosted workspaces own their connection UI via
-  // WorkspaceGate (see resolveSubmitDirectory's comment), so surfacing the
-  // overlay here would double up — and worse, strand it: the overlay's clear
-  // path (`clearCloudStartup`) is gated to `hostKind === "provisioner"` in
-  // submit.ts, so an overlay opened for a machine submit is NEVER closed and
-  // permanently masks the session timeline once the send navigates.
+  // `overlay: false` publishes a state to the harness handoff (`onPublish`)
+  // without opening the submit-time startup overlay (`onCloudStartup`). A
+  // machine-placed workspace shows its connection through WorkspaceGate (see
+  // resolveSubmitDirectory), so an overlay here would double up — and strand:
+  // the overlay's clear path (`clearCloudStartup`) in submit.ts runs only for
+  // `hostKind === "provisioner"`, so an overlay opened for a machine submit is
+  // never closed and masks the session timeline once the send navigates.
   const publish = (state: Omit<CloudStartupState, "open">, opts?: { overlay?: boolean }) => {
     const next = {
       logs,

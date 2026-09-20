@@ -19,7 +19,7 @@ function query(search: string) {
 
 describe("signedSessionList", () => {
   /**
-   * The registry only ever receives sessions created THROUGH it. A user-hosted
+   * The registry only ever receives sessions created THROUGH it. A machine-placed
    * workspace's host holds the rest, so this read must name the runtime as the
    * authority rather than answer a truncated list the client cannot tell apart
    * from an empty workspace.
@@ -65,7 +65,7 @@ describe("signedSessionList", () => {
 
   /**
    * A project can hold both kinds. The registry answers for its cloud
-   * workspaces; the user-hosted ones are read by the client over their own
+   * workspaces; the machine-placed ones are read by the client over their own
    * relay, so listing them here would render a truncated duplicate.
    */
   test("omits a project's machine-placed workspaces from the registry union", async () => {

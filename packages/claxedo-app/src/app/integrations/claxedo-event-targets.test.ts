@@ -170,8 +170,8 @@ describe("claxedoEventStreamTargets", () => {
 
   test("a server that declares no aggregate hands a workspace on this machine its own stream, loopback or not", () => {
     // The self-hosted node runs its embedded issuer on localhost and mounts no
-    // aggregate when it does. Reading the URL alone would leave every local
-    // workspace with no stream at all behind a route that answers nothing.
+    // aggregate when it does. Reading the URL alone would leave every workspace
+    // the node embeds with no stream at all behind a route that answers nothing.
     const forServer = (serverUrl: string, accountSigned: boolean) => claxedoEventStreamTargets({
       hostAggregate: false,
       serverUrl,
@@ -221,7 +221,7 @@ describe("claxedoEventStreamTargets", () => {
     // What Tier R's daemon answers before its workspace store has registered
     // the worktree: a project with a worktree and no `workspaces` map at all.
     // The daemon serves the paths on its OWN machine, so a path is local by
-    // construction and only a catalog entry naming one cloud or user-hosted is
+    // construction, and only a catalog entry placing one elsewhere makes it
     // another machine's runtime.
     const directory = "/private/var/folders/claxedo-tier-real-two-streams"
     const input = {
@@ -248,9 +248,9 @@ describe("claxedoEventStreamTargets", () => {
 
   test("a workspace the catalog lists as local rides the aggregate even under a relay-shaped id", () => {
     // `sessionWorkspaceRuntimeRef` calls a `ws_`-shaped id optimistically
-    // relay-backed, and the daemon serves a local workspace on the
-    // relay-shaped path all the same: the scoped stream would be the
-    // aggregate's own frames a second time.
+    // relay-backed, but the daemon serves a workspace it embeds under that id
+    // all the same: a scoped stream would be the aggregate's own frames a
+    // second time.
     expect(claxedoEventStreamTargets({
       hostAggregate: true,
       serverUrl: "http://127.0.0.1:3001",
@@ -463,7 +463,6 @@ describe("eventStreamFetch", () => {
       // Mint the relay connection for the workspace.
       if (url.includes("/api/workspace/ws_events_relay/connection")) {
         return new Response(JSON.stringify({
-          access: "user-hosted",
           backing: "local-worktree",
           role: "owner",
           workspaceId: "ws_events_relay",
@@ -519,8 +518,8 @@ describe("eventStreamFetch", () => {
       const request = input instanceof Request ? input : new Request(input, init)
       if (request.url.includes("/api/workspace/ws_reconnect/connection")) {
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           role: "editor",
           workspaceId: "ws_reconnect",
           relayUrl: "https://relay.events.test",
@@ -656,8 +655,8 @@ describe("eventStreamFrameAddress", () => {
     }
   })
 
-  // A local workspace is served by this surface's own runtime over loopback, so
-  // its path IS this machine's and every consumer is keyed by it.
+  // `hostKind: "self"` means this surface's own runtime serves the workspace
+  // over loopback, so its path IS this machine's and every consumer is keyed by it.
   test("leaves the paths of a workspace on this machine alone", () => {
     const address = eventStreamFrameAddress({
       kind: "wr",

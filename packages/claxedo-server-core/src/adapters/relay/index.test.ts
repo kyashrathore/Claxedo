@@ -225,7 +225,6 @@ describe("control-plane relay provider", () => {
         ? {
             found: true as const,
             baseUrl: "https://runtime.test/ws_1",
-            access: "cloud" as const,
             backing: "cloud-vm" as const,
           }
         : {
@@ -244,7 +243,6 @@ describe("control-plane relay provider", () => {
       workspaceId: "ws_1",
       hostId: "host_ready",
       baseUrl: "https://runtime.test/ws_1",
-      access: "cloud",
       backing: "cloud-vm",
     })
     await expect(provider.resolveTarget("ws_1", "host_missing")).resolves.toBeUndefined()

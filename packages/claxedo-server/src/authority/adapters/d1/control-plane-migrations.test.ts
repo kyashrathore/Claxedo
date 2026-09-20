@@ -355,8 +355,8 @@ describe("session share levels", () => {
   })
 })
 
-describe("user-hosted directory normalization", () => {
-  test("rewrites every absolute POSIX directory of a user-hosted row to its normalized form and nothing else", async () => {
+describe("machine-placed directory normalization", () => {
+  test("rewrites every absolute POSIX directory of a machine-placed row to its normalized form and nothing else", async () => {
     const target = await database()
     await apply(target, CONTROL_PLANE_MIGRATIONS.slice(
       0,

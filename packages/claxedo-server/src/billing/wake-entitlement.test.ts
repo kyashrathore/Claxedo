@@ -8,8 +8,8 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
  * wake/resume — the sandbox-lease acquisition choke point — not only at create.
  * A canceled subscription must not keep an existing cloud workspace wake-able.
  * The gate sits in `hostedConnectionInfo` (the hosted `/:id/connection` path
- * that drives `sandboxManager.ensure`), guarded on backing=cloud-vm/access=cloud
- * so self-host / local never see it, and composed only via `HostedWorkspaceRoutes`
+ * that drives `sandboxManager.ensure`), guarded on backing=cloud-vm so
+ * self-host / local never see it, and composed only via `HostedWorkspaceRoutes`
  * in hosted-core-app.ts.
  */
 

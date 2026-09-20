@@ -139,7 +139,7 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
   // turns on the runtime's durable prompt admission (`acquireManagedPromptLease`,
   // workspace-runtime routes/session-core.ts), and a policy with no turn
   // callbacks answers every prompt 503 `session_turn_authority_unavailable` —
-  // a user-hosted host that can authorize a turn and never run one.
+  // a machine-placed host that can authorize a turn and never run one.
   test("admits a turn through the same owner the HTTP oracle serves", async () => {
     const acquireSessionTurn = vi.fn(async () => turnLease)
     const releaseSessionTurn = vi.fn(async () => ({

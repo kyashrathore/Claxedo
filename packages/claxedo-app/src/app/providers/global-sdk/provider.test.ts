@@ -31,11 +31,12 @@ describe("global sdk stream bridge", () => {
   })
 
   test("a workspace the inventory knows is local is never relay-routed, explicit id or not", () => {
-    // Every claxedo workspace carries a uuid, local ones included, so a session
-    // row's `workspaceId` is not evidence of a relay. Routing a local workspace
-    // at the relay answers `401 Workspace connection failed` forever, and the
-    // SDK reports that as `data: undefined` — indistinguishable, to the rail's
-    // status batch, from "no session is active".
+    // Every claxedo workspace carries a uuid, the ones this server serves
+    // included, so a session row's `workspaceId` is not evidence of a relay.
+    // Routing a loopback-served workspace at the relay answers `401 Workspace
+    // connection failed` forever, and the SDK reports that as `data: undefined`
+    // — indistinguishable, to the rail's status batch, from "no session is
+    // active".
     const projects = [
       {
         worktree: "/repo/local",
@@ -57,8 +58,9 @@ describe("global sdk stream bridge", () => {
       directory: "/repo/local",
       workspaceId: "ws_local",
     }))).toBeUndefined()
-    // An id the inventory cannot place keeps the optimistic fallback: a cloud
-    // workspace whose projects have not loaded yet still reaches its relay.
+    // An id the inventory cannot place keeps the optimistic fallback: a
+    // workspace another machine serves still reaches its relay before its
+    // projects have loaded.
     expect(globalSdkClientWorkspaceId(projects, {
       directory: "/repo/other",
       workspaceId: "ws_unknown",

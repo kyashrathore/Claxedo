@@ -4,8 +4,6 @@ import { legacyDirectoryRouteKey, workspaceSessionRoute } from "@/platform/ident
 
 describe("groupNavigateUrlSync", () => {
   test("syncs when a workspace-session target switches to a different workspace than the URL", () => {
-    // The behavior-5 regression: URL pinned to the auto-adopted local workspace,
-    // in-pane navigation targets the cloud workspace's session root.
     expect(
       groupNavigateUrlSync({
         targetPath: workspaceSessionRoute("ws_core_harness_cloud"),

@@ -14,7 +14,7 @@ import {
   type RelayFixtureInfo,
   type RunningRelayFixture,
   type RunningWebApp,
-  type SignedRelayAccess,
+  type SignedRelayBacking,
 } from "./web-signed-relay-harness"
 
 const execFileAsync = promisify(execFile)
@@ -192,12 +192,12 @@ export async function openAs(
   page: Page,
   fixture: RunningRelayFixture,
   webApp: RunningWebApp,
-  access: SignedRelayAccess,
+  backing: SignedRelayBacking,
   token: string,
   user: { id: string; fullName: string },
   role: "owner" | "editor" | "viewer" | "admin" = "owner",
 ) {
-  await seedWorkspace(page, teammateInfo(fixture, token), access, user)
+  await seedWorkspace(page, teammateInfo(fixture, token), backing, user)
   await page.goto(`${webApp.url}${sessionRoute(fixture.info)}`, {
     waitUntil: "domcontentloaded",
     timeout: 45_000,

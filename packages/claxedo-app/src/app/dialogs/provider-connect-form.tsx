@@ -73,7 +73,8 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const providers = useProviders(() => props.harness, () => props.workspaceScope)
   // Auth belongs to the machine serving this scope, not to the harness name:
   // `useProviderAuth` reads it under the same (server, scope, harness) key the
-  // catalog above uses, so a cloud workspace never shows the daemon's methods.
+  // catalog above uses, so a workspace reached through the relay never shows
+  // the daemon's methods.
   const providerAuthQuery = useProviderAuth(() => props.harness, () => props.workspaceScope)
   /** The subject of every sentence on this card, and the name on its heading. */
   const subject = () => connectSubject(props.context)

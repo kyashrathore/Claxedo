@@ -3,7 +3,7 @@ import { workspaceSandboxDriversUrl } from "./app-ports"
 import { readBoolean, readString } from "@/lib/record"
 
 /**
- * Whether cloud workspaces can actually be created right now.
+ * Whether a provisioner-owned workspace can actually be created right now.
  *
  * The control plane speaks "driver"; the user-facing word is "provider".
  *

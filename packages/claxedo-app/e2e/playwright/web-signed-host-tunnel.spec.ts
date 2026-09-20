@@ -3,9 +3,10 @@
  *
  * Thin configuration wrapper: every scenario body lives in
  * `e2e/helpers/web-signed-relay-journeys.ts`, shared with
- * `web-signed-cloud.spec.ts`; the only axis that differs is `access`. This
- * file boots the fixture as user-hosted, builds and serves the production web
- * bundle against it, and wires each scenario id to its journey. Test titles
+ * `web-signed-cloud.spec.ts`; the only axis that differs is the backing. This
+ * file boots the shared fixture with `backing: "local-worktree"`, builds and
+ * serves the production web bundle against it, and wires each scenario id to
+ * its journey. Test titles
  * carry the ids of the scenario matrix shared with the `desktop-*` lanes
  * (A = shell integrity, B = session lifecycle & rail, C = composer & harness,
  * D = terminal, E = rail geometry).
@@ -13,8 +14,8 @@
  * Real: the built web app (`web-signed-relay-harness.ts`), the `hosted-node`
  * control plane on `createSqliteCentralStore` behind
  * `customVerifierAuthAdapter`, a `@claxedo/workspace-relay` process (EdDSA
- * JWT mint/verify), a host tunnel (`startUserHostedWorkspaceTunnel`) and the
- * embedded workspace-runtime engine it resolves to (`user-hosted-tunnel.ts`'s
+ * JWT mint/verify), a host tunnel (`startWorkspaceHostTunnel`) and the
+ * embedded workspace-runtime engine it resolves to (`host-tunnel.ts`'s
  * `tunnelTarget`). The only fake is the model HTTP endpoint
  * (`scripted-model-server.ts`), wired into the fixture's own process env so
  * the scenarios complete real turns.
@@ -26,9 +27,9 @@
  *
  * Fixed backend/preview ports (4537/4539, overridable by env): a build needs
  * its backend URL before it starts, and each signed lane has its own port
- * block. `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS` is left unset: the fixture's
- * default is user-hosted, and omitting the key (not a falsy string) is what
- * selects it.
+ * block. `CLAXEDO_E2E_RELAY_FIXTURE_BACKING` is left unset: the fixture's
+ * default is a `local-worktree` placement, and omitting the key (not a falsy
+ * string) is what selects it.
  */
 import { expect, test, type Page } from "@playwright/test"
 import path from "node:path"
@@ -55,11 +56,11 @@ import {
 import { startScriptedModelServer, type ScriptedModelServer } from "../helpers/scripted-model-server"
 
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
-const SPEC = "web-signed-userhosted"
+const SPEC = "web-signed-host-tunnel"
 const APP_DIR = path.resolve(import.meta.dirname, "..", "..")
 const BACKEND_PORT = Number(process.env.CLAXEDO_WEB_SIGNED_USERHOSTED_BACKEND_PORT ?? 4537)
 const PREVIEW_PORT = Number(process.env.CLAXEDO_WEB_SIGNED_USERHOSTED_PREVIEW_PORT ?? 4539)
-const OUT_DIR = path.join(APP_DIR, "dist-e2e-web-signed-userhosted")
+const OUT_DIR = path.join(APP_DIR, "dist-e2e-web-signed-host-tunnel")
 
 let scripted: ScriptedModelServer | undefined
 let fixture: RunningRelayFixture | undefined
@@ -73,7 +74,7 @@ function ctx(page: Page): JourneyCtx {
     info: fixture!.info,
     scripted: scripted!,
     spec: SPEC,
-    kind: "user-hosted",
+    backing: "local-worktree",
   }
 }
 
@@ -81,10 +82,10 @@ function ctx(page: Page): JourneyCtx {
 // this out of the sharded core run into its own CI job; the lane boots its own
 // backend+relay+build and cannot ride a shard's shared dev server.
 // `@surface-web` selects by surface.
-test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
+test.describe("web signed host tunnel @core @tier-real @surface-web", () => {
   test.skip(
     !TIER_REAL,
-    "Tier R: set CLAXEDO_TIER_REAL_E2E=1 to run web-signed-userhosted against a real relay process, a real host " +
+    "Tier R: set CLAXEDO_TIER_REAL_E2E=1 to run web-signed-host-tunnel against a real relay process, a real host " +
       "tunnel, the real hosted-node control plane, and a built production web bundle.",
   )
 
@@ -93,11 +94,11 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
     test.setTimeout(180_000)
     scripted = await startScriptedModelServer()
     fixture = await startSignedRelayFixture({
-      access: "user-hosted",
+      backing: "local-worktree",
       backendPort: BACKEND_PORT,
       browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
-      claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-userhosted-claude"),
+      claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-host-tunnel-claude"),
     })
     webApp = await buildAndServeWebApp({
       backendUrl: fixture.info.backendUrl,
@@ -128,14 +129,14 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
   // client-side Playwright error with no visibility into what the shared
   // fixture process (real relay + real embedded engine) was doing at the
   // same moment — every prior spec in this family (`real-cloud-relay.spec
-  // .ts`, `live-user-hosted-relay.spec.ts`) accumulates this same `log()`
+  // .ts`, `live-host-tunnel-relay.spec.ts`) accumulates this same `log()`
   // but only surfaces it in a startup GATING throw, never on a mid-test
   // failure. Printing the tail here costs nothing on green runs.
   test.afterEach(async () => {
     const testInfo = test.info()
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
     console.log(
-      `\n[web-signed-userhosted] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
+      `\n[web-signed-host-tunnel] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
     )
   })
 

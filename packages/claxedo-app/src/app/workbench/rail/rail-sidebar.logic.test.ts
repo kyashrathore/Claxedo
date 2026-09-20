@@ -130,7 +130,7 @@ describe("railWorkspaceSessionBacking", () => {
   })
 
   test("resolves a machine-placed row addressed as `workspace:<id>` against its host-directory catalog key", () => {
-    // What the control plane answers with for a user-hosted workspace: the
+    // What the control plane answers with for a machine-placed workspace: the
     // catalog keys it by the HOST's own path, while the session row carries
     // `sessionRowDirectory`'s `workspace:<id>`. The row's identity, not the
     // section's directory, is what the backing comes from — and the signed id
@@ -398,8 +398,8 @@ describe("railWorkspaceMetaLabels", () => {
   })
 
   test("reachability is only asked about a machine someone owns", () => {
-    // A cloud workspace's runtime is provisioned on demand; an unknown host
-    // state is not an offline one.
+    // A provisioner-owned machine exists only on demand, so an unknown host
+    // state there is not an offline one.
     expect(railWorkspaceMetaLabels({
       kind: "provisioner", role: "editor", publishedToYourAccount: false, label,
     })).toEqual([])

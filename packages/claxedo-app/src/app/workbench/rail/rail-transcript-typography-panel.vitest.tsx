@@ -21,7 +21,11 @@ vi.mock("@/platform/account/account-provider", () => ({
 }))
 
 vi.mock("@/app/providers/config", () => ({
-  useConfigOptional: () => ({ authEnabled: true, accountSignInEnabled: false, sandboxEnabled: false }),
+  useConfigOptional: () => ({ accountSignInEnabled: false, sandboxEnabled: false }),
+}))
+
+vi.mock("@/app/connection/deployment-posture", () => ({
+  useDeploymentPosture: () => ({ issuesSessions: () => true }),
 }))
 
 vi.mock("@/platform/runtime/platform-provider", () => ({

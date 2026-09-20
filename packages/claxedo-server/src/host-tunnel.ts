@@ -16,7 +16,7 @@ import { getWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 import { RouteHandler, routeOwnership } from "@claxedo/server-core/platform/governance/route-ownership"
 
-const log = Log.create({ service: "user-hosted-tunnel" })
+const log = Log.create({ service: "host-tunnel" })
 const sandboxManager = createWorkspaceSupervisorSandboxManager()
 
 type ActiveTunnel = {
@@ -54,15 +54,15 @@ function logTunnelEvent(input: { workspaceId: string; hostId: string; relayUrl: 
     relayUrl: input.relayUrl,
   }
   if (event.type === "auth-failed") {
-    log.error("user-hosted workspace tunnel auth failed", { ...context, attempt: event.attempt, error: event.error })
+    log.error("workspace host tunnel auth failed", { ...context, attempt: event.attempt, error: event.error })
     return
   }
   if (event.type === "reconnecting") {
-    log.warn("user-hosted workspace tunnel reconnecting", { ...context, attempt: event.attempt, delayMs: event.delayMs, reason: event.reason })
+    log.warn("workspace host tunnel reconnecting", { ...context, attempt: event.attempt, delayMs: event.delayMs, reason: event.reason })
     return
   }
   if (event.type === "closed") {
-    log.info("user-hosted workspace tunnel closed", { ...context, reason: event.reason })
+    log.info("workspace host tunnel closed", { ...context, reason: event.reason })
   }
 }
 
@@ -100,7 +100,7 @@ async function tunnelTarget(input: { workspaceId: string; hostId: string }) {
   }
 }
 
-export async function startUserHostedMachineTunnel(input: {
+export async function startMachineHostTunnel(input: {
   workspaceIds: string[]
   hostId: string
   relayUrl: string
@@ -175,7 +175,7 @@ export async function startUserHostedMachineTunnel(input: {
     workspaceIds,
     registration,
   })
-  log.info("user-hosted machine tunnel started", {
+  log.info("machine host tunnel started", {
     hostId: input.hostId,
     relayUrl,
     workspaceIds,
@@ -183,7 +183,7 @@ export async function startUserHostedMachineTunnel(input: {
   return { reused: false, connectionCount: 1, workspaceIds }
 }
 
-export async function startUserHostedWorkspaceTunnel(input: {
+export async function startWorkspaceHostTunnel(input: {
   workspaceId: string
   hostId: string
   relayUrl: string
@@ -232,7 +232,7 @@ export async function startUserHostedWorkspaceTunnel(input: {
     url: target.url,
     release: target.release,
   })
-  log.info("user-hosted workspace tunnel started", {
+  log.info("workspace host tunnel started", {
     workspaceId: input.workspaceId,
     hostId: input.hostId,
     relayUrl,
@@ -243,7 +243,7 @@ export async function startUserHostedWorkspaceTunnel(input: {
   }
 }
 
-export function stopUserHostedWorkspaceTunnel(input: {
+export function stopWorkspaceHostTunnel(input: {
   workspaceId: string
   hostId: string
 }) {
@@ -255,7 +255,7 @@ export function stopUserHostedWorkspaceTunnel(input: {
   return true
 }
 
-export function stopUserHostedMachineTunnel(hostId: string) {
+export function stopMachineHostTunnel(hostId: string) {
   const existing = machineTunnels.get(hostId)
   if (!existing) return false
   existing.tunnel.close()
@@ -263,11 +263,11 @@ export function stopUserHostedMachineTunnel(hostId: string) {
   return true
 }
 
-export function hasUserHostedMachineTunnel(hostId: string) {
+export function hasMachineHostTunnel(hostId: string) {
   return machineTunnels.has(hostId)
 }
 
-export function stopAllUserHostedWorkspaceTunnels() {
+export function stopAllWorkspaceHostTunnels() {
   const count = tunnels.size + machineTunnels.size
   for (const existing of tunnels.values()) {
     existing.tunnel.close()

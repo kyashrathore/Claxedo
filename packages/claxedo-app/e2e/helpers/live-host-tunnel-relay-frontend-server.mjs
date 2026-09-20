@@ -65,7 +65,7 @@ const FORWARDED_CLIENT_IP = "203.0.113.10" // TEST-NET-3 (RFC 5737), never a rea
 // without this file restating that list.
 const proxyTarget = process.env.CLAXEDO_E2E_RELAY_PROXY_TARGET
 const forwardedClientPlugin = {
-  name: "live-user-hosted-relay:forwarded-client",
+  name: "live-host-tunnel-relay:forwarded-client",
   configResolved(config) {
     for (const entry of Object.values(config.server.proxy ?? {})) {
       if (proxyTarget) entry.target = proxyTarget

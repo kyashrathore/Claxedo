@@ -700,8 +700,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_cloud/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_cloud",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -785,8 +785,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_cloud/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_cloud",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -855,8 +855,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_known_bootstrap/connection")) {
           return Response.json({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_known_bootstrap",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -918,8 +918,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_default/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_default",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -979,8 +979,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_raw/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_raw",
             relayUrl: "http://relay.test",
             role: "owner",

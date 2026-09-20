@@ -304,7 +304,6 @@ describe("hosted local document relay", () => {
           workspaceId: "local_ws",
           hostId: "host_1",
           baseUrl: "http://runtime.test",
-          access: "user-hosted",
           backing: "local-worktree",
         }),
         directory,

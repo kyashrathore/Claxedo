@@ -17,8 +17,7 @@ afterEach(() => {
 
 describe("viewer read-only role gates", () => {
   const relayInfo = (role: WorkspaceConnectionInfo["role"]): WorkspaceConnectionInfo => ({
-    access: "cloud",
-    backing: "cloud-vm",
+    host: "provisioner",
     workspaceId: "ws_readonly",
     role,
     relayUrl: "https://relay.example.test",

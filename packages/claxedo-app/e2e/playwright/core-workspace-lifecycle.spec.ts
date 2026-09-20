@@ -10,6 +10,7 @@ import { sessionListRoute } from "../helpers/contracts/session-list"
 import { isOrgListPath, orgListResponse } from "../helpers/contracts/org-list"
 import { workspaceResolveResponse } from "../helpers/contracts/workspace-resolve"
 import { expect, test, type Page } from "@playwright/test"
+import { bootstrapDeployment } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-core-lifecycle-main"
 const PROJECT_ID = "proj_core_lifecycle"
@@ -83,6 +84,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   const bootstrapBody = {
     healthy: true,
     events: { hostAggregate: true },
+    deployment: bootstrapDeployment(),
     version: "1.0.0-test",
     path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
     project: [proj],
@@ -541,9 +543,7 @@ test.describe("core workspace lifecycle @core", () => {
     await page.route("**/api/workspace/*/connection**", (r) =>
       api(r.request())
         ? json(r, {
-            access: "cloud",
             backing: "cloud-vm",
-            runtimeKind: "cloud",
             sessionAuthority: "managed-private",
             workspaceId: "wsid_main_cloud",
             role: "owner",

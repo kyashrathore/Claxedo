@@ -194,7 +194,6 @@ describe("createCachedTargetClient", () => {
     workspaceId: "ws_1",
     hostId: "host_1",
     baseUrl: "https://runtime.test",
-    access: "cloud",
     backing: "cloud-vm",
   }
 
@@ -265,7 +264,6 @@ describe("createResolverClient", () => {
     workspaceId: "ws_1",
     hostId: "host_1",
     baseUrl: "https://runtime.test",
-    access: "cloud",
     backing: "cloud-vm",
   }
 

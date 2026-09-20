@@ -48,7 +48,7 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
   "app/routes/directory-layout.tsx":
     "Local route shell: resolves a directory route against the local server's `workspaceResolveUrl` through `platform.fetch` (authFetch only when the platform injects no transport); never calls Hosted Server.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
-    "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
+    "Workspace panel: `hostedControlCall` runs the injected hosted operation when the account bridge is signed and otherwise its `api` calls against the attached server's own checkpoint and lifecycle routes at `getDefaultBaseUrl()`; neither is a Hosted Server AccountPort surface.",
   "features/workspaces/data/project-api.ts":
     "Projects live on servers with a filesystem (`/api/claxedo/projects` on the local and self-hosted servers); the hosted plane has no such route, so this is not a Hosted Server AccountPort surface.",
   "features/settings/ui/harness-providers-section.tsx":
@@ -161,7 +161,7 @@ describe("hosted operation matrix", () => {
 
   test("no row returns an address of the machine a workspace runs on", () => {
     // The connection mint answers `relayUrl` and a scoped Runtime Access Token
-    // (`userHostedConnectionInfo`). A row that returned the serving machine's
+    // (`hostTunnelConnectionInfo`). A row that returned the serving machine's
     // own address would make it a direct client target and bypass every relay
     // authorization gate, so the spellings such an address takes are refused
     // in the table rather than in prose, which cannot fail a build.

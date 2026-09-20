@@ -187,7 +187,6 @@ describe("workspace relay runtime env", () => {
       hostId: "host_1",
       role: "editor",
       parentJti: "rat_jti_good",
-      access: "cloud",
       backing: "cloud-vm",
       kid: "kid-rotated",
     }, key.privateKey, "EdDSA")
@@ -211,7 +210,6 @@ describe("workspace relay runtime env", () => {
       hostId: "host_1",
       role: "editor",
       parentJti: "rat_jti_bad",
-      access: "cloud",
       backing: "cloud-vm",
       kid: "kid-not-in-jwks",
     }, otherKey.privateKey, "EdDSA")

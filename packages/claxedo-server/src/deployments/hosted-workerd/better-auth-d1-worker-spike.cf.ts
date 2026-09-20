@@ -15,7 +15,7 @@ import {
 } from "../../platform/auth/better-auth-configuration"
 import { betterAuthNativeResource } from "../../platform/auth/better-auth-native-clients"
 import { createD1CoreAuthority } from "../../authority/adapters/d1/core-authority"
-import { createD1UserHostedTargetResolver } from "../../authority/adapters/d1/user-hosted-relay-target"
+import { createD1HostTunnelTargetResolver } from "../../authority/adapters/d1/host-tunnel-relay-target"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   UNUSED_DURABLE_SESSION_LOG,
@@ -155,7 +155,7 @@ function controlPlaneAuthentication(env: Env) {
  * Auth adapter the rest of the Worker uses, over the same D1 authority.
  *
  * `/__test/relay-target` exposes the service-side routing read
- * (`createD1UserHostedTargetResolver`) so the spike can assert the fact the
+ * (`createD1HostTunnelTargetResolver`) so the spike can assert the fact the
  * relay would act on: a workspace routes to a host only while it is
  * owner-assigned AND inside the machine's heartbeat-acked served set AND the
  * enrollment lease is live. No `deploymentId` filter here: the hosted product
@@ -216,7 +216,7 @@ function controlPlaneApp(env: Env) {
     relayUrl: RELAY_URL,
     hostTunnelTokenSigner,
   }
-  const resolveRelayTarget = createD1UserHostedTargetResolver(env.CONTROL_PLANE_DB)
+  const resolveRelayTarget = createD1HostTunnelTargetResolver(env.CONTROL_PLANE_DB)
   return (controlPlane = new Hono()
     .route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, options))
     .route("/api/workspace", HostedWorkspaceRoutes(services, options))

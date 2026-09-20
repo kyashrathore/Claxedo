@@ -272,10 +272,9 @@ describe("workspace runtime route audit", () => {
       ) {
         offenders.push(`${file}: reintroduced a legacy RuntimeGateway predicate`)
       }
-      if (
-        file !== "platform/runtime/agent/workspace-relay-connection.ts" &&
-        /\bfunction\s+runtimeKind\s*\(/.test(text)
-      ) {
+      // No exemption: the mint body states `backing` and nothing else, so no
+      // module has a producer word of its own left to narrow privately.
+      if (/\bfunction\s+runtimeKind\s*\(/.test(text)) {
         offenders.push(`${file}: reintroduced a private runtimeKind decision`)
       }
     }
@@ -2195,10 +2194,10 @@ describe("workspace runtime route audit", () => {
     ).text()
     const sidebarDataPlane = `${text}\n${headerSurfaces}\n${projectSessionInfo}`
 
-    // Each section reads its own SOURCE, chosen from the catalog row's kind:
-    // the central server for a local/cloud workspace and for Global Chat, the
-    // workspace's own runtime over the relay for a user-hosted one. The rail
-    // never names a list route itself.
+    // Each section reads its own SOURCE, chosen from the catalog row's host
+    // kind: the attached server for a workspace it or the provisioner holds and
+    // for Global Chat, the workspace's own runtime over the relay for one
+    // another machine serves. The rail never names a list route itself.
     const sectionList = await Bun.file(
       path.join(root, "app/workbench/rail/rail-section-session-list.ts"),
     ).text()

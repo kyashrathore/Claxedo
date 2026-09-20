@@ -13,7 +13,6 @@ import {
   verifyRuntimeAccessToken,
   deriveRelayHostKid,
   deriveRelayHostPublicKey,
-  type RelayClaimPair,
 } from "./auth"
 
 async function keys() {
@@ -291,7 +290,6 @@ describe("workspace relay auth", () => {
     const hostToken = await mintRelayHostToken({
       ...base,
       parentJti: base.jti,
-      access: "cloud",
       backing: "cloud-vm",
     }, key.privateKey, "EdDSA")
     const directClientToken = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
@@ -304,7 +302,6 @@ describe("workspace relay auth", () => {
       aud: "workspace-host-service",
       role: "editor",
       parent_jti: base.jti,
-      access: "cloud",
       backing: "cloud-vm",
     })
 
@@ -326,7 +323,6 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
-      access: "cloud",
       backing: "cloud-vm",
     })
       .setProtectedHeader({ alg: "EdDSA" })
@@ -343,14 +339,13 @@ describe("workspace relay auth", () => {
     })).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
-  test("rejects inconsistent Relay Host Token access/backing pairs", async () => {
+  test("rejects a Relay Host Token backing that names no placement", async () => {
     const key = await keys()
     await expect(mintRelayHostToken({
       ...base,
       parentJti: base.jti,
-      access: "cloud",
-      backing: "local-worktree",
-    } as unknown as typeof base & RelayClaimPair & { parentJti: string }, key.privateKey, "EdDSA")).rejects.toMatchObject({
+      backing: "user-hosted",
+    } as unknown as Parameters<typeof mintRelayHostToken>[0], key.privateKey, "EdDSA")).rejects.toMatchObject({
       code: "relay_token_claims_invalid",
     } satisfies Partial<WorkspaceRelayAuthError>)
 
@@ -362,8 +357,8 @@ describe("workspace relay auth", () => {
       principal_kind: base.principalKind,
       actor_id: base.actorId,
       actor_kind: base.actorKind,
-      access: "user-hosted",
-      backing: "cloud-vm",
+      parent_jti: base.jti,
+      backing: "user-hosted",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("workspace-relay")
@@ -374,6 +369,36 @@ describe("workspace relay auth", () => {
       .sign(key.privateKey)
 
     await expect(verifyRelayHostToken(forged, key.publicKey, {
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })).rejects.toMatchObject({
+      code: "relay_token_claims_invalid",
+    } satisfies Partial<WorkspaceRelayAuthError>)
+  })
+
+  test("refuses a Relay Host Token that still carries an access claim", async () => {
+    const key = await keys()
+    const minted = await new SignJWT({
+      org_id: base.orgId,
+      workspace_id: base.workspaceId,
+      host_id: base.hostId,
+      role: base.role,
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
+      parent_jti: base.jti,
+      access: "cloud",
+      backing: "cloud-vm",
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer("workspace-relay")
+      .setAudience(relayHostTokenAudience)
+      .setIssuedAt()
+      .setExpirationTime("30m")
+      .setJti(base.jti)
+      .sign(key.privateKey)
+
+    await expect(verifyRelayHostToken(minted, key.publicKey, {
       workspaceId: "ws_1",
       hostId: "host_1",
     })).rejects.toMatchObject({
@@ -452,7 +477,6 @@ describe("workspace relay auth", () => {
     const token = await mintRelayHostToken({
       ...base,
       parentJti: base.jti,
-      access: "cloud",
       backing: "cloud-vm",
       kid: "rht-key-current",
     }, key.privateKey, "EdDSA")
@@ -466,7 +490,6 @@ describe("workspace relay auth", () => {
     const token = await mintRelayHostToken({
       ...base,
       parentJti: base.jti,
-      access: "cloud",
       backing: "cloud-vm",
     }, key.privateKey, "EdDSA")
 

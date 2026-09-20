@@ -83,12 +83,12 @@ export function resetWorkspaceRuntimeEnsureCache() {
 
 function isHostOfflineBody(text: string) {
   if (!text) return false
-  if (text.includes("user_hosted_app_offline")) return true
+  if (text.includes("host_tunnel_offline")) return true
   try {
     const body: unknown = JSON.parse(text)
     const error = readField(body, "error")
     const code = typeof error === "string" ? error : readString(error, "code") ?? readString(body, "code")
-    return code === "user_hosted_app_offline"
+    return code === "host_tunnel_offline"
   } catch {
     return false
   }
@@ -98,14 +98,14 @@ function isHostOfflineBody(text: string) {
  * Drive the machine-placed connecting sequence. Resolves the workspace's relay
  * connection (mint) and probes the runtime health endpoint through the relay,
  * surfacing each phase via `onLog`/`onStatus`. When the host is offline the
- * relay answers `503 user_hosted_app_offline` (or the connection mint fails) —
+ * relay answers `503 host_tunnel_offline` (or the connection mint fails) —
  * we report `offline: true` so the caller can render the dedicated offline
  * error state instead of a generic failure.
  */
 // The Durable Object relay holds host presence in memory, so right after a room
 // is (re)instantiated there is a short window — until the host's next ping
 // re-registers presence — where target resolution answers 409
-// (relay_resolver_workspace_target_unavailable) or 503 (user_hosted_app_offline)
+// (relay_resolver_workspace_target_unavailable) or 503 (host_tunnel_offline)
 // for a host that is in fact connected. We therefore retry the health probe for
 // a bounded window before declaring the host offline, so a transient
 // presence-registration gap does not strand a healthy workspace.

@@ -8,7 +8,7 @@
  */
 
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
+import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "../../authority/services"
 import { sandboxRelayTargetLookup } from "../../authority/sandbox-relay-target"
 import type { LocalRelayTargetExists, RelayTargetLookup } from "../shared-routes/internal-relay"
@@ -16,13 +16,13 @@ import type { LocalRelayTargetExists, RelayTargetLookup } from "../shared-routes
 export function localRelayTargetLookup(
   options: {
     sandboxManager?: SandboxManager
-    userHostedResolver?: UserHostedTargetResolver
+    hostTunnelResolver?: HostTunnelTargetResolver
     telemetry?: ControlPlaneTelemetry
   } = {},
 ): RelayTargetLookup {
   return sandboxRelayTargetLookup({
     ...(options.sandboxManager ? { sandboxManager: options.sandboxManager } : {}),
-    ...(options.userHostedResolver ? { userHostedResolver: options.userHostedResolver } : {}),
+    ...(options.hostTunnelResolver ? { hostTunnelResolver: options.hostTunnelResolver } : {}),
     ...(options.telemetry ? { telemetry: options.telemetry } : {}),
   })
 }

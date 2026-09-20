@@ -74,8 +74,8 @@ describe("createTransport", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_relay/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_relay",
           role: "owner",
           relayUrl: "https://relay.test",

@@ -1571,9 +1571,8 @@ export function RailSidebar(props: RailSidebarProps) {
       sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
-    // Global Chat's sessions belong to no workspace, so the app's own central
-    // server owns them — the same server a local or cloud workspace's list
-    // comes from.
+    // Global Chat's sessions belong to no workspace, so the server this app is
+    // served from owns them.
     const list = createRailSectionSessionList({
       baseUrl: () => globalSDK.url,
       source: () => centralSessionSource({ local: server.isLocal() }),
@@ -1961,9 +1960,9 @@ export function RailSidebar(props: RailSidebarProps) {
     const list = createRailSectionSessionList({
       baseUrl: () => globalSDK.url,
       // A project section lists the sessions of ALL its workspaces, and those
-      // do not share one server: the central one answers for the local and
-      // cloud workspaces, each machine-placed workspace from its own runtime over
-      // the relay.
+      // do not share one server: the one this app is served from answers for
+      // the workspaces it embeds and the provisioner's, each machine-placed
+      // workspace from its own runtime over the relay.
       source: () => projectSessionSource({
         local: server.isLocal(),
         projectId: section.project.id,
@@ -1994,13 +1993,12 @@ export function RailSidebar(props: RailSidebarProps) {
       })
     })
     const projectActionLabel = createMemo(() => workspaceName(projectActionDirectory(), section.project))
-    // Cloud workspaces are lazily connected: dim the entry until its runtime
-    // is ready so the rail honestly shows what is reachable NOW. Clicking
-    // still connects (the select handler drives the connection), and the
-    // connect surface then narrates restore/resume/cold-start. Local and
-    // machine-placed entries never dim — a workspace this server holds has
-    // nothing to connect, and another machine's readiness is that machine's
-    // business, reported in-pane.
+    // A provisioner-owned machine is connected lazily: dim the entry until its
+    // runtime is ready so the rail shows what is reachable NOW. Clicking still
+    // connects (the select handler drives the connection), and the connect
+    // surface then narrates restore/resume/cold-start. Nothing else dims: a
+    // workspace this server embeds has nothing to connect, and another
+    // machine's readiness is that machine's business, reported in-pane.
     const dimmedCloud = createMemo(() => {
       const directory = projectActionDirectory()
       if (!sectionCloud(section.project, directory)) return false

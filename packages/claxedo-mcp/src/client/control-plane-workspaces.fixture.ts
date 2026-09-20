@@ -32,18 +32,18 @@ export function controlPlaneWorkspaceRow(
 }
 
 /**
- * The rows `GET /api/workspace?access=` answers for one scope.
+ * The rows `GET /api/workspace?host=` answers for one host.
  *
- * `user-hosted` is the only scope the route filters; `cloud` hands back every
- * row the caller can see, provisioned or not, so a client that trusts the
- * scope it asked for rather than the row's own `backing` mislabels machines as
- * cloud VMs.
+ * `machine` is the only value the route filters; `provisioner` hands back every
+ * row the caller can see, provisioned or not, so a client that trusts the host
+ * it asked for rather than the row's own `backing` mislabels machines as cloud
+ * VMs.
  */
-export function workspaceListScopeRows(
+export function workspaceListHostRows(
   rows: readonly ControlPlaneWorkspaceRow[],
-  scope: string | null,
+  host: string | null,
 ): readonly ControlPlaneWorkspaceRow[] {
-  if (scope === "user-hosted") return rows.filter((row) => row.backing === "local-worktree")
+  if (host === "machine") return rows.filter((row) => row.backing === "local-worktree")
   return rows
 }
 
@@ -51,6 +51,6 @@ export function controlPlaneWorkspaceListFetch(rows: readonly ControlPlaneWorksp
   return async (path) => {
     const url = new URL(path, "http://control.local")
     if (url.pathname !== "/api/workspace") return new Response("no such route", { status: 404 })
-    return Response.json({ workspaces: workspaceListScopeRows(rows, url.searchParams.get("access")) })
+    return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
   }
 }

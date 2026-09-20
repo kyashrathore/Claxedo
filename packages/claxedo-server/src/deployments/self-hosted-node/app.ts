@@ -104,8 +104,8 @@ import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, embeddedAuthPublicOrigin, getEmbeddedAuth } from "./embedded-auth"
 import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { createSqliteUserHostedTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/user-hosted-relay-target"
-import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
+import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/host-tunnel-relay-target"
+import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import { selfHostedTasksClientInput, type TasksSessionGrants } from "../../tasks/session-grants"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
@@ -164,7 +164,7 @@ import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
-import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
+import { hasMachineHostTunnel, startMachineHostTunnel, stopMachineHostTunnel } from "../../host-tunnel"
 import {
   DEFAULT_CLAXEDO_SERVER_PORT,
   embeddedWorkspaceRuntimeSessionAuthority,
@@ -1015,7 +1015,7 @@ export function createSelfHostedApp(
       ...(services.authority ? { authority: services.authority } : {}),
       targetLookup: localRelayTargetLookup({
         ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-        ...(services.relay.userHostedResolver ? { userHostedResolver: services.relay.userHostedResolver } : {}),
+        ...(services.relay.hostTunnelResolver ? { hostTunnelResolver: services.relay.hostTunnelResolver } : {}),
         telemetry: services.telemetry,
       }),
       localTargetExists: localRelayTargetExists((services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {})),
@@ -1052,9 +1052,9 @@ export function createSelfHostedApp(
     // inject `embeddedManagedPrivateSessionPolicy` and are `managed-private`,
     // unsigned ones stay on the unbound local policy.
     sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
-    startMachineTunnel: startUserHostedMachineTunnel,
-    stopMachineTunnel: stopUserHostedMachineTunnel,
-    machineTunnelActive: hasUserHostedMachineTunnel,
+    startMachineTunnel: startMachineHostTunnel,
+    stopMachineTunnel: stopMachineHostTunnel,
+    machineTunnelActive: hasMachineHostTunnel,
     capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
   }) : undefined
   app.route(
@@ -1491,7 +1491,7 @@ export function createDefaultLocalControlPlaneServices() {
   // migrations, repair checks, WAL checkpointing, and statement preparation.
   ClaxedoDB.raw()
   const authority = createSqliteWorkspaceAuthority()
-  const userHostedResolver = createSqliteUserHostedTargetResolver()
+  const hostTunnelResolver = createSqliteHostTunnelTargetResolver()
   const services = createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
@@ -1510,7 +1510,7 @@ export function createDefaultLocalControlPlaneServices() {
         : {}),
       // Self-host always uses SQLite.
       authority,
-      relay: localRelayFromEnv(sandboxManager, authority, userHostedResolver),
+      relay: localRelayFromEnv(sandboxManager, authority, hostTunnelResolver),
       sandbox: {
         sandboxManager,
       },
@@ -1524,7 +1524,7 @@ export function createDefaultLocalControlPlaneServices() {
       if (closed) return
       closed = true
       if ("close" in authority && typeof authority.close === "function") authority.close()
-      userHostedResolver.close()
+      hostTunnelResolver.close()
       ClaxedoDB.close()
     },
   })
@@ -1533,7 +1533,7 @@ export function createDefaultLocalControlPlaneServices() {
 function localRelayFromEnv(
   sandboxManager = createWorkspaceSupervisorSandboxManager(),
   authority: WorkspaceAuthority = createSqliteWorkspaceAuthority(),
-  userHostedResolver: UserHostedTargetResolver = createSqliteUserHostedTargetResolver(),
+  hostTunnelResolver: HostTunnelTargetResolver = createSqliteHostTunnelTargetResolver(),
 ): ControlPlaneRelay {
   const relayUrl = process.env.CLAXEDO_WORKSPACE_RELAY_URL?.trim()
   const resolverToken = process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()
@@ -1547,7 +1547,7 @@ function localRelayFromEnv(
     ...(relayUrl ? { relayUrl } : {}),
     ...(relayUrls ? { relayUrls } : {}),
     ...(resolverToken ? { resolverToken } : {}),
-    userHostedResolver,
+    hostTunnelResolver,
     ...(runtimeSigner && hostSigner
       ? {
           runtimeAccessTokenSigner: runtimeSigner,
@@ -1560,7 +1560,7 @@ function localRelayFromEnv(
             relay: { relayUrl, relayUrls },
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
-            targetLookup: localRelayTargetLookup({ sandboxManager, userHostedResolver }),
+            targetLookup: localRelayTargetLookup({ sandboxManager, hostTunnelResolver }),
             recordRuntimeAccessToken: (input) => recordRelayRuntimeToken(authority, input),
           }),
         }

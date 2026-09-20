@@ -39,7 +39,7 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  * hosted one over control-plane auth on signed web), and, on a signed
  * desktop, ALSO the hosted control plane's through the Electron account
  * bridge (`transport: "account"`) — a signed desktop has two control planes,
- * and the daemon's is the only one that rings for its local workspaces. `wr`
+ * and the daemon's is the only one that rings for the workspaces it embeds. `wr`
  * is one workspace runtime's stream: a runtime-owned long-lived GET behind
  * the workspace's relay connection, reached with the Runtime Access Token
  * exactly like provider, file and PTY reads — or, on a loopback surface (the
@@ -62,13 +62,13 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
  *
  * The `scope: "host"` target is the daemon's HOST AGGREGATE: `wr/events` with
  * no workspace named, carrying every embedded runtime's frames on one
- * connection. It is what makes a local workspace that is not on screen stay
- * live without a connection per workspace. Whether it exists is the SERVER's
+ * connection. It is what keeps a workspace the daemon embeds live while it is
+ * off screen, without a connection per workspace. Whether it exists is the SERVER's
  * declaration (`events.hostAggregate` in its bootstrap body), never a guess
  * from the URL or from the build: a self-hosted node that issues sessions runs
  * its issuer on loopback too, and the aggregate refuses a relay-stamped reader
  * unconditionally there, so a page that opened it on a URL match would hold a
- * permanently retrying 403 while its local workspaces went silent. The
+ * permanently retrying 403 while every workspace the node embeds went silent. The
  * aggregate's frames carry each runtime's own directory, which on this machine
  * is the address every consumer is keyed by.
  */
@@ -125,8 +125,9 @@ function routeWorkspaceRef(input: { directory?: string; projects?: ProjectCache 
     : undefined
   return routeWorkspace
     ?? signedWorkspaceFromProjects(input.projects ?? [], input.directory)
-    // Local workspaces have no relay identity. Resolve them separately so
-    // signed desktop can still read their events alongside the account feed.
+    // A workspace this server embeds has no relay identity, so the signed
+    // lookup above misses it; without this one a signed desktop would read the
+    // account feed and nothing from its own runtimes.
     ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 }
 

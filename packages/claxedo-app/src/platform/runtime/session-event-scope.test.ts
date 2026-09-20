@@ -162,7 +162,7 @@ describe("sessionEventStreamsOpen", () => {
   })
 
   test("the host aggregate carries every local session, whichever workspace it belongs to", () => {
-    // On loopback the only stream a local workspace has is the daemon's
+    // On loopback the only stream a workspace has is the daemon's host
     // aggregate, registered under one lane for all of them: readiness that
     // waited for a per-workspace lane would never be satisfied.
     registerSessionEventStreamLane("wr:host")

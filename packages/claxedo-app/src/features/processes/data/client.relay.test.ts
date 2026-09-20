@@ -43,8 +43,8 @@ describe("process client relay transport", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_1/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_1",
           role: "admin",
           relayUrl: "https://relay.example.test",
@@ -122,8 +122,8 @@ describe("process client relay transport", () => {
       }
       if (req.url === "http://server.test/api/workspace/ws_direct/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_direct",
           role: "admin",
           relayUrl: "https://relay.example.test",
@@ -155,9 +155,10 @@ describe("process client relay transport", () => {
     ])
   })
 
-  // A signed user-hosted workspace addressed by its filesystem-path directory
-  // has no `/api/workspace/resolve` answer on the hosted control plane; the
-  // signed inventory is the placement authority that puts it on the relay.
+  // A signed workspace placed on another machine, addressed by its
+  // filesystem-path directory, has no `/api/workspace/resolve` answer on the
+  // hosted control plane; the signed inventory is the placement authority that
+  // puts it on the relay.
   test("uses the signed workspace inventory match when the runtime resolve read comes back empty", async () => {
     const calls: string[] = []
     const request = (async (input, init) => {
@@ -168,7 +169,6 @@ describe("process client relay transport", () => {
       }
       if (req.url === "http://server.test/api/workspace/ws_machine1/connection") {
         return Response.json({
-          access: "user-hosted",
           backing: "local-worktree",
           workspaceId: "ws_machine1",
           role: "owner",
@@ -188,7 +188,7 @@ describe("process client relay transport", () => {
       directory: "/repo/on-a-machine/ws_machine1-dir",
       fetch: request,
       // The hosted control plane's liveness read for this directory answers
-      // null — same as production for a user-hosted workspace it does not own.
+      // null, as in production for a workspace on a machine it does not own.
       resolveWorkspaceRuntime: async () => null,
       resolveSignedWorkspace: (directory) =>
         directory === "/repo/on-a-machine/ws_machine1-dir"
@@ -211,7 +211,7 @@ describe("process client relay transport", () => {
         id: "prj_uh",
         worktree: "/repo/on-a-machine/ws_machine2-dir",
         workspaces: {
-          "/repo/on-a-machine/ws_machine2-dir": { id: "ws_machine2", directory: "/repo/on-a-machine/ws_machine2-dir", kind: "user-hosted", access: "user-hosted" },
+          "/repo/on-a-machine/ws_machine2-dir": { id: "ws_machine2", directory: "/repo/on-a-machine/ws_machine2-dir", kind: "user-hosted" },
         },
       },
     ])
@@ -222,7 +222,6 @@ describe("process client relay transport", () => {
         calls.push(req.url)
         if (req.url === `${server}/api/workspace/ws_machine2/connection`) {
           return Response.json({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_machine2",
             role: "owner",

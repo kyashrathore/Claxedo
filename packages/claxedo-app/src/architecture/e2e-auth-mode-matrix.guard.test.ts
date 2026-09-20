@@ -37,8 +37,7 @@ const reusableE2EBuildJob = workflow.slice(workflow.indexOf("\n  e2e-build:\n"),
 describe("e2e auth mode matrix", () => {
   test("Playwright owns both explicit modes and a real no-user Vite composition", () => {
     expect(authMode).toContain('e2eAuthModes = ["test-user", "local-unsigned"] as const')
-    expect(authMode).toContain('VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1"')
-    expect(authMode).toContain('VITE_AUTH_ENABLED: "true"')
+    expect(authMode).toContain('mode === "local-unsigned" ? "1" : "0"')
     expect(config).toContain("resolveE2EAuthMode()")
   })
 

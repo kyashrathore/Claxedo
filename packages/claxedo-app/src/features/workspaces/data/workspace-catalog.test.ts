@@ -44,7 +44,7 @@ describe("controlPlaneCatalogProjects", () => {
   })
 
   /**
-   * A cloud or user-hosted workspace is served by ANOTHER machine, so the path
+   * A relay-backed workspace is served by ANOTHER machine, so the path
    * its row reports names a directory on that machine's filesystem. Addressing
    * the workspace by it makes every later read (`?directory=`,
    * `x-claxedo-directory`, the route's own key) ask a server about a path it
@@ -397,12 +397,12 @@ function daemonClient(projects: unknown[]) {
   return { project: { list: async () => ({ data: projects as never }) } }
 }
 
-function controlPlaneFetch(rows: Record<"cloud" | "user-hosted", unknown[]>, calls: string[] = []) {
+function controlPlaneFetch(rows: Record<"provisioner" | "machine", unknown[]>, calls: string[] = []) {
   return (async (input: URL | RequestInfo) => {
     const url = new URL(requestUrl(input))
     calls.push(url.toString())
-    const access = url.searchParams.get("access") as "cloud" | "user-hosted"
-    return Response.json({ workspaces: rows[access] ?? [] })
+    const host = url.searchParams.get("host") as "provisioner" | "machine"
+    return Response.json({ workspaces: rows[host] ?? [] })
   }) as typeof fetch
 }
 
@@ -422,15 +422,15 @@ describe("workspaceCatalogQuery", () => {
     const options = workspaceCatalogQuery({
       baseUrl: LOOPBACK,
       client: daemonClient([{ id: "proj_local", worktree: "/Users/me/repo", time: { created: 1, updated: 1 } }]),
-      request: controlPlaneFetch({ cloud: [machineRow("ws_cloud", { backing: "cloud-vm", project_id: "proj_cloud" })], "user-hosted": [] }, calls),
+      request: controlPlaneFetch({ provisioner: [machineRow("ws_cloud", { backing: "cloud-vm", project_id: "proj_cloud" })], machine: [] }, calls),
       signedAccess: true,
     })
 
     const catalog = await options.queryFn()
     expect(catalog.map((project) => project.id).toSorted((a, b) => a.localeCompare(b))).toEqual(["proj_cloud", "proj_local"])
     expect(calls.toSorted((a, b) => a.localeCompare(b))).toEqual([
-      `${LOOPBACK}/api/workspace?access=cloud`,
-      `${LOOPBACK}/api/workspace?access=user-hosted`,
+      `${LOOPBACK}/api/workspace?host=machine`,
+      `${LOOPBACK}/api/workspace?host=provisioner`,
     ])
   })
 
@@ -448,7 +448,7 @@ describe("workspaceCatalogQuery", () => {
           "/Users/me/opencode": { id: workspaceId, kind: "local", directory: "/Users/me/opencode" },
         },
       }]),
-      request: controlPlaneFetch({ cloud: [], "user-hosted": [machineRow(workspaceId, { project_id: "proj_local" })] }),
+      request: controlPlaneFetch({ provisioner: [], machine: [machineRow(workspaceId, { project_id: "proj_local" })] }),
       signedAccess: true,
     })
 
@@ -482,7 +482,7 @@ describe("workspaceCatalogQuery", () => {
           },
         },
       },
-      request: controlPlaneFetch({ cloud: [], "user-hosted": [machineRow("ws_shared", { role: "viewer", status: "offline" })] }),
+      request: controlPlaneFetch({ provisioner: [], machine: [machineRow("ws_shared", { role: "viewer", status: "offline" })] }),
       signedAccess: true,
     })
 

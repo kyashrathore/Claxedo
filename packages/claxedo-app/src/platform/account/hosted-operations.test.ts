@@ -84,9 +84,9 @@ describe("decodeHostedResult", () => {
 
   test("rejects a list where an object is required, and the reverse", () => {
     expect(() => decodeHostedResult("account.mode", [])).toThrow(/expected an object/)
-    expect(() => decodeHostedResult("workspace.list.cloud", [])).toThrow(/expected an object/)
-    expect(() => decodeHostedResult("workspace.list.cloud", {})).toThrow(/expected an array "workspaces"/)
-    expect(() => decodeHostedResult("workspace.list.userHosted", {})).toThrow(/expected an array "workspaces"/)
+    expect(() => decodeHostedResult("workspace.list.provisioner", [])).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("workspace.list.provisioner", {})).toThrow(/expected an array "workspaces"/)
+    expect(() => decodeHostedResult("workspace.list.machine", {})).toThrow(/expected an array "workspaces"/)
   })
 
   test("rejects an empty string in a required field, not just a missing one", () => {
@@ -101,10 +101,10 @@ describe("decodeHostedResult", () => {
       relayUrl: "wss://relay.test",
       token: "x",
     })
-    expect(decodeHostedResult("workspace.list.cloud", { workspaces: [{ id: "ws_1" }] })).toEqual({
+    expect(decodeHostedResult("workspace.list.provisioner", { workspaces: [{ id: "ws_1" }] })).toEqual({
       workspaces: [{ id: "ws_1" }],
     })
-    expect(decodeHostedResult("workspace.list.userHosted", { workspaces: [{ id: "ws_2" }] })).toEqual({
+    expect(decodeHostedResult("workspace.list.machine", { workspaces: [{ id: "ws_2" }] })).toEqual({
       workspaces: [{ id: "ws_2" }],
     })
   })
@@ -190,8 +190,8 @@ describe("isSafeOperation", () => {
   test("marks plain reads as safe", () => {
     for (const safe of [
       "account.mode",
-      "workspace.list.cloud",
-      "workspace.list.userHosted",
+      "workspace.list.provisioner",
+      "workspace.list.machine",
       "workspace.checkpoints.list",
       "agentPlugins.skill",
       "agentPlugins.skill.project",

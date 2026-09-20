@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
-import { createD1UserHostedTargetResolver } from "./user-hosted-relay-target"
+import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 
 const MIGRATIONS = controlPlaneMigrations()
 const active: Miniflare[] = []
@@ -60,10 +60,10 @@ async function database() {
   return database
 }
 
-describe("D1 user-hosted relay target", () => {
+describe("D1 host tunnel relay target", () => {
   test("routes only an assigned workspace that is ready at the current revision and generation on a live lease", async () => {
     const db = await database()
-    const resolve = createD1UserHostedTargetResolver(db, {
+    const resolve = createD1HostTunnelTargetResolver(db, {
       now: () => 100,
       deploymentId: "deployment-1",
     })

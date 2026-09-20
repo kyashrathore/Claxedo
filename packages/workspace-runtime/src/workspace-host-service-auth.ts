@@ -3,7 +3,7 @@ import { createRemoteJWKSet, importSPKI } from "jose"
 import type { RelayHostVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
-  isRelayClaimPair,
+  isRelayBacking,
   relayHostTokenAudience,
   relayHostTokenIssuer,
   verifyRelayHostToken,
@@ -45,10 +45,9 @@ export type RelayHostAuthContext = {
 /**
  * Verified actor identity stamped by the in-process local-server boundary.
  * Deliberately not a Relay Host Token: it has no signature lifecycle, issuer,
- * audience, or token identifiers to synthesize. `access` and `backing` are
- * the claim pair the control plane mints on a Relay Host Token, carried here
- * verbatim when the stamping boundary has them; nothing on this side derives
- * them.
+ * audience, or token identifiers to synthesize. `backing` is the placement the
+ * control plane mints on a Relay Host Token, carried here verbatim when the
+ * stamping boundary has it; nothing on this side derives it.
  */
 export type EmbeddedRelayHostIdentity = {
   principal_kind: "user" | "service"
@@ -61,7 +60,6 @@ export type EmbeddedRelayHostIdentity = {
   workspace_id: string
   role: "viewer" | "editor" | "admin" | "owner"
   host_id?: string
-  access?: "cloud" | "user-hosted"
   backing?: "cloud-vm" | "local-worktree"
 }
 
@@ -115,9 +113,7 @@ function validateRelayHostVerifierClaims(
   const actor_public_id = stringClaim(payload, "actor_public_id")
   const actor_name = stringClaim(payload, "actor_name")
   const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
-  const access = stringClaim(payload, "access")
   const backing = stringClaim(payload, "backing")
-  const pair = { access, backing }
   const exp = numberClaim(payload, "exp")
   const iat = numberClaim(payload, "iat")
   const jti = stringClaim(payload, "jti")
@@ -133,7 +129,8 @@ function validateRelayHostVerifierClaims(
     || !workspace_id
     || !host_id
     || !role
-    || !isRelayClaimPair(pair)
+    || payload.access !== undefined
+    || !isRelayBacking(backing)
     || !exp
     || !iat
     || !jti
@@ -164,7 +161,7 @@ function validateRelayHostVerifierClaims(
     workspace_id,
     host_id,
     role,
-    ...pair,
+    backing,
     exp,
     iat,
     jti,
@@ -327,12 +324,11 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
           "Relay request workspace is not hosted by this Workspace Host Service",
         ), 404)
       }
-      // `access` is a claim the control plane mints and `isRelayClaimPair`
-      // admits only these two values, so this covers every token the verifier
-      // accepts: the relay stamps `x-forwarded-by` on each request it
+      // Every token the verifier accepts carries a `backing`, so this covers
+      // all of them: the relay stamps `x-forwarded-by` on each request it
       // forwards, and a valid token arriving without it was replayed around
       // the relay. The control plane's own token took the direct branch above.
-      if (claims.access === "cloud" || claims.access === "user-hosted") {
+      if (claims.backing) {
         if (c.req.header("x-forwarded-by") !== "workspace-relay") {
           await audit(options, {
             action: "relay_host_token.rejected",

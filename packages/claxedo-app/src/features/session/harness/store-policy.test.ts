@@ -187,8 +187,9 @@ describe("harness store policy", () => {
         hostKind: "provisioner",
       }),
     ).toBe(true)
-    // A user-hosted workspace is a machine's workspace: its draft starts from
-    // that machine's harness, even though its config API is never loopback.
+    // A workspace reached through the relay still sits on a machine, so its
+    // draft starts from that machine's harness even though its config API is
+    // never loopback.
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: false,

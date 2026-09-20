@@ -79,11 +79,10 @@ export function repoDerivedProjectLabel(
  * The inventory arrives in TWO shapes that key `workspaces` differently: the
  * server bootstrap keys by WORKSPACE ID (routes/hosted/shell.ts, where
  * `directory` is a field on the value) and the client snapshot keys by
- * DIRECTORY (data/query/inventory.ts). Matching only the key missed the other
- * shape, so the active project came back undefined and the workspace chip —
- * which filters THAT project's workspaces — collapsed to the "create new" path
- * even when the project already had cloud workspaces. Match both shapes, plus
- * the id fields, so either inventory resolves.
+ * DIRECTORY (data/query/inventory.ts). Matching the key, the directory and the
+ * id fields lets either shape resolve; a miss leaves the active project
+ * undefined and collapses the workspace chip, which filters THAT project's
+ * workspaces, to its "create new" path.
  */
 export function findProjectForDirectory<T extends ProjectInventoryEntry>(
   projects: readonly T[],

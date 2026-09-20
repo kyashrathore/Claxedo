@@ -11,7 +11,7 @@
 // This script is DIAGNOSTIC ONLY. It does not assert and does not gate; the
 // relay-side fix is deliberately out of scope for the change that added it.
 // It boots the same local topology as `local-dialin.ts` (real shipping relay
-// process, bench resolver in user-hosted mode), holds tunnel A open, then dials
+// process, bench resolver in local-worktree mode), holds tunnel A open, then dials
 // tunnel B for the SAME hostId and reports what the second upgrade returned.
 //
 //   bun bench/scratch-reregister.ts
@@ -50,7 +50,7 @@ async function main() {
   const resolver = startBenchResolver({
     targetBaseUrl: echo.url,
     token: resolverToken,
-    accessMode: "user-hosted",
+    backing: "local-worktree",
   })
   const relayPort = await freePort()
   const relayHttp = `http://127.0.0.1:${relayPort}`

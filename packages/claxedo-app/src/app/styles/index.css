@@ -62,10 +62,9 @@
     container-name: session-new-design;
   }
 
-  /* The context row above the composer. Chips size to their own content and
-     truncate, so unlike the segmented-control row this replaced there are no
-     fixed per-picker widths to maintain — the only responsive behaviour left is
-     swapping the self-hosted workspace's long detail line for its short form. */
+  /* Chips in the context row size to their own content and truncate, so the
+     only responsive behaviour is swapping the placement chip's long detail line
+     for its short form. */
   [data-component="session-context-row"] [data-slot="self-hosted-compact-detail"] {
     display: none;
   }

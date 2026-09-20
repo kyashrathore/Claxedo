@@ -1,6 +1,7 @@
 /**
- * User-hosted signed traffic reaches the in-process embedded workspace runtime
- * through `embedded()` — not through `createRelayHostAuthMiddleware`. Without
+ * Signed traffic for a machine-placed workspace reaches the in-process
+ * embedded workspace runtime through `embedded()` — not through
+ * `createRelayHostAuthMiddleware`. Without
  * this hop, `sessionAccessContext` never sees actor profile claims, so user
  * messages are stored without `claxedo.author` and MessageAuthorLane chips
  * never render.
@@ -27,7 +28,6 @@ export type EmbeddedRelayHostAuth = {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
   host_id?: string
-  access?: "cloud" | "user-hosted"
   backing?: "cloud-vm" | "local-worktree"
 }
 

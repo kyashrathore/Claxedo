@@ -17,8 +17,9 @@ describe("terminalScopedPlacement", () => {
     })
   })
 
-  // A signed user-hosted workspace addressed by its filesystem-path directory
-  // has no `/api/workspace/resolve` entry on the hosted control plane — the
+  // A signed workspace placed on another machine, addressed by its
+  // filesystem-path directory, has no `/api/workspace/resolve` entry on the
+  // hosted control plane — the
   // caller's liveness read (`workspace`) comes back empty for it — so the
   // signed inventory match passed as `signedWorkspace` must still win the
   // relay placement instead of falling through to the central transport.

@@ -5,8 +5,8 @@
  * and control frames). Every frame enters one emitter; consumers subscribe by
  * type or listen to all.
  *
- * On loopback the daemon hosts every local runtime, so one `wr/events` — the
- * host aggregate, named by no workspace — carries all of them, and a local
+ * On loopback the daemon embeds every runtime of its own, so one `wr/events` —
+ * the host aggregate, named by no workspace — carries all of them, and a
  * workspace that is not on screen stays live. A relay-backed workspace is
  * another machine's runtime and still gets its own stream when it is routed.
  * On signed web every `wr` stream is a routed workspace's.
@@ -224,7 +224,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // read again, and the stream stays open.
       if (isStreamReplayGap(frame)) {
         if (target.kind === "wr") {
-          // The aggregate's hole is every local workspace's: a resync naming
+          // The aggregate's hole is every embedded runtime's: a resync naming
           // no directory is answered by every mounted controller.
           if (target.scope === "host") {
             requestSessionHistoryResync({ reason: "sse-gap" })
@@ -289,8 +289,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
 
     // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
-    // carries that session's events; the aggregate is every local workspace's,
-    // so it has one lane of its own.
+    // carries that session's events; the aggregate carries every runtime the
+    // daemon embeds, so it has one lane of its own.
     const lane: SessionEventStreamLane | undefined = target.kind !== "wr"
       ? undefined
       : target.scope === "host" ? HOST_AGGREGATE_LANE : `wr:${target.workspaceId}`
@@ -497,7 +497,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // the authority had flipped to reconnecting). Readiness is owned by the
         // authority; this stream does not infer it. The aggregate speaks for
         // nobody: a connection entry exists only for a workspace a
-        // `WorkspaceGate` mounted, and a local workspace never gets one.
+        // `WorkspaceGate` mounted, and a workspace served over loopback never gets one.
         if (target.kind === "wr" && target.scope !== "host") markWorkspaceReconnected(target.workspaceId)
         resetHeartbeat()
         const reader = res.body.getReader()

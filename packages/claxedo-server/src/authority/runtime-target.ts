@@ -29,8 +29,8 @@ export async function resolveWorkspaceRuntimeTarget(
     if (!activeLink.active) {
       throw new WorkspaceRuntimeTargetError(
         409,
-        "user_hosted_workspace_unavailable",
-        "User-hosted sandbox is unavailable",
+        "workspace_host_offline",
+        "The machine serving this workspace is offline",
       )
     }
     return {

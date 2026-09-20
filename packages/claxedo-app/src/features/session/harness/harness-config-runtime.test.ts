@@ -210,10 +210,10 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/local" })).toBe(true)
   })
 
-  // A signed user-hosted workspace addressed by its filesystem-path directory
-  // (the registration-stored remote_directory, not a `ws_`/`workspace:` ref)
-  // must still resolve to its workspaceId and get a relay placement — not fall
-  // through to the plain central transport, which serves none of the
+  // A signed machine-placed workspace addressed by its filesystem-path
+  // directory (the registration-stored remote_directory, not a
+  // `ws_`/`workspace:` ref) must still resolve to its workspaceId and get a
+  // relay placement; the plain central transport serves none of the
   // `/api/wr/*` runtime paths.
   test("routes signed machine-placed harness config options through the workspace relay for a filesystem directory", async () => {
     const placements: unknown[] = []

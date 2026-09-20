@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import {
   asHostKind,
   backingHostKind,
-  controlPlaneListScope,
   controlPlaneRowPlacement,
   inventoryHostKind,
   inventoryKindWord,
@@ -11,6 +10,7 @@ import {
   modelStoreWorkspaceKey,
   placementProvisioner,
   placementWire,
+  rowHostKind,
   type SelfHost,
 } from "./placement-wire"
 
@@ -72,9 +72,19 @@ describe("the control plane's vocabulary", () => {
     expect(asHostKind(undefined)).toBeUndefined()
   })
 
-  test("the list scope keeps the route vocabulary the control plane answers on", () => {
-    expect(controlPlaneListScope("provisioner")).toBe("cloud")
-    expect(controlPlaneListScope("machine")).toBe("user-hosted")
+  test("a whole row narrows from either producer's spelling of the placement", () => {
+    expect(rowHostKind({ kind: "local", directory: "/repo" })).toBe("self")
+    expect(rowHostKind({ backing: "local-worktree" })).toBe("machine")
+    // The signed resolve body states the placement as an object and no kind.
+    expect(rowHostKind({ workspaceId: "ws_1", backing: { kind: "local-worktree", branch: "main" } })).toBe("machine")
+    expect(rowHostKind({ workspaceId: "ws_1", backing: { kind: "cloud-vm", repoName: "app" } })).toBe("provisioner")
+    expect(rowHostKind({ backing: { kind: "quantum-vm" } })).toBeUndefined()
+    expect(rowHostKind({})).toBeUndefined()
+  })
+
+  test("the attached server's own word outranks a control-plane backing on one row", () => {
+    expect(rowHostKind({ kind: "local", backing: "local-worktree" })).toBe("self")
+    expect(rowHostKind({ kind: "local", backing: { kind: "local-worktree" } })).toBe("self")
   })
 
   test("only a relay host is one this client cannot serve itself", () => {

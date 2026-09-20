@@ -14,7 +14,7 @@ import {
 import { sha256Hex } from "@claxedo/helpers/crypto"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
-import { createD1UserHostedTargetResolver } from "./user-hosted-relay-target"
+import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority, hostEnrollmentPayload } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
@@ -68,7 +68,7 @@ async function setup() {
   const runtimeTokens = new D1ChannelRuntimeAuthority(database, { deploymentId: "deployment-a", now })
   // No deployment pin: the fixture's organizations are team orgs, which carry
   // no deployment id, and the predicate under test is the serving one.
-  const relayTarget = createD1UserHostedTargetResolver(database, { now })
+  const relayTarget = createD1HostTunnelTargetResolver(database, { now })
   return {
     database,
     workspace,
@@ -567,7 +567,7 @@ describe("D1 host access authority", () => {
     expect(undeclared).not.toHaveProperty("session_authority")
   })
 
-  test("stamps host reachability on every user-hosted row of the workspace list", async () => {
+  test("stamps host reachability on every machine-placed row of the workspace list", async () => {
     const input = await setup()
     const { alice } = await fixture(input)
     const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-c")

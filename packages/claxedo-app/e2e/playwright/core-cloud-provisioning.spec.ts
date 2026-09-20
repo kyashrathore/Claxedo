@@ -30,9 +30,10 @@
  * Not here: the create-workspace dialog's own pipeline (`core-workspace-lifecycle`),
  * harness ownership over the relay (`core-harness-ownership-cloud`), offline, 403 and
  * viewer-role behavior (`core-cloud-offline-roles`), and the three-step connect
- * pipeline of a workspace placed on a machine (`core-user-hosted-workspace`).
+ * pipeline of a workspace placed on a machine (`core-host-tunnel-workspace`).
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isWorkspaceListPath, workspaceListResponse } from "../helpers/contracts/workspace-list"
 import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import {
@@ -41,7 +42,7 @@ import {
   expectTurnCounts,
   SELECTORS,
 } from "../helpers/turn-oracle"
-import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
+import { bootstrapDeployment, installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
 import { stampTestAuth } from "../playwright-global-setup"
 import { eventStream, lastEventId } from "../helpers/sse-route"
 import {
@@ -57,6 +58,7 @@ import {
 } from "../helpers/contracts/session-registration"
 
 const DIR = "/tmp/e2e-core-cloud-provisioning"
+const ORG_ID = "org_core_cloud_provisioning"
 const PROJECT_ID = "proj_core_cloud_provisioning"
 const WORKSPACE_ID = "ws_core_cloud_provisioning"
 const SESSION_ID = "ses_core_cloud_provisioning"
@@ -300,6 +302,7 @@ async function installCloudRuntimeMock(
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
         events: { hostAggregate: true },
+        deployment: bootstrapDeployment(),
         project: [projectRow()],
         provider: providerCatalogIndex(providerCatalog()),
         provider_auth: {},
@@ -424,12 +427,21 @@ async function installCloudRuntimeMock(
       const result = sessionReservationResponse(reservation)
       return json(route, result, sessionReservationStatus(result))
     }
-    if (url.pathname === "/api/workspace") {
-      const access = url.searchParams.get("access")
-      if (access === "cloud") {
-        return json(route, { workspaces: workspaceRegistered ? [{ workspace_id: WORKSPACE_ID, project_id: PROJECT_ID, backing: "cloud-vm", placement: {}, display_name: "core-cloud-provisioning" }] : [] })
-      }
-      return json(route, { workspaces: [] })
+    if (isWorkspaceListPath(url.pathname)) {
+      return json(route, workspaceListResponse({
+        host: url.searchParams.get("host"),
+        workspaces: workspaceRegistered
+          ? [{
+              workspace_id: WORKSPACE_ID,
+              org_id: ORG_ID,
+              project_id: PROJECT_ID,
+              display_name: "core-cloud-provisioning",
+              backing: "cloud-vm",
+              placement: {},
+              role: "owner",
+            }]
+          : [],
+      }))
     }
 
     if (url.pathname === "/api/workspace/create" && method === "POST") {
@@ -779,6 +791,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
             version: "1.0.0-test",
             path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
             events: { hostAggregate: true },
+            deployment: bootstrapDeployment(true),
             project: created.map((project) => ({
               id: project.id,
               name: project.name,
@@ -857,7 +870,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       let inventoryReads = 0
       page.on("request", (request) => {
         const url = new URL(request.url())
-        if (request.method() === "GET" && url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
+        if (request.method() === "GET" && isWorkspaceListPath(url.pathname) && url.searchParams.get("host") === "provisioner") {
           inventoryReads += 1
         }
       })

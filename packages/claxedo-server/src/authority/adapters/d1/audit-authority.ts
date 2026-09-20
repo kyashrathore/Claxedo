@@ -27,6 +27,7 @@ type WorkspaceRow = { workspace_id: string; org_id: string; project_id: string }
 const AUDIT_METADATA_KEYS = new Set([
   "activeLeases",
   "actor",
+  "backing",
   "callerSessionId",
   "cap",
   "client",
@@ -39,7 +40,6 @@ const AUDIT_METADATA_KEYS = new Set([
   "hostLeaseExpiresAt",
   "orgId",
   "retryAfterMs",
-  "runtimeKind",
   "sessionId",
   "tool",
   "workspaceId",

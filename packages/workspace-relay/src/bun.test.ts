@@ -196,7 +196,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -233,7 +232,6 @@ describe("workspace relay Bun adapter", () => {
         hostId: "host_1",
       })).resolves.toMatchObject({
         role: "editor",
-        access: "cloud",
         backing: "cloud-vm",
       })
     } finally {
@@ -271,7 +269,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -334,7 +331,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://cloud.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -398,7 +394,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://cloud.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -486,7 +481,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://cloud.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -585,7 +579,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://cloud.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -658,7 +651,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://cloud.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -721,7 +713,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -801,7 +792,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -860,7 +850,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -925,7 +914,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, {
@@ -964,7 +952,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("registers user-hosted tunnel presence and responds to heartbeat pings", async () => {
+  test("registers host tunnel presence and responds to heartbeat pings", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
@@ -1175,7 +1163,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("forwards user-hosted HTTP requests over the registered tunnel", async () => {
+  test("forwards tunnelled HTTP requests over the registered tunnel", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1188,8 +1176,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1266,7 +1253,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("rejects user-hosted HTTP request bodies over the configured cap", async () => {
+  test("rejects tunnelled HTTP request bodies over the configured cap", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1279,8 +1266,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1337,7 +1323,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("returns user-hosted offline after the host tunnel closes", async () => {
+  test("returns host-tunnel offline after the host tunnel closes", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1350,8 +1336,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1390,8 +1375,8 @@ describe("workspace relay Bun adapter", () => {
       expect(res.status).toBe(503)
       await expect(res.json()).resolves.toEqual({
         error: {
-          code: "user_hosted_app_offline",
-          message: "User-hosted workspace is offline",
+          code: "host_tunnel_offline",
+          message: "The machine serving this workspace is offline",
         },
       })
     } finally {
@@ -1400,7 +1385,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("streams user-hosted large HTTP responses before the tunnel response ends", async () => {
+  test("streams tunnelled large HTTP responses before the tunnel response ends", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1413,8 +1398,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1505,7 +1489,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("fails pending user-hosted HTTP when the tunnel sends an error frame", async () => {
+  test("fails pending tunnelled HTTP when the tunnel sends an error frame", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1518,8 +1502,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1587,8 +1570,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1665,7 +1647,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("keeps user-hosted SSE streams open past the tunnel response timeout", async () => {
+  test("keeps tunnelled SSE streams open past the tunnel response timeout", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1678,8 +1660,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1794,7 +1775,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -1835,7 +1815,7 @@ describe("workspace relay Bun adapter", () => {
     }
   }, 20_000)
 
-  test("multiplexes user-hosted WebSocket frames over the registered tunnel", async () => {
+  test("multiplexes tunnelled WebSocket frames over the registered tunnel", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1848,8 +1828,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1929,7 +1908,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("closes an idle user-hosted channel and notifies its host after token revocation", async () => {
+  test("closes an idle tunnelled channel and notifies its host after token revocation", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -1946,8 +1925,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -1998,7 +1976,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("round-trips binary user-hosted WebSocket frames through the tunnel", async () => {
+  test("round-trips binary tunnelled WebSocket frames through the tunnel", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -2011,8 +1989,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -2098,8 +2075,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -2233,8 +2209,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -2358,8 +2333,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -2453,8 +2427,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -2550,7 +2523,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://upstream.invalid",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -2608,7 +2580,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -2667,7 +2638,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://127.0.0.1:9",
-        access: "user-hosted",
         backing: "local-worktree",
       }),
     })
@@ -2721,7 +2691,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, { runtimeAccessTokenActiveCheckIntervalMs: 5 })
@@ -2773,7 +2742,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     }, { now: () => Date.now() + 31 * 60_000 })
@@ -2816,7 +2784,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "http://upstream.invalid",
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -2878,7 +2845,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -2940,7 +2906,6 @@ describe("workspace relay Bun adapter", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
     })
@@ -2977,7 +2942,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("rejects user-hosted user→relay WS upgrades with a disallowed Origin", async () => {
+  test("rejects tunnelled user→relay WS upgrades with a disallowed Origin", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -2990,8 +2955,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -3150,8 +3114,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -3279,8 +3242,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -3362,8 +3324,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -3554,8 +3515,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -3643,8 +3603,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -3809,8 +3768,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -4012,7 +3970,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
       })
@@ -4034,7 +3991,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
       })
@@ -4057,7 +4013,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
       })
@@ -4091,7 +4046,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://unused.test",
-          access: "user-hosted",
           backing: "local-worktree",
         }),
       })
@@ -4166,7 +4120,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: String(host.url).replace(/\/$/, ""),
-          access: "cloud",
           backing: "cloud-vm",
         }),
       })
@@ -4218,7 +4171,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://127.0.0.1:1",
-          access: "cloud",
           backing: "cloud-vm",
         }),
       })
@@ -4256,7 +4208,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://unused.test",
-          access: "user-hosted",
           backing: "local-worktree",
         }),
       })
@@ -4328,7 +4279,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://cloud.example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
       }, {
@@ -4387,7 +4337,6 @@ describe("workspace relay Bun adapter", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "http://unused.test",
-          access: "user-hosted",
           backing: "local-worktree",
         }),
       })
@@ -4621,8 +4570,7 @@ describe("workspace relay Bun adapter host generation fence", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -5368,7 +5316,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
   // detected, because no local harness can produce one. The threshold arithmetic
   // is covered by the unit tests above; the "healthy traffic at the real 8 MiB
   // default is untouched" test below is the other half of the vise.
-  async function userHostedRelay(webSocketBufferedAmountMaxBytes: number) {
+  async function hostTunnelRelay(webSocketBufferedAmountMaxBytes: number) {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -5381,8 +5329,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://user-hosted.invalid",
-        access: "user-hosted",
+        baseUrl: "http://host-tunnel.invalid",
         backing: "local-worktree",
       }),
     }, {
@@ -5414,7 +5361,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
   test("a saturated client channel is closed 1011 with the named reason", async () => {
     // Host→client direction, `bun.ts:1455`. The host pushes a frame at a client
     // whose buffer is over limit; the CHANNEL dies, and the tunnel survives.
-    const { relay, token, observer, directory } = await userHostedRelay(-1)
+    const { relay, token, observer, directory } = await hostTunnelRelay(-1)
     const host = new WebSocket(
       new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
     )
@@ -5460,7 +5407,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
     // buffer is over limit. Bun closes the CLIENT here (not the tunnel), which
     // is the semantic this test pins — it is the shape the CF port would have
     // had to match, and it keeps one noisy client from killing every channel.
-    const { relay, token, observer, directory } = await userHostedRelay(-1)
+    const { relay, token, observer, directory } = await hostTunnelRelay(-1)
     const host = new WebSocket(
       new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
     )
@@ -5489,7 +5436,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
     // default limit. If the guard were over-eager, this is what would break —
     // and this is the assertion that makes the two forced-breach tests meaningful
     // rather than merely "closing sockets is possible".
-    const { relay, token, observer, directory } = await userHostedRelay(8 * 1024 * 1024)
+    const { relay, token, observer, directory } = await hostTunnelRelay(8 * 1024 * 1024)
     const host = new WebSocket(
       new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
     )

@@ -146,10 +146,10 @@ export {
 } from "./adapters/central-store/mirror"
 export { createClaxedoClient, type ClaxedoClientOptions, type ClaxedoRequestOptions } from "./client"
 export {
-  startUserHostedWorkspaceTunnel,
-  stopAllUserHostedWorkspaceTunnels,
-  stopUserHostedWorkspaceTunnel,
-} from "./user-hosted-tunnel"
+  startWorkspaceHostTunnel,
+  stopAllWorkspaceHostTunnels,
+  stopWorkspaceHostTunnel,
+} from "./host-tunnel"
 export { initPostHog, shutdownPostHog, capture, getPostHog } from "./platform/telemetry/errors/posthog"
 export { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 export type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"

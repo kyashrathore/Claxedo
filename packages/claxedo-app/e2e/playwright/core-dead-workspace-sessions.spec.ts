@@ -27,7 +27,7 @@
  * No turn is ever sent here, so no relay and no harness is mounted. Sending turns on a
  * provisioner-placed workspace is core-harness-ownership-cloud's, provisioning is
  * core-cloud-provisioning's, and machine-placed workspaces are
- * core-user-hosted-workspace's.
+ * core-host-tunnel-workspace's.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionListPath } from "../helpers/contracts/session-list"
@@ -198,8 +198,7 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
       })
     }
     if (path === "/api/workspace") {
-      const access = url.searchParams.get("access")
-      if (access === "user-hosted") return json(route, { workspaces: [] })
+      if (url.searchParams.get("host") === "machine") return json(route, { workspaces: [] })
       return json(route, {
         workspaces: [{
           workspace_id: WORKSPACE_ID,

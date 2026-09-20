@@ -6,10 +6,13 @@
  * answer to "is that machine me", computed here and nowhere else, never
  * persisted and never sent.
  *
- * The words `local`, `cloud` and `user-hosted` are the CONTROL PLANE's, on the
- * wire only: a project inventory row's `kind`, a control-plane row's `backing`,
- * and the `?access=` list scope. This module is the only translator between
- * them and the placement the rest of the app reads.
+ * Two producers write that fact in two vocabularies, on the wire only: a
+ * project-inventory row's `kind` (`local` / `cloud` / `user-hosted`), written
+ * by the attached server about the directories it serves itself, and the
+ * control plane's `backing` (`cloud-vm` / `local-worktree`), written about a
+ * workspace it placed on some machine. The `?host=` list query is a third,
+ * asked in the placement's own words. This module is the only translator
+ * between all of them and the placement the rest of the app reads.
  */
 
 import { asRecord } from "@/lib/record"
@@ -17,12 +20,13 @@ import { asRecord } from "@/lib/record"
 /**
  * The word a project-inventory row's `kind` is written with on the wire.
  *
- * One producer writes it now: the daemon's own store, whose workspace row has
- * a `kind` column (`local` / `cloud`) and no backing. The app mints it back
- * for its own catalog rows through {@link inventoryKindWord} so both halves of
- * one inventory map read alike. Every other inventory producer states
- * `backing` instead, which is why a row is narrowed by {@link rowHostKind}
- * rather than by this word alone.
+ * One producer writes it: the ATTACHED server's own store, whose workspace row
+ * has a `kind` column (`local` / `cloud`) and no backing. It answers a
+ * different question from every other producer — "does this server serve this
+ * directory itself" rather than "which machine does the control plane place it
+ * on" — which is why the word survives and why {@link rowHostKind} reads it
+ * first. The app mints it back for its own catalog rows through
+ * {@link inventoryKindWord} so both halves of one inventory map read alike.
  */
 export type InventoryKindWord = "local" | "cloud" | "user-hosted"
 
@@ -130,11 +134,40 @@ export function modelStoreWorkspaceKey(input: {
 }
 
 /**
+ * A host kind that has travelled as a plain string through app-internal data —
+ * a session row's `environment.kind`, a stored draft. Not a wire word.
+ */
+export function asHostKind<T>(input: T & NotAWireWord<T>): WorkspaceHostKind | undefined {
+  const value: unknown = input
+  return value === "self" || value === "machine" || value === "provisioner" ? value : undefined
+}
+
+/**
+ * The host kind a control-plane row's `backing` WORD states.
+ *
+ * The control plane stores where a workspace runs, not how a client reaches
+ * it: `cloud-vm` is the provisioner's machine and `local-worktree` is an
+ * enrolled one. It emits no kind of its own.
+ *
+ * The word only. A resolve projection spells the same fact as an object, and a
+ * list route that answers a resolve projection whole sends rows with no
+ * `placement.host_enrollment_id` and no `remote_directory`; narrowing the
+ * object here would place every one of them on an unnamed machine instead of
+ * refusing the row. {@link rowHostKind} takes either spelling, for readers that
+ * hold a whole row from either producer.
+ */
+export function backingHostKind<T>(input: T & NotAHostKind<T>): RelayHostKind | undefined {
+  if (input === "cloud-vm") return "provisioner"
+  if (input === "local-worktree") return "machine"
+  return undefined
+}
+
+/**
  * The host kind a project-inventory row's `kind` states.
  *
- * Only the daemon's own store and the app's own catalog projection write that
- * field. A reader holding a whole row asks {@link rowHostKind}; this narrows
- * the word once it has been read off one.
+ * Only the attached server's own store and the app's own catalog projection
+ * write that field. A reader holding a whole row asks {@link rowHostKind};
+ * this narrows the word once it has been read off one.
  */
 export function inventoryHostKind<T>(input: T & NotAHostKind<T>): WorkspaceHostKind | undefined {
   if (input === "local") return "self"
@@ -147,40 +180,6 @@ export function inventoryKindWord(kind: WorkspaceHostKind): InventoryKindWord {
   if (kind === "self") return "local"
   if (kind === "provisioner") return "cloud"
   return "user-hosted"
-}
-
-/**
- * A host kind that has travelled as a plain string through app-internal data —
- * a session row's `environment.kind`, a stored draft. Not a wire word.
- */
-export function asHostKind<T>(input: T & NotAWireWord<T>): WorkspaceHostKind | undefined {
-  const value: unknown = input
-  return value === "self" || value === "machine" || value === "provisioner" ? value : undefined
-}
-
-/**
- * The host kind a control-plane row's `backing` states.
- *
- * The control plane stores where a workspace runs, not how a client reaches
- * it: `cloud-vm` is the provisioner's machine and `local-worktree` is an
- * enrolled one. It emits no kind of its own.
- */
-export function backingHostKind<T>(input: T & NotAHostKind<T>): RelayHostKind | undefined {
-  if (input === "cloud-vm") return "provisioner"
-  if (input === "local-worktree") return "machine"
-  return undefined
-}
-
-/**
- * The list scope the control plane's workspace routes name.
- *
- * `GET /api/workspace?access=` and the account bridge's `workspace.list.*`
- * operations answer one placement each, under the vocabulary those routes were
- * built with. Kept here so the app states it once, at the same boundary that
- * reads it back off a row.
- */
-export function controlPlaneListScope(kind: RelayHostKind): "cloud" | "user-hosted" {
-  return kind === "provisioner" ? "cloud" : "user-hosted"
 }
 
 /**
@@ -224,20 +223,24 @@ export function placementProvisioner(input: unknown): string | undefined {
  * The host kind an inventory or session row reports, whichever word its
  * producer states it in.
  *
- * The producers do not agree and cannot: the daemon's store has a `kind`
- * column and no backing, while the signed bootstrap
- * (`claxedo-local-server/.../bootstrap.ts`) and the hosted shell
- * (`claxedo-server/src/routes/hosted/shell.ts`) pass the control plane's
- * `backing` through and write no kind. Reading only one of the two answers
- * `undefined` for half the rows in circulation, which every caller spells as
- * "not relay-backed" and routes at the wrong server.
+ * The producers do not agree and cannot, because they answer different
+ * questions. The attached server's own store has a `kind` column and no
+ * backing, and its `local` says "I serve this directory myself". The signed
+ * bootstrap (`claxedo-local-server/.../bootstrap.ts`) and the hosted shell
+ * (`claxedo-server/src/routes/hosted/shell.ts`) pass the CONTROL PLANE's
+ * `backing` through, where `local-worktree` says "some enrolled machine serves
+ * it" and never this one. Reading only one of the two answers `undefined` for
+ * half the rows in circulation, which every caller spells as "not
+ * relay-backed" and routes at the wrong server.
  *
  * `kind` is preferred where a row carries both, because it is the serving
  * process writing about itself.
  */
 export function rowHostKind(input: unknown): WorkspaceHostKind | undefined {
   const row = asRecord(input)
-  return inventoryHostKind(row?.kind) ?? backingHostKind(row?.backing)
+  const backing: unknown = row?.backing
+  return inventoryHostKind(row?.kind)
+    ?? backingHostKind(typeof backing === "string" ? backing : asRecord(backing)?.kind)
 }
 
 function text(input: unknown) {

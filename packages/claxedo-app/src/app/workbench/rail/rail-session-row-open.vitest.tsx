@@ -99,8 +99,8 @@ const WORKSPACE_REF = `workspace:${WORKSPACE_ID}`
 const SESSION_ID = "ses_host"
 const SESSION_UPDATED_AT = Date.now() - 60_000
 
-// A session read from a user-hosted workspace's own runtime: `sessionRowDirectory`
-// addresses it as `workspace:<id>`, never as the host's filesystem path.
+// A session read from another machine's runtime: `sessionRowDirectory`
+// addresses it as `workspace:<id>`, never as that machine's filesystem path.
 const HOST_SESSION_ROW = {
   type: "session",
   sessionRef: `${WORKSPACE_REF}:session:${SESSION_ID}`,

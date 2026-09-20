@@ -25,7 +25,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
-import { userHostedConnectionInfo } from "../connections/user-hosted-connection"
+import { hostTunnelConnectionInfo } from "../connections/host-tunnel-connection"
 import type { D1Database } from "@cloudflare/workers-types"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
 import type { ControlPlaneCredentials } from "../authority/services"
@@ -395,10 +395,10 @@ describe("signed Composio Gmail on Miniflare", () => {
       jti: "jti_1",
     }))
 
-    const local = await userHostedConnectionInfo({
+    const local = await hostTunnelConnectionInfo({
       authority: {
           // The host declares its runtime's session authority on the heartbeat;
-        // the user-hosted mint asks for it before the plugin gate runs.
+        // the machine-placement mint asks for it before the plugin gate runs.
         activeWorkspaceHost: vi.fn(async () => ({
           active: true,
           host_id: "host_1",
@@ -451,7 +451,7 @@ describe("signed Composio Gmail on Miniflare", () => {
     const cloud = await hostedConnectionInfo({
       authority: {
           // The host declares its runtime's session authority on the heartbeat;
-        // the user-hosted mint asks for it before the plugin gate runs.
+        // the machine-placement mint asks for it before the plugin gate runs.
         activeWorkspaceHost: vi.fn(async () => ({
           active: true,
           host_id: "host_1",
@@ -505,8 +505,8 @@ describe("signed Composio Gmail on Miniflare", () => {
       },
     }, auth, "ws_cloud_mint", "https://control.test")
 
-    expect(local).toMatchObject({ connection: { access: "user-hosted", runtimeAccessToken: "runtime-token" } })
-    expect(cloud).toMatchObject({ connection: { access: "cloud", runtimeAccessToken: "runtime-token" } })
+    expect(local).toMatchObject({ connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" } })
+    expect(cloud).toMatchObject({ connection: { backing: "cloud-vm", runtimeAccessToken: "runtime-token" } })
     expect("error" in local).toBe(false)
     expect("error" in cloud).toBe(false)
     expect(resolveConnection.mock.calls.every((call) => call[0].ownerUserId === USER.userId)).toBe(true)

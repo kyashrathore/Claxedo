@@ -9,10 +9,10 @@
 //                            ▼  forwards channels to the echo target
 //   `bun src/main.ts` relay ◀── browser WS (RAT) dials IN; relay rendezvouses
 //   (bench resolver =            the two inbound sockets — NO dial-out
-//    user-hosted mode)
+//    local-worktree mode)
 //
 // Proves the relay routes a browser WS through the held tunnel (relayed WS 1/1)
-// with the resolver in user-hosted mode. Same key mints the HTT and the RAT and
+// with the resolver in local-worktree mode. Same key mints the HTT and the RAT and
 // is trusted by the relay via CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM.
 //
 //   bun bench/local-dialin.ts [--messages 4]
@@ -61,7 +61,7 @@ async function main() {
   const resolver = startBenchResolver({
     targetBaseUrl: echo.url,
     token: resolverToken,
-    accessMode: "user-hosted",
+    backing: "local-worktree",
   })
   const relayPort = await freePort()
   const relayHttp = `http://127.0.0.1:${relayPort}`

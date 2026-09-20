@@ -306,10 +306,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
     if (!currentHarness) return []
-    // OpenCode's provider catalog is explicitly fetched for OpenCode and remains authoritative when
-    // the active workspace is remote. The generic provider picker accessor is
-    // the selection writer/current-value owner, but its directory-scoped list
-    // may legitimately be empty while a cloud workspace is still hydrating.
+    // OpenCode's provider catalog is fetched for OpenCode explicitly and stays
+    // authoritative when the workspace is reached through the relay: the
+    // generic provider picker owns the selection and current value, but its
+    // directory-scoped list may legitimately be empty while a provisioned
+    // machine is still coming up.
     if (isCatalogHarness(currentHarness)) {
       const providerModel = props.providerModel?.()
       return catalogRows().rows.filter((item) =>

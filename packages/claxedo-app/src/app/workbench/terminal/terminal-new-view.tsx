@@ -89,9 +89,9 @@ export function TerminalNewView(props: TerminalNewViewProps) {
 
   /**
    * The relay carries the probe only for a workspace the signed inventory
-   * confirms is relay-backed. `props.workspaceId` is not that answer — a local
-   * workspace has one too, and routing its probe at the relay asks a control
-   * plane that has no record of it.
+   * confirms is relay-backed. `props.workspaceId` is not that answer — a
+   * workspace this server embeds has one too, and routing its probe at the
+   * relay asks a control plane that has no record of it.
    */
   const relayWorkspaceId = createMemo(() => {
     const projects = (projectsQuery.data ?? []) as WorkspaceInventoryProject[]

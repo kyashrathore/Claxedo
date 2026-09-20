@@ -979,7 +979,6 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
     const principalKind = payload.principal_kind
     const actorKind = payload.actor_kind
     const role = payload.role
-    const access = payload.access
     const backing = payload.backing
     const actorId = trimToUndefined(payload.actor_id)
     const orgId = trimToUndefined(payload.org_id)
@@ -997,8 +996,8 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
       || !jti
       || !parentJti
       || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
-      || !((access === "cloud" && backing === "cloud-vm")
-        || (access === "user-hosted" && backing === "local-worktree"))
+      || payload.access !== undefined
+      || (backing !== "cloud-vm" && backing !== "local-worktree")
     ) throw new Error("Relay proof claims are invalid")
     // Assembled AFTER the checks so the claims object is the narrowed values,
     // not the raw payload asserted into their type.

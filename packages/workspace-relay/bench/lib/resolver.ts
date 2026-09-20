@@ -15,11 +15,11 @@ export type BenchResolverConfig = {
   // unset the resolver accepts unauthenticated calls (local dev only).
   token?: string
   upstreamHeaders?: Record<string, string>
-  // "cloud" (default, dial-out): relay dials targetBaseUrl. "user-hosted"
-  // (dial-in): relay routes the client into the registered host tunnel and
-  // never dials the target — targetBaseUrl/upstreamHeaders are unused on that
-  // path (the sandbox agent reaches its own localhost).
-  accessMode?: "cloud" | "user-hosted"
+  // "cloud-vm" (default, dial-out): relay dials targetBaseUrl.
+  // "local-worktree" (dial-in): relay routes the client into the registered
+  // host tunnel and never dials the target — targetBaseUrl/upstreamHeaders are
+  // unused on that path (the sandbox agent reaches its own localhost).
+  backing?: "cloud-vm" | "local-worktree"
   port?: number
   hostname?: string
 }
@@ -50,19 +50,17 @@ export function startBenchResolver(config: BenchResolverConfig): BenchResolver {
         const workspaceId = url.searchParams.get("workspaceId") ?? "ws_bench"
         const hostId = url.searchParams.get("hostId") ?? "host_bench"
         const target: WorkspaceRelayTarget =
-          config.accessMode === "user-hosted"
+          config.backing === "local-worktree"
             ? {
                 workspaceId,
                 hostId,
                 baseUrl: config.targetBaseUrl,
-                access: "user-hosted",
                 backing: "local-worktree",
               }
             : {
                 workspaceId,
                 hostId,
                 baseUrl: config.targetBaseUrl,
-                access: "cloud",
                 backing: "cloud-vm",
                 ...(config.upstreamHeaders ? { upstreamHeaders: config.upstreamHeaders } : {}),
               }

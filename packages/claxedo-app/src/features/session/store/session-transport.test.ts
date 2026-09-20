@@ -32,8 +32,8 @@ const apiFixture = createMockApi({
     if (request.url.includes("/api/workspace/ws_1/connection") || request.url.includes("/api/workspace/ws_known/connection")) {
       const workspaceId = request.url.includes("ws_known") ? "ws_known" : "ws_1"
       return new Response(JSON.stringify({
-        access: "cloud",
         backing: "cloud-vm",
+        sessionAuthority: "managed-private",
         workspaceId,
         relayUrl: "https://relay.test",
         runtimeAccessToken: "rat_1",

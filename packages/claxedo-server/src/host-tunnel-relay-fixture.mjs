@@ -58,7 +58,6 @@ async function resolveTarget(claims) {
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
       baseUrl,
-      access: "cloud",
       backing: "cloud-vm",
     }
   }
@@ -66,7 +65,6 @@ async function resolveTarget(claims) {
     workspaceId: claims.workspace_id,
     hostId: claims.host_id,
     baseUrl: "http://127.0.0.1:9",
-    access: "user-hosted",
     backing: "local-worktree",
   }
 }

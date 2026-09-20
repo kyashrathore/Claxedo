@@ -46,8 +46,8 @@ export function createClaxedoClient(options: ClaxedoClientOptions) {
 
   return {
     health: async () => await request("/api/claxedo/health"),
-    listWorkspaces: async (access?: "cloud" | "user-hosted") => await request(
-      access ? `/api/workspace?${query({ access })}` : "/api/workspace",
+    listWorkspaces: async (host?: "provisioner" | "machine") => await request(
+      host ? `/api/workspace?${query({ host })}` : "/api/workspace",
     ),
     resolveWorkspace: async (input: { directory: string; create?: boolean }) => await request(
       `/api/workspace/resolve?${query({

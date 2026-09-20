@@ -46,8 +46,13 @@ describe("workspace connection authority", () => {
     return new Response("{}", { headers: { "content-type": "application/json" } })
   }
 
-  const relayInfo = (input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConnectionInfo => ({
-    access: "cloud",
+  // Two seams share one fixture: `applyWorkspaceConnectionInfo` takes the
+  // PARSED info, which names a `host`, while the `/connection` stubs answer the
+  // route's own mint body, which names a `backing` that `parseConnection`
+  // narrows back into that host.
+  type RelayConnectionFixture = WorkspaceConnectionInfo & { backing: "cloud-vm" | "local-worktree" }
+  const relayInfo = (input: Partial<RelayConnectionFixture> = {}): RelayConnectionFixture => ({
+    host: "provisioner",
     backing: "cloud-vm",
     sessionAuthority: "managed-private",
     workspaceId: "ws_relay",
@@ -150,12 +155,12 @@ describe("workspace connection authority", () => {
 
   test("machine-placed readiness consumes a connection cached before the authority entry", async () => {
     const workspaceId = "ws_cached_editor"
-    const baseUrl = "http://server.cached-user-hosted-role.test"
+    const baseUrl = "http://server.cached-machine-role.test"
     const request = (async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.pathname === `/api/workspace/${workspaceId}/connection`) {
         return Response.json(relayInfo({
-          access: "user-hosted",
+          host: "machine",
           backing: "local-worktree",
           workspaceId,
           role: "editor",

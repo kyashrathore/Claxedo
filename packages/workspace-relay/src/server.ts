@@ -10,7 +10,8 @@ import {
   validateRuntimeAccessTokenClaims,
   verifyRuntimeAccessToken,
   type HostTunnelTokenClaims,
-  type RelayClaimPair,
+  isRelayBacking,
+  type RelayBacking,
   type RelayJwtAlgorithm,
   type RelayKey,
   type RelayRole,
@@ -19,7 +20,7 @@ import {
 import type { WorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken, errorBody } from "./http"
-import { isUserHostedTarget } from "./user-hosted-forwarding"
+import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 
 export type RelayHostPublicKey = {
   publicKey: CryptoKey | Uint8Array
@@ -31,7 +32,8 @@ export type WorkspaceRelayTarget = {
   hostId: string
   baseUrl: string
   upstreamHeaders?: Record<string, string>
-} & RelayClaimPair
+  backing: RelayBacking
+}
 
 export type RuntimeAccessTokenActiveResult =
   | {
@@ -56,14 +58,17 @@ export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget 
   const { workspaceId, hostId, baseUrl, upstreamHeaders } = row
   if (typeof workspaceId !== "string" || typeof hostId !== "string" || typeof baseUrl !== "string") return undefined
   if (upstreamHeaders !== undefined && !isStringRecord(upstreamHeaders)) return undefined
-  const pair = relayClaimPair(row.access, row.backing)
-  if (!pair) return undefined
+  // `access` is the retired spelling of the same fact. A payload carrying it
+  // came from a control plane on the other side of the placement change, whose
+  // `backing` may disagree with it; drop the target rather than pick one.
+  if (row.access !== undefined) return undefined
+  if (!isRelayBacking(row.backing)) return undefined
   return {
     workspaceId,
     hostId,
     baseUrl,
     ...(upstreamHeaders ? { upstreamHeaders } : {}),
-    ...pair,
+    backing: row.backing,
   }
 }
 
@@ -145,12 +150,6 @@ export function createHostGenerationResolverLookup(url: string, options: HostGen
 export function hostTunnelIncumbentOutranks(incumbentGeneration: number | undefined, candidateGeneration: number | undefined) {
   if (incumbentGeneration === undefined) return false
   return candidateGeneration === undefined || incumbentGeneration > candidateGeneration
-}
-
-function relayClaimPair(access: unknown, backing: unknown): RelayClaimPair | undefined {
-  if (access === "cloud" && backing === "cloud-vm") return { access, backing }
-  if (access === "user-hosted" && backing === "local-worktree") return { access, backing }
-  return undefined
 }
 
 function isStringRecord(input: unknown): input is Record<string, string> {
@@ -703,15 +702,13 @@ function isDangerousInboundHeader(name: string) {
 
 export type WorkspaceRelayForwardHeadersOptions = {
   /**
-   * When true, also strip the `Cookie` request header. User-hosted workspaces
-   * run on the user's laptop where the host process may share a cookie jar
-   * with the browser (e.g. localhost dev tooling); passing through cookies
-   * verbatim risks leaking sensitive session data to the host. Cloud-vm
-   * workspaces sit behind a dedicated network boundary where session cookies
-   * may legitimately be needed (e.g. workspace dashboards), so the default
-   * is to not strip cookies.
+   * When true, also strip the `Cookie` request header. A host tunnel ends on a
+   * machine somebody uses, whose cookie jar the browser may share (localhost
+   * dev tooling); passing cookies verbatim risks leaking session data to it. A
+   * cloud-vm sits behind a dedicated network boundary where a session cookie
+   * may legitimately be needed, so the default is to not strip cookies.
    */
-  userHosted?: boolean
+  hostTunnel?: boolean
   upstreamHeaders?: Record<string, string>
 }
 
@@ -736,9 +733,7 @@ function forwardHeaders(
   for (const name of inboundNames) {
     if (isDangerousInboundHeader(name)) headers.delete(name)
   }
-  // Strip Cookie when forwarding into a user-hosted workspace. See
-  // WorkspaceRelayForwardHeadersOptions for rationale.
-  if (options.userHosted) headers.delete("cookie")
+  if (options.hostTunnel) headers.delete("cookie")
   // Bun's fetch auto-decodes gzip/br responses but errors on malformed
   // upstream content-encoding (Daytona occasionally serves gzip-marked
   // responses that fail Zlib decompression). Force identity encoding so the
@@ -819,7 +814,6 @@ function relayHostTokenCacheKey(
     claims.role,
     claims.workspace_id,
     claims.host_id,
-    target.access,
     target.backing,
     options.relayHostMintKid ?? "",
   ].join("\0")
@@ -1339,15 +1333,15 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     if (
-      isUserHostedTarget(target)
+      isHostTunnelTarget(target)
       && !options.directory?.activeHost({ hostId: target.hostId, workspaceId: target.workspaceId })
     ) {
       return {
         ok: false,
-        code: "user_hosted_app_offline",
+        code: "host_tunnel_offline",
         response: await deny(options, {
-          code: "user_hosted_app_offline",
-          message: "User-hosted workspace is offline",
+          code: "host_tunnel_offline",
+          message: "The machine serving this workspace is offline",
           status: 503,
           claims,
           request,

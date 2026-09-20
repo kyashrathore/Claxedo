@@ -15,7 +15,7 @@ import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/d
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
+import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ClaxedoRegion, ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 
 export type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -40,7 +40,7 @@ export type ControlPlaneRelay = ControlPlaneRelayPort & {
   relayUrls?: ClaxedoRegionMap<string>
   runtimeAccessTokenSigner?: RuntimeAccessTokenSigner
   hostTunnelTokenSigner?: HostTunnelTokenSigner
-  userHostedResolver?: UserHostedTargetResolver
+  hostTunnelResolver?: HostTunnelTargetResolver
 }
 
 export { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"

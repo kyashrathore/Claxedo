@@ -125,8 +125,8 @@ describe("hosted remote documents genuine integration", () => {
       relayHostAlgorithm: "EdDSA",
       isRuntimeAccessTokenActive: async () => ({ active: true }),
       resolveTarget: async (claims) => claims.workspace_id === "local_ws"
-        ? { workspaceId: "local_ws", hostId: "local_host", baseUrl: "http://local.runtime", access: "user-hosted", backing: "local-worktree" }
-        : { workspaceId: "cloud_ws", hostId: "cloud_host", baseUrl: "http://cloud.runtime", access: "cloud", backing: "cloud-vm" },
+        ? { workspaceId: "local_ws", hostId: "local_host", baseUrl: "http://local.runtime", backing: "local-worktree" }
+        : { workspaceId: "cloud_ws", hostId: "cloud_host", baseUrl: "http://cloud.runtime", backing: "cloud-vm" },
       directory,
       fetch: (async (request: RequestInfo | URL, init?: RequestInit) => {
         const source = request instanceof Request ? request : new Request(request, init)

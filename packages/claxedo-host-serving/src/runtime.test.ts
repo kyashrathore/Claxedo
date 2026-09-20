@@ -102,7 +102,6 @@ describe("host workspace runtime behind the loopback listener", () => {
       hostId: input.hostId ?? HOST_ID,
       role: "editor",
       parentJti: "rat_jti_1",
-      access: "user-hosted",
       backing: "local-worktree",
       kid: input.kid ?? KID,
     }, key.privateKey, "EdDSA")
@@ -151,7 +150,6 @@ describe("host workspace runtime behind the loopback listener", () => {
       hostId: HOST_ID,
       role: "editor",
       parentJti: "rat_jti_1",
-      access: "user-hosted",
       backing: "local-worktree",
       kid: KID,
     }, other.privateKey, "EdDSA")

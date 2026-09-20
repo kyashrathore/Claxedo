@@ -35,11 +35,11 @@ function token(jti: string, payload: Record<string, unknown> = {}) {
  * The two bodies `/api/workspace/:id/connection` answers, each spelled field
  * for field as its producer in `claxedo-server` writes it:
  * `hostedConnectionInfo` for a workspace the provisioner runs,
- * `userHostedConnectionInfo` for one a machine serves.
+ * `hostTunnelConnectionInfo` for one a machine serves.
  *
  * Spelled as the wire bodies rather than as `WorkspaceConnectionInfo`: the two
  * differ exactly where `parseConnection` does its work — a producer states
- * `access` / `backing` / `runtimeKind` and the parsed value states one `host` —
+ * `backing` and the parsed value states one `host` —
  * so a fixture typed as the parsed shape is a fake of the reader, not of the
  * producer. Nothing here is typechecked (`tsconfig.json` excludes `*.test.ts`),
  * so these types are the only thing holding the fixtures to the producers.
@@ -50,9 +50,7 @@ function token(jti: string, payload: Record<string, unknown> = {}) {
  * id.
  */
 type ProvisionerConnectionBody = {
-  access: "cloud"
   backing: "cloud-vm"
-  runtimeKind: "cloud"
   sessionAuthority: "managed-private"
   workspaceId: string
   homeRegion: string
@@ -64,9 +62,7 @@ type ProvisionerConnectionBody = {
 }
 
 type MachineConnectionBody = {
-  access: "user-hosted"
   backing: "local-worktree"
-  runtimeKind: "user-hosted"
   sessionAuthority?: "local" | "managed-private"
   workspaceId: string
   homeRegion: string
@@ -78,9 +74,7 @@ type MachineConnectionBody = {
 
 function connection(input: Partial<ProvisionerConnectionBody> = {}): ProvisionerConnectionBody {
   return {
-    access: "cloud",
     backing: "cloud-vm",
-    runtimeKind: "cloud",
     sessionAuthority: "managed-private",
     workspaceId: "ws_1",
     homeRegion: "us-east",
@@ -95,9 +89,7 @@ function connection(input: Partial<ProvisionerConnectionBody> = {}): Provisioner
 
 function machineConnection(input: Partial<MachineConnectionBody> = {}): MachineConnectionBody {
   return {
-    access: "user-hosted",
     backing: "local-worktree",
-    runtimeKind: "user-hosted",
     workspaceId: "ws_1",
     homeRegion: "us-east",
     relayUrl: "https://relay.example.test",
@@ -346,7 +338,6 @@ describe("workspace relay connection", () => {
           return Response.json({
             status: "provisioning",
             workspaceId: "ws_cloud",
-            runtimeKind: "cloud",
             homeRegion: "us-east",
             retryAfterMs: 1_500,
           })
@@ -610,7 +601,6 @@ describe("workspace relay connection", () => {
         return Response.json({
           status: "provisioning",
           workspaceId: "ws_still_cold",
-          runtimeKind: "cloud",
           homeRegion: "us-east",
           retryAfterMs: 750,
         })
@@ -628,8 +618,8 @@ describe("workspace relay connection", () => {
     await expect(openWorkspaceConnection("ws_missing_role", {
       serverUrl: "http://server.test",
       request: (async () => Response.json({
-        access: "cloud",
         backing: "cloud-vm",
+        sessionAuthority: "managed-private",
         workspaceId: "ws_missing_role",
         relayUrl: "https://relay.example.test",
         runtimeAccessToken: token("jti_1"),
@@ -666,7 +656,6 @@ describe("workspace relay connection", () => {
           return Response.json({
             status: "provisioning",
             workspaceId: "ws_refreshing",
-            runtimeKind: "cloud",
             homeRegion: "us-east",
             retryAfterMs: 750,
           })

@@ -6,6 +6,7 @@ import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import {
   createWorkspaceRelay,
+  parseWorkspaceRelayTarget,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
   type WorkspaceRelayAuditEvent,
@@ -23,11 +24,8 @@ function fetchUrl(input: string | URL | Request) {
   return input instanceof URL ? input.href : input.url
 }
 
-function relayPair(input: { access?: "cloud" | "user-hosted"; backing?: "cloud-vm" | "local-worktree" }) {
-  if (input.access === "user-hosted" || input.backing === "local-worktree") {
-    return { access: "user-hosted", backing: "local-worktree" } as const
-  }
-  return { access: "cloud", backing: "cloud-vm" } as const
+function relayBacking(input: { backing?: "cloud-vm" | "local-worktree" }) {
+  return { backing: input.backing ?? "cloud-vm" } as const
 }
 
 async function harness(
@@ -42,7 +40,6 @@ async function harness(
     | "tokenVerifier"
     | "allowedOrigins"
   >> & {
-    access?: "cloud" | "user-hosted"
     backing?: "cloud-vm" | "local-worktree"
   } = {},
 ) {
@@ -58,7 +55,7 @@ async function harness(
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
       baseUrl: "https://host.example.test",
-      ...relayPair(input),
+      ...relayBacking(input),
     }),
     audit: (event) => {
       auditEvents.push(event)
@@ -125,7 +122,6 @@ describe("workspace relay server", () => {
       })).resolves.toMatchObject({
         parent_jti: decodeJwt(runtimeAccessToken).jti,
         role: "editor",
-        access: "cloud",
         backing: "cloud-vm",
       })
       expect(relay.auditEvents).toContainEqual({
@@ -849,9 +845,8 @@ describe("workspace relay server", () => {
     }
   })
 
-  test("fails closed when a user-hosted target has no active host tunnel presence", async () => {
+  test("fails closed when a tunnelled target has no active host tunnel presence", async () => {
     const relay = await harness({
-      access: "user-hosted",
       backing: "local-worktree",
       directory: createWorkspaceRelayDirectory(),
     })
@@ -865,14 +860,14 @@ describe("workspace relay server", () => {
     expect(res.status).toBe(503)
     await expect(res.json()).resolves.toEqual({
       error: {
-        code: "user_hosted_app_offline",
-        message: "User-hosted workspace is offline",
+        code: "host_tunnel_offline",
+        message: "The machine serving this workspace is offline",
       },
     })
     expect(relay.auditEvents).toContainEqual({
       action: "relay.request.denied",
       result: "deny",
-      reason: "user_hosted_app_offline",
+      reason: "host_tunnel_offline",
       principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
@@ -965,7 +960,6 @@ describe("workspace relay server", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "https://host.example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
         fetch: ((url, init) => {
@@ -1147,29 +1141,29 @@ describe("workspace relay server", () => {
       expect(out.get("cookie")).toBe("session=abc; foo=bar")
     })
 
-    test("cloud-vm path: Cookie header passes through when userHosted: false", () => {
+    test("cloud-vm path: Cookie header passes through when hostTunnel: false", () => {
       const input = new Headers({ cookie: "session=abc" })
-      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { userHosted: false })
+      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { hostTunnel: false })
       expect(out.get("cookie")).toBe("session=abc")
     })
 
-    test("user-hosted path: Cookie header is stripped", () => {
+    test("host-tunnel path: Cookie header is stripped", () => {
       const input = new Headers({ cookie: "session=abc; secret=xyz" })
-      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { userHosted: true })
-      // User-hosted workspaces run on the user's laptop where cookie jars may
-      // be shared with the browser; passthrough leaks sensitive cookies.
+      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { hostTunnel: true })
+      // The tunnel ends on a machine whose cookie jar the browser may share;
+      // passthrough leaks sensitive cookies to it.
       expect(out.get("cookie")).toBeNull()
     })
 
-    test("user-hosted path: Cookie header is stripped (case-insensitive)", () => {
+    test("host-tunnel path: Cookie header is stripped (case-insensitive)", () => {
       const input = new Headers()
       input.set("Cookie", "session=abc")
-      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { userHosted: true })
+      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { hostTunnel: true })
       expect(out.get("cookie")).toBeNull()
       expect(out.get("Cookie")).toBeNull()
     })
 
-    test("user-hosted path: Existing dangerous-header strip still happens", () => {
+    test("host-tunnel path: Existing dangerous-header strip still happens", () => {
       const input = new Headers({
         cookie: "session=abc",
         "x-forwarded-for": "1.2.3.4",
@@ -1180,7 +1174,7 @@ describe("workspace relay server", () => {
         "x-claxedo-internal-actor": "spoofed",
         "x-supervisor-backplane-token": "spoofed",
       })
-      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { userHosted: true })
+      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", { hostTunnel: true })
       expect(out.get("cookie")).toBeNull()
       expect(out.get("x-forwarded-for")).toBeNull()
       expect(out.get("x-forwarded-host")).toBeNull()
@@ -1207,7 +1201,7 @@ describe("workspace relay server", () => {
         }),
         "tok",
         "ws_1",
-        { signal: controller.signal, userHosted: false },
+        { signal: controller.signal, hostTunnel: false },
       )
 
       expect(init.method).toBe("POST")
@@ -1284,7 +1278,6 @@ describe("workspace relay server", () => {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "https://host.example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
         tokenVerifier: {
@@ -1343,7 +1336,6 @@ describe("workspace relay server", () => {
             workspaceId: claims.workspace_id,
             hostId: claims.host_id,
             baseUrl: "https://host.example.test",
-            access: "cloud",
             backing: "cloud-vm",
           }
         },
@@ -1411,7 +1403,6 @@ describe("workspace relay server", () => {
           workspaceId: "ws_1",
           hostId: "host_1",
           baseUrl: "https://host.example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
         tokenVerifier: {
@@ -1454,7 +1445,6 @@ describe("workspace relay server", () => {
           workspaceId: "ws_1",
           hostId: "host_1",
           baseUrl: "https://host.example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
         tokenVerifier: {
@@ -1503,7 +1493,6 @@ describe("workspace relay server", () => {
           workspaceId: "ws_1",
           hostId: "host_1",
           baseUrl: "https://host.example.test",
-          access: "cloud",
           backing: "cloud-vm",
         }),
         tokenVerifier: {
@@ -1545,7 +1534,6 @@ describe("workspace relay audit sampling (T16)", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "https://host.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
       audit: (event) => {
@@ -1722,7 +1710,6 @@ describe("workspace relay drain (T9)", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "https://host.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
       isDraining: () => draining,
@@ -1750,7 +1737,6 @@ describe("workspace relay drain (T9)", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "https://host.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
       isDraining: () => true,
@@ -1790,7 +1776,6 @@ describe("workspace relay /metrics endpoint (T31)", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: "https://host.example.test",
-        access: "cloud",
         backing: "cloud-vm",
       }),
       audit: (event) => {
@@ -1989,5 +1974,30 @@ describe("workspace relay /metrics endpoint (T31)", () => {
     const res = await harness.app.request("http://relay.test/metrics")
     expect(res.status).toBe(200)
     harness.app.disposeAuditSampler()
+  })
+})
+
+describe("parseWorkspaceRelayTarget", () => {
+  const row = {
+    workspaceId: "ws_1",
+    hostId: "host_1",
+    baseUrl: "https://host.example.test",
+  }
+
+  test("reads the placement from backing alone", () => {
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "local-worktree" })).toEqual({
+      ...row,
+      backing: "local-worktree",
+    })
+  })
+
+  test("refuses a target that still states access", () => {
+    expect(parseWorkspaceRelayTarget({ ...row, access: "user-hosted", backing: "local-worktree" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, access: "cloud", backing: "cloud-vm" })).toBeUndefined()
+  })
+
+  test("refuses a backing that names no placement", () => {
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "user-hosted" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget(row)).toBeUndefined()
   })
 })

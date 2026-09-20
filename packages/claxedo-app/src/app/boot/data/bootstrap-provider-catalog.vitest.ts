@@ -24,8 +24,8 @@ afterEach(() => {
 
 function connectionBody() {
   return {
-    access: "cloud",
     backing: "cloud-vm",
+    sessionAuthority: "managed-private",
     workspaceId: WS,
     role: "owner",
     relayUrl: RELAY,

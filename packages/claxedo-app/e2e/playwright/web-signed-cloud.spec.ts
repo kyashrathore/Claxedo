@@ -3,8 +3,8 @@
  *
  * Thin configuration wrapper: every scenario body lives in
  * `e2e/helpers/web-signed-relay-journeys.ts`, shared with
- * `web-signed-userhosted.spec.ts`. This file boots the shared fixture with
- * `access: "cloud"`, builds and serves the production web bundle against it,
+ * `web-signed-host-tunnel.spec.ts`. This file boots the shared fixture with
+ * `backing: "cloud-vm"`, builds and serves the production web bundle against it,
  * and wires each scenario id to its journey. Test titles carry the ids of the
  * scenario matrix shared with the `desktop-*` lanes (A = shell integrity,
  * B = session lifecycle & rail, C = composer & harness, D = terminal,
@@ -19,7 +19,7 @@
  *
  * Fixed backend/preview ports (4527/4529, overridable by env): a build needs
  * its backend URL before it starts, and each signed lane has its own port
- * block. `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS=cloud` selects `startCloudRuntime`
+ * block. `CLAXEDO_E2E_RELAY_FIXTURE_BACKING=cloud-vm` selects `startCloudRuntime`
  * in the fixture.
  */
 import { expect, test, type Page } from "@playwright/test"
@@ -67,7 +67,7 @@ function ctx(page: Page): JourneyCtx {
     info: fixture!.info,
     scripted: scripted!,
     spec: SPEC,
-    kind: "cloud",
+    backing: "cloud-vm",
   }
 }
 
@@ -83,7 +83,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
     test.setTimeout(180_000)
     scripted = await startScriptedModelServer()
     fixture = await startSignedRelayFixture({
-      access: "cloud",
+      backing: "cloud-vm",
       backendPort: BACKEND_PORT,
       browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
@@ -97,7 +97,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
     })
     const probe = await browser.newPage()
     try {
-      await seedWorkspace(probe, fixture.info, "cloud")
+      await seedWorkspace(probe, fixture.info, "cloud-vm")
       await probe.goto(`${webApp.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
       await gateReachesReady(probe, 45_000)
     } finally {
@@ -120,7 +120,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
     watchForbiddenDirectRequests(page, new URL(fixture!.info.backendUrl).origin, forbiddenHits)
   })
 
-  // DIAGNOSTIC, permanent — see the identical note in `web-signed-userhosted
+  // DIAGNOSTIC, permanent — see the identical note in `web-signed-host-tunnel
   // .spec.ts`: surfaces the fixture's own server log on any non-green result,
   // which is otherwise invisible from a client-side Playwright error alone.
   test.afterEach(async () => {

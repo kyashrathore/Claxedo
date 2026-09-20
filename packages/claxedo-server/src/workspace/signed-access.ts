@@ -17,20 +17,16 @@ export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const workspaceName = txt(workspace?.display_name)
     ?? txt(workspace?.workspace_name)
     ?? txt(workspace?.workspaceName)
-  // The placement word the project inventory is written with. A record with no
-  // backing at all came from a node that answers for its own directories.
-  const kind = backing === "local-worktree"
-    ? "user-hosted"
-    : backing === "cloud-vm"
-      ? "cloud"
-      : "local"
   return {
     workspaceId: resolvedWorkspaceId,
     orgId: txt(workspace?.org_id) ?? txt(workspace?.orgId),
     projectId: txt(workspace?.project_id) ?? txt(workspace?.projectId) ?? resolvedWorkspaceId,
     directory: txt(workspace?.remote_directory) ?? txt(workspace?.remoteDirectory) ?? WORKSPACE_DIR,
     workspaceName,
-    backing: kind === "cloud"
+    // A record carrying no backing is one the authority holds for a machine it
+    // does not provision, which is the same placement a `local-worktree` row
+    // states; only a provisioned sandbox names its repo and project here.
+    backing: backing === "cloud-vm"
       ? {
           kind: "cloud-vm" as const,
           workspaceName,
@@ -43,7 +39,6 @@ export function signedWorkspaceJson(result: unknown, workspaceId: string) {
           kind: "local-worktree" as const,
           branch,
         },
-    kind,
     driver: null,
     status: "ready",
     git: {

@@ -399,7 +399,7 @@ describe("workspace assignments", () => {
    * any pane opens it, so reachability rides the workspace LIST rather than a
    * per-workspace probe. Same lease `activeWorkspaceHost` routes on.
    */
-  test("stamps host reachability on every user-hosted row of the workspace list", async () => {
+  test("stamps host reachability on every machine-placed row of the workspace list", async () => {
     const api = authority()
     const { hostId } = await enroll(api, { displayName: "Laptop B" })
     const listed = async () => Object.fromEntries(

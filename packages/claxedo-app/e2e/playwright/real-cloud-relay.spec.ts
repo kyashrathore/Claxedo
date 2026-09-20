@@ -77,7 +77,7 @@ function promptText(marker: string) {
 
 /** Opens the workspace draft route through the connect gate; every scenario's entry point. */
 async function openReadyWorkspace(page: Page) {
-  await seedWorkspace(page, fixture!.info, "cloud")
+  await seedWorkspace(page, fixture!.info, "cloud-vm")
   await page.goto(`${webApp!.url}${sessionRoute(fixture!.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
   await gateReachesReady(page)
 }
@@ -109,7 +109,7 @@ test.describe("real cloud relay @core @tier-real", () => {
     test.setTimeout(180_000)
     scripted = await startScriptedModelServer()
     fixture = await startSignedRelayFixture({
-      access: "cloud",
+      backing: "cloud-vm",
       backendPort: BACKEND_PORT,
       browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,

@@ -372,7 +372,7 @@ function composedHostedServices(driver: SandboxDriver) {
     {
       auth: { config: { enabled: true, mode: "signed" } } as never,
       authority: {} as never,
-      userHostedResolver: (async () => undefined) as never,
+      hostTunnelResolver: (async () => undefined) as never,
       sandbox: { driver, leaseStore: createMemoryLeaseStore() },
     },
   ).services

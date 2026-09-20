@@ -181,8 +181,7 @@ async function harness() {
     resolveTarget: (claims) => ({
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
-      baseUrl: "http://user-hosted.invalid",
-      access: "user-hosted",
+      baseUrl: "http://host-tunnel.invalid",
       backing: "local-worktree",
     }),
   })
@@ -896,7 +895,7 @@ describe("workspace relay host tunnel client", () => {
       localBaseUrl: "http://runtime.invalid",
       headers: {
         Authorization: "Bearer stale",
-        "x-host-kind": "user-hosted",
+        "x-host-kind": "machine",
       },
       setTimeout: timers.setTimeout,
       clearTimeout: timers.clearTimeout,
@@ -912,7 +911,7 @@ describe("workspace relay host tunnel client", () => {
     await flush()
     expect(sockets[0].options.headers).toEqual({
       authorization: "Bearer token_1",
-      "x-host-kind": "user-hosted",
+      "x-host-kind": "machine",
     })
 
     sockets[0].open()
@@ -922,7 +921,7 @@ describe("workspace relay host tunnel client", () => {
 
     expect(sockets[1].options.headers).toEqual({
       authorization: "Bearer token_2",
-      "x-host-kind": "user-hosted",
+      "x-host-kind": "machine",
     })
     tunnel.close()
   })
@@ -1257,7 +1256,7 @@ describe("workspace relay host tunnel client", () => {
     tunnel.close()
   })
 
-  test("forwards user-hosted HTTP requests to the local Workspace Host Service", async () => {
+  test("forwards tunnelled HTTP requests to the local Workspace Host Service", async () => {
     const relay = await harness()
     const hostAuthorizations: string[] = []
     const hostWorkspaces: string[] = []
@@ -1299,7 +1298,6 @@ describe("workspace relay host tunnel client", () => {
         workspaceId: "ws_1",
         hostId: "host_1",
       })).resolves.toMatchObject({
-        access: "user-hosted",
         backing: "local-worktree",
       })
       expect(hostWorkspaces[0]).toBe("ws_1")
@@ -1310,7 +1308,7 @@ describe("workspace relay host tunnel client", () => {
     }
   })
 
-  test("streams user-hosted large responses through the host tunnel before the host finishes", async () => {
+  test("streams large tunnelled responses through the host tunnel before the host finishes", async () => {
     const relay = await harness()
     const firstChunk = new Uint8Array(64 * 1024).fill(65)
     const secondChunk = new Uint8Array(64 * 1024).fill(66)
@@ -1387,7 +1385,7 @@ describe("workspace relay host tunnel client", () => {
     }
   })
 
-  test("forwards user-hosted WebSocket channels to the local Workspace Host Service", async () => {
+  test("forwards tunnelled WebSocket channels to the local Workspace Host Service", async () => {
     const relay = await harness()
     const hostWorkspaces: string[] = []
     const host = Bun.serve<{ ok: true }>({
@@ -1447,7 +1445,7 @@ describe("workspace relay host tunnel client", () => {
     }
   })
 
-  test("closing the host tunnel makes user-hosted workspaces unavailable remotely", async () => {
+  test("closing the host tunnel makes machine-placed workspaces unavailable remotely", async () => {
     const relay = await harness()
     const host = Bun.serve({
       port: 0,
@@ -1480,8 +1478,8 @@ describe("workspace relay host tunnel client", () => {
       expect(res.status).toBe(503)
       await expect(res.json()).resolves.toEqual({
         error: {
-          code: "user_hosted_app_offline",
-          message: "User-hosted workspace is offline",
+          code: "host_tunnel_offline",
+          message: "The machine serving this workspace is offline",
         },
       })
     } finally {

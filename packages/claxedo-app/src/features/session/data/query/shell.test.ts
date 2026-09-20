@@ -136,8 +136,8 @@ describe("shell query helpers", () => {
         const url = new URL(req.url)
         if (url.pathname === "/api/workspace/ws_cloud/connection") {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_cloud",
             role: "owner",
             relayUrl: "https://relay.test",

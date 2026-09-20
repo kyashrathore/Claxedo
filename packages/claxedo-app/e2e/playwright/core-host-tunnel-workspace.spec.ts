@@ -2,7 +2,7 @@
  * Opening a workspace placed on another machine, over the relay. Nothing is
  * provisioned or cloned, so everything here is about reaching a runtime that
  * already exists. A real tunnel, real JWTs and transport-layer role enforcement
- * are real-user-hosted-relay.spec.ts's; this file mocks the wire.
+ * are real-host-tunnel-relay.spec.ts's; this file mocks the wire.
  *
  * Four facts the assertions lean on, none of which the selectors show:
  *   - `prepareMachineRuntime` calls `onOffline` on the FIRST transient health
@@ -45,16 +45,17 @@ import { draftDefaultStorageKey } from "../../src/features/session/harness/draft
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
 import { eventStream, lastEventId } from "../helpers/sse-route"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
+import { bootstrapDeployment } from "../helpers/mock-runtime"
 
-const PROJECT_ID = "proj_core_user_hosted_workspace"
-const WORKSPACE_ID = "ws_core_user_hosted_workspace"
-const SESSION_ID = "run_core_user_hosted_workspace"
-const DIR = "/tmp/e2e-core-user-hosted-workspace"
+const PROJECT_ID = "proj_core_host_tunnel_workspace"
+const WORKSPACE_ID = "ws_core_host_tunnel_workspace"
+const SESSION_ID = "run_core_host_tunnel_workspace"
+const DIR = "/tmp/e2e-core-host-tunnel-workspace"
 // The path the HOST machine serves this workspace from — a directory on
 // somebody else's filesystem. The control plane reports it as the row's
 // `remote_directory`, and it is metadata only: nothing in the app may address
 // the workspace, or a session on it, by this path.
-const HOST_DIR = "/Users/host/e2e-core-user-hosted-workspace"
+const HOST_DIR = "/Users/host/e2e-core-host-tunnel-workspace"
 // The one identity the app addresses this workspace by — `workspaceRowDirectory`
 // in src/features/workspaces/data/workspace-catalog.ts, and the same form
 // `sessionRowDirectory` stamps on every session row of a relay-backed workspace.
@@ -78,7 +79,7 @@ const SEEDED_SESSION_TITLE = "session on the host"
 // The last user message of that already-existing transcript. A turn started on
 // the HOST answers it, and the runtime announces the reply as `${id}_r`.
 const HOST_USER_MESSAGE_ID = "msg_uh_host_turn"
-const IDLE_SESSION_ID = "run_core_user_hosted_idle"
+const IDLE_SESSION_ID = "run_core_host_tunnel_idle"
 const IDLE_SESSION_TITLE = "idle since it was created"
 
 const OFFLINE_DETAIL =
@@ -196,7 +197,7 @@ async function seedProject(page: Page, opts: { registerWorkspace: boolean; model
  * once exhausted), and the `/workspaces/:id/...` runtime proxy lane needed to complete a
  * full turn once ready.
  */
-async function installUserHostedRuntimeMock(
+async function installHostTunnelRuntimeMock(
   page: Page,
   opts: {
     health: HealthOutcome[]
@@ -304,14 +305,14 @@ async function installUserHostedRuntimeMock(
   })
 
   // Shaped as `controlPlaneCatalogProjects` builds it from a real
-  // `/api/workspace?access=user-hosted` row: the workspace is keyed and
+  // `/api/workspace?host=machine` row: the workspace is keyed and
   // addressed by `workspace:<id>`, and the host's own path rides along as
   // `remote_directory` — the workspace's LOCATION, which the UI can show and
   // nothing may scope a request by.
   const projectRow = () => ({
     id: PROJECT_ID,
     worktree: DIR,
-    name: "core-user-hosted-workspace",
+    name: "core-host-tunnel-workspace",
     sandboxes: [WORKSPACE_REF],
     workspaces: {
       [WORKSPACE_REF]: {
@@ -363,6 +364,7 @@ async function installUserHostedRuntimeMock(
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
         events: { hostAggregate: true },
+        deployment: bootstrapDeployment(),
         project: [projectRow()],
         provider: { all: [], connected: [], default: {} },
         provider_auth: {},
@@ -474,7 +476,7 @@ async function installUserHostedRuntimeMock(
         backing: "local-worktree",
         workspaceId: WORKSPACE_ID,
         role: "owner",
-        // What `user-hosted-connection.ts` mints: the HOST's own runtime is the
+        // What `host-tunnel-connection.ts` mints: the HOST's own runtime is the
         // authority for this workspace's sessions, so the app reads and opens
         // them there rather than in the control plane's registry.
         sessionAuthority: "local",
@@ -501,7 +503,7 @@ async function installUserHostedRuntimeMock(
         if (outcome === 409) {
           return json(route, { error: { code: "relay_resolver_workspace_target_unavailable" } }, 409)
         }
-        return json(route, { error: { code: "user_hosted_app_offline" } }, 503)
+        return json(route, { error: { code: "host_tunnel_offline" } }, 503)
       }
 
       if (runtimePath === "/vcs") return json(route, {})
@@ -759,7 +761,7 @@ async function installUserHostedRuntimeMock(
     }
 
     if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
-    return json(route, { error: "unhandled request in core-user-hosted-workspace mock", path: url.pathname }, 598)
+    return json(route, { error: "unhandled request in core-host-tunnel-workspace mock", path: url.pathname }, 598)
   })
 
   return {
@@ -810,8 +812,8 @@ function workspaceRoute(sessionId?: string) {
   return sessionId ? `/w/${encodeURIComponent(WORKSPACE_ID)}/session/${sessionId}` : `/w/${encodeURIComponent(WORKSPACE_ID)}/session`
 }
 
-test.describe("core user-hosted workspace @core", () => {
-  test("landing on an unready user-hosted workspace renders the distinct 3-step pipeline", async ({ page }) => {
+test.describe("core machine-placed workspace @core", () => {
+  test("landing on an unready machine-placed workspace renders the distinct 3-step pipeline", async ({ page }) => {
     // Pad well beyond the suite's 60s default: this is the FIRST navigation
     // of the file, which pays for cold dev-server compile on a shared server
     // that may also be serving other concurrent spec runs.
@@ -819,7 +821,7 @@ test.describe("core user-hosted workspace @core", () => {
     // A generous mint delay so the pipeline is still on screen when the first assertion
     // polls it, whatever the cold-compile jitter on a run's first navigation. There is
     // no mint-latency contract to pin; this is test-timing margin only.
-    await installUserHostedRuntimeMock(page, { health: [200], mintDelayMs: 3000, healthDelayMs: 800 })
+    await installHostTunnelRuntimeMock(page, { health: [200], mintDelayMs: 3000, healthDelayMs: 800 })
     await seedProject(page, { registerWorkspace: true })
 
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
@@ -860,7 +862,7 @@ test.describe("core user-hosted workspace @core", () => {
   // `busy` → `finish` pair settles it into a message-list refetch over the same relay.
   test("ready unlocks the composer and a send is proven by the oracle through the relay lane", async ({ page }) => {
     test.setTimeout(120_000)
-    const mock = await installUserHostedRuntimeMock(page, { health: [200] })
+    const mock = await installHostTunnelRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
 
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
@@ -883,7 +885,7 @@ test.describe("core user-hosted workspace @core", () => {
       timeout: CONTENTION_TIMEOUT,
     })
 
-    const promptText = "core user-hosted workspace first turn"
+    const promptText = "core machine-placed workspace first turn"
     await input.click()
     await input.fill(promptText)
     await expect(input).toContainText(promptText, { timeout: 10_000 })
@@ -923,7 +925,7 @@ test.describe("core user-hosted workspace @core", () => {
     // possibly contended dev server doesn't race the test timeout
     // independent of the assertions.
     test.setTimeout(120_000)
-    await installUserHostedRuntimeMock(page, { health: [503] })
+    await installHostTunnelRuntimeMock(page, { health: [503] })
     await seedProject(page, { registerWorkspace: true })
 
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
@@ -940,7 +942,7 @@ test.describe("core user-hosted workspace @core", () => {
 
   test("transient 409/503 health hiccups still reach ready", async ({ page }) => {
     test.setTimeout(120_000)
-    await installUserHostedRuntimeMock(page, { health: [409, 503, 200] })
+    await installHostTunnelRuntimeMock(page, { health: [409, 503, 200] })
     await seedProject(page, { registerWorkspace: true })
 
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
@@ -958,7 +960,7 @@ test.describe("core user-hosted workspace @core", () => {
     // Two navigations (initial connect + reload); pad generously beyond the suite
     // default for cold-navigation margin.
     test.setTimeout(120_000)
-    await installUserHostedRuntimeMock(page, { health: [200] })
+    await installHostTunnelRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true })
 
     // First connect: succeeds, marks the workspace "recently ready" in
@@ -974,7 +976,7 @@ test.describe("core user-hosted workspace @core", () => {
     await page.route("**/*", async (route) => {
       const url = new URL(route.request().url())
       if (url.pathname === `/workspaces/${WORKSPACE_ID}/api/wr/health`) {
-        return json(route, { error: { code: "user_hosted_app_offline" } }, 503)
+        return json(route, { error: { code: "host_tunnel_offline" } }, 503)
       }
       return route.fallback()
     })
@@ -1011,14 +1013,15 @@ test.describe("core user-hosted workspace @core", () => {
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
           events: { hostAggregate: true },
-          project: [{ id: PROJECT_ID, worktree: DIR, name: "core-user-hosted-workspace", time: { created: Date.now(), updated: Date.now() } }],
+          deployment: bootstrapDeployment(true),
+          project: [{ id: PROJECT_ID, worktree: DIR, name: "core-host-tunnel-workspace", time: { created: Date.now(), updated: Date.now() } }],
           provider: { all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }], default: { opencode: BIG_PICKLE.id }, connected: ["opencode"] },
           provider_auth: {},
           config: { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } },
         })
       }
       if (url.pathname === "/project" || url.pathname === "/experimental/project") {
-        return json(route, [{ id: PROJECT_ID, worktree: DIR, name: "core-user-hosted-workspace", time: { created: Date.now(), updated: Date.now() } }])
+        return json(route, [{ id: PROJECT_ID, worktree: DIR, name: "core-host-tunnel-workspace", time: { created: Date.now(), updated: Date.now() } }])
       }
       if (url.pathname === "/api/cp/events") {
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
@@ -1129,7 +1132,7 @@ test.describe("core user-hosted workspace @core", () => {
     // come from the workspace's own runtime over the relay. That is the whole
     // point: in the rail's default "Projects" view the project section is the
     // only place a machine-placed workspace's sessions appear.
-    const mock = await installUserHostedRuntimeMock(page, {
+    const mock = await installHostTunnelRuntimeMock(page, {
       health: [200],
       existingRuntimeSession: true,
       idleRuntimeSession: true,
@@ -1193,7 +1196,7 @@ test.describe("core user-hosted workspace @core", () => {
   // as they are published.
   test("attaching to a running session by route opens its live stream", async ({ page }) => {
     test.setTimeout(120_000)
-    const mock = await installUserHostedRuntimeMock(page, { health: [200], existingRuntimeSession: true })
+    const mock = await installHostTunnelRuntimeMock(page, { health: [200], existingRuntimeSession: true })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
 
     // ATTACH: reach the session by its route. The composer never ran here, so
@@ -1258,7 +1261,7 @@ test.describe("core user-hosted workspace @core", () => {
   // registers a terminal arrives on this stream and no other.
   test("the workspace stream opens workspace-wide on a session-less route", async ({ page }) => {
     test.setTimeout(120_000)
-    const mock = await installUserHostedRuntimeMock(page, { health: [200] })
+    const mock = await installHostTunnelRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
 
     // A draft route: no session id anywhere, which is the same standing the
@@ -1280,7 +1283,7 @@ test.describe("core user-hosted workspace @core", () => {
     mock.emitWorkspaceFrame({
       type: "pty.created",
       info: {
-        id: "pty_core_user_hosted",
+        id: "pty_core_host_tunnel",
         title: "zsh",
         command: "zsh",
         args: [],

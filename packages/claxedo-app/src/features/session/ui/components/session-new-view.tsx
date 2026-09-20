@@ -1,4 +1,3 @@
-// Claxedo keeps the upstream empty-session summary while resolving project display across cloud workspace refs.
 import { readField, readString } from "@/lib/record"
 import { Show, createMemo, createResource, type JSX } from "solid-js"
 import { formatRelativeTime } from "@/lib/relative-time"

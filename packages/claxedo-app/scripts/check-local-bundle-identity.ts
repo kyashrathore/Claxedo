@@ -31,14 +31,11 @@
  *                               the control that turns "no hits" into a result
  *                               instead of a hope.
  *
- * Use `bun run build:marker-control` (./dist-marker-control) for that control, never
- * the hosted `./dist`, which is wrong anywhere the auth env is unset — every CI runner.
- * `better-auth-browser-auth.ts` reaches the provider only past an early return on disabled
- * auth, so a hosted build without `VITE_AUTH_ENABLED` emits no provider at all
- * and the control fails every marker. That failure is honest — the control is
- * doing its job — but it reads as a broken gate rather than a missing env var,
- * which is how a correct check gets deleted. `build:marker-control` supplies
- * `VITE_AUTH_ENABLED=true` purely to keep the provider in the graph.
+ * Use `bun run build:marker-control` (./dist-marker-control) for that control.
+ * The hosted entry imports `#browser-auth-adapter` statically and starts it
+ * against whatever posture the server declared at runtime, so the provider is
+ * in the hosted graph unconditionally and the control needs no build env of
+ * its own.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"

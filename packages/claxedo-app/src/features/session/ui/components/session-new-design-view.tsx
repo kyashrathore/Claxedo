@@ -114,10 +114,8 @@ export function NewSessionDesignView(props: {
   const inventoryProjects = createMemo(() => (projectsQuery.data ?? []) as ProjectInventoryItem[])
   // The inventory arrives in two shapes that key `workspaces` differently (by
   // workspace id from the server bootstrap, by directory from the client
-  // snapshot). Matching only the KEY resolved one shape and missed the other,
-  // which left activeProject undefined — and every chip below derives from it,
-  // so the workspace picker collapsed to "create new" even for a project that
-  // already had cloud workspaces. `findProjectForDirectory` matches both.
+  // snapshot); `findProjectForDirectory` matches both. Every chip below derives
+  // from this memo, so a miss collapses the workspace picker to "create new".
   const activeProject = createMemo(() => {
     const selection =
       props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
@@ -144,10 +142,11 @@ export function NewSessionDesignView(props: {
     if (!projectRoot() || roots.includes(projectRoot())) return roots
     return [projectRoot(), ...roots]
   })
-  // The project options are directory paths. Cloud workspaces live in
-  // UUID-named directories, so getFilename(dir) would surface a raw UUID.
-  // Prefer the enriched project name (the same one the sidebar shows) and
-  // only fall back to the directory's basename when no name is available.
+  // The project options are directory paths. A provisioned workspace's
+  // directory is a placeholder (the literal "/workspace" or a bare workspace
+  // id), so getFilename(dir) would surface "workspace" or a raw id. Prefer the
+  // enriched project name (the same one the sidebar shows) and only fall back
+  // to the directory's basename when no name is available.
   const projectLabel = (value: string) => {
     const project = findProjectForDirectory(inventoryProjects(), [value])
     // 1) Enriched layout list — the same name the sidebar renders.
@@ -170,7 +169,7 @@ export function NewSessionDesignView(props: {
       project?.workspaces ?? (value === projectRoot() ? workspaces() : undefined),
     )
     if (fromRepo) return fromRepo
-    // 5) Last resort: the directory basename (a UUID for cloud workspaces).
+    // 5) Last resort: the directory basename (a placeholder for a provisioned workspace).
     return getFilename(value)
   }
   // Hosted cloud projects have no real directory — theirs resolves to the
@@ -198,8 +197,9 @@ export function NewSessionDesignView(props: {
     return undefined
   }
   // The avatar's monogram comes from the resolved LABEL, never the directory: a
-  // cloud workspace's directory basename is a UUID, so `getFilename(dir)[0]` would
-  // put a random hex digit on the square that is supposed to identify the project.
+  // provisioned workspace's directory is a placeholder, so `getFilename(dir)[0]`
+  // would put a "w" or a random hex digit on the square that is supposed to
+  // identify the project.
   const projectAvatar = (value: string): ContextChipAvatar => {
     const icon = projectIcon(value)
     return {
@@ -216,9 +216,6 @@ export function NewSessionDesignView(props: {
     return getFilename(value)
   }
 
-  // Display name for the pinned self-hosted workspace (the relay-connected
-  // machine the route already scopes to). Prefer the inventory workspace_name,
-  // fall back to the project label.
   const pinnedWorkspaceName = createMemo(() => {
     const selfHosted = Object.values(workspaces()).find((workspace) => inventoryHostKind(workspace?.kind) === "machine")
     return selfHosted?.workspace_name?.trim() || projectLabel(projectRoot())
@@ -299,11 +296,9 @@ export function NewSessionDesignView(props: {
         options: projects().map<ContextChipOption>((value) => ({
           value,
           label: projectLabel(value),
-          // projectLabel falls back to a directory basename, which is a raw UUID
-          // for cloud workspaces — the detail is what disambiguates two projects
-          // that resolve to the same display name. Hosted rows get the project
-          // id (their "directory" is a workspace placeholder); local rows keep
-          // the path.
+          // Two projects can resolve to the same label; the detail disambiguates
+          // them: the path for a project on a machine, the project id for a
+          // provisioned one whose directory is only a placeholder.
           detail: projectDetail(value),
           avatar: projectAvatar(value),
         })),

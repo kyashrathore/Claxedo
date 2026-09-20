@@ -1,19 +1,16 @@
 /**
- * The composer chip row as a HOSTED CLOUD session sees it.
+ * The composer chip row as a session on a provisioner-owned machine sees it.
  *
  * The sibling `session-new-design-view.vitest.tsx` pins the project chip's
- * footer action with static mocks (one local project, empty inventory). This
- * file varies the three inputs the hosted path actually turns on — the
- * platform, the control-plane transport, and the inventory SHAPE — because all
- * three composer defects were invisible to a local-project fixture:
- *
- *   1. the project chip read "workspace", the basename of the literal
- *      directory "/workspace" every hosted cloud workspace lives in;
- *   2. the environment chip offered "Local" on web, which the browser can
- *      never run;
- *   3. the workspace chip offered only "create new" for a project that already
- *      had cloud workspaces, because the active-project lookup matched the
- *      snapshot's directory keys but not the bootstrap's workspace-id keys.
+ * footer action with static mocks (one project served over loopback, empty
+ * inventory). This file varies the three inputs that fixture never exercises:
+ * the platform, the control-plane transport, and the inventory SHAPE. What it
+ * pins: the project chip must not read "workspace", the basename of the
+ * literal "/workspace" directory every provisioned machine mounts; the
+ * environment chip must not offer a loopback option on web, which the browser
+ * can never run; and the workspace chip must list a project's existing
+ * provisioned workspaces under both inventory shapes — the bootstrap keys
+ * `workspaces` by workspace id, the snapshot by directory.
  */
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -81,7 +78,7 @@ const workspaceChip = () => chip("context-chip-worktree")
 /**
  * The server BOOTSTRAP shape (routes/hosted/shell.ts `signedShellProjects`):
  * `workspaces` is keyed by WORKSPACE ID and the directory is a field on the
- * value. Two cloud workspaces so the third select has something to list.
+ * value. Two provisioned workspaces so the workspace chip has something to list.
  */
 const bootstrapProject = {
   worktree: "ws_1",
@@ -236,8 +233,6 @@ describe("environment options", () => {
 })
 
 describe("existing provisioner-placed workspaces in the workspace chip", () => {
-  // The reported defect: cloud selected, the project HAS cloud workspaces, and
-  // the third select offered no way to pick one.
   test("lists the project's existing provisioner-placed workspaces on the bootstrap shape", () => {
     state.projects = [bootstrapProject]
     renderView({ hostKind: "provisioner" })

@@ -85,7 +85,6 @@ describe("workspace relay connection E2E", () => {
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
         baseUrl: String(host.url).replace(/\/$/, ""),
-        access: "cloud",
         backing: "cloud-vm",
       }),
       isRuntimeAccessTokenActive: (claims) =>

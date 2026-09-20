@@ -68,11 +68,11 @@ describe("signedRouteSessionWorkspaceId", () => {
   })
 
   test("does not trust a `workspace:`-branded UUID as a signed workspace route identity", () => {
-    // `workspace:<uuid>` is also the canonical shape the local sidecar mints
-    // for its own association id (see `session-workspace.ts`'s
-    // `sessionWorkspaceRuntimeRef`). Without a signed inventory to confirm it,
-    // that prefix alone is not proof of a relay-backed workspace — treating it
-    // as one minted a connection for a local workspace on every session mount.
+    // `workspace:<uuid>` is also the shape the attached server mints for its
+    // own association id (`sessionWorkspaceRuntimeRef` in
+    // `session-workspace.ts`), so without a signed inventory the prefix alone
+    // does not prove the route needs the relay. Trusting it opens a relay
+    // connection on every mount of a session this server serves over loopback.
     expect(signedRouteSessionWorkspaceId("/w/workspace%3A550e8400-e29b-41d4-a716-446655440000/session/ses_1"))
       .toBeUndefined()
   })

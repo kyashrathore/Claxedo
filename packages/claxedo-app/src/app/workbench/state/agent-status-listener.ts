@@ -522,10 +522,10 @@ export async function reconcileAgentStatuses(state: AgentStatusReconcileState, r
         request,
         resolveWorkspaceRuntime: ({ directory }) => requestWorkspaceRecord({ baseUrl: getClaxedoServerUrl(), directory, request }),
       })
-      // A local workspace can still have a stable workspaceId. That identity
-      // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`
-      // exists at the relay edge, while the local runtime is addressed by
-      // `?directory=...`.
+      // A workspace served over loopback still carries a stable workspaceId,
+      // and that identity does not make its HTTP surface relay-shaped:
+      // `/workspaces/:id` exists at the relay edge, while the loopback runtime
+      // is addressed by `?directory=...`.
       const ptys = await transport.json(
         terminalPtyApiPath(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }),
         { headers: { Accept: "application/json" } },

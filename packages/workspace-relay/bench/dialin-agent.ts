@@ -13,7 +13,7 @@
 // to a single node-compatible .cjs (bench/setup-dialin.ts) because Daytona
 // sandbox images ship node, not bun. Node 22 provides global WebSocket + fetch,
 // which the tunnel client uses directly (production wires it the same way, no
-// custom WebSocket ctor — see claxedo-server/src/user-hosted-tunnel.ts).
+// custom WebSocket ctor — see claxedo-server/src/host-tunnel.ts).
 //
 // Config via env (injected by setup-dialin.ts):
 //   RELAY_URL     wss://…relay base (host-tunnels path is appended internally)

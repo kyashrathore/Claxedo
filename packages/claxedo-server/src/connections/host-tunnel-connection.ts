@@ -17,7 +17,7 @@ import {
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
-export async function userHostedConnectionInfo(
+export async function hostTunnelConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
@@ -30,7 +30,7 @@ export async function userHostedConnectionInfo(
   if (authz) return authz
   if (result.workspace?.backing !== "local-worktree") {
     return {
-      error: apiError("workspace_relay_user_hosted_required", "Workspace Relay machine connection is only available for a workspace shared from a machine"),
+      error: apiError("workspace_relay_machine_placement_required", "Workspace Relay machine connection is only available for a workspace shared from a machine"),
       status: 400,
     } as const
   }
@@ -43,7 +43,7 @@ export async function userHostedConnectionInfo(
       workspaceId,
     })
     return {
-      error: apiError("user_hosted_workspace_unavailable", "User-hosted sandbox is unavailable"),
+      error: apiError("workspace_host_offline", "The machine serving this workspace is offline"),
       status: 409,
     } as const
   }
@@ -85,9 +85,7 @@ export async function userHostedConnectionInfo(
     event: "workspace.connection.requested",
     workspaceId,
     properties: {
-      access: "user-hosted",
       backing: "local-worktree",
-      runtimeKind: "user-hosted",
       homeRegion,
       relayRoom: workspaceId,
       hostId,
@@ -139,7 +137,6 @@ export async function userHostedConnectionInfo(
     event: "runtime_access_token.minted",
     workspaceId,
     properties: {
-      access: "user-hosted",
       backing: "local-worktree",
       hostId,
       role,
@@ -155,9 +152,7 @@ export async function userHostedConnectionInfo(
   }
   return {
     connection: {
-      access: "user-hosted" as const,
       backing: "local-worktree" as const,
-      runtimeKind: "user-hosted" as const,
       // Which stream scopes the runtime behind this connection serves, in the
       // HOST's own words: the machine that serves this workspace declares its
       // runtime's `SessionAccessPolicy.sessionAuthority` on every heartbeat,

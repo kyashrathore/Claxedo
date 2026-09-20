@@ -27,7 +27,6 @@ describe("local relay target lookup", () => {
     await expect(lookup({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual({
       found: true,
       baseUrl: "https://runtime.example.test/ws_1/",
-      access: "cloud",
       backing: "cloud-vm",
     })
     await Promise.resolve()
@@ -57,14 +56,13 @@ describe("local relay target lookup", () => {
 
   test("a machine-placed workspace resolves to the serving host over the tunnel, and only to that host", async () => {
     const lookup = localRelayTargetLookup({
-      userHostedResolver: async (workspaceId) =>
+      hostTunnelResolver: async (workspaceId) =>
         workspaceId === "ws_api" ? { active: true, hostId: "host_box", backing: "local-worktree" } : { active: false },
     })
 
     await expect(lookup({ workspaceId: "ws_api", hostId: "host_box" })).resolves.toEqual({
       found: true,
       baseUrl: "",
-      access: "user-hosted",
       backing: "local-worktree",
     })
     await expect(lookup({ workspaceId: "ws_api", hostId: "host_other" })).resolves.toEqual({
@@ -77,15 +75,15 @@ describe("local relay target lookup", () => {
     })
   })
 
-  test("a cloud lease that is not ready falls through to the user-hosted resolver", async () => {
+  test("a cloud lease that is not ready falls through to the host-tunnel resolver", async () => {
     const lookup = localRelayTargetLookup({
       sandboxManager: {
         target: vi.fn(async () => ({ status: "unavailable", reason: "runtime_lease_not_ready" })),
       } as never,
-      userHostedResolver: async () => ({ active: true, hostId: "host_box", backing: "local-worktree" }),
+      hostTunnelResolver: async () => ({ active: true, hostId: "host_box", backing: "local-worktree" }),
     })
 
-    await expect(lookup({ workspaceId: "ws_api", hostId: "host_box" })).resolves.toMatchObject({ found: true, access: "user-hosted" })
+    await expect(lookup({ workspaceId: "ws_api", hostId: "host_box" })).resolves.toMatchObject({ found: true, backing: "local-worktree" })
   })
 
   test("local target existence uses SandboxManager host id when available", async () => {

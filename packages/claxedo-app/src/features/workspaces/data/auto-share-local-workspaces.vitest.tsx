@@ -123,9 +123,9 @@ describe("localWorkspaceShareCandidates", () => {
       project("/code/api", {
         "/code/api": { directory: "/code/api", id: "ws_api" },
         "/code/api/feature": { directory: "/code/api/feature", id: "ws_feature" },
-        // The control plane's echo of this machine's own registration, and a
-        // cloud workspace: both are remote representations, neither is a
-        // directory this machine can publish.
+        // The control plane's echo of this machine's own registration and a
+        // provisioner-owned workspace are both remote representations; neither
+        // is a directory this machine can publish.
         "/code/api/hosted": { directory: "/code/api/hosted", id: "ws_hosted", kind: "machine" },
         "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "provisioner" },
       }),
@@ -199,9 +199,9 @@ describe("machine-level auto-share", () => {
     expect(connector.shareCalls).toHaveLength(1)
 
     // Nor when the inventory RECOMPUTES without actually changing what is
-    // missing — here a cloud workspace appears, which this machine can never
-    // publish. The derived list is a fresh array every time, so only comparing
-    // its CONTENT keeps the pass from firing again.
+    // missing — here a provisioner-owned workspace appears, which this machine
+    // can never publish. The derived list is a fresh array every time, so only
+    // comparing its CONTENT keeps the pass from firing again.
     setProjects([
       project("/code/api", {
         "/code/api": { directory: "/code/api", id: "ws_api" },

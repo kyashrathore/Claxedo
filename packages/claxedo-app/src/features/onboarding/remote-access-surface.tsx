@@ -93,12 +93,12 @@ export type RemoteAccessSurfaceProps = {
 /**
  * Remote access, at MACHINE level.
  *
- * Enabling it publishes every local workspace on this machine, and every one
+ * Enabling it publishes every workspace this machine serves, and every one
  * opened afterwards. So there is nothing here to tick: the panel states one
  * machine's status, offers one way to reach it, and offers the two ways to
- * stop it. The tick list this replaced asked the user to re-answer, per
- * workspace, a question they had already answered once by turning the feature
- * on — and every workspace they later opened silently defaulted to "no".
+ * stop it. A per-workspace tick list would ask the user to re-answer, per
+ * workspace, a question they already answered once by turning the feature on,
+ * and every workspace opened later would silently default to "no".
  *
  * The live dot is deliberately hard to turn green: it needs BOTH an enabled
  * machine and `servingPending === undefined`, which the caller only reports

@@ -102,20 +102,20 @@ exist with sensible defaults — see the package source if you need them.
 
 ## Production Relay Shape
 
-Workspace Relay production v1 is a single-instance deployment for user-hosted
+Workspace Relay production v1 is a single-instance deployment for host-tunnel
 traffic. The relay stores host presence and active host-tunnel sockets in
 process memory, so one `hostId` has exactly one active inbound host tunnel in
 one relay process. A new tunnel for the same `hostId` replaces the previous
 tunnel; stale close events from the old socket do not mark the replacement
 offline.
 
-Do not run multiple active relay instances for the same user-hosted fleet unless
+Do not run multiple active relay instances for the same host-tunnel fleet unless
 a separate multi-instance routing milestone has added sticky host routing,
 split-brain prevention, and failover ownership. Private cloud-VM targets can be
-forwarded directly by the relay, but user-hosted tunnels are process-local.
+forwarded directly by the relay, but host tunnels are process-local.
 
 Operational tradeoff: the relay process, VM, or region is a single point of
-failure for user-hosted traffic. Restart, deploy, or crash events drop active
+failure for host-tunnel traffic. Restart, deploy, or crash events drop active
 host tunnels and long-lived HTTP/WebSocket/SSE/PTY sessions until the
 workspace-runtime host reconnects. During planned drain, the relay reports
 `/health` as unhealthy, rejects new workspace requests and tunnel registrations

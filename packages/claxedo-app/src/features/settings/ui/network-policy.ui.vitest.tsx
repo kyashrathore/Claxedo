@@ -18,8 +18,8 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit) {
 
   if (url.pathname === "/api/workspace/ws_1/connection") {
     return Response.json({
-      access: "cloud",
       backing: "cloud-vm",
+      sessionAuthority: "managed-private",
       workspaceId: "ws_1",
       role: workspaceRole,
       relayUrl: "https://relay.example.test",

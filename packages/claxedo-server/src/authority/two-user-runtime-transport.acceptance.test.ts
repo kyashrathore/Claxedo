@@ -397,7 +397,6 @@ describe("two-user signed runtime transport acceptance", () => {
         workspaceId: "ws_runtime_private",
         hostId: "host_runtime_private",
         role,
-        access: "cloud",
         backing: "cloud-vm",
       }, key.privateKey, "EdDSA")
     }

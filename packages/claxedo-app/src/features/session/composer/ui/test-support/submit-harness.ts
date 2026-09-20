@@ -444,9 +444,8 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     if (/^\/api\/workspace\/[^/]+\/connection$/.test(url.pathname)) {
       const workspaceId = url.pathname.split("/")[3] ?? "ws_1"
       return new Response(JSON.stringify({
-        access: "cloud",
         backing: "cloud-vm",
-        runtimeKind: "cloud",
+        sessionAuthority: "managed-private",
         homeRegion: "us-east",
         workspaceId,
         role: "owner",
@@ -977,10 +976,10 @@ export async function installSubmitMocks(mock: ModuleMocker) {
   clearRuntimeQueries = () => testQueryClient.clear()
   const cloudStartup = await import("@/platform/runtime/cloud/workspace-runtime-store")
   resetRuntimeEnsureCache = cloudStartup.resetWorkspaceRuntimeEnsureCache
-  // Production binds this in `app/entry/main.tsx`; the harness is the hosted
+  // Production binds this in `app/entry/main.tsx`; the harness is the signed
   // composition for these tests, so it binds the same implementation. Without
-  // it a submit into a workspace the attached server does not serve itself
-  // throws "no hosted workspace startup".
+  // it `workspaceStartup()` throws on a submit into a workspace the attached
+  // server does not serve itself.
   ;(await import("@/platform/runtime/workspace-startup")).configureWorkspaceStartup(cloudStartup.cloudWorkspaceStartup)
 }
 

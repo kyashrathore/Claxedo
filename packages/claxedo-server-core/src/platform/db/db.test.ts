@@ -165,6 +165,54 @@ describe("migrations", () => {
     ])
   })
 
+  const USAGE_LOCATION_MIGRATION = "20260920000100_usage_location_machine_placed"
+
+  function plantUsageTurn(sqlite: ReturnType<typeof boot>, messageId: string, location: string) {
+    for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"]) {
+      sqlite
+        .prepare(
+          `INSERT INTO ${table}
+             (host_id, session_ref, session_id, message_id, revision, payload_hash, observed_at,
+              settlement, status, location, harness, provider_id, model_id, quality_json)
+           VALUES ('host_1', 'ref_1', 'ses_1', ?, 1, 'hash', 1, 'final', 'completed', ?, 'pi', 'prov', 'model', '{}')`,
+        )
+        .run(messageId, location)
+    }
+  }
+
+  function usageLocations(sqlite: ReturnType<typeof boot>, table: string) {
+    return sqlite.prepare(`SELECT message_id, location FROM ${table} ORDER BY message_id`).all()
+  }
+
+  test("a machine-placed turn is remetered at the attached server's location", () => {
+    const sqlite = boot()
+    // Unjournalling the entry is the only way to observe a migration that the
+    // boot under test has already applied against the finished schema.
+    sqlite.prepare("DELETE FROM __claxedo_migrations WHERE name = ?").run(USAGE_LOCATION_MIGRATION)
+    plantUsageTurn(sqlite, "msg_machine", "user-hosted")
+    plantUsageTurn(sqlite, "msg_cloud", "cloud-workspace")
+
+    const rebooted = reboot()
+
+    for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"]) {
+      expect(usageLocations(rebooted, table)).toEqual([
+        { message_id: "msg_cloud", location: "cloud-workspace" },
+        { message_id: "msg_machine", location: "local" },
+      ])
+    }
+  })
+
+  test("the rewrite is the migration's, not the boot's", () => {
+    const sqlite = boot()
+    plantUsageTurn(sqlite, "msg_machine", "user-hosted")
+
+    const rebooted = reboot()
+
+    expect(usageLocations(rebooted, "claxedo_usage_turn_current")).toEqual([
+      { message_id: "msg_machine", location: "user-hosted" },
+    ])
+  })
+
   test("a pending migration whose SQL cannot be read fails the boot", () => {
     const journal = path.join(root, "journal")
     mkdirSync(path.join(journal, "20990101000000_broken", "migration.sql"), { recursive: true })

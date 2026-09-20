@@ -18,7 +18,7 @@ export function DeferredSessionSecondaryStatus(props: {
   directory: Accessor<string | undefined>
   sessionId: Accessor<string | undefined>
   turnActive: Accessor<boolean>
-  /** Workspace whose event stream carries this session, including local workspaces. */
+  /** Workspace whose `wr` stream carries this session's frames, served over loopback or through the relay. */
   eventWorkspaceId: Accessor<string | undefined>
   delayMs?: number
 }) {

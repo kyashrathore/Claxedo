@@ -211,7 +211,6 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       org_id,
       role,
       ...(trimToUndefined(row.host_id) ? { host_id: trimToUndefined(row.host_id) } : {}),
-      ...(row.access === "cloud" || row.access === "user-hosted" ? { access: row.access } : {}),
       ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
     }
   } catch {

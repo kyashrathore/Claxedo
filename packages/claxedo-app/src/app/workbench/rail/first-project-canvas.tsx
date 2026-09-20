@@ -4,7 +4,6 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useServer } from "@/app/connection/server"
 import { serverHealthQueryOptions } from "@/app/connection/server-health"
-import { useConfigOptional } from "@/app/providers/config"
 import { useLayout } from "@/app/providers/layout"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { pickProjectFolderWith } from "@/features/session/ui/components/session-pick-project-folder"
@@ -12,7 +11,7 @@ import type { NewSessionProjectSelection } from "@/features/session/ui/component
 import { refreshProjectInventory } from "@/features/workspaces/data/query/project-ensure"
 import { ProjectCreateForm } from "@/features/workspaces/ui/project-create-form"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { centralTransportForDeployment } from "@/platform/runtime/transport"
+import { useDeploymentPosture } from "@/app/connection/deployment-posture"
 import { validWorktree } from "@/platform/sync/worktree"
 
 import "./first-project-canvas.css"
@@ -30,18 +29,14 @@ export function FirstProjectCanvas(props: {
   onProjectCreated?: (project: NewSessionProjectSelection) => void
 }) {
   const server = useServer()
-  const config = useConfigOptional()
+  const posture = useDeploymentPosture()
   const dialog = useDialog()
   const layout = useLayout()
   const platform = usePlatform()
   const queryOptions = useShellQueryOptions()
   let nameField: HTMLInputElement | undefined
 
-  const signedControlPlane = createMemo(
-    () =>
-      centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) ===
-      "signed-web",
-  )
+  const signedControlPlane = createMemo(() => posture.issuesSessions() === true)
   const health = useQuery(() =>
     serverHealthQueryOptions({
       server: { url: server.url },

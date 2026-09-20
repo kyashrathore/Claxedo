@@ -4,9 +4,9 @@ import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 
 /**
  * The control plane projects (registers, checkpoints, repairs) only the
- * sessions it holds: those of its own cloud workspaces. A machine-placed
- * workspace's sessions live on the machine serving it, which is their
- * authority; the control plane has nothing of theirs to project.
+ * sessions it holds: those of workspaces on machines the provisioner owns. A
+ * machine-placed workspace's sessions live on the machine serving it, which is
+ * their authority; the control plane has nothing of theirs to project.
  */
 export function sessionProjectionBacking(
   runtime: { workspaceId: string; kind: WorkspaceSessionBacking["kind"] } | undefined,

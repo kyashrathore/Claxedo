@@ -156,8 +156,8 @@ describe("terminal session preview aliases", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_1/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_1",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_1",

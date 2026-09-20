@@ -103,9 +103,9 @@ describe("createNewSessionWorkspaceState", () => {
     }).options).toEqual([])
   })
 
-  // Regression for the accidental-VM bug: a self-hosted (user-hosted) workspace
-  // is its OWN kind and must never be collapsed into "cloud" — collapsing is what
-  // dropped it into the cloud-provision create path.
+  // Regression for the accidental-VM bug: a workspace on the owner's machine is
+  // its OWN placement and must never be collapsed into the provisioner's —
+  // collapsing is what dropped it into the cloud-provision create path.
   test("machine-placed workspaces are a distinct placement, never collapsed into the provisioner's", () => {
     const machineWorkspaces = {
       "/repo/main": { kind: "local" as const },
@@ -113,7 +113,7 @@ describe("createNewSessionWorkspaceState", () => {
     }
     const sandboxes = ["workspace:self-hosted"]
 
-    // It appears ONLY under the user-hosted kind...
+    // It appears ONLY under the machine placement...
     expect(createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: "workspace:self-hosted",
@@ -132,8 +132,9 @@ describe("createNewSessionWorkspaceState", () => {
     }).options).toEqual([])
   })
 
-  // The fail-closed property: an empty user-hosted option set must NOT auto-flip
-  // into create mode (that path only exists for "cloud"). No silent provisioning.
+  // The fail-closed property: an empty option set for a machine must NOT
+  // auto-flip into create mode (that path exists only for the provisioner).
+  // No silent provisioning.
   test("a machine placement with no options never enters create-new mode", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",

@@ -26,9 +26,8 @@ afterEach(() => {
 
 function connectionBody(workspaceId: string) {
   return {
-    access: "cloud",
     backing: "cloud-vm",
-    runtimeKind: "cloud",
+    sessionAuthority: "managed-private",
     workspaceId,
     role: "owner",
     relayUrl: "http://relay.test",
@@ -254,15 +253,13 @@ describe("provisioner-placed workspace startup", () => {
 
 /**
  * `/api/workspace/:id/connection` for a workspace another machine serves,
- * field for field as `claxedo-server`'s `userHostedConnection` writes it: the
- * control plane's wire words, the region, and the machine's own declaration of
- * how its runtime composes session authority.
+ * field for field as `claxedo-server`'s `hostTunnelConnectionInfo` writes it:
+ * the control plane's wire words, the region, and the machine's own declaration
+ * of how its runtime composes session authority.
  */
 function machineConnectionBody(workspaceId: string) {
   return {
-    access: "user-hosted",
     backing: "local-worktree",
-    runtimeKind: "user-hosted",
     sessionAuthority: "local",
     workspaceId,
     homeRegion: "us-east",
@@ -305,12 +302,12 @@ describe("prepareMachineRuntime", () => {
     expect(healthProbeInits.map((init) => isFetchThrottleBypassed(init))).toEqual([true])
     expect(healthProbeInits.map((init) => new Headers(init?.headers).has("x-fetch-bypass-throttle"))).toEqual([false])
     expect(seen.some((u) => u === "https://control.test/workspaces/ws_machine_ready/api/wr/health")).toBe(false)
-    // The connecting sequence is the user-hosted set, NOT cloud sandbox steps.
+    // The connecting sequence is a machine's, NOT the provisioner's sandbox steps.
     expect(logs).toEqual(["connecting_workspace", "establishing_relay", "checking_health", "ready"])
     expect(logs).not.toContain("acquiring_sandbox")
   })
 
-  test("reports offline after retrying when the relay stays 503 user_hosted_app_offline", async () => {
+  test("reports offline after retrying when the relay stays 503 host_tunnel_offline", async () => {
     let probes = 0
     const request: typeof fetch = mock(async (input) => {
       const url = requestUrl(input)
@@ -319,7 +316,7 @@ describe("prepareMachineRuntime", () => {
       }
       if (url === "https://relay.uh.test/workspaces/ws_machine_offline/api/wr/health") {
         probes += 1
-        return new Response(JSON.stringify({ error: { code: "user_hosted_app_offline" } }), { status: 503 })
+        return new Response(JSON.stringify({ error: { code: "host_tunnel_offline" } }), { status: 503 })
       }
       throw new Error(`unexpected request: ${url}`)
     })

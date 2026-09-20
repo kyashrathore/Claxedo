@@ -24,7 +24,6 @@ const relayInput = {
   workspaceId: "ws_1",
   hostId: "host_1",
   role: "editor" as const,
-  access: "cloud" as const,
   backing: "cloud-vm" as const,
   jti: "rht_child_1",
   parentJti: "rat_parent_1",
@@ -143,7 +142,6 @@ describe("runtime private-session authority oracle", () => {
       host_id: "host_1",
       parent_jti: "rat_parent_1",
       role: "editor",
-      access: "cloud",
       backing: "cloud-vm",
     })
       .setProtectedHeader({ alg: "EdDSA" })
@@ -163,6 +161,42 @@ describe("runtime private-session authority oracle", () => {
       env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
     })
     expect((await request(target, token, { sessionId: "ses_private", action: "read" })).status).toBe(401)
+  })
+
+  test("refuses a relay proof that still carries an access claim", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const now = Math.floor(Date.now() / 1_000)
+    const authorizeRuntimeSession = vi.fn(async () => {})
+    const token = await new SignJWT({
+      principal_kind: "user",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      host_id: "host_1",
+      parent_jti: "rat_parent_1",
+      role: "editor",
+      access: "cloud",
+      backing: "cloud-vm",
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer("workspace-relay")
+      .setAudience("workspace-host-service")
+      .setIssuedAt(now)
+      .setExpirationTime(now + 60)
+      .setJti("rht_access_claim")
+      .sign(key.privateKey)
+    const target = app({
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => ({}),
+        authorizeRuntimeSession,
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+    })
+    expect((await request(target, token, { sessionId: "ses_private", action: "read" })).status).toBe(401)
+    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
   })
 
   test("binds reconciliation and compensation transitions to RHT actor, workspace, session, and operation", async () => {
@@ -847,7 +881,6 @@ describe("reservation and adoption against a real private-session authority", ()
       workspaceId: "ws_real",
       hostId: "host_real",
       role,
-      access: "user-hosted",
       backing: "local-worktree",
       jti: `rht_${role}_${who.user.subject}`,
       parentJti: "rat_real",

@@ -5,7 +5,7 @@ import { workspacePlacement } from "./placement"
 /**
  * A stored workspace as a control-plane LIST row.
  *
- * `GET /api/workspace?access=` answers rows of this shape whoever serves it, so
+ * `GET /api/workspace?host=` answers rows of this shape whoever serves it, so
  * a client reads one contract from the hosted control plane, from a signed node
  * and from a loopback daemon. The field set is the authority's own list row
  * (`listWorkspaces`) minus `role`, `placement` and `host_online` — the three

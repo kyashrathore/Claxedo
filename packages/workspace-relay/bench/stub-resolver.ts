@@ -15,7 +15,7 @@
 //   bun bench/stub-resolver.ts --target-base-url https://<sandbox-preview>/ \
 //     --port 8790 --token <resolver-token>
 //
-// Emits GET /target?workspaceId=&hostId= → WorkspaceRelayTarget (access:cloud)
+// Emits GET /target?workspaceId=&hostId= → WorkspaceRelayTarget (backing: cloud-vm)
 // and GET /revocation?... → { active: true }. GET /health for liveness.
 
 import { trimToUndefined } from "@claxedo/helpers/string"

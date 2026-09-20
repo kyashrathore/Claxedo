@@ -509,7 +509,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         delete from host_workspace_assignments where workspace_id = ?
       `).bind(workspaceId),
       this.database.prepare(`delete from host_assignment_readiness where workspace_id = ?`).bind(workspaceId),
-      this.database.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).bind(now, now, workspaceId),
+      this.database.prepare(retireMachinePlacedWorkspaceSql("workspace_id = ?")).bind(now, now, workspaceId),
     ])
     return { unassigned: changes(result) > 0 }
   }
@@ -947,7 +947,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         where enrollment_id = ? and owner_actor_id = ? and scope_revision = ? and revoked_at is null
       `).bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
       this.wonAssertion(assertionId),
-      this.database.prepare(retireUserHostedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
+      this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
         .bind(now, now, ...outsideRoots()),
       this.database.prepare(`
         delete from host_assignment_readiness where workspace_id in (${outsideRootsSql})
@@ -1282,7 +1282,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       // id), so its assignments could never become routable again — leaving
       // them would only accumulate dangling rows that a later re-share must
       // displace. The cascade keeps "revoke = nothing routable" exactly true.
-      this.database.prepare(retireUserHostedWorkspaceSql(`workspace_id in (
+      this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (
         select workspace_id from host_workspace_assignments
         where owner_actor_id = ? and (? is null or host_id = ?)
       )`)).bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
@@ -1867,7 +1867,7 @@ async function verifyHostSignature(input: { publicKey: string; payload: string; 
  * the row, and sharing it again revives the same record. Cloud rows are never
  * touched here — their lifetime is the sandbox's.
  */
-export function retireUserHostedWorkspaceSql(where: string) {
+export function retireMachinePlacedWorkspaceSql(where: string) {
   return `
     update workspaces set deleted_at = ?, updated_at = ?
     where backing = 'local-worktree' and deleted_at is null and ${where}

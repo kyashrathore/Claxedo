@@ -283,7 +283,6 @@ async function createRoot(sessionId: string, creator: WorkspaceOwnerIdentity) {
     workspaceId: WORKSPACE,
     hostId: HOST,
     role: "owner",
-    access: "cloud",
     backing: "cloud-vm",
     jti: `rht_${sessionId}`,
     parentJti: `rat_${creator.actorId}`,

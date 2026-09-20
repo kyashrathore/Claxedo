@@ -97,7 +97,7 @@
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { bootstrapDeployment, installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
 type TitleContinuityProbe = {
@@ -386,6 +386,7 @@ test.describe("core first prompt (local) @core", () => {
         body: JSON.stringify({
           healthy: true,
           events: { hostAggregate: true },
+          deployment: bootstrapDeployment(),
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
           project: [],

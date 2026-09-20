@@ -18,7 +18,7 @@ const APP_DIR = path.resolve(HERE, "..", "..")
 const REPO_ROOT = path.resolve(APP_DIR, "..", "..")
 const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
 
-export type SignedFixtureAccess = "user-hosted" | "cloud"
+export type SignedFixtureBacking = "local-worktree" | "cloud-vm"
 
 export type SignedFixtureInfo = {
   backendUrl: string
@@ -44,11 +44,11 @@ export type SignedFixtureInfo = {
 /**
  * Spawns `signed-browser-relay-fixture.mjs`: the real `hosted-node` control plane (SQLite
  * store and workspace authority behind `customVerifierAuthAdapter`), a local JWKS issuer,
- * a `@claxedo/workspace-relay` child, and for `access: "cloud"` a second in-process
+ * a `@claxedo/workspace-relay` child, and for `backing: "cloud-vm"` a second in-process
  * workspace-runtime standing in for the cloud sandbox. Only the model endpoint is fake.
  */
 export async function startSignedFixture(input: {
-  access: SignedFixtureAccess
+  backing: SignedFixtureBacking
   claudeScriptedEnv: (url: string, configDir: string) => Record<string, string>
   startScriptedModelServer: () => Promise<{ url: string; v1Url: string; piEnv: { PI_CODING_AGENT_DIR: string; OPENAI_API_KEY: string } }>
   logLabel: string
@@ -74,7 +74,7 @@ export async function startSignedFixture(input: {
       env: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
-        CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: input.access,
+        CLAXEDO_E2E_RELAY_FIXTURE_BACKING: input.backing,
         CLAXEDO_E2E_HOST_HEARTBEAT_DELAY_MS: String(input.hostHeartbeatDelayMs ?? 0),
         ...scriptedModel.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: scriptedModel.v1Url,
@@ -143,7 +143,7 @@ export async function startSignedFixture(input: {
  * `X-Forwarded-For` on every request. `isLoopbackLocalRequest` (`claxedo-server-core`
  * `peer-address.ts`) takes the local bootstrap path for any loopback peer, and both the
  * backend and the desktop app are loopback on one machine, so without the proxy the
- * signed path is never exercised. Reuses `live-user-hosted-relay-frontend-server.mjs`,
+ * signed path is never exercised. Reuses `live-host-tunnel-relay-frontend-server.mjs`,
  * which already proxies the `vite.cloud.config.ts` route table including WebSocket
  * upgrades under `/api` (pty connects and the loopback `cp/events` socket); the
  * desktop app never loads its HTML.
@@ -156,7 +156,7 @@ export async function startForwardedForProxy(backendUrl: string): Promise<{ url:
   let log = ""
   const child = spawn(
     "node",
-    [path.join(APP_DIR, "e2e", "helpers", "live-user-hosted-relay-frontend-server.mjs")],
+    [path.join(APP_DIR, "e2e", "helpers", "live-host-tunnel-relay-frontend-server.mjs")],
     {
       cwd: APP_DIR,
       env: { ...process.env, ...e2eAppViteEnvironment(), VITE_CLAXEDO_SERVER_URL: backendUrl, PORT: String(port) },

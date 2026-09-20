@@ -12,8 +12,8 @@
 // shared CF egress IPs dominates, sharding will not help.
 //
 // Scope: cloud targets only (Daytona / CF sandbox). Every /workspaces/ WS
-// upgrade is round-robined, so a user-hosted client could land on a shard
-// without its host tunnel; user-hosted routing would need shard affinity.
+// upgrade is round-robined, so a tunnelled client could land on a shard
+// without its host tunnel; host-tunnel routing would need shard affinity.
 
 import { trimToUndefined } from "@claxedo/helpers/string"
 import {

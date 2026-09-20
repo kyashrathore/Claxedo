@@ -344,9 +344,9 @@ function ContextChipPicker(props: { chip: ContextChip }) {
 }
 
 /**
- * A pinned, non-interactive chip. Used for the self-hosted workspace, which the
- * route already scopes to — there is nothing to pick, so it must not look
- * pickable.
+ * A pinned, non-interactive chip for a workspace on a machine reached through
+ * the relay: the route already scopes to that machine, so there is nothing to
+ * pick and it must not look pickable.
  */
 export type ContextPin = {
   slot: string
@@ -377,8 +377,8 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
           silently close the menu under the user. `Index` keys by position (the
           chip order is fixed) and just updates the item. */}
       <Index each={props.chips}>{(chip) => <ContextChipPicker chip={chip()} />}</Index>
-      {/* The pin replaces the environment/worktree chips rather than all of them
-          — the project is still switchable on a self-hosted workspace. */}
+      {/* The pin replaces only the environment and worktree chips: the project
+          stays switchable on a machine-placed workspace. */}
       <Show when={props.pin}>
         {(pin) => (
           <div

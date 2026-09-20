@@ -154,7 +154,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
   test.beforeEach(async () => {
     test.skip(!TIER_REAL, "requires CLAXEDO_TIER_REAL_E2E=1")
     const fixture = await startSignedFixture({
-      access: "cloud",
+      backing: "cloud-vm",
       claudeScriptedEnv,
       startScriptedModelServer,
       logLabel: "desktop-signed-cloud",
@@ -220,7 +220,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
             api: { account: { run(name: string, input?: Record<string, unknown>): Promise<unknown> } }
           }
         ).api
-        return api.account.run("workspace.list.cloud")
+        return api.account.run("workspace.list.provisioner")
       })
     const workspaces = await listCloudWorkspaces()
     expect(workspaces).toMatchObject({ workspaces: expect.any(Array) })
@@ -266,7 +266,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
             api: { account: { run(name: string, input?: Record<string, unknown>): Promise<unknown> } }
           }
         ).api
-        return api.account.run("workspace.list.cloud")
+        return api.account.run("workspace.list.provisioner")
       }),
     ).toMatchObject({ workspaces: expect.any(Array) })
   })

@@ -151,8 +151,7 @@ describe("role policy", () => {
 
   test("uses the backend workspace connection role at the UI policy boundary", () => {
     expect(placementFromWorkspaceConnection({
-      access: "cloud",
-      backing: "cloud-vm",
+      host: "provisioner",
       workspaceId: "ws_1",
       role: "viewer",
       relayUrl: "https://relay.test",

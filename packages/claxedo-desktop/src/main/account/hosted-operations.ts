@@ -14,7 +14,7 @@
  * traversal.
  *
  * A path may carry a QUERY, and where it does the query is written out here in
- * full — `?access=cloud`, never `?access=:access`. The substitution above would
+ * full — `?host=provisioner`, never `?host=:host`. The substitution above would
  * happily fill a `:name` inside a query string, which is exactly why the table
  * must not contain one: a caller-selected query is a caller-selected request,
  * and then the set of calls main can make is no longer the set written down
@@ -35,7 +35,7 @@ export type HostedOperation = {
    *
    * Distinct from putting `:name` in the path's query string: those keys are
    * fixed here, so the set of requests stays enumerable. A free-form
-   * `?access=:access` is still forbidden.
+   * `?host=:host` is still forbidden.
    *
    * Keys in `query` are required. Keys in `optionalQuery` are omitted when
    * absent (e.g. resolve-by-id OR resolve-by-directory).
@@ -124,29 +124,28 @@ export const HOSTED_OPERATIONS = {
   // gateway bearer credentials, so it is withheld from the renderer
   // (`RENDERER_WITHHELD_OPERATIONS`) and handed only to the daemon.
   "agentPlugins.runtimeSelf": { method: "GET", path: "/api/claxedo/plugins/runtime/self", response: "http" },
-  // TWO operations, one per access kind, each with the access FIXED in the path.
+  // TWO operations, one per host kind, each with the host FIXED in the path.
   //
-  // `GET /api/workspace` with no `?access=` is not a broader list — it is
-  // `{ workspaces: [] }`, always. The hosted handler (`routes/hosted/workspace.ts`)
-  // only requires a signed caller, only asks the authority, and only answers
-  // rows when `access` is `cloud` or `user-hosted`; every other value falls
-  // through to the empty envelope. The single access-less row this replaces
-  // could therefore never return a workspace, and never did.
+  // `GET /api/workspace` with no `?host=` is not a broader list — it is
+  // `{ workspaces: [] }`, always: the hosted handler
+  // (`routes/hosted/workspace.ts`) only requires a signed caller and only asks
+  // the authority when a host is named. A host it does not serve is a 400, so
+  // a host-less row could never return a workspace.
   //
-  // Not one row with an `access` PARAMETER, which this table could express
-  // today — `?access=:access` would substitute like any other `:name`. Two
-  // reasons it must not:
-  //   - Nothing chooses a kind at runtime. The caller wants BOTH and merges
+  // Not one row with a `host` PARAMETER, which this table could express today —
+  // `?host=:host` would substitute like any other `:name`. Two reasons it must
+  // not:
+  //   - Nothing chooses a host at runtime. The caller wants BOTH and merges
   //     them (`claxedo-app/.../features/session/data/sync/inventory-source.ts`,
-  //     `fetchSignedWorkspaceSnapshotUncached`), so the kind is a constant at
+  //     `fetchSignedWorkspaceSnapshotUncached`), so the host is a constant at
   //     each call site. A parameter would buy no caller flexibility and would
   //     cost the closed set its enumerability: what main can request would stop
   //     being readable here and start depending on what the renderer passes.
   //   - Withholding is per NAME (`RENDERER_WITHHELD_OPERATIONS`). One
-  //     parameterized row cannot be withheld for one access kind and allowed
-  //     for the other; two rows can.
-  "workspace.list.cloud": { method: "GET", path: "/api/workspace?access=cloud" },
-  "workspace.list.userHosted": { method: "GET", path: "/api/workspace?access=user-hosted" },
+  //     parameterized row cannot be withheld for one host and allowed for the
+  //     other; two rows can.
+  "workspace.list.provisioner": { method: "GET", path: "/api/workspace?host=provisioner" },
+  "workspace.list.machine": { method: "GET", path: "/api/workspace?host=machine" },
   // Optional query: callers pass workspaceId and/or directory and/or create.
   "workspace.resolve": {
     method: "GET",

@@ -43,7 +43,7 @@ export type WorkspaceConnectionKind = WorkspaceHostKind
 
 export type WorkspaceOfflineReason =
   // The machine serving the workspace is offline (relay 503
-  // `user_hosted_app_offline`, which is the relay's own wire word).
+  // `host_tunnel_offline`, which is the relay's own wire word).
   | "no-host"
   // mint 403 / 401 — not your workspace (terminal)
   | "forbidden"
@@ -497,8 +497,8 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
     rolePlacement: input.kind === "self"
       ? { state: "role-known", workspaceId, role: "owner" }
       : { state: "role-pending", workspaceId },
-    // A local workspace never mints a connection: its runtime is this process's
-    // own embedded one over loopback.
+    // A `self` placement never mints a connection: its runtime is this
+    // process's own embedded one, reached over loopback.
     ...(input.kind === "self"
       ? { relayPlacement: { workspaceId, hosting: "workspace", transport: "loopback", role: "owner" } satisfies Placement }
       : {}),

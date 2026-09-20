@@ -38,7 +38,6 @@ export async function cloudConnectionInfo(
       connection: {
         status: "provisioning" as const,
         workspaceId: ws.id,
-        runtimeKind: "cloud" as const,
         retryAfterMs: target.retryAfterMs,
       },
     } as const
@@ -101,7 +100,6 @@ export async function cloudConnectionInfo(
     event: "runtime_access_token.minted",
     workspaceId: ws.id,
     properties: {
-      access: "cloud",
       backing: "cloud-vm",
       hostId,
       role,
@@ -117,7 +115,6 @@ export async function cloudConnectionInfo(
   }
   return {
     connection: {
-      access: "cloud",
       backing: "cloud-vm",
       // A provisioned sandbox is a non-loopback workspace-runtime exposure, so
       // `createWorkspaceRuntimeApp` composes `remoteWorkspaceSessionAccessPolicyFromEnv()`
@@ -180,7 +177,6 @@ export async function localLoopbackCloudConnectionInfo(
       connection: {
         status: "provisioning" as const,
         workspaceId: ws.id,
-        runtimeKind: "cloud" as const,
         retryAfterMs: target.retryAfterMs,
       },
     } as const
@@ -209,7 +205,6 @@ export async function localLoopbackCloudConnectionInfo(
       }
   return {
     connection: {
-      access: "cloud",
       backing: "cloud-vm",
       // This branch answers a LOOPBACK caller of the local server, whose
       // workspace runtimes are the embedded ones it starts itself

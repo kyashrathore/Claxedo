@@ -26,6 +26,7 @@ import {
 import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { stampTestAuth } from "../playwright-global-setup"
+import { bootstrapDeployment } from "../helpers/mock-runtime"
 
 const RELAY_ORIGIN = "https://relay.core13.e2e.test"
 const WORKSPACE_ID = "ws_core13_cloud"
@@ -127,7 +128,7 @@ async function seed(page: Page) {
 /**
  * The two workspaces above, as the CONTROL PLANE lists them — the same workspaces
  * `bootstrapBody().project` declares, seen from the other side. `workspaceCatalogQuery`
- * folds the central's `/project` inventory together with `/api/workspace?access=...`,
+ * folds the central's `/project` inventory together with `/api/workspace?host=...`,
  * and the shared `workspace_id` is what makes `mergeWorkspaceCatalog` recognise the two
  * sources as ONE workspace instead of listing each twice; `remote_directory` is the
  * host's own path and addresses nothing.
@@ -163,6 +164,7 @@ function bootstrapBody() {
   return {
     healthy: true,
     events: { hostAggregate: true },
+    deployment: bootstrapDeployment(true),
     version: "1.0.0-test",
     path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
     project: [
@@ -285,7 +287,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     if (url.pathname === "/project/current") return json(route, bootstrapBody().project[0])
     if (isWorkspaceListPath(url.pathname)) {
       return json(route, workspaceListResponse({
-        access: url.searchParams.get("access"),
+        host: url.searchParams.get("host"),
         workspaces: controlPlaneWorkspaceRows(),
       }))
     }
@@ -385,7 +387,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // special-cases `isLoopbackHttpUrl(serverUrl) && !preferRelayOnLoopback` (true
     // in this harness, since `getClaxedoServerUrl()` defaults to loopback
     // `http://127.0.0.1:3001` with no `VITE_CLAXEDO_SERVER_URL` configured) by
-    // routing `prepareUserHostedRuntime`'s `/api/wr/health` poll through the
+    // routing `prepareHostTunnelRuntime`'s `/api/wr/health` poll through the
     // CENTRAL server's own origin (`${serverUrl}/workspaces/:id/api/wr/health`)
     // instead of `relayUrl` — a real "claxedo-server proxies the relay in local
     // dev" behavior, not a mock bug. Kept on its own handler (rather than the
@@ -403,7 +405,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
         return route.fulfill({
           status: state.uhHealth.status,
           headers: corsHeaders(),
-          body: JSON.stringify(state.uhHealth.body ?? { error: { code: "user_hosted_app_offline" } }),
+          body: JSON.stringify(state.uhHealth.body ?? { error: { code: "host_tunnel_offline" } }),
         })
       }
       return json(route, { healthy: true, version: "1.0.0-test" })
@@ -428,7 +430,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
           return route.fulfill({
             status: state.uhHealth.status,
             headers: corsHeaders(),
-            body: JSON.stringify(state.uhHealth.body ?? { error: { code: "user_hosted_app_offline" } }),
+            body: JSON.stringify(state.uhHealth.body ?? { error: { code: "host_tunnel_offline" } }),
           })
         }
         return json(route, { healthy: true, version: "1.0.0-test" })
@@ -609,7 +611,7 @@ test.describe("core cloud offline & roles @core", () => {
   test("a host-offline health probe on a machine-placed workspace renders the no-host offline copy", async ({ page }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
-    state.uhHealth = { status: 503, body: { error: { code: "user_hosted_app_offline" } } }
+    state.uhHealth = { status: 503, body: { error: { code: "host_tunnel_offline" } } }
 
     await gotoDraft(page, UH_DIR)
 

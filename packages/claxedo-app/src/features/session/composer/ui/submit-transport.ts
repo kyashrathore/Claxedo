@@ -74,14 +74,14 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
 /**
  * The workspace a signed submit reserves against. The composer's accessor names
  * it when the route did; a session created in a workspace the route has not
- * named yet (a fresh cloud workspace, a `ws_…` directory) takes it from the
+ * named yet (a freshly provisioned one, a `ws_…` directory) takes it from the
  * directory's runtime ref — the same owner finalize and the transport read.
  *
  * A workspace the signed server also serves from this machine has neither: its
- * catalog row is a plain local worktree at a filesystem directory, and only the
+ * catalog row is a plain worktree at a filesystem directory, and only the
  * project catalog carries the id the control plane registered it under. That
- * row is the last resort, so a relay-backed workspace still resolves through
- * the runtime ref exactly as before.
+ * row is the last resort, so a workspace reached through the relay still
+ * resolves through the runtime ref.
  */
 export function signedSubmitWorkspaceId(
   explicit: string | undefined,

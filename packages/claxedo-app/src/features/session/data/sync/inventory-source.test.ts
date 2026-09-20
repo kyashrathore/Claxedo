@@ -261,7 +261,7 @@ describe("global sync inventory source helpers", () => {
       authFetch: async (resource) => {
         const url = new URL(requestUrl(resource))
         requested.push(`${url.pathname}?${url.searchParams.toString()}`)
-        if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
+        if (url.pathname === "/api/workspace" && url.searchParams.get("host") === "provisioner") {
           return jsonResponse({
             workspaces: [{
               workspace_id: "ws_cloud",
@@ -272,7 +272,7 @@ describe("global sync inventory source helpers", () => {
             }],
           })
         }
-        if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "user-hosted") {
+        if (url.pathname === "/api/workspace" && url.searchParams.get("host") === "machine") {
           return jsonResponse({
             workspaces: [{
               workspace_id: "ws_user",
@@ -303,20 +303,20 @@ describe("global sync inventory source helpers", () => {
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
-    // The registry only ever holds the user-hosted sessions that were created
-    // THROUGH it, so this boot read asked a question it could not answer and
-    // paid a round trip per shared machine for the empty answer. Its list is
-    // the runtime's, over the relay (`session-source.ts`).
+    // The registry only ever holds the machine-placed sessions that were
+    // created THROUGH it, so this boot read asked a question it could not
+    // answer and paid a round trip per shared machine for the empty answer.
+    // Its list is the runtime's, over the relay (`session-source.ts`).
     expect(requested).not.toContain("/api/control/sessions?workspaceId=ws_user")
     expect(requested).toContain("/api/control/sessions?workspaceId=ws_cloud")
   })
 
-  // Falsifier for the boot request graph's serial cloud→user-hosted pair: the
-  // two lists are independent reads (neither's result feeds the other), so a
-  // serial `await` chain here is pure round-trip latency. If the snapshot
-  // reverted to sequencing them, "user-hosted" would never start until
-  // "cloud" first awaits this test's gate, and the test would time out.
-  test("fetchSignedWorkspaceSnapshot requests the `cloud` and `user-hosted` list scopes concurrently", async () => {
+  // Falsifier for a serial provisioner→machine pair: the two lists are
+  // independent reads (neither's result feeds the other), so a serial `await`
+  // chain here is pure round-trip latency. If the snapshot sequenced them,
+  // `machine` would never start until `provisioner` first awaits this test's
+  // gate, and the test would time out.
+  test("fetchSignedWorkspaceSnapshot requests the `provisioner` and `machine` lists concurrently", async () => {
     const started: string[] = []
     let openCloudGate: () => void = () => {}
     let openMachineGate: () => void = () => {}
@@ -327,9 +327,9 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
       authFetch: async (resource) => {
-        const access = new URL(requestUrl(resource)).searchParams.get("access")
-        started.push(access!)
-        if (access === "cloud") {
+        const host = new URL(requestUrl(resource)).searchParams.get("host")
+        started.push(host!)
+        if (host === "provisioner") {
           openCloudGate()
           await machineGate
         } else {
@@ -344,7 +344,7 @@ describe("global sync inventory source helpers", () => {
 
     await source.fetchSignedWorkspaceSnapshot()
 
-    expect(started.sort()).toEqual(["cloud", "user-hosted"])
+    expect(started.sort()).toEqual(["machine", "provisioner"])
   })
 
   test("signed directory fetch uses known workspace metadata before resolving runtime", async () => {
@@ -404,7 +404,7 @@ describe("global sync inventory source helpers", () => {
     await expect(source.fetchControlPlaneSessions("ws_down"))
       .rejects.toThrow("Control-plane session list failed with 503")
     await expect(source.fetchControlPlaneWorkspaces("provisioner"))
-      .rejects.toThrow("Control-plane cloud workspace list failed with 503")
+      .rejects.toThrow("Control-plane provisioner workspace list failed with 503")
   })
 
   test("effective-access checks bypass cached session inventory and surface authority failures", async () => {

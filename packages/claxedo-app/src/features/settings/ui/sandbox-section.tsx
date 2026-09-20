@@ -74,11 +74,10 @@ function DriverLabel(props: { driver: Driver; class?: string }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-// You run cloud workspaces on ONE provider. The previous layout listed all
-// seven at once, each with its own credential row and Configure button, so the
-// screen was six repetitions of a thing you will never use next to the one you
-// will. This picks the provider first and only ever shows that provider's
-// credential form.
+// The control plane provisions on ONE driver at a time, so the picker comes
+// first and only the picked provider's credential form renders. A credential
+// row per provider would be six repetitions of a thing you will never use next
+// to the one you will.
 export const SandboxSettingsSection: Component = () => {
   const onboarding = useSandboxOnboardingFunnel()
   const baseUrl = getDefaultBaseUrl()

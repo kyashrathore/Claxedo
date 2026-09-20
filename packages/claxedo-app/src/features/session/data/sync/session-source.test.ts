@@ -15,7 +15,7 @@ import {
   sessionSourceQueryOptions,
 } from "./session-source"
 
-/** The path a user-hosted runtime reports for itself — another machine's. */
+/** The path a machine's runtime reports for itself — another machine's. */
 const HOST_DIR = "/Users/host/repo"
 
 const CONTROL = "https://control.test"
@@ -55,7 +55,6 @@ function recordingFetch(routes: Record<string, () => Response>) {
 
 function relayConnection() {
   return Response.json({
-    access: "user-hosted",
     backing: "local-worktree",
     workspaceId: "ws_1",
     role: "viewer",
@@ -411,8 +410,8 @@ describe("a provisioner-placed workspace's list", () => {
  * A project's rail section lists the sessions of ALL its workspaces, and those
  * do not share one server. These pin what the section reads and what it shows,
  * against the catalog rows the control plane actually answers with: a
- * user-hosted workspace is keyed by the HOST's own directory and carries the
- * signed id the app addresses it by.
+ * workspace on another machine is keyed by that HOST's own directory and
+ * carries the signed id the app addresses it by.
  */
 describe("a project's list", () => {
   const projectQuery = (overrides: Partial<SessionListQuery> = {}): SessionListQuery => railQuery({

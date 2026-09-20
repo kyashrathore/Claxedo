@@ -4,6 +4,7 @@ import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-ac
 import type { HarnessScopeInput } from "./store-policy"
 import { connectionHarness } from "@/platform/identity/harness-selection"
 import { requestUrl } from "@/lib/url"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 
 const sessionConfig = {
@@ -186,7 +187,7 @@ function runtime(input: {
   clientOptions?: (input?: HarnessScopeInput) => {
     request: typeof fetch
     workspaceId?: string
-    hostKind?: "cloud" | "user-hosted"
+    hostKind?: RelayHostKind
   }
 } = {}) {
   return {

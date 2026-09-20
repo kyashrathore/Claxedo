@@ -87,8 +87,8 @@ describe("workspace diff client relay transport", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_1/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_1",
           role: "admin",
           relayUrl: "https://relay.example.test",

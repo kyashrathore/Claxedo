@@ -223,9 +223,9 @@ describe("VITE_CLAXEDO_TELEMETRY_MODE", () => {
 describe("deployment mode", () => {
   test("maps platform and auth signals onto the three planes", async () => {
     const { resolveDeploymentMode } = await import("./analytics")
-    expect(resolveDeploymentMode({ platform: "desktop", authEnabled: true })).toBe("desktop-local")
-    expect(resolveDeploymentMode({ platform: "desktop", authEnabled: false })).toBe("desktop-local")
-    expect(resolveDeploymentMode({ platform: "web", authEnabled: true })).toBe("cloud")
-    expect(resolveDeploymentMode({ platform: "web", authEnabled: false })).toBe("self-host")
+    expect(resolveDeploymentMode({ platform: "desktop", issuesSessions: true })).toBe("desktop-local")
+    expect(resolveDeploymentMode({ platform: "desktop", issuesSessions: false })).toBe("desktop-local")
+    expect(resolveDeploymentMode({ platform: "web", issuesSessions: true })).toBe("cloud")
+    expect(resolveDeploymentMode({ platform: "web", issuesSessions: false })).toBe("self-host")
   })
 })

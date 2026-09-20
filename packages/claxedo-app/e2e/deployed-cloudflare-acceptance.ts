@@ -452,7 +452,7 @@ async function placedWorkspaceRow(
   workspaceId: string,
 ) {
   const body = record(
-    await jsonRequest(context, config, "run-multiplayer", env, "private_session", "/api/workspace?access=user-hosted"),
+    await jsonRequest(context, config, "run-multiplayer", env, "private_session", "/api/workspace?host=machine"),
     "machine-placed workspace list",
   )
   const rows = Array.isArray(body.workspaces) ? body.workspaces : []

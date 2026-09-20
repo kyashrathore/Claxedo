@@ -28,7 +28,6 @@ describe("workspace runtime request", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_machine/connection") {
         return Response.json({
-          access: "user-hosted",
           backing: "local-worktree",
           workspaceId: "ws_machine",
           role: "owner",
@@ -68,7 +67,6 @@ describe("workspace runtime request", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_strip/connection") {
         return Response.json({
-          access: "user-hosted",
           backing: "local-worktree",
           workspaceId: "ws_strip",
           role: "owner",
@@ -104,8 +102,8 @@ describe("workspace runtime request", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_strip_id/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_strip_id",
           role: "owner",
           relayUrl: "https://relay.strip-id.test",
@@ -164,8 +162,8 @@ describe("workspace runtime request", () => {
       if (url.pathname === "/api/workspace/ws_signed_loopback/connection") {
         expect(req.headers.get("authorization")).toBe("Bearer signed-browser-token")
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_signed_loopback",
           role: "owner",
           relayUrl: "https://relay.loopback.test",
@@ -207,7 +205,6 @@ describe("workspace runtime request", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_shared/connection") {
         return Response.json({
-          access: "user-hosted",
           backing: "local-worktree",
           workspaceId: "ws_shared",
           role: "owner",
@@ -260,8 +257,8 @@ describe("workspace runtime request", () => {
       const url = new URL(req.url)
       if (url.pathname !== "/api/workspace/ws_isolated/connection") throw new Error(`unexpected request: ${req.url}`)
       return Response.json({
-        access: "cloud",
         backing: "cloud-vm",
+        sessionAuthority: "managed-private",
         workspaceId: "ws_isolated",
         role: "owner",
         relayUrl: "https://relay.isolated.test",
@@ -325,8 +322,8 @@ describe("workspace runtime request", () => {
           if (url.pathname === "/workspaces/ws_raw/command") return Response.json({ ok: true })
           if (url.pathname !== "/api/workspace/ws_raw/connection") throw new Error(`unexpected request: ${req.url}`)
           return Response.json({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_raw",
             role: "owner",
             relayUrl: "https://relay.raw.test",
@@ -403,8 +400,8 @@ describe("workspace runtime request", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_real/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_real",
           role: "owner",
           relayUrl: "https://relay.session-ref.test",
@@ -605,10 +602,11 @@ describe("resolveRuntimeTarget", () => {
       resolveWorkspaceRuntime: async () => ({ kind: "machine", workspaceId: "ws_resolved" }),
     })).resolves.toEqual({ kind: "machine", workspaceId: "ws_resolved" })
 
-    // `resolveWorkspaceRuntime` answering nothing (no record) is exactly the
-    // 404-for-user-hosted case the resolve endpoint produces — this ref is
-    // never guessed as cloud; it falls through to `sessionWorkspaceRuntimeRef`'s
-    // "unresolved relay-backed ref defaults to user-hosted" rule.
+    // `resolveWorkspaceRuntime` answering nothing (no record) is exactly what
+    // the resolve endpoint produces for a workspace the control plane places on
+    // somebody else's machine. The ref is never guessed as the provisioner's;
+    // it falls through to `sessionWorkspaceRuntimeRef`, which reads an
+    // unresolved relay-backed ref as a machine.
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       directory: "workspace:ws_alias",

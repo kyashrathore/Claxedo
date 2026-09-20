@@ -221,13 +221,13 @@ export const HOSTED_OPERATIONS = {
   // other row here validates without transforming and one decoder that quietly
   // reshapes its answer is a decoder nobody can read the registry to predict.
   //
-  // Two rows answering the same envelope, one per list scope the hosted route
-  // names on the wire (`cloud`, `user-hosted`); a caller that needs every
-  // placement asks for both and merges them. Two names rather than one
-  // operation taking a scope argument, so the set of calls stays enumerable by
-  // name — the property the closed set rests on.
-  "workspace.list.cloud": { safe: true, decode: withArrays("workspaces") },
-  "workspace.list.userHosted": { safe: true, decode: withArrays("workspaces") },
+  // Two rows answering the same envelope, one per host the hosted route names
+  // on the wire (`provisioner`, `machine`); a caller that needs every placement
+  // asks for both and merges them. Two names rather than one operation taking a
+  // host argument, so the set of calls stays enumerable by name — the property
+  // the closed set rests on.
+  "workspace.list.provisioner": { safe: true, decode: withArrays("workspaces") },
+  "workspace.list.machine": { safe: true, decode: withArrays("workspaces") },
   // Nullable: the hosted control plane answers `null` on purpose.
   "workspace.resolve": { safe: true, decode: nullable(object) },
   // Provisions a cloud VM. Without a key, an uncertain response creates a

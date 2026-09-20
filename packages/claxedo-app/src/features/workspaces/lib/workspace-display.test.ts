@@ -222,15 +222,13 @@ describe("workspace display helpers", () => {
     expect(workspaceRouteIdentity([projects[1]], "/workspace")?.routeId).toBe("project-b")
   })
 
-  // A path-keyed workspace record that carries no `id`/`workspaceId` used to
-  // fall back to the map KEY as its `routeId`. For a user-hosted workspace that
-  // key is a filesystem path, so the app-shell route-sync canonicalizer at
-  // `app-shell-route-sync.ts` compared the path against itself, found them
-  // equal, and never rewrote the URL — leaving the user on
-  // `/w/%2Fprivate%2Ftmp%2F...%2Fws_cleantest1-dir/session`, which leaks the
-  // host's directory layout (and username) into a shareable link. A record with
-  // no real id must report NO routeId rather than a directory masquerading as
-  // one, so the canonicalizer stays silent instead of confirming a bad URL.
+  // A workspace placed on a machine is keyed by its filesystem path. Reporting
+  // that key as the `routeId` of a record with no `id`/`workspaceId` would hand
+  // the canonicalizer in `app-shell-route-sync.ts` a path equal to itself, so it
+  // would leave the URL at `/w/%2Fprivate%2Ftmp%2F...%2Fws_cleantest1-dir/session`,
+  // which leaks the host's directory layout (and username) into a shareable
+  // link. A record with no real id reports NO routeId, and the canonicalizer
+  // stays silent instead of confirming a bad URL.
   test("never reports a filesystem path as a workspace routeId", () => {
     const identity = workspaceRouteIdentity([project], "/repo/review")
     expect(identity?.directory).toBe("/repo/review")

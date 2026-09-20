@@ -8,7 +8,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
-import { placementProvisioner, asHostKind, controlPlaneListScope, inventoryHostKind, isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
+import { placementProvisioner, asHostKind, inventoryHostKind, isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
 
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -341,10 +341,9 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchControlPlaneWorkspaces(host: RelayHostKind) {
-    const scope = controlPlaneListScope(host)
     const run = await signedAccountRun()
     if (run) {
-      const operation = host === "provisioner" ? "workspace.list.cloud" : "workspace.list.userHosted"
+      const operation = host === "provisioner" ? "workspace.list.provisioner" : "workspace.list.machine"
       const workspaces = readArray(decodeHostedResult(operation, await run(operation, {})), "workspaces")
       if (!workspaces) throw new Error(`${operation} returned an invalid workspaces payload`)
       return workspaces
@@ -353,10 +352,10 @@ export function createSignedInventorySource(input: {
       baseUrl: input.baseUrl(),
       host,
     }), { headers: { Accept: "application/json" } })
-    if (!res.ok) throw new Error(`Control-plane ${scope} workspace list failed with ${res.status}`)
+    if (!res.ok) throw new Error(`Control-plane ${host} workspace list failed with ${res.status}`)
     const workspaces = readArray(await res.json(), "workspaces")
     if (!workspaces) {
-      throw new Error(`Control-plane ${scope} workspace list returned an invalid workspaces payload`)
+      throw new Error(`Control-plane ${host} workspace list returned an invalid workspaces payload`)
     }
     return workspaces
   }

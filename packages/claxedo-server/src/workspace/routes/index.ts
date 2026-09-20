@@ -231,7 +231,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         return c.json(workspaceResponse(ws))
       })
       .get("/", async (c) => {
-        const access = c.req.query("access")
+        const host = c.req.query("host")
+        if (host !== undefined && host !== "machine" && host !== "provisioner") {
+          return c.json({ error: apiError("workspace_host_invalid", "workspace host is invalid") }, 400)
+        }
         const authResult = await signedOrError(
           c.req.raw,
           {
@@ -240,25 +243,24 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             // loopback keeps the local inventory.
             requireSigned:
               (options.authConfig?.enabled === true && !isLoopbackLocalRequest(c.req.raw))
-              || access === "cloud"
-              || access === "user-hosted",
+              || host !== undefined,
           },
           services,
         )
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        if (authResult.auth && (access === "cloud" || access === "user-hosted")) {
+        if (authResult.auth && host) {
           try {
             const authority = requireAuthority(services)
             await authority.usersMe(authResult.auth)
             const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, authResult.auth, {
-              key: `workspaces.list:${access}`,
+              key: `workspaces.list:${host}`,
               action: "workspaces.list.denied",
             })
             if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
             const workspaces = await authority.listWorkspaces(authResult.auth)
             return c.json({
               workspaces:
-                Array.isArray(workspaces) && access === "user-hosted"
+                Array.isArray(workspaces) && host === "machine"
                   ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
                   : workspaces,
             })
@@ -267,10 +269,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             throw err
           }
         }
-        if (access === "cloud") return c.json({ workspaces: await unsignedWorkspaceList() })
+        if (host === "provisioner") return c.json({ workspaces: await unsignedWorkspaceList() })
         // A workspace on somebody else's machine is the authority's record, and
         // a node with no signed identity has no authority to ask.
-        if (access === "user-hosted") return c.json({ workspaces: [] })
+        if (host === "machine") return c.json({ workspaces: [] })
         return c.json(await listProjects())
       })
       .route("/", workspaceConnectionRoutes(services, options))
@@ -399,10 +401,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if ("error" in accessResult) return c.json(accessResult.error, accessResult.status)
         const ws = await resolveWorkspace({ workspaceId: id })
         if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
-        if (
-          ws.kind === "cloud" &&
-          (c.req.query("access") === "cloud" || bearerToken(c.req.raw.headers.get("authorization")))
-        ) {
+        if (ws.kind === "cloud" && bearerToken(c.req.raw.headers.get("authorization"))) {
           const authResult = await signedOrError(
             c.req.raw,
             {
@@ -429,7 +428,6 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
               event: "workspace.delete",
               workspaceId: id,
               properties: {
-                access: "cloud",
                 backing: "cloud-vm",
               },
             })

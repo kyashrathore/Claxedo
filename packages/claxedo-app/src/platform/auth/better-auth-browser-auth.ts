@@ -198,8 +198,9 @@ export function createBetterAuthBrowserAdapter(
         setLoading(false)
         return
       }
-      // Deployments with no sign-in flow at all (loopback central, non-HTTPS
-      // origins) settle here, without a request and without a session client.
+      // Deployments with no sign-in flow at all (a server that declares it
+      // issues no sessions, or a non-HTTPS origin) settle here, without a
+      // request and without a session client.
       const unsupported = browserAuthUnavailable(deployment)
       if (unsupported) {
         setUnavailable(unsupported)

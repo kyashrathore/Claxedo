@@ -146,8 +146,8 @@ describe("directory query factories", () => {
         const url = new URL(req.url)
         if (url.pathname === "/api/workspace/ws_1/connection") {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.test",
             runtimeAccessToken: "rat_1",
@@ -197,8 +197,8 @@ describe("directory query factories", () => {
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_A/connection") {
             return Response.json({
-              access: "cloud",
               backing: "cloud-vm",
+              sessionAuthority: "managed-private",
               workspaceId: "ws_A",
               relayUrl: "https://relay.test",
               runtimeAccessToken: "rat_A",
@@ -246,7 +246,6 @@ describe("directory query factories", () => {
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_persisted_agent/connection") {
             return new Response(JSON.stringify({
-              access: "user-hosted",
               backing: "local-worktree",
               workspaceId: "ws_persisted_agent",
               role: "owner",
@@ -302,8 +301,8 @@ describe("directory query factories", () => {
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_signed_loopback/connection") {
             return Response.json({
-              access: "cloud",
               backing: "cloud-vm",
+              sessionAuthority: "managed-private",
               workspaceId: "ws_signed_loopback",
               relayUrl: "https://relay.test",
               runtimeAccessToken: "rat_loopback",

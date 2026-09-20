@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createMockSDK, createMockStorage, createTerminalApiModule } from "./test-support/terminal-fixture"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?relay-lifecycle-restore`)) }
@@ -102,8 +103,8 @@ function createSession(input: {
   claxedoServerUrl?: string
   workspaceId?: string
   directory?: string
-  sdkWorkspace?: { workspaceId: string; kind: "provisioner" | "local" | "user-hosted"; directory?: string }
-  resolveWorkspaceRuntime?: (input: { directory: string; workspaceId?: string }) => Promise<{ kind: "provisioner" | "local" | "user-hosted"; workspaceId?: string } | null>
+  sdkWorkspace?: { workspaceId: string; kind: WorkspaceHostKind; directory?: string }
+  resolveWorkspaceRuntime?: (input: { directory: string; workspaceId?: string }) => Promise<{ kind: WorkspaceHostKind; workspaceId?: string } | null>
 }) {
   const sdk = createMockSDK()
   if (input.directory) sdk.directory = input.directory
@@ -143,8 +144,8 @@ describe("terminal relay lifecycle", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_1/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_1",
           role: "owner",
           relayUrl: "https://relay.example.test",
@@ -248,8 +249,8 @@ describe("terminal relay lifecycle", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_lifecycle/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_lifecycle",
           role: "owner",
           relayUrl: "https://relay.example.test",
@@ -329,9 +330,7 @@ describe("terminal relay lifecycle", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_selfhost/connection") {
         return Response.json({
-          access: "user-hosted",
           backing: "local-worktree",
-          runtimeKind: "user-hosted",
           workspaceId: "ws_selfhost",
           role: "owner",
           relayUrl: "https://relay.example.test",

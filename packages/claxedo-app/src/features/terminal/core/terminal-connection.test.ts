@@ -191,8 +191,8 @@ describe("openTerminalWebSocket direct vs relay", () => {
       webSocket: FakeWebSocket as typeof WebSocket,
       request: (async () =>
         Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_socket",
           role: "owner",
           relayUrl: "https://relay.example.test",
@@ -226,8 +226,8 @@ describe("terminal runtime routing", () => {
       request: (async (input) => {
         calls.push(requestUrl(input))
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_cloud",
           role: "owner",
           relayUrl: "https://relay.example.test",
@@ -262,8 +262,8 @@ describe("terminal runtime routing", () => {
       webSocket: FakeWebSocket as unknown as typeof WebSocket,
       request: (async () =>
         Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_cloud",
           role: "owner",
           relayUrl: "https://relay.example.test",
@@ -290,8 +290,8 @@ describe("terminal runtime routing", () => {
       webSocket: FakeWebSocket as unknown as typeof WebSocket,
       request: (async () =>
         Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_cloud",
           role: "owner",
           relayUrl: "https://relay.example.test",

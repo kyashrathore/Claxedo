@@ -4,6 +4,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Show, createContext, createMemo, createSignal, onCleanup, useContext, type JSX } from "solid-js"
 
 import { useConfigOptional } from "@/app/providers/config"
+import { useDeploymentPosture } from "@/app/connection/deployment-posture"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
@@ -116,13 +117,17 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
   const auth = useAuthSession()
   const account = useAccountPort()
   const config = useConfigOptional()
+  const posture = useDeploymentPosture()
   const language = useLanguage()
   const user = createMemo(() => auth.user() ?? undefined)
   const accountState = createMemo(() => account.state())
   const signed = createMemo(() => accountState().status === "signed")
   const pending = createMemo(() => accountState().status === "pending")
   const productUi = createMemo(() => resolveProductUiFlags(config))
-  const hostedAccount = createMemo(() => config?.authEnabled === true || config?.loadHostedContributions !== undefined)
+  // A sign-in entry belongs anywhere an account can exist: a deployment that
+  // issues sessions, or a desktop build whose hosted loader proves Electron
+  // main holds a configured account client.
+  const hostedAccount = createMemo(() => posture.issuesSessions() === true || config?.loadHostedContributions !== undefined)
   const showSignIn = createMemo(
     () => productUi().accountSignIn && hostedAccount() && !pending() && !signed(),
   )

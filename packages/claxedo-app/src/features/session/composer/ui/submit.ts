@@ -302,7 +302,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const scope = panePreferenceScope({ directory: sessionDirectory, ...scopeIdentity })
     if (isNewSession && sourceScope !== scope && selectedHarnessMode(sourceScope) && !selectedHarnessMode(scope)) {
-      // Cloud workspace creation changes submit directory; carry draft harness ownership.
+      // Resolving the directory (a new worktree or a provisioned workspace) moves
+      // the draft out of the scope its harness selection was recorded under.
       harnessController.promote(sourceScope, scope)
     }
     const existingSessionConfig = isNewSession ? undefined : await loadExistingSubmitConfig(

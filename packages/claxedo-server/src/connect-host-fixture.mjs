@@ -533,7 +533,6 @@ export function connectFixtureRoutes(app, ctx) {
     const relayHostToken = await mintRelayHostToken(
       {
         ...parent,
-        access: "user-hosted",
         backing: "local-worktree",
         parentJti,
         ttlSeconds: 60,
@@ -579,7 +578,7 @@ export function connectFixtureRoutes(app, ctx) {
     const target = hostServingSurface({ localBaseUrl, workspaceId, path: requestPath })
     if (target.kind === "deny") return c.json({ error: "the host surface denies this path" }, 403)
     const inbound = new Headers(body.headers ?? {})
-    const forwarded = workspaceRelayForwardHeaders(inbound, relayHostToken, workspaceId, { userHosted: true })
+    const forwarded = workspaceRelayForwardHeaders(inbound, relayHostToken, workspaceId, { hostTunnel: true })
     const replayed = loopbackReplayHeaders(Object.fromEntries(forwarded.entries()))
     const response = await fetch(target.url, {
       method: typeof method === "string" ? method : "GET",

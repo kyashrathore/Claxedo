@@ -21,7 +21,7 @@ import {
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
-import { asHostKind, inventoryHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
+import { asHostKind, rowHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
 import {
   resolveRuntimePlacement,
   resolveSessionResourceRoute,
@@ -182,15 +182,15 @@ export function createAgentRuntimeClient(options: {
     if (options.workspaceId) return knownKindTarget(options.workspaceId)
     const directoryWorkspaceId = workspaceIdFromRef(directory)
     if (directoryWorkspaceId) {
-      // A `ws_`/`workspace:ws_` directory-ref tells us the workspace is
-      // relay-backed, but NOT which host runs it (the ref shape
-      // is identical for both). Do NOT assert `kind: "cloud"` here — that guess
-      // mislabels machine-placed workspaces and forces `fetchSessionResource` onto
-      // the central control plane (404, since a machine's rows have no control-plane
-      // session store). Leave the kind unresolved so the relay divert fires for
-      // anything that isn't a *confirmed* cloud workspace (confirmed only by the
-      // sessionRef.toolSandbox.hosting or the workspace resolve response kind.
-      // A caller-resolved `hostKind` IS a confirmation — attach it.
+      // A `ws_`/`workspace:ws_` directory-ref says the workspace is reached
+      // through the relay, not which host kind serves it: the ref shape is the
+      // same for a machine and for the provisioner. Guessing `provisioner`
+      // mislabels a machine-placed workspace and sends `fetchSessionResource`
+      // to the central control plane, which 404s because a machine's sessions
+      // have no control-plane store. Only a confirmation may set the kind:
+      // `sessionRef.toolSandbox.hosting`, the placement the resolve response
+      // states, or the caller-resolved `hostKind`, which `knownKindTarget`
+      // attaches when present.
       return knownKindTarget(directoryWorkspaceId)
     }
     if (!targetOptions?.forceResolve && fastSessionSwitchAnyNetworkQuiet()) return {
@@ -204,13 +204,19 @@ export function createAgentRuntimeClient(options: {
           workspaceResolveUrl({ baseUrl: serverUrl(), scope: directory }),
           await signedControlPlaneInit(),
         )
-        const body = await readJson<{ workspaceId?: string; kind?: unknown }>(res)
+        // Two producers answer this route and they state the placement in
+        // different words: the attached server's own store writes `kind` about
+        // the directories it serves, the control plane writes `backing` about a
+        // workspace some other machine serves. `rowHostKind` is the only reader
+        // that takes both, and it prefers `kind` — reading the control plane's
+        // word off a local row would call this machine's own worktree somebody
+        // else's and route the sessions list through the relay.
+        const body = await readJson<{ workspaceId?: string }>(res)
         if (!body?.workspaceId) throw new Error(`Signed session transport requires a workspace id for ${directory}`)
+        const host = rowHostKind(body)
         return {
           workspaceId: body.workspaceId,
-          ...(inventoryHostKind(body.kind)
-            ? { workspace: { workspaceId: body.workspaceId, kind: inventoryHostKind(body.kind) } }
-            : {}),
+          ...(host ? { workspace: { workspaceId: body.workspaceId, kind: host } } : {}),
         }
       },
       staleTime: Number.POSITIVE_INFINITY,

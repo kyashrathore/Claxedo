@@ -29,7 +29,7 @@ import {
 } from "./auth"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
-import { isUserHostedTarget } from "./user-hosted-forwarding"
+import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 import { resolveUpstreamWebSocket, type UpstreamWebSocketConstructor } from "./upstream-websocket"
 
 /**
@@ -71,7 +71,7 @@ type RelayHostTunnelWebSocketData = {
   enrollmentId?: string
   generation?: number
   pending: Map<string, PendingTunnelHttpResponse>
-  channels: Map<string, RelayUserHostedClientWebSocket>
+  channels: Map<string, RelayHostTunnelClientWebSocket>
   heartbeat?: ReturnType<typeof setInterval>
   missedPongs: number
   generationCheckTimer?: ReturnType<typeof setInterval>
@@ -81,8 +81,8 @@ type RelayHostTunnelWebSocketData = {
   messageBuffer: string
 }
 
-type RelayUserHostedClientWebSocketData = {
-  kind: "user-hosted-client"
+type RelayHostTunnelClientWebSocketData = {
+  kind: "host-tunnel-client"
   claims: RuntimeAccessTokenClaims
   hostId: string
   workspaceId: string
@@ -96,13 +96,13 @@ type RelayUserHostedClientWebSocketData = {
 type RelayWebSocketData =
   | RelayClientWebSocketData
   | RelayHostTunnelWebSocketData
-  | RelayUserHostedClientWebSocketData
+  | RelayHostTunnelClientWebSocketData
 
 /** The socket type Bun hands every handler: one type carrying the data union. */
 type RelayWebSocket = Bun.ServerWebSocket<RelayWebSocketData>
 type RelayClientWebSocket = Bun.ServerWebSocket<RelayClientWebSocketData>
 type RelayHostTunnelWebSocket = Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
-type RelayUserHostedClientWebSocket = Bun.ServerWebSocket<RelayUserHostedClientWebSocketData>
+type RelayHostTunnelClientWebSocket = Bun.ServerWebSocket<RelayHostTunnelClientWebSocketData>
 
 /*
  * `RelayWebSocketData` is a discriminated union, but `Bun.ServerWebSocket<T>`
@@ -113,8 +113,8 @@ type RelayUserHostedClientWebSocket = Bun.ServerWebSocket<RelayUserHostedClientW
  */
 const isRelayClientSocket = (ws: RelayWebSocket): ws is RelayClientWebSocket => ws.data.kind === "client"
 const isHostTunnelSocket = (ws: RelayWebSocket): ws is RelayHostTunnelWebSocket => ws.data.kind === "host-tunnel"
-const isUserHostedClientSocket = (ws: RelayWebSocket): ws is RelayUserHostedClientWebSocket =>
-  ws.data.kind === "user-hosted-client"
+const isHostTunnelClientSocket = (ws: RelayWebSocket): ws is RelayHostTunnelClientWebSocket =>
+  ws.data.kind === "host-tunnel-client"
 
 type PendingTunnelHttpResponse = {
   controller: ReadableStreamDefaultController<Uint8Array>
@@ -720,14 +720,14 @@ function cleanupHostTunnelSocket(input: {
     failPendingHttpResponse({
       entry: pending,
       response: input.request
-        ? corsJsonError(input.request, input.originAllowed, "user_hosted_app_offline", "User-hosted workspace is offline", 503)
-        : jsonError("user_hosted_app_offline", "User-hosted workspace is offline", 503),
-      error: new Error("User-hosted tunnel disconnected"),
+        ? corsJsonError(input.request, input.originAllowed, "host_tunnel_offline", "The machine serving this workspace is offline", 503)
+        : jsonError("host_tunnel_offline", "The machine serving this workspace is offline", 503),
+      error: new Error("Host tunnel disconnected"),
     })
   }
   input.ws.data.pending.clear()
   for (const channel of input.ws.data.channels.values()) {
-    if (input.closeChannels) closeWebSocket(channel, 1011, "User-hosted tunnel disconnected")
+    if (input.closeChannels) closeWebSocket(channel, 1011, "Host tunnel disconnected")
   }
   input.ws.data.channels.clear()
   if (!input.disconnectDirectory) return
@@ -970,12 +970,12 @@ async function tunnelHttpRequest(input: {
   responseTimeoutMs: number
 }) {
   if (input.ws.readyState !== WebSocket.OPEN) {
-    return new Response("User-hosted workspace is offline", { status: 503 })
+    return new Response("The machine serving this workspace is offline", { status: 503 })
   }
   if (input.ws.data.pending.size >= TUNNEL_PENDING_HTTP_CAP) {
     return jsonError(
       "too_many_in_flight",
-      "User-hosted tunnel has too many in-flight HTTP requests",
+      "Host tunnel has too many in-flight HTTP requests",
       429,
     )
   }
@@ -1033,10 +1033,10 @@ async function tunnelHttpRequest(input: {
         }
         return
       }
-      const error = new Error("User-hosted tunnel response timed out")
+      const error = new Error("Host tunnel response timed out")
       failPendingHttpResponse({
         entry,
-        response: corsJsonError(input.request, input.originAllowed, "user_hosted_tunnel_timeout", "User-hosted tunnel response timed out", 504),
+        response: corsJsonError(input.request, input.originAllowed, "host_tunnel_timeout", "Host tunnel response timed out", 504),
         error,
       })
     }, input.responseTimeoutMs)
@@ -1072,9 +1072,9 @@ async function tunnelHttpRequest(input: {
       input.request.headers,
       input.relayHostToken,
       input.workspaceId,
-      // User-hosted tunnel: strip Cookie so browser cookies never reach the
+      // Host tunnel: strip Cookie so browser cookies never reach the
       // host process on the user's laptop.
-      { userHosted: true },
+      { hostTunnel: true },
     )),
     ...(body?.bodyBase64 ? { body_base64: body.bodyBase64 } : {}),
     end: true,
@@ -1137,7 +1137,7 @@ async function directHttpRequest(input: {
       {
         // Cloud-vm direct path: cookies pass through — workspace dashboards in
         // the VM may legitimately need session cookies.
-        userHosted: false,
+        hostTunnel: false,
         upstreamHeaders: input.upstreamHeaders,
         signal: controller.signal,
       },
@@ -1264,7 +1264,7 @@ function watchHostGeneration(
 
 const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 
-type RelayAccessWatchedWebSocketData = RelayClientWebSocketData | RelayUserHostedClientWebSocketData
+type RelayAccessWatchedWebSocketData = RelayClientWebSocketData | RelayHostTunnelClientWebSocketData
 
 function clearClientAccessWatchers(data: RelayAccessWatchedWebSocketData) {
   if (data.accessCheckTimer) clearInterval(data.accessCheckTimer)
@@ -1646,7 +1646,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         const response = await trace.span("relay-total", async () => {
           const relay = await authorizeWorkspaceRelayRequest(options, request, workspaceId, trace)
           if (!relay.ok) return relay.response
-          if (isUserHostedTarget(relay.request.target)) {
+          if (isHostTunnelTarget(relay.request.target)) {
             const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId, relay.request.target.workspaceId)
             return tunnel
               ? await trace.span("tunnel-http", async () => await tunnelHttpRequest({
@@ -1662,7 +1662,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
                 requestBodyMaxBytes: bunOptions.tunnelRequestBodyMaxBytes ?? TUNNEL_REQUEST_BODY_MAX_BYTES_DEFAULT,
                 responseTimeoutMs: bunOptions.tunnelHttpResponseTimeoutMs ?? TUNNEL_HTTP_RESPONSE_TIMEOUT_MS_DEFAULT,
               }))
-              : new Response("User-hosted workspace is offline", { status: 503 })
+              : new Response("The machine serving this workspace is offline", { status: 503 })
           }
           return await directHttpRequest({
             request,
@@ -1686,26 +1686,26 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       if (!relay.ok) return relay.response
       const originDenied = requireAllowedOrigin(request, relayOriginMatcher)
       if (originDenied) return originDenied
-      if (isUserHostedTarget(relay.request.target)) {
+      if (isHostTunnelTarget(relay.request.target)) {
         const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId, relay.request.target.workspaceId)
         if (!tunnel) {
-          return new Response("User-hosted workspace is offline", { status: 503 })
+          return new Response("The machine serving this workspace is offline", { status: 503 })
         }
         if (tunnel.data.channels.size >= TUNNEL_CHANNEL_CAP) {
           return jsonError(
             "too_many_channels",
-            "User-hosted tunnel has too many active WebSocket channels",
+            "Host tunnel has too many active WebSocket channels",
             503,
           )
         }
         // RHT validates only the connection establishment for this WS upgrade.
-        // The long-lived user-hosted-client channel (multiplexed over the host
+        // The long-lived host-tunnel-client channel (multiplexed over the host
         // tunnel) survives past RHT TTL by design. See
         // `packages/workspace-relay/src/auth.ts` mintRelayHostToken for the
         // full lifetime semantics.
         if (server.upgrade(request, {
           data: {
-            kind: "user-hosted-client",
+            kind: "host-tunnel-client",
             claims: relay.request.claims,
             hostId: relay.request.target.hostId,
             workspaceId: relay.request.target.workspaceId,
@@ -1737,7 +1737,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             relay.request.relayHostToken,
             relay.request.target.workspaceId,
             // Cloud-vm WS upgrade: cookies pass through.
-            { userHosted: false, upstreamHeaders: relay.request.target.upstreamHeaders },
+            { hostTunnel: false, upstreamHeaders: relay.request.target.upstreamHeaders },
           )),
           queue: [],
           ...(relayWebSocketTraceEnabled(request)
@@ -1874,10 +1874,10 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }
           return
         }
-        if (isUserHostedClientSocket(ws)) {
+        if (isHostTunnelClientSocket(ws)) {
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId, ws.data.workspaceId)
           if (!tunnel) {
-            ws.close(1011, "User-hosted tunnel disconnected")
+            ws.close(1011, "Host tunnel disconnected")
             return
           }
           if (relayOverBackpressureLimit(tunnel, bunOptions.webSocketBufferedAmountMaxBytes ?? WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT)) {
@@ -1947,16 +1947,16 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           })
           return
         }
-        if (isUserHostedClientSocket(ws)) {
+        if (isHostTunnelClientSocket(ws)) {
           watchClientAccess(ws, options, bunOptions)
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId, ws.data.workspaceId)
           if (!tunnel) {
-            ws.close(1011, "User-hosted tunnel disconnected")
+            ws.close(1011, "Host tunnel disconnected")
             return
           }
           tunnel.data.channels.set(ws.data.channelId, ws)
           if (tunnel.readyState !== WebSocket.OPEN) {
-            closeWebSocket(ws, 1011, "User-hosted tunnel disconnected")
+            closeWebSocket(ws, 1011, "Host tunnel disconnected")
             return
           }
           tunnel.send(JSON.stringify({
@@ -1969,9 +1969,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               new Headers(),
               ws.data.relayHostToken,
               ws.data.workspaceId,
-              // User-hosted tunnel WS upgrade: strip Cookie. Headers are empty
+              // Host tunnel WS upgrade: strip Cookie. Headers are empty
               // here today; the flag keeps the rule uniform.
-              { userHosted: true },
+              { hostTunnel: true },
             )),
           }))
           return
@@ -2049,7 +2049,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }
           return
         }
-        if (isUserHostedClientSocket(ws)) {
+        if (isHostTunnelClientSocket(ws)) {
           clearClientAccessWatchers(ws.data)
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId, ws.data.workspaceId)
           tunnel?.data.channels.delete(ws.data.channelId)

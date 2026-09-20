@@ -133,12 +133,6 @@ const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>()
 type TerminalSessionOptions = {
   claxedoServerUrl?: string
   claxedoEvents?: ReturnType<typeof useClaxedoEventsOptional>
-  /**
-   * Cloud-workspace routing hooks. When provided alongside
-   * `request`, PTY lifecycle calls (create/update/clone/delete) route
-   * through the Workspace Relay for cloud workspaces. Local workspaces
-   * keep the legacy direct fetch.
-   */
   request?: typeof fetch
   resolveWorkspaceRuntime?: (input: { directory: string }) => Promise<{
     kind: WorkspaceHostKind

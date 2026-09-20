@@ -20,7 +20,7 @@ import "./document-index.css"
  * A project's documents, keyed by the project THIS CLIENT ASKED FOR.
  *
  * Deliberately not `DocumentSummary.project_id`. Those two ids are different
- * namespaces for a local workspace: `routeScope` resolves a loopback request
+ * namespaces over loopback: `routeScope` resolves a loopback request
  * through `resolveLocalProjectId(directory)`, which mints and stores its own
  * `project_<uuid>` per canonical directory (`documents/index-store.ts`) and
  * ignores the `project_id` we sent. Grouping on the echoed id therefore finds

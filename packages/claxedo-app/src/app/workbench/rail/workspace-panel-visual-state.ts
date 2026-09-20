@@ -20,9 +20,9 @@ export function workspacePanelMatchesFocusedPane(input: {
   // A targetless panel is attached to the currently focused pane. Providers
   // can open one before workbench hydration produces a stable pane id.
   if (input.panel.targetPaneId === undefined) return true
-  // UI ownership is pane-scoped. The panel directory and the focused surface's
-  // tool directory may be canonical aliases of the same local workspace (for
-  // example a resolved local workspace id versus its filesystem cwd).
+  // Compared by pane id, not directory: the panel's directory and the focused
+  // surface's tool directory can be two aliases of one workspace (its id
+  // versus its filesystem cwd).
   return input.panel.targetPaneId === input.target?.targetPaneId
 }
 

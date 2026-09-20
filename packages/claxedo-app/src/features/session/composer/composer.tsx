@@ -466,8 +466,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     addPart: engine.addPart,
     readClipboardImage: platform.readClipboardImage,
-    // A hosted workspace has no path the runtime can write an attachment to,
-    // so only the harness's own prompt inputs are left there.
+    // A workspace reached through the relay has no path this runtime can write
+    // an attachment into, so only the harness's own prompt inputs remain there.
     target: () => ({
       ...(currentHarnessType(scope()) ? { harness: currentHarnessType(scope())! } : {}),
       workspace: !props.hostKind?.(),

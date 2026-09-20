@@ -4,7 +4,7 @@ import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-acc
 export const SHARED_WORKSPACES_QUERY_KEY = ["claxedo", "remote-access", "shared-workspaces"] as const
 
 /**
- * Which local workspaces this machine's account has published for remote access.
+ * Which workspaces this machine's account has published for remote access.
  *
  * Each product answers from its OWN authority, and the two are genuinely
  * different facts rather than a preference order:

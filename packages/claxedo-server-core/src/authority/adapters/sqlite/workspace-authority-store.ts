@@ -863,7 +863,7 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
         WHERE assignment.revision > workspace.host_assignment_revision
       )
     `)
-    normalizeUserHostedDirectories(db)
+    normalizeMachinePlacedDirectories(db)
     dropWorkspaceAccessMode(db)
   })()
 }
@@ -886,7 +886,7 @@ function dropWorkspaceAccessMode(db: SqliteAuthorityDb) {
  * paths now store `normalizeStoredDirectory`'s form, so this converges in one
  * pass and rewrites nothing on later opens.
  */
-function normalizeUserHostedDirectories(db: SqliteAuthorityDb) {
+function normalizeMachinePlacedDirectories(db: SqliteAuthorityDb) {
   const rows = db.prepare<unknown[], { workspace_id: string; remote_directory: string }>(`
     SELECT workspace_id, remote_directory FROM workspaces
     WHERE backing = 'local-worktree' AND remote_directory IS NOT NULL

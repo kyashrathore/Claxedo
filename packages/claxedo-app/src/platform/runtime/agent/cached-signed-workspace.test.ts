@@ -17,7 +17,7 @@ describe("cachedSignedWorkspace", () => {
         id: "prj_1",
         worktree: "/Users/me/test/opencode",
         workspaces: {
-          "/Users/me/test/opencode": { id: "ws_1", directory: "/Users/me/test/opencode", kind: "user-hosted", access: "user-hosted" },
+          "/Users/me/test/opencode": { id: "ws_1", directory: "/Users/me/test/opencode", kind: "user-hosted" },
         },
       },
     ])

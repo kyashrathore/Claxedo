@@ -138,7 +138,7 @@ enrollment row; `sessionAuthority` is read per beat from
 app is composed from, so the declaration cannot drift from what is mounted.
 
 **A.7 The tunnel replays onto loopback** — both tunnel owners
-(`host-serving/src/serving.ts`, `claxedo-server/src/user-hosted-tunnel.ts`)
+(`host-serving/src/serving.ts`, `claxedo-server/src/host-tunnel.ts`)
 replay a relayed request as a fetch to the machine's own listener with
 `loopbackReplayHeaders`
 (`claxedo-server-core/src/platform/http/peer-address.ts`): the remote
@@ -168,14 +168,12 @@ attached server's own `/project` when that server serves directories of its
 own (`centralOwnsProjects`), and, for a signed principal, the control plane's
 list once per relay host kind: `listControlPlaneWorkspaces` for
 `provisioner` and for `machine`, through the account operations
-`workspace.list.cloud` / `workspace.list.userHosted` on the desktop or
-`workspaceListUrl` with `controlPlaneListScope` elsewhere. Both spell the
-list scope as `GET /api/workspace?access=cloud` / `?access=user-hosted`
+`workspace.list.provisioner` / `workspace.list.machine` on the desktop or
+`workspaceListUrl` elsewhere. Both spell the list query as
+`GET /api/workspace?host=provisioner` / `?host=machine`
 (`packages/claxedo-server/src/routes/hosted/workspace.ts` and
-`workspace/routes/index.ts`), and the route answers the `user-hosted` scope
-by filtering rows to `backing === "local-worktree"`; that query word is the
-route's, under review in the server lane, and this module states it once at
-the boundary. Each row states `backing`, `placement`, `remote_directory`,
+`workspace/routes/index.ts`), and the route answers `host=machine` by
+filtering rows to `backing === "local-worktree"`. Each row states `backing`, `placement`, `remote_directory`,
 `role`, `status` and `host_online`. `controlPlaneCatalogProjects` builds one
 project per `project_id`; `controlPlaneRowKind` maps `backing` to a host
 kind and back to the inventory word the daemon's own rows use, so the two
@@ -198,8 +196,9 @@ directory on another machine.
 
 **B.4 Wire** — `src/platform/runtime/placement-wire.ts` is the only
 translator between the control plane's words and the placement the app
-reads: `inventoryHostKind` (`local` / `cloud` / `user-hosted` → `self` /
-`provisioner` / `machine`), `backingHostKind` (`cloud-vm` / `local-worktree`),
+reads: `inventoryHostKind` (the ATTACHED server's own inventory word `local` /
+`cloud` → `self` / `provisioner`), `backingHostKind` (the control plane's
+`cloud-vm` / `local-worktree` → `provisioner` / `machine`),
 `controlPlaneRowPlacement`, and `placementWire(placement, self)`: a `self`
 host is loopback; the provisioner is relay; a machine with no enrollment id
 is `unreachable` (nothing is opened, the surface says the machine is
@@ -220,17 +219,16 @@ unmet for two of the three paths.
 (`packages/claxedo-server/src/connections/routes/connection-routes.ts`) →
 `hostedConnectionInfo` (`connections/hosted-connection-info.ts`) opens the
 workspace through the authority and branches on `backing`. `local-worktree`
-→ `userHostedConnectionInfo` (`connections/user-hosted-connection.ts`): the
+→ `hostTunnelConnectionInfo` (`connections/host-tunnel-connection.ts`): the
 host must be live (`activeWorkspaceHost`, else 409
-`user_hosted_workspace_unavailable`); the relay URL comes from the
+`workspace_host_offline`); the relay URL comes from the
 workspace's home region; a Runtime Access Token is minted with the verified
 actor, the workspace, the host id and the caller's workspace role, recorded
 and audited, and the previous token revoked on a refresh. The answer carries
 `relayUrl`, `runtimeAccessToken`, `tokenExpiresAt`, `role`, `backing`, and
 `sessionAuthority` exactly as the host declared it on its beat (an
-undeclared host yields none). Observed: the same answer still carries
-`access: "user-hosted"` and `runtimeKind: "user-hosted"`, and its telemetry
-still names `access`; the app does not read those fields. `cloud-vm` →
+undeclared host yields none). `backing` is the only placement word the body
+carries: `runtimeKind` restated it one-for-one and nothing parsed it. `cloud-vm` →
 the sandbox is ensured and `sessionAuthority` is the fixed
 `"managed-private"`.
 
@@ -475,19 +473,19 @@ names the file and what it claims to cover.
   in `e2e/helpers/contracts/*`) mocks the whole server. Its control-plane
   rows carry `backing`, `placement { host_enrollment_id, directory }`,
   `remote_directory` and `host_online`, and its connection mint carries
-  `sessionAuthority`. `e2e/playwright/core-user-hosted-workspace.spec.ts`
+  `sessionAuthority`. `e2e/playwright/core-host-tunnel-workspace.spec.ts`
   drives a machine-placed workspace against it.
 - **Daemon probe** (`packages/claxedo-local-server/src/app/desktop-session-authority.test.ts`)
   runs the same request twice against a real `startLocalServer`, once with the
   relay's marks and once without, with the session authority and the relay
   bearer verification faked, and asserts which of them the daemon consults.
-- **Tier R** (`CLAXEDO_TIER_REAL_E2E=1`): `e2e/playwright/real-user-hosted-relay.spec.ts`
+- **Tier R** (`CLAXEDO_TIER_REAL_E2E=1`): `e2e/playwright/real-host-tunnel-relay.spec.ts`
   with `packages/claxedo-server/src/signed-browser-relay-fixture.mjs` — a
   real relay, a real host tunnel, a real server with its embedded runtime, a
   scripted model and a real browser with zero route mocks: register and
   tunnel-up, health, file and PTY through the relay lane, a terminal round
   trip, attach with live deltas, viewer-role denial, tunnel pause and resume.
-  `web-signed-userhosted.spec.ts` runs the shared signed-web journeys against
+  `web-signed-host-tunnel.spec.ts` runs the shared signed-web journeys against
   the same fixture; `desktop-signed-embedded-shared.spec.ts` and
   `real-desktop-signed-cloud.spec.ts` drive the packaged desktop's account
   and remote-access surfaces; `real-connect-host.spec.ts` runs a real

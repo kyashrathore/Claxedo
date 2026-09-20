@@ -59,7 +59,7 @@ const claims = await verifier.verify("test-token")
 | `TunnelMessageValidation` | Stable | Result type returned by `validateTunnelMessage` — `{ ok: true, message }` or a typed failure (`protocol_mismatch` / `invalid`). |
 | `makeTunnelPing`, `makeTunnelPong` | Stable | Helpers for heartbeat requests and replies. |
 | `TokenVerifier` and claim types | Stable | Narrow verifier interface shared by relay/runtime boundaries. |
-| `RelayHostVerifierClaims` (incl. `role`) | Stable | Claims shape for host-side verification: org, `role` (`viewer` \| `editor` \| `admin` \| `owner`), and cloud/user-hosted backing discriminant. |
+| `RelayHostVerifierClaims` (incl. `role`) | Stable | Claims shape for host-side verification: org, `role` (`viewer` \| `editor` \| `admin` \| `owner`), and the `cloud-vm` / `local-worktree` backing that names the placement. |
 | `createOidcTokenVerifier` | Public beta | Verifies session JWTs with issuer, audience, JWKS, and algorithm constraints. |
 | `createHttpTokenVerifier` | Public beta | Calls an operator-controlled verifier endpoint over HTTP. |
 | `createStaticTokenVerifier` | Test/single-tenant only | Fixed token table for tests and isolated self-hosted deployments. |

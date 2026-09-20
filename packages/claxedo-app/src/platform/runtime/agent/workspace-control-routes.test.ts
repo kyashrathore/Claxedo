@@ -12,10 +12,22 @@ import {
   workspaceSandboxDriverAuthUrl,
   workspaceSandboxDriversUrl,
   workspaceLifecycleUrl,
+  workspaceListUrl,
   workspaceResolveUrl,
 } from "./workspace-control-routes"
 
 describe("workspace control routes", () => {
+  test("names the host the workspace list is asked for", () => {
+    // The route serves a project list rather than a workspace list when no
+    // host is named, so a caller that drops the query reads another question's
+    // answer in another shape.
+    expect(workspaceListUrl({ baseUrl: "https://control.example.test", host: "provisioner" }).toString())
+      .toBe("https://control.example.test/api/workspace?host=provisioner")
+    expect(workspaceListUrl({ baseUrl: "https://control.example.test", host: "machine" }).toString())
+      .toBe("https://control.example.test/api/workspace?host=machine")
+  })
+
+
   test("builds workspace sandbox driver, resolve, and delete URLs", () => {
     expect(workspaceSandboxDriversUrl({ baseUrl: "https://control.example.test/" }))
       .toBe("https://control.example.test/api/workspace/drivers")

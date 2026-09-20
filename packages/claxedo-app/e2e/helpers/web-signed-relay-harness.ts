@@ -12,11 +12,11 @@ export const APP_DIR = path.resolve(import.meta.dirname, "..", "..")
 export const REPO_ROOT = path.resolve(APP_DIR, "..", "..")
 export const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
 
-export type SignedRelayAccess = "cloud" | "user-hosted"
+export type SignedRelayBacking = "cloud-vm" | "local-worktree"
 
 /**
  * Mirrors `signed-browser-relay-fixture.mjs`'s stdout JSON shape — the exact
- * type both `real-cloud-relay.spec.ts` and `live-user-hosted-relay.spec.ts`
+ * type both `real-cloud-relay.spec.ts` and `live-host-tunnel-relay.spec.ts`
  * already declare locally. `controlPlaneToken` is required, not merely typed,
  * by the readiness parser below for the same reason those two files require
  * it: a fixture regression that stopped printing it would otherwise resolve
@@ -61,7 +61,7 @@ export type RunningRelayFixture = {
 const stopChild = (child: ChildProcess | undefined) => stopOwnedChild(child, { processGroup: true })
 
 export async function startSignedRelayFixture(opts: {
-  access: SignedRelayAccess
+  backing: SignedRelayBacking
   backendPort: number
   scripted: ScriptedModelServer
   claudeConfigDir: string
@@ -86,7 +86,7 @@ export async function startSignedRelayFixture(opts: {
       env: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(opts.backendPort),
-        ...(opts.access === "cloud" ? { CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud" } : {}),
+        ...(opts.backing === "cloud-vm" ? { CLAXEDO_E2E_RELAY_FIXTURE_BACKING: "cloud-vm" } : {}),
         ...(opts.collaborativeOrg?.name
           ? { CLAXEDO_E2E_COLLABORATIVE_ORG_NAME: opts.collaborativeOrg.name }
           : {}),
@@ -115,7 +115,7 @@ export async function startSignedRelayFixture(opts: {
         reject(err)
       }
       const timeout = setTimeout(() => {
-        finish(new Error(`GATING: signed relay fixture (access=${opts.access}) did not start within 120s.\n${log}`))
+        finish(new Error(`GATING: signed relay fixture (backing=${opts.backing}) did not start within 120s.\n${log}`))
       }, 120_000)
       child.stdout?.on("data", (chunk) => {
         const text = chunk.toString()
@@ -151,7 +151,7 @@ export async function startSignedRelayFixture(opts: {
         clearTimeout(timeout)
         finish(
           new Error(
-            `GATING: signed relay fixture (access=${opts.access}) exited before starting (${code ?? signal}).\n${log}`,
+            `GATING: signed relay fixture (backing=${opts.backing}) exited before starting (${code ?? signal}).\n${log}`,
           ),
         )
       })
@@ -311,14 +311,17 @@ export async function buildAndServeWebApp(opts: {
  * failure modes each key independently guards against: `placementFor`/
  * `workspaceIdFromRef` needing the ref shape, and a path-keyed resolve
  * missing the row or aliasing a `/private/var` symlink into a second
- * workspace). `kind` is threaded through so ONE function serves both lanes.
+ * workspace). The placement is threaded through so ONE function serves both
+ * lanes; the seeded rows carry the project inventory's own `kind` word, which
+ * is what `rowHostKind` narrows in the page.
  */
 export async function seedWorkspace(
   page: Page,
   info: RelayFixtureInfo,
-  kind: SignedRelayAccess,
+  backing: SignedRelayBacking,
   authUser?: { id: string; fullName?: string },
 ) {
+  const kind: "cloud" | "user-hosted" = backing === "cloud-vm" ? "cloud" : "user-hosted"
   if (info.browserUrl) {
     await page.context().addCookies([{
       name: "claxedo_fixture_jwt",
@@ -330,7 +333,7 @@ export async function seedWorkspace(
   }
   await page.addInitScript(
     (seed: RelayFixtureInfo & {
-      kind: SignedRelayAccess
+      kind: "cloud" | "user-hosted"
       authUserId?: string
       authUserFullName?: string
     }) => {

@@ -260,7 +260,7 @@ describe("SQLite host-connect upgrade", () => {
     expect(repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_b'`).get()).toEqual({ revision: 6 })
   })
 
-  test("a legacy user-hosted directory is stored normalized after the open; cloud rows are untouched", () => {
+  test("a legacy machine-placed directory is stored normalized after the open; cloud rows are untouched", () => {
     const file = preConnectDatabase()
     const legacy = new Database(file)
     legacy.exec(`

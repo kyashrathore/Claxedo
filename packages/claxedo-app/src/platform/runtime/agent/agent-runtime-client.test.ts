@@ -157,8 +157,8 @@ describe("AgentRuntimeClient", () => {
         seen.push(requestUrl(input))
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://control.example",
             runtimeAccessToken: "runtime-token",
@@ -482,8 +482,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -543,8 +543,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -582,8 +582,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -619,8 +619,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -661,7 +661,6 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -696,7 +695,6 @@ describe("AgentRuntimeClient", () => {
         calls.push(requestUrl(input))
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -730,7 +728,6 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -770,7 +767,6 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -810,7 +806,6 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -836,11 +831,12 @@ describe("AgentRuntimeClient", () => {
 
   // When the client is not told the workspace id up front, `listSessions`
   // resolves it live via `/api/workspace/resolve` — but that read confirms only a
-  // `workspaceId` for a user-hosted workspace addressed by its filesystem-path
-  // directory, never a `kind` (the hosted control plane does not track kind for a
+  // `workspaceId` for a machine-placed workspace addressed by its filesystem-path
+  // directory, never a `kind` (the control plane does not track the kind of a
   // directory it does not own). The caller-confirmed `hostKind` (threaded down
-  // from the signed inventory) must still steer `listSessions` to the relay runtime
-  // instead of the central sessions list, which holds nothing for user-hosted.
+  // from the signed inventory) must still steer `listSessions` to the relay
+  // runtime instead of the central sessions list, which holds nothing for a
+  // machine's workspaces.
   it("signed machine-placed session lists use the caller-confirmed host kind when the live resolve confirms only an id", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
@@ -854,7 +850,6 @@ describe("AgentRuntimeClient", () => {
         }
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -888,8 +883,8 @@ describe("AgentRuntimeClient", () => {
         if (requestUrl(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "cloud" })
         if (requestUrl(input).includes("/api/workspace/ws_real/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_real",
             relayUrl: "https://control.example",
             runtimeAccessToken: "runtime-token",
@@ -952,7 +947,6 @@ describe("AgentRuntimeClient", () => {
         if (requestUrl(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "user-hosted" })
         if (requestUrl(input).includes("/api/workspace/ws_real/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_real",
             relayUrl: "https://relay.example",
@@ -1005,8 +999,8 @@ describe("AgentRuntimeClient", () => {
         }
         if (requestUrl(input).includes("/api/workspace/ws_bearer/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_bearer",
             relayUrl: "https://control.example",
             runtimeAccessToken: "runtime-token",

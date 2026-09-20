@@ -9,11 +9,12 @@ export const hostTunnelTokenAudience = "workspace-relay-host-tunnel"
 export const relayHostTokenIssuer = "workspace-relay"
 export const relayHostTokenAudience = "workspace-host-service"
 
-export type RelayClaimPair =
-  | { access: "cloud"; backing: "cloud-vm" }
-  | { access: "user-hosted"; backing: "local-worktree" }
-export type RelayAccess = RelayClaimPair["access"]
-export type RelayBacking = RelayClaimPair["backing"]
+/**
+ * Where the workspace behind a relayed request runs: the provisioner's machine
+ * (`cloud-vm`) or an enrolled one (`local-worktree`). The only placement word
+ * on the relay wire; the control plane stores the same two.
+ */
+export type RelayBacking = "cloud-vm" | "local-worktree"
 export type RelayJwtAlgorithm = (typeof algorithms)[number]
 export type RelayRole = "viewer" | "editor" | "admin" | "owner"
 export type ActorKind = "human" | "agent"
@@ -54,7 +55,8 @@ export type RelayHostTokenClaims = {
   jti: string
   /** Durable parent Runtime Access Token id used for revocation checks. */
   parent_jti: string
-} & RelayClaimPair
+  backing: RelayBacking
+}
 
 export type HostTunnelTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
@@ -105,7 +107,8 @@ type RuntimeInput = {
   now?: number
 }
 
-type RelayHostInput = RuntimeInput & RelayClaimPair & {
+type RelayHostInput = RuntimeInput & {
+  backing: RelayBacking
   /** The Runtime Access Token jti from which this one-request RHT is derived. */
   parentJti: string
   /**
@@ -210,12 +213,8 @@ function actorProfilePayload(input: {
   }
 }
 
-export function isRelayClaimPair(input: { access?: unknown; backing?: unknown }): input is RelayClaimPair {
-  return (
-    input.access === "cloud" && input.backing === "cloud-vm"
-  ) || (
-    input.access === "user-hosted" && input.backing === "local-worktree"
-  )
+export function isRelayBacking(input: unknown): input is RelayBacking {
+  return input === "cloud-vm" || input === "local-worktree"
 }
 
 function checkHostTunnelTarget(payload: JWTPayload, expected: ExpectedHostTunnel) {
@@ -410,8 +409,8 @@ export async function verifyHostTunnelToken(token: string, key: RelayKey, expect
 // (and Control Plane via the resolver) in the streaming critical path with
 // no security benefit.
 export async function mintRelayHostToken(input: RelayHostInput, key: RelaySigningKey, alg: RelayJwtAlgorithm) {
-  if (!isRelayClaimPair(input)) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Relay Host Token access/backing claims are inconsistent")
+  if (!isRelayBacking(input.backing)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Relay Host Token backing claim is not a placement")
   }
   const now = seconds(input.now)
   const protectedHeader: { alg: RelayJwtAlgorithm; kid?: string } = { alg: requireAlgorithm(alg) }
@@ -425,7 +424,6 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
-    access: input.access,
     backing: input.backing,
     parent_jti: input.parentJti,
   })
@@ -494,17 +492,20 @@ function relayHostClaims(payload: JWTPayload): RelayHostTokenClaims | undefined 
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
   })
-  const access = stringClaim(payload, "access")
+  // An `access` claim is the retired spelling of this same fact. A token
+  // carrying it was minted by a control plane on the other side of the
+  // placement change, whose `backing` may disagree with it; refuse rather than
+  // pick one.
+  if (payload.access !== undefined) return undefined
   const backing = stringClaim(payload, "backing")
   const parent_jti = stringClaim(payload, "parent_jti")
-  const pair = { access, backing }
-  if (!base || !parent_jti || !isRelayClaimPair(pair)) return undefined
+  if (!base || !parent_jti || !isRelayBacking(backing)) return undefined
   return {
     ...base,
     iss: relayHostTokenIssuer,
     aud: relayHostTokenAudience,
     parent_jti,
-    ...pair,
+    backing,
   }
 }
 

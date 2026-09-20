@@ -250,7 +250,7 @@ describe("hosted session pull", () => {
       }),
     ).rejects.toMatchObject({
       status: 409,
-      code: "user_hosted_workspace_unavailable",
+      code: "workspace_host_offline",
     })
 
     expect(mintRuntimeAccessToken).not.toHaveBeenCalled()

@@ -211,7 +211,7 @@ export async function machines(fixture: RunningConnectFixture): Promise<Machine[
  */
 export async function placedWorkspaces(fixture: RunningConnectFixture, token?: string): Promise<ControlPlaneWorkspaceRow[]> {
   const body = await json<{ workspaces: ControlPlaneWorkspaceRow[] }>(
-    await fetch(`${fixture.info.backendUrl}/api/workspace?access=user-hosted`, { headers: owner(fixture, token) }),
+    await fetch(`${fixture.info.backendUrl}/api/workspace?host=machine`, { headers: owner(fixture, token) }),
     "machine-placed workspace list",
   )
   return body.workspaces

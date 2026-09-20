@@ -19,7 +19,7 @@ workspace on them appears in the sidebar the same way. Every machine has a name.
 The desktop app names its own machine from the computer's own name and the full
 name on the account you sign into that computer with, so it reads the same on
 every device: on the desktop, on the web, on your phone it is "Yashvardhan's
-Mac". A workspace is never labelled "local" or "user-hosted"; it is labelled by
+Mac". A workspace is never labelled by a placement word; it is labelled by
 the machine it is on.
 
 ## Add a machine

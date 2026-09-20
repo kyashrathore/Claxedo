@@ -145,8 +145,8 @@ describe("global sync inventory source", () => {
       }),
     ).toBe(false)
 
-    // Session reads stay local, but hosted-workspace discovery must still run;
-    // otherwise the first cloud workspace can never enter the project cache.
+    // Session reads stay on loopback, yet the signed catalog is still fetched:
+    // without it a workspace another machine serves never enters the project cache.
     expect(shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: true })).toBe(true)
     expect(shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: false })).toBe(false)
   })

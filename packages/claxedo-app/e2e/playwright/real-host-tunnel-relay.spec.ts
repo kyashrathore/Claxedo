@@ -1,4 +1,4 @@
-/** Real user-hosted relay, host tunnel, browser, and runtime with a scripted model endpoint.
+/** Real relay, host tunnel, browser, and runtime with a scripted model endpoint.
  * These Tier R checks cover browser transport, host-started streaming, PTY output,
  * role denial, and offline recovery. They do not exercise a hosted deployment.
  */
@@ -26,9 +26,9 @@ import { watchForbiddenDirectRequests } from "../helpers/web-signed-relay-journe
 import { Identifier } from "../../src/lib/id"
 
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
-const BACKEND_PORT = Number(process.env.CLAXEDO_REAL_USER_HOSTED_RELAY_BACKEND_PORT ?? 4567)
-const PREVIEW_PORT = Number(process.env.CLAXEDO_REAL_USER_HOSTED_RELAY_PREVIEW_PORT ?? 4569)
-const OUT_DIR = path.join(APP_DIR, "dist-e2e-real-user-hosted-relay")
+const BACKEND_PORT = Number(process.env.CLAXEDO_REAL_HOST_TUNNEL_RELAY_BACKEND_PORT ?? 4567)
+const PREVIEW_PORT = Number(process.env.CLAXEDO_REAL_HOST_TUNNEL_RELAY_PREVIEW_PORT ?? 4569)
+const OUT_DIR = path.join(APP_DIR, "dist-e2e-real-host-tunnel-relay")
 
 let scripted: ScriptedModelServer
 let fixture: RunningRelayFixture
@@ -154,7 +154,7 @@ async function relayFetchFromPage(
 // Not `.serial`: each test brings its own page, navigation and connect, and `.serial`
 // would skip every later test after one failure. Only the `beforeAll`-booted fixture and
 // frontend are shared; ordering is not.
-test.describe("real user-hosted relay @core @tier-real", () => {
+test.describe("real host tunnel relay @core @tier-real", () => {
   test.skip(
     !TIER_REAL,
     "Tier R: set CLAXEDO_TIER_REAL_E2E=1 to run the real local relay and host tunnel with the scripted model endpoint. Requires bun and node on PATH.",
@@ -167,11 +167,11 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     test.setTimeout(180_000)
     scripted = await startScriptedModelServer()
     fixture = await startSignedRelayFixture({
-      access: "user-hosted",
+      backing: "local-worktree",
       backendPort: BACKEND_PORT,
       browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
-      claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "real-user-hosted-relay-claude"),
+      claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "real-host-tunnel-relay-claude"),
     })
     webApp = await buildAndServeWebApp({
       backendUrl: fixture.info.backendUrl,
@@ -202,13 +202,13 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     const testInfo = test.info()
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
     console.log(
-      `\n[real-user-hosted-relay] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
+      `\n[real-host-tunnel-relay] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
     )
   })
 
   test("the real register+tunnel-up sequence makes the workspace appear ready", async ({ page }) => {
     test.setTimeout(60_000)
-    await seedWorkspace(page, fixture.info, "user-hosted")
+    await seedWorkspace(page, fixture.info, "local-worktree")
     await page.goto(`${webApp.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     await gateReachesReady(page)
@@ -218,13 +218,13 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     page,
   }) => {
     test.setTimeout(60_000)
-    await seedWorkspace(page, fixture.info, "user-hosted")
+    await seedWorkspace(page, fixture.info, "local-worktree")
     await page.goto(`${webApp.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
     await gateReachesReady(page)
 
     const connection = await mintConnectionFromPage(page, fixture.info)
     // The real mint derives the role from the caller's own authority role on the
-    // workspace (`connections/user-hosted-connection.ts`'s `relayRole(result.role)`),
+    // workspace (`connections/host-tunnel-connection.ts`'s `relayRole(result.role)`),
     // not from any fixture setting: `browserSubject` is the identity that registered
     // this workspace, so the authority answers "owner" and the token carries it.
     expect(connection.role).toBe("owner")
@@ -301,7 +301,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
   // `platform/settings/terminal-preferences.ts`).
   test("a terminal opened from the browser runs on the host and streams its output back", async ({ page }) => {
     test.setTimeout(120_000)
-    await seedWorkspace(page, fixture.info, "user-hosted")
+    await seedWorkspace(page, fixture.info, "local-worktree")
     // `createTerminalInstance` seeds each new xterm from this preference at
     // construction, so it has to be persisted before the terminal is created.
     await page.addInitScript(() => {
@@ -421,7 +421,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     page.on("requestfinished", settle)
     page.on("requestfailed", settle)
 
-    await seedWorkspace(page, fixture.info, "user-hosted")
+    await seedWorkspace(page, fixture.info, "local-worktree")
     await page.goto(`${webApp.url}${sessionRoute(fixture.info, sessionId)}`, {
       waitUntil: "domcontentloaded",
       timeout: 45_000,
@@ -520,7 +520,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     // The full three-layer oracle on the settled turn, and the model endpoint's
     // own receipt that the turn really crossed the relay into the engine.
     await expectAssistantReplyVisible(page, new RegExp(marker), {
-      spec: "real-user-hosted-relay",
+      spec: "real-host-tunnel-relay",
       scenario: "attached-host-turn",
       timeout: 60_000,
     })
@@ -532,7 +532,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
 
   test("viewer-role tokens are real-denied writes and PTY, but allowed reads", async ({ page }) => {
     test.setTimeout(60_000)
-    await seedWorkspace(page, fixture.info, "user-hosted")
+    await seedWorkspace(page, fixture.info, "local-worktree")
     await page.goto(`${webApp.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
     await gateReachesReady(page)
 
@@ -591,7 +591,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
   // loopback-literal base makes `centralTransportForServer` answer `loopback`, the
   // app reads the DAEMON's own `/project` catalog, and `mergeWorkspaceCatalog`
   // deliberately lets that direct row (kind `local`, the host's path) win over the
-  // control plane's user-hosted echo of the same workspace — correct for the
+  // control plane's machine-placed echo of the same workspace — correct for the
   // desktop, wrong for the web client this spec drives. Addressing the fixture's
   // control plane by a front-door hostname (see `buildAndServeWebApp`) is what puts the
   // app on the signed-web path it is here to prove, and the gate then mounts.
@@ -599,7 +599,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
     "pausing the real host tunnel surfaces the offline view on reload, and resuming lets Retry reconnect without another reload",
     async ({ page }) => {
       test.setTimeout(90_000)
-      await seedWorkspace(page, fixture.info, "user-hosted")
+      await seedWorkspace(page, fixture.info, "local-worktree")
       await page.goto(`${webApp.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
       await gateReachesReady(page)
 

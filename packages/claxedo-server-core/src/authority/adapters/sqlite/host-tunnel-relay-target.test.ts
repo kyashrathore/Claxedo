@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { createSqliteUserHostedTargetResolver } from "./user-hosted-relay-target"
+import { createSqliteHostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases } from "./workspace-authority-store"
 
@@ -36,7 +36,7 @@ async function setup(now?: () => number) {
   roots.push(root)
   const file = path.join(root, "authority.db")
   const api = createSqliteWorkspaceAuthority({ path: file })
-  const resolve = createSqliteUserHostedTargetResolver({ path: file, ...(now ? { now } : {}) })
+  const resolve = createSqliteHostTunnelTargetResolver({ path: file, ...(now ? { now } : {}) })
   const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
   const hostId = "host_box"
   const request = await api.createHostEnrollmentRequest(owner, { hostId })
@@ -83,7 +83,7 @@ async function setup(now?: () => number) {
   return { api, resolve, hostId, beat }
 }
 
-describe("SQLite user-hosted relay target", () => {
+describe("SQLite host tunnel relay target", () => {
   test("answers the readiness predicate: assigned and acked routes, assigned-only does not", async () => {
     const { api, resolve, hostId, beat } = await setup()
     await expect(resolve("ws_api")).resolves.toEqual({ active: false })

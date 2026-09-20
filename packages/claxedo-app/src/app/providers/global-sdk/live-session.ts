@@ -56,14 +56,15 @@ export function liveSessionTransition(
  * The workspace a client must be RELAY-ROUTED to, or `undefined` for "talk to
  * the server directly with `?directory=`".
  *
- * Every claxedo workspace carries a uuid, LOCAL ones included, so an explicit
- * `workspaceId` from a session row is not by itself evidence of a relay. The
- * inventory is the authority: a signed, relay-placed workspace routes
- * through the relay, a known-local one never does, and an id the inventory
- * cannot place yet keeps the optimistic fallback — that is what lets a cloud
- * workspace work before its projects have loaded.
+ * Every claxedo workspace carries a uuid, the ones this server serves
+ * included, so an explicit `workspaceId` from a session row is not by itself
+ * evidence of a relay. The inventory is the authority: a signed, relay-placed
+ * workspace routes through the relay, one the inventory places on this server
+ * never does, and an id the inventory cannot place yet keeps the optimistic
+ * fallback — that is what lets a relay-placed workspace work before its
+ * projects have loaded.
  *
- * Without the known-local rule, the rows of a workspace this server serves
+ * Without the placed-here rule, the rows of a workspace this server serves
  * itself route at the relay and every request answers `401 Workspace connection
  * failed`, which the SDK reports as `data: undefined`. Callers that read absence
  * as an assertion (the rail's status batch: absent from `/session/status` means

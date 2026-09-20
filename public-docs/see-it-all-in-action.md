@@ -26,7 +26,7 @@ workspace, and deployment backends underneath.
 | Local worktree | `workspace-runtime` runs next to a project directory on the user's machine. The product can call it over loopback. |
 | Container or Docker workspace | `workspace-runtime` runs inside or beside a container where the project directory is mounted, for example `/workspace/repo`. |
 | Cloud VM | `workspace-runtime` runs on the VM next to the project checkout. The control plane reaches it directly on private networking or through Relay. |
-| User-hosted team workspace | A user runs the runtime locally, it attaches to Relay, and authorized teammates reach that workspace through the hosted/self-hosted control plane. |
+| Team workspace on a machine | Someone runs the runtime on their own machine, it attaches to Relay through a host tunnel, and authorized teammates reach that workspace through the hosted/self-hosted control plane. |
 
 ## Full App In A Few Pieces
 

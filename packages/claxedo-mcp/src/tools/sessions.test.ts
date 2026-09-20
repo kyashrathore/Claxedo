@@ -18,7 +18,7 @@ import {
   type RuntimeCredentialClaims,
 } from "../server"
 import { registerSessionTools } from "./sessions"
-import { controlPlaneWorkspaceRow, workspaceListScopeRows } from "../client/control-plane-workspaces.fixture"
+import { controlPlaneWorkspaceRow, workspaceListHostRows } from "../client/control-plane-workspaces.fixture"
 
 type FixtureSession = {
   id: string
@@ -226,7 +226,7 @@ function controlPlane(workspaces: readonly Workspace[], created: Workspace[]) {
           remote_directory: row.directory,
           ...(row.name ? { display_name: row.name } : {}),
         }))
-      return Response.json({ workspaces: workspaceListScopeRows(rows, url.searchParams.get("access")) })
+      return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
     }
     if (url.pathname === "/api/workspace/create") {
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { workspaceName?: string }

@@ -104,12 +104,11 @@ describe("WorkspaceGate", () => {
     expect(screen.queryByTestId("session-page-root")).toBeNull()
   })
 
-  // A dead CLOUD sandbox does not take its history with it: sessions sync back
-  // to the control plane, so the surface must still render and let the
-  // transcript load centrally. Blocking it behind the offline panel is the bug
-  // this branch fixes.
+  // A dead provisioner-owned machine does not take its history with it:
+  // sessions sync back to the control plane, so the surface must still render
+  // and let the transcript load centrally.
   test.each(["no-host", "unreachable", "still-provisioning", "failed"] as const)(
-    "renders the surface for a dead cloud workspace (%s) so central history stays readable",
+    "renders the surface for a dead provisioner-placed workspace (%s) so central history stays readable",
     (reason) => {
       calls.connection.mockReturnValue({ status: { offline: reason }, terminal: false })
       calls.offline.mockReturnValue(reason)

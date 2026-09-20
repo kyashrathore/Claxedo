@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createWorkspaceRelayDirectory } from "./directory"
 
 describe("workspace relay directory", () => {
-  test("tracks user-hosted tunnel presence by host and workspace with TTL", () => {
+  test("tracks host tunnel presence by host and workspace with TTL", () => {
     let timestamp = 1_000
     const directory = createWorkspaceRelayDirectory({
       ttlMs: 10_000,

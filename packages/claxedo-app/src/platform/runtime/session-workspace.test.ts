@@ -65,11 +65,10 @@ describe("session workspace key", () => {
   })
 
   test("keeps bounded workspace selector compatibility behind the shell workspace key", () => {
-    // When the kind cannot be resolved from the signed inventory, the directory
-    // path does not default to "cloud" (which would run the provisioning
-    // resolve and fail for a user-hosted workspace whose mint returns 200). Both
-    // kinds route through the relay; "user-hosted" drives readiness off the
-    // mint+health path, which is the source of truth.
+    // A host kind the signed inventory cannot resolve falls to `machine`, never
+    // `provisioner`: the provisioner path runs the workspace resolve endpoint,
+    // which fails for a workspace on an enrolled machine whose connection mint
+    // returns 200.
     expect(sessionWorkspaceRuntimeRef({ directory: "ws_raw" })).toEqual({
       workspaceId: "ws_raw",
       kind: "machine",
@@ -124,18 +123,18 @@ describe("session workspace key", () => {
         },
       },
     ]
-    // user-hosted resolved by id-ref form
+    // a machine placement resolved by id-ref form
     expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_cleantest1", projects })).toEqual({
       workspaceId: "ws_cleantest1",
       kind: "machine",
     })
-    // cloud resolved from the inventory (NOT defaulted to user-hosted)
+    // the provisioner resolved from the inventory (NOT defaulted to a machine)
     expect(sessionWorkspaceRuntimeRef({ directory: "ws_cloud_1", projects })).toEqual({
       workspaceId: "ws_cloud_1",
       kind: "provisioner",
     })
     // Bare UUIDs are ambiguous with local project/workspace ids. They only become
-    // runtime-backed when the signed inventory confirms a cloud/user-hosted match.
+    // runtime-backed when the signed inventory confirms a relay-backed match.
     expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e", projects: [
       {
         workspaces: {
@@ -247,7 +246,7 @@ describe("session workspace key", () => {
       projects,
     })).toEqual({ workspaceId: undefined, kind: "self" })
 
-    // A stale session row claiming user-hosted hosting for the local UUID must not win.
+    // A stale session row placing the local UUID on a machine must not win.
     expect(sessionWorkspaceRuntimeRef({
       directory,
       workspaceId: projectId,

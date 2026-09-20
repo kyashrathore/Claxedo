@@ -23,15 +23,12 @@ export function workspaceResolveResponse(workspace: Workspace): WorkspaceRespons
  * list returns.
  *
  * A different producer from `workspaceResolveResponse` above, not a variant of
- * it: that one projects a row this server stores, while this one projects a row
- * the AUTHORITY holds for a workspace some other host serves. The two disagree
- * on `kind` for the same placement — the stored projection can only say `local`
- * or `cloud`, while this one says `user-hosted` for a `local-worktree` backing —
- * so a fixture that picked the wrong producer would hand the app a host kind the
- * real route never sends it.
- *
- * `signedWorkspaceJson` derives `kind` and the `backing` object from the row's
- * own `backing` string, so a fixture cannot put the two out of step.
+ * it: that one projects a row this server stores and states a `kind` saying it
+ * serves the directory itself, while this one projects a row the AUTHORITY
+ * holds for a workspace some other host serves and states only the placement.
+ * A fixture that picked the wrong producer would hand the app a `kind` the real
+ * route never sends it, and the app would open a loopback runtime for a
+ * workspace on somebody else's machine.
  */
 export function signedWorkspaceResolveResponse(row: ControlPlaneWorkspaceRow) {
   return signedWorkspaceJson({ workspace: row }, row.workspace_id)

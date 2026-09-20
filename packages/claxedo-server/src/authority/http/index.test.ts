@@ -472,7 +472,7 @@ describe("control plane HTTP protocol", () => {
     expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 
-  test("pulls a user-hosted runtime through its active authority host link", async () => {
+  test("pulls a machine-placed runtime through its active authority host link", async () => {
     const svc = services()
     mocks.resolveWorkspace.mockResolvedValue({
       id: "ws_1",
@@ -527,7 +527,7 @@ describe("control plane HTTP protocol", () => {
     {
       name: "a machine that is not serving",
       workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree" },
-      code: "user_hosted_workspace_unavailable",
+      code: "workspace_host_offline",
       activeWorkspaceHost: vi.fn(async () => ({ active: false as const })),
     },
     {

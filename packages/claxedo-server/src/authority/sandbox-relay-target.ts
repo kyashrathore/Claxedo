@@ -1,12 +1,12 @@
 import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
-import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
+import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
 import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
-export type { UserHostedTargetResolver, UserHostedTargetResult } from "@claxedo/server-core/adapters/relay-port"
+export type { HostTunnelTargetResolver, HostTunnelTargetResult } from "@claxedo/server-core/adapters/relay-port"
 
 /**
  * The single SandboxManager-backed relay target lookup, consumed by hosted
@@ -17,7 +17,7 @@ export type { UserHostedTargetResolver, UserHostedTargetResult } from "@claxedo/
 export function sandboxRelayTargetLookup(input: {
   sandboxManager?: SandboxManager
   telemetry?: ControlPlaneTelemetry
-  userHostedResolver?: UserHostedTargetResolver
+  hostTunnelResolver?: HostTunnelTargetResolver
   env?: Record<string, string | undefined>
 }): RelayTargetLookup {
   const capture = (properties: Record<string, unknown>) => {
@@ -71,16 +71,15 @@ export function sandboxRelayTargetLookup(input: {
     if (waitUntil) waitUntil(work)
     else void work
   }
-  const resolveUserHosted = async (args: { workspaceId: string; hostId: string }) => {
-    if (!input.userHostedResolver) return undefined
-    const link = await input.userHostedResolver(args.workspaceId)
+  const resolveHostTunnel = async (args: { workspaceId: string; hostId: string }) => {
+    if (!input.hostTunnelResolver) return undefined
+    const link = await input.hostTunnelResolver(args.workspaceId)
     if (!link.active || link.hostId !== args.hostId) return undefined
     // The host dials *out* to the relay, so there is no baseUrl. The relay
     // routes by hostId over the established tunnel.
     return {
       found: true as const,
       baseUrl: "",
-      access: "user-hosted" as const,
       backing: link.backing,
     }
   }
@@ -102,7 +101,6 @@ export function sandboxRelayTargetLookup(input: {
         return {
           found: true,
           baseUrl: target.url,
-          access: "cloud",
           backing: "cloud-vm",
           ...(headers ? { upstreamHeaders: headers } : {}),
         }
@@ -110,8 +108,8 @@ export function sandboxRelayTargetLookup(input: {
     }
     // A machine-placed workspace has no sandbox lease; resolve the registered
     // host link.
-    const userHosted = await resolveUserHosted(args)
-    if (userHosted) return userHosted
+    const tunnelled = await resolveHostTunnel(args)
+    if (tunnelled) return tunnelled
     return {
       found: false,
       code: "relay_resolver_workspace_target_unavailable",

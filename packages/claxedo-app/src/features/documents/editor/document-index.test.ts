@@ -168,10 +168,10 @@ describe("multi-project fan-out", () => {
     expect(controller.snapshot().error).toBeUndefined()
   })
 
-  // Regression: a local workspace's documents come back stamped with the
-  // server's own project id (`resolveLocalProjectId` mints `project_<uuid>` per
-  // canonical directory). Grouping on that id found no project in the inventory
-  // and printed a raw uuid as the heading.
+  // Over loopback the server stamps documents with its own project id
+  // (`resolveLocalProjectId` mints `project_<uuid>` per canonical directory).
+  // Grouping on that id finds no project in the inventory and prints a raw uuid
+  // as the heading.
   test("groups by the requested project even when the server echoes a different id", async () => {
     const controller = createDocumentIndexController({
       queries: [{ projectId: "p1", directory: "/code/alpha" }],

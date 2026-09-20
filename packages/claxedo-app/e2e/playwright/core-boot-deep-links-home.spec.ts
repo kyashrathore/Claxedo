@@ -167,7 +167,7 @@
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { bootstrapDeployment, installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
@@ -364,6 +364,7 @@ test.describe("core boot, deep links, and home @core", () => {
         body: JSON.stringify({
           healthy: true,
           events: { hostAggregate: true },
+          deployment: bootstrapDeployment(),
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
           project: [],
@@ -760,6 +761,7 @@ test.describe("core boot, deep links, and home @core", () => {
         body: JSON.stringify({
           healthy: true,
           events: { hostAggregate: true },
+          deployment: bootstrapDeployment(),
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
           project: [],

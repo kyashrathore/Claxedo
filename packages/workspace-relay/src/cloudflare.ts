@@ -26,7 +26,7 @@ import {
 } from "./server"
 import { createWorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins } from "./cors-origins"
-import { isUserHostedTarget } from "./user-hosted-forwarding"
+import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -321,7 +321,7 @@ export type WorkspaceRelaySocketAttachment =
       generationCheckFailures?: number
     }
   | {
-      kind: "user-hosted-client"
+      kind: "host-tunnel-client"
       channelId: string
       claims: RuntimeAccessAttachmentClaims
       target: WorkspaceRelayTargetAttachment
@@ -391,7 +391,7 @@ type HostTunnelSocket = {
   generationWatcher?: ReturnType<typeof setInterval>
   socket: WorkspaceRelayDurableObjectSocket
   pending: Map<string, PendingTunnelHttpResponse>
-  channels: Map<string, UserHostedClientSocket>
+  channels: Map<string, HostTunnelClientSocket>
 }
 
 type ClientSocket = {
@@ -399,7 +399,7 @@ type ClientSocket = {
   socket: WorkspaceRelayDurableObjectSocket
 }
 
-type UserHostedClientSocket = ClientSocket & {
+type HostTunnelClientSocket = ClientSocket & {
   channelId: string
 }
 
@@ -413,11 +413,11 @@ function unrefTimer(timer: ReturnType<typeof setInterval>) {
 }
 
 /**
- * `clients` holds both cloud-VM and user-hosted sockets; only the latter carry
+ * `clients` holds both cloud-VM and tunnelled sockets; only the latter carry
  * the tunnel channel they are multiplexed over. This is the one place that
  * distinction is made at runtime.
  */
-function isUserHostedClient(client: ClientSocket): client is UserHostedClientSocket {
+function isHostTunnelClient(client: ClientSocket): client is HostTunnelClientSocket {
   return "channelId" in client && typeof client.channelId === "string"
 }
 
@@ -1149,7 +1149,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }
     hostTunnels.clear()
     clients.clear()
-    const clientRows: Array<{ socket: WorkspaceRelayDurableObjectSocket; attachment: Extract<WorkspaceRelaySocketAttachment, { kind: "user-hosted-client" }> }> = []
+    const clientRows: Array<{ socket: WorkspaceRelayDurableObjectSocket; attachment: Extract<WorkspaceRelaySocketAttachment, { kind: "host-tunnel-client" }> }> = []
     for (const socket of hibernation.getWebSockets()) {
       const attachment = socketAttachment(socket)
       if (!attachment) continue
@@ -1176,10 +1176,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     for (const row of clientRows) {
       const tunnel = hostTunnels.get(row.attachment.target.hostId)
       if (!tunnel) {
-        closeSocket(row.socket, 1011, "User-hosted tunnel unavailable")
+        closeSocket(row.socket, 1011, "Host tunnel unavailable")
         continue
       }
-      const client: UserHostedClientSocket = {
+      const client: HostTunnelClientSocket = {
         request: {
           claims: row.attachment.claims,
           target: row.attachment.target,
@@ -1279,8 +1279,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     return timer
   }
 
-  const watchUserHostedTarget = (
-    client: UserHostedClientSocket,
+  const watchHostTunnelTarget = (
+    client: HostTunnelClientSocket,
     onInactive: (reason: string) => void,
   ): ReturnType<typeof setInterval> | undefined => {
     const intervalMs = options.workspaceTargetActiveCheckIntervalMs ?? WORKSPACE_TARGET_ACTIVE_CHECK_INTERVAL_MS_DEFAULT
@@ -1291,7 +1291,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       void Promise.resolve(options.resolveTarget(client.request.claims))
         .then((activeTarget) => {
           if (
-            activeTarget?.access === "user-hosted"
+            activeTarget?.backing === "local-worktree"
             && activeTarget.workspaceId === target.workspaceId
             && activeTarget.hostId === target.hostId
             && directory.activeHost({ hostId: target.hostId, workspaceId: target.workspaceId })
@@ -1303,7 +1303,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           // conclusive answer — the workspace really did move or stop. No grace.
           consecutiveUnreachable = 0
           clearInterval(timer)
-          onInactive("User-hosted workspace is offline")
+          onInactive("The machine serving this workspace is offline")
         })
         // Unlike revocation, the target resolver signals "unreachable" by
         // THROWING (`worker.ts` throws on a non-ok response) while 404/409 return
@@ -1600,11 +1600,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     return active.active ? { active: true as const } : { active: false as const, reason: active.reason }
   }
 
-  const userHostedTargetActive = async (client: UserHostedClientSocket) => {
+  const hostTunnelTargetActive = async (client: HostTunnelClientSocket) => {
     const target = client.request.target
     const activeTarget = await options.resolveTarget(client.request.claims)
     return !!(
-      activeTarget?.access === "user-hosted"
+      activeTarget?.backing === "local-worktree"
       && activeTarget.workspaceId === target.workspaceId
       && activeTarget.hostId === target.hostId
       && directory.activeHost({ hostId: target.hostId, workspaceId: target.workspaceId })
@@ -1612,17 +1612,17 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   }
 
   /**
-   * Tears a user-hosted channel down from the relay's side: forget it, close the
+   * Tears a tunnelled channel down from the relay's side: forget it, close the
    * browser socket, and tell the host to stop producing for it.
    *
    * That last part is what a bare `closeSocket` misses. A channel the relay has
    * given up on but the host still believes in keeps costing the host work and
    * the tunnel bandwidth, for frames with nowhere to go.
    */
-  const dropUserHostedChannel = (
+  const dropHostTunnelChannel = (
     tunnel: HostTunnelSocket,
     channelId: string,
-    client: UserHostedClientSocket,
+    client: HostTunnelClientSocket,
     code: number,
     reason: string,
   ) => {
@@ -1693,7 +1693,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
    * Re-checks revocation for every live client connection and closes the revoked
    * ones. Driven by the DO alarm, so it works under hibernation.
    *
-   * Why this exists: on the hibernating path `admitUserHostedClient` installs NO
+   * Why this exists: on the hibernating path `admitHostTunnelClient` installs NO
    * watchers (`hibernation ? undefined : watch…`) because `setInterval` does not
    * survive eviction. That left the per-frame cached check as the only
    * enforcement — adequate for a busy connection, useless for an IDLE one, which
@@ -1710,10 +1710,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
     /** Close and forget one client, telling its host tunnel if it has one. */
     const revoke = (client: ClientSocket, reason: string) => {
-      if (isUserHostedClient(client)) {
+      if (isHostTunnelClient(client)) {
         for (const tunnel of hostTunnels.values()) {
           if (tunnel.channels.get(client.channelId) !== client) continue
-          dropUserHostedChannel(tunnel, client.channelId, client, 1008, reason)
+          dropHostTunnelChannel(tunnel, client.channelId, client, 1008, reason)
           return
         }
       }
@@ -1750,7 +1750,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     await scheduleHibernatedRevocationCheck()
   }
 
-  const activeUserHostedClient = (channelId: string, socket: WorkspaceRelayDurableObjectSocket) => {
+  const activeHostTunnelClient = (channelId: string, socket: WorkspaceRelayDurableObjectSocket) => {
     for (const tunnel of hostTunnels.values()) {
       const client = tunnel.channels.get(channelId)
       if (client?.socket === socket) return { tunnel, client }
@@ -1758,20 +1758,20 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     return undefined
   }
 
-  const handleUserHostedClientMessage = async (
+  const handleHostTunnelClientMessage = async (
     channelId: string,
     socket: WorkspaceRelayDurableObjectSocket,
     data: unknown,
   ) => {
-    const active = activeUserHostedClient(channelId, socket)
+    const active = activeHostTunnelClient(channelId, socket)
     if (!active) return
     const token = await runtimeAccessTokenActive(active.client)
     if (!token.active) {
       closeSocket(socket, 1008, token.reason)
       return
     }
-    if (!await userHostedTargetActive(active.client)) {
-      closeSocket(socket, 1011, "User-hosted workspace is offline")
+    if (!await hostTunnelTargetActive(active.client)) {
+      closeSocket(socket, 1011, "The machine serving this workspace is offline")
       return
     }
     // `socketFrame` is synchronous except for Blob data, and this handler is
@@ -1786,7 +1786,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       channel_id: channelId,
       ...frame,
     }))
-    if (!sent) closeSocket(socket, 1011, "User-hosted tunnel unavailable")
+    if (!sent) closeSocket(socket, 1011, "Host tunnel unavailable")
   }
 
   /**
@@ -1876,7 +1876,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       if (!pending) return
       const chunk = base64ToBytes(message.body_base64)
       if (pending.bytes + chunk.byteLength > (options.tunnelResponseBodyMaxBytes ?? TUNNEL_RESPONSE_BODY_MAX_BYTES_DEFAULT)) {
-        failPendingTunnelResponse(tunnel, message.request_id, pending, new Error("User-hosted response body exceeds the relay limit"))
+        failPendingTunnelResponse(tunnel, message.request_id, pending, new Error("Host tunnel response body exceeds the relay limit"))
         return
       }
       pending.bytes += chunk.byteLength
@@ -1922,12 +1922,12 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         return
       }
       // The host→client direction. The client→host direction in
-      // `handleUserHostedClientMessage` has always checked its send result and
+      // `handleHostTunnelClientMessage` has always checked its send result and
       // closed 1011; this one discarded it, so a browser whose socket had gone
       // away stayed in `tunnel.channels` and the host kept producing frames into
       // a dead socket until something else happened to notice.
       if (!sendSocket(channel.socket, tunnelFrame(message))) {
-        dropUserHostedChannel(tunnel, message.channel_id, channel, 1013, "Client WebSocket delivery failed")
+        dropHostTunnelChannel(tunnel, message.channel_id, channel, 1013, "Client WebSocket delivery failed")
       }
       return
     }
@@ -1968,7 +1968,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     directory.disconnectHost(hostId)
   }
 
-  const cleanupUserHostedClient = (
+  const cleanupHostTunnelClient = (
     channelId: string,
     socket: WorkspaceRelayDurableObjectSocket,
     event?: WorkspaceRelayDurableObjectSocketEvent,
@@ -2051,8 +2051,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         void handleTunnelMessage(hostId, { data: event.data })
           .catch((err) => reportFrameHandlerFailure(pair.server, err))
       })
-      pair.server.addEventListener?.("close", () => cleanupHostTunnel(hostId, pair.server, "User-hosted tunnel disconnected"))
-      pair.server.addEventListener?.("error", () => cleanupHostTunnel(hostId, pair.server, "User-hosted tunnel disconnected"))
+      pair.server.addEventListener?.("close", () => cleanupHostTunnel(hostId, pair.server, "Host tunnel disconnected"))
+      pair.server.addEventListener?.("error", () => cleanupHostTunnel(hostId, pair.server, "Host tunnel disconnected"))
     }
     return upgradeResponse(pair.client, request)
   }
@@ -2061,7 +2061,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!websocketRequest(request)) return json("websocket_upgrade_required", "Workspace Relay requires a WebSocket upgrade", 426)
     const authorized = await authorizeWorkspaceRelayRequest(relayOptions, request, workspaceId)
     if (!authorized.ok) return authorized.response
-    if (isUserHostedTarget(authorized.request.target)) return admitUserHostedClient(request, authorized.request)
+    if (isHostTunnelTarget(authorized.request.target)) return admitHostTunnelClient(request, authorized.request)
     return await admitCloudClient(request, authorized.request)
   }
 
@@ -2086,7 +2086,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
             new Headers(),
             authorized.relayHostToken,
             authorized.target.workspaceId,
-            { userHosted: false, upstreamHeaders: authorized.target.upstreamHeaders },
+            { hostTunnel: false, upstreamHeaders: authorized.target.upstreamHeaders },
           )),
         },
       )
@@ -2184,17 +2184,17 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     return upgradeResponse(pair.client, request)
   }
 
-  const admitUserHostedClient = (request: Request, authorized: AuthorizedWorkspaceRelayRequest) => {
+  const admitHostTunnelClient = (request: Request, authorized: AuthorizedWorkspaceRelayRequest) => {
     const tunnel = hostTunnels.get(authorized.target.hostId)
     if (!tunnel || !directory.activeHost({ hostId: authorized.target.hostId, workspaceId: authorized.target.workspaceId })) {
-      return json("user_hosted_app_offline", "User-hosted workspace is offline", 503)
+      return json("host_tunnel_offline", "The machine serving this workspace is offline", 503)
     }
     if (tunnel.channels.size >= (options.tunnelChannelCap ?? TUNNEL_CHANNEL_CAP_DEFAULT)) {
-      return json("too_many_channels", "User-hosted tunnel has too many active WebSocket channels", 503)
+      return json("too_many_channels", "Host tunnel has too many active WebSocket channels", 503)
     }
     const channelId = randomToken()
     const pair = acceptSocket({
-      kind: "user-hosted-client",
+      kind: "host-tunnel-client",
       channelId,
       claims: authorized.claims,
       target: authorized.target,
@@ -2211,11 +2211,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     // Timers do not survive DO hibernation, which is why these are skipped on
     // that path. The alarm scheduled just below is what enforces revocation for
     // an idle hibernated connection; the per-frame cached check in
-    // `handleUserHostedClientMessage` continues to cover active traffic.
+    // `handleHostTunnelClientMessage` continues to cover active traffic.
     const activeTokenTimer = hibernation ? undefined : watchRuntimeAccessToken(client, (reason) => {
       closeSocket(pair.server, 1008, reason)
     })
-    const activeTargetTimer = hibernation ? undefined : watchUserHostedTarget(client, (reason) => {
+    const activeTargetTimer = hibernation ? undefined : watchHostTunnelTarget(client, (reason) => {
       closeSocket(pair.server, 1011, reason)
     })
     if (hibernation) void scheduleHibernatedRevocationCheck()
@@ -2223,11 +2223,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       const cleanup = (event?: WorkspaceRelayDurableObjectSocketEvent) => {
         if (activeTokenTimer) clearInterval(activeTokenTimer)
         if (activeTargetTimer) clearInterval(activeTargetTimer)
-        cleanupUserHostedClient(channelId, pair.server, event)
+        cleanupHostTunnelClient(channelId, pair.server, event)
       }
       pair.server.addEventListener?.("message", (event) => {
         if (!event) return
-        void handleUserHostedClientMessage(channelId, pair.server, event.data)
+        void handleHostTunnelClientMessage(channelId, pair.server, event.data)
           .catch((err) => reportFrameHandlerFailure(pair.server, err))
       })
       pair.server.addEventListener?.("close", cleanup)
@@ -2246,14 +2246,14 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         new Headers(),
         authorized.relayHostToken,
         authorized.target.workspaceId,
-        { userHosted: true },
+        { hostTunnel: true },
       )),
     }))
     if (!opened) {
       tunnel.channels.delete(channelId)
       clients.delete(client)
-      closeSocket(pair.server, 1011, "User-hosted tunnel unavailable")
-      return json("user_hosted_app_offline", "User-hosted workspace is offline", 503)
+      closeSocket(pair.server, 1011, "Host tunnel unavailable")
+      return json("host_tunnel_offline", "The machine serving this workspace is offline", 503)
     }
     return upgradeResponse(pair.client, request)
   }
@@ -2265,9 +2265,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       })
     )
     if (!authorized.ok) return authorized.response
-    if (isUserHostedTarget(authorized.request.target)) {
-      trace && (trace.routeKind = "user-hosted-http")
-      return forwardUserHostedHttp(request, authorized.request, trace)
+    if (isHostTunnelTarget(authorized.request.target)) {
+      trace && (trace.routeKind = "host-tunnel-http")
+      return forwardHostTunnelHttp(request, authorized.request, trace)
     }
     trace && (trace.routeKind = "cloud-http")
     const controller = new AbortController()
@@ -2303,10 +2303,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }
   }
 
-  const forwardUserHostedHttp = async (request: Request, authorized: AuthorizedWorkspaceRelayRequest, trace?: RelayTrace) => {
+  const forwardHostTunnelHttp = async (request: Request, authorized: AuthorizedWorkspaceRelayRequest, trace?: RelayTrace) => {
     const tunnel = hostTunnels.get(authorized.target.hostId)
     if (!tunnel || !directory.activeHost({ hostId: authorized.target.hostId, workspaceId: authorized.target.workspaceId })) {
-      return json("user_hosted_app_offline", "User-hosted workspace is offline", 503)
+      return json("host_tunnel_offline", "The machine serving this workspace is offline", 503)
     }
     // Only NOT-yet-started requests count toward the pending cap. Started
     // streaming responses (SSE) are long-lived by design and capped + evicted
@@ -2314,22 +2314,22 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     // orphaned streams starve every subsequent request with 503s.
     const awaitingStart = [...tunnel.pending.values()].filter((entry) => entry.startedSeq === undefined).length
     if (awaitingStart >= (options.tunnelPendingHttpCap ?? TUNNEL_PENDING_HTTP_CAP_DEFAULT)) {
-      return json("too_many_pending_requests", "User-hosted tunnel has too many pending HTTP requests", 503)
+      return json("too_many_pending_requests", "Host tunnel has too many pending HTTP requests", 503)
     }
     const requestId = randomToken()
     const init = workspaceRelayForwardRequestInit(request, authorized.relayHostToken, authorized.target.workspaceId, {
-      userHosted: true,
+      hostTunnel: true,
     })
     const bodyMaxBytes = options.tunnelRequestBodyMaxBytes ?? TUNNEL_REQUEST_BODY_MAX_BYTES_DEFAULT
     const contentLength = Number(request.headers.get("content-length") ?? Number.NaN)
     if (Number.isFinite(contentLength) && contentLength > bodyMaxBytes) {
-      return json("request_body_too_large", "User-hosted request body exceeds the relay limit", 413)
+      return json("request_body_too_large", "Host tunnel request body exceeds the relay limit", 413)
     }
     const bodyBytes = request.method === "GET" || request.method === "HEAD"
       ? undefined
       : await traceSpan(trace, "request-body", () => readRequestBodyCapped(request, bodyMaxBytes))
     if (bodyBytes === "too_large") {
-      return json("request_body_too_large", "User-hosted request body exceeds the relay limit", 413)
+      return json("request_body_too_large", "Host tunnel request body exceeds the relay limit", 413)
     }
     const body = bodyBytes ? bytesToBase64(bodyBytes) : undefined
     const pending = new Promise<Response>((resolve, reject) => {
@@ -2342,7 +2342,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           paused: false,
           reason: "closed",
         } satisfies TunnelHttpResponseFlow))
-        reject(new Error("User-hosted tunnel timed out"))
+        reject(new Error("Host tunnel timed out"))
       }, options.forwardTimeoutMs ?? 30_000)
       tunnel.pending.set(requestId, {
         chunks: [],
@@ -2371,15 +2371,15 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return Response.json(
         errorBody(
           timeout
-            ? "user_hosted_tunnel_timeout"
+            ? "host_tunnel_timeout"
             : responseTooLarge
-              ? "user_hosted_response_body_too_large"
-              : "user_hosted_tunnel_unavailable",
+              ? "host_tunnel_response_body_too_large"
+              : "host_tunnel_unavailable",
           timeout
-            ? "User-hosted tunnel timed out"
+            ? "Host tunnel timed out"
             : responseTooLarge
-              ? "User-hosted response body exceeds the relay limit"
-              : "User-hosted tunnel is unavailable",
+              ? "Host tunnel response body exceeds the relay limit"
+              : "Host tunnel is unavailable",
         ),
         { status: responseTooLarge ? 413 : 503 },
       )
@@ -2391,7 +2391,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       ensureHibernatedSocketsRebuilt()
       // Must run BEFORE any presence consult on this request: the offline gate
       // lives in `authorizeWorkspaceRelayRequest` (server.ts activeHost check),
-      // which rejects user-hosted requests ahead of the admit/forward handlers.
+      // which rejects tunnelled requests ahead of the admit/forward handlers.
       refreshHostPresenceFromSockets()
       const url = new URL(request.url)
       const roomWorkspaceId = workspaceRelayDurableObjectWorkspaceId(request)
@@ -2439,7 +2439,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           await handleTunnelMessage(attachment.hostId, { data: message })
           return
         }
-        await handleUserHostedClientMessage(attachment.channelId, socket, message)
+        await handleHostTunnelClientMessage(attachment.channelId, socket, message)
       } catch (err) {
         reportFrameHandlerFailure(socket, err)
       }
@@ -2460,20 +2460,20 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       const attachment = socketAttachment(socket)
       if (!attachment) return
       if (attachment.kind === "host-tunnel") {
-        cleanupHostTunnel(attachment.hostId, socket, "User-hosted tunnel disconnected")
+        cleanupHostTunnel(attachment.hostId, socket, "Host tunnel disconnected")
         return
       }
-      cleanupUserHostedClient(attachment.channelId, socket, { code, reason })
+      cleanupHostTunnelClient(attachment.channelId, socket, { code, reason })
     },
     webSocketError(socket: WorkspaceRelayDurableObjectSocket) {
       ensureHibernatedSocketsRebuilt()
       const attachment = socketAttachment(socket)
       if (!attachment) return
       if (attachment.kind === "host-tunnel") {
-        cleanupHostTunnel(attachment.hostId, socket, "User-hosted tunnel disconnected")
+        cleanupHostTunnel(attachment.hostId, socket, "Host tunnel disconnected")
         return
       }
-      cleanupUserHostedClient(attachment.channelId, socket, { code: 1011, reason: "WebSocket error" })
+      cleanupHostTunnelClient(attachment.channelId, socket, { code: 1011, reason: "WebSocket error" })
     },
     state() {
       ensureHibernatedSocketsRebuilt()

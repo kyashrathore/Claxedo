@@ -54,8 +54,8 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
     // nothing after the user pressed Enable.
     onMachineChanged: () => invalidateSharedWorkspaces(queryClient),
   })
-  // Machine-level sharing: while remote access is on, every local workspace
-  // this machine holds is published, and one opened later is published as soon
+  // Machine-level sharing: while remote access is on, every workspace this
+  // machine holds is published, and one opened later is published as soon
   // as the inventory reports it. The reconciler runs in the app shell for the
   // whole session — this panel only reports what it found, because a driver
   // that started when Settings opened would only keep the promise while

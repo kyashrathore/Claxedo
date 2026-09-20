@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 
-import type { UserHostedTargetResolver } from "../../sandbox-relay-target"
+import type { HostTunnelTargetResolver } from "../../sandbox-relay-target"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 
 type ActiveHostRow = {
@@ -18,10 +18,10 @@ type ActiveHostRow = {
  * and rechecks the workspace's posture in the same query. A provisioner-owned
  * workspace is refused by its backing: no enrollment serves a cloud VM.
  */
-export function createD1UserHostedTargetResolver(
+export function createD1HostTunnelTargetResolver(
   database: D1Database,
   options: { now?: () => number; deploymentId?: string } = {},
-): UserHostedTargetResolver {
+): HostTunnelTargetResolver {
   const now = options.now ?? Date.now
   const deploymentId = options.deploymentId?.trim()
   return async (workspaceId) => {

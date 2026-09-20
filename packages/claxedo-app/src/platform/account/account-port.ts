@@ -97,12 +97,10 @@ export type HostedOperationName =
   | "connections.connect"
   | "connections.attempt"
   | "connections.disconnect"
-  // One per list scope the hosted route names, because it answers rows only
-  // under a named scope and the scope-less call is always empty. The scope
-  // words are the control plane's; `controlPlaneListScope` is the one place
-  // that maps a placement to them.
-  | "workspace.list.cloud"
-  | "workspace.list.userHosted"
+  // One per host the list route names, because it answers rows only under a
+  // named host and the host-less call is always empty.
+  | "workspace.list.provisioner"
+  | "workspace.list.machine"
   | "workspace.resolve"
   | "workspace.create"
   | "workspace.lifecycle"

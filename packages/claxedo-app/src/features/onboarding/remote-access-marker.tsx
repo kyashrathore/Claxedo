@@ -23,10 +23,11 @@ type SearchParamWriter = (values: Record<string, string | undefined>, options: {
  * ## Why this is two legs and not one call
  *
  * Sharing is machine level, so the QR points at the app ROOT: enabling remote
- * access publishes every local workspace, and no single one of them is "the"
- * destination. The marker therefore ARRIVES on a URL that names no workspace,
- * while `markSecondDeviceOpen` needs one. The workspace it proves is whichever
- * one this device opens first, which is a later moment than the landing.
+ * access publishes every workspace the machine serves, and no single one of
+ * them is "the" destination. The marker therefore ARRIVES on a URL that names
+ * no workspace, while `markSecondDeviceOpen` needs one. The workspace it proves
+ * is whichever one this device opens first, which is a later moment than the
+ * landing.
  *
  *   1. **Capture.** Marker params on any route are stashed in `sessionStorage`
  *      and stripped from the visible URL. Stripping is not cosmetic: a marker

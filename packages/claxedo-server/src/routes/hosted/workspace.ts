@@ -8,7 +8,7 @@
  * and routing requires assignment AND acked set AND a live lease. There is no
  * per-workspace challenge or signature — that grain is retired.
  *
- * `GET /:id/connection` is shared with the local server (`userHostedConnectionInfo`).
+ * `GET /:id/connection` is shared with the local server (`hostTunnelConnectionInfo`).
  */
 
 import { Hono, type Context } from "hono"
@@ -209,14 +209,17 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
   return (
     new Hono()
-      // Workspace LIST. Mirrors the LOCAL handler (routes/workspace.ts GET "/")
-      // for shape: signed when access is cloud|user-hosted, returns
-      // { workspaces: [...] }, filtered to user-hosted rows when access=user-hosted.
+      // Workspace LIST. Mirrors the LOCAL handler (workspace/routes/index.ts
+      // GET "/") for shape: signed when a host is named, returns
+      // { workspaces: [...] }, filtered to machine-placed rows on host=machine.
       // The hosted control plane has no local projects list, so the unsigned /
-      // no-access case returns an empty list (NOT the local listProjects()).
+      // no-host case returns an empty list (NOT the local listProjects()).
       .get("/", async (c) => {
-        const access = c.req.query("access")
-        const requireSigned = access === "cloud" || access === "user-hosted"
+        const host = c.req.query("host")
+        if (host !== undefined && host !== "machine" && host !== "provisioner") {
+          return c.json({ error: apiError("workspace_host_invalid", "workspace host is invalid") }, 400)
+        }
+        const requireSigned = host !== undefined
         const authResult = await signedOrError(
           c.req.raw,
           {
@@ -232,14 +235,14 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             const authority = requireAuthority(services)
             await authority.usersMe(auth)
             const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-              key: `workspaces.list:${access}`,
+              key: `workspaces.list:${host}`,
               action: "workspaces.list.denied",
             })
             if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
             const workspaces = await authority.listWorkspaces(auth)
             return c.json({
               workspaces:
-                Array.isArray(workspaces) && access === "user-hosted"
+                Array.isArray(workspaces) && host === "machine"
                   ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
                   : workspaces,
             })

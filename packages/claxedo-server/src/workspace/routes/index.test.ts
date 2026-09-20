@@ -57,9 +57,9 @@ const mocks = {
   shutdownWorkspaceSupervisor: vi.fn(async () => {}),
   listSupervisorSandboxs: vi.fn(() => []),
   getLease: vi.fn(() => undefined),
-  startUserHostedWorkspaceTunnel: vi.fn(async () => ({ url: "http://runtime/ws_local", reused: false })),
-  stopUserHostedWorkspaceTunnel: vi.fn(() => true),
-  stopAllUserHostedWorkspaceTunnels: vi.fn(() => 0),
+  startWorkspaceHostTunnel: vi.fn(async () => ({ url: "http://runtime/ws_local", reused: false })),
+  stopWorkspaceHostTunnel: vi.fn(() => true),
+  stopAllWorkspaceHostTunnels: vi.fn(() => 0),
 }
 
 function resetWorkspaceStoreMocks() {
@@ -167,10 +167,10 @@ vi.mock("../../workspace/supervisor", () => ({
   listSupervisorSandboxs: mocks.listSupervisorSandboxs,
 }))
 
-vi.mock("../../user-hosted-tunnel", () => ({
-  startUserHostedWorkspaceTunnel: mocks.startUserHostedWorkspaceTunnel,
-  stopUserHostedWorkspaceTunnel: mocks.stopUserHostedWorkspaceTunnel,
-  stopAllUserHostedWorkspaceTunnels: mocks.stopAllUserHostedWorkspaceTunnels,
+vi.mock("../../host-tunnel", () => ({
+  startWorkspaceHostTunnel: mocks.startWorkspaceHostTunnel,
+  stopWorkspaceHostTunnel: mocks.stopWorkspaceHostTunnel,
+  stopAllWorkspaceHostTunnels: mocks.stopAllWorkspaceHostTunnels,
 }))
 
 const { localOnlyAuthAdapter } = await import("@claxedo/server-core/platform/auth/auth")
@@ -378,8 +378,8 @@ describe("workspace routes signed control plane authority", () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     resetWorkspaceStoreMocks()
-    mocks.startUserHostedWorkspaceTunnel.mockResolvedValue({ url: "http://runtime/ws_local", reused: false })
-    mocks.stopUserHostedWorkspaceTunnel.mockReturnValue(true)
+    mocks.startWorkspaceHostTunnel.mockResolvedValue({ url: "http://runtime/ws_local", reused: false })
+    mocks.stopWorkspaceHostTunnel.mockReturnValue(true)
     mocks.ensureWorkspace.mockResolvedValue({
       id: "ws_1",
       org_id: "org_1",
@@ -445,7 +445,7 @@ describe("workspace routes signed control plane authority", () => {
       },
     })
     // The placement is the only statement of where the workspace runs; the
-    // scope word derived from it belongs to the `?access=` query, not the body.
+    // host word derived from it belongs to the `?host=` query, not the body.
     expect(json).not.toHaveProperty("access")
     expect(JSON.stringify(json)).not.toContain("/tmp/claxedo-workspace-route-test")
     expect(verify).toHaveBeenCalledWith("user_1", authConfig)
@@ -506,10 +506,10 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.listProjects).toHaveBeenCalled()
   })
 
-  test("signed mode refuses anonymous inventory list even with hosted access param from a remote caller", async () => {
+  test("signed mode refuses anonymous inventory list even with a named host from a remote caller", async () => {
     const app = WorkspaceRoutes(services(), { authConfig, verifier })
 
-    const res = await app.request("http://remote.attacker.example/?access=Cloud")
+    const res = await app.request("http://remote.attacker.example/?host=provisioner")
 
     expect(res.status).toBe(401)
     expect(mocks.listProjects).not.toHaveBeenCalled()
@@ -1302,7 +1302,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
   })
 
-  test("signed directory resolve prefers user-hosted authority without consulting the local store", async () => {
+  test("signed directory resolve prefers the machine-placed authority without consulting the local store", async () => {
     const svc = services()
     svc.authority!.listWorkspaces = vi.fn(async () => [{
       workspace_id: "ws_shared",
@@ -1332,7 +1332,6 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toMatchObject({
       workspaceId: "ws_shared",
       projectId: "proj_shared",
-      kind: "user-hosted",
       backing: {
         kind: "local-worktree",
         branch: "dev",
@@ -1469,7 +1468,6 @@ describe("workspace routes signed control plane authority", () => {
       projectId: "proj_hosted",
       directory: "/workspace/hosted",
       status: "ready",
-      kind: "cloud",
       backing: {
         kind: "cloud-vm",
         repoName: "opencode",
@@ -1532,7 +1530,6 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toMatchObject({
       workspaceId: "ws_signed",
       directory: "/workspace/signed",
-      kind: "cloud",
     })
     expect(svc.authority?.listWorkspaces).not.toHaveBeenCalled()
     expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
@@ -1618,7 +1615,6 @@ describe("workspace routes signed control plane authority", () => {
       projectId: "proj_shared",
       directory: "/workspace",
       workspaceName: "Shared workspace",
-      kind: "user-hosted",
       backing: {
         kind: "local-worktree",
         branch: "dev",
@@ -1747,7 +1743,7 @@ describe("workspace routes signed control plane authority", () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
-    const signed = await app.request("http://localhost/?access=cloud", {
+    const signed = await app.request("http://localhost/?host=provisioner", {
       headers: {
         Authorization: "Bearer user_1",
       },
@@ -1782,10 +1778,10 @@ describe("workspace routes signed control plane authority", () => {
       }),
     })
 
-    const first = await app.request("http://localhost/?access=cloud", {
+    const first = await app.request("http://localhost/?host=provisioner", {
       headers: { Authorization: "Bearer user_1" },
     })
-    const second = await app.request("http://localhost/?access=cloud", {
+    const second = await app.request("http://localhost/?host=provisioner", {
       headers: { Authorization: "Bearer user_1" },
     })
 
@@ -1801,7 +1797,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
-  test("signed user-hosted list reads the authority shared workspaces instead of local projects", async () => {
+  test("signed host=machine list reads the authority shared workspaces instead of local projects", async () => {
     const svc = services()
     svc.authority!.listWorkspaces = vi.fn(async () => [
       {
@@ -1821,7 +1817,7 @@ describe("workspace routes signed control plane authority", () => {
     ])
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
-    const res = await app.request("http://localhost/?access=user-hosted", {
+    const res = await app.request("http://localhost/?host=machine", {
       headers: {
         Authorization: "Bearer user_2",
       },
@@ -1871,7 +1867,6 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
-      access: "cloud",
       backing: "cloud-vm",
       // The stream scope the sandbox's runtime composition serves — a client
       // cannot discover it, so the mint states it.
@@ -1933,7 +1928,6 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "runtime_access_token.minted", {
       workspaceId: "ws_1",
-      access: "cloud",
       backing: "cloud-vm",
       hostId: "ws_1",
       role: "owner",
@@ -2031,7 +2025,6 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toEqual({
       status: "provisioning",
       workspaceId: "ws_1",
-      runtimeKind: "cloud",
       retryAfterMs: 2_000,
     })
     expect(signer).not.toHaveBeenCalled()
@@ -2071,7 +2064,6 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      access: "cloud",
       backing: "cloud-vm",
       // A loopback caller of the local server is served by its own EMBEDDED
       // workspace runtime, which composes the unbound local policy.
@@ -2117,7 +2109,6 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      access: "cloud",
       backing: "cloud-vm",
       workspaceId: "ws_1",
       hostId: "host_manager",
@@ -2168,7 +2159,6 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      access: "cloud",
       backing: "cloud-vm",
       workspaceId: "ws_1",
       relayUrl: "http://relay.test",
@@ -2198,7 +2188,6 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      access: "cloud",
       backing: "cloud-vm",
       // A loopback caller of the local server is served by its own EMBEDDED
       // workspace runtime, which composes the unbound local policy.
@@ -2285,13 +2274,13 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed user-hosted connection opens the authority-visible shared local workspace without local store row", async () => {
+  test("signed machine connection opens the authority-visible shared local workspace without local store row", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
     const svc = services()
     const signer = vi.fn(async () => ({
-      runtimeAccessToken: "rat_user_hosted",
+      runtimeAccessToken: "rat_machine",
       tokenExpiresAt: 789_000,
-      jti: "jti_user_hosted",
+      jti: "jti_machine",
     }))
     svc.authority!.openWorkspace = vi.fn(async () => ({
       allowed: true,
@@ -2316,9 +2305,7 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
-      access: "user-hosted",
       backing: "local-worktree",
-      runtimeKind: "user-hosted",
       // No `sessionAuthority`: this host declared no composition on its
       // heartbeat, and the control plane does not invent one. The client then
       // opens no workspace stream instead of picking a flavour that is wrong
@@ -2326,7 +2313,7 @@ describe("workspace routes signed control plane authority", () => {
       workspaceId: "ws_shared",
       homeRegion: "us-east",
       relayUrl: "https://relay.example.test",
-      runtimeAccessToken: "rat_user_hosted",
+      runtimeAccessToken: "rat_machine",
       tokenExpiresAt: 789_000,
       role: "editor",
     })
@@ -2347,7 +2334,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.recordRuntimeAccessToken).toHaveBeenCalledWith(
       expect.objectContaining({ token: "user_2" }),
       {
-        jti: "jti_user_hosted",
+        jti: "jti_machine",
         workspaceId: "ws_shared",
         hostId: "host_1",
         actorId: "actor_1",
@@ -2358,11 +2345,10 @@ describe("workspace routes signed control plane authority", () => {
     )
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_2", "runtime_access_token.minted", {
       workspaceId: "ws_shared",
-      access: "user-hosted",
       backing: "local-worktree",
       hostId: "host_1",
       role: "editor",
-      jti: "jti_user_hosted",
+      jti: "jti_machine",
       expiresAt: 789_000,
       hostLeaseExpiresAt: 60_000,
       relayRoom: "ws_shared",
@@ -2370,7 +2356,7 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed user-hosted connection mints the stream scope its HOST declared, for either composition", async () => {
+  test("signed machine connection mints the stream scope its HOST declared, for either composition", async () => {
     // A constant `sessionAuthority: "local"` here would be wrong for half the
     // hosts: a machine-placed workspace whose runtime injected a session
     // authority composes `managed-private` and answers an unscoped
@@ -2402,9 +2388,9 @@ describe("workspace routes signed control plane authority", () => {
         verifier,
         relayUrl: "https://relay.example.test",
         runtimeAccessTokenSigner: vi.fn(async () => ({
-          runtimeAccessToken: "rat_user_hosted",
+          runtimeAccessToken: "rat_machine",
           tokenExpiresAt: 789_000,
-          jti: "jti_user_hosted",
+          jti: "jti_machine",
         })),
       })
 
@@ -2414,20 +2400,19 @@ describe("workspace routes signed control plane authority", () => {
 
       expect(res.status).toBe(200)
       await expect(res.json()).resolves.toMatchObject({
-        access: "user-hosted",
-        runtimeKind: "user-hosted",
+        backing: "local-worktree",
         sessionAuthority: declared,
       })
     }
   })
 
-  test("signed user-hosted connection rejects denied shared workspace authorization before host lookup", async () => {
+  test("signed machine connection rejects denied shared workspace authorization before host lookup", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
     const svc = services()
     const signer = vi.fn(async () => ({
-      runtimeAccessToken: "rat_user_hosted",
+      runtimeAccessToken: "rat_machine",
       tokenExpiresAt: 789_000,
-      jti: "jti_user_hosted",
+      jti: "jti_machine",
     }))
     svc.authority!.openWorkspace = vi.fn(async () => ({ allowed: false }))
     const app = WorkspaceRoutes(svc, {
@@ -2461,13 +2446,13 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed user-hosted connection refresh rejects inactive previous Runtime Access Tokens", async () => {
+  test("signed machine connection refresh rejects inactive previous Runtime Access Tokens", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
     const svc = services()
     const signer = vi.fn(async () => ({
-      runtimeAccessToken: "rat_user_hosted",
+      runtimeAccessToken: "rat_machine",
       tokenExpiresAt: 789_000,
-      jti: "jti_user_hosted",
+      jti: "jti_machine",
     }))
     svc.authority!.openWorkspace = vi.fn(async () => ({
       allowed: true,
@@ -2539,9 +2524,9 @@ describe("workspace routes signed control plane authority", () => {
     }))
     svc.authority!.activeWorkspaceHost = vi.fn(async () => ({ active: false as const }))
     const signer = vi.fn(async () => ({
-      runtimeAccessToken: "rat_user_hosted",
+      runtimeAccessToken: "rat_machine",
       tokenExpiresAt: 789_000,
-      jti: "jti_user_hosted",
+      jti: "jti_machine",
     }))
     const app = WorkspaceRoutes(svc, {
       authConfig,
@@ -2559,8 +2544,8 @@ describe("workspace routes signed control plane authority", () => {
     expect(res.status).toBe(409)
     await expect(res.json()).resolves.toEqual({
       error: {
-        code: "user_hosted_workspace_unavailable",
-        message: "User-hosted sandbox is unavailable",
+        code: "workspace_host_offline",
+        message: "The machine serving this workspace is offline",
       },
     })
     expect(signer).not.toHaveBeenCalled()
@@ -2655,7 +2640,6 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
-      access: "cloud",
       backing: "cloud-vm",
       // The stream scope the sandbox's runtime composition serves — a client
       // cannot discover it, so the mint states it.
@@ -3270,7 +3254,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_local")
   })
 
-  test("unsigned cloud workspace delete without cloud access remains local-only", async () => {
+  test("tokenless loopback cloud workspace delete remains local-only", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
@@ -3286,11 +3270,11 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_1")
   })
 
-  test("unsigned cloud access workspace delete requires signed Control Plane auth", async () => {
+  test("remote cloud workspace delete requires signed Control Plane auth", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
-    const res = await app.request("http://localhost/ws_1?access=cloud", {
+    const res = await app.request("http://claxedo.example.test/ws_1", {
       method: "DELETE",
     })
 
@@ -3328,7 +3312,6 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "workspace.delete", {
       workspaceId: "ws_1",
-      access: "cloud",
       backing: "cloud-vm",
     })
     expect(destroy).toHaveBeenCalledWith("ws_1")
@@ -3440,7 +3423,7 @@ describe("unsigned workspace list", () => {
     })
     const app = WorkspaceRoutes(services())
 
-    const res = await app.request("http://localhost/?access=cloud")
+    const res = await app.request("http://localhost/?host=provisioner")
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
@@ -3467,7 +3450,7 @@ describe("unsigned workspace list", () => {
     })
     const app = WorkspaceRoutes(services())
 
-    const res = await app.request("http://localhost/?access=user-hosted")
+    const res = await app.request("http://localhost/?host=machine")
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ workspaces: [] })

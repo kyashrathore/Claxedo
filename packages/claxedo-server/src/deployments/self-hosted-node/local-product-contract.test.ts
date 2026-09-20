@@ -327,10 +327,10 @@ describe("desktop-local product contract", () => {
     if (!shared) throw new Error("the store refused the fixture workspace")
     const app = localApp()
 
-    for (const access of ["cloud", "user-hosted"] as const) {
-      const response = await app.request(`/api/workspace?access=${access}`)
-      expect(response.status, access).toBe(200)
-      expect(await response.json(), access).toMatchObject({ workspaces: expect.any(Array) })
+    for (const host of ["provisioner", "machine"] as const) {
+      const response = await app.request(`/api/workspace?host=${host}`)
+      expect(response.status, host).toBe(200)
+      expect(await response.json(), host).toMatchObject({ workspaces: expect.any(Array) })
     }
 
     const client = createClaxedoMcpClient({

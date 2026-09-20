@@ -33,7 +33,7 @@ import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/p
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import type { RuntimeSessionAuthorityOptions } from "../routes/runtime-session-authority"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
-import { sandboxRelayTargetLookup, type UserHostedTargetResolver } from "./sandbox-relay-target"
+import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { CliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
@@ -246,7 +246,7 @@ export type HostedControlPlane = {
 export type HostedControlPlaneAdapterBindings = {
   auth: ControlPlaneAuthAdapter
   authority: WorkspaceAuthority
-  userHostedResolver: UserHostedTargetResolver
+  hostTunnelResolver: HostTunnelTargetResolver
   /** Adapter-owned native sessions own this registry; Better Auth owns OAuth state in AUTH_DB. */
   cliSessionTokenRegistry?: CliSessionTokenRegistry
   /** Required only when the static sandbox posture selects a driver. */
@@ -336,7 +336,7 @@ export function composeProviderNeutralHostedControlPlane(
   const hostTunnelSigner = hostTunnelTokenSigner(env)
   const relayTargetLookup = sandboxRelayTargetLookup({
     ...(manager ? { sandboxManager: manager } : {}),
-    userHostedResolver: bindings.userHostedResolver,
+    hostTunnelResolver: bindings.hostTunnelResolver,
     telemetry,
     env,
   })

@@ -161,7 +161,7 @@ function bridged(streams: ReturnType<typeof claxedoEventSource>, globalEvents: R
  * the producing machine's own path, always.
  */
 const HOST_DIR = "/Users/host/repo"
-/** A live user-hosted workspace id: caller-chosen, never a minted `ws_*`. */
+/** A machine-placed workspace's id: the enrolling machine chooses it, never a minted `ws_*`. */
 const MACHINE_UUID = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
 /** The same shape, but only ever this machine's own local association. */
 const LOCAL_ASSOCIATION_UUID = "9c1d2f80-4b6a-4d1e-9f27-1a3b5c7d9e11"
@@ -673,8 +673,8 @@ describe("global sync event ingress", () => {
   /**
    * A shared machine publishes the workspace under the id it ALREADY held — a
    * `randomUUID()` from its own workspace store — and the control plane keeps
-   * that id verbatim, so a live user-hosted host's frames name a uuid, never a
-   * minted `ws_*` id. The catalog knowing that uuid as `user-hosted` is what
+   * that id verbatim, so a live machine's frames name a uuid, never a minted
+   * `ws_*` id. The catalog knowing that uuid as a machine placement is what
    * makes the row workspace-addressed.
    */
   test("a uuid the catalog knows as machine-placed addresses the row by workspace", () => {
@@ -1190,7 +1190,7 @@ describe("global sync event ingress", () => {
   // The frame is the one a signed self-hosted control plane puts on the wire
   // when Alice shares a session with a team Bob belongs to
   // (`web-signed-org-team-multiplayer`). Bob's rail section refetched on it and
-  // still showed nothing: a user-hosted section's rows are cut from the
+  // still showed nothing: a machine section's rows are cut from the
   // per-workspace relay read `session-source.ts` memoizes, and the doorbell left
   // that memo answering the pre-share list for its whole window.
   test("a share grant sends the section back to the runtime instead of its memoized page", async () => {

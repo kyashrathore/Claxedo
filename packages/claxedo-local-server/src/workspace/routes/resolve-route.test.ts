@@ -75,8 +75,7 @@ describe("local workspace resolve route", () => {
       "http://localhost/resolve?workspaceId=ws_provisioned",
     )
     expect(response.status).toBe(200)
-    // The placement, which is the fact; the resolve projection's `access` is a
-    // scope word derived from it and has no reader left.
+    // The placement, which is the fact.
     expect(await response.json()).toMatchObject({
       workspaceId: "ws_provisioned",
       backing: { kind: "cloud-vm", driver: "daytona" },
@@ -87,7 +86,7 @@ describe("local workspace resolve route", () => {
     // authority's snake-case keys. A client narrows a list row by comparing
     // that field, so the resolve projection's object `backing` would make it
     // drop the whole list.
-    const listed = await LocalWorkspaceRoutes().request("http://localhost/?access=cloud")
+    const listed = await LocalWorkspaceRoutes().request("http://localhost/?host=provisioner")
     expect(listed.status).toBe(200)
     await expect(listed.json()).resolves.toEqual({
       workspaces: [{
@@ -102,14 +101,14 @@ describe("local workspace resolve route", () => {
   // A worktree on this machine is reached over loopback through the project
   // inventory. Listed here it would carry no `placement.host_enrollment_id`,
   // and a client reads a machine it cannot place as one it cannot reach.
-  test("lists no worktree of its own, under any scope", async () => {
+  test("lists no worktree of its own, under any host", async () => {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "listed-")))
     execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
     await LocalWorkspaceRoutes().request(
       `http://localhost/resolve?directory=${encodeURIComponent(directory)}&create=true`,
     )
 
-    for (const scope of ["", "?access=local", "?access=user-hosted"]) {
+    for (const scope of ["", "?host=machine", "?host=provisioner"]) {
       const listed = await LocalWorkspaceRoutes().request(`http://localhost/${scope}`)
       expect(listed.status, scope).toBe(200)
       const body = await listed.json() as { workspaces: { remote_directory?: string }[] }
@@ -117,10 +116,12 @@ describe("local workspace resolve route", () => {
     }
   })
 
-  test("refuses a scope it cannot answer rather than guessing one", async () => {
-    const response = await LocalWorkspaceRoutes().request("http://localhost/?access=machine")
-    expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "workspace_access_invalid" } })
+  test("refuses a host it cannot answer rather than guessing one", async () => {
+    for (const query of ["?host=local", "?host=user-hosted", "?host=cloud"]) {
+      const response = await LocalWorkspaceRoutes().request(`http://localhost/${query}`)
+      expect(response.status, query).toBe(400)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "workspace_host_invalid" } })
+    }
   })
 
   // The provisioner owns the machine it provisions, so a row that names no

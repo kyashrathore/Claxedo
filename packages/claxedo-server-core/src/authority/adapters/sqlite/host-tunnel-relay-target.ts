@@ -1,10 +1,10 @@
-import type { UserHostedTargetResolver } from "../../../adapters/relay-port"
+import type { HostTunnelTargetResolver } from "../../../adapters/relay-port"
 import { HOST_SERVING_WORKSPACE_SQL } from "./workspace-authority"
 import { openAuthorityDb, type SqliteWorkspaceAuthorityOptions } from "./workspace-authority-store"
 
 /**
  * Service-side relay lookup for SQLite-backed machine-placed workspaces, the
- * twin of the D1 adapter's `createD1UserHostedTargetResolver`.
+ * twin of the D1 adapter's `createD1HostTunnelTargetResolver`.
  *
  * The internal resolver has machine authority, not an end-user principal, so
  * it cannot call `WorkspaceAuthority.activeWorkspaceHost`. It reads only the
@@ -14,12 +14,12 @@ import { openAuthorityDb, type SqliteWorkspaceAuthorityOptions } from "./workspa
  * database file the authority uses (WAL, one process), the way every
  * beside-the-authority reader in this adapter does.
  */
-export function createSqliteUserHostedTargetResolver(
+export function createSqliteHostTunnelTargetResolver(
   options: SqliteWorkspaceAuthorityOptions & { now?: () => number } = {},
-): UserHostedTargetResolver & { close(): void } {
+): HostTunnelTargetResolver & { close(): void } {
   const database = openAuthorityDb(options)
   const now = options.now ?? Date.now
-  const resolve: UserHostedTargetResolver = async (workspaceId) => {
+  const resolve: HostTunnelTargetResolver = async (workspaceId) => {
     if (!workspaceId.trim()) return { active: false }
     const row = database().prepare<unknown[], { host_id: string; backing: "local-worktree" | "cloud-vm" }>(`
       SELECT assignment.host_id, workspace.backing

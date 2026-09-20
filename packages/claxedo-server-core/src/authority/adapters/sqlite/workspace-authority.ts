@@ -343,7 +343,7 @@ async function verifyHostSignature(input: {
  *
  * `activeWorkspaceHost` answers it for one workspace; `listWorkspaces` stamps
  * it on every machine-placed row so the rail can say "host offline" before any
- * pane opens the workspace; the relay resolver's `user-hosted-relay-target.ts`
+ * pane opens the workspace; the relay resolver's `host-tunnel-relay-target.ts`
  * routes by it with no principal — all three must mean the same thing.
  * Mirrors the D1 adapter's `HOST_SERVING_WORKSPACE_SQL`. A re-pointed
  * directory (new revision) or a superseded instance (new generation) stops
@@ -627,7 +627,7 @@ function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]
  * the row, and sharing it again revives the same record. Cloud rows are never
  * touched here — their lifetime is the sandbox's.
  */
-function retireUserHostedWorkspaceSql(where: string) {
+function retireMachinePlacedWorkspaceSql(where: string) {
   return `
     UPDATE workspaces SET deleted_at = ?, updated_at = ?
     WHERE backing = 'local-worktree' AND deleted_at IS NULL AND ${where}
@@ -1752,7 +1752,7 @@ export function createSqliteWorkspaceAuthority(
         // id), so its assignments could never become routable again — leaving
         // them would only accumulate dangling rows that a later re-share must
         // displace. The cascade keeps "revoke = nothing routable" exactly true.
-        db.prepare(retireUserHostedWorkspaceSql(`workspace_id IN (
+        db.prepare(retireMachinePlacedWorkspaceSql(`workspace_id IN (
           SELECT workspace_id FROM host_workspace_assignments
           WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
         )`)).run(now, now, who.token_identifier, hostId, hostId)
@@ -1928,7 +1928,7 @@ export function createSqliteWorkspaceAuthority(
         const result = db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`)
           .run(args.workspaceId)
         db.prepare(`DELETE FROM host_assignment_readiness WHERE workspace_id = ?`).run(args.workspaceId)
-        db.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).run(now, now, args.workspaceId)
+        db.prepare(retireMachinePlacedWorkspaceSql("workspace_id = ?")).run(now, now, args.workspaceId)
         return { unassigned: result.changes > 0 }
       })()
     },
@@ -2197,7 +2197,7 @@ export function createSqliteWorkspaceAuthority(
           }
           db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`).run(assignment.workspace_id)
           db.prepare(`DELETE FROM host_assignment_readiness WHERE workspace_id = ?`).run(assignment.workspace_id)
-          db.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).run(now, now, assignment.workspace_id)
+          db.prepare(retireMachinePlacedWorkspaceSql("workspace_id = ?")).run(now, now, assignment.workspace_id)
           retired.push(assignment.workspace_id)
         }
         recordHostAudit(db, {

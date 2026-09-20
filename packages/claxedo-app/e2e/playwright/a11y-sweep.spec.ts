@@ -6,7 +6,7 @@ import { AxeBuilder } from "@axe-core/playwright"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { bootstrapDeployment, installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-a11y-sweep"
@@ -64,6 +64,7 @@ async function mockEmptyBootstrap(page: Page) {
       body: JSON.stringify({
         healthy: true,
         events: { hostAggregate: true },
+        deployment: bootstrapDeployment(),
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
         project: [],

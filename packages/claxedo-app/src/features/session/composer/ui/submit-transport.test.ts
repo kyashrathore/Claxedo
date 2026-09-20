@@ -358,8 +358,8 @@ describe("submit transport adapter", () => {
         runtimeCalls.push(`${request.method} ${request.url}`)
         if (new URL(request.url).pathname === "/api/workspace/ws_signed/connection") {
           return Response.json({
-            access: "user-hosted",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_signed",
             role: "owner",
             relayUrl: "https://relay.test",

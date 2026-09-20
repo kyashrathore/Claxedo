@@ -37,7 +37,7 @@ import {
   waitForWorkspaceRole,
   type RunningRelayFixture,
   type RunningWebApp,
-  type SignedRelayAccess,
+  type SignedRelayBacking,
 } from "../helpers/web-signed-relay-harness"
 import {
   addTeamMember,
@@ -68,7 +68,7 @@ import { startScriptedModelServer, type ScriptedModelServer } from "../helpers/s
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const SPEC = "web-signed-org-team-multiplayer"
 const APP_DIR = path.resolve(import.meta.dirname, "..", "..")
-const ACCESS: SignedRelayAccess = (process.env.CLAXEDO_WEB_SIGNED_ORG_TEAM_ACCESS as SignedRelayAccess) || "user-hosted"
+const BACKING: SignedRelayBacking = (process.env.CLAXEDO_WEB_SIGNED_ORG_TEAM_BACKING as SignedRelayBacking) || "local-worktree"
 const BACKEND_PORT = Number(process.env.CLAXEDO_WEB_SIGNED_ORG_TEAM_BACKEND_PORT ?? 4557)
 const PREVIEW_PORT = Number(process.env.CLAXEDO_WEB_SIGNED_ORG_TEAM_PREVIEW_PORT ?? 4559)
 const OUT_DIR = path.join(APP_DIR, "dist-e2e-web-signed-org-team-multiplayer")
@@ -119,7 +119,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
     test.setTimeout(360_000)
     scripted = await startScriptedModelServer()
     fixture = await startSignedRelayFixture({
-      access: ACCESS,
+      backing: BACKING,
       backendPort: BACKEND_PORT,
       browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
@@ -206,7 +206,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
         aliceCtx.page,
         fixture!,
         webApp!,
-        ACCESS,
+        BACKING,
         fixture!.info.controlPlaneToken,
         { id: "user_browser", fullName: ALICE_NAME },
       )
@@ -234,7 +234,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
 
       // Bob is already on the workspace before share so fanout (not navigation)
       // is what surfaces the session row.
-      await openAs(bobCtx.page, fixture!, webApp!, ACCESS, bob!.controlPlaneToken, {
+      await openAs(bobCtx.page, fixture!, webApp!, BACKING, bob!.controlPlaneToken, {
         id: "user_bob",
         fullName: BOB_NAME,
       }, "editor")
@@ -341,7 +341,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       await aliceCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId)).click()
       await expectAuthorVisible(aliceCtx.page, BOB_NAME)
 
-      await openAs(caseyCtx.page, fixture!, webApp!, ACCESS, casey!.controlPlaneToken, {
+      await openAs(caseyCtx.page, fixture!, webApp!, BACKING, casey!.controlPlaneToken, {
         id: "user_casey",
         fullName: CASEY_NAME,
       }, "editor")
@@ -447,7 +447,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
 
     writeEvidenceManifest(path.join(VIDEO_ROOT, "manifest.json"), {
       spec: SPEC,
-      access: ACCESS,
+      backing: BACKING,
       sessionId,
       orgId: fixture!.info.orgId,
       defaultTeamId: fixture!.info.defaultTeamId,

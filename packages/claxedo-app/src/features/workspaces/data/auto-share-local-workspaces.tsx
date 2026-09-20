@@ -5,12 +5,12 @@ import { localWorkspaceShareTarget, publishWorkspacePlacement } from "./share-wo
 import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "./shared-workspaces"
 
 /**
- * Remote access is MACHINE level: turning it on publishes every local
- * workspace on this machine, and every local workspace opened afterwards.
+ * Remote access is MACHINE level: turning it on publishes every workspace this
+ * machine serves, and every one opened afterwards.
  *
  * There is no per-workspace choice to hold, so there is no per-workspace state
- * to reconcile against — the target set is simply "every local workspace this
- * machine has", and this module's whole job is to make the published set equal
+ * to reconcile against — the target set is simply "every workspace this
+ * machine serves", and this module's whole job is to make the published set equal
  * it. The backend contract stays one `publishWorkspacePlacement` call per
  * workspace (an assignment POST plus a beat); the machine's own inventory is
  * the list, not a user-ticked selection.

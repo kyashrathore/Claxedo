@@ -82,8 +82,8 @@ export async function attachmentMime(file: File) {
  *
  * `workspace` is whether the session's runtime can write an attachment into the
  * workspace it runs in, which is what lets an agent reach any file type at all
- * by path. A hosted workspace has no such path, so there only the harness's own
- * prompt inputs remain.
+ * by path. A workspace reached through the relay has no such path, so there
+ * only the harness's own prompt inputs remain.
  */
 export type AttachmentTarget = {
   harness?: HarnessType

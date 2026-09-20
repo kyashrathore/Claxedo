@@ -88,7 +88,7 @@ describe("PrincipalProvider", () => {
       const principal = usePrincipal()
       return <pre>{JSON.stringify(principal())}</pre>
     }
-    const view = render(() => <PrincipalProvider authEnabled signedAccount={account}><Probe /></PrincipalProvider>)
+    const view = render(() => <PrincipalProvider issuesSessions signedAccount={account}><Probe /></PrincipalProvider>)
     expect(view.container.textContent).toBe('{"kind":"signed-unresolved"}')
     setAccount({ userId: "usr_canonical" })
     expect(view.container.textContent).toBe('{"kind":"signed","userId":"usr_canonical"}')
@@ -102,7 +102,7 @@ describe("PrincipalProvider", () => {
 
 })
 
-function renderPrincipal(authEnabled: boolean) {
+function renderPrincipal(issuesSessions: boolean) {
   let value: Principal | undefined
   function Probe() {
     value = usePrincipal()()
@@ -110,7 +110,7 @@ function renderPrincipal(authEnabled: boolean) {
   }
 
   render(() => (
-    <PrincipalProvider authEnabled={authEnabled} signedAccount={() => accountState.current}>
+    <PrincipalProvider issuesSessions={issuesSessions} signedAccount={() => accountState.current}>
       <Probe />
     </PrincipalProvider>
   ))

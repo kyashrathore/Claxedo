@@ -4,7 +4,7 @@ import { bytesToBase64 } from "./cloudflare"
 
 /**
  * `bytesToBase64` is on the path EVERY relayed frame pays — both the WebSocket
- * frame encoder (`socketFrame`) and the user-hosted HTTP request body. It was
+ * frame encoder (`socketFrame`) and the tunnelled HTTP request body. It was
  * rewritten from a per-byte `binary += String.fromCharCode(byte)` loop to a
  * chunked `String.fromCharCode.apply` over 0x8000-byte subarrays.
  *

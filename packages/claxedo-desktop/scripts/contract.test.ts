@@ -86,15 +86,15 @@ test("the packaged output always names the local renderer document and separate 
   // Hosted capability changes only the optional dynamic contribution. The
   // renderer document and separately fingerprinted resource roots are stable
   // under either environment shape.
-  const documentFor = (authEnabled: string | undefined) => {
-    const previous = process.env.VITE_AUTH_ENABLED
-    if (authEnabled === undefined) delete process.env.VITE_AUTH_ENABLED
-    else process.env.VITE_AUTH_ENABLED = authEnabled
+  const documentFor = (hostedActivation: string | undefined) => {
+    const previous = process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+    if (hostedActivation === undefined) delete process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+    else process.env.VITE_CLAXEDO_HOSTED_ACTIVATION = hostedActivation
     try {
       return desktopContractSpec(ROOT).output.filter((entry) => entry.startsWith("out/renderer/") && entry.endsWith(".html"))
     } finally {
-      if (previous === undefined) delete process.env.VITE_AUTH_ENABLED
-      else process.env.VITE_AUTH_ENABLED = previous
+      if (previous === undefined) delete process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+      else process.env.VITE_CLAXEDO_HOSTED_ACTIVATION = previous
     }
   }
 

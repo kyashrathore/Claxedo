@@ -8,7 +8,7 @@ import { createClaxedoMcpClient } from "../client/index"
 import type { ClaxedoFetch } from "../client/contract"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential } from "../server"
 import { registerWorkspaceTools } from "./workspaces"
-import { controlPlaneWorkspaceRow, workspaceListScopeRows } from "../client/control-plane-workspaces.fixture"
+import { controlPlaneWorkspaceRow, workspaceListHostRows } from "../client/control-plane-workspaces.fixture"
 
 type Call = { method: string; path: string; body?: Record<string, unknown> }
 
@@ -54,7 +54,7 @@ function controlPlane() {
         controlPlaneWorkspaceRow({ workspace_id: "ws_mac", backing: "local-worktree", display_name: "Mac", remote_directory: "/Users/me/app" }),
         controlPlaneWorkspaceRow({ workspace_id: "ws_old", backing: "local-worktree", host_online: false }),
       ]
-      return Response.json({ workspaces: workspaceListScopeRows(rows, url.searchParams.get("access")) })
+      return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
     }
     return Response.json({ error: { code: "not_found", message: url.pathname } }, { status: 404 })
   }
