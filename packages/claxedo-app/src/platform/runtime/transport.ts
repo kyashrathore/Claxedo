@@ -7,7 +7,6 @@ import {
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/agent/workspace-runtime-request"
 import {
-  centralTransportForDeployment,
   centralTransportForServer,
   isLocalPersonalScope,
 } from "@/platform/runtime/server-transport"
@@ -16,7 +15,6 @@ import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspa
 import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export {
-  centralTransportForDeployment,
   centralTransportForServer,
   isLocalPersonalScope,
   unsignedLocalFetch,
@@ -69,11 +67,9 @@ export function submitTransportForPlacement(input: {
     //
     // So the answer comes from the server, never from this build: the
     // catalog's `session_authority` is the serving process's own declaration
-    // of the policy it mounted. Two client-side derivations were tried and
-    // each was wrong for one deployment — the wire (loopback vs relay) missed
-    // the signed self-hosted server, and `VITE_AUTH_ENABLED` turned the
-    // test-user e2e build into a reserving client against a local backend
-    // that has no issuer to reserve at.
+    // of the policy it mounted. The wire cannot stand in for it — loopback
+    // reaches a signed self-hosted server's reserving runtime as readily as a
+    // daemon's unbound one.
     managedSessionRegistration: controlPlaneSession || input.sessionAuthority === "managed-private",
   }
 }

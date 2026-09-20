@@ -3,24 +3,19 @@ import { isLoopbackHttpUrl } from "@/platform/api/api"
 
 export { isLoopbackHttpUrl } from "@/platform/api/api"
 
-// True only for Local Personal Mode: loopback server plus a real local
-// workspace directory. Cloud workspaces pass workspaceId separately.
 export function isLocalPersonalScope(input: { serverUrl?: string; directory?: string }) {
   return isLoopbackHttpUrl(input.serverUrl) && isFilesystemDirectory(input.directory)
 }
 
+/**
+ * Which wire reaches the central at `serverUrl`: a loopback socket this
+ * machine already owns, or the network.
+ *
+ * A transport, not a posture. Whether that central issues sessions is its own
+ * declaration (`deployment.issuesSessions` in its bootstrap body) — a signed
+ * node runs its issuer on localhost too, so this answers "loopback" for it and
+ * is right to.
+ */
 export function centralTransportForServer(serverUrl: string | undefined) {
   return isLocalPersonalScope({ serverUrl, directory: "/" }) ? "loopback" : "signed-web"
-}
-
-/**
- * The central transport for the deployment the app was built against.
- *
- * A loopback URL alone says "this machine's own server", which has no accounts
- * in the local product. A build with auth enabled is talking to a server that
- * issues sessions — the self-hosted server with its embedded issuer runs on
- * localhost too — so that build is signed web wherever the server lives.
- */
-export function centralTransportForDeployment(input: { serverUrl: string | undefined; authEnabled: boolean }) {
-  return input.authEnabled ? ("signed-web" as const) : centralTransportForServer(input.serverUrl)
 }

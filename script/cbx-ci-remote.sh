@@ -209,7 +209,7 @@ run_release_gates_linux_x64() {
     cd packages/claxedo-desktop
     CLAXEDO_CHANNEL=prod \
     RUST_TARGET=x86_64-unknown-linux-gnu \
-    VITE_AUTH_ENABLED=true \
+    VITE_CLAXEDO_HOSTED_ACTIVATION=true \
       bun run build
   )
   (
@@ -298,7 +298,6 @@ run_e2e_core() {
     cd packages/claxedo-app
     CLAXEDO_E2E_SERVE_MODE=build-preview \
     PLAYWRIGHT_VIDEO=0 \
-    VITE_AUTH_ENABLED=true \
     VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 \
     VITE_CLAXEDO_E2E=1 \
       bun run test:e2e:core:base -- --shard="$shard/$total"
@@ -312,7 +311,6 @@ run_e2e_onboarding() {
     cd packages/claxedo-app
     CLAXEDO_E2E_SERVE_MODE=build-preview \
     PLAYWRIGHT_VIDEO=0 \
-    VITE_AUTH_ENABLED=true \
     VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 \
     VITE_CLAXEDO_E2E=1 \
       bun run test:e2e:onboarding
@@ -349,7 +347,7 @@ run_e2e_tier_real_web() {
       npx playwright test \
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
-        e2e/playwright/web-signed-userhosted.spec.ts \
+        e2e/playwright/web-signed-host-tunnel.spec.ts \
         --workers=1
   )
 }
@@ -394,7 +392,7 @@ run_e2e_tier_real() {
       npx playwright test \
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
-        e2e/playwright/web-signed-userhosted.spec.ts \
+        e2e/playwright/web-signed-host-tunnel.spec.ts \
         --workers=1
   )
 }

@@ -370,6 +370,10 @@ const NAME_FREE_ROUTES: readonly string[] = [
   // Renewal reads the bearer and nothing else; the names it answers are the token's own.
   "POST /api/claxedo/tasks/grant/renew",
   "GET /api/claxedo/auth/descriptor",
+  // The posture declaration a browser reads before its first render, with
+  // nobody signed in. It carries the composition's own facts and no tenant
+  // name, so a stranger's names change nothing about the answer.
+  "GET /api/claxedo/bootstrap",
   "GET /api/claxedo/compatibility",
   "GET /api/claxedo/health",
   "GET /api/claxedo/mode",

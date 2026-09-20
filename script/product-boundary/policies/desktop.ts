@@ -516,8 +516,14 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
   // — see the app-local ledger. The renderer's port leaves `providerConfig`
   // absent, so the control never renders here; the module rides in with the
-  // shared surface. Measured 1121 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1121, packages: 58 },
+  // shared surface.
+  //
+  // +1 module (2026-09-20): `app/connection/deployment-posture.ts` — see the
+  // app-local ledger. Only the in-tree reader reaches this renderer; the
+  // pre-render resolver (`app/boot/data/deployment-posture.ts`) is an entry's
+  // call and `renderer/local.tsx` does not make it. Measured 1122 modules / 58
+  // packages, with no headroom.
+  ceilings: { modules: 1122, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

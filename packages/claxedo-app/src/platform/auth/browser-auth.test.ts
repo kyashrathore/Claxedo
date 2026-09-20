@@ -105,26 +105,27 @@ describe("browser auth descriptor boundary", () => {
 })
 
 describe("browser sign-in availability", () => {
-  test("a loopback central plane has no accounts to offer", () => {
-    // The e2e, dev and self-host composition. The composition root reads this
-    // from `centralTransportForServer` and hands it down, so no descriptor is
-    // requested and no provider SDK is loaded.
+  test("a central that issues no sessions has no accounts to offer", () => {
+    // The desktop daemon and the unsigned self-host. The composition root
+    // reads the server's own declaration and hands it down, so no descriptor
+    // is requested and no provider SDK is loaded — even though this HTTPS
+    // origin would otherwise pass every check below.
     expect(
       browserAuthUnavailable({
         apiOrigin: "https://api.example.test",
         appOrigin: "https://app.example.test",
-        centralTransport: "loopback",
+        issuesSessions: false,
       }),
-    ).toContain("loopback")
+    ).toContain("issues no sessions")
   })
 
   test("a plain-http deployment cannot run the HTTPS-only descriptor contract", () => {
     // A plain-http self-host, and any http app origin: both are deployments
     // without a sign-in flow, reported as a reason rather than thrown, so the
     // shell and `/login` render either way.
-    expect(browserAuthUnavailable({ apiOrigin: "http://api.example.test", appOrigin: "https://app.example.test", centralTransport: "signed-web" }))
+    expect(browserAuthUnavailable({ apiOrigin: "http://api.example.test", appOrigin: "https://app.example.test", issuesSessions: true }))
       .toContain("HTTPS")
-    expect(browserAuthUnavailable({ apiOrigin: "https://api.example.test", appOrigin: "http://app.example.test", centralTransport: "signed-web" }))
+    expect(browserAuthUnavailable({ apiOrigin: "https://api.example.test", appOrigin: "http://app.example.test", issuesSessions: true }))
       .toContain("HTTPS")
   })
 
@@ -133,7 +134,7 @@ describe("browser sign-in availability", () => {
       browserAuthUnavailable({
         apiOrigin: "https://api.example.test",
         appOrigin: "https://app.example.test",
-        centralTransport: "signed-web",
+        issuesSessions: true,
       }),
     ).toBeNull()
   })

@@ -13,7 +13,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig, issuesSessions } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { asRecord, asString } from "@claxedo/helpers/guards"
@@ -65,6 +65,19 @@ function events(options: Options) {
   return { hostAggregate: options.hostAggregateEvents }
 }
 
+/**
+ * Read from the composition's own auth config rather than declared beside it,
+ * so the body cannot say "sign in" about a server that authenticates by
+ * loopback.
+ */
+function declaresSessions(options: Options) {
+  return issuesSessions(options.authConfig ?? controlPlaneAuthConfig())
+}
+
+function deployment(options: Options) {
+  return { issuesSessions: declaresSessions(options) }
+}
+
 function bootstrapHostIdentity(options: Options) {
   return { enrollment: options.hostEnrollmentId?.() ?? null }
 }
@@ -75,6 +88,7 @@ async function localBootstrapBody(options: Options) {
     version: version(options),
     path: bootPath(),
     events: events(options),
+    deployment: deployment(options),
     host: bootstrapHostIdentity(options),
     project: await listProjects(),
     provider_auth: providerAuthMethods(),
@@ -87,6 +101,7 @@ async function localShellBootstrapBody(options: Options) {
     version: version(options),
     path: bootPath(),
     events: events(options),
+    deployment: deployment(options),
     host: bootstrapHostIdentity(options),
     project: await listProjects(),
   }
@@ -165,9 +180,27 @@ async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Option
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
     events: events(options),
+    deployment: deployment(options),
     host: bootstrapHostIdentity(options),
     project: await Promise.all(projects.map(async (project) => ({ ...project, ...await getProjectMetadata(project.id) }))),
     provider_auth: providerAuthMethods(),
+  }
+}
+
+/**
+ * What a caller holding no credential learns from a server that issues
+ * sessions: the posture it has to satisfy, and nothing of the machine behind
+ * it. The client reads this before its first render to decide whether a signed
+ * session is required at all, so refusing the request would leave it guessing
+ * from the URL — and answering `localBootstrap` would hand an anonymous caller
+ * this node's project list and home directory.
+ */
+function unauthenticatedDeclarationBody(options: Options) {
+  return {
+    healthy: true,
+    version: version(options),
+    events: events(options),
+    deployment: deployment(options),
   }
 }
 
@@ -220,6 +253,7 @@ export function BootstrapRoutes(options: Options) {
             throw err
           }
         }
+        if (declaresSessions(options)) return c.json(unauthenticatedDeclarationBody(options))
         return c.json(await localBootstrap(c.req.url, options))
       } catch (err) {
         return c.json({

@@ -74,7 +74,8 @@ export function configureAuthSession(source: ExternalAuthSource | null) {
  * be loading: a local build IS anonymous, permanently and immediately, and
  * `status()` says so on the first read so nothing downstream waits for a
  * resolution that will never come. Every consumer already handles it —
- * `CloudAuthGate` renders (it only gates when `authEnabled`),
+ * `CloudAuthGate` renders (it gates only where the server declares it issues
+ * sessions),
  * `PrincipalProvider` yields the `local` principal, `RailAccountMenu` shows
  * "Not signed in", `browserAccountPort.state()` reports `unsigned`.
  *
@@ -93,7 +94,7 @@ export function configureAuthSession(source: ExternalAuthSource | null) {
  *  - `signIn()`/`signUp()` REJECT. Unlike the above these are explicit,
  *    user-initiated requests for something this build cannot do, they are only
  *    reachable from hosted-only surfaces (`/login`, `/cli-login`, the account
- *    menu's sign-in action, which is itself gated on `authEnabled`), and they
+ *    menu's sign-in action, which is itself gated on that declaration), and they
  *    are never called during render. Resolving silently would leave a button
  *    that reports success and does nothing — the failure shape
  *    `app-ports-wiring.guard.test.ts` exists to prevent. The rejection names

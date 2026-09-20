@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { ClaxedoProviderModel as Model, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import {
+  deploymentPostureFailure,
+  deploymentPostureQuery,
   normalizeProjectList,
   projectCatalogMissingWorkspace,
   projectListQuery,
@@ -354,5 +356,40 @@ describe("an empty provider catalog never replaces a populated one", () => {
   test("a populated catalog still replaces a populated one — this is not a freeze", () => {
     const next = normalizeProviderList(catalog([provider("anthropic", [model("sonnet")])], ["anthropic"]))
     expect([...mergeProviderIndexWithDetails(populated, next).all.keys()]).toEqual(["anthropic"])
+  })
+})
+
+/**
+ * The three ways the declaration read ends without an answer, each driven
+ * through the real query function rather than by constructing its error.
+ *
+ * The sign-in gate holds on all three and shows the sentence, so a wrong one
+ * is what the person stuck behind the gate reads.
+ */
+describe("deploymentPostureFailure", () => {
+  const read = (respond: () => Response | Promise<Response>) =>
+    deploymentPostureQuery({
+      baseUrl: "http://127.0.0.1:2593",
+      request: (async () => await respond()) as typeof globalThis.fetch,
+    }).queryFn({})
+
+  test("a refused request names the status the server answered with", async () => {
+    await expect(read(() => new Response("nope", { status: 503 })).catch(deploymentPostureFailure)).resolves.toBe(
+      "It refused the request (HTTP 503).",
+    )
+  })
+
+  test("a body with no declaration says so, rather than blaming the network", async () => {
+    await expect(read(() => Response.json({ healthy: true })).catch(deploymentPostureFailure)).resolves.toBe(
+      "It answered without declaring whether it issues sessions.",
+    )
+  })
+
+  test("anything the request itself threw reads as unreachable", async () => {
+    await expect(
+      read(() => {
+        throw new TypeError("Failed to fetch")
+      }).catch(deploymentPostureFailure),
+    ).resolves.toBe("It could not be reached.")
   })
 })

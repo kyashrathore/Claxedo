@@ -16,7 +16,6 @@ describe("E2E auth mode", () => {
 
   test("owns the complete build environment every e2e vite launcher passes", () => {
     expect(e2eAppViteEnvironment("test-user")).toEqual({
-      VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "0",
       VITE_SANDBOX_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true",
@@ -25,7 +24,6 @@ describe("E2E auth mode", () => {
       VITE_CLAXEDO_E2E: "1",
     })
     expect(e2eAppViteEnvironment("local-unsigned")).toEqual({
-      VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1",
       VITE_SANDBOX_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true",

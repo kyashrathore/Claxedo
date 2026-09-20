@@ -57,6 +57,7 @@ export const queryKeys = {
   deployment: {
     hostAggregateDeclaration: (baseUrl?: string) => ["deployment", normalized(baseUrl), "hostAggregateDeclaration"] as const,
     selfHost: (baseUrl?: string) => ["deployment", normalized(baseUrl), "selfHost"] as const,
+    issuesSessions: (baseUrl?: string) => ["deployment", normalized(baseUrl), "issuesSessions"] as const,
   },
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,

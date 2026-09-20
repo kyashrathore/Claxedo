@@ -50,7 +50,6 @@ jobs:
         working-directory: packages/claxedo-app
         env:
           VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
-          VITE_AUTH_ENABLED: "true"
           VITE_CLAXEDO_AUTH_ADAPTER: "better-auth"
           # Public by design: VITE_ vars ship in the client bundle — this is
           # the PostHog PROJECT key (capture-only), never a personal API

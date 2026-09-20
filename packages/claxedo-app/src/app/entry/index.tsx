@@ -38,8 +38,6 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
   // PLUGGABLE FEATURE FLAGS
   // ─────────────────────────────────────────────
 
-  /** Enable Better Auth + claxedo server (default: false) */
-  authEnabled?: boolean
   /** Allow cloud sandbox workspace creation (default: false) */
   sandboxEnabled?: boolean
   /** Show Global Chat sections in the rail (default: false) */
@@ -57,7 +55,6 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
  *
  * Call this before rendering the app to register all cloud functionality.
  * Extensions are conditionally registered based on feature flags:
- * - authEnabled: Better Auth + claxedo server
  * - sandboxEnabled: Cloud sandbox workspace creation
  * - globalChatEnabled: Global Chat rail sections
  *
@@ -66,7 +63,6 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
   * await initClaxedo({
   *   authBaseUrl: window.location.origin,
  *   gatewayUrl: "http://127.0.0.1:3000",
- *   authEnabled: true,
  *   sandboxEnabled: true,
  *   globalChatEnabled: true,
  * })
@@ -83,10 +79,9 @@ export function initClaxedo(config: ClaxedoConfig): void {
   })
 
   // `hostedComposition` answers whether this build has a hosted implementation
-  // it may load. Browser hosted builds activate immediately (`authEnabled`);
-  // desktop releases supply the loader but leave auth disabled because Electron
-  // main owns the account. In that composition HostedContributionSync follows
-  // the Electron AccountPort and activates only after it reports `signed`.
+  // it may load. Only the desktop supplies the loader, and there Electron main
+  // owns the account: HostedContributionSync follows the AccountPort and
+  // registers the set only once it reports `signed`.
   const contributions = configureProductContributions({
     local: localContentSurfaces,
     register: registerContentSurface,
@@ -106,10 +101,10 @@ export function initClaxedo(config: ClaxedoConfig): void {
     })
   }
 
-  // Starting the identity provider is not this function's job: guarding it
-  // behind `config.authEnabled` would not keep it out of the local bundle,
-  // since a non-executing branch does not remove the module, and a dynamic
-  // import only turns it into a lazy chunk the local build still ships.
+  // Starting the identity provider is not this function's job: a runtime
+  // guard would not keep it out of the local bundle, since a non-executing
+  // branch does not remove the module, and a dynamic import only turns it into
+  // a lazy chunk the local build still ships.
   //
   // The hosted entry starts it instead (`app/entry/main.tsx`), where the
   // decision to have an identity provider is actually made; this function
@@ -118,17 +113,6 @@ export function initClaxedo(config: ClaxedoConfig): void {
 
   contributions.expectAgentPlugins()
   void contributions.activateAgentPlugins().catch(() => {})
-
-  if (config.authEnabled && config.loadHostedContributions) {
-    // Hosted composition: Documents arrives as one lazily
-    // imported contribution set rather than as static imports of this entry.
-    //
-    // `expectHosted()` runs synchronously and `activateHosted` resolves later,
-    // and the split matters: restored-state pruning must know that a hosted
-    // tabs are legal in this build before the dynamic import lands, or a hosted
-    // reload would drop every restored hosted tab in the gap.
-    void contributions.activateHosted().catch(() => {})
-  }
 }
 
 /**
@@ -143,7 +127,6 @@ export function getDefaultConfig(): ClaxedoConfig {
     cloudAutoSwitch: import.meta.env.VITE_CLOUD_AUTOSWITCH !== "false",
 
     // Feature flags - all default to false for standalone mode
-    authEnabled: import.meta.env.VITE_AUTH_ENABLED === "true",
     sandboxEnabled: import.meta.env.VITE_SANDBOX_ENABLED === "true",
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
     ...productUiFlagConfigFromEnv(import.meta.env),

@@ -34,6 +34,7 @@ import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtim
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
 import { hostedServiceContributionLoaders } from "@/app/composition/hosted-contribution-loader"
 import { startBrowserAuth } from "./browser-auth-startup"
+import { resolveDeploymentPosture } from "@/app/boot/data/deployment-posture"
 
 const OAuthConsentPage = lazy(() => import("@/app/routes/oauth-consent"))
 const HostedOAuthConsentRoute = () => (
@@ -50,11 +51,9 @@ const HostedDeviceApprovalRoute = () => (
 )
 
 /**
- * Bind the hosted workspace-startup implementation.
- *
- * Local callers (composer, session actions) wake relay-placed
- * runtimes through `workspaceStartup()`. `local.tsx` binds nothing: a local
- * build has no sandbox to wake, so reaching the port throws.
+ * Composer and session actions wake a relay-placed runtime through
+ * `workspaceStartup()`. `local.tsx` binds nothing: an unsigned local build has
+ * no provisioner to wake, so reaching the port there throws.
  */
 configureWorkspaceStartup(cloudWorkspaceStartup)
 
@@ -138,30 +137,8 @@ const config = {
 }
 initClaxedo(config)
 
-/**
- * Start signing in, beside the other module-scope bindings and before render.
- *
- * See `browser-auth-startup.ts`: nothing here waits for it, and nothing here
- * can fail because of it.
- */
-startBrowserAuth({
-  authEnabled: config.authEnabled === true,
-  adapter: browserAuthAdapter,
-  apiOrigin: getClaxedoServerUrl(),
-  appOrigin: window.location.origin,
-})
-
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 initPostHog()
-// This entry is the web build; the desktop renderer resolves its own plane
-// once PlatformProvider mounts (TelemetryIdentityRecorder).
-setDeploymentMode(resolveDeploymentMode({ platform: "web", authEnabled: config.authEnabled === true }))
-phCapture("app_launched", {
-  ...identityProps(),
-  surface: "app_shell",
-  platform: "web",
-  version: "cloud",
-})
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -219,6 +196,32 @@ const platform: Platform = {
 }
 
 async function startApp() {
+  // The server's posture before anything reads it. `startBrowserAuth` must not
+  // load a provider SDK against a central that issues no sessions, and
+  // `CloudAuthGate` must not paint an anonymous shell on one that does, so the
+  // declaration is resolved here and the whole tree below reads the same
+  // cached answer on its first render.
+  const issuesSessions = await resolveDeploymentPosture({ baseUrl: getClaxedoServerUrl() })
+
+  // Nothing here waits for it, and nothing here can fail because of it — see
+  // `browser-auth-startup.ts`.
+  startBrowserAuth({
+    issuesSessions,
+    adapter: browserAuthAdapter,
+    apiOrigin: getClaxedoServerUrl(),
+    appOrigin: window.location.origin,
+  })
+
+  // This entry is the web build; the desktop renderer resolves its own plane
+  // once PlatformProvider mounts (TelemetryIdentityRecorder).
+  setDeploymentMode(resolveDeploymentMode({ platform: "web", issuesSessions: issuesSessions === true }))
+  phCapture("app_launched", {
+    ...identityProps(),
+    surface: "app_shell",
+    platform: "web",
+    version: "cloud",
+  })
+
   // Render the standard app with cloud extensions active
   render(
     () => (

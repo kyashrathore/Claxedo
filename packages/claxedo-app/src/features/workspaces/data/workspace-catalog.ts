@@ -9,7 +9,6 @@ import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import {
   backingHostKind,
-  controlPlaneListScope,
   controlPlaneRowPlacement,
   inventoryKindWord,
   type RelayHostKind,
@@ -331,10 +330,9 @@ async function listControlPlaneWorkspaces(input: {
   serverUrl?: string
   request: typeof fetch
 }) {
-  const scope = controlPlaneListScope(input.host)
   const run = await signedAccountRun()
   if (run) {
-    const operation = input.host === "provisioner" ? "workspace.list.cloud" : "workspace.list.userHosted"
+    const operation = input.host === "provisioner" ? "workspace.list.provisioner" : "workspace.list.machine"
     const workspaces = readArray(decodeHostedResult(operation, await run(operation, {})), "workspaces")
     if (!workspaces) throw new Error(`${operation} returned an invalid workspaces payload`)
     return workspaces
@@ -342,10 +340,10 @@ async function listControlPlaneWorkspaces(input: {
   const res = await input.request(workspaceListUrl({ baseUrl: input.serverUrl, host: input.host }), {
     headers: { Accept: "application/json" },
   })
-  if (!res.ok) throw new Error(`Control-plane ${scope} workspace list failed with ${res.status}`)
+  if (!res.ok) throw new Error(`Control-plane ${input.host} workspace list failed with ${res.status}`)
   const workspaces = readArray(await res.json(), "workspaces")
   if (!workspaces) {
-    throw new Error(`Control-plane ${scope} workspace list returned an invalid workspaces payload`)
+    throw new Error(`Control-plane ${input.host} workspace list returned an invalid workspaces payload`)
   }
   return workspaces
 }

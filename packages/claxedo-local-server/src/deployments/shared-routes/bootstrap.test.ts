@@ -129,6 +129,74 @@ describe("BootstrapRoutes", () => {
     await expect(shellScope.json()).resolves.toMatchObject({ host: { enrollment: "enr_this_machine" } })
   })
 
+  // The client cannot read this off the URL: a signed node runs its issuer on
+  // localhost, and an unsigned node can be reached over a LAN name. The
+  // declaration is derived from the composition's own auth config so the body
+  // cannot say "sign in" about a server that authenticates by loopback.
+  test("declares whether this composition issues sessions", async () => {
+    const localOnly = await BootstrapRoutes({
+      env: {},
+      hostAggregateEvents: false,
+      authConfig: { enabled: false, mode: "local-only", reason: "local test" },
+    }).request("/api/claxedo/bootstrap")
+    await expect(localOnly.json()).resolves.toMatchObject({ deployment: { issuesSessions: false } })
+
+    const shell = await BootstrapRoutes({
+      env: {},
+      hostAggregateEvents: false,
+      authConfig: { enabled: false, mode: "local-only", reason: "local test" },
+    }).request("/api/claxedo/bootstrap?scope=shell")
+    await expect(shell.json()).resolves.toMatchObject({ deployment: { issuesSessions: false } })
+
+    const signed = await signedBootstrap()
+    await expect(signed.json()).resolves.toMatchObject({ deployment: { issuesSessions: true } })
+  })
+
+  // A composition whose signed auth is misconfigured still refuses every signed
+  // route. Declaring it a personal machine would send an unsigned client into a
+  // shell where nothing it does can work.
+  test("a misconfigured signed composition still says it issues sessions", async () => {
+    const response = await BootstrapRoutes({
+      env: {},
+      hostAggregateEvents: false,
+      authConfig: { enabled: false, mode: "misconfigured", reason: "hosted route mounted without an auth config" },
+    }).request("http://control.example/api/claxedo/bootstrap")
+    await expect(response.json()).resolves.toMatchObject({ deployment: { issuesSessions: true } })
+  })
+
+  // The declaration has to reach a caller who has not signed in yet — that is
+  // the caller it is for — but the local body carries this node's project list
+  // and home directory, which an anonymous caller has no claim on.
+  test("an anonymous caller on a session-issuing node gets the declaration and nothing else", async () => {
+    const response = await BootstrapRoutes({
+      ...signedAuth,
+      env: { npm_package_version: "9.9.9-test" },
+      hostAggregateEvents: true,
+    }).request("http://control.example/api/claxedo/bootstrap")
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toEqual({
+      healthy: true,
+      version: "9.9.9-test",
+      events: { hostAggregate: true },
+      deployment: { issuesSessions: true },
+    })
+  })
+
+  test("an anonymous caller on a local-only node still gets the machine's own body", async () => {
+    const response = await BootstrapRoutes({
+      env: {},
+      hostAggregateEvents: true,
+      authConfig: { enabled: false, mode: "local-only", reason: "local test" },
+    }).request("/api/claxedo/bootstrap")
+
+    const body = await response.json()
+    expect(body.path).toBeDefined()
+    expect(body.project).toEqual([])
+    expect(body.deployment).toEqual({ issuesSessions: false })
+  })
+
   test("declares it in the signed body too", async () => {
     const response = await signedBootstrap()
 

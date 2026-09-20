@@ -514,7 +514,6 @@ jobs:
         env:
           CLAXEDO_E2E_SERVE_MODE: build-preview
           PLAYWRIGHT_VIDEO: "0"
-          VITE_AUTH_ENABLED: "true"
           VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
           VITE_CLAXEDO_E2E: "1"
 
@@ -653,7 +652,7 @@ jobs:
       # together on one worker: their fixed port blocks and output directories
       # are distinct, but serial execution avoids concurrent Vite builds
       # starving the 4-vCPU runner and keeps one combined Playwright report.
-      - name: Run signed web relay e2e (cloud + user-hosted + org-team multiplayer)
+      - name: Run signed web relay e2e (cloud + host tunnel + org-team multiplayer)
         working-directory: packages/claxedo-app
         timeout-minutes: 60
         env:
@@ -665,7 +664,7 @@ jobs:
           npx playwright test
           --config playwright.config.ts
           e2e/playwright/web-signed-cloud.spec.ts
-          e2e/playwright/web-signed-userhosted.spec.ts
+          e2e/playwright/web-signed-host-tunnel.spec.ts
           e2e/playwright/web-signed-org-team-multiplayer.spec.ts
           --workers=1
 

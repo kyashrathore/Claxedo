@@ -6,6 +6,7 @@ import type { NewSessionProjectSelection } from "@/features/session/ui/component
 import { FirstProjectCanvas } from "./first-project-canvas"
 
 const health = vi.hoisted(() => ({ localExecution: true as boolean | undefined }))
+const posture = vi.hoisted(() => ({ issuesSessions: false as boolean | undefined }))
 const createIntent = vi.hoisted(() => ({ pending: false, bump: () => {}, answer: () => {} }))
 const created = vi.hoisted(() => ({
   calls: [] as { baseUrl?: string; name: string; source: unknown }[],
@@ -23,8 +24,8 @@ vi.mock("@/app/connection/server-health", () => ({
   }),
 }))
 
-vi.mock("@/app/providers/config", () => ({
-  useConfigOptional: () => ({ authEnabled: false }),
+vi.mock("@/app/connection/deployment-posture", () => ({
+  useDeploymentPosture: () => ({ issuesSessions: () => posture.issuesSessions }),
 }))
 
 vi.mock("@/app/providers/layout", () => ({
@@ -91,6 +92,7 @@ const renderCanvas = (props: Parameters<typeof FirstProjectCanvas>[0] = {}) =>
 
 afterEach(() => {
   health.localExecution = true
+  posture.issuesSessions = false
   created.calls = []
   created.checkoutDirectory = "/home/me/demo"
   cleanup()
@@ -115,6 +117,26 @@ describe("FirstProjectCanvas", () => {
 
     await waitFor(() => expect(screen.getByRole("textbox", { name: "Repository URL" })).toBeTruthy())
     expect(screen.queryByRole("button", { name: "Choose folder" })).toBeNull()
+  })
+
+  // `localExecution` is the server's own statement and wins wherever it is
+  // made. Where it is absent, the posture declaration is what is left: a
+  // central that issues sessions is not running projects off this machine's
+  // filesystem, and a folder picker there would offer paths nobody can reach.
+  test("a server that states nothing about its filesystem falls to the posture declaration", async () => {
+    health.localExecution = undefined
+    posture.issuesSessions = true
+    renderCanvas()
+
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Repository URL" })).toBeTruthy())
+    expect(screen.queryByRole("button", { name: "Choose folder" })).toBeNull()
+    cleanup()
+
+    health.localExecution = undefined
+    posture.issuesSessions = false
+    renderCanvas()
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Choose folder" })).toBeTruthy())
   })
 
   test("a created project reaches onProjectCreated as the record the shell opens", async () => {

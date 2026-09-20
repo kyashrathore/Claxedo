@@ -470,9 +470,18 @@ export const appLocal: Policy = {
   // machine, rendered under each row of the Machines list by
   // `remote-access-surface.tsx`. It reaches the control plane only through
   // `MachineRemoteAccessPort.providerConfig`, which the HTTP binding serves
-  // and the desktop leaves absent; no new package edge. Measured 1078
-  // modules / 58 packages, with no headroom.
-  ceilings: { modules: 1078, packages: 58 },
+  // and the desktop leaves absent; no new package edge.
+  //
+  // +2 modules (2026-09-20): `app/boot/data/deployment-posture.ts` and
+  // `app/connection/deployment-posture.ts` — the server's
+  // `deployment.issuesSessions` declaration, read before the first render and
+  // then per active server. The local entry needs it as much as the hosted
+  // one: a loopback daemon is the deployment that declares it issues NO
+  // sessions, and that answer is what keeps this build's sign-in gate open and
+  // its identity provider unstarted. Both reach only `platform/query`, already
+  // in this closure; no new package edge. Measured 1080 modules / 58 packages,
+  // with no headroom.
+  ceilings: { modules: 1080, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

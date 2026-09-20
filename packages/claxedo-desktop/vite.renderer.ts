@@ -41,11 +41,11 @@ export function createElectronRenderer(mode: string): UserConfig {
   const env = loadEnv(mode, claxedoAppDir, "VITE_")
   const terminal = env.VITE_TERMINAL_BACKEND || process.env.VITE_TERMINAL_BACKEND || "xterm"
   // `loadEnv` only copies prefixed process.env keys when a matching .env file
-  // exists. This worktree has none, so a signed inner build must also read
-  // VITE_AUTH_ENABLED from the process (same precedence the contract tests
+  // exists. This worktree has none, so a build that wants the hosted chunk must
+  // also read the flag from the process (same precedence the contract tests
   // document for `.env.local`).
   const hostedActivationEnabled =
-    (env.VITE_AUTH_ENABLED ?? process.env.VITE_AUTH_ENABLED)?.trim() === "true"
+    (env.VITE_CLAXEDO_HOSTED_ACTIVATION ?? process.env.VITE_CLAXEDO_HOSTED_ACTIVATION)?.trim() === "true"
   const localServerUrl = env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
   // The hosted app a PHONE must open, baked per build.
   //

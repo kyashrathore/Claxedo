@@ -32,6 +32,7 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
+  issuesSessions,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
@@ -135,6 +136,7 @@ function txt(input: unknown) {
 function version(options: HostedShellRouteOptions) {
   return options.version || "1.0.0"
 }
+
 
 // Shape mirror of `bootPath()` in routes/client-presentation.ts — the hosted
 // central has no home/state/config directories, so those stay empty (the app
@@ -705,6 +707,20 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
       }))
+    // Public, and deliberately not the node's bootstrap body: a hosted central
+    // has no filesystem, no embedded runtime and no machine behind it, so the
+    // only fact it has to state here is the posture the browser must satisfy.
+    // The app reads it before its first render, while nobody is signed in yet,
+    // which is why it passes no auth gate.
+    .get("/api/claxedo/bootstrap", (c) => {
+      c.header("Cache-Control", "no-store")
+      return c.json({
+        healthy: true,
+        version: version(options),
+        events: { hostAggregate: false },
+        deployment: { issuesSessions: issuesSessions(options.authConfig) },
+      })
+    })
     .get("/project", async (c) => {
       try {
         return c.json(await signedProjects(c, options))

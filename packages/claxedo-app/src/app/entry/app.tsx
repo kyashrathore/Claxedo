@@ -39,6 +39,8 @@ import {
   type ParentProps,
   Show,
   Suspense,
+  Switch,
+  Match,
 } from "solid-js"
 import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useServer } from "@/app/connection/server"
 import { LanguageProvider, useLanguage } from "@/platform/i18n/provider"
@@ -49,8 +51,7 @@ import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
-import { useConfigOptional } from "@/app/providers/config"
-import { centralTransportForDeployment, centralTransportForServer } from "@/platform/runtime/transport"
+import { signInGate, useDeploymentPosture } from "@/app/connection/deployment-posture"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider, useAccountPort } from "@/platform/account/account-provider"
@@ -298,9 +299,7 @@ function ConnectionGate(props: ParentProps) {
           when={startup()}
           fallback={
             <ConnectionError
-              onRetry={() => {
-                if (mode() === "background") void actions.refetch()
-              }}
+              onRetry={() => void actions.refetch()}
               onServerSelected={(key) => {
                 setMode("blocking")
                 server.setActive(key)
@@ -319,7 +318,20 @@ function ConnectionGate(props: ParentProps) {
   )
 }
 
-function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key: ServerConnection.Key) => void }) {
+/**
+ * The one screen for "this app cannot go on with the server it has".
+ *
+ * Two callers state their own reason: `ConnectionGate` when the server never
+ * answered its health check, and `CloudAuthGate` when it answered but its
+ * sign-in rule could not be read. Both offer the same two ways out, because
+ * both have the same two: ask again, or pick a different server.
+ */
+function ConnectionError(props: {
+  headline?: JSX.Element
+  detail?: JSX.Element
+  onRetry?: () => void
+  onServerSelected?: (key: ServerConnection.Key) => void
+}) {
   const server = useServer()
   const others = () => server.list.filter((item) => ServerConnection.key(item) !== server.key)
 
@@ -328,9 +340,24 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
       <div class="flex flex-col items-center max-w-md text-center">
         <ClaxedoSplash class="w-12 h-15 mb-4" />
         <p class="text-14-regular text-text-base">
-          Could not reach <span class="text-text-strong font-medium">{server.name || server.key}</span>
+          {props.headline ?? (
+            <>
+              Could not reach <span class="text-text-strong font-medium">{server.name || server.key}</span>
+            </>
+          )}
         </p>
-        <p class="mt-1 text-12-regular text-text-weak">Retrying automatically...</p>
+        <p class="mt-1 text-12-regular text-text-weak">{props.detail ?? "Retrying automatically..."}</p>
+        <Show when={props.onRetry}>
+          {(retry) => (
+            <button
+              type="button"
+              class="mt-4 px-3 py-1.5 rounded-md bg-surface-base hover:bg-surface-raised-base-hover text-14-regular text-text-strong transition-colors"
+              onClick={() => retry()()}
+            >
+              Try again
+            </button>
+          )}
+        </Show>
       </div>
       <Show when={others().length > 0}>
         <div class="flex flex-col gap-2 w-full max-w-sm">
@@ -359,11 +386,11 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
 
 /**
  * e2e-only runtime override for the resolved default server URL. Returns a
- * spec-supplied `window.__CLAXEDO_E2E_SERVER_URL__` only in a dev/e2e build so
- * a Playwright spec can drive a non-loopback transport (making
- * `CloudAuthGate`'s `needsSignedAuth()` true) without a separate hosted
- * harness. A real production build sets neither flag, so this folds to
- * `undefined` and is eliminated — no production behavior change.
+ * spec-supplied `window.__CLAXEDO_E2E_SERVER_URL__` only in a dev/e2e build, so
+ * a Playwright spec can point the shell at a server whose bootstrap declares a
+ * different posture without a separate hosted harness. A real production build
+ * sets neither flag, so this folds to `undefined` and is eliminated — no
+ * production behavior change.
  */
 function e2eServerUrlOverride(): string | undefined {
   if (!(import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1")) return undefined
@@ -373,38 +400,46 @@ function e2eServerUrlOverride(): string | undefined {
 }
 
 function CloudAuthGate(props: ParentProps) {
-  const config = useConfigOptional()
   const session = useAuthSession()
-  const server = useServer()
   const location = useLocation()
   const navigate = useNavigate()
-  const authEnabled = () => config?.authEnabled === true
-  const needsSignedAuth = () => {
-    if (centralTransportForDeployment({ serverUrl: server.url, authEnabled: authEnabled() }) === "loopback") return false
-    // An auth-enabled build against this machine's own server is signed web
-    // only when that server advertises an identity provider (the self-hosted
-    // embedded issuer publishes a descriptor). A loopback server that settled
-    // without one has no sign-in to complete: the visitor is the machine's
-    // user, and sending them to `/login` would gate the shell behind nothing.
-    if (centralTransportForServer(server.url) === "loopback" && session.status() === "anonymous" && session.descriptor() === null) return false
-    return true
+  const server = useServer()
+  const posture = useDeploymentPosture()
+  const gate = () => signInGate({ posture: posture.posture(), session: session.status() })
+  const unreadable = () => {
+    const current = gate()
+    return current.surface === "unreadable" ? current.reason : undefined
   }
-  const canRender = () => !needsSignedAuth() || session.status() === "signed"
 
   createEffect(() => {
-    if (!needsSignedAuth()) return
-    if (session.status() !== "anonymous") return
+    const current = gate()
+    if (current.surface !== "hold" || !current.redirectToLogin) return
     if (location.pathname === "/login") return
     navigate("/login", { replace: true })
   })
 
   return (
-    <Show
-      when={canRender()}
-      fallback={<div class="size-full flex items-center justify-center">Loading...</div>}
-    >
-      {props.children}
-    </Show>
+    <Switch fallback={<div class="size-full flex items-center justify-center">Loading...</div>}>
+      <Match when={unreadable()}>
+        {(reason) => (
+          // This gate sits ABOVE ConnectionGate, so nothing below it can report
+          // the failure; rendering through instead would put an ungated shell on
+          // a deployment whose sign-in rule this app never learned.
+          <ConnectionError
+            headline={
+              <>
+                Could not confirm sign-in for{" "}
+                <span class="text-text-strong font-medium">{server.name || server.key}</span>
+              </>
+            }
+            detail={reason()}
+            onRetry={() => posture.reread()}
+            onServerSelected={(key) => server.setActive(key)}
+          />
+        )}
+      </Match>
+      <Match when={gate().surface === "shell"}>{props.children}</Match>
+    </Switch>
   )
 }
 
@@ -415,8 +450,7 @@ function CloudAuthGate(props: ParentProps) {
  * provider directly: it renders ABOVE `RuntimeProviders`, i.e. before the
  * lazily-imported `app/integrations/feature-ports` wiring has evaluated, so it
  * must not go through the workspaces app-ports proxy — that proxy throws
- * "Workspaces app ports are not configured" until the wiring lands, which
- * crashed boot whenever `authEnabled` resolved first on a cold load.
+ * "Workspaces app ports are not configured" until the wiring lands.
  */
 function CloudAutoSwitch(props: ParentProps) {
   const server = useServer()
@@ -433,7 +467,7 @@ function CloudAutoSwitch(props: ParentProps) {
 }
 
 function AuthenticatedProviders(props: ParentProps) {
-  const config = useConfigOptional()
+  const posture = useDeploymentPosture()
 
   return (
     <BoundAccountPortProvider>
@@ -443,7 +477,7 @@ function AuthenticatedProviders(props: ParentProps) {
           session is ever bound — the entry injects it because the auth layer
           must not import the account layer). Every account surface sits
           below, so none of them reaches either source directly. */}
-      <AccountPortPrincipalProvider authEnabled={config?.authEnabled === true}>
+      <AccountPortPrincipalProvider issuesSessions={posture.issuesSessions() === true}>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       {/* Removes the hosted contribution set when the account signs out.
@@ -452,7 +486,7 @@ function AuthenticatedProviders(props: ParentProps) {
       <WorkspaceConnectionAuthoritySync />
       <RoutedClaxedoEventsProvider>
         <CloudAuthGate>
-          <Show when={config?.authEnabled} fallback={props.children}>
+          <Show when={posture.issuesSessions()} fallback={props.children}>
             <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
           </Show>
         </CloudAuthGate>
@@ -470,14 +504,14 @@ function BoundAccountPortProvider(props: ParentProps) {
 }
 
 /** PrincipalProvider with the account port injected as its second signed source. */
-function AccountPortPrincipalProvider(props: ParentProps<{ authEnabled: boolean }>) {
+function AccountPortPrincipalProvider(props: ParentProps<{ issuesSessions: boolean }>) {
   const account = useAccountPort()
   const signedAccount = () => {
     const state = account.state()
     return state.status === "signed" ? { userId: state.identity.userId } : undefined
   }
   return (
-    <PrincipalProvider authEnabled={props.authEnabled} signedAccount={signedAccount}>
+    <PrincipalProvider issuesSessions={props.issuesSessions} signedAccount={signedAccount}>
       {props.children}
     </PrincipalProvider>
   )
@@ -517,11 +551,11 @@ function AuthenticatedLayout(
   })()
 
   const resolveDefaultUrl = () => {
-    // e2e-only: let a spec force a non-loopback default server so the
-    // signed-auth redirect boundary (CloudAuthGate → /login for an anonymous
-    // principal on a non-loopback transport) is provable. Gated to the dev
-    // server / prebuilt e2e build; a real production build sets neither flag,
-    // so this constant-folds away and the window read is tree-shaken out.
+    // e2e-only: let a spec point the shell at a server that declares it issues
+    // sessions, so the redirect boundary (CloudAuthGate → /login for an
+    // anonymous principal) is provable. Gated to the dev server / prebuilt e2e
+    // build; a real production build sets neither flag, so this constant-folds
+    // away and the window read is tree-shaken out.
     const e2eServer = e2eServerUrlOverride()
     if (e2eServer) return e2eServer
     if (props.defaultServer) return props.defaultServer as string

@@ -9,6 +9,7 @@
 // `route.fulfill` cannot drip a body over time, so the app's own SSE-reconnect loop is
 // the delivery mechanism).
 import type { Page, Route } from "@playwright/test"
+import { resolveE2EAuthMode } from "../auth-mode"
 import { normalizeHarnessIdentity, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { SessionHarness } from "../../../agent-sdk-runtime/src"
 import type { SessionMeta } from "../../../claxedo-server-core/src/session/meta/types"
@@ -490,6 +491,18 @@ export type MockRuntimeOptions = {
    * state. Pass `[]` for a genuinely empty workspace.
    */
   workspaceFiles?: { path: string; content: string }[]
+  /**
+   * The posture this fixture's bootstrap declares in `deployment.issuesSessions`.
+   *
+   * Defaults to the suite's auth mode, because the two model two deployments:
+   * `test-user` is a signed user, which only a session-issuing central can
+   * have — the adapter's own test bypass runs inside an identity provider this
+   * app starts only where the server declared one — and `local-unsigned` is a
+   * visitor to a daemon that authenticates by loopback and has no accounts.
+   *
+   * A spec that pins one posture regardless of the mode sets it explicitly.
+   */
+  issuesSessions?: boolean
   /** Initial config persistence fails during `POST /session`, and later config PATCHes also return 500. */
   configPatchFailure?: boolean
   sessionArchive?: { delayMs?: number; failingSessionIds?: string[] }
@@ -849,6 +862,23 @@ function defaultReplyText(turn: number, promptText: string) {
   return `ack ${turn}: ${promptText}`
 }
 
+/**
+ * The `deployment` block a bootstrap body must carry.
+ *
+ * Every producer declares it, and the app's sign-in gate, identity provider and
+ * first-project canvas read nothing else — so a fixture that omits it models a
+ * server that does not exist and leaves those three surfaces resolving an error.
+ *
+ * The default follows the suite's auth mode, because the two model two
+ * deployments: `test-user` is a signed user, which only a session-issuing
+ * central can have, and `local-unsigned` is a visitor to a daemon that
+ * authenticates by loopback. A fixture whose subject is a hosted control plane
+ * or a signed node passes `true` regardless of the mode.
+ */
+export function bootstrapDeployment(issuesSessions?: boolean) {
+  return { issuesSessions: issuesSessions ?? resolveE2EAuthMode() !== "local-unsigned" }
+}
+
 function api(route: Route) {
   const type = route.request().resourceType()
   return type === "fetch" || type === "xhr"
@@ -856,6 +886,18 @@ function api(route: Route) {
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) })
+}
+
+function corsJson(route: Route, body: unknown, status = 200) {
+  return route.fulfill({
+    status,
+    contentType: "application/json",
+    headers: {
+      "Access-Control-Allow-Origin": route.request().headers().origin ?? new URL(route.request().url()).origin,
+      "Vary": "Origin",
+    },
+    body: JSON.stringify(body),
+  })
 }
 
 function textOf(parts: unknown): string {
@@ -1659,15 +1701,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
 
   /**
-   * The rows `GET /api/workspace?access=…` answers with — the SAME workspaces
+   * The rows `GET /api/workspace?host=…` answers with — the SAME workspaces
    * the resolve/connection/checkpoint routes already model, seen from the
    * control plane's side.
    *
-   * Only relay-backed workspaces exist here. A `local` workspace has no signed
-   * identity and is never registered with a control plane, so listing one would
-   * be inventing a row the real authority cannot produce; the local lane is
-   * answered by `/project` (`centralOwnsProjects`, workspace-catalog.ts) and
-   * `mergeWorkspaceCatalog` folds the two sides together.
+   * Only relay-backed workspaces exist here. A spec's `local` workspace has no
+   * signed identity and is never registered with a control plane, so listing
+   * one would be inventing a row the real authority cannot produce; the local
+   * lane is answered by `/project` (`centralOwnsProjects`, workspace-catalog.ts)
+   * and `mergeWorkspaceCatalog` folds the two sides together.
+   *
+   * A spec declares its workspaces in the PROJECT-INVENTORY word (`local` /
+   * `cloud` / `user-hosted`), which is what `/project` answers with and what
+   * the spec is written against. The control plane has no such word: it states
+   * where the workspace runs, so a row carries `backing` and a placement. This
+   * function is the translation, the same one the real hosted routes perform,
+   * which is why a spec never spells `backing` itself.
    *
    * `org_id`/`project_id`/`display_name` are REQUIRED by the authority's row
    * projection (see ./contracts/workspace-list.ts) — the type is what says so.
@@ -1703,9 +1752,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         },
         remote_directory: workspace.directory ?? directory,
         role: "owner",
-        // Reachability, not authorization — and only ever asked about a machine
-        // someone owns. `available: false` is the spec's way of modelling a
-        // workspace whose host is not serving it.
+        // Reachability, not authorization. Only a row the control plane places
+        // on an enrolled machine carries it — the provisioner is always up, so
+        // its rows state nothing here and a client that read a missing flag as
+        // offline would hide every cloud workspace. `available: false` is the
+        // spec's way of modelling a machine that is not serving its workspace.
         ...(workspace.kind === "user-hosted" ? { host_online: workspace.available !== false } : {}),
       })
     }
@@ -1903,9 +1954,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await route.fulfill({ status: image.status ?? 200, contentType: "image/png", body: image.body })
   })
 
+  // The only route here a spec can point at a FOREIGN origin: the posture
+  // declaration is read before the first render, and a spec that moves the
+  // shell's server URL off this origin still has to be answered. A fulfilled
+  // cross-origin response the browser may not read is indistinguishable from an
+  // unreachable server, which is a passing gate for the wrong reason.
   await page.route("**/api/claxedo/bootstrap**", (r) =>
     api(r)
-      ? json(r, {
+      ? corsJson(r, {
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
@@ -1914,6 +1970,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           // so. Without the declaration the app opens no workspace stream at
           // all and every spec here waits for frames that never come.
           events: { hostAggregate: true },
+          // The posture the sign-in gate, the identity provider and the
+          // first-project canvas all read. A fixture that declared nothing
+          // would leave the gate holding, which is what a server answering no
+          // declaration earns.
+          deployment: bootstrapDeployment(options.issuesSessions),
           project: [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])],
           provider: providerCatalogIndex(providerResponse()),
           provider_auth: { [providerIdFor(harness)]: [{ type: "api", label: "API key" }] },
@@ -2333,7 +2394,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   })
 
   // The control plane's workspace list — the sidebar catalog's only source for
-  // relay-backed workspaces (`workspaceCatalogQuery` asks for both access kinds
+  // relay-backed workspaces (`workspaceCatalogQuery` asks for both hosts
   // concurrently, src/features/workspaces/data/workspace-catalog.ts). An escape here
   // reaches the central origin (127.0.0.1:3001, nothing listening) and REJECTS, which
   // the catalog's loopback branch swallows (`.catch(() => [])`) — so the rail silently
@@ -2348,7 +2409,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const url = new URL(r.request().url())
     if (!isWorkspaceListPath(url.pathname) || r.request().method() !== "GET") return r.fallback()
     return json(r, workspaceListResponse({
-      access: url.searchParams.get("access"),
+      host: url.searchParams.get("host"),
       workspaces: controlPlaneWorkspaceRows(),
     }))
   })

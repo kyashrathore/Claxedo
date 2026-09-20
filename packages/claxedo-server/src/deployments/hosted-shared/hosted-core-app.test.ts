@@ -124,6 +124,35 @@ describe("cloud-workspace admission", () => {
   })
 })
 
+describe("deployment posture on the deployed central", () => {
+  // The app reads this before its first render, with nobody signed in, to learn
+  // whether it must gate at all. Asserted through the composed app rather than
+  // the route alone because everything in front of the route decides whether an
+  // anonymous caller ever reaches it — the unsigned-local gate and the default
+  // request guard both run first.
+  test("an anonymous browser reads the posture it has to satisfy", async () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+
+    const response = await app.request("/api/claxedo/bootstrap")
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ deployment: { issuesSessions: true } })
+  })
+
+  // This composition builds its own `enabled: true` auth config, so there is no
+  // misconfigured hosted central that serves a declaration: it either has auth
+  // or it never composes.
+  test("carries nothing that belongs to a machine", async () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+
+    const body = (await (await app.request("/api/claxedo/bootstrap")).json()) as Record<string, unknown>
+
+    expect(body.events).toEqual({ hostAggregate: false })
+    expect(body.host).toBeUndefined()
+    expect(body.path).toBeUndefined()
+  })
+})
+
 describe("hosted production Pi and connection discovery", () => {
   const catalogPath = "/api/claxedo/agent-config/providers?nativeHarness=pi"
   const headers = (subject = "alice") => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
