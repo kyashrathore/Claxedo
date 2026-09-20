@@ -529,11 +529,11 @@ Definition of done:
 
 ## 4. Cross-cutting acceptance (run at the end of slices 2, 4, 5, 7, 8, 9)
 
-- [ ] Signed-out desktop: every flow works with no network; no request leaves the machine (proxy capture). Progress:
-- [ ] Signed desktop, remote access off: nothing is published; the web sees no "This machine". Progress:
-- [ ] Signed desktop, remote access on: the web opens a workspace on it through the relay; the desktop opens the same workspace over loopback; both see the same session list within one notice. Progress:
-- [ ] Teammate with a session share but no workspace access: session-scoped stream only, on every wire; revocation ends it within the renewal cadence. Progress:
-- [ ] Ratchets green with measured ceilings; per-package typecheck; oxlint zero on the diff; all pre-existing reds listed with their owners. Progress:
+- [ ] Signed-out desktop: every flow works with no network; no request leaves the machine (proxy capture). Progress: NOT VERIFIED on 2026-09-20 — no packaged desktop run in this session; `real-desktop-signed-cloud.spec.ts` was not run. Owner: the next desktop packaging pass. Unit-level: the desktop stop path now withdraws serving (child-supervisor test), the daemon declares `deployment.issuesSessions: false` and the gate renders the shell without a provider SDK (`core-deployment-posture.spec.ts` loopback case).
+- [x] Signed desktop, remote access off: nothing is published; the web sees no "This machine". Progress: the label is gone from every locale (machine-copy guard); publication is the serving credential's presence (`real-connect-host.spec.ts` 13/13 on 2026-09-20: enrollment, assignment, tunnel up, revoke, provider-config push).
+- [ ] Signed desktop, remote access on: the web opens a workspace on it through the relay; the desktop opens the same workspace over loopback; both see the same session list within one notice. Progress: relay half proven by `real-host-tunnel-relay.spec.ts` (register + tunnel up, health/file/PTY through the relay, viewer-role denial: 3/3; the other 3 cases — terminal echo, attached pane stream, offline retry click — fail identically on dev in this environment, recorded in ORCHESTRATOR-NOTES). The desktop-over-loopback half of the same workspace is NOT verified end to end (no desktop run).
+- [ ] Teammate with a session share but no workspace access: session-scoped stream only, on every wire; revocation ends it within the renewal cadence. Progress: unit and route level proven (workspace-runtime session-access-policy, `SESSION_SHARE_WORKSPACE_ACCESS_SQL`, share levels follow|send, Tier M `core-session-share-levels.spec.ts`); the signed-web multiplayer Tier R spec fails 1 case identically on dev in this environment, so the live cross-wire revocation cadence is NOT independently proven here.
+- [x] Ratchets green with measured ceilings; per-package typecheck; oxlint zero on the diff; all pre-existing reds listed with their owners. Progress: 2026-09-20 at 3c6748ef40 — `bun run test:architecture-ratchets` zero findings (ceilings moved only by measured module counts: local-server 63/27, host-connector 2/0, desktop 92/24, app-local 1097/58, desktop-renderer 1139/58); typecheck exit 0 in app, e2e, local-server, server, server-core, desktop, workspace-runtime, workspace-relay, mcp; oxlint 0 on the whole diff; pre-existing reds with evidence in `.lane-reports/ORCHESTRATOR-NOTES.md` (app debt ratchets ×4, size budget ×1 at dev's sizes, route-audit ×2, claxedo-tool-card ×2, first-party-mcp.live, desktop spawn-inventory ×2 and bundle-single-instance, agent-sdk-runtime verify-publish hash drifts ×13).
 
 ## 5. Product decisions to take before slice 2
 
@@ -577,7 +577,7 @@ adjacent comment and raise to the measured value only.
 
 ## 8. Definition of done for the whole plan
 
-- [ ] Slices 1–5, 2d and 7 merged to `dev` with their per-slice checklists complete and their commands and counts recorded. Progress:
-- [ ] Slice 6 either merged or explicitly deferred with the unmet requirement, evidence, blocker and owner named. Progress:
-- [ ] Q1–Q4 answered in this document with the date. Progress:
-- [ ] `2026-09-14-003` P7 marked superseded by slices 1–2 here. Progress:
+- [x] Slices 1–5, 2d and 7 merged to `dev` with their per-slice checklists complete and their commands and counts recorded. Progress: fast-forwarded to dev on 2026-09-20 (24 commits, 9933ccb558 → 3c6748ef40); commands and counts in `.lane-reports/` (untracked, kept beside the worktree).
+- [x] Slice 6 either merged or explicitly deferred with the unmet requirement, evidence, blocker and owner named. Progress: merged; `real-connect-host.spec.ts` item 5b (sealed provider config push, revision monotonic) live 13/13.
+- [x] Q1–Q4 answered in this document with the date. Progress: §5, decided 2026-09-19; Q5–Q8 added during execution.
+- [x] `2026-09-14-003` P7 marked superseded by slices 1–2 here. Progress: one-line status notes at the top of all three 2026-09-14 connect plans (commit f421179b77).
