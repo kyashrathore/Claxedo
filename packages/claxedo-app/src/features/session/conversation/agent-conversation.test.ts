@@ -778,6 +778,20 @@ describe("fragment parts", () => {
     expect(refreshed[0]?.parts).toHaveLength(2)
   })
 
+  test("the canonical read of a partless turn clears the mark although its page is identical", () => {
+    const failed = { ...settled, error: { name: "UnknownError", data: { message: "400 blocked" } } } as Message
+    const page = () => agentConversationSnapshot({ messages: [failed], parts: { msg_assistant: [] } })
+    const first = mergeConversationSnapshot([], page(), { fragmentParts: true })
+    expect(agentConversationProjection(first).fragmentParts).toEqual(new Set(["msg_assistant"]))
+    const canonical = mergeConversationSnapshot(first, page(), {
+      order: "snapshot",
+      canonicalMessageIDs: new Set(["msg_assistant"]),
+      canonicalPartMessageIDs: new Set(["msg_assistant"]),
+    })
+    expect(agentConversationProjection(canonical).fragmentParts).toEqual(new Set())
+    expect(canonical).not.toBe(first)
+  })
+
   test("a snapshot that is not a fragment marks nothing", () => {
     const merged = mergeConversationSnapshot([], full())
     expect(agentConversationProjection(merged).fragmentParts).toEqual(new Set())
