@@ -368,7 +368,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
   })
 
 
-  // Attach from the web client to a session running on a user-hosted workspace and
+  // Attach from the web client to a session running on another machine's workspace and
   // receive its stream as it happens. The browser is a pure viewer: the session is
   // created host-side before it navigates, and the turn starts host-side after it
   // has attached.
@@ -584,7 +584,7 @@ test.describe("real user-hosted relay @core @tier-real", () => {
 
   // The real host-tunnel lifecycle, proven through the gate the product mounts for
   // a relay-backed workspace. What makes the gate reachable at all is the app
-  // classifying this workspace as user-hosted, and that classification reads the
+  // classifying this workspace as machine-placed, and that classification reads the
   // project inventory (`src/platform/runtime/session-workspace.ts` through
   // `signedWorkspaceFromProjects` / `localWorkspaceInProjects`). The inventory the
   // app resolves depends on the transport it picks for its control plane: a

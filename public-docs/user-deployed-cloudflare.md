@@ -252,12 +252,14 @@ hash. The authenticated owner then admits only the returned subject through
 issuer from the deployed auth descriptor, while the D1 authority atomically creates the canonical user, human actor,
 and single-organization membership. Only after that admission may the second browser use ordinary product routes.
 
-The private-session proof must use the public cold user-hosted path: request
-`POST /api/workspace/:id/user-hosted/challenge`, sign the returned canonical P-256 challenge with the host key, and
-submit `POST /api/workspace/:id/user-hosted/register`. Challenge issuance does not create a workspace; the valid signed
-registration is the first workspace write. Reserve and register the private session through the public control/runtime
-authority routes, add the admitted user to a team, grant and revoke the session share, and observe the second browser's
-inventory/stream before and after revocation. Direct D1 inserts are not acceptance evidence.
+The private-session proof must use the public owner-assignment path: enroll the machine with
+`POST /api/claxedo/host/enrollments/requests` and `POST /api/claxedo/host/enrollments`, then assign a directory on it
+with `POST /api/workspace/:id/host-assignment` naming the enrolled `hostId`. Enrolling a machine creates no workspace;
+the assignment cold-registers it and mints the first serving credential. That route carries no challenge and no machine
+signature, because liveness is the enrollment lease and the machine's consent is its heartbeat-acked served set.
+Reserve and register the private session through the public control/runtime authority routes, add the admitted user to
+a team, grant and revoke the session share, and observe the second browser's inventory/stream before and after
+revocation. Direct D1 inserts are not acceptance evidence.
 
 The repository's headed acceptance runner performs that public-route sequence and keeps the two OAuth sessions in
 separate mode-0700 profiles under the ignored `.artifacts/deployed-cloudflare-acceptance/` directory. It never accepts

@@ -451,7 +451,7 @@ diagnosis; Phase 0 either confirms it or records "no wire".
       description of the event system survives anywhere. Progress: the
       handler headers (`routes/events.ts`, `shell/events.ts`), the reader
       header (`claxedo-events.tsx`), `claxedo-event-targets.ts`,
-      `session-event-scope.ts`, `user-hosted-workspaces.md` §F and the
+      `session-event-scope.ts`, `workspaces-on-a-host.md` §F and the
       runtime README were aligned in `bcdf50329e` and re-aligned after
       rounds 3 and 4 (two control planes on a signed desktop; the routed
       workspace's stream, not one per open workspace).

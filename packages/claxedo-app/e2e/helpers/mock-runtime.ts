@@ -1018,8 +1018,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   // The two streams. `cp/events` carries the control plane's notices, flat.
   // `wr/events` carries a workspace runtime's frames, `{ directory, payload }`:
-  // the daemon's host aggregate carries every local workspace's, and the cloud
-  // workspace's own stream carries its own and nothing else.
+  // the daemon's host aggregate carries a frame for every runtime it serves,
+  // and a relay-backed workspace's own stream carries its own and nothing else.
   const cloudDirectory = options.cloud?.workspaceId
   const controlPlaneBus = new EventBus()
   const workspaceFanout = new FanoutBus()
@@ -1605,7 +1605,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return harnessModels[cloudHarness]?.[0] ?? BIG_PICKLE
   }
 
-  // Cloud/user-hosted drafts never touch the local readiness POST/polling
+  // A draft on a relay-backed workspace never touches the local readiness POST/polling
   // endpoint (`STATE MODEL` in core-harness-ownership-cloud.spec.ts) — status
   // is unconditionally "ready" the instant a harness is picked, so there is
   // no draft-time "applying"/"error" state to model here.
@@ -2337,7 +2337,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // concurrently, src/features/workspaces/data/workspace-catalog.ts). An escape here
   // reaches the central origin (127.0.0.1:3001, nothing listening) and REJECTS, which
   // the catalog's loopback branch swallows (`.catch(() => [])`) — so the rail silently
-  // loses every cloud/user-hosted row.
+  // loses every relay-backed row.
   //
   // Registered BEFORE `/resolve`, `/drivers`, `/create`, `/:id/connection` and
   // `/:id/checkpoints` so those keep winning (Playwright resolves handlers
@@ -3011,8 +3011,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // so an unmocked reservation does not degrade, it ABORTS the send: no session
   // create, no prompt, no reply. It is mounted on the PRIMARY origin for every
   // page (never relay-prefixed, and never gated on `cloud`) because it is the
-  // control plane's route, taken by any relay-backed workspace — cloud and
-  // user-hosted alike.
+  // control plane's route, taken by any relay-backed workspace whichever host
+  // serves it.
   await contractRoute(page, `**${SESSION_REGISTRATION_RESERVE_PATH}`, (r) => {
     if (!api(r)) return r.continue()
     if (r.request().method() !== "POST") return r.fallback()

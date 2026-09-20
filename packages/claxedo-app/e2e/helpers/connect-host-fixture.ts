@@ -14,6 +14,7 @@ import path from "node:path"
 import { stopChild as stopOwnedChild } from "./child-process"
 import { claudeScriptedEnv, type ScriptedModelServer } from "./scripted-model-server"
 import { REPO_ROOT, SERVER_DIR } from "./web-signed-relay-harness"
+import type { ControlPlaneWorkspaceRow } from "./contracts/workspace-list"
 
 export const CLI_ENTRY = path.join(REPO_ROOT, "packages", "cli", "src", "index.ts")
 
@@ -200,12 +201,18 @@ export async function machines(fixture: RunningConnectFixture): Promise<Machine[
   return body.machines ?? []
 }
 
-export type UserHostedWorkspace = { workspace_id: string; remote_directory?: string; host_online?: boolean; display_name?: string }
-
-export async function userHostedWorkspaces(fixture: RunningConnectFixture, token?: string): Promise<UserHostedWorkspace[]> {
-  const body = await json<{ workspaces: UserHostedWorkspace[] }>(
+/**
+ * The rows for workspaces placed on an enrolled machine.
+ *
+ * The row type is the authority's own projection rather than a field list
+ * restated here, so a field renamed or dropped in `listWorkspaces` fails this
+ * package's typecheck instead of silently answering `undefined` to a spec.
+ * `host_online` is reachability and only a `local-worktree` row carries it.
+ */
+export async function placedWorkspaces(fixture: RunningConnectFixture, token?: string): Promise<ControlPlaneWorkspaceRow[]> {
+  const body = await json<{ workspaces: ControlPlaneWorkspaceRow[] }>(
     await fetch(`${fixture.info.backendUrl}/api/workspace?access=user-hosted`, { headers: owner(fixture, token) }),
-    "list user-hosted workspaces",
+    "machine-placed workspace list",
   )
   return body.workspaces
 }

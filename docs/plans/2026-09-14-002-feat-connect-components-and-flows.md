@@ -5,6 +5,8 @@ status: proposal — companion to 2026-09-14-001
 date: 2026-09-14
 ---
 
+> Status note (2026-09-20): superseded in part by `docs/plans/2026-09-19-001-refactor-host-is-a-machine.md`, which replaces the workspace kinds and the two enrollment paths mapped here with one host identity and a wire the client derives at open time. Every "Host — desktop laptop" entry marked *Later* (main stops relaying heartbeats, the child uses the machine-signed transport, the daemon verifies the stamp at ingress and decides per request) is done by that plan's slices 1 and 2; the user-managed host, relay and control-plane components that P1–P3 of `2026-09-14-003` delivered stand as written. The flows below are the record of what was planned on 2026-09-14.
+
 # Remote machine connection — components and flows
 
 Companion to `2026-09-14-001-feat-connect-enrollment-foundation-proposal.md` (code references and evidence) and `2026-09-14-003-feat-connect-implementation-plan.md` rev 4 (the controlling design). Where a component entry or flow below differs from the plan, the plan wins; the differences are marked. This document names each component in plain terms, says where it runs, what it does today, and what changes. Flows follow, today beside needed.

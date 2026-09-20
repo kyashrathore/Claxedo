@@ -9,11 +9,32 @@ import {
   workspaceResponse,
   type WorkspaceResponse,
 } from "../../../../claxedo-server/src/workspace/workspace-response"
+import { signedWorkspaceJson } from "../../../../claxedo-server/src/workspace/signed-access"
+import type { ControlPlaneWorkspaceRow } from "./workspace-list"
 
 export function workspaceResolveResponse(workspace: Workspace): WorkspaceResponse {
   const response = workspaceResponse(workspace)
   if (!response) throw new Error(`workspace resolve contract produced no response for ${workspace.id}`)
   return response
+}
+
+/**
+ * Resolve as a SIGNED control plane answers it, from the same authority row the
+ * list returns.
+ *
+ * A different producer from `workspaceResolveResponse` above, not a variant of
+ * it: that one projects a row this server stores, while this one projects a row
+ * the AUTHORITY holds for a workspace some other host serves. The two disagree
+ * on `kind` for the same placement — the stored projection can only say `local`
+ * or `cloud`, while this one says `user-hosted` for a `local-worktree` backing —
+ * so a fixture that picked the wrong producer would hand the app a host kind the
+ * real route never sends it.
+ *
+ * `signedWorkspaceJson` derives `kind` and the `backing` object from the row's
+ * own `backing` string, so a fixture cannot put the two out of step.
+ */
+export function signedWorkspaceResolveResponse(row: ControlPlaneWorkspaceRow) {
+  return signedWorkspaceJson({ workspace: row }, row.workspace_id)
 }
 
 /**

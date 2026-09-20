@@ -5,6 +5,8 @@ status: proposal — investigation only, not authorized for implementation
 date: 2026-09-14
 ---
 
+> Status note (2026-09-20): superseded in part by `docs/plans/2026-09-19-001-refactor-host-is-a-machine.md`, which makes the desktop and `claxedo connect` one host identity, gives a workspace a placement instead of a `user-hosted` kind, and removes the account heartbeat described here. The §2.B/§2.F desktop findings (account bearer on every beat, every workspace member reaching every session) are the defects that plan's slices 1 and 2 remove, and they take over the slice 4 sketch in §11. §1's slice 1 (machine principal, invitations, `claxedo connect`) landed as P1–P3 of `2026-09-14-003` and stands. The rest is the record of what was observed and proposed on 2026-09-14.
+
 # Shared setup, enrollment and connectivity foundation — investigation and proposal
 
 Every claim below is tagged: **[observed]** = read in the code at dev `d12391a146`; **[probe]** = run live in this investigation (commands in §14); **[inference]** = follows from observed code but not executed; **[proposed]** = does not exist today.

@@ -19,14 +19,15 @@
  *
  * Every runtime route here answers 409, so anything that renders can only have come from
  * the control plane; that is the enforcement, never a sleep. The workspace gate must let
- * this through: a dead cloud workspace renders its surface via `hasCentralHistory`
- * (`src/features/workspaces/data/workspace-gate.tsx`) instead of the offline panel, while
- * user-hosted keeps the offline panel because it genuinely has no central copy. An empty
- * list is honest only when the control plane itself returned nothing.
+ * this through: a dead provisioner-placed workspace renders its surface through
+ * `hasCentralHistory` instead of the offline panel, while a machine-placed one keeps the
+ * offline panel because it genuinely has no central copy. An empty list is honest only
+ * when the control plane itself returned nothing.
  *
  * No turn is ever sent here, so no relay and no harness is mounted. Sending turns on a
- * cloud workspace is core-harness-ownership-cloud's, provisioning is
- * core-cloud-provisioning's, and user-hosted workspaces are core-user-hosted-workspace's.
+ * provisioner-placed workspace is core-harness-ownership-cloud's, provisioning is
+ * core-cloud-provisioning's, and machine-placed workspaces are
+ * core-user-hosted-workspace's.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionListPath } from "../helpers/contracts/session-list"

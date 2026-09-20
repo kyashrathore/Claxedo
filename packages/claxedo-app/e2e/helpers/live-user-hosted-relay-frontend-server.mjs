@@ -9,15 +9,17 @@
 // the LOCAL, unsigned bootstrap path for ANY request whose real socket peer is loopback
 // (`isLoopbackLocalRequest`, packages/claxedo-server-core/src/platform/http/peer-address.ts)
 // REGARDLESS of a valid bearer token being present — this is deliberate (desktop/local
-// dev shortcut). A workspace's real `kind: "user-hosted"` value, however, is ONLY present
-// in the SIGNED bootstrap body (`signedBootstrapBody` -> `services.authority.
-// listWorkspaces(auth)` -> `signedBootstrapProjects`, reading `row.access`) — the local
-// body's project scan reports the raw `Workspace.kind` (`"local"|"cloud"` only, from
-// `workspace-store.ts`), which the client's `sessionWorkspaceRuntimeRef` resolver reads
-// as `signedKind` and therefore never sees "user-hosted" through the local path. Since
-// this whole spec necessarily runs over loopback (its dedicated backend and frontend are
-// both on 127.0.0.1 by construction), the unsigned-local shortcut would otherwise swallow
-// every control-plane request. `isLoopbackLocalRequest` fails closed on any
+// dev shortcut). A MACHINE placement, however, reaches the client only through the
+// SIGNED bootstrap body: its projection (`signedBootstrapBody` -> `services.authority.
+// listWorkspaces(auth)` -> that file's `signedBootstrapProjects`) passes the control
+// plane's `backing` through, so a workspace another machine serves arrives as
+// `backing: "local-worktree"`. The local body answers `listProjects()` instead, whose
+// rows carry the daemon store's own `kind` — `"local" | "cloud"`, a column with no word
+// for a machine — so `rowHostKind` narrows them to `self` or `provisioner` and the
+// client's `sessionWorkspaceRuntimeRef` resolver never reads a `signedKind` of
+// `"machine"` through the local path. Since this whole spec necessarily runs over
+// loopback (its dedicated backend and frontend are both on 127.0.0.1 by construction),
+// the unsigned-local shortcut would otherwise swallow every control-plane request. `isLoopbackLocalRequest` fails closed on any
 // forwarded-client header (`FORWARDED_CLIENT_HEADERS`): forwarding destroys the direct
 // socket-to-client relationship unsigned-local trust is built on, so a request carrying
 // one is never treated as local no matter what its socket peer is. This launcher is

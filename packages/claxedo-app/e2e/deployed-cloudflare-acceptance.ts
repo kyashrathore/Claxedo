@@ -438,14 +438,14 @@ async function jsonRequest(
 }
 
 /**
- * This owner's user-hosted workspace row, or undefined.
+ * The row for a workspace placed on this owner's machine, or undefined.
  *
  * The list is the only signed read that answers "does this workspace exist for
  * me", and the acceptance run needs it twice: absent after enrollment, present
  * after assignment. Those two answers together ARE the cold-registration
  * proof.
  */
-async function userHostedWorkspace(
+async function placedWorkspaceRow(
   context: BrowserContext,
   config: DeployedAcceptanceConfig,
   env: Environment,
@@ -453,7 +453,7 @@ async function userHostedWorkspace(
 ) {
   const body = record(
     await jsonRequest(context, config, "run-multiplayer", env, "private_session", "/api/workspace?access=user-hosted"),
-    "user-hosted workspace list",
+    "machine-placed workspace list",
   )
   const rows = Array.isArray(body.workspaces) ? body.workspaces : []
   return rows
@@ -784,7 +784,7 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
     if (textField(enrollment.host_id, "enrollment.host_id") !== hostId) {
       throw new Error("enrollment returned a different host id than the one enrolled")
     }
-    if (await userHostedWorkspace(owner, config, env, workspaceId)) {
+    if (await placedWorkspaceRow(owner, config, env, workspaceId)) {
       throw new Error("enrolling a machine created a workspace, which it must never do")
     }
 
@@ -910,7 +910,7 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
     // Cold registration is only proven by the workspace EXISTING now, since it
     // did not before the assignment.
     const workspace = record(
-      await userHostedWorkspace(owner, config, env, workspaceId),
+      await placedWorkspaceRow(owner, config, env, workspaceId),
       "cold workspace registration.workspace",
     )
     const projectId = textField(workspace.project_id ?? workspace.projectId, "workspace.project_id")

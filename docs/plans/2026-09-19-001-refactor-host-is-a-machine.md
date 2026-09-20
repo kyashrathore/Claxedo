@@ -488,7 +488,46 @@ Definition of done:
 - [ ] docs/tech-docs, public-docs, AGENTS.md/CLAUDE.md fragments and plan cross-references describe only the current model; the 09-14 plans are marked superseded where this branch replaced them. Progress:
 - [ ] One adversarial review per package (app, desktop, local-server, workspace-runtime, claxedo-server, server-core, host-connector, cli, e2e) returns zero surviving assumptions. Progress:
 
-## 4. Cross-cutting acceptance (run at the end of slices 2, 4, 5, 7)
+### Slice 8 — Deployment posture is the server's declaration, not the build's
+
+Retired model 7 (Slice 7's list) survives in the app: `server-transport.ts`
+decides "loopback" from the URL and "signed-web" from `VITE_AUTH_ENABLED`
+(`app/entry/index.tsx`), with three production readers (`app/entry/app.tsx`,
+`browser-auth-startup.ts`, `first-project-canvas.tsx`) and the `transport.ts`
+placement helpers. The server already declares its aggregate
+(`events.hostAggregate`) and its own enrollment (`host.enrollment`); it
+declares its posture the same way (`deployment: { issuesSessions:
+boolean }` in the bootstrap body from the composition's auth config), and the
+app's central transport, sign-in gating and placement helpers read that
+declaration. The build flag is deleted from the app's config surface. The 67
+remaining comment lines that say "local workspace" / "cloud workspace" as
+shorthand are rewritten from the code in the same pass.
+
+Definition of done:
+- [ ] `VITE_AUTH_ENABLED` and `centralTransportForDeployment` have zero readers in `packages/claxedo-app/src`; `centralTransportForServer` decides only which wire opens a loopback socket, never posture. Progress:
+- [ ] The three surfaces (sign-in gate, browser auth startup, first-project canvas) behave identically on a loopback daemon, a signed self-hosted node on localhost, and the hosted web, driven by the server's declaration; Tier M covers the three postures with mocked bootstrap bodies. Progress:
+- [ ] The comment sweep leaves zero `local workspace` / `cloud workspace` / `hosted workspace` phrases in `packages/claxedo-app/src` outside i18n keys that name a placement. Progress:
+
+### Slice 9 — One word for a hosted placement on the wire and in the relay
+
+The server residue audit found the relay contract spelling one fact twice:
+`RelayTarget` carries `access: "cloud" | "user-hosted"` beside `backing`,
+`workspace-relay/src/auth.ts` refuses any unmatched pair, and
+`user-hosted-forwarding.ts` / `cloudflare.ts` branch on `access`; the
+`UserHosted` identifier family (139 hits across workspace-relay,
+server-core, claxedo-server and two fixture paths the app's e2e spawns by
+string: `createD1UserHostedTargetResolver`, `user-hosted-relay-target.ts`,
+`user-hosted-tunnel.ts`, `user-hosted-relay-fixture.mjs`) names the retired
+kind. This slice collapses the relay contract to `backing` alone and renames
+the family for what it is (a machine-placed workspace reached through a
+host tunnel), as one reviewable change with the e2e spawn paths updated in
+the same commit.
+
+Definition of done:
+- [ ] `RelayTarget` and the relay's admission carry only `backing`; the forwarding branch reads it; relay tests re-derived; zero `access` on the relay wire. Progress:
+- [ ] `grep -rn "UserHosted\|user-hosted" packages/workspace-relay packages/claxedo-server-core packages/claxedo-server packages/claxedo-app/e2e` returns only the two wire words parsed at a boundary or nothing; fixture paths renamed and the spawning specs updated. Progress:
+
+## 4. Cross-cutting acceptance (run at the end of slices 2, 4, 5, 7, 8, 9)
 
 - [ ] Signed-out desktop: every flow works with no network; no request leaves the machine (proxy capture). Progress:
 - [ ] Signed desktop, remote access off: nothing is published; the web sees no "This machine". Progress:

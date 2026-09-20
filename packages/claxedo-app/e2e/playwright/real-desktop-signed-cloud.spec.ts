@@ -13,7 +13,7 @@
  * ANATOMY — A packaged asar build talks through a real X-Forwarded-For proxy
  * to the real hosted-node app, SQLite authority, local JWKS issuer, OAuth
  * refresh endpoint, and host-enrollment routes. Playwright drives production
- * preload IPC and the real Settings > Devices surface.
+ * preload IPC and the real Settings > Machines surface.
  *
  * BEHAVIORS — 1. An expired encrypted credential refreshes on its first named
  * operation and the rotated record restores after restart. 2. Signed launch

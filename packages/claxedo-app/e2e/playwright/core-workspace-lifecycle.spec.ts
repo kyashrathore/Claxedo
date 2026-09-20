@@ -8,6 +8,7 @@
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { isOrgListPath, orgListResponse } from "../helpers/contracts/org-list"
+import { workspaceResolveResponse } from "../helpers/contracts/workspace-resolve"
 import { expect, test, type Page } from "@playwright/test"
 
 const DIR = "/tmp/e2e-core-lifecycle-main"
@@ -37,7 +38,7 @@ type SeedProject = {
     workspaceId?: string
     directory?: string
     workspace_name?: string | null
-    kind?: "local" | "cloud" | "user-hosted"
+    kind?: "local" | "cloud"
     available?: boolean
   }>
 }
@@ -172,10 +173,9 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   // "ready", never mints a connection, and the role-gated "Delete workspace" kebab item
   // behind `canMutateWorkspace` never renders at all.
   //
-  // The response mirrors the server's own projection (`workspaceResponse`,
-  // packages/claxedo-server-core/src/workspace/store/response.ts) and is derived from this
-  // fixture's seeded `workspaces` map, so a project seeded with a cloud main workspace
-  // resolves as cloud.
+  // The stored row goes through the route's own projection, so `access`, `backing`
+  // and `directory` are whatever the server would derive from this fixture's seeded
+  // `workspaces` map rather than a second field table that can drift from it.
   const resolveHandler = (r: import("@playwright/test").Route) => {
     if (!api(r.request())) return r.continue()
     const url = new URL(r.request().url())
@@ -188,19 +188,17 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
     const record = hit?.[1]
     const directory = record?.directory ?? hit?.[0] ?? wantedDir ?? DIR
     const kind = record?.kind ?? "local"
-    const backing = kind === "cloud" ? { kind: "cloud-vm" } : kind === "user-hosted" ? { kind: "user-hosted" } : { kind: "local-worktree" }
-    return json(r, {
-      workspaceId: record?.workspaceId ?? record?.id ?? `local-${proj.id}`,
-      projectId: proj.id,
+    return json(r, workspaceResolveResponse({
+      id: record?.workspaceId ?? record?.id ?? `local-${proj.id}`,
+      project_id: proj.id,
       directory,
-      workspaceName: record?.workspace_name ?? null,
-      access: kind === "cloud" ? "cloud" : kind === "user-hosted" ? "user-hosted" : "local",
-      backing,
+      ...(kind === "cloud" ? { remote_directory: directory } : {}),
+      ...(record?.workspace_name ? { workspace_name: record.workspace_name } : {}),
       kind,
-      driver: null,
       status: "ready",
-      git: { repo: null, branch: null, remote: null },
-    })
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }))
   }
   await page.route("**/api/workspace/resolve**", resolveHandler)
   await page.route("**/api/claxedo/workspace/resolve**", resolveHandler)

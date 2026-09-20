@@ -1,130 +1,31 @@
 /**
- * Connecting to a user-hosted workspace: a real machine somebody is running `claxedo up`
- * on, reached through the Workspace Relay tunnel. Nothing is provisioned or cloned — the
- * workspace already exists — so the whole "getting ready" story is about reaching it.
- * Everything here is mocked; a real tunnel, real JWTs, WS multiplexing and transport-layer
- * role enforcement belong to live-user-hosted-relay.spec.ts.
+ * Opening a workspace placed on another machine, over the relay. Nothing is
+ * provisioned or cloned, so everything here is about reaching a runtime that
+ * already exists. A real tunnel, real JWTs and transport-layer role enforcement
+ * are real-user-hosted-relay.spec.ts's; this file mocks the wire.
  *
- * The connection authority is the one cloud workspaces use: `workspaceConnection`, keyed by
- * `workspaceId` and ref-counted across mounted panes. `WorkspaceGate` renders
- * `CloudStartupView variant="user-hosted"` until status is `ready`, `WorkspaceOfflineView`
- * when status is `{offline: reason}`, and its children once ready.
+ * Four facts the assertions lean on, none of which the selectors show:
+ *   - `prepareMachineRuntime` calls `onOffline` on the FIRST transient health
+ *     miss, not after N consecutive ones, while its retry loop keeps running
+ *     underneath. A single relay hiccup therefore flips the gate to the offline
+ *     view and can still recover to ready.
+ *   - Its three timing constants are not overridable from `driveConnection`, so
+ *     a persistently offline host takes the whole budget: 15 attempts, 1500ms
+ *     apart, each capped at 6000ms.
+ *   - `acquireWorkspaceConnection` renders a reconnect inside 60s as ready from
+ *     frame zero (`warmMachine`, `keepReadyWhileChecking`), so "paused" shows up
+ *     as ready-then-offline rather than as a connecting spinner.
+ *   - `WorkspaceOfflineView` supplies its own copy for reason `"no-host"`;
+ *     `prepareMachineRuntime`'s internal default message differs and never
+ *     reaches the screen.
  *
- * STATE MODEL — the SAME single connection authority as cloud workspaces owns this:
- * `workspaceConnection` (in-memory Solid store, `src/features/workspaces/data/
- * workspace-connection.ts`), keyed by `workspaceId`, ref-counted across mounted panes.
- * `WorkspaceGate` (`src/features/workspaces/data/workspace-gate.tsx`) renders `CloudStartupView
- * variant="user-hosted"` while `connections[workspaceId].status !== "ready"`, the terminal
- * `WorkspaceOfflineView` while `status` is `{offline: reason}`, and `props.children`
- * (the real session/composer surface) once `status === "ready"`.
- *   Kind resolution — `sessionWorkspaceRuntimeRef` (`src/platform/runtime/session-
- *   workspace.ts`) reads the workspace's kind off the signed project inventory
- *   (`/api/claxedo/bootstrap`'s `project[].workspaces` map); a `ws_`-shaped workspaceId
- *   with NO matching inventory entry DEFAULTS to `"user-hosted"` (never `"cloud"` —
- *   `"cloud"` would route through the sandbox-provisioning resolve endpoint, which 404s
- *   for a workspace that has no central sandbox). This spec registers the workspace
- *   explicitly as `kind: "user-hosted"` for clarity rather than relying on the default.
- *   Connect sequence — `acquireWorkspaceConnection` → `driveConnection` (kind
- *   `"user-hosted"`) calls `prepareUserHostedRuntime` (`src/platform/runtime/cloud/
- *   workspace-runtime-store.ts`) directly — NO `/api/workspace/resolve` polling and NO `provision`
- *   SSE stream (that machinery is cloud-only). `prepareUserHostedRuntime`: (1) emits
- *   `connecting_workspace` then, synchronously right after (no network yet), emits
- *   `establishing_relay`; (2) builds a `workspace-relay` transport and calls
- *   `transport.fetch("/api/wr/health")` in a retry loop (up to `USER_HOSTED_HEALTH_MAX_
- *   ATTEMPTS`=15 attempts, `USER_HOSTED_HEALTH_RETRY_MS`=1500ms apart, each probe capped
- *   at `USER_HOSTED_HEALTH_TIMEOUT_MS`=6000ms) — the FIRST call to `transport.fetch`
- *   lazily mints the relay connection (`GET /api/workspace/:id/connection`, cached by
- *   `openWorkspaceConnection`) before proxying through `${relayUrl}/workspaces/:id/api/wr/
- *   health`; (3) a 502/503/409 response (or a network/abort error) is TRANSIENT — the loop
- *   emits `checking_health` and keeps retrying, but ALSO calls `onOffline` on the very
- *   FIRST such miss (not debounced to "N consecutive misses") — `workspace-connection.ts`
- *   wires that straight to `setOffline(workspaceId, "no-host", message)`, so a single
- *   transient relay hiccup DOES flip the gate to the offline view even though the retry
- *   loop keeps running underneath and can still recover to `ready` — see BEHAVIORS #5;
- *   (4) any other non-2xx fails FAST (no
- *   retry) with a generic error, not `offline`; (5) success emits `checking_health` then
- *   `ready`. None of these three timing constants are overridable from the app's call
- *   site (`driveConnection` calls `prepareUserHostedRuntime` with no attempt/delay/timeout
- *   overrides), so a persistent-offline scenario in this spec genuinely takes the full
- *   retry budget (~21s) — there is no way to speed it up short of monkey-patching the
- *   module, which this spec does not do.
- *   Reload / warm start — `acquireWorkspaceConnection` remembers the last successful
- *   connect per `workspaceId` in `localStorage['claxedo.workspace-connection.ready.v1']`
- *   with a 60s TTL (`wasRecentlyReady`). A user-hosted workspace that reconnects within
- *   that window is optimistically rendered `ready` from frame zero (`warmUserHosted`) —
- *   `driveConnection` still runs `prepareUserHostedRuntime` in the background
- *   (`keepReadyWhileChecking: true`, so it does NOT reset status to "connecting" first),
- *   and if the host is now actually unreachable, the SAME `onOffline`/`setOffline` path
- *   flips the optimistic `ready` render to the offline view once the background health
- *   check reports it. This is the mechanism this spec pins as "pause" — a host that goes
- *   offline between an earlier successful connect and a later reload of the same page
- *   surfaces as an offline transition, not a stuck stale-ready UI. NONE of this state
- *   lives in a session/turn sense — it is connection-authority state, entirely orthogonal
- *   to the session timeline, and (aside from the localStorage warm-start marker) is
- *   in-memory only, fully discarded by a real page reload.
- *   Share/register — sharing is MACHINE level and no longer a per-workspace gesture.
- *   Enabling remote access (Settings > Devices) publishes every local workspace this
- *   machine holds, and one opened later is published as soon as the inventory reports it.
- *   The reconciler is `useLocalWorkspaceAutoShareDriver` (`features/workspaces/data/auto-
- *   share-local-workspaces.tsx`), mounted once by the app shell in `app/entry/runtime-
- *   providers.tsx`; per workspace it still fires the same ONE-SHOT
- *   `publishWorkspacePlacement` (`features/workspaces/data/share-workspace.ts`) →
- *   `POST /api/workspace/:id/host-assignment`. It does not touch `workspaceConnection` at
- *   all — it is orthogonal to the connect pipeline above. Which workspaces qualify is
- *   still `localWorkspaceShareTarget`
- *   finding a non-cloud workspace row for the clicked directory (falls back to the
- *   project's own id/worktree when the directory equals the project's main worktree, so
- *   no prior workspace registration is required to reach it).
- *
- * ANATOMY —
- *   `[data-component="cloud-startup-view"]` with `variant="user-hosted"` — same component
- *     cloud workspaces use (`src/features/session/ui/components/cloud-startup-view.tsx`),
- *     rendering the DISTINCT `USER_HOSTED_STARTUP_PIPELINE` (3 keys, in order): `connecting_
- *     workspace` ("Connecting to workspace"), `establishing_relay` ("Establishing relay
- *     tunnel"), `checking_health` ("Checking runtime health") — never cloud's 4-key
- *     pipeline (`acquiring_sandbox`/`cloning`/`starting_runtime`/`waiting_health`). Its
- *     heading reads exactly "Connecting to workspace" (`isUserHosted() ? "Connecting to
- *     workspace" : "Preparing workspace"`). The detail line under it is GENERIC ("The
- *     composer unlocks when the runtime is ready.") for a plain mid-pipeline step; a
- *     `cloudSummary()` sentence appears only on error or ready-handoff — so this spec
- *     proves the 3-step pipeline via the row labels themselves, not a step-specific
- *     summary sentence.
- *   `[data-testid="workspace-offline"]` (`src/features/workspaces/data/workspace-gate.tsx`'s
- *     `WorkspaceOfflineView`) — the terminal "can't reach it" state for reason `"no-
- *     host"`: title "Workspace host is offline", detail EXACTLY "Start it by running
- *     `claxedo up` on the machine that serves this workspace, then retry." (note: this is
- *     the GATE's own copy, distinct from `prepareUserHostedRuntime`'s internal default
- *     offline message string, which differs slightly and is never rendered directly since
- *     the gate always supplies its own `OFFLINE_COPY` text). Not terminal (`isTerminalReason
- *     ("no-host") === false`), so `[data-testid="workspace-offline-retry"]` ("Retry")
- *     renders and calls `retryWorkspaceConnection`.
- *   `[role="textbox"][aria-label*="Ask anything"]` — once the gate renders children, the
- *     draft composer appears exactly like a local/cloud session (proof the gate unlocked).
- *   Settings > Devices — the one remote-access surface. Off state offers a single
- *     "Enable remote access" button; once on, the machine card states `Serving N
- *     workspaces` beside a live dot that is green only when the published set equals the
- *     machine's local inventory. There is no per-workspace tick list and no per-workspace
- *     QR: the rail's old "Share workspace" kebab item was removed with them.
- *
- * A successful connect is remembered per workspace in
- * `localStorage['claxedo.workspace-connection.ready.v1']` for 60s. A reconnect inside that
- * window renders `ready` from frame zero while the health check runs behind it
- * (`keepReadyWhileChecking`, so status is not reset to connecting first), and the same
- * `onOffline` path flips that optimistic render to the offline view if the host has since
- * gone away. That transition is what "paused" looks like.
- *
- * `"no-host"` is the only offline reason exercised here, and it is not terminal, so the
- * offline view offers Retry. Its copy comes from the gate's own `OFFLINE_COPY`;
- * `prepareUserHostedRuntime` carries a slightly different default message that is never
- * rendered.
- *
- * Sharing is a machine-level gesture, not a per-workspace one: enabling remote access in
- * Settings > Devices publishes every local workspace this machine holds, reconciled by
- * `useLocalWorkspaceAutoShareDriver` through the same one-shot
- * `publishWorkspacePlacement` → `POST /api/workspace/:id/host-assignment`. It never
- * touches `workspaceConnection`.
+ * Sharing is machine-level. Enabling remote access in Settings > Machines
+ * publishes every workspace this machine holds through
+ * `useLocalWorkspaceAutoShareDriver` → `publishWorkspacePlacement` →
+ * `POST /api/workspace/:id/host-assignment`, and never touches
+ * `workspaceConnection`. There is no per-workspace share gesture to assert.
  */
-import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isWorkspaceResolvePath, workspaceResolveResponse } from "../helpers/contracts/workspace-resolve"
 import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
 import {
   isSessionRegistrationReservePath,
@@ -212,8 +113,8 @@ function textOf(parts: unknown): string {
 // Cursor-resumed SSE event log matching e2e/helpers/mock-runtime.ts's EventBus
 // and core-cloud-provisioning.spec.ts. Each concurrent reader receives every
 // event in order and resumes with its own Last-Event-ID. Duplicated here
-// because mock-runtime.ts's cloud/relay support does not model the user-hosted
-// mint/health sequence this spec needs.
+// because mock-runtime.ts's cloud/relay support does not model the mint/health
+// sequence a machine-placed workspace needs.
 class Bus<T> {
   private log: Array<{ id: number; payload: T }> = []
   private sequence = 0
@@ -288,8 +189,9 @@ async function seedProject(page: Page, opts: { registerWorkspace: boolean; model
 }
 
 /**
- * Installs the user-hosted workspace mock: bootstrap/project inventory (registered as
- * `kind: "user-hosted"`), the connection mint endpoint, the `/api/wr/health` probe (driven
+ * Installs the mock for a workspace placed on another machine: bootstrap/project
+ * inventory (whose wire word for that placement is `kind: "user-hosted"`), the
+ * connection mint endpoint, the `/api/wr/health` probe (driven
  * by `opts.health`, a queue of outcomes consumed one per probe — the last entry repeats
  * once exhausted), and the `/workspaces/:id/...` runtime proxy lane needed to complete a
  * full turn once ready.
@@ -504,8 +406,8 @@ async function installUserHostedRuntimeMock(
     // a loopback surface opens for its own local runtimes. Bare-origin by
     // contract — it is the daemon's own route, not this workspace's runtime
     // lane — so it is answered here and never counted below. It carries
-    // nothing of a user-hosted workspace: that runtime is on another machine
-    // and speaks only through the relay mount above.
+    // nothing of this workspace: its runtime is on another machine and speaks
+    // only through the relay mount above.
     if (url.pathname === "/api/wr/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'id: 0\ndata: {"type":"heartbeat"}\n\n' }).catch(() => {})
     }
@@ -544,16 +446,24 @@ async function installUserHostedRuntimeMock(
         teams: [],
       })
     }
-    // A `ws_...`-shaped workspaceId with no inventory entry defaults to
-    // "user-hosted" (`sessionWorkspaceRuntimeRef`), but OTHER resolve calls for
-    // unrelated ids (there shouldn't be any in this spec) must not fall through
-    // to the unhandled-request 598 below.
+    // `sessionWorkspaceRuntimeRef` answers `machine` for a `ws_...`-shaped id the
+    // inventory cannot place, and that path never polls resolve. This handler
+    // exists only so a resolve call for some unrelated id (there should be none
+    // in this spec) does not fall through to the 598 below.
     if (isWorkspaceResolvePath(url.pathname)) {
-      return json(route, { workspaceId: WORKSPACE_ID, directory: WORKSPACE_ID, kind: "user-hosted", status: "ready" })
+      return json(route, workspaceResolveResponse({
+        id: WORKSPACE_ID,
+        project_id: PROJECT_ID,
+        directory: WORKSPACE_ID,
+        kind: "local",
+        status: "ready",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      }))
     }
 
-    // ---- Connection mint (always succeeds fast; the bottleneck for user-
-    // hosted is the HEALTH probe, not provisioning) ----
+    // ---- Connection mint (always succeeds fast; the bottleneck on a machine
+    // is the HEALTH probe, not provisioning) ----
     if (
       url.pathname === `/api/workspace/${WORKSPACE_ID}/connection` ||
       url.pathname === `/api/workspace/${WORKSPACE_ID}/connection/refresh`
@@ -681,7 +591,7 @@ async function installUserHostedRuntimeMock(
         promptCount += 1
         requests.promptCount += 1
         const body = request.postDataJSON() as { messageID?: string; parts?: unknown; agent?: string; model?: { providerID?: string; modelID?: string } }
-        const text = textOf(body?.parts) || `user-hosted message ${promptCount}`
+        const text = textOf(body?.parts) || `machine message ${promptCount}`
         const userID = body?.messageID || `msg_uh_user_${promptCount}`
         // Production convention (`mkAssistantId`, workspace-runtime/src/session/
         // service.ts): the assistant reply's id is `${userMessageId}_r`. The app's
@@ -756,7 +666,7 @@ async function installUserHostedRuntimeMock(
           await wait(20)
           sessionBusy = true
           emitFrame({ type: "session-status", status: "busy" })
-          const fullText = `user-hosted ack ${promptCount}: ${text}`
+          const fullText = `machine ack ${promptCount}: ${text}`
           const midpoint = Math.max(1, Math.floor(fullText.length / 2))
           for (const chunk of [fullText.slice(0, midpoint), fullText.slice(midpoint)]) {
             await wait(20)
@@ -979,7 +889,7 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(input).toContainText(promptText, { timeout: 10_000 })
     await page.locator(SELECTORS.submitControl).last().click()
 
-    await expectAssistantReplyVisible(page, `user-hosted ack 1: ${promptText}`)
+    await expectAssistantReplyVisible(page, `machine ack 1: ${promptText}`)
     await expectTurnCounts(page, { user: 1, assistant: 1 })
 
     // Everything that happened while ready went through the relay lane; nothing hit a
@@ -1083,7 +993,7 @@ test.describe("core user-hosted workspace @core", () => {
   test("enabling remote access publishes this machine's workspaces with no per-workspace gesture", async ({ page }) => {
     test.setTimeout(120_000)
     await stampTestAuth(page.context())
-    // Deliberately not the user-hosted connect pipeline: the reconciler resolves
+    // Deliberately not the machine connect pipeline: the reconciler resolves
     // against the project's own main workspace directory, so a plain local session
     // with no relay backing at all is enough.
     const assignments: string[] = []
@@ -1218,7 +1128,7 @@ test.describe("core user-hosted workspace @core", () => {
     // above returns an empty page), so any row the rail shows can only have
     // come from the workspace's own runtime over the relay. That is the whole
     // point: in the rail's default "Projects" view the project section is the
-    // only place a user-hosted workspace's sessions appear.
+    // only place a machine-placed workspace's sessions appear.
     const mock = await installUserHostedRuntimeMock(page, {
       health: [200],
       existingRuntimeSession: true,

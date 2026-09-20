@@ -44,7 +44,7 @@ import {
   teammate,
   tunnelDeliver,
   until,
-  userHostedWorkspaces,
+  placedWorkspaces,
   type MachineService,
   type RelayTiming,
   type RunningConnectFixture,
@@ -140,7 +140,7 @@ function assignedWorkspaceId(output: string) {
  */
 async function routability(workspaceId: string, hostId: string) {
   const [catalog, mint, target] = await Promise.all([
-    userHostedWorkspaces(fixture),
+    placedWorkspaces(fixture),
     mintConnection(fixture, workspaceId),
     relayTarget(fixture, workspaceId, hostId),
   ])
@@ -272,7 +272,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(enrolled.value.log).toContain(`Enrolled as ${state.enrollmentId}`)
     // Enrolled, and nothing to serve: the invitation grants roots, not folders.
     expect(enrolled.value.state!.run!.served).toEqual([])
-    expect(await userHostedWorkspaces(fixture)).toEqual([])
+    expect(await placedWorkspaces(fixture)).toEqual([])
     const listed = await machines(fixture)
     expect(listed.map((machine) => [machine.display_name, machine.enrollment_id, machine.host_id])).toEqual([["box1", state.enrollmentId, state.hostId]])
     expect(listed[0].scope?.allowed_roots).toEqual([roots.root])
@@ -301,7 +301,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(served.value.row.revision).toBe(1)
     expect(served.value.presence.presence!.connectedAt).toBeGreaterThanOrEqual(assignedAt)
     expectAgreement(await routability(state.wsApi, state.hostId), true, "acked")
-    const catalog = await userHostedWorkspaces(fixture)
+    const catalog = await placedWorkspaces(fixture)
     expect(catalog.map((row) => [row.workspace_id, row.remote_directory, row.host_online])).toEqual([[state.wsApi, roots.api, true]])
 
     // The owner reaches the folder through the relay and the external host,
@@ -746,7 +746,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
       { since: Date.now(), timeoutMs: TIMING.targetCacheTtlMs + SLACK_MS, message: "the re-pointed workspace never served the docs folder" },
     )
     expect(docsFile.value.ok).toBe(true)
-    expect((await userHostedWorkspaces(fixture)).map((row) => [row.workspace_id, row.remote_directory, row.host_online]).sort(byFirst))
+    expect((await placedWorkspaces(fixture)).map((row) => [row.workspace_id, row.remote_directory, row.host_online]).sort(byFirst))
       .toEqual([[wsApi, roots.api, true], [wsWeb, roots.docs, true]].sort(byFirst))
   })
 
@@ -907,13 +907,13 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const wsApi = require(state.wsApi, "the api workspace")
     const wsWeb = require(state.wsWeb, "the web workspace")
     const roots = fixture.info.roots
-    expect((await userHostedWorkspaces(fixture)).map((row) => row.workspace_id).sort(byText)).toEqual([wsApi, wsWeb].sort(byText))
+    expect((await placedWorkspaces(fixture)).map((row) => row.workspace_id).sort(byText)).toEqual([wsApi, wsWeb].sort(byText))
 
     const scopedAt = Date.now()
     const scope = await cli("host", "scope", "--machine", "box1", "--root", roots.api)
     expect(scope.code, scope.output).toBe(0)
     // Transactional: gone from the catalog on the very next read, before any beat.
-    expect((await userHostedWorkspaces(fixture)).map((row) => row.workspace_id)).toEqual([wsApi])
+    expect((await placedWorkspaces(fixture)).map((row) => row.workspace_id)).toEqual([wsApi])
     const retired = await routability(wsWeb, hostId)
     expect(retired).toMatchObject({ listed: false, hostOnline: false, mintable: false, relayTarget: false })
     expectAgreement(await routability(wsApi, hostId), true, "api inside the new roots")
@@ -943,7 +943,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const outside = await cli("host", "assign", "--machine", "box1", roots.web)
     expect(outside.code).not.toBe(0)
     expect(outside.output).toContain("not under any root this machine may serve")
-    expect((await userHostedWorkspaces(fixture)).map((row) => row.workspace_id)).toEqual([wsApi])
+    expect((await placedWorkspaces(fixture)).map((row) => row.workspace_id)).toEqual([wsApi])
   })
 
   test("7. revoking the machine: new client requests refused within the resolver cache, the open stream and the host socket closed by their next checks, the process exits 78 on its next beat", async () => {
@@ -968,7 +968,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(revoke.code, revoke.output).toBe(0)
     expect((await hostGeneration(fixture, enrollmentId)).body?.revoked).toBe(true)
     expect((await machines(fixture)).map((machine) => machine.enrollment_id)).not.toContain(enrollmentId)
-    expect(await userHostedWorkspaces(fixture)).toEqual([])
+    expect(await placedWorkspaces(fixture)).toEqual([])
 
     const refused = await until(
       async () => {

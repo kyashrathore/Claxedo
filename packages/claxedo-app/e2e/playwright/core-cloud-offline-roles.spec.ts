@@ -13,10 +13,11 @@
  *     off the same connection store, so the panel and the main pane can show different
  *     chrome for one workspace at one instant.
  *
- * Every workspace here is `cloud` or `user-hosted`; a `local` workspace is synthesized
- * ready immediately and exercises none of this.
+ * Both workspaces here are relay-backed — one placed on a provisioner, one on an
+ * enrolled machine. A workspace placed on this machine is synthesized ready
+ * immediately and exercises none of this.
  */
-import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isWorkspaceResolvePath, signedWorkspaceResolveResponse } from "../helpers/contracts/workspace-resolve"
 import {
   isWorkspaceListPath,
   workspaceListResponse,
@@ -30,7 +31,7 @@ const RELAY_ORIGIN = "https://relay.core13.e2e.test"
 const WORKSPACE_ID = "ws_core13_cloud"
 const UH_WORKSPACE_ID = "ws_core13_uh"
 const DIR = WORKSPACE_ID
-const UH_DIR = `${DIR}/.claxedo/user-hosted/workspaces/${UH_WORKSPACE_ID}`
+const UH_DIR = UH_WORKSPACE_ID
 const PROJECT_ID = "proj_core13"
 
 // Contention-tolerant ceiling for the reactive (re)connect state transitions —
@@ -102,7 +103,7 @@ function defaultHarnessState(): HarnessState {
 async function seed(page: Page) {
   await stampTestAuth(page.context())
   await page.addInitScript(
-    (input: { directory: string; uhDirectory: string }) => {
+    (input: { directory: string }) => {
       localStorage.clear()
       ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
@@ -119,7 +120,7 @@ async function seed(page: Page) {
         }),
       )
     },
-    { directory: DIR, uhDirectory: UH_DIR },
+    { directory: DIR },
   )
 }
 
@@ -221,12 +222,12 @@ function providerCatalog() {
   }
 }
 
-function mintBody(workspaceId: string, kind: "cloud" | "user-hosted", mint: MintResponse) {
+function mintBody(workspaceId: string, backing: "cloud-vm" | "local-worktree", mint: MintResponse) {
   return {
-    backing: kind === "cloud" ? "cloud-vm" : "local-worktree",
-    // A cloud sandbox delegates session authority to the control plane; the owner's
-    // own daemon does not.
-    sessionAuthority: kind === "cloud" ? "managed-private" : "local",
+    backing,
+    // A provisioned sandbox delegates session authority to the control plane; the
+    // owner's own machine declares its runtime's own.
+    sessionAuthority: backing === "cloud-vm" ? "managed-private" : "local",
     workspaceId,
     role: mint.role ?? "owner",
     relayUrl: RELAY_ORIGIN,
@@ -323,32 +324,30 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     if (url.pathname === `/api/workspace/${WORKSPACE_ID}/connection`) {
       state.mintHits.push(WORKSPACE_ID)
       if (state.cloudMint.status !== 200) return json(route, { error: "mint failed" }, state.cloudMint.status)
-      return json(route, mintBody(WORKSPACE_ID, "cloud", state.cloudMint))
+      return json(route, mintBody(WORKSPACE_ID, "cloud-vm", state.cloudMint))
     }
     if (url.pathname === `/api/workspace/${WORKSPACE_ID}/connection/refresh`) {
       state.refreshHits.push(WORKSPACE_ID)
       const role = state.cloudRefreshRole ?? state.cloudMint.role ?? "owner"
-      return json(route, mintBody(WORKSPACE_ID, "cloud", { status: 200, role, tokenExpiresAt: Date.now() + 120_000 }))
+      return json(route, mintBody(WORKSPACE_ID, "cloud-vm", { status: 200, role, tokenExpiresAt: Date.now() + 120_000 }))
     }
     if (url.pathname === `/api/workspace/${UH_WORKSPACE_ID}/connection`) {
       state.mintHits.push(UH_WORKSPACE_ID)
       if (state.uhMint.status !== 200) return json(route, { error: "mint failed" }, state.uhMint.status)
-      return json(route, mintBody(UH_WORKSPACE_ID, "user-hosted", state.uhMint))
+      return json(route, mintBody(UH_WORKSPACE_ID, "local-worktree", state.uhMint))
     }
     if (url.pathname === `/api/workspace/${UH_WORKSPACE_ID}/connection/refresh`) {
       state.refreshHits.push(UH_WORKSPACE_ID)
-      return json(route, mintBody(UH_WORKSPACE_ID, "user-hosted", state.uhMint))
+      return json(route, mintBody(UH_WORKSPACE_ID, "local-worktree", state.uhMint))
     }
+    // Resolved from the SAME rows the list serves, through the signed control
+    // plane's own projection, so `kind` follows `backing` instead of this
+    // fixture asserting the pair itself.
     if (isWorkspaceResolvePath(url.pathname)) {
-      const workspaceId = url.searchParams.get("workspaceId")
-      const directory = url.searchParams.get("directory")
-      const uh = workspaceId === UH_WORKSPACE_ID || directory === UH_DIR
-      return json(route, {
-        workspaceId: uh ? UH_WORKSPACE_ID : WORKSPACE_ID,
-        directory: uh ? UH_DIR : DIR,
-        kind: uh ? "user-hosted" : "cloud",
-        status: "ready",
-      })
+      const wanted = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory")
+      const rows = controlPlaneWorkspaceRows()
+      const row = rows.find((candidate) => candidate.workspace_id === wanted) ?? rows[0]
+      return json(route, signedWorkspaceResolveResponse(row))
     }
     if (url.pathname === "/api/control/sessions") return json(route, [])
     if (isSessionListPath(url.pathname)) return json(route, { sessions: [], nextCursor: null })
@@ -391,7 +390,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // instead of `relayUrl` — a real "claxedo-server proxies the relay in local
     // dev" behavior, not a mock bug. Kept on its own handler (rather than the
     // per-workspace runtime bucket below) because its status drives the
-    // user-hosted offline classification under test: a 598 here reads as a
+    // host-offline classification under test: a 598 here reads as a
     // non-transient failure and misclassifies as the generic "failed" reason
     // instead of "no-host". The rest of the loopback-routed runtime surface
     // (agent/vcs/provider/session/...) IS answered by the bucket below — the
@@ -419,7 +418,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // panel's mount fetches throw the raw body of any 598, which crashes the
     // route into the error boundary before a single assertion runs. The health
     // probe stays on its own narrower handler above (it drives the
-    // user-hosted offline classification under test).
+    // host-offline classification under test).
     const relayMatch = /^\/workspaces\/([^/]+)(\/.*)?$/.exec(url.pathname)
     if (relayMatch && (relayMatch[1] === WORKSPACE_ID || relayMatch[1] === UH_WORKSPACE_ID)) {
       const [, workspaceId, rest] = relayMatch
@@ -607,7 +606,7 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(page.getByTestId("workspace-offline-retry")).toBeVisible()
   })
 
-  test("user-hosted host-offline health probe renders the no-host offline copy", async ({ page }) => {
+  test("a host-offline health probe on a machine-placed workspace renders the no-host offline copy", async ({ page }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.uhHealth = { status: 503, body: { error: { code: "user_hosted_app_offline" } } }

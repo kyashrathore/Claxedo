@@ -1,6 +1,8 @@
+> Status note (2026-09-20): P1–P3 landed on dev `8bdd4bdbff` and stand. P7 (desktop beats as a machine; provenance-scoped authorization on the daemon) is superseded by slices 1 and 2 of `docs/plans/2026-09-19-001-refactor-host-is-a-machine.md`, the provider-configuration gap by its slice 6, and the `user-hosted` workspace kind this plan assumes by its §2; P4–P6 are unchanged by that plan. The rest is the record of what was planned.
+
 # Remote machine connection: implementation plan
 
-Status: P1–P3 implemented on branch `feat/connect` (2026-09-14–15), reviewed twice (Fable + Codex) with every finding fixed, live-proven on the fixture (12/12 + 1 fixme) and on real EC2; P4–P7 not started. Revision 4. Builds on the investigation
+Status: P1–P3 implemented on branch `feat/connect` (2026-09-14–15), reviewed twice (Fable + Codex) with every finding fixed, live-proven on the fixture (12/12 + 1 fixme) and on real EC2; P4–P6 not started. Revision 4. Builds on the investigation
 (`2026-09-14-001-feat-connect-enrollment-foundation-proposal.md`) and the
 component map (`2026-09-14-002-feat-connect-components-and-flows.md`). Nothing
 here is authorized until the product questions in §0 are answered.

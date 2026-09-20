@@ -1,5 +1,5 @@
 /**
- * Web lane: signed, user-hosted workspace, through the real relay.
+ * Web lane: signed, a workspace on an enrolled machine, through the real relay.
  *
  * Thin configuration wrapper: every scenario body lives in
  * `e2e/helpers/web-signed-relay-journeys.ts`, shared with
