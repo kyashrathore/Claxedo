@@ -10,7 +10,7 @@ import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
 import { placementProvisioner, asHostKind, controlPlaneListScope, inventoryHostKind, isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
 
-import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
@@ -618,7 +618,6 @@ export function shouldUseSignedControlPlaneInventory(input: {
   if (input.workspaceId) return true
   if (cachedSignedWorkspaceDirectory(input.baseUrl, input.directory)) return true
   if (input.directory && !isFilesystemDirectory(input.directory)) return true
-  if (isUserHostedWorkspaceDirectory(input.directory)) return true
   if (!usesLocalControlTransport(input.baseUrl)) return true
   return false
 }

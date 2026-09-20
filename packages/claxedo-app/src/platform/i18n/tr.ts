@@ -518,7 +518,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Görüntüleyici",
   "sidebar.workspace.role.editor": "Düzenleyici",
   "sidebar.workspace.role.admin": "Yönetici",
-  "sidebar.workspace.hostOffline": "Ana makine çevrimdışı",
+  "sidebar.workspace.hostOffline": "Makine çevrimdışı",
   "sidebar.workspace.sharedWithYou": "Sizinle paylaşıldı",
   "sidebar.workspace.publishedToYourAccount": "Hesabınıza yayınlandı",
 

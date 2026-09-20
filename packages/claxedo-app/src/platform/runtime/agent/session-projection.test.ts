@@ -56,7 +56,7 @@ describe("session projection sync-back", () => {
     expect(sessionProjectionBacking(undefined)).toBeUndefined()
   })
 
-  test("never projects a user-hosted workspace's sessions: the machine serving it is their authority", () => {
+  test("never projects a machine-placed workspace's sessions: the machine serving it is their authority", () => {
     expect(sessionProjectionWorkspaceBacking({
       signedControlPlane: true,
       workspaceId: "ws_machine",

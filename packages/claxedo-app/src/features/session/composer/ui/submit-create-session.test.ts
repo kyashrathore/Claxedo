@@ -381,7 +381,7 @@ describe("finalizeSubmitSessionTarget", () => {
     expect(navigations).toEqual([])
   })
 
-  test("never projects a session created in a user-hosted workspace: the machine serving it is its authority", () => {
+  test("never projects a session created in a machine-placed workspace: the machine serving it is its authority", () => {
     const scheduled: Parameters<SubmitProjectionScheduler>[0][] = []
 
     const result = finalizeSessionTarget({

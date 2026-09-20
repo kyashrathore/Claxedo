@@ -261,22 +261,22 @@ describe("harness store policy", () => {
     expect(
       shouldUseLocalHarnessConfigApi({
         baseUrl: "http://127.0.0.1:3001",
-        directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
+        directory: "/home/dev/.claxedo/workspaces/ws_1",
         hostKind: "machine",
       }),
     ).toBe(false)
   })
 
-  test("resolves the workspace runtime ref for a signed user-hosted directory only when the inventory is passed in", () => {
+  test("resolves the workspace runtime ref for a machine-placed directory only when the inventory is passed in", () => {
     const projects = [
       {
         worktree: "/repo",
         workspaces: {
-          ws_uh1: {
-            id: "ws_uh1",
-            workspaceId: "ws_uh1",
+          ws_machine1: {
+            id: "ws_machine1",
+            workspaceId: "ws_machine1",
             kind: "user-hosted" as const,
-            directory: "/repo/user-hosted/ws_uh1-dir",
+            directory: "/repo/worktrees/shared",
           },
         },
       },
@@ -284,12 +284,12 @@ describe("harness store policy", () => {
 
     // Without the signed inventory, a plain filesystem-path directory can't be
     // told apart from an ordinary local one — the ref stays unresolved.
-    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" })).toBeUndefined()
+    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/worktrees/shared" })).toBeUndefined()
 
-    // Threading the inventory through lets the directory match the signed
-    // user-hosted workspace and resolve to its real workspaceId.
-    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" }, projects)).toEqual({
-      workspaceId: "ws_uh1",
+    // Threading the inventory through lets the directory match the placed
+    // workspace and resolve to its real workspaceId.
+    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/worktrees/shared" }, projects)).toEqual({
+      workspaceId: "ws_machine1",
       kind: "machine",
     })
   })

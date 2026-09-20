@@ -115,10 +115,10 @@ export function createNewSessionWorkspaceState(input: {
   const directoryFor = (value: string) => value === MAIN_WORKTREE ? input.projectRoot : value
   const kindFor = (value: string): WorkspaceHostKind => {
     // A workspace on an enrolled machine is its OWN host — never collapse it
-    // into the provisioner's. Collapsing is what let a misresolved one fall
-    // into the "New cloud sandbox" create path (creatingWorkspace below only
-    // auto-fires for the provisioner). Such a workspace already exists and
-    // connects through the relay; it is never provisioned.
+    // into the provisioner's. `creatingWorkspace` below auto-fires only for the
+    // provisioner, so one collapsed into it falls into the "New cloud sandbox"
+    // create path. Such a workspace already exists and connects through the
+    // relay; it is never provisioned.
     const wsKind = inventoryHostKind(projectWorkspaceForRef(workspaces, directoryFor(value))?.kind)
     if (wsKind === "machine") return "machine"
     if (wsKind === "provisioner" || !!sessionWorkspaceRuntimeRef({ directory: directoryFor(value) })) return "provisioner"

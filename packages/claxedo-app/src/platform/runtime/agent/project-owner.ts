@@ -1,5 +1,6 @@
 import { signedWorkspaceFromProjects } from "./signed-workspace"
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
+import { inventoryHostKind, isSelfHostKind } from "@/platform/runtime/placement-wire"
 
 type ProjectDirectory = string
 
@@ -26,7 +27,7 @@ function workspaceForRef(project: ProjectInventory, ref: ProjectDirectory) {
 
 function localWorkspaceOwnsDirectory(project: ProjectInventory, directory: ProjectDirectory) {
   return Object.entries(project.workspaces ?? {}).some(([key, workspace]) =>
-    workspace.kind === "local" &&
+    isSelfHostKind(inventoryHostKind(workspace.kind)) &&
     (key === directory || workspace.id === directory || workspace.workspaceId === directory ||
       sameWorkspaceDirectory(workspace.directory, directory)),
   )
@@ -43,17 +44,17 @@ export function projectForDirectory<T extends ProjectInventory>(projects: readon
 }
 
 /**
- * Whether the project inventory identifies `directory` as a secondary LOCAL
- * git worktree. Local project payloads key `workspaces` by workspace id and put
- * those ids in `sandboxes`, so resolving the sandbox reference is required
- * before comparing its canonical directory.
+ * Whether the project inventory identifies `directory` as a secondary git
+ * worktree the attached server holds itself. Such payloads key `workspaces` by
+ * workspace id and put those ids in `sandboxes`, so the sandbox reference has
+ * to be resolved before its canonical directory can be compared.
  */
 export function isProjectWorktreeDirectory(project: ProjectInventory, directory: ProjectDirectory) {
   if (sameWorkspaceDirectory(project.worktree, directory)) return false
   return (project.sandboxes ?? []).some((sandbox) => {
     if (sameWorkspaceDirectory(sandbox, directory)) return true
     const workspace = workspaceForRef(project, sandbox)
-    return workspace?.kind === "local" && sameWorkspaceDirectory(workspace.directory, directory)
+    return isSelfHostKind(inventoryHostKind(workspace?.kind)) && sameWorkspaceDirectory(workspace?.directory, directory)
   })
 }
 

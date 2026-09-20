@@ -27,20 +27,20 @@ const catalog: CatalogProject[] = [
 ]
 
 describe("settingsWorkspaceOptions", () => {
-  // The key is the model document's workspace half (`modelStoreWorkspaceKey`):
-  // a local workspace is its directory even when the inventory gives it an id,
+  // The key is the model document's workspace half: a workspace the attached
+  // server holds is its directory even when the inventory gives it an id,
   // because that is what a pane on that directory keys its model store by.
   test("one row per catalog workspace, keyed the way a pane's model store keys it", () => {
     expect(settingsWorkspaceOptions(catalog).map((option) => ({
       key: option.key,
       scope: option.scope,
-      kind: option.kind,
+      host: option.host,
       label: option.label,
       project: option.project,
     }))).toEqual([
-      { key: "/repo", scope: "workspace:ws_local", kind: "local", label: "main", project: "acme/app" },
-      { key: "ws_cloud", scope: "workspace:ws_cloud", kind: "cloud", label: "sandbox", project: "acme/api" },
-      { key: "/other", scope: "/other", kind: "local", label: "/other", project: "/other" },
+      { key: "/repo", scope: "workspace:ws_local", host: "self", label: "main", project: "acme/app" },
+      { key: "ws_cloud", scope: "workspace:ws_cloud", host: "provisioner", label: "sandbox", project: "acme/api" },
+      { key: "/other", scope: "/other", host: "self", label: "/other", project: "/other" },
     ])
   })
 
@@ -53,11 +53,32 @@ describe("settingsWorkspaceOptions", () => {
     }])).toEqual([{
       key: "/repo",
       scope: "/repo",
-      kind: "local",
+      host: "self",
       label: "/repo",
       project: "/repo",
       directory: "/repo",
     }])
+  })
+
+  test("a machine's workspace is placed on that machine and keyed by its id", () => {
+    expect(settingsWorkspaceOptions([{
+      id: "proj",
+      name: "proj",
+      worktree: "workspace:ws_remote",
+      workspaces: { "workspace:ws_remote": { workspaceId: "ws_remote", kind: "user-hosted", directory: "/on/their/mac" } },
+    }])[0]).toMatchObject({ key: "ws_remote", host: "machine" })
+  })
+
+  // The catalog writes the control plane's word. A row carrying an app host
+  // kind instead is a producer this build does not have, so it is placed on the
+  // attached server rather than keyed by an id no pane would reach it under.
+  test("a row whose kind is not a word the catalog writes is placed on the attached server", () => {
+    expect(settingsWorkspaceOptions([{
+      id: "proj",
+      name: "proj",
+      worktree: "/repo",
+      workspaces: { "/repo": { workspaceId: "ws_x", kind: "self", directory: "/repo" } },
+    }])[0]).toMatchObject({ key: "/repo", host: "self" })
   })
 })
 
@@ -69,13 +90,13 @@ describe("defaultSettingsWorkspace", () => {
     expect(defaultSettingsWorkspace(options, { directory: "/other" })?.key).toBe("/other")
   })
 
-  test("without a focus, a local workspace is chosen before anything remote", () => {
+  test("without a focus, a workspace the attached server holds is chosen before anything remote", () => {
     const cloudFirst = settingsWorkspaceOptions([catalog[1], catalog[0]])
     expect(cloudFirst[0].key).toBe("ws_cloud")
     expect(defaultSettingsWorkspace(cloudFirst)?.key).toBe("/repo")
   })
 
-  test("with no local workspace, the first catalog row is chosen", () => {
+  test("with nothing on the attached server, the first catalog row is chosen", () => {
     const remote = settingsWorkspaceOptions([catalog[1]])
     expect(defaultSettingsWorkspace(remote)?.key).toBe("ws_cloud")
   })

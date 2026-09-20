@@ -86,10 +86,10 @@ export function shouldRefreshDirectoryAfterHarnessStatus(input?: HarnessScopeInp
 
 /**
  * Whether a new-session draft takes its harness from the workspace's status
- * probe. A workspace served by a machine — this one (`local`) or one reached
- * through the relay (`user-hosted`) — carries that machine's harness
- * configuration, and a draft starts from it exactly as the desktop does. Cloud
- * sandboxes keep the draft-default policy.
+ * probe. A workspace on a machine — this one, or one reached through the relay
+ * — carries that machine's harness configuration, and a draft starts from it
+ * exactly as the desktop does. A provisioned sandbox keeps the draft-default
+ * policy.
  */
 export function shouldHydrateDraftFromHarnessStatus(input: {
   useLocalHarnessConfig: boolean
@@ -107,8 +107,8 @@ export function shouldHydrateDraftFromHarnessStatus(input: {
  * `signedWorkspaceFromProjects` matches against). It is optional and defaults
  * to none so existing callers that only know the directory keep their prior
  * behavior; a caller that has the inventory in hand (the harness config
- * runtime, which threads its own `input.projects()`) passes it so a
- * user-hosted workspace addressed by its filesystem-path directory still
+ * runtime, which threads its own `input.projects()`) passes it so a workspace
+ * on another machine, addressed by its filesystem-path directory, still
  * resolves to its `workspaceId` instead of falling through unresolved.
  */
 export function harnessWorkspaceRuntimeRef(

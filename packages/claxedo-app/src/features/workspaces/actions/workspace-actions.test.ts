@@ -223,7 +223,7 @@ describe("createWorkspaceActions", () => {
     ])
   })
 
-  test("reused cloud workspace sessions carry explicit session refs", () => {
+  test("reused provisioner-placed workspace sessions carry explicit session refs", () => {
     const { props, opens, nav, seedMeta } = makeProps()
     const cloudProject = project({
       id: "p1",
@@ -299,7 +299,7 @@ describe("createWorkspaceActions", () => {
     expect(defaulted).toEqual([{ paneId: "pane-focused", dir: "/workspace/feature" }])
   })
 
-  test("shows recovery dialog instead of creating a draft for a missing local workspace", () => {
+  test("shows recovery dialog instead of creating a draft for a missing workspace on this machine", () => {
     const { props, opens, navs, shows, nav } = makeProps()
     props.projects = () => [project({
       id: "p1",

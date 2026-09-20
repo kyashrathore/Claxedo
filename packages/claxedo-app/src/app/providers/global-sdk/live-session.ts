@@ -63,11 +63,12 @@ export function liveSessionTransition(
  * cannot place yet keeps the optimistic fallback — that is what lets a cloud
  * workspace work before its projects have loaded.
  *
- * Without the known-local rule, a local workspace's own rows were routed at the
- * relay and every request answered `401 Workspace connection failed`, which the
- * SDK reports as `data: undefined`. Callers that read absence as an assertion
- * (the rail's status batch: absent from `/session/status` means idle) then read
- * a request that never reached the runtime as "this session is idle".
+ * Without the known-local rule, the rows of a workspace this server serves
+ * itself route at the relay and every request answers `401 Workspace connection
+ * failed`, which the SDK reports as `data: undefined`. Callers that read absence
+ * as an assertion (the rail's status batch: absent from `/session/status` means
+ * idle) then read a request that never reached the runtime as "this session is
+ * idle".
  */
 export function globalSdkClientWorkspaceId(
   projects: WorkspaceProjects,

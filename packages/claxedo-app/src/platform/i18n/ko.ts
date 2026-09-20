@@ -446,7 +446,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "뷰어",
   "sidebar.workspace.role.editor": "편집자",
   "sidebar.workspace.role.admin": "관리자",
-  "sidebar.workspace.hostOffline": "호스트 오프라인",
+  "sidebar.workspace.hostOffline": "컴퓨터 오프라인",
   "sidebar.workspace.sharedWithYou": "나에게 공유됨",
   "sidebar.workspace.publishedToYourAccount": "내 계정에 게시됨",
   "settings.section.desktop": "데스크톱",

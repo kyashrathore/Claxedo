@@ -293,7 +293,7 @@ describe("SessionPaneScope", () => {
     expect(calls.scopeFor).not.toHaveBeenCalled()
   })
 
-  test("passes filesystem user-hosted readiness through the connection authority", () => {
+  test("passes filesystem machine-placed readiness through the connection authority", () => {
     calls.projects = [{
       workspaces: {
         ws_cleantest1: {
@@ -324,7 +324,7 @@ describe("SessionPaneScope", () => {
     expect(calls.scopeFor).toHaveBeenCalledWith("ws_cleantest1")
   })
 
-  test("does not mask user-hosted connection progress with a session loading fallback", () => {
+  test("does not mask machine-placed connection progress with a session loading fallback", () => {
     calls.projects = [{
       workspaces: {
         ws_cleantest1: {

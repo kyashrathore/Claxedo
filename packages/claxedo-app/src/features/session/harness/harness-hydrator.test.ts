@@ -149,7 +149,7 @@ describe("harness hydrator", () => {
     expect(subject.cache.seen.get("scope")).toBe("/repo\nnew")
   })
 
-  test("hydrates local workspace-runtime drafts through local harness status", async () => {
+  test("hydrates this machine's workspace-runtime drafts through local harness status", async () => {
     const subject = createSubject({ workspaceRuntime: true, hostKind: "self" })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
@@ -160,7 +160,7 @@ describe("harness hydrator", () => {
     ])
   })
 
-  test("a user-hosted draft the inventory has not described yet resolves its workspace and hydrates from the machine's status", async () => {
+  test("a machine-placed draft the inventory has not described yet resolves its workspace and hydrates from the machine's status", async () => {
     const subject = createSubject({
       local: false,
       workspaceRuntime: false,

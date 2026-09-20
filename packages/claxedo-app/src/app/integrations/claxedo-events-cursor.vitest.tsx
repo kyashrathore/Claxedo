@@ -533,7 +533,7 @@ describe("the host aggregate the desktop opens for every local runtime", () => {
 
   afterEach(() => connections.reset())
 
-  test("registers one lane and reports it open for a session of any local workspace", async () => {
+  test("registers one lane and reports it open for a session of any workspace on this machine", async () => {
     let reachable = false
     transport.request.mockImplementation(async (input) => {
       if (!isHostAggregate(requestUrl(input))) return live()

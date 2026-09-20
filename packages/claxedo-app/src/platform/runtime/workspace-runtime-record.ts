@@ -16,20 +16,15 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
 
 /**
  * Reading the workspace runtime RECORD — which workspace a directory belongs
- * to, what kind it is, and whether it is still coming up.
+ * to, where it is placed, and whether it is still coming up.
  *
- * This is not a hosted capability, which is why it does not live under
- * `runtime/cloud/`. The record is served by `http-backend.ts` for every
- * deployment; a local build simply gets `null` (no workspace for the
- * directory, or a 404 from the resolve route) and every caller already handles
- * that. What made it LOOK hosted was its address: it shipped inside
- * `platform/runtime/cloud/workspace-runtime-store.ts`, so fourteen local
- * files — bootstrap, the rail, terminals, processes, review, the session
- * composer and harness — imported a module the cloud extraction has to move.
- *
- * Provisioning a cloud sandbox or connecting to another machine IS a hosted
- * capability, and that half stays behind `workspace-startup-port.ts`. The line
- * between the two files is "read the record" versus "make the runtime exist".
+ * Not a hosted capability, which is why it does not live under
+ * `runtime/cloud/`: the record is served by `http-backend.ts` for every
+ * deployment, and a local build gets `null` (no workspace for the directory,
+ * or a 404 from the resolve route), which every caller handles. Provisioning a
+ * sandbox or connecting to another machine IS hosted, and that half stays
+ * behind `workspace-startup-port.ts`. The line between the two files is "read
+ * the record" versus "make the runtime exist".
  *
  * The record answers two different questions, so this module exposes two reads
  * over ONE query and one cache entry:
@@ -39,11 +34,10 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
  * - `resolveWorkspaceRuntime` — "and what state is that runtime in". Liveness.
  *   Revalidates on the query's freshness window.
  *
- * Anything that fetches the record itself instead of going through these will
- * disagree with them; that is not a style point. A private copy in
- * `http-backend.ts` shared this cache key but not the fast-switch policy, and
- * a routing read taken on the liveness path put a control-plane round trip on
- * whatever the user was doing when the freshness window happened to elapse.
+ * Fetching the record outside these two disagrees with them: a second copy
+ * sharing this cache key but not the fast-switch policy, and a routing read
+ * taken on the liveness path, put a control-plane round trip on whatever the
+ * user is doing when the freshness window happens to elapse.
  */
 
 /**
@@ -61,14 +55,14 @@ export function runtimeScope(input: { directory?: string; workspaceId?: string }
   }
 }
 
-export function pendingCloudRuntime(
+export function pendingProvisionedRuntime(
   input: WorkspaceRuntimeSnapshot | null | undefined,
 ): input is WorkspaceRuntimeSnapshot & { kind: "provisioner"; status: string } {
   return !!input && input.kind === "provisioner" && !!input.status && input.status !== "ready" && input.status !== "failed"
 }
 
 export function workspaceRuntimeBlocksBootstrap(input?: WorkspaceRuntimeSnapshot | null) {
-  return pendingCloudRuntime(input)
+  return pendingProvisionedRuntime(input)
 }
 
 function recordHostKind(value: unknown): WorkspaceRuntimeSnapshot["kind"] {

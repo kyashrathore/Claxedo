@@ -159,12 +159,29 @@ describe("hosted operation matrix", () => {
     }
   })
 
-  test("never promises a direct laptop runtime target", () => {
-    // A row returning `directRuntimeUrl` would make the laptop a direct client
-    // target and bypass every Relay authorization gate; only the prose that
-    // forbids it may mention the field.
+  test("no row returns an address of the machine a workspace runs on", () => {
+    // The connection mint answers `relayUrl` and a scoped Runtime Access Token
+    // (`userHostedConnectionInfo`). A row that returned the serving machine's
+    // own address would make it a direct client target and bypass every relay
+    // authorization gate, so the spellings such an address takes are refused
+    // in the table rather than in prose, which cannot fail a build.
+    const machineAddressSpellings = [
+      "directRuntimeUrl",
+      "runtimeUrl",
+      "hostUrl",
+      "machineUrl",
+      "laptopUrl",
+      "tunnelUrl",
+      "127.0.0.1",
+      "localhost",
+    ]
     const rows = matrix.split("\n").filter((line) => line.trimStart().startsWith("| `"))
-    expect(rows.filter((row) => row.includes("directRuntimeUrl"))).toEqual([])
+    for (const spelling of machineAddressSpellings) {
+      expect(
+        rows.filter((row) => row.includes(spelling)),
+        `a matrix row names \`${spelling}\``,
+      ).toEqual([])
+    }
   })
 
   test("declares no generic authenticated proxy operation", () => {

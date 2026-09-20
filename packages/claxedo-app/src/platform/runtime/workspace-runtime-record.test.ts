@@ -59,7 +59,7 @@ describe("requestWorkspaceRecord", () => {
 })
 
 describe("workspace runtime record", () => {
-  test("workspaceRuntimeBlocksBootstrap only while cloud runtime is still pending", () => {
+  test("workspaceRuntimeBlocksBootstrap only while a provisioned runtime is still coming up", () => {
     expect(workspaceRuntimeBlocksBootstrap()).toBe(false)
     expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "self" })).toBe(false)
     expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "provisioner", status: "ready" })).toBe(false)

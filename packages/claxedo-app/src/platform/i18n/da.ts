@@ -506,7 +506,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Læser",
   "sidebar.workspace.role.editor": "Redaktør",
   "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Vært offline",
+  "sidebar.workspace.hostOffline": "Maskinen er offline",
   "sidebar.workspace.sharedWithYou": "Delt med dig",
   "sidebar.workspace.publishedToYourAccount": "Udgivet til din konto",
 

@@ -448,7 +448,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "閲覧者",
   "sidebar.workspace.role.editor": "編集者",
   "sidebar.workspace.role.admin": "管理者",
-  "sidebar.workspace.hostOffline": "ホストはオフライン",
+  "sidebar.workspace.hostOffline": "マシンはオフライン",
   "sidebar.workspace.sharedWithYou": "あなたに共有中",
   "sidebar.workspace.publishedToYourAccount": "あなたのアカウントに公開中",
   "settings.section.desktop": "デスクトップ",

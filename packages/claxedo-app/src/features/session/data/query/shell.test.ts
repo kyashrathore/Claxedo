@@ -91,7 +91,7 @@ describe("shell query helpers", () => {
     expect(resolves).toBe(1)
   })
 
-  test("commandListQuery routes loopback cloud workspaces through the local workspace proxy when request is supplied", async () => {
+  test("commandListQuery routes loopback provisioner-placed workspaces through this machine's workspace proxy when request is supplied", async () => {
     const calls: string[] = []
     const query = commandListQuery({
       baseUrl: "http://127.0.0.1:3001",
@@ -125,7 +125,7 @@ describe("shell query helpers", () => {
     expect(calls).toEqual(["GET http://127.0.0.1:3001/workspaces/ws_1/command"])
   })
 
-  test("commandListQuery routes signed cloud workspaces through the relay when request is supplied", async () => {
+  test("commandListQuery routes signed provisioner-placed workspaces through the relay when request is supplied", async () => {
     const calls: string[] = []
     const query = commandListQuery({
       baseUrl: "https://control.test",
@@ -168,7 +168,7 @@ describe("shell query helpers", () => {
     expect(calls.some((call) => call.includes("/api/claxedo/agent-config/commands"))).toBe(false)
   })
 
-  test("commandListQuery uses Claxedo command config API for local workspaces", async () => {
+  test("commandListQuery uses Claxedo command config API for workspaces this machine serves", async () => {
     const calls: string[] = []
     const query = commandListQuery({
       baseUrl: "http://claxedo.test/",

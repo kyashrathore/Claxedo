@@ -235,10 +235,10 @@ describe("environment options", () => {
   })
 })
 
-describe("existing cloud workspaces in the workspace chip", () => {
+describe("existing provisioner-placed workspaces in the workspace chip", () => {
   // The reported defect: cloud selected, the project HAS cloud workspaces, and
   // the third select offered no way to pick one.
-  test("lists the project's existing cloud workspaces on the bootstrap shape", () => {
+  test("lists the project's existing provisioner-placed workspaces on the bootstrap shape", () => {
     state.projects = [bootstrapProject]
     renderView({ hostKind: "provisioner" })
     expect(workspaceChip()?.options?.map((option) => option.label)).toEqual(["main", "feature"])
@@ -261,7 +261,7 @@ describe("existing cloud workspaces in the workspace chip", () => {
 
   // The pre-fix behaviour, pinned as the honest empty case: with no cloud
   // workspace to offer, collapsing to the create path is correct.
-  test("offers no options when the project genuinely has no cloud workspace", () => {
+  test("offers no options when the project genuinely has no provisioner-placed workspace", () => {
     state.directory = "/repo/thing"
     state.projects = [{ worktree: "/repo/thing", workspaces: { "/repo/thing": { kind: "local" } } }]
     renderView({ hostKind: "provisioner" })

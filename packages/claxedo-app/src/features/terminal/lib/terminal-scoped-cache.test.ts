@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { terminalScopedPlacement } from "./terminal-scoped-cache"
 
 describe("terminalScopedPlacement", () => {
-  test("routes a resolved non-local workspace through the relay", () => {
+  test("routes a resolved workspace this machine does not serve through the relay", () => {
     expect(terminalScopedPlacement("https://claxedo.example.test", { kind: "provisioner", workspaceId: "ws_1" })).toEqual({
       workspaceId: "ws_1",
       hosting: "workspace",
@@ -27,10 +27,10 @@ describe("terminalScopedPlacement", () => {
       terminalScopedPlacement(
         "https://claxedo.example.test",
         null,
-        { kind: "machine", workspaceId: "ws_uh1" },
+        { kind: "machine", workspaceId: "ws_machine1" },
       ),
     ).toEqual({
-      workspaceId: "ws_uh1",
+      workspaceId: "ws_machine1",
       hosting: "workspace",
       transport: "workspace-relay",
     })

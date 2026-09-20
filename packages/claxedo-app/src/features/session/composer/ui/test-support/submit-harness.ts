@@ -446,6 +446,8 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       return new Response(JSON.stringify({
         access: "cloud",
         backing: "cloud-vm",
+        runtimeKind: "cloud",
+        homeRegion: "us-east",
         workspaceId,
         role: "owner",
         relayUrl: "https://relay.test",
@@ -977,7 +979,8 @@ export async function installSubmitMocks(mock: ModuleMocker) {
   resetRuntimeEnsureCache = cloudStartup.resetWorkspaceRuntimeEnsureCache
   // Production binds this in `app/entry/main.tsx`; the harness is the hosted
   // composition for these tests, so it binds the same implementation. Without
-  // it a cloud/user-hosted submit would throw "no hosted workspace startup".
+  // it a submit into a workspace the attached server does not serve itself
+  // throws "no hosted workspace startup".
   ;(await import("@/platform/runtime/workspace-startup")).configureWorkspaceStartup(cloudStartup.cloudWorkspaceStartup)
 }
 

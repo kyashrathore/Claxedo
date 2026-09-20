@@ -5,8 +5,7 @@
  * destroy or rewind compute are annotated destructive so a host prompts, are
  * confirmed through elicitation where the host offers it, and send
  * `approved: true` only because the registry got that confirmation — never
- * because a model put it in an argument, which is how the old cloud-workspace
- * tools took approval (security review S5).
+ * because a model put it in an argument.
  */
 import { z } from "zod"
 import { workspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
@@ -119,9 +118,10 @@ export function registerWorkspaceTools(registry: ToolRegistrar) {
 
 function renderWorkspace(workspace: WorkspaceSummary): string {
   const name = workspace.name ? ` (${workspace.name})` : ""
+  const where = workspace.host === "provisioner" ? " — cloud VM" : workspace.host === "machine" ? " — machine" : ""
   const reachable = workspace.machineOnline === undefined ? "" : workspace.machineOnline ? "  online" : "  offline"
   const directory = workspace.directory ? `  ${workspace.directory}` : ""
-  return `${workspace.id}${name} — ${workspace.kind}${reachable}${directory}`
+  return `${workspace.id}${name}${where}${reachable}${directory}`
 }
 
 function checkpointsPath(workspaceId: string) {

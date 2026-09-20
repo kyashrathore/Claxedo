@@ -889,7 +889,7 @@ describe("override bootstrapDirectory", () => {
     expect(directoryPath("https://app.claxedo.test", "/tmp/cloud-alias")?.directory).toBe("/tmp/cloud-alias")
   })
 
-  test("does not invent a harness for signed cloud workspace refs", async () => {
+  test("does not invent a harness for signed provisioner-placed workspace refs", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
       command: {

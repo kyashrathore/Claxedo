@@ -62,9 +62,9 @@ function sameConnectionInput(
 /**
  * One connection lease per workspace scope, independent of whichever session
  * pane happens to be visible. A later caller can refine the connection input
- * (for example user-hosted -> cloud after inventory hydrates); acquiring the
- * replacement before releasing the old handle keeps the authority alive while
- * it applies that refinement.
+ * (a machine placement becoming a provisioner one after inventory hydrates);
+ * acquiring the replacement before releasing the old handle keeps the authority
+ * alive while it applies that refinement.
  */
 export function createWorkspaceConnectionLeaseCache(
   acquire: (input: AcquireWorkspaceConnectionInput) => WorkspaceConnectionHandle = acquireWorkspaceConnection,

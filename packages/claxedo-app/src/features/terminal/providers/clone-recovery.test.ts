@@ -263,7 +263,7 @@ describe("terminal clone recovery on app restart", () => {
     restoreFetch()
   })
 
-  test("clone() preserves cloud workspace routing when dir differs from cwd", async () => {
+  test("clone() preserves provisioner-placed workspace routing when dir differs from cwd", async () => {
     const sdk = createMockSDK()
     sdk.directory = "/Users/yash/worktrees/local-mirror"
     const restoreFetch = installFetchMock(sdk)

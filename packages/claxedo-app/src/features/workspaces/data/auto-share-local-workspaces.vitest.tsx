@@ -137,7 +137,7 @@ describe("localWorkspaceShareCandidates", () => {
 })
 
 describe("machine-level auto-share", () => {
-  test("turning remote access on publishes every local workspace, with no tick from anyone", async () => {
+  test("turning remote access on publishes every workspace this machine serves, with no tick from anyone", async () => {
     connector.enabled = false
     const projects = () => [
       project("/code/api", {

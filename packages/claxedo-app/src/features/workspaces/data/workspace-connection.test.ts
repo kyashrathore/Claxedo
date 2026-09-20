@@ -58,7 +58,7 @@ describe("workspace connection authority", () => {
     ...input,
   })
 
-  test("local workspaces are synthesized ready immediately (no relay backing)", () => {
+  test("workspaces this machine serves are synthesized ready immediately (no relay backing)", () => {
     createRoot((dispose) => {
       const handle = acquireWorkspaceConnection({ workspaceId: "ws_local", kind: "self" })
       expect(isWorkspaceReady("ws_local")).toBe(true)
@@ -77,16 +77,16 @@ describe("workspace connection authority", () => {
 
   test("relay-backed workspaces start connecting from frame zero (no blank fall-through)", () => {
     createRoot((dispose) => {
-      // The drive loop hits the network (prepareUserHostedRuntime) and resolves
+      // The drive loop hits the network (prepareMachineRuntime) and resolves
       // later — we only assert the SYNCHRONOUS initial state set inside acquire,
       // which is what kills the blank fall-through frame. `status` is the
       // invariant; the exact phase advances as the (real) loop emits.
-      acquireWorkspaceConnection({ workspaceId: "ws_uh", kind: "machine", request: runtimeReadyFetch })
-      const state = workspaceConnection("ws_uh")
+      acquireWorkspaceConnection({ workspaceId: "ws_machine", kind: "machine", request: runtimeReadyFetch })
+      const state = workspaceConnection("ws_machine")
       expect(state?.status).toBe("connecting")
-      expect(connectionPlacement("ws_uh")).toEqual({ state: "role-pending", workspaceId: "ws_uh" })
-      expect(workspaceRelayPlacement("ws_uh")).toBeUndefined()
-      expect(isWorkspaceConnecting("ws_uh")).toBe(true)
+      expect(connectionPlacement("ws_machine")).toEqual({ state: "role-pending", workspaceId: "ws_machine" })
+      expect(workspaceRelayPlacement("ws_machine")).toBeUndefined()
+      expect(isWorkspaceConnecting("ws_machine")).toBe(true)
       dispose()
     })
   })
@@ -148,7 +148,7 @@ describe("workspace connection authority", () => {
     })
   })
 
-  test("user-hosted readiness consumes a connection cached before the authority entry", async () => {
+  test("machine-placed readiness consumes a connection cached before the authority entry", async () => {
     const workspaceId = "ws_cached_editor"
     const baseUrl = "http://server.cached-user-hosted-role.test"
     const request = (async (input: string | URL | Request) => {

@@ -129,7 +129,7 @@ describe("railWorkspaceSessionBacking", () => {
     })).toEqual({ workspaceId: "ws_signed", kind: "provisioner" })
   })
 
-  test("resolves a user-hosted row addressed as `workspace:<id>` against its host-directory catalog key", () => {
+  test("resolves a machine-placed row addressed as `workspace:<id>` against its host-directory catalog key", () => {
     // What the control plane answers with for a user-hosted workspace: the
     // catalog keys it by the HOST's own path, while the session row carries
     // `sessionRowDirectory`'s `workspace:<id>`. The row's identity, not the
@@ -153,7 +153,7 @@ describe("railWorkspaceSessionBacking", () => {
     })).toEqual({ workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11", kind: "machine" })
   })
 
-  test("does not infer signed authority from a local workspace", () => {
+  test("does not infer signed authority from a workspace on this machine", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/repo/main",
       project: project({
@@ -367,7 +367,7 @@ describe("railWorkspaceMetaLabels", () => {
    * workspace someone else's machine serves says what this account may do with
    * it and whether that machine is up, before any pane opens it.
    */
-  test("a teammate's user-hosted workspace reads viewer and host offline with no pane open", () => {
+  test("a teammate's machine-placed workspace reads viewer and host offline with no pane open", () => {
     expect(railWorkspaceMetaLabels({
       kind: "machine",
       role: "viewer",

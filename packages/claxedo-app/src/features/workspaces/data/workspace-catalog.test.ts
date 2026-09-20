@@ -92,10 +92,10 @@ describe("controlPlaneCatalogProjects", () => {
     expect(project?.workspaces?.["workspace:ws_bare"]).not.toHaveProperty("remote_directory")
   })
 
-  test("builds synthetic project refs from signed user-hosted workspaces", () => {
+  test("builds synthetic project refs from signed machine-placed workspaces", () => {
     expect(controlPlaneCatalogProjects({
       workspaces: [{
-        workspace_id: "ws_user_hosted",
+        workspace_id: "ws_machine",
         project_id: "proj_1",
         display_name: "Shared Repo",
         backing: "local-worktree",
@@ -110,15 +110,15 @@ describe("controlPlaneCatalogProjects", () => {
       // naming the project after one of them picks whichever row happened to
       // be seen first. The repo is stable across every row of the project.
       name: "claxedo/shared",
-      worktree: "workspace:ws_user_hosted",
-      sandboxes: ["workspace:ws_user_hosted"],
+      worktree: "workspace:ws_machine",
+      sandboxes: ["workspace:ws_machine"],
       workspaces: {
-        "workspace:ws_user_hosted": {
-          id: "ws_user_hosted",
+        "workspace:ws_machine": {
+          id: "ws_machine",
           kind: "user-hosted",
           repo_url: "https://github.com/claxedo/shared.git",
           workspace_name: "Shared Repo",
-          directory: "workspace:ws_user_hosted",
+          directory: "workspace:ws_machine",
         },
       },
       time: { created: 1, updated: 2 },
@@ -136,7 +136,7 @@ describe("controlPlaneCatalogProjects", () => {
       },
     ], controlPlaneCatalogProjects({
       workspaces: [{
-        workspace_id: "ws_user_hosted",
+        workspace_id: "ws_machine",
         project_id: "proj_1",
         display_name: "Shared Repo",
         backing: "local-worktree",
@@ -147,10 +147,10 @@ describe("controlPlaneCatalogProjects", () => {
       id: "proj_1",
       name: "Local Repo",
       worktree: "/Users/me/repo",
-      sandboxes: ["workspace:ws_user_hosted"],
+      sandboxes: ["workspace:ws_machine"],
       workspaces: {
-        "workspace:ws_user_hosted": {
-          id: "ws_user_hosted",
+        "workspace:ws_machine": {
+          id: "ws_machine",
           kind: "user-hosted",
         },
       },
@@ -254,6 +254,27 @@ describe("controlPlaneCatalogProjects placement", () => {
     ).toThrow("Control-plane workspace row states no placement")
   })
 
+  /**
+   * `backing` is a WORD on a list row and an OBJECT on the resolve projection
+   * (`claxedo-server-core`'s `workspaceResponse`, and `signedWorkspaceJson`).
+   * A list route that answers the resolve projection whole therefore sends a
+   * shape no list reader can place, and the throw is the honest outcome: one
+   * such row loses the entire control-plane half of the catalog, because
+   * `workspaceCatalogQuery` catches that rejection where the attached server
+   * owns its own projects.
+   */
+  test("refuses a row carrying the resolve projection's object backing", () => {
+    expect(() =>
+      controlPlaneCatalogProjects({
+        workspaces: [{
+          workspaceId: "ws_cloud",
+          projectId: "proj_1",
+          backing: { kind: "cloud-vm", driver: "fly" },
+        }],
+      })
+    ).toThrow("Control-plane workspace row states no placement")
+  })
+
   test.each([["cloud-vm", "cloud"], ["local-worktree", "user-hosted"]])(
     "%s is the %s kind this build can open",
     (backing, kind) => {
@@ -330,7 +351,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
 
   // Both cloud workspaces of one project must survive grouping — this is the
   // list the composer's third select offers as "pick an existing workspace".
-  test("keeps every cloud workspace of a project selectable", () => {
+  test("keeps every provisioner-placed workspace of a project selectable", () => {
     const [project] = controlPlaneCatalogProjects({
       workspaces: [
         { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", remote_directory: "/workspace", workspace_name: "main" },
@@ -385,7 +406,7 @@ function controlPlaneFetch(rows: Record<"cloud" | "user-hosted", unknown[]>, cal
   }) as typeof fetch
 }
 
-const userHostedRow = (workspaceId: string, input: Record<string, unknown> = {}) => ({
+const machineRow = (workspaceId: string, input: Record<string, unknown> = {}) => ({
   workspace_id: workspaceId,
   project_id: input.project_id ?? workspaceId,
   backing: "local-worktree",
@@ -401,7 +422,7 @@ describe("workspaceCatalogQuery", () => {
     const options = workspaceCatalogQuery({
       baseUrl: LOOPBACK,
       client: daemonClient([{ id: "proj_local", worktree: "/Users/me/repo", time: { created: 1, updated: 1 } }]),
-      request: controlPlaneFetch({ cloud: [userHostedRow("ws_cloud", { backing: "cloud-vm", project_id: "proj_cloud" })], "user-hosted": [] }, calls),
+      request: controlPlaneFetch({ cloud: [machineRow("ws_cloud", { backing: "cloud-vm", project_id: "proj_cloud" })], "user-hosted": [] }, calls),
       signedAccess: true,
     })
 
@@ -427,7 +448,7 @@ describe("workspaceCatalogQuery", () => {
           "/Users/me/opencode": { id: workspaceId, kind: "local", directory: "/Users/me/opencode" },
         },
       }]),
-      request: controlPlaneFetch({ cloud: [], "user-hosted": [userHostedRow(workspaceId, { project_id: "proj_local" })] }),
+      request: controlPlaneFetch({ cloud: [], "user-hosted": [machineRow(workspaceId, { project_id: "proj_local" })] }),
       signedAccess: true,
     })
 
@@ -461,7 +482,7 @@ describe("workspaceCatalogQuery", () => {
           },
         },
       },
-      request: controlPlaneFetch({ cloud: [], "user-hosted": [userHostedRow("ws_shared", { role: "viewer", status: "offline" })] }),
+      request: controlPlaneFetch({ cloud: [], "user-hosted": [machineRow("ws_shared", { role: "viewer", status: "offline" })] }),
       signedAccess: true,
     })
 

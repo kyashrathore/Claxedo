@@ -221,11 +221,11 @@ export const HOSTED_OPERATIONS = {
   // other row here validates without transforming and one decoder that quietly
   // reshapes its answer is a decoder nobody can read the registry to predict.
   //
-  // Two rows, one per access kind, answering the same envelope: the hosted list
-  // route returns rows only for `cloud` or `user-hosted`, and the caller that
-  // needs the whole picture asks for both and merges them. Two names rather
-  // than one operation taking an access argument, so the set of calls stays
-  // enumerable by name — the property the closed set rests on.
+  // Two rows answering the same envelope, one per list scope the hosted route
+  // names on the wire (`cloud`, `user-hosted`); a caller that needs every
+  // placement asks for both and merges them. Two names rather than one
+  // operation taking a scope argument, so the set of calls stays enumerable by
+  // name — the property the closed set rests on.
   "workspace.list.cloud": { safe: true, decode: withArrays("workspaces") },
   "workspace.list.userHosted": { safe: true, decode: withArrays("workspaces") },
   // Nullable: the hosted control plane answers `null` on purpose.

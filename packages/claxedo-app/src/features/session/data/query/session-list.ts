@@ -208,10 +208,10 @@ export async function fetchSessionListPage(input: {
  * Fold a freshly fetched page into the list cached for its query.
  *
  * The shaping is the list's, not any one source's: whichever server answered —
- * the daemon, the control-plane registry, or a user-hosted workspace's own
- * runtime over the relay — the cached entry keeps the same merge, ordering and
- * pagination contract, so every reader and every event applier below sees one
- * shape.
+ * the daemon, the control-plane registry, or the runtime on the machine that
+ * serves the workspace, over the relay — the cached entry keeps the same merge,
+ * ordering and pagination contract, so every reader and every event applier
+ * below sees one shape.
  */
 export function applyFetchedSessionListPage(input: {
   baseUrl?: string
@@ -249,8 +249,7 @@ export async function invalidateSessionListQueries(input: { baseUrl?: string } =
 }
 
 /**
- * The relay read a user-hosted section's rows are cut from
- * (`data/sync/session-source.ts`).
+ * The relay read the rows of a section on another machine are cut from.
  *
  * It is memoized per WORKSPACE so one relay hop answers that workspace's own
  * section, its project's section and every page — which also means a section

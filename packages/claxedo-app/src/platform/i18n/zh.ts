@@ -511,7 +511,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "查看者",
   "sidebar.workspace.role.editor": "编辑者",
   "sidebar.workspace.role.admin": "管理员",
-  "sidebar.workspace.hostOffline": "主机离线",
+  "sidebar.workspace.hostOffline": "本机离线",
   "sidebar.workspace.sharedWithYou": "已共享给你",
   "sidebar.workspace.publishedToYourAccount": "已发布到你的账户",
 

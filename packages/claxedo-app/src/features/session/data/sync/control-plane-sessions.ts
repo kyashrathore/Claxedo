@@ -9,12 +9,12 @@ import type { SessionOwner } from "../query/types"
 /**
  * The control plane's session records for one workspace.
  *
- * The registry is not the authority for WHICH sessions a user-hosted workspace
- * holds — its host is — but it is the authority for who created one and who it
- * is shared with, because sharing is a control-plane grant and the runtime has
- * no notion of a user at all. So both the flat inventory and the rail's
- * user-hosted rows read these records, and they read them through here rather
- * than each spelling out the bridge/HTTP pair and the owner field names.
+ * The registry is not the authority for WHICH sessions a workspace holds — the
+ * machine serving it is — but it is the authority for who created one and who
+ * it is shared with, because sharing is a control-plane grant and the runtime
+ * has no notion of a user at all. So both the flat inventory and the rail's
+ * rows for such a workspace read these records, and they read them through here
+ * rather than each spelling out the bridge/HTTP pair and the owner field names.
  *
  * Uncached on purpose: the two callers cache under different contracts — the
  * inventory dedupes a boot fan-out for a few seconds, the rail's owner join

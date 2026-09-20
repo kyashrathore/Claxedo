@@ -91,8 +91,8 @@ describe("share workspace helpers", () => {
   /**
    * The wire contract, pinned against the route that actually exists.
    *
-   * `POST /api/workspace/:id/host-assignment` replaced the retired
-   * `/user-hosted/register`, and its body schema is `.strict()` with exactly
+   * `POST /api/workspace/:id/host-assignment` is the route, and its body
+   * schema is `.strict()` with exactly
    * two optional fields (`displayName`, `orgId`) — plus an explicit 400 for a
    * client-supplied `hostId`, because the machine identity is server-owned.
    * So "what we send" is as load-bearing as "where we send it": one extra key
@@ -162,12 +162,12 @@ describe("share workspace helpers", () => {
         JSON.stringify({
           error: {
             code: "host_assignment_local_workspace_required",
-            message: "Only local workspaces can be assigned for user-hosted sharing",
+            message: "Only a workspace this machine serves can be assigned to a machine",
           },
         }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       ),
-    })).rejects.toThrow("Only local workspaces can be assigned for user-hosted sharing")
+    })).rejects.toThrow("Only a workspace this machine serves can be assigned to a machine")
   })
 
   test("withdrawing one workspace deletes the same assignment", async () => {

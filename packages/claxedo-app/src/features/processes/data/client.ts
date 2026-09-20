@@ -35,11 +35,11 @@ type Input = {
   /**
    * Synchronous placement authority: the signed workspace inventory match for
    * a directory (same shape `createGlobalSdkFetch` takes). Checked before the
-   * network `resolveWorkspaceRuntime` liveness read below, because a
-   * user-hosted workspace addressed by its filesystem-path directory has no
+   * network `resolveWorkspaceRuntime` liveness read below, because a workspace
+   * another machine serves, addressed by its filesystem-path directory, has no
    * `/api/workspace/resolve` entry on the hosted control plane — that read
-   * answers null for it — so without this the process client falls back to
-   * the central (non-relay) transport for every user-hosted process request.
+   * answers null for it — so without this the process client falls back to the
+   * central (non-relay) transport for every one of its process requests.
    */
   resolveSignedWorkspace?: (directory: DirectorySelector) => SignedWorkspaceInfo | undefined
   resolveWorkspaceRuntime?: (input: {

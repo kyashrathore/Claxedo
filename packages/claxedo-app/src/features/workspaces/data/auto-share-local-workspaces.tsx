@@ -58,12 +58,13 @@ export type LocalWorkspaceAutoShareStatus = {
 }
 
 /**
- * Every LOCAL workspace across every open project.
+ * Every workspace this machine holds itself, across every open project.
  *
- * The `kind === "local"` decision is `localWorkspaceShareTarget`'s and stays
- * there: a cloud workspace, a user-hosted one, and the control plane's echo of
- * this machine's own registration all look like directories from here, and
- * re-deriving that from an id shape is the bug that filter exists to prevent.
+ * Which placement a row states is `localWorkspaceShareTarget`'s decision and
+ * stays there: a provisioned sandbox, another machine's workspace and the
+ * control plane's echo of this machine's own registration all look like
+ * directories from here, and re-deriving the placement from an id shape is the
+ * bug that filter exists to prevent.
  */
 export function localWorkspaceShareCandidates(
   projects: readonly ShareableProject[],

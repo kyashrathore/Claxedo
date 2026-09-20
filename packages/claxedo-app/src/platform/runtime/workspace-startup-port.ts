@@ -5,9 +5,9 @@ import type { WorkspaceRuntimeSnapshot } from "./workspace-runtime"
  * How local code asks for a workspace runtime to be brought up, without owning
  * a way to do it.
  *
- * The three operations here need a hosted backend — waking a central cloud
- * sandbox, connecting to a user-hosted machine through the Relay, and admitting
- * a worktree on a remote host — and are bound by
+ * The three operations here need a hosted backend — waking a provisioned
+ * sandbox, connecting to another machine through the Relay, and admitting a
+ * worktree on that machine — and are bound by
  * `platform/runtime/cloud/workspace-runtime-store.ts`. All three need the
  * authenticated transport and the Relay; none of them can happen in a local build.
  *
@@ -45,7 +45,7 @@ export type WorkspaceProvisionEvents = {
   on(type: "provision", handler: (event: WorkspaceProvisionEvent) => void): (() => void) | undefined
 }
 
-export type UserHostedRuntimeResult = {
+export type MachineRuntimeResult = {
   ok: boolean
   offline?: boolean
   status?: string
@@ -53,13 +53,13 @@ export type UserHostedRuntimeResult = {
 }
 
 /**
- * Emitted the first time a host looks offline, while retries continue.
+ * Emitted the first time the machine looks offline, while retries continue.
  *
  * Separate from the final result so a surface can show "waiting for your
  * machine" during the presence-registration window instead of only learning
  * about it thirty seconds later.
  */
-export type UserHostedOfflineSignal = {
+export type MachineOfflineSignal = {
   message: string
 }
 
@@ -91,7 +91,7 @@ export type PrepareWorkspaceRuntimeResult = {
   message?: string
 }
 
-export type PrepareUserHostedRuntimeInput = {
+export type PrepareMachineRuntimeInput = {
   workspaceId: string
   directory?: string
   baseUrl?: string
@@ -100,7 +100,7 @@ export type PrepareUserHostedRuntimeInput = {
   cancelled?: () => boolean
   onStatus?: (status: string) => void
   onLog?: (next: WorkspaceRuntimeLog) => void
-  onOffline?: (next: UserHostedOfflineSignal) => void
+  onOffline?: (next: MachineOfflineSignal) => void
   maxHealthAttempts?: number
   retryDelayMs?: number
   healthTimeoutMs?: number
@@ -116,7 +116,7 @@ export type PrepareWorkspaceSessionWorktreeInput = {
   baseCommit?: string
 }
 
-/** The worktree a remote host admitted for one session. */
+/** The worktree the serving machine admitted for one session. */
 export type WorkspaceSessionWorktree = {
   path?: string
   branch?: string
@@ -124,11 +124,11 @@ export type WorkspaceSessionWorktree = {
 }
 
 export type WorkspaceStartupPort = {
-  /** Wake (or confirm) a central cloud runtime for a directory. */
+  /** Wake (or confirm) the provisioner's sandbox runtime for a directory. */
   prepareWorkspaceRuntime: (input: PrepareWorkspaceRuntimeInput) => Promise<PrepareWorkspaceRuntimeResult>
-  /** Connect to a user-hosted workspace through the Relay and probe its health. */
-  prepareUserHostedRuntime: (input: PrepareUserHostedRuntimeInput) => Promise<UserHostedRuntimeResult>
-  /** Admit a session worktree on the remote host. */
+  /** Connect to a workspace another machine serves, through the Relay, and probe its health. */
+  prepareMachineRuntime: (input: PrepareMachineRuntimeInput) => Promise<MachineRuntimeResult>
+  /** Admit a session worktree on the machine that serves the workspace. */
   prepareWorkspaceSessionWorktree: (
     input: PrepareWorkspaceSessionWorktreeInput,
   ) => Promise<WorkspaceSessionWorktree>

@@ -44,9 +44,9 @@ type WorkspacePending = Readonly<{
 
 type WorkspaceBoard = WorkspacePending & Readonly<{ sessions: ReadonlyMap<string, AgentPresentationSession> }>
 
-function workspaceLabel(input: Readonly<{ id?: string; name?: string; kind: string }>): string {
+function workspaceLabel(input: Readonly<{ id?: string; name?: string; where: string }>): string {
   const name = input.name ? ` (${input.name})` : ""
-  return `${input.id ?? "this workspace"}${name} — ${input.kind}`
+  return `${input.id ?? "this workspace"}${name} — ${input.where}`
 }
 
 /**
@@ -61,7 +61,7 @@ async function boardTargets(client: ClaxedoMcpClient): Promise<{ entries: readon
     try {
       for (const row of await client.workspaces()) {
         entries.push({
-          label: workspaceLabel(row),
+          label: workspaceLabel({ ...row, where: row.host === "provisioner" ? "cloud VM" : "machine" }),
           target: { workspaceId: row.id, ...(row.directory ? { directory: row.directory } : {}) },
           ...(row.machineOnline === false ? { offline: "machine offline" } : {}),
         })
@@ -72,7 +72,7 @@ async function boardTargets(client: ClaxedoMcpClient): Promise<{ entries: readon
   }
   const own = client.ownWorkspace
   if (own && !entries.some((entry) => own.workspaceId && entry.target.workspaceId === own.workspaceId)) {
-    entries.unshift({ label: workspaceLabel({ ...(own.workspaceId ? { id: own.workspaceId } : {}), kind: client.deployment }), target: own })
+    entries.unshift({ label: workspaceLabel({ ...(own.workspaceId ? { id: own.workspaceId } : {}), where: client.deployment }), target: own })
   }
   return { entries, ...(problem ? { problem } : {}) }
 }

@@ -67,7 +67,7 @@ test("archived inventory rows are never direct-route targets", () => {
   })).toBeUndefined()
 })
 
-test("local workspace identity does not replace its filesystem transport directory", () => {
+test("the identity of a workspace on this machine does not replace its filesystem transport directory", () => {
   expect(sessionInventoryTarget("ses_local", {
     loaded: true,
     global: [],

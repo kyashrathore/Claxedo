@@ -127,10 +127,10 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   // `workspace:<uuid>` is also the canonical shape emitted by the local
   // sidecar. A prefix does not turn that local association id into a relay
   // workspace. Only typed SessionRef backing (handled above) or the signed
-  // inventory may do that. Guessing `machine` here created a connection mint
-  // for a local workspace on every session mount; the local control plane
-  // correctly answered 404 "Workspace not found", and the gate then flashed
-  // that false failure over an already-loaded local session.
+  // inventory may do that. Guessing `machine` here mints a connection for a
+  // workspace this server serves itself, on every session mount; the local
+  // control plane answers 404 "Workspace not found" and the gate flashes that
+  // false failure over an already-loaded session.
   if (!signedKind && localWorkspaceAssociationId(workspaceId)) return undefined
   // When the inventory can't resolve the host, do NOT default to the
   // provisioner: that path runs `prepareWorkspaceRuntime` →

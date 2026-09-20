@@ -17,10 +17,12 @@ import { asRecord } from "@/lib/record"
 /**
  * The word a project-inventory row's `kind` is written with on the wire.
  *
- * Three producers write it: the daemon's own store (`local` / `cloud`), the
- * hosted control plane's shell projects and a self-hosted node's signed
- * bootstrap (`user-hosted` / `cloud`). Rows keep it; readers narrow it with
- * {@link inventoryHostKind}.
+ * One producer writes it now: the daemon's own store, whose workspace row has
+ * a `kind` column (`local` / `cloud`) and no backing. The app mints it back
+ * for its own catalog rows through {@link inventoryKindWord} so both halves of
+ * one inventory map read alike. Every other inventory producer states
+ * `backing` instead, which is why a row is narrowed by {@link rowHostKind}
+ * rather than by this word alone.
  */
 export type InventoryKindWord = "local" | "cloud" | "user-hosted"
 
@@ -99,12 +101,40 @@ export function isRelayHostKind(kind: WorkspaceHostKind | null | undefined): kin
 }
 
 /**
+ * Whether the attached server serves this workspace itself.
+ *
+ * Not the negation of {@link isRelayHostKind}: a placement that names no host
+ * is neither, and a caller that reads "not relayed" as "mine" opens a local
+ * runtime for a workspace nothing has placed.
+ */
+export function isSelfHostKind(kind: WorkspaceHostKind | null | undefined): kind is "self" {
+  return kind === "self"
+}
+
+/**
+ * The workspace half of a persisted model document's key.
+ *
+ * A workspace the attached server holds is keyed by its directory there; one a
+ * machine or the provisioner holds is keyed by its id, because that directory
+ * is a path on somebody else's filesystem and two of them can collide. A pane
+ * and the Settings Models page must derive it the same way or they edit two
+ * documents while believing they share one, so each narrows its own producer's
+ * word to a host kind and asks here.
+ */
+export function modelStoreWorkspaceKey(input: {
+  host: WorkspaceHostKind | null | undefined
+  workspaceId?: string
+  hostDirectory: string
+}) {
+  return isRelayHostKind(input.host) && input.workspaceId ? input.workspaceId : input.hostDirectory
+}
+
+/**
  * The host kind a project-inventory row's `kind` states.
  *
- * Three producers write that field and each spells the same three placements
- * its own way: the daemon's own store (`local` / `cloud`), the hosted control
- * plane's shell projects and the self-hosted node's signed bootstrap
- * (`user-hosted` / `cloud`).
+ * Only the daemon's own store and the app's own catalog projection write that
+ * field. A reader holding a whole row asks {@link rowHostKind}; this narrows
+ * the word once it has been read off one.
  */
 export function inventoryHostKind<T>(input: T & NotAHostKind<T>): WorkspaceHostKind | undefined {
   if (input === "local") return "self"
@@ -191,16 +221,21 @@ export function placementProvisioner(input: unknown): string | undefined {
 }
 
 /**
- * The host kind a raw inventory or session row reports.
+ * The host kind an inventory or session row reports, whichever word its
+ * producer states it in.
  *
- * A daemon row states its own `kind`; a control-plane row states only where it
- * runs, so its `backing` is mapped. A row carrying both is answered by its own
- * `kind`, which the serving process wrote about itself.
+ * The producers do not agree and cannot: the daemon's store has a `kind`
+ * column and no backing, while the signed bootstrap
+ * (`claxedo-local-server/.../bootstrap.ts`) and the hosted shell
+ * (`claxedo-server/src/routes/hosted/shell.ts`) pass the control plane's
+ * `backing` through and write no kind. Reading only one of the two answers
+ * `undefined` for half the rows in circulation, which every caller spells as
+ * "not relay-backed" and routes at the wrong server.
  *
- * Not the same question as `workspaceHostingKind`, which answers "which relay
- * reaches it" and so has no answer for a row this server serves.
+ * `kind` is preferred where a row carries both, because it is the serving
+ * process writing about itself.
  */
-function rowHostKind(input: unknown): WorkspaceHostKind | undefined {
+export function rowHostKind(input: unknown): WorkspaceHostKind | undefined {
   const row = asRecord(input)
   return inventoryHostKind(row?.kind) ?? backingHostKind(row?.backing)
 }

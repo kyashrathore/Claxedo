@@ -168,7 +168,7 @@ describe("claxedoEventStreamTargets", () => {
     })).toEqual([loopbackCp, { ...loopbackCp, transport: "account" }, hostAggregate])
   })
 
-  test("a server that declares no aggregate hands the local workspace its own stream, loopback or not", () => {
+  test("a server that declares no aggregate hands a workspace on this machine its own stream, loopback or not", () => {
     // The self-hosted node runs its embedded issuer on localhost and mounts no
     // aggregate when it does. Reading the URL alone would leave every local
     // workspace with no stream at all behind a route that answers nothing.
@@ -364,15 +364,15 @@ describe("claxedoEventStreamTargets", () => {
       hostAggregate: true,
       serverUrl: "https://control.example.test",
       accountSigned: true,
-      directory: "ws_user_hosted",
+      directory: "ws_machine",
     })).toEqual([
       { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
       {
         kind: "wr",
         serverUrl: "https://control.example.test",
-        workspaceId: "ws_user_hosted",
+        workspaceId: "ws_machine",
         hostKind: "machine",
-        directory: "ws_user_hosted",
+        directory: "ws_machine",
       },
     ])
   })
@@ -556,7 +556,7 @@ describe("eventStreamFetch", () => {
     ])
   })
 
-  test("keeps loopback local workspace streams on the directory-scoped runtime", async () => {
+  test("keeps loopback streams for a workspace on this machine on the directory-scoped runtime", async () => {
     const seen: Array<{ url: string; auth: string | null; xdir: string | null }> = []
     const request: typeof fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -596,7 +596,7 @@ describe("eventStreamFetch", () => {
     }])
   })
 
-  test("a desktop reads a cloud workspace's stream through its daemon's proxy, cursor forwarded, no browser relay mint", async () => {
+  test("a desktop reads a provisioner-placed workspace's stream through its daemon's proxy, cursor forwarded, no browser relay mint", async () => {
     const seen: Array<{ url: string; auth: string | null; cursor: string | null }> = []
     const request: typeof fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -658,7 +658,7 @@ describe("eventStreamFrameAddress", () => {
 
   // A local workspace is served by this surface's own runtime over loopback, so
   // its path IS this machine's and every consumer is keyed by it.
-  test("leaves a local workspace's own paths alone", () => {
+  test("leaves the paths of a workspace on this machine alone", () => {
     const address = eventStreamFrameAddress({
       kind: "wr",
       serverUrl: "http://127.0.0.1:3001",

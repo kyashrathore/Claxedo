@@ -322,10 +322,9 @@ export default function SessionPage(props: {
   })
   const routeHostKind = createMemo<WorkspaceHostKind>(() => {
     // On a fresh DRAFT nav the inventory hasn't resolved yet and the only signal
-    // is the directory-ref fallback — resolveDraftHostKind carries the ref's
-    // OWN kind through instead of collapsing every ref to the provisioner (the
-    // collapse mis-routed ws_-shaped machine draft navs into the environment
-    // picker).
+    // is the directory-ref fallback, so `resolveDraftHostKind` carries the ref's
+    // OWN kind through: collapsing every ref to the provisioner routes a
+    // `ws_`-shaped draft nav for a machine into the environment picker.
     return resolveDraftHostKind({
       resolvedKind: resolvedHostKind(),
       fallbackRefKind: inventoryAwareWorkspaceRuntime()?.kind,

@@ -30,9 +30,12 @@ export function workspaceDefaultSandboxDriverUrl(input?: { baseUrl?: string }) {
 /**
  * The control plane's workspace list for one host kind.
  *
- * `?access` is required: without it the route answers the CENTRAL's own local
- * inventory, which is a different question from "what can this principal
- * reach". Callers that want the whole picture ask for both hosts and merge.
+ * `?access` is required because the two routes that serve this path disagree
+ * without it: `claxedo-server`'s answers `listProjects()` — a project list,
+ * another question in another shape — while the daemon's answers the
+ * provisioner's rows alone, which silently equals one of the two scopes and
+ * looks like a complete list. Callers that want the whole picture ask for both
+ * hosts and merge.
  */
 export function workspaceListUrl(input: { baseUrl?: string; host: RelayHostKind }) {
   const url = new URL("/api/workspace", controlPlaneBaseUrl(input.baseUrl))

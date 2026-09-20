@@ -445,7 +445,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "مشاهد",
   "sidebar.workspace.role.editor": "محرر",
   "sidebar.workspace.role.admin": "مسؤول",
-  "sidebar.workspace.hostOffline": "المضيف غير متصل",
+  "sidebar.workspace.hostOffline": "الجهاز غير متصل",
   "sidebar.workspace.sharedWithYou": "تمت مشاركته معك",
   "sidebar.workspace.publishedToYourAccount": "منشور إلى حسابك",
   "settings.section.desktop": "سطح المكتب",

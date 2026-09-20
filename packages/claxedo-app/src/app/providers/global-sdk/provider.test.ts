@@ -258,11 +258,11 @@ describe("global sdk stream bridge", () => {
       directory: "ws_cloud",
       workspaceId: "ws_cloud",
       hostKind: "provisioner",
-    }, "cp-user-hosted-1", {
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
+    }, "cp-machine-1", {
+      directory: "/home/dev/.claxedo/workspaces/ws_shared",
     })).toEqual({
-      sessionID: "cp-user-hosted-1",
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
+      sessionID: "cp-machine-1",
+      directory: "/home/dev/.claxedo/workspaces/ws_shared",
       workspaceId: undefined,
       hostKind: undefined,
     })
@@ -292,25 +292,25 @@ describe("global sdk stream bridge", () => {
     })
   })
 
-  test("live session relay backing resolves signed user-hosted filesystem directories", () => {
+  test("live session relay backing resolves a machine-placed filesystem directory", () => {
     expect(liveSessionWithRelayBacking({
-      sessionID: "cp-user-hosted-1",
-      directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
+      sessionID: "cp-machine-1",
+      directory: "/private/tmp/ws/.claxedo/workspaces/ws_shared",
     }, [{
       id: "project-1",
       worktree: "/tmp/ws",
       time: { created: 1, updated: 1 },
       workspaces: {
-        ws_user_hosted: {
-          workspaceId: "ws_user_hosted",
+        ws_shared: {
+          workspaceId: "ws_shared",
           kind: "user-hosted",
-          directory: "/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
+          directory: "/tmp/ws/.claxedo/workspaces/ws_shared",
         },
       },
     }])).toEqual({
-      sessionID: "cp-user-hosted-1",
-      directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
-      workspaceId: "ws_user_hosted",
+      sessionID: "cp-machine-1",
+      directory: "/private/tmp/ws/.claxedo/workspaces/ws_shared",
+      workspaceId: "ws_shared",
       hostKind: "machine",
     })
   })

@@ -78,7 +78,6 @@ export type WorkspaceConnectionInfo = {
   homeRegion?: string
   role: RuntimeAccessTokenRole
   relayUrl: string
-  directRuntimeUrl?: string
   runtimeAccessToken: string
   tokenExpiresAt: number
 }
@@ -155,9 +154,6 @@ function parseConnection(input: unknown): WorkspaceConnectionInfo {
   if (!("workspaceId" in input) || typeof input.workspaceId !== "string") throw new Error("Invalid workspace connection workspaceId")
   if (!("role" in input) || !isRuntimeAccessTokenRole(input.role)) throw new Error("Invalid workspace connection role")
   if (!("relayUrl" in input) || typeof input.relayUrl !== "string") throw new Error("Invalid workspace connection relayUrl")
-  const directRuntimeUrl = "directRuntimeUrl" in input && typeof input.directRuntimeUrl === "string"
-    ? normalized(input.directRuntimeUrl) ?? input.directRuntimeUrl
-    : undefined
   // Absent means the control plane did not say, and the app must not decide for
   // it: the stream owner opens no workspace stream until it knows which scopes
   // the runtime serves. A wrong guess is a permanent 400 on one composition and
@@ -176,7 +172,6 @@ function parseConnection(input: unknown): WorkspaceConnectionInfo {
     ...(homeRegion ? { homeRegion } : {}),
     role: input.role,
     relayUrl: normalized(input.relayUrl) ?? input.relayUrl,
-    ...(directRuntimeUrl ? { directRuntimeUrl } : {}),
     runtimeAccessToken: input.runtimeAccessToken,
     tokenExpiresAt: input.tokenExpiresAt,
   }
@@ -479,15 +474,6 @@ export function createWorkspaceRelayConnection(input: WorkspaceConnectionInfo, o
 
   const relayFetch = async (path: string, init: RequestInit = {}) => {
     const connection = await ensureFresh()
-    if (connection.directRuntimeUrl) {
-      const headers = new Headers(init.headers)
-      headers.delete("Authorization")
-      return relayRequest(`${connection.directRuntimeUrl}${path}`, {
-        ...init,
-        redirect: init.redirect ?? "manual",
-        headers,
-      })
-    }
     const headers = new Headers(init.headers)
     headers.set("Authorization", `Bearer ${connection.runtimeAccessToken}`)
     const res = await relayRequest(`${connection.relayUrl}/workspaces/${encodeURIComponent(connection.workspaceId)}${path}`, {
@@ -507,9 +493,6 @@ export function createWorkspaceRelayConnection(input: WorkspaceConnectionInfo, o
 
   const relayWebSocket = async (path: string, protocols: string[] = []) => {
     const connection = await ensureFresh()
-    if (connection.directRuntimeUrl) {
-      return new webSocket(`${connection.directRuntimeUrl}${path}`.replace(/^http/, "ws"), protocols)
-    }
     return new webSocket(
       `${connection.relayUrl}/workspaces/${encodeURIComponent(connection.workspaceId)}${path}`.replace(/^http/, "ws"),
       [runtimeAccessTokenProtocol(connection.runtimeAccessToken), ...protocols],

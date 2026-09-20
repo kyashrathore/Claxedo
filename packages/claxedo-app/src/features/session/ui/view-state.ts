@@ -111,11 +111,11 @@ export function shouldRenderNewSessionComposer(input: {
   return input.workspaceReady
 }
 
-// A fresh draft nav to `/w/:workspaceId/session` resolves its workspace kind in
-// two steps: the signed-inventory lookup (`resolvedKind`, real cloud vs
-// user-hosted) and, when that hasn't landed yet (inventory/projects still
+// A fresh draft nav to `/w/:workspaceId/session` resolves the workspace's host
+// in two steps: the signed-inventory lookup (`resolvedKind`, the placement the
+// catalog states) and, when that hasn't landed yet (inventory/projects still
 // loading), a directory-ref fallback that only proves a `ws_`-shaped ref
-// exists — it does not by itself distinguish cloud from user-hosted.
+// exists — it names no host of its own.
 // Collapsing that fallback into the provisioner would route a workspace on an
 // enrolled machine into the sandbox-provisioning draft picker instead of its
 // own gate, so the fallback carries its own host kind through instead of being
@@ -126,8 +126,8 @@ export function resolveDraftHostKind(input: {
   /**
    * Hosted web composition (web platform + signed, non-loopback control plane).
    * There is no machine behind the renderer, so `self` is not a reachable
-   * default — falling back to it opened every fresh draft in an environment the
-   * web build can never run. Desktop and loopback keep the `self` default.
+   * default: a draft that falls back to it names an environment the web build
+   * can never run. Desktop and loopback keep the `self` default.
    */
   webOnlyCloud?: boolean
 }): WorkspaceHostKind {

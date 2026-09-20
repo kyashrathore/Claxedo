@@ -513,7 +513,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Lector",
   "sidebar.workspace.role.editor": "Editor",
   "sidebar.workspace.role.admin": "Administrador",
-  "sidebar.workspace.hostOffline": "Host sin conexión",
+  "sidebar.workspace.hostOffline": "Máquina sin conexión",
   "sidebar.workspace.sharedWithYou": "Compartido contigo",
   "sidebar.workspace.publishedToYourAccount": "Publicado en tu cuenta",
 

@@ -512,7 +512,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Gledalac",
   "sidebar.workspace.role.editor": "Urednik",
   "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Domaćin je offline",
+  "sidebar.workspace.hostOffline": "Mašina je offline",
   "sidebar.workspace.sharedWithYou": "Podijeljeno s vama",
   "sidebar.workspace.publishedToYourAccount": "Objavljeno na vaš račun",
 

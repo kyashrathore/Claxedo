@@ -163,8 +163,8 @@ export type MachineRemoteAccessPort = {
   /**
    * Publish one workspace from this machine.
    *
-   * Absent on the HTTP product, where sharing goes through the self-hosted
-   * server's own `/api/workspace/:id/user-hosted/register` route. Present on
+   * Absent on the HTTP product, where publishing goes through the self-hosted
+   * server's own `POST /api/workspace/:id/host-assignment` route. Present on
    * the desktop, where the Host Connector holds the machine key and the
    * account credential and no such local route exists.
    */

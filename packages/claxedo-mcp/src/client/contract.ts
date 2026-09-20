@@ -50,7 +50,12 @@ export type TasksGrant = Readonly<{
 export type WorkspaceSummary = Readonly<{
   id: string
   name?: string
-  kind: "user-hosted" | "cloud" | "local"
+  /**
+   * The machine the workspace runs on, as its control-plane row states it.
+   * Absent on the workspace this credential itself belongs to: no row names
+   * that one, and the client reaches it in its own process either way.
+   */
+  host?: "machine" | "provisioner"
   directory?: string
   status?: string
   machineOnline?: boolean

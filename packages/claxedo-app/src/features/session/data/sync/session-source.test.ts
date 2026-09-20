@@ -96,7 +96,7 @@ describe("sessionRowDirectory", () => {
   })
 })
 
-describe("a user-hosted workspace's list", () => {
+describe("a machine-placed workspace's list", () => {
   test("takes its rows from the workspace runtime, never from the control plane", async () => {
     const { requested, request } = recordingFetch({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
@@ -208,13 +208,13 @@ describe("a user-hosted workspace's list", () => {
   })
 })
 
-describe("who owns a user-hosted row", () => {
+describe("who owns a machine-placed row", () => {
   const SHARED_ROWS = () => Response.json([
     { id: "ses_alice", title: "Alice's session", directory: HOST_DIR, time: { created: 1, updated: 40 } },
     { id: "ses_mine", title: "mine", directory: HOST_DIR, time: { created: 1, updated: 2 } },
   ])
 
-  async function userHostedPage(routes: Record<string, () => Response>) {
+  async function machinePage(routes: Record<string, () => Response>) {
     const { requested, request } = recordingFetch(routes)
     const page = await sessionSourceQueryOptions({
       baseUrl: CONTROL,
@@ -229,7 +229,7 @@ describe("who owns a user-hosted row", () => {
   // reached his rail anonymous. The registry's record for the same session id
   // carries the creator, and only for a reader who is not that creator.
   test("carries the creator the control plane names for that session", async () => {
-    const { page, requested } = await userHostedPage({
+    const { page, requested } = await machinePage({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
       [`${CONTROL}/api/control/sessions`]: () => Response.json({
         sessions: [
@@ -262,7 +262,7 @@ describe("who owns a user-hosted row", () => {
   // The creator decorates a row; a rail emptied because an avatar could not be
   // resolved would report a reachable machine as an empty one.
   test("still lists the machine's sessions when the control plane refuses", async () => {
-    const { page } = await userHostedPage({
+    const { page } = await machinePage({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
       [`${CONTROL}/api/control/sessions`]: () => new Response("forbidden", { status: 403 }),
       "https://relay.test/workspaces/ws_1/session": SHARED_ROWS,
@@ -274,7 +274,7 @@ describe("who owns a user-hosted row", () => {
 })
 
 describe("a re-prompted session's place in the list", () => {
-  test("a user-hosted row whose updatedAt moves is re-sorted to the top of its own section", async () => {
+  test("a machine-placed row whose updatedAt moves is re-sorted to the top of its own section", async () => {
     const { request } = recordingFetch({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
       "https://relay.test/workspaces/ws_1/session": () => Response.json([
@@ -305,7 +305,7 @@ describe("a re-prompted session's place in the list", () => {
       .toEqual(["ses_old", "ses_new"])
   })
 
-  test("a user-hosted section the rail asked for human_turn_desc orders on the reader's last turn", async () => {
+  test("a machine-placed section the rail asked for human_turn_desc orders on the reader's last turn", async () => {
     const { request } = recordingFetch({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
       "https://relay.test/workspaces/ws_1/session": () => Response.json([
@@ -384,7 +384,7 @@ describe("a re-prompted session's place in the list", () => {
   })
 })
 
-describe("a cloud workspace's list", () => {
+describe("a provisioner-placed workspace's list", () => {
   test("is served by the control plane's registry", async () => {
     const { requested, request } = recordingFetch({
       [`${CONTROL}/api/control/session-list`]: () => Response.json({
@@ -449,7 +449,7 @@ describe("a project's list", () => {
     attachments: [],
   }
 
-  test("a project with no user-hosted workspace reads the central server alone", () => {
+  test("a project with no machine-placed workspace reads the central server alone", () => {
     expect(projectSessionSource({
       local: false,
       projectId: "prj_1",
@@ -470,11 +470,11 @@ describe("a project's list", () => {
     })).toEqual({
       kind: "composed",
       central: { kind: "provisioner" },
-      userHosted: [{ kind: "machine", workspaceId: "ws_1", projectId: "prj_1" }],
+      machines: [{ kind: "machine", workspaceId: "ws_1", projectId: "prj_1" }],
     })
   })
 
-  test("lists the central server's rows beside the user-hosted workspace's own runtime rows", async () => {
+  test("lists the central server's rows beside the machine-placed workspace's own runtime rows", async () => {
     const { requested, request } = recordingFetch({
       [`${CONTROL}/api/control/session-list`]: centralPage([localRow]),
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
@@ -507,7 +507,7 @@ describe("a project's list", () => {
     })
   })
 
-  test("a user-hosted-only project lists the relay's rows even though the central server has none", async () => {
+  test("a project of machine-placed workspaces alone lists the relay's rows even though the central server has none", async () => {
     const { request } = recordingFetch({
       [`${CONTROL}/api/control/session-list`]: centralPage([]),
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
@@ -617,7 +617,7 @@ describe("a project's list", () => {
     }).queryFn!({} as never)).rejects.toThrow()
   })
 
-  test("a session.lifecycle row for the user-hosted workspace lands in the project's list", async () => {
+  test("a session.lifecycle row for the machine-placed workspace lands in the project's list", async () => {
     const { request } = recordingFetch({
       [`${CONTROL}/api/control/session-list`]: centralPage([localRow]),
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,

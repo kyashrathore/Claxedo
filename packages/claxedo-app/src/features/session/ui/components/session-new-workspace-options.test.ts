@@ -33,7 +33,7 @@ describe("createNewSessionWorkspaceState", () => {
     expect(state.creatingWorkspace).toBe(false)
   })
 
-  test("filters local and cloud workspace choices separately", () => {
+  test("filters this machine's workspace choices from the provisioner-placed ones", () => {
     const sandboxes = ["/repo/local-feature", "workspace:cloud-main", "workspace:cloud-feature"]
 
     expect(createNewSessionWorkspaceState({
@@ -66,7 +66,7 @@ describe("createNewSessionWorkspaceState", () => {
     expect(state.currentWorktree).toBe(MAIN_WORKTREE)
   })
 
-  test("cloud mode defaults to create-new when no cloud workspace exists", () => {
+  test("the provisioner defaults to create-new when no provisioner-placed workspace exists", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: MAIN_WORKTREE,
@@ -106,8 +106,8 @@ describe("createNewSessionWorkspaceState", () => {
   // Regression for the accidental-VM bug: a self-hosted (user-hosted) workspace
   // is its OWN kind and must never be collapsed into "cloud" — collapsing is what
   // dropped it into the cloud-provision create path.
-  test("self-hosted workspaces are a distinct kind, never collapsed to cloud", () => {
-    const userHostedWorkspaces = {
+  test("machine-placed workspaces are a distinct placement, never collapsed into the provisioner's", () => {
+    const machineWorkspaces = {
       "/repo/main": { kind: "local" as const },
       "workspace:self-hosted": { kind: "user-hosted" as const, workspace_name: "my-machine" },
     }
@@ -119,7 +119,7 @@ describe("createNewSessionWorkspaceState", () => {
       selectedWorktree: "workspace:self-hosted",
       hostKind: "machine",
       sandboxes,
-      workspaces: userHostedWorkspaces,
+      workspaces: machineWorkspaces,
     }).options).toEqual(["workspace:self-hosted"])
 
     // ...and is NOT offered as a cloud choice.
@@ -128,13 +128,13 @@ describe("createNewSessionWorkspaceState", () => {
       selectedWorktree: MAIN_WORKTREE,
       hostKind: "provisioner",
       sandboxes,
-      workspaces: userHostedWorkspaces,
+      workspaces: machineWorkspaces,
     }).options).toEqual([])
   })
 
   // The fail-closed property: an empty user-hosted option set must NOT auto-flip
   // into create mode (that path only exists for "cloud"). No silent provisioning.
-  test("user-hosted with no options never enters create-new mode", () => {
+  test("a machine placement with no options never enters create-new mode", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: MAIN_WORKTREE,

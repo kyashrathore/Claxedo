@@ -7,7 +7,8 @@
  * into pickable rows, and choosing which row a freshly opened dialog starts on.
  */
 
-import { sessionRowDirectory, modelStoreWorkspaceKey } from "@/platform/identity/workspace-address"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
+import { inventoryHostKind, isSelfHostKind, modelStoreWorkspaceKey, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 
 /** A workspace row as the catalog carries it inside a project. */
@@ -37,7 +38,8 @@ export type SettingsWorkspaceOption = {
    */
   scope: string
   workspaceId?: string
-  kind: string
+  /** The machine that holds it, narrowed from the catalog row's wire word. */
+  host: WorkspaceHostKind
   /** The workspace's own name. */
   label: string
   /** The project it belongs to, for disambiguating same-named workspaces. */
@@ -52,9 +54,9 @@ function projectLabel(project: CatalogProject) {
 /**
  * One option per workspace the catalog knows, in catalog order.
  *
- * A project with no workspace records is a directory the central server serves
- * itself, so it contributes one `local` row addressed by its worktree — the
- * same scope string a pane on that directory produces.
+ * A project with no workspace records is a directory the attached server serves
+ * itself, so it contributes one row on host `self` addressed by its worktree —
+ * the same scope string a pane on that directory produces.
  */
 export function settingsWorkspaceOptions(projects: readonly CatalogProject[]): SettingsWorkspaceOption[] {
   return projects.flatMap((project) => {
@@ -63,7 +65,7 @@ export function settingsWorkspaceOptions(projects: readonly CatalogProject[]): S
       return [{
         key: project.worktree,
         scope: project.worktree,
-        kind: "local",
+        host: "self",
         label: project.worktree,
         project: projectLabel(project),
         directory: project.worktree,
@@ -72,13 +74,17 @@ export function settingsWorkspaceOptions(projects: readonly CatalogProject[]): S
     return entries.map(([ref, workspace]) => {
       const workspaceId = workspace.workspaceId ?? workspace.id
       const directory = workspace.directory ?? ref
+      // A row whose `kind` this build does not know is a workspace it cannot
+      // place, and the attached server is the only host it can reach without
+      // one.
+      const host = inventoryHostKind(workspace.kind) ?? "self"
       return {
         // The model document's key — the same rule a pane on this workspace
         // applies, so Settings edits the document the composer reads.
-        key: modelStoreWorkspaceKey({ kind: workspace.kind ?? "local", workspaceId, hostDirectory: directory }),
+        key: modelStoreWorkspaceKey({ host, workspaceId, hostDirectory: directory }),
         scope: sessionRowDirectory({ workspaceId, hostDirectory: directory }),
         ...(workspaceId ? { workspaceId } : {}),
-        kind: workspace.kind ?? "local",
+        host,
         label: workspace.workspace_name ?? directory,
         project: projectLabel(project),
         directory,
@@ -90,9 +96,9 @@ export function settingsWorkspaceOptions(projects: readonly CatalogProject[]): S
 /**
  * The row a freshly opened dialog starts on.
  *
- * The workspace the user is looking at wins; otherwise a local workspace, which
- * is the one a desktop or daemon surface can always answer for; otherwise the
- * first row the catalog offered.
+ * The workspace the user is looking at wins; otherwise one the attached server
+ * holds itself, which is the one a desktop or daemon surface can always answer
+ * for; otherwise the first row the catalog offered.
  */
 export function defaultSettingsWorkspace(
   options: readonly SettingsWorkspaceOption[],
@@ -102,7 +108,7 @@ export function defaultSettingsWorkspace(
     (!!focused.workspaceId && option.workspaceId === focused.workspaceId) ||
     (!!focused.directory && option.directory === focused.directory))
   if (match) return match
-  return options.find((option) => option.kind === "local") ?? options[0]
+  return options.find((option) => isSelfHostKind(option.host)) ?? options[0]
 }
 
 /**

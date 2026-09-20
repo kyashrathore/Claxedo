@@ -54,6 +54,19 @@ export function sameWorkspaceDirectory(left: string | null | undefined, right: s
   return !!left && !!right && workspaceDirectoryAliasKey(left) === workspaceDirectoryAliasKey(right)
 }
 
+/**
+ * Whether a directory forces the signed path, whatever it turns out to be.
+ *
+ * One arm today, and kept as a name because the question is not the mechanism:
+ * callers ask "must this be read through the control plane", and answering it
+ * by spelling `isFilesystemDirectory` at each call site moves a legacy string
+ * sniff out of this file — which the header above forbids and the
+ * `isFilesystemDirectory` ratchet counts.
+ */
+export function requiresSignedLegacyDirectory(input: string | undefined) {
+  return isFilesystemDirectory(input)
+}
+
 export function usesScopedSessionTransport(sessionID: string | undefined, directory?: string) {
   return !!sessionID && (
     requiresSignedLegacyDirectory(directory) ||
@@ -62,17 +75,9 @@ export function usesScopedSessionTransport(sessionID: string | undefined, direct
   )
 }
 
-export function isUserHostedWorkspaceDirectory(input: string | undefined) {
-  if (!input) return false
-  return /(?:^|[/\\])\.claxedo[/\\]user-hosted[/\\]workspaces[/\\][^/\\]+/.test(input)
-}
-
-export function requiresSignedLegacyDirectory(input: string | undefined) {
-  return isFilesystemDirectory(input) || isUserHostedWorkspaceDirectory(input)
-}
-
 export function isLocalSessionDirectory(input: string | undefined): input is string {
   if (!input) return false
-  if (requiresSignedLegacyDirectory(input)) return true
+  // An absolute path never starts with `workspace:`, so the ref test answers
+  // it too.
   return !input.startsWith("workspace:")
 }

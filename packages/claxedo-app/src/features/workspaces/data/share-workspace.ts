@@ -2,6 +2,7 @@ import { workspaceRoute } from "@/platform/identity/route"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { inventoryHostKind, isSelfHostKind } from "@/platform/runtime/placement-wire"
 
 type ProjectWorkspace = {
   id?: string
@@ -38,10 +39,10 @@ export function localWorkspaceShareTarget(input: {
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
   if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return undefined
-  // Anything the engine marks non-local (cloud OR user-hosted) is a remote
-  // representation — including the control plane's echo of this machine's own
-  // registration — never a directory this machine can publish.
-  if (row?.kind && row.kind !== "local") return undefined
+  // A row placed anywhere but on the attached server — the provisioner, another
+  // machine, or the control plane's echo of this machine's own registration —
+  // is a remote representation, never a directory this machine can publish.
+  if (row?.kind && !isSelfHostKind(inventoryHostKind(row.kind))) return undefined
   return { workspaceId, directory }
 }
 

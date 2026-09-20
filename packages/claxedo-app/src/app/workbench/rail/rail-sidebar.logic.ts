@@ -326,10 +326,10 @@ export function railRowStatusType(input: {
  *
  * All of it comes from the CATALOG, so a workspace a teammate shares says what
  * this account may do with it and whether the machine serving it is up before
- * any pane opens it. The two sharing badges are different facts and were one
- * word ("Shared") that meant only the first:
+ * any pane opens it. The two sharing badges are different facts and one word
+ * for both would state only the first:
  *
- * - "published by this machine" — this desktop is the host serving it out;
+ * - "published to your account" — this desktop serves the workspace out;
  * - "shared with you" — someone else's machine serves it and this account
  *   holds a granted role on it.
  */
@@ -341,13 +341,13 @@ export function railWorkspaceMetaLabels(input: {
   publishedToYourAccount: boolean
   label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedToYourAccount", role?: string) => string
 }) {
-  const userHosted = input.kind === "machine"
-  const granted = userHosted && !!input.role && input.role !== "owner"
+  const onAMachine = input.kind === "machine"
+  const granted = onAMachine && !!input.role && input.role !== "owner"
   return [
     input.status,
-    // Reachability is only a question about a machine someone owns; a cloud
-    // workspace's runtime is provisioned on demand and reports its own state.
-    userHosted && input.hostOnline === false ? input.label("hostOffline") : undefined,
+    // Reachability is only a question about a machine someone owns; the
+    // provisioner brings a runtime up on demand and reports its own state.
+    onAMachine && input.hostOnline === false ? input.label("hostOffline") : undefined,
     granted ? input.label("role", input.role) : undefined,
     input.publishedToYourAccount ? input.label("publishedToYourAccount") : undefined,
     granted && !input.publishedToYourAccount ? input.label("sharedWithYou") : undefined,

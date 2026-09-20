@@ -373,7 +373,7 @@ describe("terminal relay lifecycle", () => {
     dispose()
   })
 
-  test("routes loopback cloud PTY lifecycle through the local workspace proxy", async () => {
+  test("routes loopback provisioner-placed PTY lifecycle through this machine's workspace proxy", async () => {
     const calls: Array<{ url: string; method: string }> = []
     const request: typeof fetch = async (input, init) => {
       const req = requestFrom(input, init)
@@ -412,7 +412,7 @@ describe("terminal relay lifecycle", () => {
     }
   })
 
-  test("keeps local workspace identity on the direct PTY API", async () => {
+  test("keeps the identity of a workspace this machine serves on the direct PTY API", async () => {
     const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = []
     let nextPty = 1
     const request: typeof fetch = async (input, init) => {

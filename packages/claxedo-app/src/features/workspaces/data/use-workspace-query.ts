@@ -21,9 +21,9 @@ export type WorkspaceQueryOptions<
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
 > = Omit<SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey>, "initialData"> & {
-  // The workspaceId whose connection gates this query. A relay-backed workspace
-  // (cloud / user-hosted) supplies its real id and the query is gated on the
-  // authority flipping that id to `ready`.
+  // The workspaceId whose connection gates this query. A workspace the attached
+  // server does not serve itself supplies its real id and the query is gated on
+  // the authority flipping that id to `ready`.
   //
   // `undefined` means there is NO relay backing for this scope — i.e. the query
   // targets the central / loopback-local server, which is reachable as soon as

@@ -66,8 +66,8 @@ describe("session config selection", () => {
     expect(sessionConfigRawQueryKey(byRoute)).not.toEqual(sessionConfigRawQueryKey({ ...byRoute, directory: "ws_2" }))
   })
 
-  test("does not merge user-hosted and cloud refs with the same visible placement", () => {
-    const userHosted = {
+  test("does not merge machine-placed and provisioner-placed refs with the same visible placement", () => {
+    const machine = {
       sessionId: "shared",
       host: "workspace",
       workspaceId: "ws_1",
@@ -93,10 +93,10 @@ describe("session config selection", () => {
       serverUrl: "https://one.example",
     }
 
-    expect(sessionConfigRawQueryKey({ ...scope, sessionRef: userHosted })).not.toEqual(
+    expect(sessionConfigRawQueryKey({ ...scope, sessionRef: machine })).not.toEqual(
       sessionConfigRawQueryKey({ ...scope, sessionRef: workspace }),
     )
-    expect(sessionConfigSelectionQueryKey({ ...scope, sessionRef: userHosted })).not.toEqual(
+    expect(sessionConfigSelectionQueryKey({ ...scope, sessionRef: machine })).not.toEqual(
       sessionConfigSelectionQueryKey({ ...scope, sessionRef: workspace }),
     )
   })

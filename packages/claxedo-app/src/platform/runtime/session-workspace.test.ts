@@ -225,7 +225,7 @@ describe("session workspace key", () => {
     expect(sessionWorkspaceRuntimeRef({ directory: "local-ses_cloud_1", projects })).toBeUndefined()
   })
 
-  test("does not mint a local project UUID as a user-hosted relay workspace", () => {
+  test("does not mint a local project UUID as a machine-placed relay workspace", () => {
     const projectId = "c4955849-a3c1-4f3e-8481-1fd1bdec3962"
     const directory = "/private/tmp/claxedo-agent-plugins-real-app/plugins-e2e"
     const projects = [{

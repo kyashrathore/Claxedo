@@ -134,7 +134,7 @@ describe("directory query factories", () => {
     expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=codex-acp"])
   })
 
-  test("agentListQuery routes loopback cloud workspaces through Workspace Relay when request is supplied", async () => {
+  test("agentListQuery routes loopback provisioner-placed workspaces through Workspace Relay when request is supplied", async () => {
     const calls: string[] = []
     const query = agentListQuery({
       baseUrl: "http://127.0.0.1:3001",
@@ -388,7 +388,7 @@ describe("directory query factories", () => {
     }
   })
 
-  test("agentListQuery uses Claxedo agent config API for local workspaces", async () => {
+  test("agentListQuery uses Claxedo agent config API for workspaces this machine serves", async () => {
     const calls: string[] = []
     const query = agentListQuery({
       baseUrl: "http://claxedo.test/",

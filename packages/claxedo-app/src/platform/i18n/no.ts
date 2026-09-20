@@ -513,7 +513,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Leser",
   "sidebar.workspace.role.editor": "Redaktør",
   "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Vert frakoblet",
+  "sidebar.workspace.hostOffline": "Maskinen er frakoblet",
   "sidebar.workspace.sharedWithYou": "Delt med deg",
   "sidebar.workspace.publishedToYourAccount": "Publisert til kontoen din",
 

@@ -76,11 +76,6 @@ describe("global sync inventory source helpers", () => {
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,
       baseUrl: "http://127.0.0.1:4096",
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-    })).toBe(true)
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:4096",
       directory: "/repo/local",
       workspaceId: "ws_authoritative",
     })).toBe(true)
@@ -257,7 +252,7 @@ describe("global sync inventory source helpers", () => {
     })
   })
 
-  test("signed inventory source keeps user-hosted visibility authority-filtered", async () => {
+  test("signed inventory source keeps machine-placed visibility authority-filtered", async () => {
     const requested: string[] = []
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
@@ -321,12 +316,12 @@ describe("global sync inventory source helpers", () => {
   // serial `await` chain here is pure round-trip latency. If the snapshot
   // reverted to sequencing them, "user-hosted" would never start until
   // "cloud" first awaits this test's gate, and the test would time out.
-  test("fetchSignedWorkspaceSnapshot requests cloud and user-hosted workspaces concurrently", async () => {
+  test("fetchSignedWorkspaceSnapshot requests the `cloud` and `user-hosted` list scopes concurrently", async () => {
     const started: string[] = []
     let openCloudGate: () => void = () => {}
-    let openUserHostedGate: () => void = () => {}
+    let openMachineGate: () => void = () => {}
     const cloudGate = new Promise<void>((resolve) => { openCloudGate = resolve })
-    const userHostedGate = new Promise<void>((resolve) => { openUserHostedGate = resolve })
+    const machineGate = new Promise<void>((resolve) => { openMachineGate = resolve })
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
@@ -336,9 +331,9 @@ describe("global sync inventory source helpers", () => {
         started.push(access!)
         if (access === "cloud") {
           openCloudGate()
-          await userHostedGate
+          await machineGate
         } else {
-          openUserHostedGate()
+          openMachineGate()
           await cloudGate
         }
         return jsonResponse({ workspaces: [] })
@@ -561,7 +556,7 @@ describe("global sync inventory source helpers", () => {
     })
   })
 
-  test("loopback grouping keeps a local workspace's filesystem transport directory", async () => {
+  test("loopback grouping keeps the filesystem transport directory of a workspace this machine serves", async () => {
     const source = createInventoryPageSource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "http://127.0.0.1:4096",

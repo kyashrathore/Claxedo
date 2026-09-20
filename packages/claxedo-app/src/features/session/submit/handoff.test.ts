@@ -253,7 +253,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     expect(navigated).toBe("/s/ses_1")
   })
 
-  test("deferred handoff stamps typed session refs for local workspace sessions", () => {
+  test("deferred handoff stamps typed session refs for sessions on a workspace this machine serves", () => {
     const patches: Array<{ id: string; patch: Record<string, unknown> }> = []
     const result = applyCreatedSessionTargetEffects({
       created: true,

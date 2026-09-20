@@ -72,7 +72,7 @@ describe("sessionEventScopeId retargets", () => {
     return { seen, dispose }
   }
 
-  test("a local workspace's open pane retargets once for the session it just created", () => {
+  test("an open pane on a workspace this machine serves retargets once for the session it just created", () => {
     // The measured flow behind the duplicated completion sound. `openSession
     // EventStreams` (composer submit-create-session.ts) holds the created id on
     // every workspace kind — local included, because the hold is not what a
@@ -85,7 +85,7 @@ describe("sessionEventScopeId retargets", () => {
     lane.dispose()
   })
 
-  test("a user-hosted session route retargets once, and again only when the session changes", () => {
+  test("a machine-placed session route retargets once, and again only when the session changes", () => {
     // Same two writes on a relay-backed workspace: a stream the runtime
     // narrowed to one session reopens for another, and a needless reopen
     // costs a whole replayed log.

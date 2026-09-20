@@ -101,12 +101,12 @@ describe("session controller helpers", () => {
       host: "workspace",
       toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner" },
     })
-    const userHosted = sessionHydrationAuthorityKey({
+    const machine = sessionHydrationAuthorityKey({
       sessionId: "ses_1",
       host: "workspace",
       toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "machine" },
     })
-    expect(cloud).not.toBe(userHosted)
+    expect(cloud).not.toBe(machine)
   })
 
   test("activation session reads become inactive and abort on pane deactivation", () => {

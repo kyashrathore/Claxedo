@@ -511,7 +511,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Наблюдатель",
   "sidebar.workspace.role.editor": "Редактор",
   "sidebar.workspace.role.admin": "Администратор",
-  "sidebar.workspace.hostOffline": "Хост не в сети",
+  "sidebar.workspace.hostOffline": "Компьютер не в сети",
   "sidebar.workspace.sharedWithYou": "Открыт вам доступ",
   "sidebar.workspace.publishedToYourAccount": "Опубликовано в вашем аккаунте",
 

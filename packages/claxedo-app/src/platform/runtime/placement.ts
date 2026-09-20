@@ -14,7 +14,7 @@ export type Placement = {
   workspaceId?: string
   hostId?: string
   hosting: "control-plane" | "workspace"
-  transport: "loopback" | "signed-web" | "workspace-relay" | "direct-runtime"
+  transport: "loopback" | "signed-web" | "workspace-relay"
   role?: RelayRole
 }
 
@@ -35,7 +35,7 @@ export function placementFromWorkspaceConnection(connection: WorkspaceConnection
   return {
     workspaceId: connection.workspaceId,
     hosting: "workspace",
-    transport: connection.directRuntimeUrl ? "direct-runtime" : "workspace-relay",
+    transport: "workspace-relay",
     role: connection.role,
   }
 }

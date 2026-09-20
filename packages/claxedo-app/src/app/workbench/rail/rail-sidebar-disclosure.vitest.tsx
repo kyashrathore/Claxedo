@@ -232,7 +232,7 @@ function renderSidebar(input?: {
 }
 
 describe("RailSidebar disclosure controls", () => {
-  test("cloud workspace metadata supplies the mounted section icon and label", async () => {
+  test("provisioner-placed workspace metadata supplies the mounted section icon and label", async () => {
     const cloud = {
       ...project,
       workspaces: {

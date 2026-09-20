@@ -1,21 +1,4 @@
 /**
- * The workspace half of a model document's key: a workspace another machine or
- * the provisioner holds is its id, one this server holds is its host directory.
- * A pane and the Settings Models page must derive it the same way or they edit
- * two documents while believing they share one.
- *
- * `kind` is a free string because the two callers read it off different
- * producers — the sdk workspace states a host kind, a project-inventory row
- * states the wire word — and `local` is the only word either spells for "this
- * server". A host kind `self` reaching here would key by id instead: this
- * module sits under `platform/identity`, which cannot call the host-kind
- * narrowers in `platform/runtime` without closing a logical import cycle.
- */
-export function modelStoreWorkspaceKey(input: { kind?: string; workspaceId?: string; hostDirectory: string }) {
-  return input.kind && input.kind !== "local" && input.workspaceId ? input.workspaceId : input.hostDirectory
-}
-
-/**
  * The directory a session row carries, for every workspace kind.
  *
  * Every later read of that session — messages, config, agents, the transcript —

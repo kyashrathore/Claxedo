@@ -107,7 +107,7 @@ describe("global sync inventory source", () => {
         time: { created: 0, updated: 0 },
         workspaces: {
           "/srv/repos/opencode": {
-            id: "ws_user_hosted",
+            id: "ws_machine",
             kind: "user-hosted",
             directory: "/srv/repos/opencode",
           },
@@ -124,7 +124,7 @@ describe("global sync inventory source", () => {
     ).toBe(true)
   })
 
-  test("uses signed inventory for signed-in loopback cloud workspace refs", () => {
+  test("uses signed inventory for signed-in loopback provisioner-placed workspace refs", () => {
     expect(
       shouldUseSignedControlPlaneInventory({
         hasSignedAccess: true,
@@ -151,7 +151,7 @@ describe("global sync inventory source", () => {
     expect(shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: false })).toBe(false)
   })
 
-  test("uses signed project session inventory for loopback cloud workspaces", () => {
+  test("uses signed project session inventory for loopback provisioner-placed workspaces", () => {
     expect(
       shouldUseSignedSessionInventory({
         hasSignedAccess: true,
@@ -184,7 +184,7 @@ describe("global sync inventory source", () => {
     ).toBe(true)
   })
 
-  test("uses signed global session inventory for hosted workspace lists", () => {
+  test("uses signed global session inventory for control-plane workspace lists", () => {
     expect(
       shouldUseSignedSessionInventory({
         hasSignedAccess: true,

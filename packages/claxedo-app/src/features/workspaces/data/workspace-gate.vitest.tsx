@@ -127,7 +127,7 @@ describe("WorkspaceGate", () => {
 
   // A DRAFT has no stored history and its first send needs a live runtime, so
   // the offline panel (with its Retry) stays the honest surface.
-  test.each([undefined, "new"])("a DRAFT (sessionId=%s) on a dead cloud workspace still shows the offline panel", (sessionId) => {
+  test.each([undefined, "new"])("a DRAFT (sessionId=%s) on a dead provisioner-placed workspace still shows the offline panel", (sessionId) => {
     calls.connection.mockReturnValue({ status: { offline: "unreachable" }, terminal: false })
     calls.offline.mockReturnValue("unreachable")
 
@@ -146,7 +146,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue("no-host")
 
     render(() => (
-      <WorkspaceGate workspaceId="ws_uh" kind="machine" sessionId="ses_stored">
+      <WorkspaceGate workspaceId="ws_machine" kind="machine" sessionId="ses_stored">
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))

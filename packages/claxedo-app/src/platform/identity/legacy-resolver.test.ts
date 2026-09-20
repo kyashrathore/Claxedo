@@ -3,7 +3,6 @@ import {
   isFilesystemDirectory,
   sameWorkspaceDirectory,
   isLocalSessionDirectory,
-  isUserHostedWorkspaceDirectory,
   isWorkspaceIdRef,
   localWorkspaceAssociationId,
   workspaceIdFromRef,
@@ -29,12 +28,6 @@ describe("legacy directory resolver", () => {
     expect(workspaceIdFromRef("/repo/main")).toBeUndefined()
     expect(localWorkspaceAssociationId("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBe("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")
     expect(localWorkspaceAssociationId("ws_abc123")).toBeUndefined()
-  })
-
-  test("recognizes user-hosted workspace directories", () => {
-    expect(isUserHostedWorkspaceDirectory("/repo/.claxedo/user-hosted/workspaces/ws_1")).toBe(true)
-    expect(isUserHostedWorkspaceDirectory("C:\\repo\\.claxedo\\user-hosted\\workspaces\\ws_1")).toBe(true)
-    expect(isUserHostedWorkspaceDirectory("/repo/.claxedo/not-user-hosted/workspaces/ws_1")).toBe(false)
   })
 
   test("keeps local session directory compatibility for non-workspace opaque strings", () => {

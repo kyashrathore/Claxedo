@@ -226,9 +226,7 @@ describe("workspace runtime route audit", () => {
           .split(",")
           .map((item) => item.trim().replace(/\s+as\s+\w+$/, ""))
           .filter(
-            (item) =>
-              item !== "isUserHostedWorkspaceDirectory" &&
-              (item !== "workspaceIdFromDirectoryRef" || !workspaceRuntimeIdentityBoundary.has(file)),
+            (item) => item !== "workspaceIdFromDirectoryRef" || !workspaceRuntimeIdentityBoundary.has(file),
           )
         if (unsafe.length > 0)
           offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
@@ -321,7 +319,6 @@ describe("workspace runtime route audit", () => {
     // acquiring the name from anywhere other than the resolver owner.
     const rawNames = [
       "isFilesystemDirectory",
-      "isUserHostedWorkspaceDirectory",
       "workspaceIdFromDirectoryRef",
       "isWorkspaceIdRef",
       "workspaceIdFromRef",
@@ -331,7 +328,7 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (file === "platform/identity/legacy-resolver.ts") continue
       if (file.startsWith("architecture/")) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text: string = await Bun.file(path.join(root, file)).text()
       const usedNames = new Set(text.match(rawNamePattern) ?? [])
       if (usedNames.size === 0) continue
 

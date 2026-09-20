@@ -33,7 +33,7 @@ describe("projectRepoUrl", () => {
 })
 
 describe("selectedNewSessionWorkspace", () => {
-  test("carries an explicitly selected cloud workspace into submit authority", () => {
+  test("carries an explicitly selected provisioner-placed workspace into submit authority", () => {
     expect(selectedNewSessionWorkspace({
       newSession: true,
       kind: "provisioner",
@@ -67,8 +67,8 @@ const projects = [
         directory: "/repo/cloud-main",
         workspace_name: "main",
       },
-      ws_user_hosted: {
-        workspaceId: "ws_user_hosted",
+      ws_machine: {
+        workspaceId: "ws_machine",
         kind: "user-hosted",
         directory: "/tmp/hosted",
       },
@@ -234,7 +234,7 @@ describe("composer workspace resolver", () => {
     })).toEqual({ status: "provision-cloud-workspace", projectId: "proj_1" })
   })
 
-  test("cloud workspace id routes keep the routed workspace instead of project main", () => {
+  test("provisioner-placed workspace id routes keep the routed workspace instead of project main", () => {
     expect(resolveWorkspaceSubmitPlan({
       isNewSession: true,
       projectDirectory: "ws_live",
@@ -258,7 +258,7 @@ describe("composer workspace resolver", () => {
     })).toEqual({ status: "provision-cloud-workspace", projectId: "proj_1" })
   })
 
-  test("user-hosted workspaces never plan cloud provisioning", () => {
+  test("machine-placed workspaces never plan provisioning", () => {
     expect(resolveWorkspaceSubmitPlan({
       isNewSession: true,
       projectDirectory: "/repo/main",

@@ -448,7 +448,7 @@ export const dict = {
   "sidebar.workspace.role.viewer": "Obserwator",
   "sidebar.workspace.role.editor": "Edytor",
   "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Host offline",
+  "sidebar.workspace.hostOffline": "Komputer offline",
   "sidebar.workspace.sharedWithYou": "Udostępnione tobie",
   "sidebar.workspace.publishedToYourAccount": "Opublikowane na Twoim koncie",
   "settings.section.desktop": "Pulpit",

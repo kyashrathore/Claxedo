@@ -166,18 +166,18 @@ describe("process client relay transport", () => {
       if (req.url.startsWith("http://server.test/api/wr/process")) {
         throw new Error(`Unexpected central process request: ${req.method} ${req.url}`)
       }
-      if (req.url === "http://server.test/api/workspace/ws_uh1/connection") {
+      if (req.url === "http://server.test/api/workspace/ws_machine1/connection") {
         return Response.json({
           access: "user-hosted",
           backing: "local-worktree",
-          workspaceId: "ws_uh1",
+          workspaceId: "ws_machine1",
           role: "owner",
           relayUrl: "https://relay.example.test",
           runtimeAccessToken: "rat_uh1",
           tokenExpiresAt: Date.now() + 120_000,
         })
       }
-      if (req.url === "https://relay.example.test/workspaces/ws_uh1/api/wr/process") {
+      if (req.url === "https://relay.example.test/workspaces/ws_machine1/api/wr/process") {
         return Response.json({ configs: [config], processes: [] })
       }
       throw new Error(`Unexpected request: ${req.method} ${req.url}`)
@@ -185,22 +185,22 @@ describe("process client relay transport", () => {
 
     const client = createProcessClient({
       baseUrl: "http://server.test",
-      directory: "/repo/user-hosted/ws_uh1-dir",
+      directory: "/repo/on-a-machine/ws_machine1-dir",
       fetch: request,
       // The hosted control plane's liveness read for this directory answers
       // null — same as production for a user-hosted workspace it does not own.
       resolveWorkspaceRuntime: async () => null,
       resolveSignedWorkspace: (directory) =>
-        directory === "/repo/user-hosted/ws_uh1-dir"
-          ? { workspaceId: "ws_uh1", kind: "machine", directory }
+        directory === "/repo/on-a-machine/ws_machine1-dir"
+          ? { workspaceId: "ws_machine1", kind: "machine", directory }
           : undefined,
     })
 
     await client.list()
 
     expect(calls).toEqual([
-      "http://server.test/api/workspace/ws_uh1/connection",
-      "https://relay.example.test/workspaces/ws_uh1/api/wr/process",
+      "http://server.test/api/workspace/ws_machine1/connection",
+      "https://relay.example.test/workspaces/ws_machine1/api/wr/process",
     ])
   })
 
@@ -209,9 +209,9 @@ describe("process client relay transport", () => {
     queryClient.setQueryData(queryKeys.controlPlane.projects(server), [
       {
         id: "prj_uh",
-        worktree: "/repo/user-hosted/ws_uh2-dir",
+        worktree: "/repo/on-a-machine/ws_machine2-dir",
         workspaces: {
-          "/repo/user-hosted/ws_uh2-dir": { id: "ws_uh2", directory: "/repo/user-hosted/ws_uh2-dir", kind: "user-hosted", access: "user-hosted" },
+          "/repo/on-a-machine/ws_machine2-dir": { id: "ws_machine2", directory: "/repo/on-a-machine/ws_machine2-dir", kind: "user-hosted", access: "user-hosted" },
         },
       },
     ])
@@ -220,18 +220,18 @@ describe("process client relay transport", () => {
       const request = (async (input, init) => {
         const req = new Request(requestUrl(input), init)
         calls.push(req.url)
-        if (req.url === `${server}/api/workspace/ws_uh2/connection`) {
+        if (req.url === `${server}/api/workspace/ws_machine2/connection`) {
           return Response.json({
             access: "user-hosted",
             backing: "local-worktree",
-            workspaceId: "ws_uh2",
+            workspaceId: "ws_machine2",
             role: "owner",
             relayUrl: "https://relay.example.test",
             runtimeAccessToken: "rat_uh2",
             tokenExpiresAt: Date.now() + 120_000,
           })
         }
-        if (req.url === "https://relay.example.test/workspaces/ws_uh2/api/wr/process") {
+        if (req.url === "https://relay.example.test/workspaces/ws_machine2/api/wr/process") {
           return Response.json({ configs: [config], processes: [] })
         }
         throw new Error(`Unexpected request: ${req.method} ${req.url}`)
@@ -239,14 +239,14 @@ describe("process client relay transport", () => {
 
       const client = createProcessClient({
         baseUrl: server,
-        directory: "/repo/user-hosted/ws_uh2-dir",
+        directory: "/repo/on-a-machine/ws_machine2-dir",
         fetch: request,
         resolveWorkspaceRuntime: async () => null,
       })
       await client.list()
       expect(calls).toEqual([
-        `${server}/api/workspace/ws_uh2/connection`,
-        "https://relay.example.test/workspaces/ws_uh2/api/wr/process",
+        `${server}/api/workspace/ws_machine2/connection`,
+        "https://relay.example.test/workspaces/ws_machine2/api/wr/process",
       ])
     } finally {
       queryClient.removeQueries({ queryKey: queryKeys.controlPlane.projects(server) })

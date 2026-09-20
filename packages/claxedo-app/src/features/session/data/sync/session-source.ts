@@ -31,7 +31,7 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
  *   app already holds — one hop, role enforced by the relay token. Own and
  *   shared workspaces are the same source; the role only gates affordances.
  *   Which sessions exist is the runtime's answer; who created one is the
- *   control plane's, joined on by `userHostedSessionOwners` below.
+ *   control plane's, joined on by `machineSessionOwners` below.
  *
  * The registry holds only the machine-placed sessions that were created THROUGH
  * it, so asking it for that workspace's list answers a subset the client cannot
@@ -47,22 +47,23 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 export type SessionSource =
   | { kind: "self" | "provisioner" }
   | { kind: "machine"; workspaceId: string; projectId?: string }
-  | { kind: "composed"; central: CentralSessionSource; userHosted: UserHostedSessionSource[] }
+  | { kind: "composed"; central: CentralSessionSource; machines: MachineSessionSource[] }
 
 type CentralSessionSource = Extract<SessionSource, { kind: "self" | "provisioner" }>
-type UserHostedSessionSource = Extract<SessionSource, { kind: "machine" }>
+type MachineSessionSource = Extract<SessionSource, { kind: "machine" }>
 
 /** The composed page's key for the central member's own cursor. */
 const COMPOSED_CENTRAL_MEMBER = "central"
 
 /** Rows the runtime answers with are re-shaped once and paged from memory. */
-const USER_HOSTED_SESSION_LIST_STALE_MS = 30_000
+const MACHINE_SESSION_LIST_STALE_MS = 30_000
 
 /**
- * The app's own central server's list: the daemon's on a local surface, the
- * control plane's registry on the hosted web. Global Chat's sessions belong to
- * no workspace and live there, by the same rule that puts a local workspace's
- * sessions on the daemon and a cloud workspace's in the registry.
+ * The attached server's own list: the daemon's on a local surface, the control
+ * plane's registry on the hosted web. Global Chat's sessions belong to no
+ * workspace and live there, by the same rule that puts the sessions of a
+ * workspace this server serves on the daemon and a provisioned one's in the
+ * registry.
  */
 export function centralSessionSource(input: { local: boolean }): CentralSessionSource {
   return { kind: input.local ? "self" : "provisioner" }
@@ -85,11 +86,11 @@ export function sessionSourceForWorkspace(input: {
  * A PROJECT's source: every source its own workspaces are read from.
  *
  * A project section lists the sessions of all its workspaces, and those do not
- * share one server — the central one answers for the local and cloud
- * workspaces, and each user-hosted workspace answers from its own runtime over
- * the relay, by the same `sessionSourceForWorkspace` rule its own section
- * uses. A project with no user-hosted workspace IS the central source: a
- * composition of one member is that member.
+ * share one server — the attached server answers for the ones it and the
+ * provisioner hold, and a workspace on another machine answers from its own
+ * runtime over the relay, by the same {@link sessionSourceForWorkspace} rule
+ * its own section uses. A project with no such workspace IS the central source:
+ * a composition of one member is that member.
  */
 export function projectSessionSource(input: {
   local: boolean
@@ -98,12 +99,13 @@ export function projectSessionSource(input: {
   workspaces: Record<string, { kind?: string; id?: string; workspaceId?: string }> | undefined
 }): SessionSource {
   const central = centralSessionSource({ local: input.local })
-  const byWorkspaceId = new Map<string, UserHostedSessionSource>()
+  const byWorkspaceId = new Map<string, MachineSessionSource>()
   for (const [ref, workspace] of Object.entries(input.workspaces ?? {})) {
     const source = sessionSourceForWorkspace({
       kind: inventoryHostKind(workspace.kind),
-      // The signed id a relay-backed workspace is addressed by; the catalog's
-      // own key is a directory on the HOST, which this app cannot reach.
+      // The signed id a workspace another machine serves is addressed by; the
+      // catalog's own key is a directory on THAT machine, which this app
+      // cannot reach.
       workspaceId: workspace.workspaceId ?? workspace.id ?? ref,
       projectId: input.projectId,
     })
@@ -112,7 +114,7 @@ export function projectSessionSource(input: {
     if (source.kind === "machine") byWorkspaceId.set(source.workspaceId, source)
   }
   if (byWorkspaceId.size === 0) return central
-  return { kind: "composed", central, userHosted: [...byWorkspaceId.values()] }
+  return { kind: "composed", central, machines: [...byWorkspaceId.values()] }
 }
 
 /**
@@ -151,7 +153,7 @@ async function sessionSourcePage(input: {
   if (source.kind === "composed") return composedSessionListPage({ ...input, source })
   if (source.kind === "machine") {
     return sessionListPage(
-      await userHostedSessionRows({
+      await machineSessionRows({
         baseUrl: input.baseUrl,
         source,
         ...(input.request ? { request: input.request } : {}),
@@ -188,10 +190,10 @@ async function composedSessionListPage(input: {
   const members = [
     // The runtime owns its workspace's sessions, so its row wins over a
     // central row for the same session.
-    ...input.source.userHosted.map((source) => ({
+    ...input.source.machines.map((source) => ({
       key: source.workspaceId,
       page: async (cursor: string | undefined) => sessionListPage(
-        await userHostedSessionRows({
+        await machineSessionRows({
           baseUrl: input.baseUrl,
           source,
           ...(input.request ? { request: input.request } : {}),
@@ -248,7 +250,7 @@ function parseJson(value: string): unknown {
  * workspace under a workspace-scoped query, under its project's section, and
  * again for each page, and one relay hop answers all of them.
  */
-async function userHostedSessionRows(input: {
+async function machineSessionRows(input: {
   baseUrl?: string
   source: Extract<SessionSource, { kind: "machine" }>
   request?: typeof fetch
@@ -256,7 +258,7 @@ async function userHostedSessionRows(input: {
   const serverUrl = normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl()
   return await queryClient.fetchQuery({
     queryKey: queryKeys.runtime.workspaceSessions(serverUrl, input.source.workspaceId),
-    staleTime: USER_HOSTED_SESSION_LIST_STALE_MS,
+    staleTime: MACHINE_SESSION_LIST_STALE_MS,
     queryFn: async () => {
       const runtime = createTransport({
         // The workspace is served by ANOTHER machine even when this app's own
@@ -274,14 +276,14 @@ async function userHostedSessionRows(input: {
       const list = agentRuntimeSessionListUrl({ serverUrl, roots: true })
       const [rows, owners] = await Promise.all([
         runtime.json(`${list.pathname}${list.search}`),
-        userHostedSessionOwners({
+        machineSessionOwners({
           baseUrl: serverUrl,
           workspaceId: input.source.workspaceId,
           ...(input.request ? { request: input.request } : {}),
         }),
       ])
       return (Array.isArray(rows) ? rows : []).flatMap((row) => {
-        const item = userHostedNavigationRow(row, input.source, owners)
+        const item = machineNavigationRow(row, input.source, owners)
         return item ? [item] : []
       })
     },
@@ -295,8 +297,8 @@ async function userHostedSessionRows(input: {
  * nothing about who owns one, so a session Alice shared with Bob's team reaches
  * Bob's rail as an anonymous row. Ownership is a control-plane fact — the same
  * grant that let Bob see the session at all — so the creator is joined from the
- * registry's record for that session id, which is the mapping the cloud lane's
- * rows already arrive with. Records for sessions the runtime did not list are
+ * registry's record for that session id, which is the mapping a provisioned
+ * workspace's rows already arrive with. Records for sessions the runtime did not list are
  * ignored: the runtime, not the registry, decides which rows exist.
  *
  * Read inside the workspace row memo so the share doorbell, which already drops
@@ -306,7 +308,7 @@ async function userHostedSessionRows(input: {
  * the section: the creator decorates a row, and a rail emptied because an
  * avatar could not be resolved would report a reachable machine as empty.
  */
-async function userHostedSessionOwners(input: {
+async function machineSessionOwners(input: {
   baseUrl: string
   workspaceId: string
   request?: typeof fetch
@@ -318,7 +320,7 @@ async function userHostedSessionOwners(input: {
   }
 }
 
-function userHostedNavigationRow(
+function machineNavigationRow(
   row: unknown,
   source: Extract<SessionSource, { kind: "machine" }>,
   owners: ReadonlyMap<string, SessionOwner>,
@@ -337,7 +339,7 @@ function userHostedNavigationRow(
     sessionRef: `workspace:${source.workspaceId}:session:${sessionId}`,
     sessionId,
     title: txt(item?.title) ?? "Untitled session",
-    // The runtime answers with the HOST's own filesystem path; what the row
+    // The runtime answers with its own machine's filesystem path; what the row
     // carries is `sessionRowDirectory`'s to decide.
     directory: sessionRowDirectory({
       workspaceId: source.workspaceId,

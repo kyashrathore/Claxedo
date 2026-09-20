@@ -140,11 +140,12 @@ export const parseTerminalSessionPreview = (value: unknown): TerminalSessionPrev
 }
 
 /**
- * Cloud-routing options for `loadTerminalSessionPreview`.
+ * Relay-routing options for `loadTerminalSessionPreview`.
  *
- * When the caller passes `directory` + `resolveWorkspaceRuntime`, the
- * function asks the shared runtime access layer to route cloud/user-hosted
- * workspaces through the relay. Local workspaces keep the direct-fetch path.
+ * When the caller passes `directory` + `resolveWorkspaceRuntime`, the function
+ * asks the shared runtime access layer to route a workspace the attached server
+ * does not serve itself through the relay. Everything it does serve keeps the
+ * direct-fetch path.
  */
 export type TerminalSessionPreviewOptions = {
   request?: typeof fetch

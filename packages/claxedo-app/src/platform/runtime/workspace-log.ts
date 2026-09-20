@@ -16,7 +16,7 @@ export type WorkspaceRuntimeLog = {
  * local files import a hosted module for a pure array helper.
  *
  * Returns the SAME array when the step is a duplicate, so a Solid store write
- * of the result is a no-op rather than a re-render — `prepareUserHostedRuntime`
+ * of the result is a no-op rather than a re-render — `prepareMachineRuntime`
  * emits `checking_health` once per retry attempt.
  */
 export function appendWorkspaceRuntimeLog(

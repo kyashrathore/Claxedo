@@ -406,9 +406,10 @@ export async function bootstrapDirectory(input: {
           // in the claxedo store, so until it resolves the catalog seeded by
           // global bootstrap can legitimately be missing it (see
           // `projectCatalogMissingWorkspace`). The catalog is cached with a
-          // five-minute `staleTime` and nothing else refetches it, which used
-          // to leave the rail on the engine-shaped payload — worktree basename
-          // for a name, and no sessions — until the user opened a surface.
+          // five-minute `staleTime` and nothing else refetches it, so without
+          // this the rail stays on the engine-shaped payload — worktree
+          // basename for a name, and no sessions — until the user opens a
+          // surface.
           // Refetch only when the catalog really is missing this workspace, so
           // the common warm boot stays a no-op. `refetchType: "all"` because
           // the catalog query need not have an observer at this moment (a

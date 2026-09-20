@@ -281,8 +281,8 @@ describe("session capabilities query ownership", () => {
     expect(queryClient.getQueryData(capabilityKey(secondRequest))).toEqual(secondCapabilities)
   })
 
-  test("isolates user-hosted and cloud refs with the same visible placement", () => {
-    const userHostedRequest = {
+  test("isolates machine-placed and provisioner-placed refs with the same visible placement", () => {
+    const machineRequest = {
       ...request,
       workspaceId: "ws_1",
       signedControlPlane: true,
@@ -296,7 +296,7 @@ describe("session capabilities query ownership", () => {
       } satisfies SessionRef,
     }
     const workspaceRequest = {
-      ...userHostedRequest,
+      ...machineRequest,
       sessionRef: {
         sessionId: request.sessionID,
         host: "workspace",
@@ -311,8 +311,8 @@ describe("session capabilities query ownership", () => {
       } satisfies SessionRef,
     }
 
-    expect(capabilityKey(userHostedRequest)).not.toEqual(capabilityKey(workspaceRequest))
-    expect(sessionCapabilitiesTransportRequestKey(userHostedRequest)).not.toEqual(
+    expect(capabilityKey(machineRequest)).not.toEqual(capabilityKey(workspaceRequest))
+    expect(sessionCapabilitiesTransportRequestKey(machineRequest)).not.toEqual(
       sessionCapabilitiesTransportRequestKey(workspaceRequest),
     )
   })

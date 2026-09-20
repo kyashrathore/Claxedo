@@ -101,14 +101,15 @@ export type ResolvedWorkspaceRuntime = {
 } | null | undefined
 
 /**
- * Transport placement for a terminal-scoped fetch: route non-local workspaces
- * that carry a workspaceId through the relay (loopback when the server itself
- * is loopback); everything else uses the server's default central transport.
+ * Transport placement for a terminal-scoped fetch: route a workspace the
+ * attached server does not serve itself, and that carries a workspaceId,
+ * through the relay (loopback when the server itself is loopback); everything
+ * else uses the server's default central transport.
  *
  * `workspace` is the caller's liveness read (`resolveWorkspaceRuntime`), which
- * hits the control plane's `/api/workspace/resolve` and — for a user-hosted
- * workspace addressed by its filesystem-path directory — never confirms a
- * kind there. `signedWorkspace` is that same directory's match in the signed
+ * hits the control plane's `/api/workspace/resolve` and — for a workspace on
+ * another machine addressed by its filesystem-path directory — never confirms a
+ * placement there. `signedWorkspace` is that same directory's match in the signed
  * workspace inventory (the canonical resolver in
  * `platform/runtime/agent/signed-workspace.ts`, e.g.
  * `signedWorkspaceFromProjects`), passed by the caller when it has one. It is

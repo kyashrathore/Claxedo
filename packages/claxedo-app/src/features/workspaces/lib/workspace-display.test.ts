@@ -260,7 +260,7 @@ describe("workspace display helpers", () => {
   // `/w/` route, resolve its identity, and rebuild the canonical route the way
   // `app-shell-route-sync.ts` does. This binds the three pieces together so a
   // regression in any one of them fails here rather than only in the browser.
-  test("canonicalizes a reported user-hosted path URL to its workspace id", () => {
+  test("canonicalizes a reported machine-placed path URL to its workspace id", () => {
     const reported =
       "/w/%2Fprivate%2Ftmp%2Fclaxedo-portability%2Fws_cleantest1-dir/session"
     const hosted: WorkspaceDisplayProject = {

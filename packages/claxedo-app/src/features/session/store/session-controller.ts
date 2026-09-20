@@ -313,10 +313,10 @@ export function createSessionController(input: {
   active?: Accessor<boolean>
   signedControlPlane?: Accessor<boolean>
   workspaceId?: Accessor<string | undefined>
-  // The workspace's resolved hosting kind (cloud vs user-hosted) from the
-  // pane's connection authority — threaded into the session transports so
-  // signed user-hosted reads divert to the relay (the central control plane
-  // has no session store for them).
+  // The workspace's resolved host, from the pane's connection authority —
+  // threaded into the session transports so a signed read of a workspace on
+  // another machine diverts to the relay (the central control plane has no
+  // session store for those).
   hostKind?: Accessor<RelayHostKind | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   onMissingSession?: (sessionID: string, cwd: string) => void

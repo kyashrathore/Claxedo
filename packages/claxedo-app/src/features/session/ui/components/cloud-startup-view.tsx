@@ -16,17 +16,17 @@ export const CLOUD_STARTUP_PIPELINE = [
   { key: "waiting_health", label: "Waiting for health check" },
 ] as const
 
-// User-hosted workspaces never acquire a sandbox or clone a repo — they already
-// exist on the user's machine and connect through the relay tunnel. Their
-// connecting sequence is mint-connection → relay-tunnel → runtime-health.
-export const USER_HOSTED_STARTUP_PIPELINE = [
+// A workspace on a machine never acquires a sandbox or clones a repo — it
+// already exists there and connects through the relay tunnel. Its connecting
+// sequence is mint-connection → relay-tunnel → runtime-health.
+export const MACHINE_STARTUP_PIPELINE = [
   { key: "connecting_workspace", label: "Connecting to workspace" },
   { key: "establishing_relay", label: "Establishing relay tunnel" },
   { key: "checking_health", label: "Checking runtime health" },
 ] as const
 
 export function startupPipeline(variant: StartupVariant) {
-  return variant === "machine" ? USER_HOSTED_STARTUP_PIPELINE : CLOUD_STARTUP_PIPELINE
+  return variant === "machine" ? MACHINE_STARTUP_PIPELINE : CLOUD_STARTUP_PIPELINE
 }
 
 const STEP_LABELS = {
@@ -268,7 +268,7 @@ export function CloudStartupView(props: {
   const pipeline = () => startupPipeline(variant())
   const hasError = () => props.status === "error" || !!props.err
   const isReady = () => props.logs.some((l) => l.step === "ready")
-  const isUserHosted = () => variant() === "machine"
+  const onAMachine = () => variant() === "machine"
 
   const lastPipelineKey = () => {
     const logs = props.logs
@@ -342,7 +342,7 @@ export function CloudStartupView(props: {
         testId="cloud-startup-view"
         tone={hasError() ? "critical" : "neutral"}
         eyebrow="Workspace runtime"
-        title={isUserHosted() ? "Connecting to workspace" : "Preparing workspace"}
+        title={onAMachine() ? "Connecting to workspace" : "Preparing workspace"}
         detail={detail()}
         aside={
           <Show when={elapsed()}>

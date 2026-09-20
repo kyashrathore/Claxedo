@@ -162,7 +162,7 @@ function bridged(streams: ReturnType<typeof claxedoEventSource>, globalEvents: R
  */
 const HOST_DIR = "/Users/host/repo"
 /** A live user-hosted workspace id: caller-chosen, never a minted `ws_*`. */
-const USER_HOSTED_UUID = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
+const MACHINE_UUID = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
 /** The same shape, but only ever this machine's own local association. */
 const LOCAL_ASSOCIATION_UUID = "9c1d2f80-4b6a-4d1e-9f27-1a3b5c7d9e11"
 
@@ -677,14 +677,14 @@ describe("global sync event ingress", () => {
    * minted `ws_*` id. The catalog knowing that uuid as `user-hosted` is what
    * makes the row workspace-addressed.
    */
-  test("a uuid the catalog knows as user-hosted addresses the row by workspace", () => {
+  test("a uuid the catalog knows as machine-placed addresses the row by workspace", () => {
     queryClient.clear()
     const globalEvents = eventSource()
     const claxedoEvents = claxedoEventSource()
     const key = queryKeys.shell.sessionList("http://test.local", {
       scope: "workspace",
-      workspaceId: USER_HOSTED_UUID,
-      directory: `workspace:${USER_HOSTED_UUID}`,
+      workspaceId: MACHINE_UUID,
+      directory: `workspace:${MACHINE_UUID}`,
       groupBy: "none",
       archived: "active",
       status: [],
@@ -702,20 +702,20 @@ describe("global sync event ingress", () => {
       hostIngressInput({
         globalEvents: globalEvents.source,
         claxedoEvents: claxedoEvents.source,
-        projects: () => [hostProject({ id: USER_HOSTED_UUID, kind: "user-hosted" })],
+        projects: () => [hostProject({ id: MACHINE_UUID, kind: "user-hosted" })],
       }),
     )
 
-    claxedoEvents.emit(lifecycleFrame("ses_lifecycle", USER_HOSTED_UUID))
-    claxedoEvents.emit(lifecycleFrame("ses_second", USER_HOSTED_UUID))
+    claxedoEvents.emit(lifecycleFrame("ses_lifecycle", MACHINE_UUID))
+    claxedoEvents.emit(lifecycleFrame("ses_second", MACHINE_UUID))
 
     const items = queryClient.getQueryData<SessionListResponse>(key)?.items
     expect(items?.map((item) => item.sessionId)).toEqual(["ses_second", "ses_lifecycle"])
     expect(items?.map((item) => item.directory))
-      .toEqual([`workspace:${USER_HOSTED_UUID}`, `workspace:${USER_HOSTED_UUID}`])
+      .toEqual([`workspace:${MACHINE_UUID}`, `workspace:${MACHINE_UUID}`])
     expect(items?.map((item) => item.sessionRef)).toEqual([
-      `workspace:${USER_HOSTED_UUID}:session:ses_second`,
-      `workspace:${USER_HOSTED_UUID}:session:ses_lifecycle`,
+      `workspace:${MACHINE_UUID}:session:ses_second`,
+      `workspace:${MACHINE_UUID}:session:ses_lifecycle`,
     ])
     dispose()
   })

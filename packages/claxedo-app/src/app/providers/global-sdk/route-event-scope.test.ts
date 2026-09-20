@@ -49,6 +49,30 @@ describe("initialRouteWorkspace", () => {
     expect(initialRouteWorkspace(BASE_URL)?.hostKind).toBe("provisioner")
   })
 
+  // The signed bootstrap and the hosted shell state `backing` and no `kind`
+  // (`signedBootstrapProjects` / `signedShellProjects`), and they address a row
+  // by `workspace:<id>` — which is the form a `/w/<id>` deep link carries.
+  test("a bootstrap row, which states backing and no kind, names the route workspace", () => {
+    queryClient.setQueryData(queryKeys.controlPlane.projects(BASE_URL), [{
+      worktree: "ws_boot",
+      workspaces: {
+        ws_boot: {
+          id: "ws_boot",
+          backing: "local-worktree",
+          workspace_name: "Main",
+          directory: "workspace:ws_boot",
+          remote_directory: "/Users/host/repo",
+        },
+      },
+    }])
+    atRoute("/w/workspace%3Aws_boot")
+    expect(initialRouteWorkspace(BASE_URL)).toEqual({
+      directory: "workspace:ws_boot",
+      workspaceId: "ws_boot",
+      hostKind: "machine",
+    })
+  })
+
   test("a row this server serves itself is not a route workspace", () => {
     queryClient.setQueryData(queryKeys.controlPlane.projects(BASE_URL), [{
       worktree: "/repo/main",

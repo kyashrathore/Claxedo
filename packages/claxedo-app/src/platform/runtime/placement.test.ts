@@ -62,7 +62,7 @@ describe("placementFor", () => {
     expect(placementFor({
       hasSignedAccess: true,
       serverUrl: "https://control.test",
-      legacy: { directory: "/repo/.claxedo/user-hosted/workspaces/ws_1" },
+      legacy: { directory: "/home/dev/.claxedo/workspaces/ws_1" },
     })).toEqual({
       hosting: "control-plane",
       transport: "signed-web",

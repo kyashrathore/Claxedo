@@ -139,7 +139,7 @@ describe("harness switcher", () => {
     expect(remembered).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo" }])
   })
 
-  test("skips the local draft post for cloud and user-hosted workspace boots", async () => {
+  test("skips the local draft post for provisioner-placed and machine-placed workspace boots", async () => {
     workspace = { kind: "provisioner" }
     const switcher = switcherFor()
 

@@ -187,7 +187,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
   })
 
-  test("cloud new button creates a cloud workspace before the first prompt and reports startup", async () => {
+  test("the cloud new button creates a provisioner-placed workspace before the first prompt and reports startup", async () => {
     state.runtimeSessionUrl = "http://runtime.example.com"
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
     let resetCalls = 0
@@ -663,7 +663,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(optimisticAdds.map((item) => item.directory)).toContain("/repo/local-feature")
   })
 
-  test("cloud main selection does not submit to local main when no cloud workspace is selected", async () => {
+  test("cloud main selection does not submit to this machine's main when no provisioner-placed workspace is selected", async () => {
     state.runtimeSessionUrl = "http://runtime.example.com"
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
 

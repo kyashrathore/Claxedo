@@ -107,10 +107,11 @@ export const queryKeys = {
   },
   runtime: {
     /**
-     * A user-hosted workspace's own session list, as its RUNTIME answers it
-     * over the relay. Keyed by workspace rather than by list query: one relay
-     * hop answers every rail section and every page of that workspace, and the
-     * per-query `shell.sessionList` entries are shaped from this one read.
+     * A workspace's own session list, as the RUNTIME on the machine serving it
+     * answers over the relay. Keyed by workspace rather than by list query: one
+     * relay hop answers every rail section and every page of that workspace,
+     * and the per-query `shell.sessionList` entries are shaped from this one
+     * read.
      */
     workspaceSessions: (baseUrl: string | undefined, workspaceId: string) =>
       ["runtime", runtimeServer(baseUrl), "workspaceSessions", workspaceId] as const,

@@ -291,7 +291,7 @@ describe("createSessionActions", () => {
     ])
   })
 
-  test("session selection passes explicit cloud workspace session refs", () => {
+  test("session selection passes explicit provisioner-placed workspace session refs", () => {
     const { props, sessions, nav } = makeProps()
     props.projects = () => [{
       id: "p1",

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   CLOUD_STARTUP_PIPELINE,
-  USER_HOSTED_STARTUP_PIPELINE,
+  MACHINE_STARTUP_PIPELINE,
   startupPipeline,
   acquiringStepLabel,
   cleanCloudError,
@@ -78,31 +78,31 @@ describe("acquiringStepLabel", () => {
   })
 })
 
-describe("user-hosted startup", () => {
+describe("machine-placed startup", () => {
   test("uses a relay-connecting pipeline, NOT the cloud sandbox-acquisition steps", () => {
-    expect(USER_HOSTED_STARTUP_PIPELINE.map((step) => step.label)).toEqual([
+    expect(MACHINE_STARTUP_PIPELINE.map((step) => step.label)).toEqual([
       "Connecting to workspace",
       "Establishing relay tunnel",
       "Checking runtime health",
     ])
     // It must not show the cloud-only steps.
-    const labels = USER_HOSTED_STARTUP_PIPELINE.map((s) => s.label)
+    const labels = MACHINE_STARTUP_PIPELINE.map((s) => s.label)
     expect(labels).not.toContain("Acquiring sandbox")
     expect(labels).not.toContain("Cloning repository")
   })
 
   test("startupPipeline branches on variant (cloud unchanged)", () => {
     expect(startupPipeline("provisioner")).toBe(CLOUD_STARTUP_PIPELINE)
-    expect(startupPipeline("machine")).toBe(USER_HOSTED_STARTUP_PIPELINE)
+    expect(startupPipeline("machine")).toBe(MACHINE_STARTUP_PIPELINE)
   })
 
-  test("normalizes user-hosted connecting steps", () => {
+  test("normalizes machine-placed connecting steps", () => {
     expect(cloudStep("connecting_workspace")).toBe("Connecting to workspace")
     expect(cloudStep("establishing_relay")).toBe("Establishing relay tunnel")
     expect(cloudStep("checking_health")).toBe("Checking runtime health")
   })
 
-  test("user-hosted summaries describe connecting/offline, not sandbox startup", () => {
+  test("machine-placed summaries describe connecting/offline, not sandbox startup", () => {
     expect(cloudSummary(undefined, false, "machine")).toBe(
       "Connecting to your workspace before the composer unlocks.",
     )

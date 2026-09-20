@@ -16,13 +16,12 @@
 import { type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
-import { isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import type { LiveSession } from "./live-session"
-import { inventoryHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
+import { isRelayHostKind, rowHostKind } from "@/platform/runtime/placement-wire"
 
 export function initialRouteDirectory() {
   if (typeof window === "undefined") return undefined
@@ -40,14 +39,14 @@ export function initialRouteWorkspace(baseUrl?: string) {
     const match = Object.entries(project.workspaces ?? {})
       .find(([key, workspace]) =>
         (sameWorkspaceDirectory(key, directory) || sameWorkspaceDirectory(workspace.directory, directory)) &&
-        isRelayHostKind(inventoryHostKind(workspace.kind))
+        isRelayHostKind(rowHostKind(workspace))
       )
     if (!match) continue
     const [key, workspace] = match
     return {
       directory,
       workspaceId: workspace.workspaceId ?? workspace.id ?? key,
-      hostKind: inventoryHostKind(workspace.kind),
+      hostKind: rowHostKind(workspace),
     }
   }
   return undefined
@@ -64,6 +63,5 @@ export function shouldUseSignedEventAccess(input: {
   const directory = input.liveSession?.directory ?? initialRouteDirectory()
   if (!directory && input.liveSession?.workspaceId) return true
   if (!directory) return true
-  return !!(directory && sessionWorkspaceRuntimeRef({ directory })) ||
-    isUserHostedWorkspaceDirectory(directory)
+  return !!(directory && sessionWorkspaceRuntimeRef({ directory }))
 }

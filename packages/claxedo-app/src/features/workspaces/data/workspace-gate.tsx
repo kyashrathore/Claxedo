@@ -199,12 +199,13 @@ export function WorkspaceGate(
         <Match when={offline() === "forbidden"}>
           <WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />
         </Match>
-        {/* An EXISTING cloud session's history lives in the control plane, so a
-            dead sandbox renders the surface instead of the offline panel: the
-            session reads resolve centrally and the transcript loads. Anything
-            needing the live runtime (sending a turn, the terminal) stays gated
-            by its own readiness checks, which still see this workspace as not
-            ready. Drafts and user-hosted keep the offline panel. */}
+        {/* An EXISTING provisioned session's history lives in the control
+            plane, so a dead sandbox renders the surface instead of the offline
+            panel: the session reads resolve centrally and the transcript loads.
+            Anything needing the live runtime (sending a turn, the terminal)
+            stays gated by its own readiness checks, which still see this
+            workspace as not ready. Drafts, and a workspace another machine
+            serves, keep the offline panel. */}
         <Match when={offline() && hasCentralHistory({ kind: props.kind, reason: offline()!, sessionId: props.sessionId })}>
           {props.children}
         </Match>

@@ -111,7 +111,7 @@ describe("resolveSessionResourceRoute", () => {
   // A dead CLOUD sandbox does not hold the transcript hostage: that history is
   // synced to the control plane, so the read goes there rather than hanging on
   // a relay that cannot answer.
-  it("B does not divert a KNOWN-DEAD cloud workspace — its history is central", () => {
+  it("B does not divert a KNOWN-DEAD provisioner-placed workspace — its history is central", () => {
     expect(resolveSessionResourceRoute({
       signed: true,
       hasSessionRef: false,
@@ -123,7 +123,7 @@ describe("resolveSessionResourceRoute", () => {
     })).toEqual({ via: "control-plane" })
   })
 
-  it("B still diverts a reachable or unknown-reachability cloud workspace", () => {
+  it("B still diverts a reachable or unknown-reachability provisioner-placed workspace", () => {
     for (const targetReachable of [true, undefined]) {
       expect(resolveSessionResourceRoute({
         signed: true,
@@ -144,12 +144,12 @@ describe("resolveSessionResourceRoute", () => {
     expect(resolveSessionResourceRoute({
       signed: true,
       hasSessionRef: false,
-      targetWorkspaceId: "ws_uh_dead",
+      targetWorkspaceId: "ws_machine_dead",
       targetKind: "machine",
       resource: "messages",
       loopback: true,
       targetReachable: false,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh_dead" })
+    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_machine_dead" })
   })
 
   it("B still diverts a dead UNRESOLVED-KIND workspace", () => {
@@ -176,15 +176,15 @@ describe("resolveSessionResourceRoute", () => {
     })).toEqual({ via: "control-plane" })
   })
 
-  it("C: signed user-hosted diverts to the relay runtime (prefer relay)", () => {
+  it("C: a signed machine placement diverts to the relay runtime (prefer relay)", () => {
     expect(resolveSessionResourceRoute({
       signed: true,
       hasSessionRef: false,
-      targetWorkspaceId: "ws_uh",
+      targetWorkspaceId: "ws_machine",
       targetKind: "machine",
       resource: "session",
       loopback: false,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh", preferRelayOnLoopback: true })
+    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_machine", preferRelayOnLoopback: true })
   })
 
   it("C: signed unresolved-kind legacy ws_ ref also diverts to the relay runtime", () => {
@@ -199,7 +199,7 @@ describe("resolveSessionResourceRoute", () => {
     })).toEqual({ via: "runtime-workspace", workspaceId: "ws_legacy", preferRelayOnLoopback: true })
   })
 
-  it("C does not fire for a confirmed cloud workspace (falls to control plane)", () => {
+  it("C does not fire for a confirmed provisioner-placed workspace (falls to control plane)", () => {
     expect(resolveSessionResourceRoute({
       signed: true,
       hasSessionRef: false,

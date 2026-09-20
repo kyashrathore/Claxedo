@@ -96,8 +96,7 @@ export function createTransport(input: {
     request: input.request,
     relayRequest: input.relayRequest,
     resolveWorkspaceRuntime: input.resolveWorkspaceRuntime,
-    preferRelayOnLoopback: input.placement.transport === "workspace-relay" ||
-      input.placement.transport === "direct-runtime",
+    preferRelayOnLoopback: input.placement.transport === "workspace-relay",
   })
   const runtimeFetch = input.placement.transport === "signed-web"
     ? (path: string, init?: RequestInit) => (input.request ?? authFetch)(`${serverUrl}${path}`, init)

@@ -11,7 +11,7 @@ describe("appendWorkspaceRuntimeLog", () => {
   test("returns the SAME array for a duplicate row, so a store write is a no-op", () => {
     const first = appendWorkspaceRuntimeLog([], "stopped", "Waking workspace runtime...", 12, 1)
 
-    // Identity, not equality: `prepareUserHostedRuntime` re-emits
+    // Identity, not equality: `prepareMachineRuntime` re-emits
     // `checking_health` on every retry, and a fresh array each time would
     // re-render the startup view once per attempt.
     expect(appendWorkspaceRuntimeLog(first, "stopped", "Waking workspace runtime...", 12, 2)).toBe(first)

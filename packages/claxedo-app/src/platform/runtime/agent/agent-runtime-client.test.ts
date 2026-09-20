@@ -650,7 +650,7 @@ describe("AgentRuntimeClient", () => {
   // directory) is exactly the case `hostKind` threading exists to steer
   // away from the signed-cloud contract, which 404s on
   // `/api/control/sessions/:id/messages` for it.
-  it("diverts signed user-hosted message reads with a filesystem directory to the relay runtime", async () => {
+  it("diverts signed machine-placed message reads with a filesystem directory to the relay runtime", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
@@ -685,7 +685,7 @@ describe("AgentRuntimeClient", () => {
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session/runtime-session-1/message")
   })
 
-  it("surfaces offline user-hosted history as an error instead of an empty transcript", async () => {
+  it("surfaces offline machine-placed history as an error instead of an empty transcript", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
@@ -719,7 +719,7 @@ describe("AgentRuntimeClient", () => {
     expect(calls.some((call) => call.includes("/api/control/sessions/"))).toBe(false)
   })
 
-  it("signed user-hosted getSession falls through to the relay runtime instead of the control sessions list", async () => {
+  it("signed machine-placed getSession falls through to the relay runtime instead of the control sessions list", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
@@ -753,7 +753,7 @@ describe("AgentRuntimeClient", () => {
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session/runtime-session-1")
   })
 
-  it("lets explicit signed workspace identity override local-looking refs for old user-hosted sends", async () => {
+  it("lets explicit signed workspace identity override local-looking refs for machine-placed sends", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
@@ -799,7 +799,7 @@ describe("AgentRuntimeClient", () => {
     ])
   })
 
-  it("signed user-hosted session lists come from the relay runtime instead of empty control inventory", async () => {
+  it("signed machine-placed session lists come from the relay runtime instead of empty control inventory", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
@@ -841,7 +841,7 @@ describe("AgentRuntimeClient", () => {
   // directory it does not own). The caller-confirmed `hostKind` (threaded down
   // from the signed inventory) must still steer `listSessions` to the relay runtime
   // instead of the central sessions list, which holds nothing for user-hosted.
-  it("signed user-hosted session lists use the caller-confirmed kind when the live resolve confirms only an id", async () => {
+  it("signed machine-placed session lists use the caller-confirmed host kind when the live resolve confirms only an id", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",

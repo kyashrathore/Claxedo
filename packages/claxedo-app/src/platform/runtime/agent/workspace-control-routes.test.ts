@@ -86,7 +86,7 @@ describe("workspace control routes", () => {
     }).toString()).toBe("https://control.example.test/api/control/session-list?scope=workspace&limit=20&directory=%2Frepo")
   })
 
-  test("builds cloud workspace lifecycle routes with encoded identities", () => {
+  test("builds provisioner-placed workspace lifecycle routes with encoded identities", () => {
     expect(workspaceCheckpointsUrl({
       baseUrl: "https://control.example.test/",
       workspaceId: "ws/custom",

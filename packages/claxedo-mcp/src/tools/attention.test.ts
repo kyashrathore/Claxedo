@@ -8,7 +8,11 @@ import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
 import { createClaxedoMcpClient } from "../client/index"
-import type { ClaxedoFetch } from "../client/contract"
+import {
+  controlPlaneWorkspaceListFetch,
+  controlPlaneWorkspaceRow,
+  type ControlPlaneWorkspaceRow,
+} from "../client/control-plane-workspaces.fixture"
 import { McpAccessDenied, type McpAuditEvent, type McpScope, type McpToolContext } from "../context"
 import {
   CLAXEDO_MCP_PATH,
@@ -79,7 +83,6 @@ function runtimeApp(state: Harness) {
     getStatus: () => state.status,
     listPermissions: async () => state.pendingPermissions,
     listQuestions: async () => state.pendingQuestions,
-    sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
       instructionChannel: "none" as const,
@@ -137,17 +140,6 @@ function runtimeApp(state: Harness) {
   }
 }
 
-type WorkspaceRow = { workspace_id: string; access: "cloud" | "user-hosted"; display_name?: string; host_online?: boolean }
-
-function controlPlaneFetch(rows: readonly WorkspaceRow[]): ClaxedoFetch {
-  return async (path) => {
-    const url = new URL(path, "http://control.local")
-    if (url.pathname !== "/api/workspace") return new Response("no such route", { status: 404 })
-    const access = url.searchParams.get("access")
-    return Response.json({ workspaces: rows.filter((row) => row.access === access) })
-  }
-}
-
 const servers: Array<ReturnType<typeof serve>> = []
 const clients: Client[] = []
 const mounts: Array<{ dispose(): void }> = []
@@ -163,7 +155,7 @@ const runtimeClaims = { runtimeId: "rt_1", workspaceId: "ws_local", userId: "use
 type MountInput = {
   state: Harness
   mount?: ClaxedoMcpMountOptions["mount"]
-  workspaces?: readonly WorkspaceRow[]
+  workspaces?: readonly ControlPlaneWorkspaceRow[]
   callerSession?: string
   userScopes?: readonly McpScope[]
 }
@@ -172,7 +164,7 @@ async function listen(input: MountInput) {
   const audits: McpAuditEvent[] = []
   const runtime = runtimeApp(input.state)
   const mount = input.mount ?? "node"
-  const control = input.workspaces ? controlPlaneFetch(input.workspaces) : undefined
+  const control = input.workspaces ? controlPlaneWorkspaceListFetch(input.workspaces) : undefined
   const routes = createClaxedoMcpRoutes({
     mount,
     verifyRuntimeCredential: (token) => (token === "rt-token" ? { ...runtimeClaims, sessionId: input.callerSession } : undefined),
@@ -238,11 +230,11 @@ describe("sessions_board", () => {
       pendingPermissions: [permission("perm_1", "ses_parent", "Bash rm -rf"), permission("perm_2", "ses_grandchild", "Write file")],
       pendingQuestions: [question("q_1", "ses_grandchild", "Which database?")],
     })
-    const { url } = await listen({ state, workspaces: [{ workspace_id: "ws_local", access: "user-hosted", display_name: "Mac" }] })
+    const { url } = await listen({ state, workspaces: [controlPlaneWorkspaceRow({ workspace_id: "ws_local", backing: "local-worktree", display_name: "Mac" })] })
     const { client } = await connect(url, "cli-jwt")
     const { text } = await callText(client, "sessions_board")
     expect(text).toBe([
-      "ws_local (Mac) — user-hosted",
+      "ws_local (Mac) — machine",
       "  ses_parent \"Fix login\"  busy",
       "    permission perm_1 — Bash rm -rf",
       "    ses_child \"Codex child\"  busy",
@@ -311,14 +303,14 @@ describe("sessions_board", () => {
     const { url } = await listen({
       state: unreachable,
       workspaces: [
-        { workspace_id: "ws_local", access: "user-hosted", display_name: "Mac" },
-        { workspace_id: "ws_asleep", access: "user-hosted", display_name: "Laptop", host_online: false },
+        controlPlaneWorkspaceRow({ workspace_id: "ws_local", backing: "local-worktree", display_name: "Mac" }),
+        controlPlaneWorkspaceRow({ workspace_id: "ws_asleep", backing: "local-worktree", display_name: "Laptop", host_online: false }),
       ],
     })
     const { client } = await connect(url, "cli-jwt")
     const { text } = await callText(client, "sessions_board")
     expect(text).toContain("machine offline: connect ECONNREFUSED")
-    expect(text).toContain("ws_asleep (Laptop) — user-hosted\n  machine offline")
+    expect(text).toContain("ws_asleep (Laptop) — machine\n  machine offline")
   })
 })
 

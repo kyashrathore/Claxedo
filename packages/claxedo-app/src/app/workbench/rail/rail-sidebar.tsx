@@ -1721,10 +1721,10 @@ export function RailSidebar(props: RailSidebarProps) {
         label: (key, role) => key === "role" ? language.t(workspaceRoleLabelKey(role)) : language.t(`sidebar.workspace.${key}`),
       })
     })
-    // Every relay-backed workspace names its id here, not just a cloud one: it
-    // is what a session's frames off that workspace's stream are matched
-    // against, and a user-hosted row carries the HOST's filesystem directory
-    // rather than this section's `workspace:<id>` ref.
+    // Every workspace another machine serves names its id here, not just a
+    // provisioned one: the id is what a session's frames off that workspace's
+    // stream are matched against, and such a row carries the SERVING machine's
+    // filesystem directory rather than this section's `workspace:<id>` ref.
     const sessionListWorkspaceId = createMemo(() => isRelayHostKind(runtime())
       ? workspaceRowId(section.project, section.workspaceDir)
       : undefined)

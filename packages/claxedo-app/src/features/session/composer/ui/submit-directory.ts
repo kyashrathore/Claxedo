@@ -17,7 +17,7 @@ import type { CloudStartupState } from "./submit-create-session"
 import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 type RuntimeEvents = Parameters<WorkspaceStartupPort["prepareWorkspaceRuntime"]>[0]["events"]
-type PrepareUserHostedRuntime = WorkspaceStartupPort["prepareUserHostedRuntime"]
+type PrepareMachineRuntime = WorkspaceStartupPort["prepareMachineRuntime"]
 type PrepareWorkspaceRuntime = WorkspaceStartupPort["prepareWorkspaceRuntime"]
 type PrepareWorkspaceSessionWorktree = WorkspaceStartupPort["prepareWorkspaceSessionWorktree"]
 
@@ -59,7 +59,7 @@ export type SubmitDirectoryProvisionInput = {
     readonly attachWorkspaceBeforePrompt: string
     readonly attachProjectBeforeCloudWorkspace: string
   }
-  readonly prepareUserHostedRuntime?: PrepareUserHostedRuntime
+  readonly prepareMachineRuntime?: PrepareMachineRuntime
   readonly prepareWorkspaceRuntime?: PrepareWorkspaceRuntime
   readonly prepareWorkspaceSessionWorktree?: PrepareWorkspaceSessionWorktree
 }
@@ -318,13 +318,13 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     }
     input.onPublish?.(next)
   }
-  const userHostedWorkspace = (() => {
+  const machineWorkspace = (() => {
     const workspace = input.workspaceForDirectory(input.directory)
     return workspace?.kind === "machine" ? workspace : undefined
   })()
-  if (userHostedWorkspace) {
-    const result = await (input.prepareUserHostedRuntime ?? workspaceStartup().prepareUserHostedRuntime)({
-      workspaceId: userHostedWorkspace.workspaceId,
+  if (machineWorkspace) {
+    const result = await (input.prepareMachineRuntime ?? workspaceStartup().prepareMachineRuntime)({
+      workspaceId: machineWorkspace.workspaceId,
       directory: input.directory,
       baseUrl: input.baseUrl,
       request: input.request,

@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  isUserHostedWorkspaceDirectory,
-  isWorkspaceIdRef,
-} from "@/platform/identity/legacy-resolver"
+import { isWorkspaceIdRef } from "@/platform/identity/legacy-resolver"
 import { localSessionRef, sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
 import {
   createWorkspaceRuntimeRequest,
@@ -21,46 +18,43 @@ describe("workspace runtime request", () => {
     expect(isLoopbackHttpUrl("https://example.test")).toBe(false)
     expect(isWorkspaceIdRef("ws_1")).toBe(true)
     expect(isWorkspaceIdRef("workspace:ws_1")).toBe(false)
-    expect(isUserHostedWorkspaceDirectory("/repo/.claxedo/user-hosted/workspaces/ws_1")).toBe(true)
-    expect(isUserHostedWorkspaceDirectory("C:\\repo\\.claxedo\\user-hosted\\workspaces\\ws_1")).toBe(true)
-    expect(isUserHostedWorkspaceDirectory("/repo/.claxedo/not-user-hosted/workspaces/ws_1")).toBe(false)
   })
 
-  test("routes user-hosted workspace runtime requests through Workspace Relay", async () => {
+  test("routes machine-placed workspace runtime requests through Workspace Relay", async () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
       const url = new URL(req.url)
-      if (url.pathname === "/api/workspace/ws_user_hosted/connection") {
+      if (url.pathname === "/api/workspace/ws_machine/connection") {
         return Response.json({
           access: "user-hosted",
           backing: "local-worktree",
-          workspaceId: "ws_user_hosted",
+          workspaceId: "ws_machine",
           role: "owner",
           relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_user_hosted",
+          runtimeAccessToken: "rat_machine",
           tokenExpiresAt: Date.now() + 120_000,
         })
       }
-      if (url.toString() === "https://relay.test/workspaces/ws_user_hosted/mcp") {
-        expect(req.headers.get("authorization")).toBe("Bearer rat_user_hosted")
+      if (url.toString() === "https://relay.test/workspaces/ws_machine/mcp") {
+        expect(req.headers.get("authorization")).toBe("Bearer rat_machine")
         return Response.json({ local: { status: "connected" } })
       }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
     }) as typeof fetch
     const runtime = createWorkspaceRuntimeRequest({
       serverUrl: "http://server.test",
-      directory: "workspace:ws_user_hosted",
+      directory: "workspace:ws_machine",
       request,
       relayRequest: request,
       resolveWorkspaceRuntime: async () => ({
         kind: "machine",
-        workspaceId: "ws_user_hosted",
+        workspaceId: "ws_machine",
       }),
     })
 
-    await expect(runtime.fetch("/mcp?directory=workspace%3Aws_user_hosted").then((res) => res.json())).resolves.toEqual({
+    await expect(runtime.fetch("/mcp?directory=workspace%3Aws_machine").then((res) => res.json())).resolves.toEqual({
       local: { status: "connected" },
     })
     expect(calls.some((call) => call.includes("http://server.test/mcp"))).toBe(false)
@@ -134,7 +128,7 @@ describe("workspace runtime request", () => {
     expect(calls.some((call) => call.includes("workspaceId=ws_strip_id"))).toBe(false)
   })
 
-  test("routes loopback unsigned cloud workspace ids through the local workspace proxy", async () => {
+  test("routes loopback unsigned provisioner-placed workspace ids through this machine's workspace proxy", async () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
@@ -161,7 +155,7 @@ describe("workspace runtime request", () => {
     ])
   })
 
-  test("routes signed loopback cloud workspace ids through Workspace Relay", async () => {
+  test("routes signed loopback provisioner-placed workspace ids through Workspace Relay", async () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
@@ -357,7 +351,7 @@ describe("workspace runtime request", () => {
     }
   })
 
-  test("keeps local workspace runtime requests on the direct server path", async () => {
+  test("keeps runtime requests for a workspace this machine serves on the direct server path", async () => {
     const calls: string[] = []
     const runtime = createWorkspaceRuntimeRequest({
       serverUrl: "http://server.test",
@@ -465,7 +459,7 @@ describe("workspace runtime request", () => {
     expect(calls).toEqual(["GET http://127.0.0.1:3001/agent?directory=%2Ftmp%2Flocal"])
   })
 
-  test("routes loopback workspace-id runtime requests through the local workspace proxy", async () => {
+  test("routes loopback workspace-id runtime requests through this machine's workspace proxy", async () => {
     const calls: string[] = []
     const runtime = createWorkspaceRuntimeRequest({
       serverUrl: "http://127.0.0.1:3001",

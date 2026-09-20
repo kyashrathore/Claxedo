@@ -7,7 +7,7 @@ import { asRecord } from "@/lib/record"
 // This module is hosted, so it imports the implementation directly rather
 // than through `workspaceStartup()`. Local surfaces must not copy this import.
 import {
-  prepareUserHostedRuntime,
+  prepareMachineRuntime,
   prepareWorkspaceRuntime,
 } from "@/platform/runtime/cloud/workspace-runtime-store"
 import {
@@ -34,7 +34,7 @@ import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 // of independently rediscovering "is the workspace connected?".
 //
 // This module is the SINGLE WRITER. The drive loop reuses the existing mint /
-// health-probe / provision code verbatim (`prepareUserHostedRuntime` /
+// health-probe / provision code verbatim (`prepareMachineRuntime` /
 // `prepareWorkspaceRuntime`, which themselves flow through
 // `openWorkspaceConnection`'s cooldown circuit-breaker) — it centralizes *who
 // calls it*, not *what it does*.
@@ -42,7 +42,8 @@ import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 export type WorkspaceConnectionKind = WorkspaceHostKind
 
 export type WorkspaceOfflineReason =
-  // user-hosted: host machine offline (503 user_hosted_app_offline)
+  // The machine serving the workspace is offline (relay 503
+  // `user_hosted_app_offline`, which is the relay's own wire word).
   | "no-host"
   // mint 403 / 401 — not your workspace (terminal)
   | "forbidden"
@@ -204,7 +205,7 @@ function roleFromPlacementState(state: ConnectionPlacementState): RelayRole | un
   return undefined
 }
 
-// Map a failed user-hosted/cloud drive outcome to an offline reason.
+// Map a failed drive outcome, on either placement, to an offline reason.
 function classifyOffline(input: { offline?: boolean; message?: string }): WorkspaceOfflineReason {
   if (isForbiddenConnectionError(input.message)) return "forbidden"
   if (input.offline) return "no-host"
@@ -337,7 +338,7 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
   }
 
   if (input.kind === "machine") {
-    void prepareUserHostedRuntime({
+    void prepareMachineRuntime({
       workspaceId,
       ...(input.directory ? { directory: input.directory } : {}),
       ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
@@ -478,14 +479,14 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
   }
 
   const runtime: ConnectionRuntime = { input, generation: 0 }
-  const warmUserHosted = input.kind === "machine" && wasRecentlyReady(workspaceId)
+  const warmMachine = input.kind === "machine" && wasRecentlyReady(workspaceId)
   runtimes.set(workspaceId, runtime)
   setConnections(workspaceId, {
     workspaceId,
     kind: input.kind,
     // From frame zero: connecting (or ready for local). No blank fall-through.
-    status: input.kind === "self" || warmUserHosted ? "ready" : "connecting",
-    phase: input.kind === "self" || warmUserHosted
+    status: input.kind === "self" || warmMachine ? "ready" : "connecting",
+    phase: input.kind === "self" || warmMachine
       ? "ready"
       : input.kind === "machine"
         ? "connecting_workspace"
@@ -502,7 +503,7 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
       ? { relayPlacement: { workspaceId, hosting: "workspace", transport: "loopback", role: "owner" } satisfies Placement }
       : {}),
   })
-  driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmUserHosted })
+  driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmMachine })
   return connectionHandle(workspaceId, runtime)
 }
 

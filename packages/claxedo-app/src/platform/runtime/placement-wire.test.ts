@@ -7,6 +7,8 @@ import {
   inventoryHostKind,
   inventoryKindWord,
   isRelayHostKind,
+  isSelfHostKind,
+  modelStoreWorkspaceKey,
   placementProvisioner,
   placementWire,
   type SelfHost,
@@ -137,5 +139,49 @@ describe("controlPlaneRowPlacement", () => {
   test("the host's own path falls back to the row's remote directory", () => {
     expect(controlPlaneRowPlacement({ backing: "cloud-vm", remote_directory: "/workspace" })?.directory)
       .toBe("/workspace")
+  })
+})
+
+describe("modelStoreWorkspaceKey", () => {
+  const DIRECTORY = "/repo/main"
+
+  test("a workspace the attached server holds is keyed by its directory even when it has an id", () => {
+    expect(modelStoreWorkspaceKey({ host: "self", workspaceId: "ws_1", hostDirectory: DIRECTORY })).toBe(DIRECTORY)
+  })
+
+  test("a workspace a machine or the provisioner holds is keyed by its id", () => {
+    expect(modelStoreWorkspaceKey({ host: "machine", workspaceId: "ws_1", hostDirectory: DIRECTORY })).toBe("ws_1")
+    expect(modelStoreWorkspaceKey({ host: "provisioner", workspaceId: "ws_1", hostDirectory: DIRECTORY })).toBe("ws_1")
+  })
+
+  test("a placement with no host, or no id to key by, falls to the directory", () => {
+    expect(modelStoreWorkspaceKey({ host: undefined, workspaceId: "ws_1", hostDirectory: DIRECTORY })).toBe(DIRECTORY)
+    expect(modelStoreWorkspaceKey({ host: null, workspaceId: "ws_1", hostDirectory: DIRECTORY })).toBe(DIRECTORY)
+    expect(modelStoreWorkspaceKey({ host: "machine", hostDirectory: DIRECTORY })).toBe(DIRECTORY)
+  })
+
+  // The pane reads a host kind off its sdk workspace; Settings narrows the
+  // catalog row's wire word. One workspace has to answer one key or the two
+  // surfaces edit two model documents.
+  test("the pane's host kind and the catalog's wire word reach the same key", () => {
+    const pane = modelStoreWorkspaceKey({ host: "machine", workspaceId: "ws_1", hostDirectory: DIRECTORY })
+    const settings = modelStoreWorkspaceKey({ host: inventoryHostKind("user-hosted"), workspaceId: "ws_1", hostDirectory: DIRECTORY })
+    expect(pane).toBe(settings)
+  })
+})
+
+describe("isSelfHostKind", () => {
+  test("only the attached server's own placement answers true", () => {
+    expect(isSelfHostKind("self")).toBe(true)
+    expect(isSelfHostKind("machine")).toBe(false)
+    expect(isSelfHostKind("provisioner")).toBe(false)
+  })
+
+  // A row whose placement nothing narrowed is not this server's by default;
+  // treating it as such opens a local runtime for a workspace nothing placed.
+  test("a placement that names no host is not this server's", () => {
+    expect(isSelfHostKind(undefined)).toBe(false)
+    expect(isSelfHostKind(null)).toBe(false)
+    expect(isRelayHostKind(undefined)).toBe(false)
   })
 })

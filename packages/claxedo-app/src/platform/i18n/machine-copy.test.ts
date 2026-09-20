@@ -29,8 +29,8 @@ const FORBIDDEN_LABELS = ["this machine", "local", "cloud", "user-hosted", "host
  *
  * In a dictionary a value of exactly "local" is a label. In a component a
  * literal `"local"` is a wire kind, a route segment or a discriminant, and
- * forbidding it here would make this suite a rename detector for slice 4's
- * vocabulary rather than a copy audit.
+ * forbidding it here would make this suite a vocabulary rename detector rather
+ * than a copy audit.
  */
 const FORBIDDEN_SCREEN_LABELS = ["this machine", "this device", "local workspace", "cloud workspace", "hosted workspace"]
 
@@ -59,6 +59,16 @@ describe("machine and workspace copy: the dictionaries", () => {
       .filter(([, value]) => FORBIDDEN_LABELS.includes(value.trim().toLowerCase()))
       .map(([key, value]) => `${key}: ${value}`)
     expect(labels).toEqual([])
+  })
+
+  // "Host" is the code's word for an enrolled machine. On a screen it reads as
+  // a server somebody else runs, which is the opposite of what the row says.
+  test("English calls a machine a machine, never a host", async () => {
+    const en = { ...baseEn, ...sourceControlEn }
+    const offenders = Object.entries(en)
+      .filter(([, value]) => /\bhosts?\b/i.test(value))
+      .map(([key, value]) => `${key}: ${value}`)
+    expect(offenders).toEqual([])
   })
 
   test("every translated locale carries the same rule, so a locale cannot reintroduce the old vocabulary", async () => {

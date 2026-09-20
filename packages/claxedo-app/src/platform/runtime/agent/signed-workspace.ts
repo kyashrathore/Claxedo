@@ -1,12 +1,10 @@
 import {
-  backingHostKind,
-  inventoryHostKind,
   isRelayHostKind,
+  rowHostKind,
   type RelayHostKind,
   type WorkspaceHost,
 } from "@/platform/runtime/placement-wire"
 import { isFilesystemDirectory, sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
-import { asRecord } from "@/lib/record"
 
 export type SignedWorkspaceInfo = {
   workspaceId: string
@@ -24,7 +22,14 @@ export type SignedWorkspaceInfo = {
 export type WorkspaceInventoryEntry = {
   id?: string | null
   workspaceId?: string | null
+  /**
+   * Where the row's producer says the workspace runs. The two words are two
+   * producers, not a choice: the daemon's store writes `kind`, the signed
+   * bootstrap and the hosted shell write `backing`. Read either through
+   * `rowHostKind`, never here.
+   */
   kind?: string | null
+  backing?: string | null
   placement?: { host_enrollment_id?: string | null } | null
   /**
    * Wire field: the serving process's own declaration of how the runtime
@@ -79,7 +84,7 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
   if (!ref) return false
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      if (inventoryHostKind(workspace.kind) !== "self") continue
+      if (rowHostKind(workspace) !== "self") continue
       if (
         !sameWorkspaceId(key, ref) &&
         !sameWorkspaceId(workspace.id, ref) &&
@@ -111,10 +116,8 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
  * every caller treats both as "no relay to reach".
  */
 export function workspaceHostingKind(input: unknown): RelayHostKind | undefined {
-  const row = asRecord(input)
-  const kind = inventoryHostKind(row?.kind)
-  if (isRelayHostKind(kind)) return kind
-  return backingHostKind(row?.backing)
+  const kind = rowHostKind(input)
+  return isRelayHostKind(kind) ? kind : undefined
 }
 
 function statedHost(kind: RelayHostKind, placement: { host_enrollment_id?: string | null }): WorkspaceHost {
@@ -126,7 +129,7 @@ function statedHost(kind: RelayHostKind, placement: { host_enrollment_id?: strin
 function findSignedWorkspaceFromProjects(projects: readonly WorkspaceInventoryProject[], directory: string) {
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      const kind = inventoryHostKind(workspace.kind)
+      const kind = rowHostKind(workspace)
       if (!isRelayHostKind(kind)) continue
       const workspaceId = workspace.workspaceId ?? workspace.id ?? key
       if (!workspaceId) continue
