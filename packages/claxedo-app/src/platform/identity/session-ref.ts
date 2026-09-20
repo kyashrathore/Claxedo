@@ -1,4 +1,5 @@
 import { isFilesystemDirectory, isLocalSessionDirectory } from "./legacy-resolver"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 import {
   NATIVE_HARNESS_IDS,
   sameHarnessSelection,
@@ -16,7 +17,7 @@ export type SessionHost = "workspace"
 export type HarnessRef = HarnessSelection & { readonly binary?: string }
 
 export type SandboxRef =
-  | { readonly kind: "workspace"; readonly workspaceId: string; readonly hosting: "cloud" | "user-hosted"; readonly hostId?: string }
+  | { readonly kind: "workspace"; readonly workspaceId: string; readonly hosting: RelayHostKind; readonly hostId?: string }
   | { readonly kind: "local"; readonly cwd: string }
 
 export type SessionRef = {

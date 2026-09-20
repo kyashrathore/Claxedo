@@ -138,7 +138,7 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
       label: "desktop production build with optional contributions",
       cwd: "packages/claxedo-desktop",
       command: ["bun", "run", "build"],
-      env: { VITE_AUTH_ENABLED: "true" },
+      env: { VITE_CLAXEDO_HOSTED_ACTIVATION: "true" },
     },
     {
       label: "unsigned renderer and packaged-resource boundaries",

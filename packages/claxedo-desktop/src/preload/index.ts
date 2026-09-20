@@ -21,13 +21,11 @@ import type {
 /**
  * The one seam where main's reply type is named.
  *
- * `ipcRenderer.invoke` resolves to `any`, so every bridge member below used to
- * repeat `as Promise<X>` — twenty-odd assertions claiming a contract the
- * boundary never checked. This declaration makes the claim once and typed:
- * each call names the type its main-process handler returns, and the
- * `any` stops at this line. Replies whose shape actually needs verifying are
- * parsed by the caller (see `processDiagnosticsBridge`, which runs every reply
- * through its `LocalDiagnostics` schema).
+ * `ipcRenderer.invoke` resolves to `any`; each call below names the type its
+ * main-process handler returns, and the `any` stops at this line rather than
+ * being asserted away at every member. Replies whose shape actually needs
+ * verifying are parsed by the caller (see `processDiagnosticsBridge`, which
+ * runs every reply through its `LocalDiagnostics` schema).
  */
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => ipcRenderer.invoke(channel, ...args)
 
@@ -220,20 +218,15 @@ const api: ElectronAPI = {
   processDiagnostics: processDiagnosticsBridge,
   browser: browserBridge,
   /**
-   * The account, entirely by name.
-   *
-   * No method here takes a url, a path, or headers — `run` takes an operation
-   * name from a fixed set and main decides the request. That is what lets the
-   * credential live in main: this bridge cannot be used to spend it on a
-   * route nobody wrote down.
-   */
-  /**
    * Machine remote access, entirely by name.
    *
-   * Four operations, none of which takes an argument. The renderer cannot pass
-   * a url, a path, a method, a body or even a label — main holds the account
-   * bearer and a machine signing key that does not expire, so the only thing a
-   * message may carry is which of four fixed operations should happen.
+   * Seven operations. `status`, `start`, `pause` and `revoke` take nothing;
+   * `share`, `unshare` and `rename` carry data the user chose — a workspace id,
+   * a label, a name — and nothing that could describe a request. Main holds
+   * the account bearer and a machine signing key that does not expire, so a
+   * message may pick which fixed operation happens and, at most, which of this
+   * machine's own workspaces it happens to; never a url, a path, a method or a
+   * machine.
    *
    * `status` reads. `start` publishes this machine and is the one place the
    * enrollment handshake can begin, which is why the desktop enrolls nothing at
@@ -252,12 +245,22 @@ const api: ElectronAPI = {
       invoke("claxedo.hostConnector.share", input),
     unshare: (input: { workspaceId: string }) =>
       invoke("claxedo.hostConnector.unshare", input),
+    rename: (input: { displayName: string }) =>
+      invoke("claxedo.hostConnector.rename", input),
     onStatus: (listener: (status: unknown) => void) => {
       const handler = (_event: unknown, status: unknown) => listener(status)
       ipcRenderer.on("claxedo.hostConnector.status", handler)
       return () => ipcRenderer.removeListener("claxedo.hostConnector.status", handler)
     },
   },
+  /**
+   * The account, entirely by name.
+   *
+   * No method here takes a url, a path, or headers — `run` takes an operation
+   * name from a fixed set and main decides the request. That is what lets the
+   * credential live in main: this bridge cannot be used to spend it on a
+   * route nobody wrote down.
+   */
   account: {
     state: () => invoke("claxedo.account.state"),
     onState: (listener: (state: unknown) => void) => {

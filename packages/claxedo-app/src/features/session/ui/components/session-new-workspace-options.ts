@@ -1,12 +1,12 @@
 import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { inventoryHostKind, type WorkspaceHostKind, type InventoryKindWord } from "@/platform/runtime/placement-wire"
 
 export const MAIN_WORKTREE = "main"
 export const CREATE_WORKTREE = "create"
 
 export type ProjectWorkspace = {
-  kind?: WorkspaceKind | null
+  kind?: InventoryKindWord | null
   workspace_name?: string | null
   available?: boolean | null
   /** Git remote — the only project-scoped identity a hosted cloud row carries. */
@@ -40,9 +40,9 @@ export function newSessionEnvironmentOptions(input: {
   localExecution: boolean | undefined
   signed: boolean
   sandboxEnabled?: boolean
-}): Array<"local" | "cloud"> {
-  const options: Array<"local" | "cloud"> = (input.localExecution ?? !input.signed) ? ["local"] : []
-  if (input.sandboxEnabled !== false) options.push("cloud")
+}): Array<Exclude<WorkspaceHostKind, "machine">> {
+  const options: Array<Exclude<WorkspaceHostKind, "machine">> = (input.localExecution ?? !input.signed) ? ["self"] : []
+  if (input.sandboxEnabled !== false) options.push("provisioner")
   return options
 }
 
@@ -79,11 +79,10 @@ export function repoDerivedProjectLabel(
  * The inventory arrives in TWO shapes that key `workspaces` differently: the
  * server bootstrap keys by WORKSPACE ID (routes/hosted/shell.ts, where
  * `directory` is a field on the value) and the client snapshot keys by
- * DIRECTORY (data/query/inventory.ts). Matching only the key missed the other
- * shape, so the active project came back undefined and the workspace chip —
- * which filters THAT project's workspaces — collapsed to the "create new" path
- * even when the project already had cloud workspaces. Match both shapes, plus
- * the id fields, so either inventory resolves.
+ * DIRECTORY (data/query/inventory.ts). Matching the key, the directory and the
+ * id fields lets either shape resolve; a miss leaves the active project
+ * undefined and collapses the workspace chip, which filters THAT project's
+ * workspaces, to its "create new" path.
  */
 export function findProjectForDirectory<T extends ProjectInventoryEntry>(
   projects: readonly T[],
@@ -107,22 +106,22 @@ export function findProjectForDirectory<T extends ProjectInventoryEntry>(
 export function createNewSessionWorkspaceState(input: {
   projectRoot: string
   selectedWorktree: string
-  workspaceKind: WorkspaceKind
+  hostKind: WorkspaceHostKind
   sandboxes?: string[]
   workspaces?: Record<string, ProjectWorkspace>
 }) {
   const workspaces = input.workspaces ?? {}
   const directoryFor = (value: string) => value === MAIN_WORKTREE ? input.projectRoot : value
-  const kindFor = (value: string): WorkspaceKind => {
-    // user-hosted (self-hosted, relay-connected) is its OWN kind — never collapse
-    // it into "cloud". Collapsing is what let a misresolved self-hosted workspace
-    // fall into the "New cloud sandbox" create path (creatingWorkspace below only
-    // auto-fires for kind === "cloud"). A self-hosted workspace already exists and
-    // connects through the relay; it is never provisioned.
-    const wsKind = projectWorkspaceForRef(workspaces, directoryFor(value))?.kind
-    if (wsKind === "user-hosted") return "user-hosted"
-    if (wsKind === "cloud" || !!sessionWorkspaceRuntimeRef({ directory: directoryFor(value) })) return "cloud"
-    return "local"
+  const kindFor = (value: string): WorkspaceHostKind => {
+    // A workspace on an enrolled machine is its OWN host — never collapse it
+    // into the provisioner's. `creatingWorkspace` below auto-fires only for the
+    // provisioner, so one collapsed into it falls into the "New cloud sandbox"
+    // create path. Such a workspace already exists and connects through the
+    // relay; it is never provisioned.
+    const wsKind = inventoryHostKind(projectWorkspaceForRef(workspaces, directoryFor(value))?.kind)
+    if (wsKind === "machine") return "machine"
+    if (wsKind === "provisioner" || !!sessionWorkspaceRuntimeRef({ directory: directoryFor(value) })) return "provisioner"
+    return "self"
   }
   // MAIN_WORKTREE already stands for the project root, and the signed
   // inventories list that root among `sandboxes` (both groupings push every
@@ -153,7 +152,7 @@ export function createNewSessionWorkspaceState(input: {
   const options = candidates.filter((value) => {
     const workspace = projectWorkspaceForRef(workspaces, directoryFor(value))
     if (workspace?.available === false) return false
-    return kindFor(value) === input.workspaceKind
+    return kindFor(value) === input.hostKind
   })
   const currentWorktree =
     input.selectedWorktree === CREATE_WORKTREE
@@ -165,8 +164,8 @@ export function createNewSessionWorkspaceState(input: {
   return {
     options,
     currentWorktree,
-    creatingWorkspace: input.selectedWorktree === CREATE_WORKTREE || (input.workspaceKind === "cloud" && options.length === 0),
-    createSessionWorktree: input.workspaceKind === "cloud" || input.selectedWorktree === CREATE_WORKTREE,
+    creatingWorkspace: input.selectedWorktree === CREATE_WORKTREE || (input.hostKind === "provisioner" && options.length === 0),
+    createSessionWorktree: input.hostKind === "provisioner" || input.selectedWorktree === CREATE_WORKTREE,
     directoryFor,
     kindFor,
   }

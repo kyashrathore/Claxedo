@@ -31,15 +31,71 @@ function token(jti: string, payload: Record<string, unknown> = {}) {
   ].join(".")
 }
 
-function connection(input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConnectionInfo {
+/**
+ * The two bodies `/api/workspace/:id/connection` answers, each spelled field
+ * for field as its producer in `claxedo-server` writes it:
+ * `hostedConnectionInfo` for a workspace the provisioner runs,
+ * `hostTunnelConnectionInfo` for one a machine serves.
+ *
+ * Spelled as the wire bodies rather than as `WorkspaceConnectionInfo`: the two
+ * differ exactly where `parseConnection` does its work — a producer states
+ * `backing` and the parsed value states one `host` —
+ * so a fixture typed as the parsed shape is a fake of the reader, not of the
+ * producer. Nothing here is typechecked (`tsconfig.json` excludes `*.test.ts`),
+ * so these types are the only thing holding the fixtures to the producers.
+ *
+ * Where they disagree is what the parse has to survive: the provisioner always
+ * declares `managed-private` and names the sandbox's `hostId`, while a machine
+ * forwards only the `session_authority` its heartbeat carried and names no host
+ * id.
+ */
+type ProvisionerConnectionBody = {
+  backing: "cloud-vm"
+  sessionAuthority: "managed-private"
+  workspaceId: string
+  homeRegion: string
+  relayUrl: string
+  runtimeAccessToken: string
+  tokenExpiresAt: number
+  role: WorkspaceConnectionInfo["role"]
+  hostId: string
+}
+
+type MachineConnectionBody = {
+  backing: "local-worktree"
+  sessionAuthority?: "local" | "managed-private"
+  workspaceId: string
+  homeRegion: string
+  relayUrl: string
+  runtimeAccessToken: string
+  tokenExpiresAt: number
+  role: WorkspaceConnectionInfo["role"]
+}
+
+function connection(input: Partial<ProvisionerConnectionBody> = {}): ProvisionerConnectionBody {
   return {
-    access: "cloud",
     backing: "cloud-vm",
+    sessionAuthority: "managed-private",
     workspaceId: "ws_1",
-    role: "owner",
+    homeRegion: "us-east",
     relayUrl: "https://relay.example.test",
     runtimeAccessToken: token("jti_1"),
     tokenExpiresAt: Date.now() + 30 * 60_000,
+    role: "owner",
+    hostId: "host_1",
+    ...input,
+  }
+}
+
+function machineConnection(input: Partial<MachineConnectionBody> = {}): MachineConnectionBody {
+  return {
+    backing: "local-worktree",
+    workspaceId: "ws_1",
+    homeRegion: "us-east",
+    relayUrl: "https://relay.example.test",
+    runtimeAccessToken: token("jti_1"),
+    tokenExpiresAt: Date.now() + 30 * 60_000,
+    role: "owner",
     ...input,
   }
 }
@@ -227,23 +283,45 @@ describe("workspace relay connection", () => {
     ])
   })
 
-  test("accepts user-hosted access backed by a local worktree", async () => {
-    const result = await openWorkspaceConnection("ws_uh", {
+  test("a local-worktree backing places the workspace on a machine", async () => {
+    const result = await openWorkspaceConnection("ws_machine", {
       serverUrl: "http://server.test",
-      request: (async () => Response.json(connection({
-        access: "user-hosted",
-        backing: "local-worktree",
-        runtimeKind: "user-hosted",
+      request: (async () => Response.json(machineConnection({
         homeRegion: "eu-west",
-        workspaceId: "ws_uh",
+        workspaceId: "ws_machine",
       }))) as typeof fetch,
     })
-    expect(result.backing).toBe("local-worktree")
-    expect(result.access).toBe("user-hosted")
-    expect(result.workspaceId).toBe("ws_uh")
-    expect(result.runtimeKind).toBe("user-hosted")
+    expect(result.host).toBe("machine")
+    expect(result.workspaceId).toBe("ws_machine")
     expect(result.homeRegion).toBe("eu-west")
     expect(result.role).toBe("owner")
+  })
+
+  // The machine composes its runtime's session policy and declares it on every
+  // heartbeat; the control plane passes that declaration through and states
+  // nothing of its own. Dropping it here would leave the stream owner with no
+  // scope and no workspace stream at all.
+  test("the machine's own session-authority declaration survives the parse", async () => {
+    const open = (workspaceId: string, body: Partial<MachineConnectionBody>) => openWorkspaceConnection(workspaceId, {
+      serverUrl: "http://server.test",
+      request: (async () => Response.json(machineConnection({ workspaceId, ...body }))) as typeof fetch,
+    })
+    expect((await open("ws_private", { sessionAuthority: "managed-private" })).sessionAuthority).toBe("managed-private")
+    expect((await open("ws_local", { sessionAuthority: "local" })).sessionAuthority).toBe("local")
+    expect((await open("ws_silent", {})).sessionAuthority).toBeUndefined()
+  })
+
+  // The provisioner's sandbox has a non-loopback exposure, so its runtime is
+  // composed `managed-private` and the producer writes the word with no spread.
+  // Losing it here narrows the workspace bus to a session scope the sandbox
+  // never serves.
+  test("the provisioner's session-authority declaration survives the parse", async () => {
+    const result = await openWorkspaceConnection("ws_sandbox", {
+      serverUrl: "http://server.test",
+      request: (async () => Response.json(connection({ workspaceId: "ws_sandbox" }))) as typeof fetch,
+    })
+    expect(result.host).toBe("provisioner")
+    expect(result.sessionAuthority).toBe("managed-private")
   })
 
   test("retries provider-neutral provisioning responses until the runtime is ready", async () => {
@@ -260,7 +338,6 @@ describe("workspace relay connection", () => {
           return Response.json({
             status: "provisioning",
             workspaceId: "ws_cloud",
-            runtimeKind: "cloud",
             homeRegion: "us-east",
             retryAfterMs: 1_500,
           })
@@ -524,7 +601,6 @@ describe("workspace relay connection", () => {
         return Response.json({
           status: "provisioning",
           workspaceId: "ws_still_cold",
-          runtimeKind: "cloud",
           homeRegion: "us-east",
           retryAfterMs: 750,
         })
@@ -542,8 +618,8 @@ describe("workspace relay connection", () => {
     await expect(openWorkspaceConnection("ws_missing_role", {
       serverUrl: "http://server.test",
       request: (async () => Response.json({
-        access: "cloud",
         backing: "cloud-vm",
+        sessionAuthority: "managed-private",
         workspaceId: "ws_missing_role",
         relayUrl: "https://relay.example.test",
         runtimeAccessToken: token("jti_1"),
@@ -580,7 +656,6 @@ describe("workspace relay connection", () => {
           return Response.json({
             status: "provisioning",
             workspaceId: "ws_refreshing",
-            runtimeKind: "cloud",
             homeRegion: "us-east",
             retryAfterMs: 750,
           })

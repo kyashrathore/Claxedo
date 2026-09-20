@@ -33,6 +33,11 @@ export type ClaxedoMcpClientOptions = Readonly<{
  */
 const IN_PROCESS_ORIGIN = "http://runtime.local"
 
+/** The hosts `GET /api/workspace?host=` answers for, one query each. */
+const WORKSPACE_LIST_HOSTS = ["provisioner", "machine"] as const satisfies readonly NonNullable<WorkspaceSummary["host"]>[]
+
+type WorkspaceListHost = (typeof WORKSPACE_LIST_HOSTS)[number]
+
 export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): ClaxedoMcpClient {
   const { deployment, local, controlPlane, now, sleep, refreshWindowMs, provisioningMaxAttempts } = options
   if (deployment === "hosted" && local) {
@@ -139,13 +144,13 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
   const workspaces = async (): Promise<readonly WorkspaceSummary[]> => {
     const { fetch: controlPlaneFetch } = requireControlPlane("Listing workspaces")
     const rows = new Map<string, WorkspaceSummary>()
-    for (const access of ["cloud", "user-hosted"] as const) {
-      const response = await controlPlaneFetch(`/api/workspace?access=${access}`, { method: "GET" })
-      if (!response.ok) throw await workspaceRuntimeClientError(`workspace.list.${access}`, response)
+    for (const host of WORKSPACE_LIST_HOSTS) {
+      const response = await controlPlaneFetch(`/api/workspace?host=${host}`, { method: "GET" })
+      if (!response.ok) throw await workspaceRuntimeClientError(`workspace.list.${host}`, response)
       const body: unknown = await response.json()
       const list = asRecord(body)?.workspaces
-      if (!Array.isArray(list)) throw new ClaxedoMcpClientError("connection-invalid", `workspace.list.${access} returned no workspaces array`)
-      for (const summary of list.map((row) => workspaceSummary(row, access))) {
+      if (!Array.isArray(list)) throw new ClaxedoMcpClientError("connection-invalid", `workspace.list.${host} returned no workspaces array`)
+      for (const summary of list.map((row) => workspaceSummary(row, host))) {
         if (summary && !rows.has(summary.id)) rows.set(summary.id, summary)
       }
     }
@@ -166,19 +171,28 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
 }
 
 /**
- * One control-plane list row. `?access=cloud` answers every visible row, not
- * only cloud ones, so the row's own `access` decides its kind and a row whose
- * access is not the one asked for is dropped and picked up by its own query.
+ * One control-plane list row, read for the machine it names.
+ *
+ * `?host=provisioner` answers every visible row rather than only the
+ * provisioner's, so a row's own `backing` is the only thing that says where it
+ * runs; a row this query did not ask for is dropped here and picked up by the
+ * other one.
  */
-function workspaceSummary(row: unknown, access: "cloud" | "user-hosted"): WorkspaceSummary | undefined {
+function workspaceSummary(row: unknown, asked: WorkspaceListHost): WorkspaceSummary | undefined {
   const record = asRecord(row)
-  const id = record?.workspace_id
-  if (typeof id !== "string" || id.length === 0 || record?.access !== access) return undefined
+  if (!record) return undefined
+  const id = record.workspace_id
+  const host = record.backing === "cloud-vm" ? "provisioner" : record.backing === "local-worktree" ? "machine" : undefined
+  if (typeof id !== "string" || id.length === 0 || host !== asked) return undefined
+  const placement = asRecord(record.placement)
+  const directory = typeof placement?.directory === "string"
+    ? placement.directory
+    : typeof record.remote_directory === "string" ? record.remote_directory : undefined
   return {
     id,
-    kind: access,
+    host,
     ...(typeof record.display_name === "string" ? { name: record.display_name } : {}),
-    ...(typeof record.remote_directory === "string" ? { directory: record.remote_directory } : {}),
+    ...(directory ? { directory } : {}),
     ...(typeof record.host_online === "boolean" ? { machineOnline: record.host_online } : {}),
   }
 }

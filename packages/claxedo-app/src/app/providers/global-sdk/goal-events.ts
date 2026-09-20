@@ -8,11 +8,11 @@ import {
   sessionResourceAuthorityScope,
   type SessionResourceAuthorityScope,
 } from "@/features/session/store/session-resource-authority"
-import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind } from "@/platform/runtime/placement-wire"
 
-function goalWorkspaceKind(input: unknown) {
-  const kind = workspaceKind(input)
-  return kind === "local" ? undefined : kind
+function goalHostKind(input: unknown) {
+  const kind = asHostKind(input)
+  return kind === "self" ? undefined : kind
 }
 
 /**
@@ -34,7 +34,7 @@ export function liveSessionGoalScope(input: {
     serverUrl: input.serverUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: live.workspaceId,
-    workspaceKind: goalWorkspaceKind(live.workspaceKind),
+    hostKind: goalHostKind(live.hostKind),
     sessionRef: live.sessionRef,
   })
 }

@@ -9,7 +9,7 @@ describe("U8 package boundary public gate", () => {
       {
         label: "signed-capable package",
         command: ["bun", "run", "package:mac", "--", "--dir", "--publish", "never"],
-        env: { VITE_AUTH_ENABLED: "true", CSC_IDENTITY_AUTO_DISCOVERY: "false" },
+        env: { VITE_CLAXEDO_HOSTED_ACTIVATION: "true", CSC_IDENTITY_AUTO_DISCOVERY: "false" },
       },
       { label: "packaged resource inventory", command: ["bun", "./scripts/verify-package-contents.ts"] },
       { label: "unsigned startup trace", command: ["bun", "./scripts/u8-packaged-smoke.ts"] },

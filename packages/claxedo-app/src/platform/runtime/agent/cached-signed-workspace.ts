@@ -7,7 +7,7 @@ import { signedWorkspaceFromProjects, type SignedWorkspaceInfo, type WorkspaceIn
  * the shared Query cache — the one `queryKeys.controlPlane.projects` entry the
  * global SDK fetch and the session/directory queries already read.
  *
- * A user-hosted workspace addressed by its filesystem-path directory has no
+ * A machine-placed workspace addressed by its filesystem-path directory has no
  * `/api/workspace/resolve` answer on the hosted control plane, so the network
  * liveness read answers null for it; the inventory is the placement authority
  * that says "this directory is workspace X, served over the relay".

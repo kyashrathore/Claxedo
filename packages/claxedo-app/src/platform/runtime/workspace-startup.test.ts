@@ -9,14 +9,14 @@ describe("the workspace startup binding", () => {
       cmd: ["bun", "-e", `
         const { configureWorkspaceStartup, workspaceStartup } = await import("./src/platform/runtime/workspace-startup.ts")
         const port = (status) => ({
-          prepareUserHostedRuntime: async () => ({ ok: true, status }),
+          prepareMachineRuntime: async () => ({ ok: true, status }),
           prepareWorkspaceRuntime: async () => ({ ok: true, startup: false, workspace: { workspaceId: status } }),
           prepareWorkspaceSessionWorktree: async () => ({ path: status, branch: status, baseCommit: status }),
         })
         configureWorkspaceStartup(port("first"))
-        const first = await workspaceStartup().prepareUserHostedRuntime({ workspaceId: "ws" })
+        const first = await workspaceStartup().prepareMachineRuntime({ workspaceId: "ws" })
         configureWorkspaceStartup(port("second"))
-        const second = await workspaceStartup().prepareUserHostedRuntime({ workspaceId: "ws" })
+        const second = await workspaceStartup().prepareMachineRuntime({ workspaceId: "ws" })
         console.log(JSON.stringify([first.status, second.status]))
       `],
       cwd: appRoot,

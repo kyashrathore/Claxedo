@@ -1,7 +1,7 @@
 /**
  * A `claxedo connect` host talks to the control plane with its key alone:
  * every request carries the four machine headers and is signed over method,
- * path, body hash, timestamp, nonce and enrollment id (P1.1). No bearer
+ * path, body hash, timestamp, nonce and enrollment id. No bearer
  * exists on the box, so nothing here can be re-used by an account caller.
  */
 
@@ -12,7 +12,7 @@ import {
   type HostKeyPair,
 } from "./host-identity"
 import { isPlainRecord, type HostScope } from "./host-state"
-import type { AssignmentDescription, HeartbeatResponse, MachineHeartbeatInput, MachineTransport } from "./connector"
+import type { AssignmentDescription, HeartbeatResponse, MachineHeartbeatInput, MachineTransport, ProviderConfigRevision } from "./connector"
 
 /** What this package needs of `fetch`; the global one satisfies it under Node, Bun and Electron. */
 export type FetchLike = (input: URL, init: RequestInit) => Promise<Response>
@@ -174,6 +174,20 @@ function decodeAssignments(value: unknown): AssignmentDescription[] | undefined 
   })
 }
 
+/**
+ * `{revision, sealed}` or nothing. A revision with no readable `sealed`
+ * member is refused rather than read as a withdrawal: a truncated blob would
+ * otherwise revoke this machine's credentials and be acked for it.
+ */
+export function decodeProviderConfig(value: unknown): ProviderConfigRevision | undefined {
+  if (!isPlainRecord(value)) return undefined
+  const sealed = value.sealed
+  if (sealed !== null && (typeof sealed !== "string" || !sealed)) {
+    throw new Error("control plane returned a malformed provider configuration")
+  }
+  return { revision: requireNumber(value.revision, "providerConfig.revision"), sealed }
+}
+
 export function decodeHeartbeatResponse(value: unknown): HeartbeatResponse {
   if (!isPlainRecord(value)) throw new Error("control plane returned no heartbeat body")
   const assigned = Array.isArray(value.assigned_workspace_ids)
@@ -181,12 +195,14 @@ export function decodeHeartbeatResponse(value: unknown): HeartbeatResponse {
     : undefined
   const assignments = decodeAssignments(value.assignments)
   const scope = decodeScope(value.scope)
+  const providerConfig = decodeProviderConfig(value.provider_config)
   return {
     expires_at: requireNumber(value.expires_at, "expires_at"),
     ...(assigned ? { assigned_workspace_ids: assigned } : {}),
     ...(isPlainRecord(value.hostTunnel) ? { hostTunnel: value.hostTunnel } : {}),
     ...(assignments ? { assignments } : {}),
     ...(scope ? { scope } : {}),
+    ...(providerConfig ? { providerConfig } : {}),
     ...decodeEndpoints(value),
   }
 }
@@ -200,8 +216,14 @@ export type MachineSignedTransportOptions = {
    * Sent in the body so a key the control plane has since replaced fails as
    * `enrollment_key_version_mismatch` (a decision) instead of as a generic
    * signature refusal.
+   *
+   * Omitted by a caller whose enrollment answer never stated one: the account
+   * enroll route returns the enrollment, not the version its key landed at.
+   * The verifier compares the field only when it is present, and a key that
+   * was replaced still fails — as `machine_request_denied`, because the stored
+   * public key no longer verifies this signature.
    */
-  keyVersion: number
+  keyVersion?: number
   fetch: FetchLike
   now?: () => number
   nonce?: () => string
@@ -212,6 +234,8 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   const now = options.now ?? (() => Date.now())
   const nonce = options.nonce ?? randomNonce
   const timeoutMs = options.requestTimeoutMs ?? MACHINE_REQUEST_TIMEOUT_MS
+
+  const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
 
   const signedPost = async (pathname: string, body: Record<string, unknown>, requestTimeoutMs = timeoutMs) => {
     const url = controlPlaneRequestUrl(options.controlPlaneUrl, pathname)
@@ -237,16 +261,10 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   }
 
   return {
-    createRequest: async () => {
-      throw new Error("a machine-signed transport is already enrolled; it never requests an enrollment nonce")
-    },
-    enroll: async () => {
-      throw new Error("a machine-signed transport is already enrolled; enrollment is by invitation")
-    },
     acquire: async (input) => {
       const value = await signedPost(
         HOST_ENROLLMENT_ACQUIRE_PATH,
-        { keyVersion: options.keyVersion },
+        keyVersion,
         input?.timeoutMs === undefined ? timeoutMs : Math.min(timeoutMs, input.timeoutMs),
       )
       if (!isPlainRecord(value)) throw new Error("control plane returned no acquire body")
@@ -254,11 +272,13 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
     },
     heartbeat: async (input: MachineHeartbeatInput) => {
       const value = await signedPost(HOST_ENROLLMENT_HEARTBEAT_PATH, {
-        keyVersion: options.keyVersion,
+        ...keyVersion,
         generation: input.generation,
         acks: input.acks.map((ack) => ({ workspaceId: ack.workspaceId, revision: ack.revision })),
         ...(input.ttlMs !== undefined ? { ttlMs: input.ttlMs } : {}),
         ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
+        ...(input.sealingPublicKey ? { sealingPublicKey: input.sealingPublicKey } : {}),
+        ...(input.providerConfigRevision === undefined ? {} : { providerConfigRevision: input.providerConfigRevision }),
       })
       return decodeHeartbeatResponse(value)
     },

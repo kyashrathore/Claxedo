@@ -55,6 +55,8 @@ import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../s
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
+import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/host-provider-config"
+import { hostProviderConfig } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
@@ -66,6 +68,7 @@ import { createUsageOutboxSync } from "../usage/outbox-sync"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
+import { localHostRelayActor, localHostSessionAccessPolicy } from "../deployments/local/host-session-authority"
 
 const log = Log.create({ service: "local-server" })
 
@@ -146,6 +149,15 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   configureEmbeddedWorkspaceRuntime({
     connectionProviders,
     opencodeRuntime,
+    // One policy for both kinds of caller: the machine's own user reaches
+    // these runtimes over loopback and owns every session on them, while a
+    // relayed org member is admitted only by the control plane's session
+    // authority. Which one a request gets is decided from the provenance the
+    // dispatch below stamps, so the declaration to the control plane is
+    // `managed-private` while this window still creates sessions with no
+    // reservation — signed in or out.
+    sessionAccessPolicy: localHostSessionAccessPolicy,
+    loopbackSessionAuthority: "local",
     firstPartyMcpLaunch: { baseUrl: firstPartyMcpBaseUrl, enabledToolGroups: builtinToolGroups },
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
@@ -170,7 +182,10 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   })
   configureAgentConfig({
     connectionProviders,
-    projectAuth: (input) => credentialBroker.projectAuth(input),
+    // The owner's pushed rows are written over the broker's answer: a
+    // provider the owner named resolves to the owner's account, every other
+    // one to whatever this machine holds.
+    projectAuth: hostProviderConfigProjectAuth((input) => credentialBroker.projectAuth(input), hostProviderConfig),
     ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
   const stopConfigWatch = watchUserConfigFile(() => {
@@ -300,7 +315,17 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     },
     telemetry: services.telemetry,
   }
-  const workspaceRelayProxy = options.workspaceRelayProxy ?? createLocalWorkspaceRelayProxy()
+  // Both dispatch entrypoints resolve the same verified relay actor: one
+  // answers `/workspaces/:id/*` (what the host tunnel replays onto) and the
+  // other the bare runtime paths, and a caller that reached either without a
+  // verifiable relay stamp is this machine's user. A composition that brings
+  // its own resolver keeps it, the way it keeps its own relay proxy below.
+  const runtimeProxyOptions = {
+    resolveRelayActor: localHostRelayActor,
+    verifyRelayIngress: true,
+    ...options.runtimeProxyOptions,
+  }
+  const workspaceRelayProxy = options.workspaceRelayProxy ?? createLocalWorkspaceRelayProxy(runtimeProxyOptions)
   const sessionProjectionReady = new Map<string, Promise<void>>()
   const refreshSessionProjection: NonNullable<LocalAppOptions["refreshSessionProjection"]> = (workspace) => {
     const ready = sessionProjectionReady.get(workspace.id)
@@ -312,6 +337,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   }
   const { app, injectWebSocket } = createLocalApp({
     ...options,
+    runtimeProxyOptions,
     egressBroker: credentialBroker.handler,
     services,
     usage,

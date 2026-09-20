@@ -31,11 +31,12 @@ describe("global sdk stream bridge", () => {
   })
 
   test("a workspace the inventory knows is local is never relay-routed, explicit id or not", () => {
-    // Every claxedo workspace carries a uuid, local ones included, so a session
-    // row's `workspaceId` is not evidence of a relay. Routing a local workspace
-    // at the relay answers `401 Workspace connection failed` forever, and the
-    // SDK reports that as `data: undefined` — indistinguishable, to the rail's
-    // status batch, from "no session is active".
+    // Every claxedo workspace carries a uuid, the ones this server serves
+    // included, so a session row's `workspaceId` is not evidence of a relay.
+    // Routing a loopback-served workspace at the relay answers `401 Workspace
+    // connection failed` forever, and the SDK reports that as `data: undefined`
+    // — indistinguishable, to the rail's status batch, from "no session is
+    // active".
     const projects = [
       {
         worktree: "/repo/local",
@@ -57,8 +58,9 @@ describe("global sdk stream bridge", () => {
       directory: "/repo/local",
       workspaceId: "ws_local",
     }))).toBeUndefined()
-    // An id the inventory cannot place keeps the optimistic fallback: a cloud
-    // workspace whose projects have not loaded yet still reaches its relay.
+    // An id the inventory cannot place keeps the optimistic fallback: a
+    // workspace another machine serves still reaches its relay before its
+    // projects have loaded.
     expect(globalSdkClientWorkspaceId(projects, {
       directory: "/repo/other",
       workspaceId: "ws_unknown",
@@ -257,14 +259,14 @@ describe("global sdk stream bridge", () => {
       sessionID: "cp-cloud-1",
       directory: "ws_cloud",
       workspaceId: "ws_cloud",
-      workspaceKind: "cloud",
-    }, "cp-user-hosted-1", {
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
+      hostKind: "provisioner",
+    }, "cp-machine-1", {
+      directory: "/home/dev/.claxedo/workspaces/ws_shared",
     })).toEqual({
-      sessionID: "cp-user-hosted-1",
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
+      sessionID: "cp-machine-1",
+      directory: "/home/dev/.claxedo/workspaces/ws_shared",
       workspaceId: undefined,
-      workspaceKind: undefined,
+      hostKind: undefined,
     })
   })
 
@@ -274,44 +276,44 @@ describe("global sdk stream bridge", () => {
       host: "workspace",
       directory: "/repo/main",
       workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     }, "runtime-session-2", {
       host: "workspace",
       directory: "/repo/main",
       workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     })).toEqual({
       next: {
         sessionID: "runtime-session-2",
         host: "workspace",
         directory: "/repo/main",
         workspaceId: "ws_signed",
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       },
       workspaceScopeChanged: false,
     })
   })
 
-  test("live session relay backing resolves signed user-hosted filesystem directories", () => {
+  test("live session relay backing resolves a machine-placed filesystem directory", () => {
     expect(liveSessionWithRelayBacking({
-      sessionID: "cp-user-hosted-1",
-      directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
+      sessionID: "cp-machine-1",
+      directory: "/private/tmp/ws/.claxedo/workspaces/ws_shared",
     }, [{
       id: "project-1",
       worktree: "/tmp/ws",
       time: { created: 1, updated: 1 },
       workspaces: {
-        ws_user_hosted: {
-          workspaceId: "ws_user_hosted",
+        ws_shared: {
+          workspaceId: "ws_shared",
           kind: "user-hosted",
-          directory: "/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
+          directory: "/tmp/ws/.claxedo/workspaces/ws_shared",
         },
       },
     }])).toEqual({
-      sessionID: "cp-user-hosted-1",
-      directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
-      workspaceId: "ws_user_hosted",
-      workspaceKind: "user-hosted",
+      sessionID: "cp-machine-1",
+      directory: "/private/tmp/ws/.claxedo/workspaces/ws_shared",
+      workspaceId: "ws_shared",
+      hostKind: "machine",
     })
   })
 

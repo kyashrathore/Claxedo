@@ -30,6 +30,7 @@ describe("runner resolution", () => {
       workspaceId: "ws_1",
       directory,
       kind: "cloud",
+      driver: "modal",
       status: "ready",
     })
     expect(ws?.id).toBe("ws_1")

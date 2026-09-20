@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   syncSession: vi.fn(() => Promise.resolve()),
   fileTreeList: vi.fn(() => Promise.resolve()),
   runtimeRequest: vi.fn((_path?: string, _init?: RequestInit) => Promise.resolve(new Response("[]"))),
-  workspace: undefined as undefined | { workspaceId: string; kind: "cloud" | "user-hosted" },
+  workspace: undefined as undefined | { workspaceId: string; kind: "provisioner" | "machine" },
   subagentRows: [] as Array<Record<string, unknown>>,
   subagentSubscriber: undefined as undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
   subagentCallerSignals: [] as AbortSignal[],
@@ -340,7 +340,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_cached", "meta"]), {
       limit: 5,
-      workspace: { workspaceId: "ws_cached", kind: "user-hosted" },
+      workspace: { workspaceId: "ws_cached", kind: "machine" },
     })
 
     const result = render(() => (
@@ -377,7 +377,7 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", {
         quiet: undefined,
-        workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+        workspace: { workspaceId: "ws_1", kind: "machine" },
       })
     })
     // User-hosted draft sessions can mount immediately with an empty draft cache;
@@ -417,7 +417,7 @@ describe("DirectoryScope bootstrap gating", () => {
         harnessType={() => state.harnessType()}
         sessionId={() => "ses_existing"}
         workspaceId={() => "ws_1"}
-        workspaceKind={() => "cloud"}
+        hostKind={() => "provisioner"}
         surfaceId={() => state.surfaceId}
       >
         <div>visible pane content</div>
@@ -429,7 +429,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", {
       quiet: undefined,
-      workspace: { workspaceId: "ws_1", kind: "cloud" },
+      workspace: { workspaceId: "ws_1", kind: "provisioner" },
     })
     expect(result.queryByText("Preparing workspace")).toBeNull()
     // No provision-step UI is rendered by DirectoryScope; runtime startup stays
@@ -446,7 +446,7 @@ describe("DirectoryScope bootstrap gating", () => {
         directory="/repo/local"
         harnessType={() => state.harnessType()}
         sessionId={() => "ses_existing"}
-        workspaceKind={() => "local"}
+        hostKind={() => "self"}
         surfaceId={() => state.surfaceId}
       >
         <div>visible local pane content</div>
@@ -467,7 +467,7 @@ describe("DirectoryScope bootstrap gating", () => {
         harnessType={() => state.harnessType()}
         sessionId={() => undefined}
         workspaceId={() => "ws_cloud"}
-        workspaceKind={() => "cloud"}
+        hostKind={() => "provisioner"}
         surfaceId={() => state.surfaceId}
       >
         <div>cloud terminal content</div>
@@ -479,7 +479,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_cloud", "codex-acp", {
       quiet: undefined,
-      workspace: { workspaceId: "ws_cloud", kind: "cloud" },
+      workspace: { workspaceId: "ws_cloud", kind: "provisioner" },
     })
     expect(result.queryByText("Preparing workspace")).toBeNull()
   })
@@ -493,7 +493,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
       limit: 5,
-      workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+      workspace: { workspaceId: "ws_1", kind: "machine" },
     })
 
     const result = render(() => (
@@ -551,7 +551,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "opaque-session-scope", "meta"]), {
       limit: 5,
-      workspace: { workspaceId: "ws_ref_backing", kind: "cloud" },
+      workspace: { workspaceId: "ws_ref_backing", kind: "provisioner" },
     })
 
     const result = render(() => (
@@ -560,7 +560,7 @@ describe("DirectoryScope bootstrap gating", () => {
         sessionRef={() => ({
           sessionId: "session-ref-pane",
           host: "workspace",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_ref_backing", hosting: "cloud" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_ref_backing", hosting: "provisioner" },
         })}
         sessionId={() => "session-ref-pane"}
         surfaceId={() => state.surfaceId}
@@ -757,7 +757,7 @@ describe("DirectoryScope bootstrap gating", () => {
     state.queryData.set(JSON.stringify(["directory-session-cache", "workspace:ws_1"]), { at: 1, limit: 5, total: 1, session: sharedStore.session })
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
       limit: 5,
-      workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+      workspace: { workspaceId: "ws_1", kind: "machine" },
     })
     state.queryData.set(JSON.stringify(["shell", "session", "ses_shared", "status"]), { type: "busy" })
 
@@ -784,7 +784,7 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("owns one workspace-aware agents request for a cloud directory", async () => {
     const directory = "/repo/cloud"
-    const workspace = { workspaceId: "ws_cloud", kind: "cloud" } as const
+    const workspace = { workspaceId: "ws_cloud", kind: "provisioner" } as const
     const agents = [{ name: "build", mode: "primary" }]
     state.workspace = workspace
     state.agentResourceRequest.mockResolvedValue(agents)
@@ -807,7 +807,7 @@ describe("DirectoryScope bootstrap gating", () => {
         directory={directory}
         harnessType={() => "opencode"}
         workspaceId={() => workspace.workspaceId}
-        workspaceKind={() => workspace.kind}
+        hostKind={() => workspace.kind}
         sessionId={() => "ses_cloud"}
         surfaceId={() => state.surfaceId}
       >
@@ -823,7 +823,7 @@ describe("DirectoryScope bootstrap gating", () => {
       "agents",
       directory,
       "opencode",
-      "cloud:ws_cloud",
+      "provisioner:ws_cloud",
     ])
 
     const result = await state.agentQueryOptions?.queryFn?.()
@@ -851,7 +851,7 @@ describe("DirectoryScope bootstrap gating", () => {
       <DirectoryScope {...directoryScopeProps}
         directory={directory}
         workspaceId={() => "ws_signed"}
-        workspaceKind={() => "user-hosted"}
+        hostKind={() => "machine"}
         harnessType={() => state.harnessType()}
         sessionId={() => "ses_signed"}
         surfaceId={() => state.surfaceId}
@@ -865,7 +865,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     expect(state.refreshDirectory).toHaveBeenCalledWith(directory, "codex-acp", {
       quiet: undefined,
-      workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+      workspace: { workspaceId: "ws_signed", kind: "machine" },
     })
     expect(state.dataProviderProps?.data.session).toEqual([])
   })
@@ -881,14 +881,14 @@ describe("DirectoryScope bootstrap gating", () => {
     })
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), {
       limit: 5,
-      workspace: { workspaceId: "ws_signed", kind: "cloud" },
+      workspace: { workspaceId: "ws_signed", kind: "provisioner" },
     })
 
     render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory={directory}
         workspaceId={() => "ws_signed"}
-        workspaceKind={() => "cloud"}
+        hostKind={() => "provisioner"}
         sessionId={() => "ses_signed"}
         surfaceId={() => state.surfaceId}
       >

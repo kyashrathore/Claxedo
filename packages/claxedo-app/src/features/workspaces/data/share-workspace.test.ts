@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import {
   accountCanShareWorkspace,
   localWorkspaceShareTarget,
-  registerUserHostedWorkspace,
-  unregisterUserHostedWorkspace,
+  publishWorkspacePlacement,
+  withdrawWorkspacePlacement,
   workspaceShareUrl,
 } from "./share-workspace"
 
@@ -91,8 +91,8 @@ describe("share workspace helpers", () => {
   /**
    * The wire contract, pinned against the route that actually exists.
    *
-   * `POST /api/workspace/:id/host-assignment` replaced the retired
-   * `/user-hosted/register`, and its body schema is `.strict()` with exactly
+   * `POST /api/workspace/:id/host-assignment` is the route, and its body
+   * schema is `.strict()` with exactly
    * two optional fields (`displayName`, `orgId`) — plus an explicit 400 for a
    * client-supplied `hostId`, because the machine identity is server-owned.
    * So "what we send" is as load-bearing as "where we send it": one extra key
@@ -107,7 +107,7 @@ describe("share workspace helpers", () => {
       })
     }
 
-    await registerUserHostedWorkspace({
+    await publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       displayName: "Main",
@@ -125,7 +125,7 @@ describe("share workspace helpers", () => {
     // Machine-level auto-share always has a label, but the helper's optional
     // parameter must still produce a valid body without one.
     const calls: Array<{ url: string; init?: RequestInit }> = []
-    await registerUserHostedWorkspace({
+    await publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       request: async (url, init) => {
@@ -139,7 +139,7 @@ describe("share workspace helpers", () => {
 
   test("never sends a hostId — the machine identity is the server's to decide", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
-    await registerUserHostedWorkspace({
+    await publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       displayName: "Main",
@@ -155,24 +155,24 @@ describe("share workspace helpers", () => {
   })
 
   test("a rejected assignment surfaces the server's own message", async () => {
-    await expect(registerUserHostedWorkspace({
+    await expect(publishWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_cloud",
       request: async () => new Response(
         JSON.stringify({
           error: {
             code: "host_assignment_local_workspace_required",
-            message: "Only local workspaces can be assigned for user-hosted sharing",
+            message: "Only a workspace this machine serves can be assigned to a machine",
           },
         }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       ),
-    })).rejects.toThrow("Only local workspaces can be assigned for user-hosted sharing")
+    })).rejects.toThrow("Only a workspace this machine serves can be assigned to a machine")
   })
 
   test("withdrawing one workspace deletes the same assignment", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
-    await unregisterUserHostedWorkspace({
+    await withdrawWorkspacePlacement({
       serverUrl: "https://control.example.test/",
       workspaceId: "ws_local",
       request: async (url, init) => {

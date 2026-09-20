@@ -2,6 +2,7 @@ import { workspaceRoute } from "@/platform/identity/route"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { inventoryHostKind, isSelfHostKind } from "@/platform/runtime/placement-wire"
 
 type ProjectWorkspace = {
   id?: string
@@ -21,7 +22,7 @@ type ShareableProject = {
   workspaces?: Record<string, ProjectWorkspace>
 }
 
-/** Share registers a user-hosted workspace on the signed control plane. */
+/** Publishing a placement needs a signed account to record it against. */
 export function accountCanShareWorkspace(status: string | undefined) {
   return status === "signed"
 }
@@ -38,10 +39,10 @@ export function localWorkspaceShareTarget(input: {
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
   if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return undefined
-  // Anything the engine marks non-local (cloud OR user-hosted) is a remote
-  // representation — including the control plane's echo of this machine's own
-  // registration — never a directory this machine can publish.
-  if (row?.kind && row.kind !== "local") return undefined
+  // A row placed anywhere but on the attached server — the provisioner, another
+  // machine, or the control plane's echo of this machine's own registration —
+  // is a remote representation, never a directory this machine can publish.
+  if (row?.kind && !isSelfHostKind(inventoryHostKind(row.kind))) return undefined
   return { workspaceId, directory }
 }
 
@@ -71,14 +72,16 @@ function workspaceHostAssignmentUrl(input: { serverUrl?: string; workspaceId: st
 }
 
 /**
- * Sharing assigns the workspace to an ENROLLED machine, and the renderer
- * cannot name that machine: the host id belongs to whoever holds the machine
- * key, which on desktop is Electron main's Host Connector and never this
- * process. So the port is the only path when one is bound; the self-hosted
- * server has no port and performs the same assignment server-side from its own
- * local route below.
+ * Records this workspace's placement: the directory, on the machine this
+ * process runs on.
+ *
+ * The renderer cannot name that machine — the host id belongs to whoever holds
+ * the machine key, which on desktop is Electron main's Host Connector and
+ * never this process. So the port is the only path when one is bound; the
+ * self-hosted server has no port and performs the same assignment server-side
+ * from its own local route below.
  */
-export async function registerUserHostedWorkspace(input: {
+export async function publishWorkspacePlacement(input: {
   workspaceId: string
   displayName?: string
   serverUrl?: string
@@ -110,8 +113,8 @@ export async function registerUserHostedWorkspace(input: {
   if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
 }
 
-/** Withdraw one workspace this machine publishes. Mirrors the register above. */
-export async function unregisterUserHostedWorkspace(input: {
+/** Withdraws one placement this machine published. Mirrors the publish above. */
+export async function withdrawWorkspacePlacement(input: {
   workspaceId: string
   serverUrl?: string
   request?: typeof fetch

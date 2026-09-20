@@ -114,7 +114,7 @@ describe("workspace connection authority invariants", () => {
     // primitives directly (that is the authority's job).
     expect(text).toMatch(/acquireWorkspaceConnection\b/)
     expect(text).toMatch(/workspaceConnection\b/)
-    expect(text).not.toMatch(/prepareUserHostedRuntime\b/)
+    expect(text).not.toMatch(/prepareMachineRuntime\b/)
     expect(text).not.toMatch(/prepareWorkspaceRuntime\b/)
     expect(text).not.toMatch(/openWorkspaceConnection\b/)
   })
@@ -134,7 +134,7 @@ describe("workspace connection authority invariants", () => {
     // The authority binds the hosted module directly rather than through
     // `workspaceStartup()`. Local callers must not copy this.
     expect(text).toMatch(/from .*cloud\/workspace-runtime-store/)
-    expect(text).toMatch(/prepareUserHostedRuntime\b/)
+    expect(text).toMatch(/prepareMachineRuntime\b/)
     expect(text).toMatch(/prepareWorkspaceRuntime\b/)
     // The log helper is NOT hosted — it appends to an array — so it comes from
     // `platform/runtime/workspace-log.ts`, which stays in `@claxedo/app`.

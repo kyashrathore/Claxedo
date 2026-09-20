@@ -5,6 +5,7 @@ import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { useClaxedoState } from "@/app/workbench/state/index"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceBackedSessionRef } from "@/platform/identity/session-ref"
+import { inventoryHostKind } from "@/platform/runtime/placement-wire"
 
 /**
  * Open a linked session through ordinary session navigation.
@@ -27,7 +28,7 @@ export function useOpenTaskSession() {
   const hostingOf = (id: string) => {
     const inventory = (projects.data ?? []).flatMap((project) => Object.values(project.workspaces ?? {}))
     const workspace = inventory.find((entry) => entry.workspaceId === id || entry.id === id)
-    return workspace?.kind === "cloud" ? ("cloud" as const) : ("user-hosted" as const)
+    return inventoryHostKind(workspace?.kind) === "provisioner" ? ("provisioner" as const) : ("machine" as const)
   }
 
   return (session: SessionReference) => {

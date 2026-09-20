@@ -2,11 +2,12 @@ import { For, Match, Show, Switch, createMemo, type JSX, type ParentProps } from
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { WorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 export type CloudLog = WorkspaceRuntimeLog
 
 type StepState = "done" | "active" | "pending" | "error"
 
-export type StartupVariant = "cloud" | "user-hosted"
+export type StartupVariant = RelayHostKind
 
 export const CLOUD_STARTUP_PIPELINE = [
   { key: "acquiring_sandbox", label: "Acquiring sandbox" },
@@ -15,17 +16,17 @@ export const CLOUD_STARTUP_PIPELINE = [
   { key: "waiting_health", label: "Waiting for health check" },
 ] as const
 
-// User-hosted workspaces never acquire a sandbox or clone a repo — they already
-// exist on the user's machine and connect through the relay tunnel. Their
-// connecting sequence is mint-connection → relay-tunnel → runtime-health.
-export const USER_HOSTED_STARTUP_PIPELINE = [
+// A workspace on a machine never acquires a sandbox or clones a repo — it
+// already exists there and connects through the relay tunnel. Its connecting
+// sequence is mint-connection → relay-tunnel → runtime-health.
+export const MACHINE_STARTUP_PIPELINE = [
   { key: "connecting_workspace", label: "Connecting to workspace" },
   { key: "establishing_relay", label: "Establishing relay tunnel" },
   { key: "checking_health", label: "Checking runtime health" },
 ] as const
 
 export function startupPipeline(variant: StartupVariant) {
-  return variant === "user-hosted" ? USER_HOSTED_STARTUP_PIPELINE : CLOUD_STARTUP_PIPELINE
+  return variant === "machine" ? MACHINE_STARTUP_PIPELINE : CLOUD_STARTUP_PIPELINE
 }
 
 const STEP_LABELS = {
@@ -72,14 +73,14 @@ export function acquiringStepLabel(status?: string | null) {
   return undefined
 }
 
-export function cloudSummary(status: string | null | undefined, hasError: boolean, variant: StartupVariant = "cloud") {
+export function cloudSummary(status: string | null | undefined, hasError: boolean, variant: StartupVariant = "provisioner") {
   if (hasError) {
-    return variant === "user-hosted"
+    return variant === "machine"
       ? "Could not connect to the workspace. Review the details below."
       : "Workspace startup failed. Review the log below."
   }
   if (!status) {
-    return variant === "user-hosted"
+    return variant === "machine"
       ? "Connecting to your workspace before the composer unlocks."
       : "Checking runtime before the composer unlocks."
   }
@@ -230,9 +231,8 @@ export function WorkspaceStateButton(
   )
 }
 
-// BUG-9: Terminal "you don't have access to this workspace" state. Rendered in
-// place of the connecting pipeline when the connection mint returns 403, so the
-// user sees a clean access-denied message instead of an endless "waiting for the
+// Rendered in place of the connecting pipeline when the connection mint answers
+// 403, because the pipeline's own failure state is an endless "waiting for the
 // workspace host" spinner.
 export function WorkspaceAccessDeniedView(props: { onGoToWorkspaces?: () => void }) {
   return (
@@ -240,9 +240,9 @@ export function WorkspaceAccessDeniedView(props: { onGoToWorkspaces?: () => void
       component="workspace-access-denied"
       testId="workspace-access-denied"
       tone="critical"
-      eyebrow="Workspace access"
-      title="You don't have access to this workspace"
-      detail="This workspace belongs to another account, or your access was removed. Switch to a workspace you own to continue."
+      eyebrow="Not visible to you"
+      title="This workspace is not one of yours"
+      detail="It is a folder on someone else's machine, or it stopped being visible to your account. Open a workspace you own to continue."
       actions={
         <Show when={props.onGoToWorkspaces}>
           <WorkspaceStateButton onClick={() => props.onGoToWorkspaces?.()}>
@@ -264,11 +264,11 @@ export function CloudStartupView(props: {
   forbidden?: boolean
   onGoToWorkspaces?: () => void
 }) {
-  const variant = () => props.variant ?? "cloud"
+  const variant = () => props.variant ?? "provisioner"
   const pipeline = () => startupPipeline(variant())
   const hasError = () => props.status === "error" || !!props.err
   const isReady = () => props.logs.some((l) => l.step === "ready")
-  const isUserHosted = () => variant() === "user-hosted"
+  const onAMachine = () => variant() === "machine"
 
   const lastPipelineKey = () => {
     const logs = props.logs
@@ -342,7 +342,7 @@ export function CloudStartupView(props: {
         testId="cloud-startup-view"
         tone={hasError() ? "critical" : "neutral"}
         eyebrow="Workspace runtime"
-        title={isUserHosted() ? "Connecting to workspace" : "Preparing workspace"}
+        title={onAMachine() ? "Connecting to workspace" : "Preparing workspace"}
         detail={detail()}
         aside={
           <Show when={elapsed()}>

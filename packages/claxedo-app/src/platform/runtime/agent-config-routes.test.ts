@@ -13,7 +13,7 @@ function jsonArrayParse(data: unknown) {
 }
 
 describe("workspaceScopedResourceList", () => {
-  test("non-cloud/non-user-hosted workspaces route through the central agent-config API scoped by directory and harness type when scopeCentralUrl is true", async () => {
+  test("a workspace on this machine routes through the central agent-config API scoped by directory and harness type when scopeCentralUrl is true", async () => {
     const calls: string[] = []
     const result = await workspaceScopedResourceList({
       baseUrl: "http://claxedo.test/",
@@ -23,7 +23,7 @@ describe("workspaceScopedResourceList", () => {
         calls.push(requestUrl(input))
         return new Response(JSON.stringify([{ name: "build" }]), { status: 200 })
       }) as typeof fetch,
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       resource: { plural: "agents", singular: "agent", scopeCentralUrl: true },
       parse: jsonArrayParse,
     })
@@ -42,7 +42,7 @@ describe("workspaceScopedResourceList", () => {
         calls.push(requestUrl(input))
         return new Response(JSON.stringify([{ name: "lint" }]), { status: 200 })
       }) as typeof fetch,
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       resource: { plural: "commands", singular: "command", scopeCentralUrl: false },
       parse: jsonArrayParse,
     })
@@ -50,7 +50,7 @@ describe("workspaceScopedResourceList", () => {
     expect(calls).toEqual(["http://claxedo.test/api/claxedo/agent-config/commands"])
   })
 
-  test("cloud workspaces route through the workspace-runtime transport using the resource's singular path", async () => {
+  test("provisioner-placed workspaces route through the workspace-runtime transport using the resource's singular path", async () => {
     const calls: string[] = []
     const result = await workspaceScopedResourceList({
       baseUrl: "http://127.0.0.1:3001",
@@ -61,7 +61,7 @@ describe("workspaceScopedResourceList", () => {
         calls.push(req.url)
         return new Response(JSON.stringify([{ name: "plan" }]), { status: 200 })
       }) as typeof fetch,
-      workspace: { workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" },
+      workspace: { workspaceId: "ws_1", directory: "/tmp/ws", kind: "provisioner" },
       resource: { plural: "agents", singular: "agent", scopeCentralUrl: true },
       parse: jsonArrayParse,
     })
@@ -70,7 +70,7 @@ describe("workspaceScopedResourceList", () => {
     expect(result).toEqual([{ name: "plan" }])
   })
 
-  test("returns an empty list without issuing a request when a cloud workspace resolves without a workspaceId", async () => {
+  test("returns an empty list without issuing a request when a provisioner-placed workspace resolves without a workspaceId", async () => {
     let called = false
     const result = await workspaceScopedResourceList({
       baseUrl: "http://127.0.0.1:3001",
@@ -79,7 +79,7 @@ describe("workspaceScopedResourceList", () => {
         called = true
         return new Response("[]", { status: 200 })
       }) as typeof fetch,
-      workspace: { workspaceId: "", directory: "/tmp/ws", kind: "cloud" },
+      workspace: { workspaceId: "", directory: "/tmp/ws", kind: "provisioner" },
       resource: { plural: "commands", singular: "command", scopeCentralUrl: false },
       parse: jsonArrayParse,
     })
@@ -93,7 +93,7 @@ describe("workspaceScopedResourceList", () => {
       baseUrl: "http://claxedo.test",
       directory: "/tmp/ws",
       request: (async () => new Response("", { status: 404 })) as typeof fetch,
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       resource: { plural: "agents", singular: "agent", scopeCentralUrl: true },
       parse: jsonArrayParse,
     })
@@ -108,7 +108,7 @@ describe("workspaceScopedResourceList", () => {
       request: (async () => {
         throw new Error("network down")
       }) as typeof fetch,
-      workspace: { workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" },
+      workspace: { workspaceId: "ws_1", directory: "/tmp/ws", kind: "provisioner" },
       resource: { plural: "commands", singular: "command", scopeCentralUrl: false },
       parse: jsonArrayParse,
     })

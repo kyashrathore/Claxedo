@@ -700,8 +700,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_cloud/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_cloud",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -740,7 +740,7 @@ describe("override bootstrapDirectory", () => {
     expect(directoryProviders("https://app.claxedo.test", "pi", "workspace:ws_cloud")?.default.opencode).toBe("big-pickle")
     expect(
       queryClient.getQueryData<Command[]>(
-        queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud", undefined, "cloud:ws_cloud"),
+        queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud", undefined, "provisioner:ws_cloud"),
       )
         ?.map((item) => item.name),
     ).toEqual(["build"])
@@ -785,8 +785,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_cloud/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_cloud",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -839,7 +839,7 @@ describe("override bootstrapDirectory", () => {
       workspace: {
         workspaceId: "ws_known_bootstrap",
         directory: "/tmp/cloud-alias",
-        kind: "cloud",
+        kind: "provisioner",
         status: "ready",
       },
       sdk,
@@ -855,8 +855,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_known_bootstrap/connection")) {
           return Response.json({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_known_bootstrap",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -889,7 +889,7 @@ describe("override bootstrapDirectory", () => {
     expect(directoryPath("https://app.claxedo.test", "/tmp/cloud-alias")?.directory).toBe("/tmp/cloud-alias")
   })
 
-  test("does not invent a harness for signed cloud workspace refs", async () => {
+  test("does not invent a harness for signed provisioner-placed workspace refs", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
       command: {
@@ -918,8 +918,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_default/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_default",
             relayUrl: "http://relay.test",
             role: "owner",
@@ -946,7 +946,7 @@ describe("override bootstrapDirectory", () => {
 
     expect(urls.some((url) => url.includes("provider"))).toBe(false)
     expect(directoryProviders("https://app.claxedo.test", undefined, "workspace:ws_default")).toBeUndefined()
-    expect(agentNames("https://app.claxedo.test", "workspace:ws_default", undefined, "cloud:ws_default")).toEqual(["build"])
+    expect(agentNames("https://app.claxedo.test", "workspace:ws_default", undefined, "provisioner:ws_default")).toEqual(["build"])
   })
 
   test("raw workspace id bootstrap resolves identity before caching its native catalog", async () => {
@@ -979,8 +979,8 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url.includes("/api/workspace/ws_raw/connection")) {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_raw",
             relayUrl: "http://relay.test",
             role: "owner",

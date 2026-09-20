@@ -1,17 +1,17 @@
 import { createContext, createEffect, createMemo, createSignal, onCleanup, onMount, useContext, type JSX } from "solid-js"
 import { useQueryClient } from "@tanstack/solid-query"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace } from "./share-workspace"
+import { localWorkspaceShareTarget, publishWorkspacePlacement } from "./share-workspace"
 import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "./shared-workspaces"
 
 /**
- * Remote access is MACHINE level: turning it on publishes every local
- * workspace on this machine, and every local workspace opened afterwards.
+ * Remote access is MACHINE level: turning it on publishes every workspace this
+ * machine serves, and every one opened afterwards.
  *
  * There is no per-workspace choice to hold, so there is no per-workspace state
- * to reconcile against — the target set is simply "every local workspace this
- * machine has", and this module's whole job is to make the published set equal
- * it. The backend contract stays one `registerUserHostedWorkspace` call per
+ * to reconcile against — the target set is simply "every workspace this
+ * machine serves", and this module's whole job is to make the published set equal
+ * it. The backend contract stays one `publishWorkspacePlacement` call per
  * workspace (an assignment POST plus a beat); the machine's own inventory is
  * the list, not a user-ticked selection.
  *
@@ -58,12 +58,13 @@ export type LocalWorkspaceAutoShareStatus = {
 }
 
 /**
- * Every LOCAL workspace across every open project.
+ * Every workspace this machine holds itself, across every open project.
  *
- * The `kind === "local"` decision is `localWorkspaceShareTarget`'s and stays
- * there: a cloud workspace, a user-hosted one, and the control plane's echo of
- * this machine's own registration all look like directories from here, and
- * re-deriving that from an id shape is the bug that filter exists to prevent.
+ * Which placement a row states is `localWorkspaceShareTarget`'s decision and
+ * stays there: a provisioned sandbox, another machine's workspace and the
+ * control plane's echo of this machine's own registration all look like
+ * directories from here, and re-deriving the placement from an id shape is the
+ * bug that filter exists to prevent.
  */
 export function localWorkspaceShareCandidates(
   projects: readonly ShareableProject[],
@@ -218,7 +219,7 @@ function useLocalWorkspaceAutoShareDriver(input: {
     let shared = 0
     for (const candidate of pending) {
       try {
-        await registerUserHostedWorkspace({
+        await publishWorkspacePlacement({
           workspaceId: candidate.workspaceId,
           displayName: candidate.label,
         })

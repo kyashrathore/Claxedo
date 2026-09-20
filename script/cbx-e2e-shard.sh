@@ -31,7 +31,7 @@ for i in "${!BOXES[@]}"; do
     # toBeVisible timeouts / 2.5h that way), and without VITE_CLAXEDO_E2E the
     # bundle tree-shakes the test-auth seam so auth specs go anonymous.
     ./script/cbx run --id "$box" --no-sync -- bash -c "umask 022; cd packages/claxedo-app && \
-      CLAXEDO_E2E_SERVE_MODE=build-preview PLAYWRIGHT_VIDEO=0 VITE_AUTH_ENABLED=true \
+      CLAXEDO_E2E_SERVE_MODE=build-preview PLAYWRIGHT_VIDEO=0 \
       VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 VITE_CLAXEDO_E2E=1 CI=1 \
       bun run test:e2e:core:base -- \
       --workers=8 --shard=$shard/$N --reporter=list ${E2E_ARGS:-}" \

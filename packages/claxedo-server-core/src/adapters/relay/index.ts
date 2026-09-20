@@ -114,7 +114,6 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
         workspaceId,
         hostId,
         baseUrl: target.baseUrl,
-        access: target.access,
         backing: target.backing,
       }
     },

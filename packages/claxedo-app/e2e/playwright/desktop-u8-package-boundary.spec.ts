@@ -163,7 +163,7 @@ test.describe("U8 packaged product boundary @core @tier-real @surface-desktop", 
 
   test("fixture OAuth activates the fingerprinted hosted renderer once without starting Host Connector", async () => {
     const fixture = await startSignedFixture({
-      access: "user-hosted",
+      backing: "local-worktree",
       claudeScriptedEnv,
       startScriptedModelServer,
       logLabel: "desktop-u8-package-boundary",

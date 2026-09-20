@@ -30,7 +30,7 @@ beforeEach(() => {
   posts = []
   dropped = []
   clearedTries = []
-  workspace = { kind: "local" }
+  workspace = { kind: "self" }
   postResponse = new Response(null, { status: 204 })
   workspaceCalls = 0
   remembered = []
@@ -69,7 +69,7 @@ describe("harness switcher", () => {
 
     expect(second).toBe(Object.values(pending)[0])
     expect(workspaceCalls).toBe(1)
-    releaseWorkspace({ kind: "cloud" })
+    releaseWorkspace({ kind: "provisioner" })
     await Promise.all([first, second])
     expect(Object.values(pending).filter(Boolean)).toEqual([])
   })
@@ -85,13 +85,13 @@ describe("harness switcher", () => {
             releaseFirst = resolve
           })
         }
-        return { kind: "cloud" }
+        return { kind: "provisioner" }
       },
     })
 
     const first = switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
     await switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })
-    releaseFirst({ kind: "cloud" })
+    releaseFirst({ kind: "provisioner" })
     await first
 
     expect(remembered).toEqual([{ scope, type: connectionHarness("codex-team"), directory: "/repo" }])
@@ -126,21 +126,21 @@ describe("harness switcher", () => {
     const currentPatches = [...patches]
     expect(currentPatches.at(-1)).toMatchObject({ harness: connectionHarness("claude-team"), optionsLoading: true })
 
-    releases[0]({ kind: "local" })
+    releases[0]({ kind: "self" })
     await abandoned
 
     expect(patches).toEqual(currentPatches)
     expect(optionFetches).toEqual([])
     expect(remembered).toEqual([])
 
-    releases[1]({ kind: "local" })
+    releases[1]({ kind: "self" })
     await current
     expect(optionFetches).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo", sessionId: "new" }])
     expect(remembered).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo" }])
   })
 
-  test("skips the local draft post for cloud and user-hosted workspace boots", async () => {
-    workspace = { kind: "cloud" }
+  test("skips the local draft post for provisioner-placed and machine-placed workspace boots", async () => {
+    workspace = { kind: "provisioner" }
     const switcher = switcherFor()
 
     await switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })

@@ -41,6 +41,7 @@ import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-confi
 import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 import { renewSdkCredentialsIfDue } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 
 const log = Log.create({ service: "embedded-workspace-runtime" })
 
@@ -131,6 +132,15 @@ export function onEmbeddedWorkspaceRuntime(listener: EmbeddedWorkspaceRuntimeLis
   }
 }
 
+/**
+ * Whether a runtime mounted in THIS process holds a transcript for the
+ * session. False for a workspace with no runtime up, so a caller that needs a
+ * yes must be on a request the dispatcher already mounted one for.
+ */
+export function embeddedWorkspaceRuntimeHoldsSession(workspaceId: string, sessionId: string) {
+  return hosts.get(workspaceId)?.host.hasSession(sessionId) ?? false
+}
+
 /** Read the active workspace's committed session config without consulting operator defaults. */
 export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionId: string) {
   const config = hosts.get(workspaceId)?.host.getSessionConfig(sessionId)
@@ -170,7 +180,7 @@ let configuredConnectionSecretResolver: ConnectionSecretResolver = createLocalCo
 let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] = []
 let configuredProcessObserver: ProcessObserver | undefined
 let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
-// Canonical WorkspaceRuntime events are the sole local execution-event source.
+let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
 let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
@@ -206,14 +216,32 @@ export function embeddedWorkspaceRuntimeSessionAuthority() {
   return (configuredSessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()).sessionAuthority
 }
 
+/**
+ * What a client on this process's OWN loopback must do before it creates a
+ * session here — a different question from the marker above, because these
+ * runtimes decide the session lifecycle per request.
+ *
+ * A desktop daemon mounts the private-session policy for relayed members and
+ * keeps the local-owner lifecycle for its own user, so it declares
+ * `managed-private` to the control plane and `local` here: its window creates
+ * sessions with no reservation, signed in or out. A host that admits nobody
+ * without a verified actor stamps its loopback callers too, so its own client
+ * must reserve first and both answers are the marker.
+ */
+export function embeddedWorkspaceRuntimeLoopbackSessionAuthority() {
+  return configuredLoopbackSessionAuthority ?? embeddedWorkspaceRuntimeSessionAuthority()
+}
+
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRuntime?: OpenCodeRuntime
   connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
-  /** Signed hosts inject their managed-private authority; unsigned desktop leaves this local. */
+  /** The policy every runtime is mounted with; absent, the unbound `managedWorkspaceSessionAccessPolicy()`, whose marker is `local`. */
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
+  /** Declared where the policy's loopback arm is the local owner's; otherwise the marker answers. */
+  loopbackSessionAuthority?: HostSessionAuthority
   onSessionMetaEvent?: (event: CompatEnvelope) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
@@ -228,6 +256,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
   configuredSessionAccessPolicy = input.sessionAccessPolicy
+  configuredLoopbackSessionAuthority = input.loopbackSessionAuthority
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
@@ -383,7 +412,7 @@ function disposeRuntime(runtime: EmbeddedRuntime): Promise<void> {
 // shared side back into this deployment.
 
 configureLocalWorkspaceRuntime({
-  sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
+  sessionAuthority: embeddedWorkspaceRuntimeLoopbackSessionAuthority,
   async fetch(workspace: Workspace, request: Request) {
     // Same policy as the proxy path: a read never waits for a config sync.
     const runtime = await ensureEmbeddedWorkspaceRuntime(workspace, {

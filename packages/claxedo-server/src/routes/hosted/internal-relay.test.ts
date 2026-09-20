@@ -9,7 +9,7 @@ import {
 /**
  * Hosted (Worker) relay-resolver behaviour. The hosted deployment injects a
  * hosted-state target lookup and NO local-target loopback fallback. These tests
- * prove the route resolves a user-hosted target from relay lookup state, fails
+ * prove the route resolves a machine-placed target from relay lookup state, fails
  * closed on revocation, and never touches the local workspace-store.
  */
 
@@ -36,13 +36,13 @@ function authed(path: string) {
 }
 
 describe("hosted /internal/relay/target", () => {
-  test("resolves a user-hosted target from relay lookup state", async () => {
+  test("resolves a machine-placed target from relay lookup state", async () => {
     const app = buildHostedApp({
       targetLookup: async ({ workspaceId, hostId }) => {
         expect(workspaceId).toBe("ws_1")
         expect(hostId).toBe("host_1")
-        // User-hosted host dials out to the relay → baseUrl is empty.
-        return { found: true, baseUrl: "", access: "user-hosted", backing: "local-worktree" }
+        // A tunnelled host dials out to the relay → baseUrl is empty.
+        return { found: true, baseUrl: "", backing: "local-worktree" }
       },
       revocationLookup: async () => ({ active: true }),
     })
@@ -53,7 +53,6 @@ describe("hosted /internal/relay/target", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
       baseUrl: "",
-      access: "user-hosted",
       backing: "local-worktree",
     })
   })

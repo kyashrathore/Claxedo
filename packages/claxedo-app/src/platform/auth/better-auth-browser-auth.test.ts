@@ -31,7 +31,7 @@ const descriptor = {
 const HOSTED = {
   apiOrigin: "https://api.example.test",
   appOrigin: "https://app.example.test",
-  centralTransport: "signed-web",
+  issuesSessions: true,
 } as const
 
 describe("Better Auth browser adapter", () => {
@@ -235,8 +235,8 @@ describe("Better Auth browser adapter startup outcomes", () => {
   })
 
   test.each([
-    ["an http API origin", { apiOrigin: "http://api.example.test", appOrigin: "https://app.example.test" }],
-    ["an http app origin", { apiOrigin: "https://api.example.test", appOrigin: "http://app.example.test" }],
+    ["an http API origin", { apiOrigin: "http://api.example.test", appOrigin: "https://app.example.test", issuesSessions: true }],
+    ["an http app origin", { apiOrigin: "https://api.example.test", appOrigin: "http://app.example.test", issuesSessions: true }],
   ])("%s is anonymous, not a failed boot, and asks the deployment nothing", async (_, origins) => {
     let requests = 0
     let clients = 0

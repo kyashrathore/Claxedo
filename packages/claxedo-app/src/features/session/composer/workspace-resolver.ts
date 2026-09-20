@@ -1,4 +1,4 @@
-import { type WorkspaceInventoryEntry, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
+import { type SignedWorkspaceInfo, type WorkspaceInventoryEntry, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import {
   sessionRefForWorkspaceSession,
@@ -7,19 +7,15 @@ import {
   type WorkspaceSessionBacking,
 } from "@/platform/identity/session-ref"
 import { placementFor } from "@/platform/runtime/placement"
+import { inventoryHostKind, isRelayHostKind, type RelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { sessionSignedTransportAuthority } from "@/features/session/ui/session-identity"
 import { resolveWorkspaceSubmitSelection, type WorkspaceSubmitSelection, type WorkspaceSubmitSelectionInput } from "./workspace-submit-selection"
 
-export type WorkspaceCatalogKind = "local" | "cloud" | "user-hosted"
 export type WorkspaceDirectory = string
-
-const cloudWorkspaceKind = "cloud"
-const localWorkspaceKind = "local"
-const userHostedWorkspaceKind = "user-hosted"
 
 export type WorkspaceCatalogEntry = WorkspaceInventoryEntry & {
   // Wire field: the catalog may name a kind this build does not know, so it is
-  // a free string here. `knownWorkspaceKind` is the narrower to `WorkspaceCatalogKind`.
+  // a free string here. `inventoryHostKind` is the narrower to a host kind.
   kind?: string | null
   id?: string | null
   workspaceId?: string | null
@@ -41,15 +37,15 @@ export type ProjectCatalogItem = WorkspaceInventoryProject & {
 
 export type RuntimeWorkspaceRef = {
   workspaceId: string
-  kind: Extract<WorkspaceCatalogKind, "cloud" | "user-hosted">
+  kind: RelayHostKind
 }
 
 export function selectedNewSessionWorkspace(input: {
   newSession: boolean
-  kind?: WorkspaceCatalogKind
+  kind?: WorkspaceHostKind
   worktree?: string
-}): ({ kind: Extract<WorkspaceCatalogKind, "cloud" | "user-hosted">; workspaceId?: string }) | undefined {
-  if (!input.newSession || (input.kind !== cloudWorkspaceKind && input.kind !== userHostedWorkspaceKind)) return undefined
+}): ({ kind: RelayHostKind; workspaceId?: string }) | undefined {
+  if (!input.newSession || !isRelayHostKind(input.kind)) return undefined
   const workspaceId = input.worktree
   return {
     kind: input.kind,
@@ -122,12 +118,21 @@ export function workspaceForDirectory(projects: readonly ProjectCatalogItem[], d
   return Object.entries(workspaces).find(([key, workspace]) => workspaceMatchesDirectory(key, workspace, directory))?.[1]
 }
 
-export function signedWorkspaceForDirectory(input: {
+/**
+ * The host a directory's workspace runs on, from whichever source states it.
+ *
+ * The sdk's workspace already speaks host kinds; a catalog row carries the
+ * control plane's wire word. Reading both through one name is how a branch
+ * goes dead with nothing to see at the call site, so each source is narrowed
+ * by its own reader and the sdk's answer wins where it has one.
+ */
+export function signedWorkspaceHostKind(input: {
   directory: WorkspaceDirectory | undefined
   projects: readonly ProjectCatalogItem[]
-  sdkWorkspace?: WorkspaceCatalogEntry
-}) {
-  return input.sdkWorkspace ?? workspaceForDirectory(input.projects, input.directory)
+  sdkWorkspace?: SignedWorkspaceInfo
+}): WorkspaceHostKind | undefined {
+  if (input.sdkWorkspace) return input.sdkWorkspace.kind
+  return inventoryHostKind(workspaceForDirectory(input.projects, input.directory)?.kind)
 }
 
 /**
@@ -146,37 +151,29 @@ export function declaredSessionAuthority(
   return declared === "local" || declared === "managed-private" ? declared : undefined
 }
 
-export function knownWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | undefined): WorkspaceCatalogKind | undefined {
-  if (kind === localWorkspaceKind) return localWorkspaceKind
-  if (kind === cloudWorkspaceKind) return cloudWorkspaceKind
-  if (kind === userHostedWorkspaceKind) return userHostedWorkspaceKind
-  return undefined
-}
-
 export function composerUsesSignedTransport(input: {
   explicit?: boolean
   directory: WorkspaceDirectory
   projects: readonly ProjectCatalogItem[]
-  sdkWorkspace?: WorkspaceCatalogEntry
+  sdkWorkspace?: SignedWorkspaceInfo
   sessionRef?: SessionRef
   principalHasSignedAccess: boolean
   routeWorkspaceAuthorityId?: string
   serverUrl?: string
 }) {
   if (input.explicit !== undefined) return input.explicit
-  const workspace = signedWorkspaceForDirectory(input)
-  const workspaceKind = knownWorkspaceKind(workspace?.kind)
+  const hostKind = signedWorkspaceHostKind(input)
   const placement = placementFor({
     ref: input.sessionRef,
     hasSignedAccess: sessionSignedTransportAuthority({
       serverUrl: input.serverUrl,
       principalHasSignedAccess: input.principalHasSignedAccess,
       routeWorkspaceAuthorityId: input.routeWorkspaceAuthorityId,
-      workspaceKind,
+      hostKind,
       sessionRef: input.sessionRef,
     }),
     serverUrl: input.serverUrl,
-    legacy: { directory: input.directory, workspaceKind },
+    legacy: { directory: input.directory, hostKind },
   })
   return !!placement && placement.transport !== "loopback"
 }
@@ -184,12 +181,12 @@ export function composerUsesSignedTransport(input: {
 export function submitSessionDirectory(input: {
   directory: WorkspaceDirectory
   projects: readonly ProjectCatalogItem[]
-  sdkWorkspace?: WorkspaceCatalogEntry
+  sdkWorkspace?: SignedWorkspaceInfo
 }) {
-  const workspace = signedWorkspaceForDirectory(input)
-  const workspaceId = workspace?.workspaceId ?? workspace?.id
+  const row = input.sdkWorkspace ? undefined : workspaceForDirectory(input.projects, input.directory)
+  const workspaceId = input.sdkWorkspace?.workspaceId ?? row?.workspaceId ?? row?.id
   if (workspaceId && input.directory === workspaceId) return input.directory
-  return workspace?.directory ?? input.directory
+  return input.sdkWorkspace?.directory ?? row?.directory ?? input.directory
 }
 
 export function sessionRefForSubmitTarget(input: {
@@ -248,13 +245,13 @@ export function existingRemoteWorkspaceDirectory(input: {
 }) {
   if (input.runtimeWorkspaceRef?.(input.directory)) return input.directory
   const workspace = workspaceForDirectory(input.projects, input.directory)
-  if (input.directory && isRemoteWorkspaceKind(workspace?.kind)) {
+  if (input.directory && workspace && isRelayHostKind(inventoryHostKind(workspace.kind))) {
     const id = workspace.id ?? workspace.workspaceId ?? undefined
     return input.runtimeWorkspaceRef?.(id) ? id : input.directory
   }
   if (input.worktreeSelection !== "main") return undefined
   return Object.entries(projectWorkspaces(input.projects, input.directory)).find(
-    ([, item]) => item.kind === "cloud" && (item.workspace_name ?? item.workspaceName) === "main",
+    ([, item]) => inventoryHostKind(item.kind) === "provisioner" && (item.workspace_name ?? item.workspaceName) === "main",
   )?.[0]
 }
 
@@ -279,7 +276,7 @@ export function resolveWorkspaceSubmitPlan(input: ResolveWorkspaceSubmitPlanInpu
     runtimeWorkspaceRef: input.runtimeWorkspaceRef,
   })
   if (existingDirectory) return { status: "prepare-remote-workspace", directory: existingDirectory }
-  if (isUserHostedWorkspaceKind(input.workspaceKind)) return { status: "missing-workspace" }
+  if (input.hostKind === "machine") return { status: "missing-workspace" }
 
   const id = projectId(projectForDirectory(input.projects, selectedDirectory ?? sessionDirectory))
   if (!id) return { status: "missing-workspace" }
@@ -290,10 +287,11 @@ function workspaceBacking(
   workspace: WorkspaceCatalogEntry | undefined,
   directory: WorkspaceDirectory | undefined,
 ): WorkspaceSessionBacking | undefined {
-  if (!isRemoteWorkspaceKind(workspace?.kind)) return undefined
+  const kind = inventoryHostKind(workspace?.kind)
+  if (!workspace || !isRelayHostKind(kind)) return undefined
   return {
     workspaceId: workspace.workspaceId ?? workspace.id ?? directory!,
-    kind: workspace.kind,
+    kind,
   }
 }
 
@@ -309,10 +307,5 @@ function sameWorkspaceId(left: string | undefined, right: string | undefined) {
   return !!left && !!right && left === right
 }
 
-export function isRemoteWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | ResolveWorkspaceSubmitPlanInput["workspaceKind"] | undefined) {
-  return kind === cloudWorkspaceKind || kind === userHostedWorkspaceKind
-}
 
-function isUserHostedWorkspaceKind(kind: ResolveWorkspaceSubmitPlanInput["workspaceKind"]) {
-  return kind === userHostedWorkspaceKind
-}
+

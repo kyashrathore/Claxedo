@@ -1,7 +1,7 @@
 import { createEffect, type Component } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { usePrincipal } from "@/platform/auth/identity-provider"
-import { useConfigOptional } from "@/app/providers/config"
+import { useDeploymentPosture } from "@/app/connection/deployment-posture"
 import {
   group,
   identify,
@@ -17,15 +17,18 @@ import {
  */
 export const TelemetryIdentityRecorder: Component = () => {
   const platform = usePlatform()
-  const config = useConfigOptional()
+  const posture = useDeploymentPosture()
   const principal = usePrincipal()
 
-  // Both signals are fixed for the life of the shell, so this resolves once on
-  // mount rather than through an effect.
+  // Read once at mount rather than through an effect, because neither input
+  // moves under this component: `platform` is fixed for the build, the web
+  // entries resolve the declaration into the cache before `render()`, and the
+  // desktop renderer — which deliberately does not — resolves its plane from
+  // the platform alone.
   setDeploymentMode(
     resolveDeploymentMode({
       platform: platform.platform,
-      authEnabled: config?.authEnabled === true,
+      issuesSessions: posture.issuesSessions() === true,
     }),
   )
 

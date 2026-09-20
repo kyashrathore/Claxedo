@@ -10,7 +10,7 @@ import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/brow
 
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
-import { createD1UserHostedTargetResolver } from "../d1/user-hosted-relay-target"
+import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import {
   composeProviderNeutralHostedControlPlane,
@@ -219,7 +219,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     turnAuthority: authority,
     ...(input.credentialsNamespace ? { credentialsNamespace: input.credentialsNamespace } : {}),
     ...(input.sandbox ? { sandbox: input.sandbox } : {}),
-    userHostedResolver: createD1UserHostedTargetResolver(input.controlPlaneDatabase, {
+    hostTunnelResolver: createD1HostTunnelTargetResolver(input.controlPlaneDatabase, {
       ...(input.now ? { now: input.now } : {}),
       deploymentId,
     }),

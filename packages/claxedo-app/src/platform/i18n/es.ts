@@ -286,7 +286,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} no puede usar este adjunto",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} no tiene una entrada de prompt para {{mime}}, y esta sesión no tiene un espacio de trabajo local donde guardar el archivo.",
+    "{{harness}} no tiene una entrada de prompt para {{mime}}, y esta sesión no tiene una carpeta de espacio de trabajo donde guardar el archivo.",
   "prompt.toast.attachmentUnreadable.title": "No se pudo leer el adjunto",
   "prompt.toast.attachmentUnreadable.description":
     "No se pudo leer {{filename}} desde este dispositivo.",
@@ -442,7 +442,7 @@ export const dict = {
 
   "home.recentProjects": "Proyectos recientes",
   "home.empty.title": "Sin proyectos recientes",
-  "home.empty.description": "Empieza abriendo un proyecto local",
+  "home.empty.description": "Empieza abriendo una carpeta de este equipo",
 
   "home.title": "Inicio",
   "session.timeline.scrollToBottom": "Desplazarse al último mensaje",
@@ -506,12 +506,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Proyectos y sesiones",
   "sidebar.settings": "Ajustes",
   "sidebar.help": "Ayuda",
-  "sidebar.workspace.role.viewer": "Lector",
-  "sidebar.workspace.role.editor": "Editor",
-  "sidebar.workspace.role.admin": "Administrador",
-  "sidebar.workspace.hostOffline": "Host sin conexión",
-  "sidebar.workspace.sharedWithYou": "Compartido contigo",
-  "sidebar.workspace.publishedByThisMachine": "Publicado desde este equipo",
 
 
   "settings.section.desktop": "Escritorio",
@@ -696,8 +690,6 @@ export const dict = {
   "session.delete.button": "Eliminar sesión",
 
   "workspace.new": "Nuevo espacio de trabajo",
-  "workspace.type.local": "local",
-  "workspace.type.sandbox": "sandbox",
   "workspace.error.stillPreparing": "El espacio de trabajo aún se está preparando",
   "workspace.status.checking": "Comprobando cambios no fusionados...",
   "workspace.status.error": "No se pudo verificar el estado de git.",

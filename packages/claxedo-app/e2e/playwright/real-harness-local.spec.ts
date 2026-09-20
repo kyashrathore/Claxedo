@@ -1217,8 +1217,8 @@ test.describe("real harness journeys @core @tier-real", () => {
     await environment.click()
     const environmentPicker = page.locator('[data-context-chip-picker="context-chip-environment"]')
     await expect(environmentPicker).toBeVisible()
-    await environmentPicker.getByRole("button", { name: /^Local/ }).click()
-    await expect(environment.locator('[data-slot="context-chip-label"]')).toHaveText("Local")
+    await environmentPicker.getByRole("button", { name: /^This computer/ }).click()
+    await expect(environment.locator('[data-slot="context-chip-label"]')).toHaveText("This computer")
 
     const workspace = page.locator('[data-slot="context-chip-worktree"]')
     await workspace.click()

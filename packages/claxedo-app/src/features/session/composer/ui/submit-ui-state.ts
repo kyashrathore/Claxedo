@@ -66,7 +66,7 @@ type LastSubmittedSnapshot = {
 export function createPromptInputSubmitRetry(input: {
   readonly resetKey: Accessor<string>
   readonly rawHandleSubmit: (event: Pick<Event, "preventDefault">) => unknown
-  readonly roleSubmitBlocked: Accessor<boolean>
+  readonly authorityBlocked: Accessor<boolean>
   /**
    * Any standing block reason. Actionable reasons leave the Send button
    * clickable so it can explain itself; the handler still refuses to submit.
@@ -104,7 +104,7 @@ export function createPromptInputSubmitRetry(input: {
   // Only `preventDefault` is read, and the retry path below replays a submit
   // without a real DOM event — so the parameter states what it uses.
   const handleSubmit = async (event: Pick<Event, "preventDefault">) => {
-    if (input.roleSubmitBlocked() || input.submitBlocked?.()) {
+    if (input.authorityBlocked() || input.submitBlocked?.()) {
       if (input.submitBlock?.()?.reason === "no-model") input.onChooseModel?.()
       return event.preventDefault()
     }

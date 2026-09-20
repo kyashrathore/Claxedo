@@ -104,14 +104,14 @@ describe("directory query factories", () => {
     const query = agentListQuery({
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       request: (async (input: string | URL | Request) => {
         calls.push(input instanceof Request ? input.url : String(input))
         return Response.json([])
       }) as typeof fetch,
     })
 
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", "local:ws_local"])
+    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", "self:ws_local"])
     expect(await query.queryFn()).toEqual([])
     expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws"])
   })
@@ -122,19 +122,19 @@ describe("directory query factories", () => {
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
       harnessType: "codex-acp",
-      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "self" },
       request: (async (input: string | URL | Request) => {
         calls.push(input instanceof Request ? input.url : String(input))
         return Response.json([agent("connection-profile")])
       }) as typeof fetch,
     })
 
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", "local:ws_local"])
+    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", "self:ws_local"])
     expect(await query.queryFn()).toEqual([agent("connection-profile")])
     expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=codex-acp"])
   })
 
-  test("agentListQuery routes loopback cloud workspaces through Workspace Relay when request is supplied", async () => {
+  test("agentListQuery routes loopback provisioner-placed workspaces through Workspace Relay when request is supplied", async () => {
     const calls: string[] = []
     const query = agentListQuery({
       baseUrl: "http://127.0.0.1:3001",
@@ -146,8 +146,8 @@ describe("directory query factories", () => {
         const url = new URL(req.url)
         if (url.pathname === "/api/workspace/ws_1/connection") {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.test",
             runtimeAccessToken: "rat_1",
@@ -163,7 +163,7 @@ describe("directory query factories", () => {
       workspace: {
         workspaceId: "ws_1",
         directory: "/tmp/ws",
-        kind: "cloud",
+        kind: "provisioner",
       },
     })
 
@@ -190,15 +190,15 @@ describe("directory query factories", () => {
         baseUrl,
         directory,
         harnessType: "opencode",
-        workspace: { workspaceId: "ws_A", directory, kind: "cloud" },
+        workspace: { workspaceId: "ws_A", directory, kind: "provisioner" },
         request: (async (input: string | URL | Request, init?: RequestInit) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
           calls.push(req.url)
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_A/connection") {
             return Response.json({
-              access: "cloud",
               backing: "cloud-vm",
+              sessionAuthority: "managed-private",
               workspaceId: "ws_A",
               relayUrl: "https://relay.test",
               runtimeAccessToken: "rat_A",
@@ -246,7 +246,6 @@ describe("directory query factories", () => {
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_persisted_agent/connection") {
             return new Response(JSON.stringify({
-              access: "user-hosted",
               backing: "local-worktree",
               workspaceId: "ws_persisted_agent",
               role: "owner",
@@ -302,8 +301,8 @@ describe("directory query factories", () => {
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_signed_loopback/connection") {
             return Response.json({
-              access: "cloud",
               backing: "cloud-vm",
+              sessionAuthority: "managed-private",
               workspaceId: "ws_signed_loopback",
               relayUrl: "https://relay.test",
               runtimeAccessToken: "rat_loopback",
@@ -368,7 +367,7 @@ describe("directory query factories", () => {
             return Response.json({
               workspaceId: "ws_local_inventory",
               directory,
-              kind: "local",
+              kind: "self",
             })
           }
           throw new Error(`unexpected signed request: ${req.method} ${req.url}`)
@@ -388,7 +387,7 @@ describe("directory query factories", () => {
     }
   })
 
-  test("agentListQuery uses Claxedo agent config API for local workspaces", async () => {
+  test("agentListQuery uses Claxedo agent config API for workspaces this machine serves", async () => {
     const calls: string[] = []
     const query = agentListQuery({
       baseUrl: "http://claxedo.test/",
@@ -405,7 +404,7 @@ describe("directory query factories", () => {
       workspace: {
         workspaceId: "ws_local",
         directory: "/tmp/ws",
-        kind: "local",
+        kind: "self",
       },
     })
 
@@ -432,7 +431,7 @@ describe("directory query factories", () => {
         workspace: {
           workspaceId: "ws_local",
           directory: "/tmp/ws",
-          kind: "local",
+          kind: "self",
         },
       })
 

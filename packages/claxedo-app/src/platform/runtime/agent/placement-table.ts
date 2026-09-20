@@ -14,7 +14,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { Placement } from "@/platform/runtime/placement"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer, isLocalPersonalScope } from "@/platform/runtime/transport"
-import { USER_HOSTED_WORKSPACE_KIND, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export { workspaceIdFromRef }
 
@@ -68,7 +68,6 @@ export function resolveRuntimePlacement(
   const loopback = centralTransportForServer(ctx.baseUrl) === "loopback"
   const workspaceTransport = input.preferRelayOnLoopback || !loopback ? "workspace-relay" : "loopback"
 
-
   // An explicit workspace tool-sandbox: route to that workspace's runtime.
   if (input.sessionRef?.toolSandbox?.kind === "workspace") {
     return {
@@ -104,7 +103,7 @@ export function resolveRuntimePlacement(
  *   runtime transport bound to that ref.
  * - `runtime-workspace`: divert to a specific workspace's runtime (relay or
  *   loopback); `preferRelayOnLoopback` forces the relay even on a loopback
- *   server (user-hosted / unresolved-kind legacy refs).
+ *   server (machine-placed / unresolved-host legacy refs).
  * - `control-plane`: signed request to the central control plane.
  * - `direct`: unsigned direct request to the runtime session URL.
  */
@@ -118,7 +117,7 @@ export function resolveSessionResourceRoute(input: {
   signed: boolean
   hasSessionRef: boolean
   targetWorkspaceId?: string
-  targetKind?: WorkspaceKind
+  targetKind?: WorkspaceHostKind
   directoryWorkspaceId?: string
   resource?: string
   loopback: boolean
@@ -141,21 +140,21 @@ export function resolveSessionResourceRoute(input: {
   //    NOT when that runtime is known-unreachable AND the workspace is
   //    confirmed cloud: a cloud session's history is synced to the control
   //    plane, so a dead sandbox must not take the transcript with it. Diverting
-  //    there would hang on a runtime that cannot answer. User-hosted and
+  //    there would hang on a runtime that cannot answer. Machine-placed and
   //    unresolved-kind workspaces keep the divert — for those the runtime is
   //    the only store, so an unreachable one means there is genuinely nothing
   //    to read and the relay's own failure is the honest answer.
   if (signed && targetWorkspaceId && resource === "messages" && loopback) {
-    const centralHistory = targetKind === "cloud" && input.targetReachable === false
+    const centralHistory = targetKind === "provisioner" && input.targetReachable === false
     if (!centralHistory) return { via: "runtime-workspace", workspaceId: targetWorkspaceId }
   }
 
-  // C: signed user-hosted — or an unresolved-kind legacy `ws_` directory ref,
+  // C: signed machine-placed — or an unresolved-host legacy `ws_` directory ref,
   //    which is indistinguishable from cloud by shape — diverts to the relay
-  //    runtime. The central control plane has no session store for user-hosted,
+  //    runtime. The central control plane has no session store for those,
   //    so asserting cloud here would 404. `preferRelayOnLoopback` forces the
   //    relay even when the server itself is loopback.
-  if (signed && targetWorkspaceId && (targetKind === USER_HOSTED_WORKSPACE_KIND || (!targetKind && !!directoryWorkspaceId))) {
+  if (signed && targetWorkspaceId && (targetKind === "machine" || (!targetKind && !!directoryWorkspaceId))) {
     return { via: "runtime-workspace", workspaceId: targetWorkspaceId, preferRelayOnLoopback: true }
   }
 

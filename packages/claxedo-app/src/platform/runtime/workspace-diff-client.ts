@@ -105,7 +105,7 @@ function asVcsRefs(value: unknown): VcsRefs {
 export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOptions) {
   const transportFor = async (dir: string) => {
     const workspace = workspaceRuntimeSnapshot(options.workspace) ??
-      workspaceRuntimeSnapshot(options.workspaceId ? { kind: "cloud", workspaceId: options.workspaceId } : undefined) ??
+      workspaceRuntimeSnapshot(options.workspaceId ? { kind: "provisioner", workspaceId: options.workspaceId } : undefined) ??
       workspaceRuntimeSnapshot(await options.resolveWorkspaceRuntime?.({
         directory: dir,
         workspaceId: options.workspaceId,
@@ -197,7 +197,7 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
 }
 
 function workspaceRuntimeSnapshot(input: WorkspaceRuntimeSnapshotLike | undefined) {
-  if (input?.kind && input.kind !== "local" && input.workspaceId) {
+  if (input?.kind && input.kind !== "self" && input.workspaceId) {
     return { workspaceId: input.workspaceId }
   }
   return undefined

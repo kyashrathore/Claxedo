@@ -133,10 +133,10 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       directory: workspaceDir,
       events: props.events,
       onResolved: (workspace) => {
-        if (!workspace || workspace.kind !== "cloud" || workspace.status === "ready") return
+        if (!workspace || workspace.kind !== "provisioner" || workspace.status === "ready") return
         setGate("status", workspace.status ?? "acquiring_sandbox")
         void props.dialog.show(() => (
-          <Dialog title="Preparing cloud workspace" fit>
+          <Dialog title="Preparing cloud environment" fit>
             <div class="pt-2">
               <CloudStartupView
                 status={gate.status}
@@ -161,7 +161,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       if (result.message) setGate("err", result.message)
       if (dialogOpen) props.dialog.close()
       showToast({
-        title: "Failed to prepare cloud workspace",
+        title: "Failed to prepare cloud environment",
         description: result.message ?? "Request failed",
         variant: "error",
       })
@@ -236,7 +236,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
           workspaceDir: providerDirectory,
           sessionId: "new",
           workspaceRouteId: routeId,
-          workspaceKind: props.workspaceKindForRoute(routeId),
+          hostKind: props.hostKindForRoute(routeId),
         }),
       })
       nav(workspaceSessionRoute(routeId), "new-session", {
@@ -260,7 +260,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
           workspaceDir: created,
           sessionId: "new",
           workspaceRouteId: routeId,
-          workspaceKind: props.workspaceKindForRoute(routeId),
+          hostKind: props.hostKindForRoute(routeId),
         }),
       })
       nav(workspaceSessionRoute(routeId), "new-session:recovered-workspace", {
@@ -291,7 +291,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         workspaceDir,
         sessionId: "new",
         workspaceRouteId: routeId,
-        workspaceKind: props.workspaceKindForRoute(routeId),
+        hostKind: props.hostKindForRoute(routeId),
       }),
     })
     nav(workspaceSessionRoute(routeId), wsInfo?.isCloud ? "new-session:cloud" : "new-session", {

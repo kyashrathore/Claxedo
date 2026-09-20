@@ -56,11 +56,80 @@ describe("claxedoEventStreamTargets", () => {
     }
   })
 
+  describe("the wire the placement names", () => {
+    // Only a control-plane row states a placement; a shell or bootstrap project
+    // row states a kind and no host at all.
+    const placedOn = (enrollmentId?: string) => [{
+      workspaces: {
+        "workspace:ws_published": {
+          workspaceId: "ws_published",
+          kind: "user-hosted" as const,
+          directory: "workspace:ws_published",
+          placement: enrollmentId ? { host_enrollment_id: enrollmentId } : {},
+        },
+      },
+    }]
+    const desktop = (self: Parameters<typeof claxedoEventStreamTargets>[0]["self"], enrollmentId?: string) =>
+      claxedoEventStreamTargets({
+        hostAggregate: true,
+        serverUrl: "http://127.0.0.1:3001",
+        directory: "workspace:ws_published",
+        accountSigned: true,
+        projects: placedOn(enrollmentId),
+        ...(self ? { self } : {}),
+      })
+
+    test("a row placed on THIS machine rides the aggregate, not its own relay stream", () => {
+      expect(desktop({ kind: "enrolled", enrollmentId: "enr_mine" }, "enr_mine")).toEqual([loopbackCp, hostAggregate])
+    })
+
+    test("a row placed on another machine keeps its own relay stream", () => {
+      expect(desktop({ kind: "enrolled", enrollmentId: "enr_mine" }, "enr_other")).toEqual([
+        loopbackCp,
+        hostAggregate,
+        {
+          kind: "wr",
+          serverUrl: "http://127.0.0.1:3001",
+          workspaceId: "ws_published",
+          hostKind: "machine",
+          directory: "workspace:ws_published",
+        },
+      ])
+    })
+
+    test("an unenrolled daemon cannot recognise itself, so the row is another machine's", () => {
+      expect(desktop({ kind: "unenrolled" }, "enr_mine").at(-1)).toMatchObject({ kind: "wr", workspaceId: "ws_published" })
+    })
+
+    test("a row no machine holds opens nothing: there is nowhere to send the request", () => {
+      expect(desktop({ kind: "enrolled", enrollmentId: "enr_mine" })).toEqual([loopbackCp, hostAggregate])
+      expect(routeAwaitsWorkspaceStream({
+        serverUrl: "http://127.0.0.1:3001",
+        directory: "workspace:ws_published",
+        projects: placedOn(),
+        hostAggregate: true,
+        self: { kind: "enrolled", enrollmentId: "enr_mine" },
+      })).toBe(false)
+    })
+
+    test("a browser is no machine, so the same row is always a relay stream", () => {
+      expect(claxedoEventStreamTargets({
+        hostAggregate: undefined,
+        serverUrl: "https://control.example.test",
+        directory: "workspace:ws_published",
+        accountSigned: true,
+        projects: placedOn("enr_mine"),
+      }).at(-1)).toMatchObject({ kind: "wr", workspaceId: "ws_published", hostKind: "machine" })
+    })
+  })
+
   test("a loopback surface with no route open still reads the aggregate", () => {
     expect(claxedoEventStreamTargets({ hostAggregate: true, serverUrl: "http://127.0.0.1:3001" })).toEqual([loopbackCp, hostAggregate])
   })
 
-  test.each(["cloud", "user-hosted"] as const)("a signed desktop adds the routed %s workspace's relay stream", (kind) => {
+  test.each([["cloud", "provisioner"], ["user-hosted", "machine"]] as const)(
+    "a signed desktop adds the routed %s workspace's relay stream",
+    (kind, host) => {
     expect(claxedoEventStreamTargets({
       hostAggregate: true,
       serverUrl: "http://127.0.0.1:3001",
@@ -81,11 +150,12 @@ describe("claxedoEventStreamTargets", () => {
         kind: "wr",
         serverUrl: "http://127.0.0.1:3001",
         workspaceId: "ws_remote",
-        workspaceKind: kind,
+        hostKind: host,
         directory: "/repo/remote",
       },
     ])
-  })
+    },
+  )
 
   test("a signed desktop on a local route reads the aggregate and no workspace stream", () => {
     expect(claxedoEventStreamTargets({
@@ -98,10 +168,10 @@ describe("claxedoEventStreamTargets", () => {
     })).toEqual([loopbackCp, { ...loopbackCp, transport: "account" }, hostAggregate])
   })
 
-  test("a server that declares no aggregate hands the local workspace its own stream, loopback or not", () => {
+  test("a server that declares no aggregate hands a workspace on this machine its own stream, loopback or not", () => {
     // The self-hosted node runs its embedded issuer on localhost and mounts no
-    // aggregate when it does. Reading the URL alone would leave every local
-    // workspace with no stream at all behind a route that answers nothing.
+    // aggregate when it does. Reading the URL alone would leave every workspace
+    // the node embeds with no stream at all behind a route that answers nothing.
     const forServer = (serverUrl: string, accountSigned: boolean) => claxedoEventStreamTargets({
       hostAggregate: false,
       serverUrl,
@@ -113,7 +183,7 @@ describe("claxedoEventStreamTargets", () => {
       kind: "wr",
       serverUrl,
       workspaceId: "ws_local",
-      workspaceKind: "local",
+      hostKind: "self",
       directory: "/repo/local",
     })
 
@@ -151,7 +221,7 @@ describe("claxedoEventStreamTargets", () => {
     // What Tier R's daemon answers before its workspace store has registered
     // the worktree: a project with a worktree and no `workspaces` map at all.
     // The daemon serves the paths on its OWN machine, so a path is local by
-    // construction and only a catalog entry naming one cloud or user-hosted is
+    // construction, and only a catalog entry placing one elsewhere makes it
     // another machine's runtime.
     const directory = "/private/var/folders/claxedo-tier-real-two-streams"
     const input = {
@@ -178,9 +248,9 @@ describe("claxedoEventStreamTargets", () => {
 
   test("a workspace the catalog lists as local rides the aggregate even under a relay-shaped id", () => {
     // `sessionWorkspaceRuntimeRef` calls a `ws_`-shaped id optimistically
-    // relay-backed, and the daemon serves a local workspace on the
-    // relay-shaped path all the same: the scoped stream would be the
-    // aggregate's own frames a second time.
+    // relay-backed, but the daemon serves a workspace it embeds under that id
+    // all the same: a scoped stream would be the aggregate's own frames a
+    // second time.
     expect(claxedoEventStreamTargets({
       hostAggregate: true,
       serverUrl: "http://127.0.0.1:3001",
@@ -211,7 +281,7 @@ describe("claxedoEventStreamTargets", () => {
       kind: "wr",
       serverUrl: "https://control.example.test",
       workspaceId: "ws_local",
-      workspaceKind: "local",
+      hostKind: "self",
       directory: "/repo/local",
     }])
   })
@@ -239,7 +309,7 @@ describe("claxedoEventStreamTargets", () => {
         kind: "wr",
         serverUrl: "https://control.example.test",
         workspaceId: "ws_cloud",
-        workspaceKind: "cloud",
+        hostKind: "provisioner",
         directory: "/repo/cloud",
         sessionID: "session-cloud",
       },
@@ -294,15 +364,15 @@ describe("claxedoEventStreamTargets", () => {
       hostAggregate: true,
       serverUrl: "https://control.example.test",
       accountSigned: true,
-      directory: "ws_user_hosted",
+      directory: "ws_machine",
     })).toEqual([
       { kind: "cp", url: new URL("https://control.example.test/api/cp/events"), transport: "server" },
       {
         kind: "wr",
         serverUrl: "https://control.example.test",
-        workspaceId: "ws_user_hosted",
-        workspaceKind: "user-hosted",
-        directory: "ws_user_hosted",
+        workspaceId: "ws_machine",
+        hostKind: "machine",
+        directory: "ws_machine",
       },
     ])
   })
@@ -319,7 +389,7 @@ describe("claxedoEventStreamTargets", () => {
       kind: "wr" as const,
       serverUrl: "https://control.example.test",
       workspaceId: "ws_cloud",
-      workspaceKind: "cloud" as const,
+      hostKind: "provisioner" as const,
     }
     expect(eventStreamTargetKey({ ...base, sessionID: "session-a" }))
       .toBe(eventStreamTargetKey({ ...base, sessionID: "session-b" }))
@@ -393,7 +463,6 @@ describe("eventStreamFetch", () => {
       // Mint the relay connection for the workspace.
       if (url.includes("/api/workspace/ws_events_relay/connection")) {
         return new Response(JSON.stringify({
-          access: "user-hosted",
           backing: "local-worktree",
           role: "owner",
           workspaceId: "ws_events_relay",
@@ -413,7 +482,7 @@ describe("eventStreamFetch", () => {
       kind: "wr" as const,
       serverUrl: "https://control.example.test",
       workspaceId: "ws_events_relay",
-      workspaceKind: "cloud" as const,
+      hostKind: "provisioner" as const,
       sessionID: "session-events",
     }
     const res = await eventStreamFetch(target, { headers: { Accept: "text/event-stream" } }, { request, relayRequest: request })
@@ -449,8 +518,8 @@ describe("eventStreamFetch", () => {
       const request = input instanceof Request ? input : new Request(input, init)
       if (request.url.includes("/api/workspace/ws_reconnect/connection")) {
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           role: "editor",
           workspaceId: "ws_reconnect",
           relayUrl: "https://relay.events.test",
@@ -465,7 +534,7 @@ describe("eventStreamFetch", () => {
       kind: "wr" as const,
       serverUrl: "https://control.example.test",
       workspaceId: "ws_reconnect",
-      workspaceKind: "cloud" as const,
+      hostKind: "provisioner" as const,
       sessionID: "session-reconnect",
     }
 
@@ -486,7 +555,7 @@ describe("eventStreamFetch", () => {
     ])
   })
 
-  test("keeps loopback local workspace streams on the directory-scoped runtime", async () => {
+  test("keeps loopback streams for a workspace on this machine on the directory-scoped runtime", async () => {
     const seen: Array<{ url: string; auth: string | null; xdir: string | null }> = []
     const request: typeof fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -510,7 +579,7 @@ describe("eventStreamFetch", () => {
         kind: "wr",
         serverUrl: "http://127.0.0.1:3001",
         workspaceId: "ws_loopback",
-        workspaceKind: "local",
+        hostKind: "self",
         directory: "/repo/local",
         sessionID: "session-local",
       },
@@ -526,7 +595,7 @@ describe("eventStreamFetch", () => {
     }])
   })
 
-  test("a desktop reads a cloud workspace's stream through its daemon's proxy, cursor forwarded, no browser relay mint", async () => {
+  test("a desktop reads a provisioner-placed workspace's stream through its daemon's proxy, cursor forwarded, no browser relay mint", async () => {
     const seen: Array<{ url: string; auth: string | null; cursor: string | null }> = []
     const request: typeof fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -536,7 +605,7 @@ describe("eventStreamFetch", () => {
       return new Response("data: {\"type\":\"heartbeat\"}\n\n", { status: 200, headers: { "content-type": "text/event-stream" } })
     }
     const res = await eventStreamFetch(
-      { kind: "wr", serverUrl: "http://127.0.0.1:3001", workspaceId: "ws_cloud", workspaceKind: "cloud" },
+      { kind: "wr", serverUrl: "http://127.0.0.1:3001", workspaceId: "ws_cloud", hostKind: "provisioner" },
       { headers: { Accept: "text/event-stream", Authorization: "Bearer browser-token", "Last-Event-ID": "7" } },
       { request },
     )
@@ -573,12 +642,12 @@ describe("eventStreamFrameAddress", () => {
   // machine is not this one, so the frame has to be re-addressed to the form
   // every pane, rail section and session row of that workspace is keyed by.
   test("addresses a relay-backed workspace's frames by workspace", () => {
-    for (const workspaceKind of ["user-hosted", "cloud"] as const) {
+    for (const hostKind of ["machine", "provisioner"] as const) {
       const address = eventStreamFrameAddress({
         kind: "wr",
         serverUrl: "https://control.example",
         workspaceId: "ws_1",
-        workspaceKind,
+        hostKind,
         directory: "/Users/owner/repo",
       })
       expect(address("/Users/owner/repo")).toBe("workspace:ws_1")
@@ -586,14 +655,14 @@ describe("eventStreamFrameAddress", () => {
     }
   })
 
-  // A local workspace is served by this surface's own runtime over loopback, so
-  // its path IS this machine's and every consumer is keyed by it.
-  test("leaves a local workspace's own paths alone", () => {
+  // `hostKind: "self"` means this surface's own runtime serves the workspace
+  // over loopback, so its path IS this machine's and every consumer is keyed by it.
+  test("leaves the paths of a workspace on this machine alone", () => {
     const address = eventStreamFrameAddress({
       kind: "wr",
       serverUrl: "http://127.0.0.1:3001",
       workspaceId: "ws_local",
-      workspaceKind: "local",
+      hostKind: "self",
       directory: "/repo/local",
     })
     expect(address("/repo/local")).toBe("/repo/local")

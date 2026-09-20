@@ -138,9 +138,9 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const activeProjectId = createMemo(() => {
     const dir = activeDirectory()
     if (!dir) return undefined
-    // Prefer the canonical `/w/:workspaceId` owner: multiple cloud workspaces
-    // can legitimately report the same physical `/workspace` directory. The
-    // physical directory remains the fallback for local and legacy routes.
+    // The route key wins over the directory: every provisioner-owned machine
+    // mounts its checkout at `/workspace`, so the directory alone cannot name
+    // the project. Only a route without a workspace key falls back to it.
     return routeProjectWorktree() ?? projectWorktreeForDirectory(layoutProjects(), dir)
   })
   const activeSessionId = createMemo(() => {

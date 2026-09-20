@@ -103,7 +103,30 @@ export const desktopMainComposition: Policy = {
   //
   // Re-measured 2026-09-17 at 90 modules / 24 packages; the two modules of
   // headroom had accrued unrecorded. Pinned with none.
-  ceilings: { modules: 90, packages: 24 },
+  // +1 module (2026-09-19): `main/host-connector/serving-push.ts`, the one
+  // owner of the hand-off from a heartbeat ack to the daemon's serving route —
+  // the credential the machine dials the relay with and the addresses it
+  // admits a relayed caller against. Reviewed owner: Electron main, which is
+  // the only process that receives an ack and the only one that may reach the
+  // daemon's loopback surface. It imports a type from `child-protocol.ts`
+  // (already in this closure) and uses `fetch`, so no package edge. 91/24.
+  // The name this machine is known by is derived in
+  // `@claxedo/helpers/machine-name`, outside `roots`, because the self-hosted
+  // node names itself the same way and one machine may not have two names.
+  // The subpath is node-only (`node:os`, `node:fs`, `node:child_process`, all
+  // already in this closure) and `@claxedo/helpers` is already a package edge
+  // through `/string`, so it costs neither a module nor a package. Reviewed
+  // owner: Electron main still CHOOSES the name and signs the enrollment it
+  // travels on. Re-measured with no headroom: 91/24.
+  // +1 module: `main/host-connector/provider-config-push.ts`, the one owner
+  // of the hand-off from an opened provider-configuration revision to the
+  // daemon's `/api/claxedo/host-provider-config` route. Reviewed owner:
+  // Electron main, the only process that receives the child's opened text
+  // and the only one that may reach the daemon's loopback surface; it
+  // forwards the text and never parses it. Imports a type from
+  // `child-protocol.ts` (already here) and uses `fetch`, so no package edge.
+  // 92/24, no headroom.
+  ceilings: { modules: 92, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -111,6 +134,11 @@ export const desktopMainComposition: Policy = {
     requiredModules: [
       `${DESKTOP}/main/index.ts`,
       `${DESKTOP}/main/account/lazy-account.ts`,
+      // The closed operation table and its IPC registration, eager so that an
+      // unsigned launch answers every account channel without constructing the
+      // credential-bearing adapter.
+      `${DESKTOP}/main/account/account-ipc.ts`,
+      `${DESKTOP}/main/account/hosted-operations.ts`,
       `${DESKTOP}/main/host-connector/electron-child.ts`,
       `${DESKTOP}/main/host-connector/child-supervisor.ts`,
     ],
@@ -180,14 +208,22 @@ export const desktopAccountComposition: Policy = {
   // is `@claxedo/helpers/claxedo-credentials`, the file's shape and path —
   // already a package edge of this closure. Re-measured, no headroom: 20/7.
   ceilings: { modules: 20, packages: 7 },
+  // The emitted list names the credential-bearing half only. `hosted-operations.ts`
+  // and `account-ipc.ts` are reached from the base entry through
+  // `lazy-account.ts`, so Rollup places them in `index.js`, and
+  // `desktopMainComposition` requires them there: the closed channel set is
+  // registered at startup precisely so signing in is what loads the adapter.
+  // Measured at 12 modules / 2 chunks, no headroom.
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
-    minModules: 10,
-    minChunks: 1,
+    minModules: 12,
+    minChunks: 2,
     requiredModules: [
       `${DESKTOP}/main/account/index.ts`,
-      `${DESKTOP}/main/account/hosted-operations.ts`,
       `${DESKTOP}/main/account/credential-store.ts`,
+      `${DESKTOP}/main/account/oauth-flow.ts`,
+      `${DESKTOP}/main/account/desktop-native-auth.ts`,
+      `${DESKTOP}/main/account/account-service.ts`,
     ],
   },
 }
@@ -475,8 +511,23 @@ export const desktopRendererUnsigned: Policy = {
   // — see the app-local ledger. Re-measured, no headroom.
   //
   // -4 modules (2026-09-17): the second stream reader — see the app-local
-  // ledger. Measured 1120 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1120, packages: 58 },
+  // ledger.
+  //
+  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // — see the app-local ledger. The renderer's port leaves `providerConfig`
+  // absent, so the control never renders here; the module rides in with the
+  // shared surface.
+  //
+  // +1 module (2026-09-20): `app/connection/deployment-posture.ts` — see the
+  // app-local ledger. Only the in-tree reader reaches this renderer; the
+  // pre-render resolver (`app/boot/data/deployment-posture.ts`) is an entry's
+  // call and `renderer/local.tsx` does not make it.
+  //
+  // +17 modules (2026-09-20): `platform/i18n/machines/<locale>.ts` — see the
+  // app-local ledger. The renderer shares the i18n manifest, so every locale
+  // file the manifest imports rides in here too. Measured 1139 modules / 58
+  // packages, with no headroom.
+  ceilings: { modules: 1139, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

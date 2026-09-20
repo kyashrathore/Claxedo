@@ -64,6 +64,11 @@
       "family": "workspace catalog",
       "writer": "features/workspaces/data/workspace-catalog.ts",
       "status": "live"
+    },
+    {
+      "family": "deployment declarations",
+      "writer": "platform/query/control-plane.ts",
+      "status": "live"
     }
   ],
   "grandfathered": [

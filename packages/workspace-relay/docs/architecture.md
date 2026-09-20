@@ -72,15 +72,15 @@ Flow for one browser request:
    `tokenVerifier`), binds the URL's `workspaceId` to the token's claims,
    and calls `isRuntimeAccessTokenActive` for revocation/freshness.
 3. `resolveTarget(claims)` returns a `WorkspaceRelayTarget` (`baseUrl`,
-   `access: "cloud" | "user-hosted"`, `backing: "cloud-vm" | "local-worktree"`).
+   `backing: "cloud-vm" | "local-worktree"`).
 4. The relay mints a fresh RHT (`mintRelayHostToken`) bound to that
-   deployment pair, strips the incoming `Authorization`/forwarding headers
+   placement, strips the incoming `Authorization`/forwarding headers
    (see README § Forwarding Boundary), and forwards to the target with the
    RHT as the new `Authorization` header.
 5. The workspace host service verifies the RHT (`verifyRelayHostToken`)
    against the relay's published public key before trusting the request.
 
-For **user-hosted** targets, step 4 does not `fetch()` a `baseUrl` directly —
+For **`local-worktree`** targets, step 4 does not `fetch()` a `baseUrl` directly —
 it forwards over an already-registered host tunnel (below). A workspace
 runtime registers that tunnel by presenting an HTT to
 `/host-tunnels/{hostId}?workspaceId=...` (one or more `workspaceId` query
@@ -92,7 +92,7 @@ RAT and HTT claims bind issuer, audience, subject, workspace id, host id,
 expiry, issue time, and JTI; RATs also bind `role` (`RelayRole`, one of
 `viewer | editor | admin | owner`) which
 `roleAllowsRelayRequest` enforces per method/path. RHTs additionally bind the
-deployment pair (`RelayAccess`/`RelayBacking`). All three are short-lived by
+placement (`RelayBacking`). All three are short-lived by
 design: a RAT or HTT authorizes only the request/connection that presents it,
 not the lifetime of any socket it opens — see "Established sockets outlive
 their token" below.
@@ -124,7 +124,7 @@ implements the same transitions inside one DO instance):
         │                        ▼
         │              REPLACING OLD SOCKET
         │              - old socket's pending HTTP responses fail with
-        │                503 user_hosted_app_offline
+        │                503 host_tunnel_offline
         │              - old socket's child WS channels close (1011)
         │              - old socket's heartbeat timer cleared
         │              - old socket closed (1012 "replaced by a newer
@@ -209,7 +209,7 @@ connections.
 ## Directory / presence contract
 
 `WorkspaceRelayDirectory` (`src/directory.ts`) is the presence map the relay
-consults before forwarding user-hosted traffic — "is `hostId` currently
+consults before forwarding tunnelled traffic — "is `hostId` currently
 tunneled in, and does it claim `workspaceId`?"
 
 ```ts
@@ -250,10 +250,10 @@ no way to reach a tunnel socket held by the first, even if it could see that
 
 - **Today**: one active Bun relay process (or a load balancer with strict
   per-`hostId` stickiness) owns every host tunnel it accepts. A process, VM,
-  or region failure drops in-flight user-hosted HTTP/WS/SSE/PTY sessions
+  or region failure drops in-flight tunnelled HTTP/WS/SSE/PTY sessions
   until the workspace runtime reconnects (to whichever instance is up).
 - **A durable directory (Redis, a dedicated coordination DO) is necessary
-  but not sufficient** for multi-instance user-hosted relay. It would need
+  but not sufficient** for a multi-instance host-tunnel relay. It would need
   to preserve the same semantics — one active owner per `hostId`, TTL
   extension on pong, immediate removal on disconnect, workspace-membership
   checks, split-brain prevention on a replacement tunnel — but the harder

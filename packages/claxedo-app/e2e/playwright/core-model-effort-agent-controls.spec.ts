@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
+import { bootstrapDeployment, installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-model-effort-agent-controls"
@@ -153,6 +153,7 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
       body: JSON.stringify({
         healthy: true,
         events: { hostAggregate: true },
+        deployment: bootstrapDeployment(),
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: mock.session.dir, directory: mock.session.dir, home: "/tmp" },
         project: [{ id: mock.session.projectId, worktree: mock.session.dir, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
@@ -180,6 +181,7 @@ async function installNoModelFixture(page: Page, mock: MockRuntimeHandles) {
       body: JSON.stringify({
         healthy: true,
         events: { hostAggregate: true },
+        deployment: bootstrapDeployment(),
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: mock.session.dir, directory: mock.session.dir, home: "/tmp" },
         project: [{ id: mock.session.projectId, worktree: mock.session.dir, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],

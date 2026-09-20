@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
+import { createMachineSealingKeyPair, hostMachineSealAad, openMachineSeal } from "@claxedo/host-connector/machine-seal"
 import { createMachineSignedTransport } from "@claxedo/host-connector/machine-transport"
 import { newHostState } from "@claxedo/host-connector/host-state"
 import { createFakeConnectControlPlane, OWNER_TOKEN, type FakeControlPlane } from "../connect/fake-control-plane.test-support"
@@ -18,6 +19,7 @@ function owner(cp: FakeControlPlane, token = OWNER_TOKEN) {
     controlPlaneUrl: cp.url,
     log: (line) => lines.push(line),
     now: () => Date.now(),
+    readFile: (file) => fs.readFile(file, "utf8"),
   }
   return { deps, lines }
 }
@@ -59,7 +61,26 @@ async function enrolledMachine(cp: FakeControlPlane, name: string, roots = ["/sr
       .map((assignment) => ({ workspaceId: assignment.workspace_id, revision: assignment.revision }))
     await transport.heartbeat({ generation, acks })
   }
-  return { hostId: state.host_id, enrollmentId, ackAll }
+  /** One beat declaring a fresh sealing key, as the running host does on every beat; the private half opens what the owner then pushes. */
+  const declareSealingKey = async () => {
+    const pair = await createMachineSealingKeyPair()
+    await transport.heartbeat({ generation, acks: [], sealingPublicKey: pair.publicKey })
+    return pair
+  }
+  return { hostId: state.host_id, enrollmentId, ackAll, declareSealingKey }
+}
+
+const SECRET = "sk-owner-secret-0123456789"
+const PROVIDERS = {
+  "claude-sdk": { baseUrl: "https://broker.example/b/1", placeholder: SECRET, authMode: "bearer" },
+  "codex-app-server": { baseUrl: "https://api.openai.com", placeholder: `${SECRET}-codex`, authMode: "bearer", apiPath: "/v1" },
+}
+
+async function providerFile(providers: unknown) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-push-"))
+  const file = path.join(dir, "providers.json")
+  await fs.writeFile(file, JSON.stringify(providers === undefined ? { providers: PROVIDERS } : providers))
+  return file
 }
 
 describe("claxedo host", () => {
@@ -163,7 +184,6 @@ describe("claxedo host", () => {
     const workspaceId = [...cp.assignments.keys()][0]
     expect(lines.at(-1)).toBe(`build-box will serve /srv/api as ${workspaceId} (API); it acks on its next beat`)
 
-    // The same folder on the same machine re-points the same workspace.
     await host(["assign", "--machine", machine.enrollmentId, "/srv/api"], deps)
     expect(cp.assignments.size).toBe(1)
     expect(cp.assignments.get(workspaceId)).toMatchObject({ revision: 2, display_name: "API" })
@@ -247,7 +267,6 @@ describe("claxedo host", () => {
     expect(cp.assignments.get(ws2)).toMatchObject({ host_id: box2.hostId, remote_directory: "/srv/api", revision: 1 })
     await box2.ackAll()
 
-    // box2 cannot retire what box1 serves, and only retires its own.
     await host(["unassign", "--machine", "box2", "/srv/api"], deps)
     expect([...cp.assignments.keys()]).toEqual([ws1])
     await expect(host(["unassign", "--machine", "box2", "/srv/api"], deps)).rejects.toThrow("box2 is not assigned /srv/api")
@@ -278,6 +297,74 @@ describe("claxedo host", () => {
     expect(revoked?.path).toBe(`/api/claxedo/remote-access/devices/${machine.hostId}`)
     expect(cp.enrollments.get(machine.enrollmentId)?.revoked_at).toBeDefined()
     await expect(host(["revoke", "--machine", "build-box"], deps)).rejects.toThrow("No machine named build-box")
+  })
+
+  test("push-config seals the file's providers for the machine's declared key; the output names providers and never the secret", async () => {
+    const machine = await enrolledMachine(cp, "build-box")
+    const sealing = await machine.declareSealingKey()
+    const { deps, lines } = owner(cp)
+    const file = await providerFile(undefined)
+
+    await host(["push-config", "--machine", "build-box", "--from-file", file], deps)
+
+    const sent = cp.log.find((entry) => entry.method === "POST" && entry.path.endsWith("/provider-config"))
+    expect(sent?.path).toBe(`/api/claxedo/host/enrollments/${machine.enrollmentId}/provider-config`)
+    expect(sent?.body).toEqual({ providers: PROVIDERS })
+    const stored = cp.providerConfig(machine.enrollmentId)
+    expect(stored?.revision).toBe(1)
+    expect(stored?.sealed).toMatch(/^mseal1\./)
+    expect(stored?.sealed).not.toContain(SECRET)
+    const opened = await openMachineSeal(sealing.privateKeyJwk, stored!.sealed!, hostMachineSealAad({ enrollmentId: machine.enrollmentId, revision: 1 }))
+    expect(JSON.parse(opened)).toEqual({ version: 1, providers: PROVIDERS })
+    expect(lines.at(-1)).toBe("build-box: sealed claude-sdk, codex-app-server (revision 1); the machine applies it on its next beat")
+    expect(lines.join("\n")).not.toContain(SECRET)
+    await fs.rm(path.dirname(file), { recursive: true, force: true })
+  })
+
+  test("push-config --clear withdraws: a new revision whose blob is null", async () => {
+    const machine = await enrolledMachine(cp, "build-box")
+    await machine.declareSealingKey()
+    const { deps, lines } = owner(cp)
+    const file = await providerFile(undefined)
+    await host(["push-config", "--machine", machine.enrollmentId, "--from-file", file], deps)
+
+    await host(["push-config", "--machine", "build-box", "--clear"], deps)
+
+    const sent = cp.log.filter((entry) => entry.method === "POST" && entry.path.endsWith("/provider-config")).at(-1)
+    expect(sent?.body).toEqual({ providers: {} })
+    expect(cp.providerConfig(machine.enrollmentId)).toEqual({ revision: 2, sealed: null })
+    expect(lines.at(-1)).toBe("build-box: provider configuration withdrawn (revision 2); the machine drops it within one beat")
+    await fs.rm(path.dirname(file), { recursive: true, force: true })
+  })
+
+  test("push-config to a machine that has declared no sealing key is refused with what to do, and nothing is stored", async () => {
+    const machine = await enrolledMachine(cp, "build-box")
+    const { deps } = owner(cp)
+    const file = await providerFile(undefined)
+
+    await expect(host(["push-config", "--machine", "build-box", "--from-file", file], deps)).rejects.toThrow(
+      "build-box has not beaten since it learned to receive configuration, so there is no sealing key to seal to yet",
+    )
+
+    expect(cp.providerConfig(machine.enrollmentId)).toBeUndefined()
+    await fs.rm(path.dirname(file), { recursive: true, force: true })
+  })
+
+  test("push-config takes the credential from a file only: --api-key is not an option, and the file must hold providers", async () => {
+    await enrolledMachine(cp, "build-box")
+    const { deps } = owner(cp)
+    await expect(host(["push-config", "--machine", "build-box", "--api-key", SECRET], deps)).rejects.toThrow("Unknown host option: --api-key")
+    await expect(host(["push-config", "--machine", "build-box"], deps)).rejects.toThrow("exactly one of --from-file FILE or --clear")
+    const file = await providerFile(undefined)
+    await expect(host(["push-config", "--machine", "build-box", "--from-file", file, "--clear"], deps)).rejects.toThrow("exactly one of")
+    await expect(host(["push-config", "--from-file", file], deps)).rejects.toThrow("--machine <name|enrollment_id> is required")
+    const empty = await providerFile({ providers: {} })
+    await expect(host(["push-config", "--machine", "build-box", "--from-file", empty], deps)).rejects.toThrow("at least one provider")
+    await fs.writeFile(empty, "{not json")
+    await expect(host(["push-config", "--machine", "build-box", "--from-file", empty], deps)).rejects.toThrow("is not a JSON file")
+    expect(cp.log.filter((entry) => entry.path.endsWith("/provider-config"))).toEqual([])
+    await fs.rm(path.dirname(file), { recursive: true, force: true })
+    await fs.rm(path.dirname(empty), { recursive: true, force: true })
   })
 
   test("an unauthenticated owner is refused by the control plane, and unknown subcommands by the CLI", async () => {

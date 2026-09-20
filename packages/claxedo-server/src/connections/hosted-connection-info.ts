@@ -10,7 +10,7 @@ import {
   relayRole,
   type WorkspaceRouteOptions,
 } from "../workspace/route-support"
-import { userHostedConnectionInfo } from "./user-hosted-connection"
+import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 import {
   previousRuntimeAccessTokenError,
   runtimeTokenOrgId,
@@ -31,29 +31,23 @@ export async function hostedConnectionInfo(
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
-  if (
-    result.workspace?.backing === "local-worktree"
-    && result.workspace.access === "user-hosted"
-  ) {
-    return userHostedConnectionInfo(services, options, auth, workspaceId, previousJti)
+  if (result.workspace?.backing === "local-worktree") {
+    return hostTunnelConnectionInfo(services, options, auth, workspaceId, previousJti)
   }
-  if (
-    result.workspace?.backing !== "cloud-vm"
-    || result.workspace.access !== "cloud"
-  ) {
+  if (result.workspace?.backing !== "cloud-vm") {
     return {
-      error: apiError("workspace_relay_unsupported", "Workspace connection is only available for user-hosted or cloud workspaces"),
+      error: apiError("workspace_relay_unsupported", "Workspace connection is only available for a workspace placed on a machine or in the cloud"),
       status: 400,
     } as const
   }
-  // Adversarial review: enforce the cloud-workspace entitlement at
-  // wake/resume, not only at create — otherwise a canceled subscription leaves
-  // existing cloud workspaces wake-able forever. Reached ONLY for HOSTED cloud
-  // workspaces (backing=cloud-vm / access=cloud, asserted above); the hook is
-  // composed exclusively in claxedo-hosted-product-app.ts and wired through
-  // hosted-core-app.ts's HostedWorkspaceRoutes mount, so self-host / local never gate.
-  // Denied → the typed billing_entitlement_required (402) the frontend acts on,
-  // BEFORE any sandbox wake side effect.
+  // The cloud-workspace entitlement is enforced at wake/resume as well as at
+  // create: a canceled subscription would otherwise leave existing cloud
+  // workspaces wake-able forever. Reached ONLY for HOSTED `cloud-vm`
+  // workspaces, asserted above; the hook is composed exclusively in
+  // claxedo-hosted-product-app.ts and wired through hosted-core-app.ts's
+  // HostedWorkspaceRoutes mount, so self-host / local never gate. Denied → the
+  // typed billing_entitlement_required (402) the frontend acts on, BEFORE any
+  // sandbox wake side effect.
   if (options.requireCloudWorkspaceEntitlement) {
     const denied = await options.requireCloudWorkspaceEntitlement(auth)
     if (denied) {
@@ -88,9 +82,7 @@ export async function hostedConnectionInfo(
     event: "workspace.connection.requested",
     workspaceId,
     properties: {
-      access: "cloud",
       backing: "cloud-vm",
-      runtimeKind: "cloud",
       homeRegion,
       relayRoom: workspaceId,
     },
@@ -141,7 +133,6 @@ export async function hostedConnectionInfo(
       connection: {
         status: "provisioning" as const,
         workspaceId,
-        runtimeKind: "cloud" as const,
         homeRegion,
         retryAfterMs: ensured.retryAfterMs,
         // Which boot path this cycle is on (restore | resume | cold-start),
@@ -159,7 +150,7 @@ export async function hostedConnectionInfo(
       event: "workspace.connection.unavailable",
       workspaceId,
       properties: {
-        runtimeKind: "cloud",
+        backing: "cloud-vm",
         homeRegion,
         relayRoom: workspaceId,
         retryAfterMs: ensured.retryAfterMs,
@@ -220,7 +211,7 @@ export async function hostedConnectionInfo(
       jti: token.jti,
       hostId: ensured.hostId,
       expiresAt: token.tokenExpiresAt,
-      runtimeKind: "cloud",
+      backing: "cloud-vm",
       homeRegion,
       leaseEpoch: ensured.epoch,
       ...(ensured.driverResourceId ? { driverResourceId: ensured.driverResourceId } : {}),
@@ -234,7 +225,6 @@ export async function hostedConnectionInfo(
     event: "runtime_access_token.minted",
     workspaceId,
     properties: {
-      access: "cloud",
       backing: "cloud-vm",
       hostId: ensured.hostId,
       role,
@@ -252,13 +242,11 @@ export async function hostedConnectionInfo(
   }
   return {
     connection: {
-      access: "cloud" as const,
       backing: "cloud-vm" as const,
-      runtimeKind: "cloud" as const,
       // The hosted sandbox runs the workspace runtime behind the relay with a
       // non-loopback exposure, so it composes the remote session authority and
       // serves session-scoped event streams only. See the sibling
-      // `user-hosted-connection.ts` for the other composition.
+      // `host-tunnel-connection.ts` for the other composition.
       sessionAuthority: "managed-private" as const,
       workspaceId,
       homeRegion,

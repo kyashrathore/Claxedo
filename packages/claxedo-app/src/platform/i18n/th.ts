@@ -286,7 +286,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ใช้ไฟล์แนบนี้ไม่ได้",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีเวิร์กสเปซในเครื่องสำหรับเก็บไฟล์",
+    "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีโฟลเดอร์พื้นที่ทำงานสำหรับเก็บไฟล์",
   "prompt.toast.attachmentUnreadable.title": "อ่านไฟล์แนบไม่ได้",
   "prompt.toast.attachmentUnreadable.description":
     "อ่าน {{filename}} จากอุปกรณ์นี้ไม่ได้",
@@ -437,7 +437,7 @@ export const dict = {
 
   "home.recentProjects": "โปรเจกต์ล่าสุด",
   "home.empty.title": "ไม่มีโปรเจกต์ล่าสุด",
-  "home.empty.description": "เริ่มต้นโดยเปิดโปรเจกต์ในเครื่อง",
+  "home.empty.description": "เริ่มต้นโดยเปิดโฟลเดอร์จากคอมพิวเตอร์เครื่องนี้",
 
   "home.title": "หน้าแรก",
   "session.timeline.scrollToBottom": "เลื่อนไปยังข้อความล่าสุด",
@@ -500,12 +500,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "โปรเจกต์และเซสชัน",
   "sidebar.settings": "การตั้งค่า",
   "sidebar.help": "ช่วยเหลือ",
-  "sidebar.workspace.role.viewer": "ผู้อ่าน",
-  "sidebar.workspace.role.editor": "ผู้แก้ไข",
-  "sidebar.workspace.role.admin": "ผู้ดูแล",
-  "sidebar.workspace.hostOffline": "โฮสต์ออฟไลน์",
-  "sidebar.workspace.sharedWithYou": "แชร์กับคุณ",
-  "sidebar.workspace.publishedByThisMachine": "เผยแพร่จากเครื่องนี้",
 
 
   "settings.section.desktop": "เดสก์ท็อป",
@@ -683,8 +677,6 @@ export const dict = {
   "session.delete.button": "ลบเซสชัน",
 
   "workspace.new": "พื้นที่ทำงานใหม่",
-  "workspace.type.local": "ในเครื่อง",
-  "workspace.type.sandbox": "แซนด์บ็อกซ์",
   "workspace.error.stillPreparing": "พื้นที่ทำงานกำลังเตรียมอยู่",
   "workspace.status.checking": "กำลังตรวจสอบการเปลี่ยนแปลงที่ไม่ได้ผสาน...",
   "workspace.status.error": "ไม่สามารถตรวจสอบสถานะ git",

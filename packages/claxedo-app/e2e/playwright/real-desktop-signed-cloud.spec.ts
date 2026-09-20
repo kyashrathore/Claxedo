@@ -13,7 +13,7 @@
  * ANATOMY — A packaged asar build talks through a real X-Forwarded-For proxy
  * to the real hosted-node app, SQLite authority, local JWKS issuer, OAuth
  * refresh endpoint, and host-enrollment routes. Playwright drives production
- * preload IPC and the real Settings > Devices surface.
+ * preload IPC and the real Settings > Machines surface.
  *
  * BEHAVIORS — 1. An expired encrypted credential refreshes on its first named
  * operation and the rotated record restores after restart. 2. Signed launch
@@ -154,7 +154,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
   test.beforeEach(async () => {
     test.skip(!TIER_REAL, "requires CLAXEDO_TIER_REAL_E2E=1")
     const fixture = await startSignedFixture({
-      access: "cloud",
+      backing: "cloud-vm",
       claudeScriptedEnv,
       startScriptedModelServer,
       logLabel: "desktop-signed-cloud",
@@ -220,7 +220,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
             api: { account: { run(name: string, input?: Record<string, unknown>): Promise<unknown> } }
           }
         ).api
-        return api.account.run("workspace.list.cloud")
+        return api.account.run("workspace.list.provisioner")
       })
     const workspaces = await listCloudWorkspaces()
     expect(workspaces).toMatchObject({ workspaces: expect.any(Array) })
@@ -266,7 +266,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
             api: { account: { run(name: string, input?: Record<string, unknown>): Promise<unknown> } }
           }
         ).api
-        return api.account.run("workspace.list.cloud")
+        return api.account.run("workspace.list.provisioner")
       }),
     ).toMatchObject({ workspaces: expect.any(Array) })
   })
@@ -313,7 +313,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
 
     await app.page.getByTestId("rail-account-trigger").click()
     await app.page.getByRole("menuitem", { name: /settings/i }).click()
-    await app.page.getByRole("tab", { name: "Devices" }).click()
+    await app.page.getByRole("tab", { name: "Machines" }).click()
     const enable = app.page.getByRole("button", { name: "Enable remote access" })
     await expect(enable).toBeVisible()
     const startResults = await app.page.evaluate(async () => {

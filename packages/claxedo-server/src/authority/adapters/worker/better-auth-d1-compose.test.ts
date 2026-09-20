@@ -8,21 +8,10 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
 const ROOT = path.resolve(import.meta.dirname, "../../../..")
-const CONTROL_MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0005_agent_extensions_and_audit.sql",
-  "0006_channel_identity_and_canonical_runtime.sql",
-  "0007_paired_recovery_epoch.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0012_cold_local_host_challenges.sql",
-  "0013_org_team_session_sharing.sql",
-  "0017_adapter_custom.sql",
-].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
+const CONTROL_MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))
 
@@ -181,8 +170,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
   test("full-hosted composes the sandbox manager over the injected driver and lease store, and admits cloud workspaces", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     const { createMemoryLeaseStore } = await import("@claxedo/sandbox-manager/stores/memory")
-    const driver = {
-      id: "cloudflare",
+    const sandboxDriver = (id: string) => ({
+      id,
       metadata: {
         driverRunsIn: ["worker"],
         hostStopBehavior: "suspends-host",
@@ -200,7 +189,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
         },
       },
       ensureHost: async () => { throw new Error("not exercised") },
-    } as unknown as NonNullable<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0]["sandbox"]>["driver"]
+    } as unknown as NonNullable<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0]["sandbox"]>["driver"])
+    const driver = sandboxDriver("cloudflare")
     const input = {
       authDatabase,
       controlPlaneDatabase,
@@ -220,6 +210,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
       sandbox,
     })
     expect(composed.plane.services.sandbox.sandboxManager).toBeDefined()
+    // The placement every cloud root this deployment allocates is stored under.
+    expect(composed.plane.services.sandbox.defaultDriver).toBe("cloudflare")
     expect(await composed.options.cloudWorkspaceAdmission({} as never)).toBeUndefined()
     await composed.authReady.catch(() => undefined)
 
@@ -237,8 +229,22 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env(), sandbox })).toThrow(
       /must not configure CLAXEDO_SANDBOX_DRIVER or inject a sandbox/,
     )
+    // The fetch bridge provisions through an operator-run service instead of a
+    // catalog driver. The release pipeline certifies it, so a composition that
+    // could not declare it would refuse every cloud root on that posture.
+    const bridged = composeBetterAuthD1UserDeployedControlPlane({
+      ...input,
+      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
+      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore() },
+    })
+    expect(bridged.plane.services.sandbox.sandboxManager).toBeDefined()
+    expect(bridged.plane.services.sandbox.defaultDriver).toBe("fetch")
+    expect(await bridged.options.cloudWorkspaceAdmission({} as never)).toBeUndefined()
+    await bridged.authReady.catch(() => undefined)
+
     const plain = composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env() })
     expect(plain.plane.services.sandbox.sandboxManager).toBeUndefined()
+    expect(plain.plane.services.sandbox.defaultDriver).toBeUndefined()
     expect((await plain.options.cloudWorkspaceAdmission({} as never))?.status).toBe(403)
     await plain.authReady.catch(() => undefined)
   })

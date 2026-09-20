@@ -1,6 +1,6 @@
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { resolveRecovery, rememberRecovery } from "../workbench/pane-terminal-recovery"
 import { createTransport } from "@/platform/runtime/transport"
 import {
@@ -140,17 +140,18 @@ export const parseTerminalSessionPreview = (value: unknown): TerminalSessionPrev
 }
 
 /**
- * Cloud-routing options for `loadTerminalSessionPreview`.
+ * Relay-routing options for `loadTerminalSessionPreview`.
  *
- * When the caller passes `directory` + `resolveWorkspaceRuntime`, the
- * function asks the shared runtime access layer to route cloud/user-hosted
- * workspaces through the relay. Local workspaces keep the direct-fetch path.
+ * When the caller passes `directory` + `resolveWorkspaceRuntime`, the function
+ * asks the shared runtime access layer to route a workspace the attached server
+ * does not serve itself through the relay. Everything it does serve keeps the
+ * direct-fetch path.
  */
 export type TerminalSessionPreviewOptions = {
   request?: typeof fetch
   directory?: string
   resolveWorkspaceRuntime?: (input: { directory: string }) => Promise<{
-    kind: "cloud" | "local" | "user-hosted"
+    kind: WorkspaceHostKind
     workspaceId?: string
   } | null>
 }
@@ -212,7 +213,7 @@ export const loadTerminalSessionPreview = (
         // `terminalScopedPlacement`'s own precedence between the two.
         const resolved = signedWorkspace ??
           await opts.resolveWorkspaceRuntime?.({ directory: opts.directory }).catch(() => null)
-        if (resolved && isRelayBackedWorkspaceKind(resolved.kind) && resolved.workspaceId) {
+        if (resolved && isRelayHostKind(resolved.kind) && resolved.workspaceId) {
           return fetchPreviewBody(
             terminalSessionPreviewPath(nextTarget.id),
             previewFetch(nextTarget.site, opts.directory, request, resolved, signedWorkspace),

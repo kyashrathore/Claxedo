@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  forkNeedsReservation,
   forkableMessages,
   resolveForkSessionId,
   type ForkConversationSnapshot,
@@ -8,6 +9,19 @@ import {
 // The fork dialog forks a specific session and lists its user turns. These
 // specs pin the two regressions that made it show an empty list on the
 // canonical route and the projection contract behind the rendered rows.
+
+describe("forkNeedsReservation", () => {
+  test("a workspace on a machine or the provisioner reserves before it forks", () => {
+    expect(forkNeedsReservation({ kind: "machine" })).toBe(true)
+    expect(forkNeedsReservation({ kind: "provisioner" })).toBe(true)
+  })
+
+  test("a directory the attached server serves itself forks without a reservation", () => {
+    expect(forkNeedsReservation({ kind: "self" })).toBe(false)
+    expect(forkNeedsReservation(undefined)).toBe(false)
+    expect(forkNeedsReservation({})).toBe(false)
+  })
+})
 
 describe("resolveForkSessionId", () => {
   test("legacy `id` param resolves the session when no `sessionId` is present", () => {

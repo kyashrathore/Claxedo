@@ -186,7 +186,7 @@ failure may appear only as the clause explaining why a guard exists.
    those specs stayed green through the 2026-08-05/06 period when defects 4-7 meant
    *nothing* was actually delivered to a real user (WebSocket `Origin: file://` rejected,
    a directory path posted as `workspaceId`, `CLAXEDO_PORT=80` from a portless synthetic
-   origin, local workspaces opening no event stream at all). "On units it's working" was
+   origin, a workspace on this machine opening no event stream at all). "On units it's working" was
    true and useless. A transport-dependent proof goes through `mock.emit()` (served by
    the real `**/api/wr/events` route) or a real Tier R/L lane; the direct-bus seam may
    still be used for setup/scaffolding that is not itself the thing under test. See

@@ -19,6 +19,7 @@ import { terminalPtyApiPath } from "@/features/terminal/core/terminal-connection
 import { terminalLaunchCommand } from "@/features/terminal/core/terminal-launch-command"
 import { createRefCountedResourceCache } from "@/platform/sync/live-resource-cache"
 import { asFiniteNumber, asString, isRecord } from "@claxedo/helpers/guards"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 export type { LocalPTY } from "@/features/terminal/providers/shared"
 
 const WORKSPACE_KEY = "__workspace__"
@@ -132,15 +133,9 @@ const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>()
 type TerminalSessionOptions = {
   claxedoServerUrl?: string
   claxedoEvents?: ReturnType<typeof useClaxedoEventsOptional>
-  /**
-   * Cloud-workspace routing hooks. When provided alongside
-   * `request`, PTY lifecycle calls (create/update/clone/delete) route
-   * through the Workspace Relay for cloud workspaces. Local workspaces
-   * keep the legacy direct fetch.
-   */
   request?: typeof fetch
   resolveWorkspaceRuntime?: (input: { directory: string }) => Promise<{
-    kind: "cloud" | "local" | "user-hosted"
+    kind: WorkspaceHostKind
     workspaceId?: string
   } | null>
 }
@@ -316,13 +311,13 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
   const scopedWorkspace = sdk.workspace(decodedDir)
   const workspaceRef = sessionWorkspaceRuntimeRef({ directory: decodedDir })
   const workspaceId = scopedWorkspace?.workspaceId ?? workspaceRef?.workspaceId
-  const workspaceKind = scopedWorkspace?.kind ?? workspaceRef?.kind
-  let resolvedWorkspace: Promise<{ workspaceId?: string | null; kind?: "local" | "cloud" | "user-hosted" | null } | null | undefined> | undefined
+  const hostKind = scopedWorkspace?.kind ?? workspaceRef?.kind
+  let resolvedWorkspace: Promise<{ workspaceId?: string | null; kind?: WorkspaceHostKind | null } | null | undefined> | undefined
   const workspaceRuntime = async () => {
     const workspace = workspaceId
-      ? { workspaceId, kind: workspaceKind ?? "user-hosted" }
+      ? { workspaceId, kind: hostKind ?? "machine" }
       : await (resolvedWorkspace ??= options?.resolveWorkspaceRuntime?.({ directory: decodedDir }).catch(() => null))
-    const resolvedWorkspaceId = workspace?.kind === "local" ? undefined : (workspace?.workspaceId ?? undefined)
+    const resolvedWorkspaceId = workspace?.kind === "self" ? undefined : (workspace?.workspaceId ?? undefined)
     return {
       workspaceId: resolvedWorkspaceId,
       transport: createTransport({

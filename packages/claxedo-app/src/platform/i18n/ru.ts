@@ -286,7 +286,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} не может использовать это вложение",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет локального рабочего пространства, где мог бы остаться файл.",
+    "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет папки рабочего пространства, где мог бы остаться файл.",
   "prompt.toast.attachmentUnreadable.title": "Не удалось прочитать вложение",
   "prompt.toast.attachmentUnreadable.description":
     "Не удалось прочитать {{filename}} с этого устройства.",
@@ -442,7 +442,7 @@ export const dict = {
 
   "home.recentProjects": "Недавние проекты",
   "home.empty.title": "Нет недавних проектов",
-  "home.empty.description": "Начните с открытия локального проекта",
+  "home.empty.description": "Начните с открытия папки с этого компьютера",
 
   "home.title": "Главная",
   "session.timeline.scrollToBottom": "Прокрутить к последнему сообщению",
@@ -504,12 +504,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Проекты и сессии",
   "sidebar.settings": "Настройки",
   "sidebar.help": "Помощь",
-  "sidebar.workspace.role.viewer": "Наблюдатель",
-  "sidebar.workspace.role.editor": "Редактор",
-  "sidebar.workspace.role.admin": "Администратор",
-  "sidebar.workspace.hostOffline": "Хост не в сети",
-  "sidebar.workspace.sharedWithYou": "Открыт вам доступ",
-  "sidebar.workspace.publishedByThisMachine": "Опубликовано с этого компьютера",
 
   "settings.section.desktop": "Приложение",
   "settings.section.workspace": "Рабочее пространство",
@@ -692,8 +686,6 @@ export const dict = {
   "session.delete.button": "Удалить сессию",
 
   "workspace.new": "Новое рабочее пространство",
-  "workspace.type.local": "локальное",
-  "workspace.type.sandbox": "песочница",
   "workspace.error.stillPreparing": "Рабочее пространство всё ещё подготавливается",
   "workspace.status.checking": "Проверка незафиксированных изменений...",
   "workspace.status.error": "Не удалось проверить статус git.",

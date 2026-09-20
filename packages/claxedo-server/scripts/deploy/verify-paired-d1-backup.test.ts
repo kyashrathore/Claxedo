@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises"
 
+import Database from "better-sqlite3"
 import { describe, expect, test } from "vitest"
 
 import { verifyPairedD1BackupExports } from "./verify-paired-d1-backup"
+import { controlPlaneMigrations } from "../../src/test-support/control-plane-migrations"
 
 const deploymentId = "deployment-backup-0001"
 const releaseId = "release-backup-0001"
@@ -14,6 +16,24 @@ async function migrations(directory: "auth" | "control-plane", names: readonly s
       names.map((name) => readFile(new URL(`../../migrations/${directory}/${name}`, import.meta.url), "utf8")),
     )
   ).join("\n")
+}
+
+/**
+ * A D1 export carries the schema a database ended up with. Concatenating the
+ * migration files instead replays every object a later migration dropped, so
+ * the restore meets a view whose backing table is absent and an INSTEAD OF
+ * trigger whose target is a table.
+ */
+async function exportedSchema(directory: "auth" | "control-plane", names: readonly string[]) {
+  const database = new Database(":memory:")
+  try {
+    database.pragma("foreign_keys = OFF")
+    database.exec(await migrations(directory, names))
+    const objects = database.prepare(`select sql from sqlite_schema where sql is not null`).all() as Array<{ sql: string }>
+    return objects.map((object) => `${object.sql};`).join("\n")
+  } finally {
+    database.close()
+  }
 }
 
 async function exports(phase = "provider_sync") {
@@ -35,25 +55,7 @@ async function exports(phase = "provider_sync") {
     insert into "deploymentReleaseActive" values (1, '${deploymentId}', 0, '2026-08-28T00:01:00.000Z');
     insert into "deploymentRecoveryEpoch" values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`
-  const control = `${await migrations("control-plane", [
-    "0001_service_installations.sql",
-    "0002_workspace_authority.sql",
-    "0003_private_sessions.sql",
-    "0004_host_access_and_sharing.sql",
-    "0005_agent_extensions_and_audit.sql",
-    "0006_channel_identity_and_canonical_runtime.sql",
-    "0007_paired_recovery_epoch.sql",
-    "0008_user_deployed_owner_bootstrap.sql",
-    "0009_optional_service_deployment.sql",
-    "0010_session_turn_leases.sql",
-    "0011_session_turn_producers.sql",
-    "0012_cold_local_host_challenges.sql",
-    "0013_org_team_session_sharing.sql",
-    "0014_host_workspace_assignments.sql",
-    "0015_drop_local_host_links.sql",
-    "0016_host_session_authority.sql",
-    "0018_drop_agent_extensions.sql",
-  ])}
+  const control = `${await exportedSchema("control-plane", controlPlaneMigrations())}
     insert into control_plane_recovery_epochs values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`
   return { auth: new TextEncoder().encode(auth), control: new TextEncoder().encode(control) }

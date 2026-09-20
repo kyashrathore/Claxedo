@@ -89,8 +89,8 @@ describe("http backend ports", () => {
       if (url.includes("/api/workspace/ws_1/connection")) {
         connections += 1
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_1",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_1",
@@ -128,8 +128,8 @@ describe("http backend ports", () => {
       }
       if (url.pathname === "/api/workspace/ws_backend_relay/connection") {
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_backend_relay",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_1",
@@ -176,19 +176,18 @@ describe("http backend ports", () => {
       const req = input instanceof Request ? input : new Request(input, init)
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
       const url = new URL(req.url)
-      if (url.pathname === "/api/workspace/ws_user_hosted/connection") {
+      if (url.pathname === "/api/workspace/ws_machine/connection") {
         return new Response(JSON.stringify({
-          access: "user-hosted",
           backing: "local-worktree",
-          workspaceId: "ws_user_hosted",
+          workspaceId: "ws_machine",
           relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_user_hosted",
+          runtimeAccessToken: "rat_machine",
           role: "editor",
           tokenExpiresAt: Date.now() + 120_000,
         }), { status: 200 })
       }
-      if (url.toString() === "https://relay.test/workspaces/ws_user_hosted/mcp") {
-        expect(req.headers.get("authorization")).toBe("Bearer rat_user_hosted")
+      if (url.toString() === "https://relay.test/workspaces/ws_machine/mcp") {
+        expect(req.headers.get("authorization")).toBe("Bearer rat_machine")
         return new Response(JSON.stringify({ local: { status: "connected" } }), { status: 200 })
       }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
@@ -203,13 +202,13 @@ describe("http backend ports", () => {
     })
 
     await withGlobalFetch(request, async () => {
-      expect(await backend.getMcpStatus({ directory: "workspace:ws_user_hosted" })).toMatchObject({
+      expect(await backend.getMcpStatus({ directory: "workspace:ws_machine" })).toMatchObject({
         local: { status: "connected" },
       })
     })
     expect(calls).toEqual([
-      "GET http://claxedo.test/api/workspace/ws_user_hosted/connection",
-      "GET https://relay.test/workspaces/ws_user_hosted/mcp Bearer rat_user_hosted",
+      "GET http://claxedo.test/api/workspace/ws_machine/connection",
+      "GET https://relay.test/workspaces/ws_machine/mcp Bearer rat_machine",
     ])
   })
 
@@ -294,8 +293,8 @@ describe("http backend ports", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_cloud/connection") {
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_cloud",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_cloud",
@@ -339,8 +338,8 @@ describe("http backend ports", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_explicit/connection") {
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_explicit",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_explicit",
@@ -373,7 +372,7 @@ describe("http backend ports", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_explicit",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
       limit: 8,
@@ -396,8 +395,8 @@ describe("http backend ports", () => {
       }
       if (url.includes("/api/workspace/ws_cloud/connection")) {
         return new Response(JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_cloud",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_cloud",

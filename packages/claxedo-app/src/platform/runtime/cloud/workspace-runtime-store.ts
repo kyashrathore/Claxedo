@@ -1,17 +1,17 @@
 import { queryClient } from "@/platform/query/query-client"
 import { createHttpWorkspaceRuntimeBackend } from "@/platform/runtime/http-backend"
 import { openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
-import { pendingCloudRuntime, resolveWorkspaceRuntime, runtimeScope } from "@/platform/runtime/workspace-runtime-record"
+import { pendingProvisionedRuntime, resolveWorkspaceRuntime, runtimeScope } from "@/platform/runtime/workspace-runtime-record"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { authFetch } from "@/platform/api/api"
 import { bypassFetchThrottle } from "@/lib/fetch-throttle"
 import type {
-  PrepareUserHostedRuntimeInput,
+  PrepareMachineRuntimeInput,
   PrepareWorkspaceRuntimeInput,
   PrepareWorkspaceRuntimeResult,
   PrepareWorkspaceSessionWorktreeInput,
-  UserHostedRuntimeResult,
+  MachineRuntimeResult,
   WorkspaceSessionWorktree,
   WorkspaceStartupPort,
 } from "@/platform/runtime/workspace-startup-port"
@@ -21,7 +21,7 @@ import { readField, readString } from "@/lib/record"
  * The hosted implementation of `WorkspaceStartupPort`.
  *
  * Everything here needs the account-bearing transport and the Relay: waking a
- * central sandbox, connecting to a user-hosted machine, admitting a worktree on
+ * central sandbox, connecting to another machine, admitting a worktree on
  * a remote host. Local code never imports this module — it names the operation
  * through `platform/runtime/workspace-startup.ts`, and `app/entry/main.tsx`
  * binds this implementation for the hosted build.
@@ -83,59 +83,59 @@ export function resetWorkspaceRuntimeEnsureCache() {
 
 function isHostOfflineBody(text: string) {
   if (!text) return false
-  if (text.includes("user_hosted_app_offline")) return true
+  if (text.includes("host_tunnel_offline")) return true
   try {
     const body: unknown = JSON.parse(text)
     const error = readField(body, "error")
     const code = typeof error === "string" ? error : readString(error, "code") ?? readString(body, "code")
-    return code === "user_hosted_app_offline"
+    return code === "host_tunnel_offline"
   } catch {
     return false
   }
 }
 
 /**
- * Drive the user-hosted connecting sequence. Resolves the workspace's relay
+ * Drive the machine-placed connecting sequence. Resolves the workspace's relay
  * connection (mint) and probes the runtime health endpoint through the relay,
  * surfacing each phase via `onLog`/`onStatus`. When the host is offline the
- * relay answers `503 user_hosted_app_offline` (or the connection mint fails) —
+ * relay answers `503 host_tunnel_offline` (or the connection mint fails) —
  * we report `offline: true` so the caller can render the dedicated offline
  * error state instead of a generic failure.
  */
 // The Durable Object relay holds host presence in memory, so right after a room
 // is (re)instantiated there is a short window — until the host's next ping
 // re-registers presence — where target resolution answers 409
-// (relay_resolver_workspace_target_unavailable) or 503 (user_hosted_app_offline)
+// (relay_resolver_workspace_target_unavailable) or 503 (host_tunnel_offline)
 // for a host that is in fact connected. We therefore retry the health probe for
 // a bounded window before declaring the host offline, so a transient
 // presence-registration gap does not strand a healthy workspace.
 //
-// The budget must comfortably exceed the host tunnel ping interval (15s in the
-// production tunnel) so a DO eviction — which drops in-memory presence until the
-// host's next ping — does not surface a false "host offline". 20 × 1.5s = 30s.
-const USER_HOSTED_HEALTH_MAX_ATTEMPTS = 15
-const USER_HOSTED_HEALTH_RETRY_MS = 1_500
+// 15 attempts 1.5s apart covers 22.5s, which has to stay above the host
+// tunnel's 15s ping interval: a DO eviction drops in-memory presence until the
+// next ping, and a budget under that interval reports a false "host offline".
+const MACHINE_HEALTH_MAX_ATTEMPTS = 15
+const MACHINE_HEALTH_RETRY_MS = 1_500
 // A single relay health probe must not hang the whole gate. If the relay
 // connection (mint → relay fetch) stalls, abort the attempt and retry, so a
 // stuck probe surfaces as a retryable transient rather than freezing forever.
-// Fast-failing probes (relay says 409/503 during the presence gap) retry every
-// ~1.5s, giving ~22s of coverage over the host's 15s ping interval.
-const USER_HOSTED_HEALTH_TIMEOUT_MS = 6_000
+// The 22.5s budget above assumes probes that fail fast; a stalling one spends
+// this timeout on each attempt instead of the retry delay.
+const MACHINE_HEALTH_TIMEOUT_MS = 6_000
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-export async function prepareUserHostedRuntime(
-  input: PrepareUserHostedRuntimeInput,
-): Promise<UserHostedRuntimeResult> {
+export async function prepareMachineRuntime(
+  input: PrepareMachineRuntimeInput,
+): Promise<MachineRuntimeResult> {
   const emit = (step: string, message?: string) => {
     input.onStatus?.(step)
     input.onLog?.({ step, message, ts: Date.now() })
   }
-  const maxAttempts = input.maxHealthAttempts ?? USER_HOSTED_HEALTH_MAX_ATTEMPTS
-  const retryDelayMs = input.retryDelayMs ?? USER_HOSTED_HEALTH_RETRY_MS
-  const healthTimeoutMs = input.healthTimeoutMs ?? USER_HOSTED_HEALTH_TIMEOUT_MS
+  const maxAttempts = input.maxHealthAttempts ?? MACHINE_HEALTH_MAX_ATTEMPTS
+  const retryDelayMs = input.retryDelayMs ?? MACHINE_HEALTH_RETRY_MS
+  const healthTimeoutMs = input.healthTimeoutMs ?? MACHINE_HEALTH_TIMEOUT_MS
   const wait = input.delay ?? sleep
   emit("connecting_workspace", "Connecting to your workspace...")
   const request = input.request ?? authFetch
@@ -222,7 +222,7 @@ function hostedCloudRuntimeWithoutRecord(workspaceId: string | undefined): Works
   // the composer overlay on Acquiring sandbox while session create hung.
   return {
     workspaceId,
-    kind: "cloud",
+    kind: "provisioner",
     status: "acquiring_sandbox",
   }
 }
@@ -239,7 +239,7 @@ export async function prepareWorkspaceRuntime(
   const workspace = resolved ?? hostedCloudRuntimeWithoutRecord(scope.workspaceId)
   if (input.cancelled?.()) return { ok: false, cancelled: true, workspace }
   input.onResolved?.(workspace)
-  if (!pendingCloudRuntime(workspace)) {
+  if (!pendingProvisionedRuntime(workspace)) {
     return { ok: true, startup: false, workspace }
   }
 
@@ -345,6 +345,6 @@ export async function prepareWorkspaceSessionWorktree(
  */
 export const cloudWorkspaceStartup: WorkspaceStartupPort = {
   prepareWorkspaceRuntime,
-  prepareUserHostedRuntime,
+  prepareMachineRuntime,
   prepareWorkspaceSessionWorktree,
 }

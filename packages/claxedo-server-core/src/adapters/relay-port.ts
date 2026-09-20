@@ -69,7 +69,6 @@ export type RelayTarget = {
   workspaceId: string
   hostId: string
   baseUrl: string
-  access: "cloud" | "user-hosted"
   backing: "cloud-vm" | "local-worktree"
 }
 
@@ -84,7 +83,6 @@ export type RelayTargetResult =
   | {
       found: true
       baseUrl: string
-      access: "cloud" | "user-hosted"
       backing: "cloud-vm" | "local-worktree"
       upstreamHeaders?: Record<string, string>
     }
@@ -94,17 +92,17 @@ export type RelayTargetResult =
     }
 
 /**
- * Which enrolled host currently serves a user-hosted workspace, read on the
+ * Which enrolled host currently serves a workspace, read on the
  * service side with no end-user principal: the relay resolver asks it for a
  * `(workspaceId, hostId)` pair. The concrete resolver is a storage adapter
  * (D1 in `@claxedo/server`, SQLite in this package); the route module only
  * depends on the shape.
  */
-export type UserHostedTargetResult =
+export type HostTunnelTargetResult =
   | { active: true; hostId: string; backing: "local-worktree" | "cloud-vm" }
   | { active: false }
 
-export type UserHostedTargetResolver = (workspaceId: string) => Promise<UserHostedTargetResult>
+export type HostTunnelTargetResolver = (workspaceId: string) => Promise<HostTunnelTargetResult>
 
 export type RelayTargetLookup = (args: {
   workspaceId: string

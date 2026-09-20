@@ -2,6 +2,11 @@ import { WorkspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
 import { describe, expect, test } from "vitest"
 import type { ClaxedoFetch } from "./contract"
 import { ClaxedoMcpClientError, createClaxedoMcpClient } from "./index"
+import {
+  controlPlaneWorkspaceRow,
+  workspaceListHostRows,
+  type ControlPlaneWorkspaceRow,
+} from "./control-plane-workspaces.fixture"
 
 type Call = { method: string; path: string; headers: Headers; body?: string }
 
@@ -41,9 +46,7 @@ function hostedFixture(input: { now: () => number; ttlMs?: number; relayUrl?: st
     const jti = `jti-${minted}`
     live.add(jti)
     return Response.json({
-      access: "cloud",
       backing: "cloud-vm",
-      runtimeKind: "cloud",
       sessionAuthority: "managed-private",
       workspaceId,
       homeRegion: "iad",
@@ -67,15 +70,14 @@ function hostedFixture(input: { now: () => number; ttlMs?: number; relayUrl?: st
       }
       return mint(decodeURIComponent(connection[1]))
     }
-    if (call.path.startsWith("/api/workspace?access=")) {
-      const access = call.path.slice("/api/workspace?access=".length)
+    if (call.path.startsWith("/api/workspace?host=")) {
       const rows = [
-        { workspace_id: "ws-cloud", access: "cloud", backing: "cloud-vm", display_name: "Cloud box", role: "owner" },
-        { workspace_id: "ws-mac", access: "user-hosted", backing: "local-worktree", display_name: "Mac", remote_directory: "/Users/me/app", host_online: true, role: "owner" },
-        { workspace_id: "ws-laptop", access: "user-hosted", backing: "local-worktree", remote_directory: "/home/me/app", host_online: false, role: "editor" },
-        { access: "cloud" },
+        controlPlaneWorkspaceRow({ workspace_id: "ws-cloud", backing: "cloud-vm", display_name: "Cloud box" }),
+        controlPlaneWorkspaceRow({ workspace_id: "ws-mac", backing: "local-worktree", display_name: "Mac", remote_directory: "/Users/me/app" }),
+        controlPlaneWorkspaceRow({ workspace_id: "ws-laptop", backing: "local-worktree", remote_directory: "/home/me/app", host_online: false, role: "editor" }),
+        { backing: "cloud-vm" } as ControlPlaneWorkspaceRow,
       ]
-      return Response.json({ workspaces: access === "user-hosted" ? rows.filter((row) => row.access === "user-hosted") : rows })
+      return Response.json({ workspaces: workspaceListHostRows(rows, new URL(call.path, "http://control.local").searchParams.get("host")) })
     }
     return Response.json({ error: { code: "not_found", message: `no route ${call.path}` } }, { status: 404 })
   })
@@ -289,15 +291,15 @@ describe("server()", () => {
 })
 
 describe("workspaces()", () => {
-  test("lists both access kinds from the control plane once each, keyed by id", async () => {
+  test("names the machine each row runs on, asking each host once and keying by id", async () => {
     const fixture = hostedFixture({ now: () => 0 })
     const client = createClaxedoMcpClient({ deployment: "hosted", controlPlane: { fetch: fixture.controlPlane.fetch } })
     await expect(client.workspaces()).resolves.toEqual([
-      { id: "ws-cloud", kind: "cloud", name: "Cloud box" },
-      { id: "ws-mac", kind: "user-hosted", name: "Mac", directory: "/Users/me/app", machineOnline: true },
-      { id: "ws-laptop", kind: "user-hosted", directory: "/home/me/app", machineOnline: false },
+      { id: "ws-cloud", host: "provisioner", name: "Cloud box" },
+      { id: "ws-mac", host: "machine", name: "Mac", directory: "/Users/me/app", machineOnline: true },
+      { id: "ws-laptop", host: "machine", directory: "/home/me/app", machineOnline: false },
     ])
-    expect(fixture.controlPlane.calls.map((call) => call.path)).toEqual(["/api/workspace?access=cloud", "/api/workspace?access=user-hosted"])
+    expect(fixture.controlPlane.calls.map((call) => call.path)).toEqual(["/api/workspace?host=provisioner", "/api/workspace?host=machine"])
   })
 
   test("needs an account credential and surfaces the control plane's refusal", async () => {
@@ -307,6 +309,6 @@ describe("workspaces()", () => {
       deployment: "hosted",
       controlPlane: { fetch: async () => Response.json({ error: { code: "rate_limited", message: "Slow down" } }, { status: 429 }) },
     })
-    await expect(refused.workspaces()).rejects.toMatchObject({ name: "WorkspaceRuntimeClientError", operation: "workspace.list.cloud", status: 429, code: "rate_limited" })
+    await expect(refused.workspaces()).rejects.toMatchObject({ name: "WorkspaceRuntimeClientError", operation: "workspace.list.provisioner", status: 429, code: "rate_limited" })
   })
 })

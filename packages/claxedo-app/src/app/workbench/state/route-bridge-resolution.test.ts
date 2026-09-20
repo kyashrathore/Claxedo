@@ -100,7 +100,7 @@ describe("routeSessionWorkspaceBacking", () => {
       projects,
       directory: "/tmp/signed-workspace",
       workspaceId: "ws_signed",
-    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+    })).toEqual({ workspaceId: "ws_signed", kind: "machine" })
   })
 
   test("does not authorize a legacy filesystem route from inventory alone", () => {
@@ -135,7 +135,7 @@ describe("routeLifecycleSessionRef", () => {
       toolSandbox: {
         kind: "workspace",
         workspaceId: "ws_signed",
-        hosting: "cloud",
+        hosting: "provisioner",
       },
     })
   })
@@ -152,7 +152,7 @@ describe("routeLifecycleSessionRef", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_signed",
-          hosting: "user-hosted",
+          hosting: "machine",
         },
       },
     })).toEqual({
@@ -162,7 +162,7 @@ describe("routeLifecycleSessionRef", () => {
       toolSandbox: {
         kind: "workspace",
         workspaceId: "ws_signed",
-        hosting: "user-hosted",
+        hosting: "machine",
       },
     })
   })

@@ -33,7 +33,7 @@ Use these packages when you want to:
   optional Claxedo product module
 - host a team app on your own system, backed by local worktrees, containers, or
   cloud VMs
-- let authorized teammates reach a user-hosted local workspace through Relay
+- let authorized teammates reach a workspace on one of your machines through Relay
 - add MCP tools that orchestrate the runtime/server API stack
 
 The practical shape is:

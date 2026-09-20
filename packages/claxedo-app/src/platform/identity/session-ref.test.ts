@@ -55,29 +55,29 @@ describe("SessionRef", () => {
     const ref: SessionRef = {
       sessionId: "voice-agent/session with punctuation",
       host: "workspace",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "provisioner" },
     }
 
     expect(sessionKey(ref)).toBe("voice-agent/session with punctuation")
     expect(workspaceKey(ref)).toBe("ws_real")
     expect(hasBacking(ref)).toBe(true)
-    expect(resolveWorkspaceRef(ref)).toEqual({ kind: "cloud", workspaceId: "ws_real" })
+    expect(resolveWorkspaceRef(ref)).toEqual({ kind: "provisioner", workspaceId: "ws_real" })
   })
 
   test("workspace refs use explicit workspace backing instead of directory shape", () => {
     const ref = sessionRefForWorkspaceSession({
       sessionId: "ses_workspace",
       directory: "opaque-directory",
-      workspace: { workspaceId: "ws_real", kind: "cloud", hostId: "host_1" },
+      workspace: { workspaceId: "ws_real", kind: "provisioner", hostId: "host_1" },
     })
 
     expect(ref).toEqual({
       sessionId: "ses_workspace",
       host: "workspace",
       workspaceId: "ws_real",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud", hostId: "host_1" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "provisioner", hostId: "host_1" },
     })
-    expect(ref && resolveWorkspaceRef(ref)).toEqual({ kind: "cloud", workspaceId: "ws_real", hostId: "host_1" })
+    expect(ref && resolveWorkspaceRef(ref)).toEqual({ kind: "provisioner", workspaceId: "ws_real", hostId: "host_1" })
   })
 
   test("local refs represent filesystem directories as local backing", () => {
@@ -92,7 +92,7 @@ describe("SessionRef", () => {
       cwd: "/repo/main",
       toolSandbox: { kind: "local", cwd: "/repo/main" },
     })
-    expect(ref && resolveWorkspaceRef(ref)).toEqual({ kind: "local", cwd: "/repo/main" })
+    expect(ref && resolveWorkspaceRef(ref)).toEqual({ kind: "self", cwd: "/repo/main" })
   })
 
   test("workspace refs avoid inventing backing for unknown directory-like scopes", () => {
@@ -134,7 +134,7 @@ describe("SessionRef", () => {
       sessionRefForWorkspaceSession({
         sessionId: "ses_workspace",
         directory: "opaque-directory",
-        workspace: { workspaceId: "ws_real", kind: "cloud" },
+        workspace: { workspaceId: "ws_real", kind: "provisioner" },
         harness: { kind: "connection", connectionId: "acp:codex" },
       }),
     ).toMatchObject({
@@ -159,14 +159,14 @@ describe("SessionRef", () => {
           sessionId: "ses_current",
           host: "workspace",
           workspaceId: "ws_real",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud", hostId: "host_1" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "provisioner", hostId: "host_1" },
         },
       }),
     ).toEqual({
       sessionId: "ses_next",
       host: "workspace",
       workspaceId: "ws_real",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud", hostId: "host_1" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "provisioner", hostId: "host_1" },
     })
   })
 
@@ -178,7 +178,7 @@ describe("SessionRef", () => {
           sessionId: "ses_current",
           host: "workspace",
           workspaceId: "ws_real",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "provisioner" },
           harness: { kind: "connection", connectionId: "acp:cursor", binary: "/tmp/cursor-agent" },
         },
       }),

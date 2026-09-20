@@ -1,28 +1,25 @@
 import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
-import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import {
+  exercisePrivateSessionAdoptionConformance,
+  exercisePrivateSessionAuthorityConformance,
+  exerciseRuntimeForkReservationConformance,
+  exerciseSessionShareLevelConformance,
+  exerciseSessionShareRuntimeTokenConformance,
+  exerciseSessionWriteClassConformance,
+} from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0010_session_turn_leases.sql",
-  "0011_session_turn_producers.sql",
-  "0013_org_team_session_sharing.sql",
-  "0024_session_last_human_turn.sql",
-  "0028_workspace_org_member_visible.sql",
-].map(
-  (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
-)
+const MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 
 const active: Miniflare[] = []
 
@@ -62,10 +59,16 @@ async function setup() {
     now,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
+  const runtimeTokens = new D1ChannelRuntimeAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: () => `chn_${String(++sequence).padStart(4, "0")}`,
+  })
   return {
     database,
     workspace,
     sessions,
+    runtimeTokens,
     now,
     advancePast: (expiresAt: number) => {
       currentTime = Math.max(currentTime, expiresAt)
@@ -119,6 +122,7 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
   const bob = await signed(input.workspace, "bob")
   const admin = await signed(input.workspace, "admin")
   const outsider = await signed(input.workspace, "outsider")
+  const reader = await signed(input.workspace, "reader")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
   await input.workspace.addOrganizationMember(alice, {
     orgId: "org_acme",
@@ -130,13 +134,17 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
     userId: admin.principal!.userId,
     role: "admin",
   })
+  await input.workspace.addOrganizationMember(alice, {
+    orgId: "org_acme",
+    userId: reader.principal!.userId,
+    role: "member",
+  })
   const workspace = await input.workspace.createWorkspace(alice, {
     workspaceId: "ws_main",
     orgId: "org_acme",
     displayName: "main",
     repoUrl: "https://github.com/acme/main.git",
     backing: "cloud-vm",
-    access: "cloud",
   })
   await input.database
     .prepare(
@@ -147,7 +155,16 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
     )
     .bind(workspace.project_id, bob.principal!.userId)
     .run()
-  return { alice, bob, admin, outsider, workspace }
+  await input.database
+    .prepare(
+      `
+    insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
+    values (?, ?, 'viewer', 1, 1, null)
+  `,
+    )
+    .bind(workspace.project_id, reader.principal!.userId)
+    .run()
+  return { alice, bob, admin, outsider, reader, workspace }
 }
 
 async function reserveAndRegister(
@@ -210,6 +227,188 @@ describe("D1 private multiplayer session authority", () => {
       lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
+    })
+  })
+
+  test("satisfies the provider-neutral runtime fork-reservation conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+
+    await expect(
+      exerciseRuntimeForkReservationConformance({
+        authority: input.sessions,
+        workspaceId: "ws_main",
+        creator: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        participant: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+        },
+      }),
+    ).resolves.toEqual({
+      forkReservedUnderAReadableParent: true,
+      registeredChildIsPrivateToItsCreator: true,
+      refusedUnderAnUnreadableParent: true,
+      refusedForAMismatchedIntent: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-share-level conformance surface", async () => {
+    const input = await setup()
+    const { alice, admin, outsider } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await input.workspace.addOrganizationMember(alice, {
+      orgId: "org_acme",
+      userId: teammate.principal!.userId,
+      role: "member",
+    })
+    // `org_member_visible = 0` withholds the implicit member rank, which is
+    // what leaves the teammate with no workspace standing at all and the
+    // share as the only thing that can admit them.
+    await input.database
+      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
+      .bind("ws_main")
+      .run()
+    await reserveAndRegister(input.sessions, alice, {
+      operationId: "op_shared",
+      sessionId: "ses_shared",
+    })
+    await expect(input.workspace.openWorkspace(teammate, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
+
+    await expect(
+      exerciseSessionShareLevelConformance({
+        authority: input.sessions,
+        shares: input.sessions,
+        workspaceId: "ws_main",
+        sessionId: "ses_shared",
+        creator: { auth: alice },
+        grantee: {
+          auth: teammate,
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
+        organizationAdministrator: {
+          auth: admin,
+          runtime: { principalKind: "user", actorId: admin.principal!.actorId, actorKind: "human" },
+        },
+        outsider: { target: { grantedToUserId: outsider.principal!.userId } },
+      }),
+    ).resolves.toEqual({
+      defaultsToFollow: true,
+      followReadsButDoesNotWrite: true,
+      sendWritesWithoutWorkspaceRank: true,
+      downgradeEndsWriting: true,
+      revokeEndsReading: true,
+      organizationAdministratorRefusedWithoutAGrant: true,
+      offerRefusedOutsideTheOrganization: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-share runtime-token conformance surface", async () => {
+    const input = await setup()
+    const { alice, admin } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await input.workspace.addOrganizationMember(alice, {
+      orgId: "org_acme",
+      userId: teammate.principal!.userId,
+      role: "member",
+    })
+    // `org_member_visible = 0` withholds the implicit member rank, so the
+    // teammate's only standing on this workspace is the share under test. An
+    // org ADMIN keeps their rank either way, which is what lets the departing
+    // member create a session and what revoking the membership takes back.
+    await input.database
+      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
+      .bind("ws_main")
+      .run()
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_shared", sessionId: "ses_shared" })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_departing", sessionId: "ses_departing" })
+
+    await expect(
+      exerciseSessionShareRuntimeTokenConformance({
+        sessions: input.sessions,
+        workspace: {
+          openWorkspace: (auth, args) => input.workspace.openWorkspace(auth, args),
+          recordRuntimeAccessToken: (auth, args) => input.runtimeTokens.recordRuntimeAccessToken(auth, args),
+          runtimeAccessTokenActive: (args) => input.runtimeTokens.runtimeAccessTokenActive(args),
+          grantSessionShare: (auth, args) => input.sessions.grantSessionShare(auth, args),
+        },
+        workspaceId: "ws_main",
+        hostId: "host_alices_desktop",
+        sessionId: "ses_shared",
+        creator: { auth: alice },
+        grantee: {
+          auth: teammate,
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
+        offboarded: {
+          auth: admin,
+          runtime: { principalKind: "user", actorId: admin.principal!.actorId, actorKind: "human" },
+          sessionId: "ses_departing",
+          leaveOrganization: async () => {
+            await input.database
+              .prepare(`update org_memberships set revoked_at = 99 where org_id = 'org_acme' and user_id = ?`)
+              .bind(admin.principal!.userId)
+              .run()
+          },
+        },
+        expiresAt: 1_800_000_600_000,
+      }),
+    ).resolves.toEqual({
+      tokenRefusedBeforeTheShare: true,
+      sendGranteeMintsAViewerTokenAndWrites: true,
+      shareNeverWidensTheTokenRole: true,
+      followGranteeKeepsTheTokenAndLosesTheTurn: true,
+      offboardedCreatorLosesReadWriteAndToken: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-adoption conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob, workspace } = await sharedWorkspace(input)
+
+    await expect(
+      exercisePrivateSessionAdoptionConformance({
+        authority: input.sessions,
+        workspaceId: "ws_main",
+        hostId: "host_alices_desktop",
+        assignHost: async () => {
+          await input.database
+            .prepare(
+              `
+            insert into host_workspace_assignments (
+              workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at
+            ) values (?, ?, ?, ?, ?, 1, 1)
+          `,
+            )
+            .bind(
+              "ws_main",
+              "host_alices_desktop",
+              workspace.org_id,
+              alice.principal!.userId,
+              alice.principal!.actorId,
+            )
+            .run()
+        },
+        owner: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        member: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+        },
+      }),
+    ).resolves.toEqual({
+      refusedBeforeAssignment: true,
+      adoptedForEnrollmentOwner: true,
+      idempotent: true,
+      refusedForMember: true,
+      refusedWhenHeldByAnotherCreator: true,
     })
   })
 
@@ -325,7 +524,6 @@ describe("D1 private multiplayer session authority", () => {
       displayName: "other",
       repoUrl: "https://github.com/acme/other.git",
       backing: "cloud-vm",
-      access: "cloud",
     })
     await expect(
       input.sessions.reserveSession(alice, {
@@ -457,15 +655,19 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toThrow(/session scope is immutable/)
   })
 
-  test("conjoins workspace authority with creator, participant, or current org administration", async () => {
+  test("admits a session only to its creator, a participant or a share grantee", async () => {
     const input = await setup()
     const { alice, bob, admin, outsider } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_private", sessionId: "ses_private" })
 
     expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
-    expect(await input.sessions.listSessions(admin, { workspaceId: "ws_main" })).toEqual([
-      expect.objectContaining({ session_id: "ses_private" }),
-    ])
+    expect(await input.sessions.listSessions(admin, { workspaceId: "ws_main" })).toEqual([])
+    await expect(
+      input.sessions.authorizeSessionRead(admin, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      input.sessions.authorizeSessionWrite(admin, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
     expect(await input.sessions.listSessions(outsider, { workspaceId: "ws_main" })).toEqual([])
     expect(
       await input.sessions.readSessionMessages(outsider, {
@@ -504,6 +706,9 @@ describe("D1 private multiplayer session authority", () => {
     ).toEqual({ removed: false })
 
     await reserveAndRegister(input.sessions, bob, { operationId: "op_bob", sessionId: "ses_bob" })
+    await expect(
+      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_bob", workspaceId: "ws_main" }),
+    ).resolves.toBeUndefined()
     await input.database
       .prepare(
         `
@@ -513,21 +718,42 @@ describe("D1 private multiplayer session authority", () => {
       )
       .bind(bob.principal!.userId)
       .run()
+    // Offboarding ends every grant in the organization, creator standing
+    // included: the row Bob created stays in the workspace and Bob reaches
+    // none of it.
+    await expect(input.workspace.openWorkspace(bob, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ status: 403 })
     await expect(
       input.sessions.authorizeSessionRead(bob, { sessionId: "ses_bob", workspaceId: "ws_main" }),
     ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      input.sessions.authorizeSessionWrite(bob, { sessionId: "ses_bob", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
     expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
+    expect(
+      await input.database
+        .prepare(`select deleted_at from sessions where session_id = 'ses_bob'`)
+        .first<{ deleted_at: number | null }>(),
+    ).toEqual({ deleted_at: null })
 
+    // An active account is asked of the actor, not only of the signed caller,
+    // so a suspension reaches the runtime's own question too.
     await input.database
-      .prepare(
-        `
-      update org_memberships set revoked_at = 100
-      where org_id = 'org_acme' and user_id = ?
-    `,
-      )
-      .bind(admin.principal!.userId)
+      .prepare(`update users set state = 'suspended', suspended_at = 101 where user_id = ?`)
+      .bind(alice.principal!.userId)
       .run()
-    expect(await input.sessions.listSessions(admin, { workspaceId: "ws_main" })).toEqual([])
+    await expect(input.sessions.listSessions(alice, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ code: "account_suspended" })
+    await expect(
+      input.sessions.authorizeRuntimeSession({
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        sessionId: "ses_private",
+        workspaceId: "ws_main",
+        action: "read",
+      }),
+    ).rejects.toMatchObject({ status: 403 })
   })
 
   test("syncs only registered writable sessions and projects verified message attribution", async () => {
@@ -852,3 +1078,77 @@ function sessionListQuery(search: string) {
     ),
   )
 }
+
+describe("D1 session authority, shares of a session this plane never registered", () => {
+  test("answers the organization it belongs to and refuses everyone else", async () => {
+    const input = await setup()
+    const { alice, outsider } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await input.workspace.addOrganizationMember(alice, {
+      orgId: "org_acme",
+      userId: teammate.principal!.userId,
+      role: "member",
+    })
+    // Withholding the implicit member rank leaves the teammate standing in
+    // the organization and nowhere else, which is what the two twins have to
+    // answer the same way.
+    await input.database
+      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
+      .bind("ws_main")
+      .run()
+
+    await expect(input.sessions.listSessionShares(teammate, {
+      sessionId: "ses_created_on_the_machine",
+      workspaceId: "ws_main",
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    await expect(input.sessions.listSessionShares(outsider, {
+      sessionId: "ses_created_on_the_machine",
+      workspaceId: "ws_main",
+    })).rejects.toMatchObject({ code: "workspace_authorization_denied" })
+  })
+})
+
+describe("D1 session authority, write classes", () => {
+  test("satisfies the provider-neutral session-write-class conformance surface", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await input.workspace.addOrganizationMember(alice, {
+      orgId: "org_acme",
+      userId: teammate.principal!.userId,
+      role: "member",
+    })
+    // `org_member_visible = 0` withholds the implicit member rank, so the
+    // share is the teammate's only standing and the class alone decides each
+    // write.
+    await input.database
+      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
+      .bind("ws_main")
+      .run()
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_classes", sessionId: "ses_classes" })
+    await expect(input.workspace.openWorkspace(teammate, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
+
+    await expect(
+      exerciseSessionWriteClassConformance({
+        authority: input.sessions,
+        shares: input.sessions,
+        workspaceId: "ws_main",
+        sessionId: "ses_classes",
+        creator: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        grantee: {
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
+      }),
+    ).resolves.toEqual({
+      sendGranteeDrivesTheTurn: true,
+      sendGranteeRefusedSessionControl: true,
+      creatorHoldsBothClasses: true,
+      absentClassAsksAboutTheTurn: true,
+    })
+  })
+})

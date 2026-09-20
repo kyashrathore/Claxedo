@@ -278,10 +278,10 @@ describe("the renderer build keeps one local base document", () => {
    * `loadEnv` gives prefixed `process.env` values precedence over `.env` files,
    * which is what lets this drive both products from one process.
    */
-  async function configFor(authEnabled: string | undefined) {
-    const previous = process.env.VITE_AUTH_ENABLED
-    if (authEnabled === undefined) delete process.env.VITE_AUTH_ENABLED
-    else process.env.VITE_AUTH_ENABLED = authEnabled
+  async function configFor(hostedActivation: string | undefined) {
+    const previous = process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+    if (hostedActivation === undefined) delete process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+    else process.env.VITE_CLAXEDO_HOSTED_ACTIVATION = hostedActivation
     try {
       const { createElectronRenderer } = await import("../../vite.renderer")
       const config = createElectronRenderer("production")
@@ -291,8 +291,8 @@ describe("the renderer build keeps one local base document", () => {
         hostedActivation: config.define?.__CLAXEDO_HOSTED_ACTIVATION_ENABLED__,
       }
     } finally {
-      if (previous === undefined) delete process.env.VITE_AUTH_ENABLED
-      else process.env.VITE_AUTH_ENABLED = previous
+      if (previous === undefined) delete process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+      else process.env.VITE_CLAXEDO_HOSTED_ACTIVATION = previous
     }
   }
 

@@ -7,7 +7,7 @@ import { asRecord } from "@/lib/record"
 // This module is hosted, so it imports the implementation directly rather
 // than through `workspaceStartup()`. Local surfaces must not copy this import.
 import {
-  prepareUserHostedRuntime,
+  prepareMachineRuntime,
   prepareWorkspaceRuntime,
 } from "@/platform/runtime/cloud/workspace-runtime-store"
 import {
@@ -26,6 +26,7 @@ import {
   type ConnectionPlacementEvent,
   type ConnectionPlacementState,
 } from "@/platform/runtime/connection-placement"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 // One connection authority keyed by `workspaceId`. Every consumer — every
 // session pane, the Review panel, the model/agent/messages/diff queries, the
@@ -33,15 +34,16 @@ import {
 // of independently rediscovering "is the workspace connected?".
 //
 // This module is the SINGLE WRITER. The drive loop reuses the existing mint /
-// health-probe / provision code verbatim (`prepareUserHostedRuntime` /
+// health-probe / provision code verbatim (`prepareMachineRuntime` /
 // `prepareWorkspaceRuntime`, which themselves flow through
 // `openWorkspaceConnection`'s cooldown circuit-breaker) — it centralizes *who
 // calls it*, not *what it does*.
 
-export type WorkspaceConnectionKind = "cloud" | "user-hosted" | "local"
+export type WorkspaceConnectionKind = WorkspaceHostKind
 
 export type WorkspaceOfflineReason =
-  // user-hosted: host machine offline (503 user_hosted_app_offline)
+  // The machine serving the workspace is offline (relay 503
+  // `host_tunnel_offline`, which is the relay's own wire word).
   | "no-host"
   // mint 403 / 401 — not your workspace (terminal)
   | "forbidden"
@@ -177,7 +179,7 @@ export function connectionPlacement(workspaceId: string | undefined): Connection
   return connections[workspaceId]?.rolePlacement
 }
 
-export function workspacePlacement(workspaceId: string | undefined): Placement | undefined {
+export function workspaceRelayPlacement(workspaceId: string | undefined): Placement | undefined {
   if (!workspaceId) return undefined
   const state = connections[workspaceId]
   if (!state?.relayPlacement) return undefined
@@ -203,7 +205,7 @@ function roleFromPlacementState(state: ConnectionPlacementState): RelayRole | un
   return undefined
 }
 
-// Map a failed user-hosted/cloud drive outcome to an offline reason.
+// Map a failed drive outcome, on either placement, to an offline reason.
 function classifyOffline(input: { offline?: boolean; message?: string }): WorkspaceOfflineReason {
   if (isForbiddenConnectionError(input.message)) return "forbidden"
   if (input.offline) return "no-host"
@@ -315,7 +317,7 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
   // `local` workspaces have no relay backing — there is nothing to connect to,
   // so they are synthesized ready immediately. This subsumes the scattered
   // `!workspaceId → true` branches across the old gates.
-  if (input.kind === "local") {
+  if (input.kind === "self") {
     setReady(workspaceId)
     return
   }
@@ -330,13 +332,13 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
         state.status = "connecting"
         state.terminal = false
         state.err = undefined
-        state.phase = input.kind === "user-hosted" ? "connecting_workspace" : "acquiring_sandbox"
+        state.phase = input.kind === "machine" ? "connecting_workspace" : "acquiring_sandbox"
       }),
     )
   }
 
-  if (input.kind === "user-hosted") {
-    void prepareUserHostedRuntime({
+  if (input.kind === "machine") {
+    void prepareMachineRuntime({
       workspaceId,
       ...(input.directory ? { directory: input.directory } : {}),
       ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
@@ -398,7 +400,7 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
     cancelled,
     onResolved: (workspace) => {
       if (cancelled()) return
-      if (!workspace || workspace.kind !== "cloud" || workspace.status === "ready") {
+      if (!workspace || workspace.kind !== "provisioner" || workspace.status === "ready") {
         setReady(workspaceId)
       }
     },
@@ -477,31 +479,31 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
   }
 
   const runtime: ConnectionRuntime = { input, generation: 0 }
-  const warmUserHosted = input.kind === "user-hosted" && wasRecentlyReady(workspaceId)
+  const warmMachine = input.kind === "machine" && wasRecentlyReady(workspaceId)
   runtimes.set(workspaceId, runtime)
   setConnections(workspaceId, {
     workspaceId,
     kind: input.kind,
     // From frame zero: connecting (or ready for local). No blank fall-through.
-    status: input.kind === "local" || warmUserHosted ? "ready" : "connecting",
-    phase: input.kind === "local" || warmUserHosted
+    status: input.kind === "self" || warmMachine ? "ready" : "connecting",
+    phase: input.kind === "self" || warmMachine
       ? "ready"
-      : input.kind === "user-hosted"
+      : input.kind === "machine"
         ? "connecting_workspace"
         : "acquiring_sandbox",
     logs: [],
     terminal: false,
     refs: 1,
-    rolePlacement: input.kind === "local"
+    rolePlacement: input.kind === "self"
       ? { state: "role-known", workspaceId, role: "owner" }
       : { state: "role-pending", workspaceId },
-    // A local workspace never mints a connection: its runtime is this process's
-    // own embedded one over loopback.
-    ...(input.kind === "local"
+    // A `self` placement never mints a connection: its runtime is this
+    // process's own embedded one, reached over loopback.
+    ...(input.kind === "self"
       ? { relayPlacement: { workspaceId, hosting: "workspace", transport: "loopback", role: "owner" } satisfies Placement }
       : {}),
   })
-  driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmUserHosted })
+  driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmMachine })
   return connectionHandle(workspaceId, runtime)
 }
 
@@ -526,22 +528,19 @@ function mergeInput(
 /**
  * Merge two `kind` readings for the SAME `workspaceId` — never a downgrade.
  *
- * `local` never survives a second, more-specific reading: it is what a caller
- * reports before it has resolved anything relay-backed, so any non-local
- * `next` wins over it.
+ * `self` never survives a second, more-specific reading: it is what a caller
+ * reports before it has resolved anything relay-backed, so any other `next`
+ * wins over it.
  *
- * Once a workspace has been read as `cloud`, a later `user-hosted` reading is
- * NOT more specific — it is `sessionWorkspaceRuntimeRef`'s deliberate "never
- * guess cloud" default (see `platform/runtime/session-workspace.ts`) landing
- * on a caller whose own inventory read has not resolved yet. `cloud` is the
- * confirmed value in that pair, so it is the one direction this merge treats
- * asymmetrically: `cloud` sticks, `user-hosted` does not get to overwrite it.
- * Every other pairing (equal kinds, or `user-hosted` refined to a
- * subsequently-confirmed `cloud`) takes `next`.
+ * Once a workspace has been read as the provisioner's, a later `machine`
+ * reading is NOT more specific — it is `sessionWorkspaceRuntimeRef`'s
+ * deliberate "never guess the provisioner" default (see
+ * `platform/runtime/session-workspace.ts`) landing on a caller whose own
+ * inventory read has not resolved yet. `provisioner` is the confirmed value in
+ * that pair, so it is the one direction this merge treats asymmetrically.
  */
 function refinedKind(prev: WorkspaceConnectionKind, next: WorkspaceConnectionKind): WorkspaceConnectionKind {
-  if (prev === "cloud" && next === "user-hosted") return prev
-  if (prev === "local" && next !== "local") return next
+  if (prev === "provisioner" && next === "machine") return prev
   return next
 }
 

@@ -6,7 +6,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { dockerSandboxDriverEnabled, isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import { dockerSandboxDriverEnabled, isSandboxProvisionerID, type SandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { isJsonRecord, jsonRecord, jsonString, jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -58,7 +58,7 @@ export type Workspace = {
   workspace_name?: string
   directory: string
   kind: "local" | "cloud"
-  driver?: SandboxDriverID
+  driver?: SandboxProvisionerID
   repo_url?: string
   repo_key?: string
   repo_root?: string
@@ -242,10 +242,10 @@ function textFields<Key extends string>(value: unknown, keys: readonly Key[]): P
   return out
 }
 
-/** A stored sandbox driver id, when the file names one this build knows. */
-function driverId(value: unknown): SandboxDriverID | undefined {
+/** A stored provisioner id, when the file names one this build knows. */
+function driverId(value: unknown): SandboxProvisionerID | undefined {
   const id = jsonString(value)
-  return id && isSandboxDriverID(id) ? id : undefined
+  return id && isSandboxProvisionerID(id) ? id : undefined
 }
 
 /** A stored timestamp, or now when the record predates the field or carries a bad one. */
@@ -426,7 +426,7 @@ type EnsureWorkspaceInput = {
   workspace_name?: string
   directory: string
   kind?: "local" | "cloud"
-  driver?: SandboxDriverID
+  driver?: SandboxProvisionerID
   repo_url?: string
   git_branch?: string
   remote_directory?: string
@@ -505,6 +505,7 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     const project_name = trimToUndefined(input.project_name) || ws.project_name
     const workspace_name = trimToUndefined(input.workspace_name) || ws.workspace_name
     const driver = input.driver ?? ws.driver
+    if (kind === "cloud" && !driver) return undefined
     const repo_url = trimToUndefined(input.repo_url) || ws.repo_url
     const repo_key = info.repo_key ?? ws.repo_key
     const repo_root = info.repo_root ?? ws.repo_root
@@ -558,6 +559,9 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
 
   // New local workspaces require a git repo
   if (kind !== "cloud" && !info.repo_key) return undefined
+  // A cloud row's placement IS its driver: the provisioner owns the machine it
+  // provisions. Stored without one the row names no machine at all.
+  if (kind === "cloud" && !input.driver) return undefined
 
   const id = requestedId || randomUUID()
   const ws = upsert({
@@ -613,7 +617,9 @@ export async function bindWorkspace(id: string, dir: string) {
 
 export async function updateWorkspace(
   id: string,
-  patch: Partial<Pick<Workspace, "project_name" | "workspace_name" | "driver" | "repo_url" | "remote_directory" | "status">>,
+  patch: Partial<
+    Pick<Workspace, "project_name" | "workspace_name" | "driver" | "repo_url" | "remote_directory" | "status">
+  >,
 ) {
   await boot()
   const ws = byId.get(id)
@@ -797,7 +803,6 @@ export async function listProjects() {
   return list.sort((a, b) => b.time.updated - a.time.updated)
 }
 
-// ── Projects ────────────────────────────────────────────────────────────────
 
 export async function listProjectRecords(): Promise<Project[]> {
   await boot()

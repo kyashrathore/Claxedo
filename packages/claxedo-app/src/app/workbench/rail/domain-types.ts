@@ -12,9 +12,9 @@
  * directly from this module.
  */
 
-import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { type InventoryKindWord, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
-export type RuntimeKind = WorkspaceKind
+export type RuntimeKind = WorkspaceHostKind
 
 export type SessionItem = {
   id: string
@@ -65,10 +65,10 @@ export type WorkspaceInfo = {
   workspaceId?: string
   workspace_name?: string
   directory?: string
-  kind?: RuntimeKind
+  kind?: InventoryKindWord
   /** What this principal may do here, as the control plane reports it. */
   role?: string
-  /** Whether a live host is serving this user-hosted workspace right now. */
+  /** Whether a live host is serving this workspace right now. */
   hostOnline?: boolean
   available?: boolean
   provider?: string

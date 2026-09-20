@@ -40,7 +40,7 @@ import { MainContentReady } from "./shell-revealed"
 import { isNarrowViewport } from "./workbench/workbench/index"
 import { useRailWorkbenchController } from "./workbench/rail/rail-workbench-controller"
 import { terminalBlockedByRole } from "../features/terminal/core/terminal-role-gate"
-import { workspacePlacement } from "../features/workspaces/data/workspace-connection"
+import { workspaceRelayPlacement } from "../features/workspaces/data/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { useRailSidebarSelection } from "./workbench/rail/rail-sidebar-selection"
 import { useRailProjectSessionInfo } from "./workbench/rail/rail-project-session-info"
@@ -294,7 +294,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     onTabClose: props.onTabClose,
     onTabSelect: props.onTabSelect,
     onWorkspacePanelVisibilityChange: shellLayout.setWorkspacePanelOpen,
-    roleBlocksTerminal: () => terminalBlockedByRole(workspacePlacement(
+    roleBlocksTerminal: () => terminalBlockedByRole(workspaceRelayPlacement(
       props.activeDirectory ? sessionWorkspaceRuntimeRef({ directory: props.activeDirectory })?.workspaceId : undefined,
     )),
     sidebarDir: sidebarSelection.sidebarDir,

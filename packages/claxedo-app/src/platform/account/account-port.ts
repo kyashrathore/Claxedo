@@ -97,11 +97,10 @@ export type HostedOperationName =
   | "connections.connect"
   | "connections.attempt"
   | "connections.disconnect"
-  // One per access kind, because the hosted list route answers rows only for
-  // `cloud` or `user-hosted` and the access-less call is always empty. See the
-  // rows in `claxedo-desktop/src/main/account/hosted-operations.ts`.
-  | "workspace.list.cloud"
-  | "workspace.list.userHosted"
+  // One per host the list route names, because it answers rows only under a
+  // named host and the host-less call is always empty.
+  | "workspace.list.provisioner"
+  | "workspace.list.machine"
   | "workspace.resolve"
   | "workspace.create"
   | "workspace.lifecycle"
@@ -112,7 +111,7 @@ export type HostedOperationName =
   | "workspace.connection.refresh"
   | "host.enrollCurrentMachine"
   | "host.enrollmentNonce"
-  | "host.enrollmentHeartbeat"
+  | "host.renameCurrentMachine"
   | "workspace.assignHost"
   | "workspace.unassignHost"
   | "session.list"

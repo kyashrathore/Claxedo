@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test"
 
+import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
+import { HOST_ENROLLMENT_HEARTBEAT_PATH, type FetchLike } from "@claxedo/host-connector/machine-transport"
+
 import { runHostConnectorChild } from "../../../scripts/host-connector-entry"
 import type {
   HostConnectorBootstrapIdentity,
   HostConnectorParentMessage,
+  HostConnectorProviderConfig,
+  HostConnectorProviderConfigReady,
+  HostConnectorServing,
   HostConnectorSharedWorkspace,
 } from "./child-protocol"
 import {
@@ -12,14 +18,27 @@ import {
   type HostConnectorChildProcess,
 } from "./child-supervisor"
 
-async function until(condition: () => boolean, description: string) {
-  for (let attempt = 0; attempt < 1_000; attempt++) {
+/**
+ * Poll against the clock, not a turn count: every wait here spans real signing
+ * and real requests to the fake control plane, so how many microtask turns one
+ * takes depends on how busy the machine running the suite is.
+ */
+async function until(condition: () => boolean, description: string, budgetMs = 5_000) {
+  const deadline = Date.now() + budgetMs
+  while (Date.now() < deadline) {
     if (condition()) return
     await Bun.sleep(0)
   }
   throw new Error(`timed out waiting for ${description}`)
 }
 
+const CONTROL_PLANE_URL = "https://control-plane.test"
+
+/**
+ * The real child, in the process the supervisor thinks it spawned, with the
+ * fake control plane behind its own `fetch`: everything after the two account
+ * operations is a machine-signed request that fake verifies.
+ */
 class FakeChild implements HostConnectorChildProcess {
   #messages: Array<(message: unknown) => void> = []
   #exit: ((code: number) => void) | undefined
@@ -28,16 +47,19 @@ class FakeChild implements HostConnectorChildProcess {
   killed = false
   parentMessages: HostConnectorParentMessage[] = []
 
-  constructor(autoStart = true) {
-    if (!autoStart) return
+  constructor(options: { autoStart?: boolean; fetch?: FetchLike } = {}) {
+    if (options.autoStart === false) return
     queueMicrotask(() => {
       if (this.killed) return
-      this.#runtime = runHostConnectorChild({
-        onMessage: (listener) => {
-          this.#receive = listener as (message: HostConnectorParentMessage) => void
+      this.#runtime = runHostConnectorChild(
+        {
+          onMessage: (listener) => {
+            this.#receive = listener as (message: HostConnectorParentMessage) => void
+          },
+          postMessage: (message) => this.emit(message),
         },
-        postMessage: (message) => this.emit(message),
-      })
+        { fetch: options.fetch ?? (async () => new Response("no control plane in this test", { status: 503 })) },
+      )
     })
   }
 
@@ -83,17 +105,41 @@ function harness(options?: {
   spawnFailsFrom?: number
   /** What the daemon answers when asked how its runtimes were composed. */
   sessionAuthority?: () => Promise<"local" | "managed-private" | undefined>
+  /** Hold every machine beat open this long, as a slow deployment would. */
+  beatDelayMs?: number
+  startupTimeoutMs?: number
+  heartbeatIntervalMs?: number
+  /** What main's store answers for a delivered revision; stored unless the test says otherwise. */
+  storeProviderConfig?: () => boolean
 }) {
+  const cp = createFakeControlPlane()
+  const beatDelayMs = options?.beatDelayMs
+  const childFetch: FetchLike =
+    beatDelayMs === undefined
+      ? cp.fetch
+      : async (input, init) => {
+        const answered = await cp.fetch(input, init)
+        // After the fake has verified the request: its nonce and skew checks
+        // read the clock on arrival, so a delay in front of them would be
+        // testing replay protection instead of the supervisor's bound.
+        if (input.pathname === HOST_ENROLLMENT_HEARTBEAT_PATH) await Bun.sleep(beatDelayMs)
+        return answered
+      }
   const children: FakeChild[] = []
   const operations: Array<{ name: string; input?: Record<string, unknown> }> = []
   const errors: Array<{ stage: string; error: unknown }> = []
   const statuses: unknown[] = []
+  const servings: HostConnectorServing[] = []
+  const providerConfigs: HostConnectorProviderConfig[] = []
+  const providerReady: HostConnectorProviderConfigReady[] = []
   let identity: HostConnectorBootstrapIdentity | undefined
+  let providerConfig: HostConnectorProviderConfig | undefined
   let clears = 0
   let loads = 0
   let stores = 0
   let spawns = 0
   let shareLoads = 0
+  let storedName: string | undefined
   const shareStores: Array<readonly HostConnectorSharedWorkspace[]> = []
   const connector = setupHostConnectorChild({
     ...(options?.describeWorkspace ? { describeWorkspace: options.describeWorkspace } : {}),
@@ -109,48 +155,90 @@ function harness(options?: {
       if (options?.spawnFailsFrom !== undefined && spawns >= options.spawnFailsFrom) {
         throw new Error("the connector executable is missing")
       }
-      const child = new FakeChild()
+      const child = new FakeChild({ fetch: childFetch })
       children.push(child)
       return child
     },
+    controlPlaneUrl: CONTROL_PLANE_URL,
+    ...(options?.startupTimeoutMs === undefined ? {} : { startupTimeoutMs: options.startupTimeoutMs }),
+    ...(options?.heartbeatIntervalMs === undefined ? {} : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
     loadIdentity: async () => {
       loads++
-      return { ok: true as const, ...(identity ? { identity } : {}) }
+      return { ok: true as const, ...(identity ? { identity } : {}), ...(providerConfig ? { providerConfig } : {}) }
     },
     storeIdentity: async (created) => {
       stores++
       identity = structuredClone(created)
+      providerConfig = undefined
+      return { ok: true as const }
+    },
+    storeSealingKey: async (sealingPrivateKeyJwk) => {
+      if (!identity) return { ok: false as const, detail: "no identity" }
+      identity = { ...identity, sealingPrivateKeyJwk }
+      return { ok: true as const }
+    },
+    storeProviderConfig: async (config) => {
+      providerConfigs.push(config)
+      if (!(options?.storeProviderConfig?.() ?? true)) return { ok: false as const, detail: "safeStorage refused the write" }
+      providerConfig = config
       return { ok: true as const }
     },
     clearIdentity: () => {
       clears++
       identity = undefined
+      providerConfig = undefined
     },
     runAccountOperation: async (name, input) => {
       operations.push({ name, ...(input ? { input } : {}) })
       const hostId = String(input?.hostId)
       if (name === "host.enrollmentNonce") return { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
       if (name === "host.enrollCurrentMachine") {
-        return { enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 10_000 } }
+        return { enrollment: await cp.enrollAccountHost({ hostId, publicKey: String(input?.publicKey) }) }
       }
-      if (name === "host.enrollmentHeartbeat") return { expires_at: 11_000 }
-      if (name === "workspace.assignHost") return { assigned: true, workspace_id: String(input?.id), host_id: hostId }
+      if (name === "workspace.assignHost") {
+        // A share with no description reaches the control plane without a
+        // directory, exactly as the route records it, and a row like that
+        // describes nothing the machine can be handed back.
+        cp.assign({
+          hostId,
+          workspaceId: String(input?.id),
+          ...(typeof input?.remoteDirectory === "string" ? { remoteDirectory: input.remoteDirectory } : {}),
+          ...(typeof input?.displayName === "string" ? { displayName: input.displayName } : {}),
+        })
+        return { assigned: true, workspace_id: String(input?.id), host_id: hostId }
+      }
+      if (name === "host.renameCurrentMachine") {
+        return { enrollment_id: String(input?.enrollmentId), display_name: String(input?.displayName) }
+      }
+      if (name === "workspace.unassignHost") {
+        cp.unassign(String(input?.id))
+        return { unassigned: true }
+      }
       throw new Error(`unexpected account operation ${name}`)
     },
     onError: (stage, error) => errors.push({ stage, error }),
     onStatusChange: (status) => statuses.push(status),
-    displayName: "Work laptop",
+    onServing: (serving) => servings.push(serving),
+    onProviderConfig: (config) => providerReady.push(config),
+    displayName: () => storedName ?? "Work laptop",
+    storeDisplayName: (name: string) => { storedName = name },
     ...(options?.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
   })
   return {
+    cp,
     connector,
     children,
     operations,
     errors,
     statuses,
+    servings,
+    providerConfigs,
+    providerReady,
     identity: () => identity,
+    providerConfig: () => providerConfig,
     counts: () => ({ loads, stores, clears }),
     shareCounts: () => ({ loads: shareLoads, stores: shareStores.length }),
+    storedName: () => storedName,
     shareStores,
     bootstrapOf: (index: number) =>
       children[index]?.parentMessages.find((message) => message.type === "bootstrap"),
@@ -190,6 +278,95 @@ describe("declared session composition", () => {
   })
 })
 
+const RELAY_JWKS_URL = "https://relay.test/.well-known/jwks.json"
+const SESSION_AUTHORITY_URL = "https://control-plane.test/api/runtime-authority/session-authorize"
+
+describe("what an ack tells the daemon", () => {
+  test("the addresses reach the serving push beside the credential", async () => {
+    // Both, in one hand-off: the daemon verifies a relayed caller's Relay Host
+    // Token against the key set and asks the authority whether that caller may
+    // read the session, so a credential delivered without them opens a tunnel
+    // that answers 503 to every relayed read.
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+
+    await until(() => host.servings.length > 0, "the first serving push")
+    expect(host.servings.at(-1)).toEqual({
+      tunnel: null,
+      endpoints: { relayJwksUrl: RELAY_JWKS_URL, sessionAuthorityUrl: SESSION_AUTHORITY_URL },
+    })
+
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+    await until(() => host.servings.some((serving) => serving.tunnel !== null), "the credential push")
+
+    const serving = host.servings.at(-1)
+    expect(serving?.tunnel).toMatchObject({ workspaceIds: ["ws_1"] })
+    // The control plane names them once and the daemon needs them on every
+    // push, so the credential-bearing ack restates the addresses the first one
+    // delivered rather than arriving without them.
+    expect(serving?.endpoints).toEqual({
+      relayJwksUrl: RELAY_JWKS_URL,
+      sessionAuthorityUrl: SESSION_AUTHORITY_URL,
+    })
+  })
+
+  // The daemon declares the machine to its own clients out of this credential,
+  // and a client compares that declaration against the host a control-plane
+  // workspace row names. Read off the enrollment the child actually beat
+  // under, so the two cannot agree by being written twice.
+  test("the credential names the enrollment this machine beat under", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    const started = await host.connector.start()
+    const enrollmentId = started.status === "enrolled" ? started.enrollment.enrollment_id : undefined
+    expect(enrollmentId).toBeTruthy()
+
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+    await until(() => host.servings.some((serving) => serving.tunnel !== null), "the credential push")
+
+    expect(host.servings.at(-1)?.tunnel).toMatchObject({ enrollmentId })
+  })
+
+  test("every stop withdraws the credential instead of leaving it to the lease", async () => {
+    for (const stop of ["pause", "revoke", "quit"] as const) {
+      const host = harness({
+        describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+      })
+      await host.connector.start()
+      await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+      await until(() => host.servings.some((serving) => serving.tunnel !== null), `the credential push (${stop})`)
+
+      if (stop === "pause") host.connector.stop()
+      if (stop === "revoke") host.connector.revoke()
+      if (stop === "quit") host.connector.dispose()
+
+      expect(host.servings.at(-1)).toEqual({ tunnel: null })
+    }
+  })
+
+  test("a lapse suspension withdraws the credential, and the resumed machine restores it", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+    await until(() => host.servings.some((serving) => serving.tunnel !== null), "the credential push")
+
+    expect(host.connector.suspendForAuthLapse()).toBe(true)
+    expect(host.servings.at(-1)).toEqual({ tunnel: null })
+
+    await host.connector.resumeAfterAuthLapse()
+    await until(
+      () => host.servings.at(-1)?.tunnel !== null && host.servings.at(-1)?.tunnel !== undefined,
+      "the credential push after the resume",
+    )
+    expect(host.servings.at(-1)?.tunnel).toMatchObject({ workspaceIds: ["ws_1"] })
+  })
+})
+
 describe("Electron-main child lifecycle", () => {
   test("construction performs no identity read and spawns no optional child", () => {
     const host = harness()
@@ -204,7 +381,10 @@ describe("Electron-main child lifecycle", () => {
 
     const status = await host.connector.start()
 
-    expect(status).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_1" } })
+    expect(status).toMatchObject({
+      status: "enrolled",
+      enrollment: { enrollment_id: [...host.cp.enrollments.keys()][0] },
+    })
     expect(host.children).toHaveLength(1)
     expect(host.counts()).toEqual({ loads: 1, stores: 1, clears: 0 })
     expect(host.identity()?.privateKeyJwk).toHaveProperty("d")
@@ -223,9 +403,7 @@ describe("Electron-main child lifecycle", () => {
           : undefined,
     })
     await host.connector.start()
-    // Owner intent is declared first; whether the machine's consent beat then
-    // settles is the child's business and not what this test reads.
-    await host.connector.shareWorkspace({ workspaceId: "ws_1" }).catch(() => undefined)
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
     expect(host.operations.find((operation) => operation.name === "workspace.assignHost")?.input).toEqual({
       id: "ws_1",
       hostId: expect.any(String),
@@ -234,6 +412,71 @@ describe("Electron-main child lifecycle", () => {
       repoName: "Claxedo",
       gitBranch: "dev",
     })
+  })
+
+  test("the share is complete only when the machine has acked the owner's description", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+
+    const settled = await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+
+    expect(settled).toMatchObject({ status: "enrolled", sharedWorkspaceIds: ["ws_1"] })
+    await until(() => host.cp.routable(enrollmentId).length === 1, "the workspace becoming routable")
+    expect(host.cp.beats().at(-1)?.body.acks).toEqual([{ workspaceId: "ws_1", revision: 1 }])
+  })
+
+  test("a slow beat finishes the share instead of timing it out on the startup budget", async () => {
+    // The share's bound must cover the beat that carries its ack, not the
+    // much tighter budget for spawning a child. 600ms of beat under a 300ms
+    // startup budget is that relationship, compressed: the real numbers are a
+    // 15s machine request under a 10s startup budget.
+    const host = harness({
+      startupTimeoutMs: 300,
+      beatDelayMs: 600,
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+
+    const settled = await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+
+    expect(settled).toMatchObject({ status: "enrolled", sharedWorkspaceIds: ["ws_1"] })
+    await until(() => host.cp.routable(enrollmentId).length === 1, "the workspace becoming routable")
+  })
+
+  test("a share this machine could not describe is refused rather than reported as published", async () => {
+    // An assignment with no directory describes nothing, so there is nothing
+    // for the machine to consent to and the share has to say so rather than
+    // leave a workspace that looks shared and routes nowhere.
+    const host = harness({ describeWorkspace: async () => undefined })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+
+    await expect(host.connector.shareWorkspace({ workspaceId: "ws_ghost" })).rejects.toThrow(
+      /no assignment for this workspace on this machine/,
+    )
+    expect(host.cp.routable(enrollmentId)).toEqual([])
+    expect(host.connector.status()).toMatchObject({ status: "enrolled", sharedWorkspaceIds: [] })
+  })
+
+  test("every beat after the enrollment is the machine's own, signed with its key", async () => {
+    const host = harness()
+    await host.connector.start()
+
+    expect(host.operations.map((operation) => operation.name)).toEqual([
+      "host.enrollmentNonce",
+      "host.enrollCurrentMachine",
+    ])
+    expect(host.cp.log.map((entry) => entry.path)).toEqual([
+      "/api/claxedo/host/enrollments/acquire",
+      "/api/claxedo/host/enrollments/heartbeat",
+    ])
+    // The fake refuses an unsigned, replayed or mis-signed machine request, so
+    // a beat in its log is a beat it verified against the enrolled key.
+    expect(host.cp.beats()).toHaveLength(1)
   })
 
   test("concurrent and repeated starts own exactly one live child", async () => {
@@ -294,6 +537,7 @@ describe("Electron-main child lifecycle", () => {
   test("a failed identity deletion still terminates the child and does not claim revocation", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
         const child = new FakeChild()
         children.push(child)
@@ -333,8 +577,9 @@ describe("Electron-main child lifecycle", () => {
   test("an exit before ready rejects startup instead of leaving it pending", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
-        const child = new FakeChild(false)
+        const child = new FakeChild({ autoStart: false })
         children.push(child)
         return child
       },
@@ -356,8 +601,9 @@ describe("Electron-main child lifecycle", () => {
   test("pause during pre-ready startup resolves immediately as closed", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
-        const child = new FakeChild(false)
+        const child = new FakeChild({ autoStart: false })
         children.push(child)
         return child
       },
@@ -385,6 +631,7 @@ describe("Electron-main child lifecycle", () => {
       release = resolve
     })
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => new FakeChild(),
       loadIdentity: async () => {
         await loading
@@ -404,11 +651,13 @@ describe("Electron-main child lifecycle", () => {
   })
 
   test("a control-plane stall longer than the bootstrap budget still enrols", async () => {
+    const cp = createFakeControlPlane()
     const children: FakeChild[] = []
     const statuses: unknown[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
-        const child = new FakeChild()
+        const child = new FakeChild({ fetch: cp.fetch })
         children.push(child)
         return child
       },
@@ -418,35 +667,37 @@ describe("Electron-main child lifecycle", () => {
       runAccountOperation: async (name, input) => {
         const hostId = String(input?.hostId)
         if (name === "host.enrollmentNonce") {
-          // The live defect, scaled to a test clock: the edge withheld this
-          // POST for ~12s against a 10s bootstrap budget. Three times the
-          // budget here is the same relationship without the wall time.
+          // A nonce POST held open longer than the bootstrap budget: 750ms
+          // against 250ms here; live, ~12s against 10s.
           await Bun.sleep(750)
           return { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
         }
-        if (name === "host.enrollCurrentMachine") {
-          return { enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 10_000 } }
-        }
-        return { expires_at: 11_000 }
+        return { enrollment: await cp.enrollAccountHost({ hostId, publicKey: String(input?.publicKey) }) }
       },
       onStatusChange: (status) => statuses.push(status),
       startupTimeoutMs: 250,
       enrollmentTimeoutMs: 10_000,
     })
 
-    await expect(connector.start()).resolves.toMatchObject({
+    const started = await connector.start()
+    expect(started).toMatchObject({
       status: "enrolled",
-      enrollment: { enrollment_id: "enr_1" },
+      enrollment: { enrollment_id: [...cp.enrollments.keys()][0] },
     })
     expect(children[0].killed).toBe(false)
     // The bootstrap reply was published while the stall was still open, so a
-    // panel open during a slow enrollment sees a starting machine.
-    expect(statuses).toEqual([{ status: "idle" }, expect.objectContaining({ status: "enrolled" })])
+    // panel open during a slow enrollment sees a starting machine, and
+    // everything after it is the enrolled one (the first beat renews the lease
+    // and says so, then the handshake announces its outcome).
+    expect(statuses[0]).toEqual({ status: "idle" })
+    expect(statuses.slice(1)).not.toHaveLength(0)
+    for (const status of statuses.slice(1)) expect(status).toMatchObject({ status: "enrolled" })
   })
 
   test("an enrollment the control plane refuses resolves with the connector's own detail", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
         const child = new FakeChild()
         children.push(child)
@@ -474,6 +725,7 @@ describe("Electron-main child lifecycle", () => {
   test("an enrollment that never answers is bounded by the enrollment budget, not the bootstrap one", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
         const child = new FakeChild()
         children.push(child)
@@ -497,8 +749,9 @@ describe("Electron-main child lifecycle", () => {
   test("a child that neither becomes ready nor exits is terminated by the startup bound", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
-        const child = new FakeChild(false)
+        const child = new FakeChild({ autoStart: false })
         children.push(child)
         return child
       },
@@ -517,28 +770,29 @@ describe("Electron-main child lifecycle", () => {
 })
 
 /**
- * The live defect these cover.
- *
- * A ~2s control-plane redeploy answered the auth descriptor with 503. The
- * account left "signed", main stopped the connector (correctly — never beat
- * with a credential the deployment may have revoked), the 60s enrollment lease
- * expired, and every client was told this machine was offline. Nothing ever
- * resumed, because a transient lapse and "the user turned remote access off"
- * were the same event to this supervisor.
- *
- * Both halves are load-bearing and both are asserted here: the stop still
- * happens, AND a stop nobody chose is undone exactly once when the account
- * returns.
+ * A ~2s control-plane redeploy answers the auth descriptor with 503. The
+ * account leaves "signed" and main stops the connector — correctly: never beat
+ * with a credential the deployment may have revoked — so the 60s enrollment
+ * lease expires and every client is told this machine is offline. Both halves
+ * are asserted here: the stop happens, AND a stop nobody chose is undone
+ * exactly once when the account returns.
  */
 describe("auth-lapse suspension", () => {
   const shares = [{ workspaceId: "ws_1", displayName: "Repo" }] as const
 
   test("fails closed on auth loss, then restores the machine and its served workspaces", async () => {
-    const host = harness({ sharedWorkspaces: shares })
+    const host = harness({
+      sharedWorkspaces: shares,
+      describeWorkspace: async () => ({ displayName: "Repo", directory: "/Users/me/repo" }),
+    })
     await host.connector.start()
     expect(host.bootstrapOf(0)?.sharedWorkspaces).toEqual(shares)
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+    await host.connector.shareWorkspace({ workspaceId: "ws_1", displayName: "Repo" })
+    await until(() => host.cp.routable(enrollmentId).length === 1, "the workspace becoming routable")
 
-    // Fail closed. Unchanged by this work, and asserted so it stays that way:
+    // Fail closed. The beat is machine-signed and would go on renewing the
+    // lease with no account at all, so stopping the child is the whole of it:
     // the child is gone and the machine is off the air the moment auth lapses.
     expect(host.connector.suspendForAuthLapse()).toBe(true)
     expect(host.children[0].killed).toBe(true)
@@ -547,16 +801,26 @@ describe("auth-lapse suspension", () => {
       reason: "closed",
       detail: HOST_CONNECTOR_AUTH_LAPSE_DETAIL,
     })
+    const beatsWhileSuspended = host.cp.beats().length
 
     const resumed = await host.connector.resumeAfterAuthLapse()
 
-    expect(resumed).toMatchObject({ status: "enrolled" })
+    // The SAME enrollment, because the enroll route upserts on (owner,
+    // host_id). A restart that minted a second row would leave this one's
+    // generation where it was, and every readiness row below it would read as
+    // routing that survived the stop.
+    expect(resumed).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: enrollmentId } })
     expect(host.children).toHaveLength(2)
-    // The point of the fix: the machine comes back publishing what it was
-    // publishing, from the list the supervisor already keeps. One load, at
-    // construction — a second store would mean a second source of truth.
+    // The machine comes back publishing what it was publishing, from the list
+    // the supervisor already keeps. One load, at construction — a second store
+    // would mean a second source of truth.
     expect(host.bootstrapOf(1)?.sharedWorkspaces).toEqual(shares)
-    expect(host.shareCounts()).toEqual({ loads: 1, stores: 0 })
+    expect(host.shareCounts()).toEqual({ loads: 1, stores: 1 })
+    // The resume acquires a new serving generation, and the control plane
+    // drops every readiness row below it — so a routable workspace here is a
+    // fresh ack by the restarted child, never one that survived the stop.
+    await until(() => host.cp.routable(enrollmentId).length === 1, "the workspace becoming routable again")
+    expect(host.cp.beats().length).toBeGreaterThan(beatsWhileSuspended)
   })
 
   test("a user pause is never undone by a later sign-in", async () => {
@@ -667,8 +931,9 @@ describe("main-side protocol guard", () => {
     const children: FakeChild[] = []
     const errors: Array<{ stage: string; error: unknown }> = []
     const connector = setupHostConnectorChild({
+      controlPlaneUrl: CONTROL_PLANE_URL,
       spawn: () => {
-        const child = new FakeChild(false)
+        const child = new FakeChild({ autoStart: false })
         children.push(child)
         return child
       },
@@ -691,5 +956,88 @@ describe("main-side protocol guard", () => {
 
     expect(errors.find((entry) => entry.stage === "child-message")).toBeUndefined()
     expect(children[0].parentMessages.some((message) => message.type === "account-result" && message.requestId === "late")).toBe(false)
+  })
+})
+
+describe("the owner's name for this machine", () => {
+  test("renames the connector's own enrollment, and the next one re-applies it", async () => {
+    const host = harness()
+    const started = await host.connector.start()
+    expect(started.status).toBe("enrolled")
+
+    await expect(host.connector.renameMachine("  Studio Mac  ")).resolves.toEqual({ displayName: "Studio Mac" })
+
+    const rename = host.operations.find((operation) => operation.name === "host.renameCurrentMachine")
+    expect(rename?.input).toEqual({
+      enrollmentId: started.status === "enrolled" ? started.enrollment.enrollment_id : "",
+      displayName: "Studio Mac",
+    })
+    expect(host.storedName()).toBe("Studio Mac")
+    expect(host.connector.displayName()).toBe("Studio Mac")
+
+    // Every enable re-enrols and the enroll route overwrites `display_name`, so
+    // a rename that only reached the control plane would be undone here.
+    host.connector.stop()
+    await host.connector.start()
+    expect(host.bootstrapOf(1)?.displayName).toBe("Studio Mac")
+  })
+
+  test("refuses an empty name, and refuses to rename a machine that is not enrolled", async () => {
+    const host = harness()
+    await expect(host.connector.renameMachine("Studio Mac")).rejects.toThrow(/not running/)
+
+    await host.connector.start()
+    await expect(host.connector.renameMachine("   ")).rejects.toThrow(/needs a name/)
+    expect(host.operations.some((operation) => operation.name === "host.renameCurrentMachine")).toBe(false)
+  })
+})
+
+describe("provider configuration through main", () => {
+  const PROVIDER_CONFIG = JSON.stringify({
+    version: 1,
+    providers: { "claude-sdk": { baseUrl: "https://broker.test/bindings/b1", placeholder: "sk-1", authMode: "api-key" } },
+  })
+
+  test("the ciphertext is stored before the revision is acked, and the opened text reaches the daemon hand-off", async () => {
+    // Timer-driven beats: the delivery rides one, the ack rides the next.
+    const host = harness({ heartbeatIntervalMs: 20 })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+    const revision = await host.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await until(() => host.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision")
+
+    expect(host.providerConfigs).toEqual([{ revision, sealed: host.cp.providerConfig(enrollmentId)!.sealed }])
+    expect(host.providerConfig()).toEqual(host.providerConfigs[0])
+    expect(host.providerReady).toEqual([{ revision, providers: PROVIDER_CONFIG }])
+    expect(JSON.stringify(host.providerConfigs)).not.toContain("sk-1")
+
+    // A restart hands the stored revision back to the child, which re-opens it
+    // for a daemon that restarted too.
+    host.connector.stop()
+    await host.connector.start()
+    await until(() => host.providerReady.length === 2, "the re-opened revision after the restart")
+    expect(host.bootstrapOf(1)).toMatchObject({ providerConfig: { revision } })
+    expect(host.providerReady[1]).toEqual({ revision, providers: PROVIDER_CONFIG })
+    expect(host.providerConfigs).toHaveLength(1)
+    host.connector.dispose()
+  })
+
+  test("a store that fails is reported, keeps the revision unacked, and hands the daemon nothing", async () => {
+    let storeOk = false
+    const host = harness({ heartbeatIntervalMs: 20, storeProviderConfig: () => storeOk })
+    await host.connector.start()
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+    const revision = await host.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
+    await until(() => host.providerConfigs.length >= 2, "the same revision delivered again")
+
+    expect(host.errors).toContainEqual({ stage: "provider-config-store", error: "safeStorage refused the write" })
+    expect(host.providerReady).toEqual([])
+    expect(host.providerConfig()).toBeUndefined()
+    expect(host.cp.providerConfigAckedRevision(enrollmentId)).not.toBe(revision)
+
+    storeOk = true
+    await until(() => host.cp.providerConfigAckedRevision(enrollmentId) === revision, "the acked revision once the store answers")
+    expect(host.providerReady).toEqual([{ revision, providers: PROVIDER_CONFIG }])
+    host.connector.dispose()
   })
 })

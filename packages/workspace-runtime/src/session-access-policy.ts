@@ -39,6 +39,7 @@ export type SessionAccessOperation =
   | "question_list"
   | "question_response"
   | "todo_read"
+  | "queue_read"
   | "abort"
   | "revert"
   | "unrevert"
@@ -114,7 +115,11 @@ export type SessionReservationDecision =
   | Exclude<SessionAccessDecision, { allowed: true }>
 
 export type SessionAccessPolicy = {
-  /** Composition marker: non-loopback managed hosts require private-session authority. */
+  /**
+   * What the composition was given, not who is asking: `managed-private`
+   * means an authority bundle is wired. The private-session lifecycle also
+   * needs `sessionRequestProvenance` to say `relay-replayed`.
+   */
   sessionAuthority: "local" | "managed-private"
   authorize(input: SessionAccessPolicyInput): Promise<SessionAccessDecision> | SessionAccessDecision
   filterSessions(
@@ -211,11 +216,10 @@ export type SessionAuthorityTurnReleasePredicate = (
  * can admit a request but not the live stream behind it still reports itself
  * as `managed-private`, and every managed terminal or session stream then
  * fails at the point it asks for the lease its agent callbacks renew. Turn
- * admission is the same contract's fifth capability — a `managed-private`
- * policy always turns on durable prompt admission (see `managedTurnAdmission`
- * in `routes/session-core.ts`), so the bundle carries `acquireTurn`/
- * `renewTurn`/`releaseTurn` as required members rather than an optional
- * add-on a composer can forget to wire up.
+ * admission is the same contract's fifth capability — a relay-replayed prompt
+ * on a `managed-private` policy always takes a durable turn lease, so the
+ * bundle carries `acquireTurn`/`renewTurn`/`releaseTurn` as required members
+ * rather than an optional add-on a composer can forget to wire up.
  */
 export type ManagedSessionAuthority = {
   authorizeSessionRead: SessionAuthorityPredicate
@@ -268,6 +272,8 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "DELETE /session/:id/goal": { kind: "authorize", operation: "goal_delete" },
   "GET /session/:id/message": { kind: "authorize", operation: "message_read" },
   "GET /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_read" },
+  "GET /session/:id/queue": { kind: "authorize", operation: "queue_read" },
+  "POST /session/:id/queue/:seq/:action": { kind: "authorize", operation: "prompt" },
   "GET /session/:id/todo": { kind: "authorize", operation: "todo_read" },
   "GET /session/capabilities": { kind: "workspace" },
   "GET /session/status": { kind: "filter", operation: "session_status" },
@@ -289,15 +295,27 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "PUT /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_write" },
 } as const satisfies Record<string, SessionRouteDecision>
 
-const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
-  "session_create",
-  "session_meta_write",
-  "session_config_write",
+/**
+ * The two kinds of write a session decision can be asked about. A `send`
+ * share carries an agent turn and nothing else, so the class has to reach the
+ * session authority with the question: the level alone cannot tell a prompt
+ * from a shell command, and both arrive as a write.
+ */
+export type SessionWriteClass = "agent_turn" | "session_control"
+
+/** Driving the agent and answering what it asks: what a `send` share buys. */
+const AGENT_TURN_OPERATIONS = new Set<SessionAccessOperation>([
   "prompt",
-  "permission_mode_write",
   "permission_response",
   "question_response",
   "abort",
+])
+
+const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
+  "session_create",
+  "session_meta_write",
+  "session_config_write",
+  "permission_mode_write",
   "revert",
   "unrevert",
   "fork",
@@ -318,9 +336,16 @@ const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
   "worktree_write",
 ])
 
-const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
 const SESSION_FILTER_CONCURRENCY = 16
 
+const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
+
+/**
+ * A write carrying no session is the workspace's own, and the relay role is
+ * the only thing that answers for it. A session-scoped write is the session
+ * authority's question instead, because a `send` share admits someone the
+ * workspace ranks below editor — or not at all.
+ */
 function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean): SessionAccessDecision {
   if (!input.authority && !requireActor) return { allowed: true }
   if (!input.actor) {
@@ -331,12 +356,17 @@ function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean
       message: "Managed session access requires verified actor claims",
     }
   }
-  if (input.authority && sessionAccessRequiresWrite(input) && ROLE_RANK[input.authority.role] < ROLE_RANK.editor) {
+  if (
+    input.authority
+    && !input.sessionId
+    && sessionAccessRequiresWrite(input)
+    && ROLE_RANK[input.authority.role] < ROLE_RANK.editor
+  ) {
     return {
       allowed: false,
       status: 403,
-      code: "session_write_forbidden",
-      message: "Session mutation requires workspace editor authority",
+      code: "workspace_write_forbidden",
+      message: "Workspace mutation requires workspace editor authority",
     }
   }
   return { allowed: true }
@@ -345,7 +375,15 @@ function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean
 export function sessionAccessRequiresWrite(
   input: Pick<SessionAccessPolicyInput, "operation" | "method">,
 ) {
-  return WRITE_OPERATIONS.has(input.operation)
+  return sessionAccessWriteClass(input) !== undefined
+}
+
+/** The class a write carries to the session authority; nothing for a read. */
+export function sessionAccessWriteClass(
+  input: Pick<SessionAccessPolicyInput, "operation" | "method">,
+): SessionWriteClass | undefined {
+  if (AGENT_TURN_OPERATIONS.has(input.operation)) return "agent_turn"
+  return SESSION_CONTROL_OPERATIONS.has(input.operation) ? "session_control" : undefined
 }
 
 function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | void): SessionAccessDecision {
@@ -355,7 +393,7 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
       allowed: false,
       status: 403,
       code: "session_private",
-      message: "Session access requires creator, participant, or organization administrator authority",
+      message: "Session access requires creator, participant, or session share authority",
     }
   }
   return result
@@ -369,10 +407,10 @@ const turnActorRequired = {
 }
 
 /**
- * Workspace policy with an injectable creator/participant authority boundary.
- * Managed session-specific operations fail closed when the authority callbacks
- * are absent. Loopback composition may use the same object as an explicit local
- * policy; non-loopback hosts require the managed-private composition marker.
+ * Without an authority bundle the policy declares `local` and refuses any
+ * session-scoped request that arrives with relay claims
+ * (`session_authority_required`); with one it declares `managed-private` and
+ * every session-scoped decision is the bundle's.
  */
 export function managedWorkspaceSessionAccessPolicy(
   options: ManagedWorkspaceSessionAccessPolicyOptions = {},
@@ -387,7 +425,7 @@ export function managedWorkspaceSessionAccessPolicy(
         allowed: false,
         status: 403,
         code: "session_authority_required",
-        message: "Managed session access requires creator, participant, or organization administrator authority",
+        message: "Managed session access requires creator, participant, or session share authority",
       } satisfies SessionAccessDecision
     }
     const predicate = sessionAccessRequiresWrite(input)
@@ -524,7 +562,37 @@ type SessionAccessContextReader = {
   req?: { header(name: string): string | undefined }
 }
 
-/** Actor identity is accepted only from the relay-host verification middleware. */
+export type SessionRequestProvenance = "loopback-direct" | "relay-replayed"
+
+type SessionRequestProvenanceReader = SessionAccessContextReader & {
+  get(name: "relayHostDirectAuth"): RelayHostAuthContext["relayHostDirectAuth"]
+}
+
+/**
+ * Who reached this runtime, read off the request rather than off the
+ * composition it was mounted with.
+ *
+ * Both marks are set only where a boundary verified the caller: the relay
+ * host-token middleware, the owner grant, and the embedded exposure the
+ * daemon ingress stamps after refusing every relayed request it cannot
+ * verify. The direct mark is that middleware admitting a bearer it trusts
+ * without a relay identity: the credential this runtime minted for the
+ * harness it launched, its own config token on health, an agent hook
+ * callback, and the token the control plane injects. None of them names an
+ * actor, so the request cannot be attributed to the person at this machine's
+ * keyboard and gets the private-session lifecycle instead. Only an unmarked
+ * request is the machine's own user. Registration, turn admission and event
+ * privacy ask this, not `SessionAccessPolicy.sessionAuthority`.
+ */
+export function sessionRequestProvenance(input: SessionRequestProvenanceReader): SessionRequestProvenance {
+  return input.get("relayHostAuth") || input.get("relayHostDirectAuth") ? "relay-replayed" : "loopback-direct"
+}
+
+/**
+ * Actor identity is read off the `relayHostAuth` mark alone, never off a
+ * header the caller could write; only a boundary that verified the caller
+ * sets the mark.
+ */
 export function sessionAccessContext(input: SessionAccessContextReader):
   Pick<SessionAccessPolicyInput, "actor" | "authority" | "credential"> & { author?: SessionAccessAuthor } {
   const auth = input.get("relayHostAuth")

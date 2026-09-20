@@ -1,19 +1,16 @@
 /**
- * The composer chip row as a HOSTED CLOUD session sees it.
+ * The composer chip row as a session on a provisioner-owned machine sees it.
  *
  * The sibling `session-new-design-view.vitest.tsx` pins the project chip's
- * footer action with static mocks (one local project, empty inventory). This
- * file varies the three inputs the hosted path actually turns on — the
- * platform, the control-plane transport, and the inventory SHAPE — because all
- * three composer defects were invisible to a local-project fixture:
- *
- *   1. the project chip read "workspace", the basename of the literal
- *      directory "/workspace" every hosted cloud workspace lives in;
- *   2. the environment chip offered "Local" on web, which the browser can
- *      never run;
- *   3. the workspace chip offered only "create new" for a project that already
- *      had cloud workspaces, because the active-project lookup matched the
- *      snapshot's directory keys but not the bootstrap's workspace-id keys.
+ * footer action with static mocks (one project served over loopback, empty
+ * inventory). This file varies the three inputs that fixture never exercises:
+ * the platform, the control-plane transport, and the inventory SHAPE. What it
+ * pins: the project chip must not read "workspace", the basename of the
+ * literal "/workspace" directory every provisioned machine mounts; the
+ * environment chip must not offer a loopback option on web, which the browser
+ * can never run; and the workspace chip must list a project's existing
+ * provisioned workspaces under both inventory shapes — the bootstrap keys
+ * `workspaces` by workspace id, the snapshot by directory.
  */
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -81,7 +78,7 @@ const workspaceChip = () => chip("context-chip-worktree")
 /**
  * The server BOOTSTRAP shape (routes/hosted/shell.ts `signedShellProjects`):
  * `workspaces` is keyed by WORKSPACE ID and the directory is a field on the
- * value. Two cloud workspaces so the third select has something to list.
+ * value. Two provisioned workspaces so the workspace chip has something to list.
  */
 const bootstrapProject = {
   worktree: "ws_1",
@@ -128,18 +125,18 @@ const snapshotProject = {
 
 const renderView = (props?: {
   worktree?: string
-  workspaceKind?: "local" | "cloud"
+  hostKind?: "self" | "provisioner"
   signedControlPlane?: boolean
   sandboxEnabled?: boolean
 }) =>
   render(() => (
     <NewSessionDesignView
       worktree={props?.worktree ?? "main"}
-      workspaceKind={props?.workspaceKind ?? "cloud"}
+      hostKind={props?.hostKind ?? "provisioner"}
       signedControlPlane={props?.signedControlPlane ?? true}
       sandboxEnabled={props?.sandboxEnabled}
       onWorktreeChange={() => {}}
-      onWorkspaceKindChange={() => {}}
+      onHostKindChange={() => {}}
     >
       <div />
     </NewSessionDesignView>
@@ -182,7 +179,7 @@ describe("hosted cloud project label", () => {
   test("falls back to the basename when no repo identity exists anywhere", () => {
     state.directory = "/repo/thing"
     state.projects = [{ worktree: "/repo/thing", workspaces: { "/repo/thing": { kind: "local" } } }]
-    renderView({ workspaceKind: "local" })
+    renderView({ hostKind: "self" })
     expect(projectChip()?.label).toBe("thing")
   })
 })
@@ -192,7 +189,7 @@ describe("environment options", () => {
     state.platform = "web"
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: true })
-    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["cloud"])
+    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["provisioner"])
   })
 
   // The desktop's embedded server, and a self-hosted server on a machine
@@ -204,7 +201,7 @@ describe("environment options", () => {
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: true })
     await vi.waitFor(() => {
-      expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local", "cloud"])
+      expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["self", "provisioner"])
     })
   })
 
@@ -214,7 +211,7 @@ describe("environment options", () => {
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: true })
     await vi.waitFor(() => {
-      expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["cloud"])
+      expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["provisioner"])
     })
   })
 
@@ -224,29 +221,27 @@ describe("environment options", () => {
     state.platform = "web"
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: false })
-    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local", "cloud"])
+    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["self", "provisioner"])
   })
 
   test("hides cloud from the composer when sandbox creation is disabled", () => {
     state.platform = "web"
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: false, sandboxEnabled: false })
-    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local"])
+    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["self"])
   })
 })
 
-describe("existing cloud workspaces in the workspace chip", () => {
-  // The reported defect: cloud selected, the project HAS cloud workspaces, and
-  // the third select offered no way to pick one.
-  test("lists the project's existing cloud workspaces on the bootstrap shape", () => {
+describe("existing provisioner-placed workspaces in the workspace chip", () => {
+  test("lists the project's existing provisioner-placed workspaces on the bootstrap shape", () => {
     state.projects = [bootstrapProject]
-    renderView({ workspaceKind: "cloud" })
+    renderView({ hostKind: "provisioner" })
     expect(workspaceChip()?.options?.map((option) => option.label)).toEqual(["main", "feature"])
   })
 
   test("lists them on the directory-keyed snapshot shape too", () => {
     state.projects = [snapshotProject]
-    renderView({ workspaceKind: "cloud" })
+    renderView({ hostKind: "provisioner" })
     expect(workspaceChip()?.options?.map((option) => option.label)).toEqual(["main", "feature"])
   })
 
@@ -254,17 +249,17 @@ describe("existing cloud workspaces in the workspace chip", () => {
   // the create path is the chip's footer action, not a list entry.
   test("keeps 'new cloud sandbox' as a footer action beside the existing ones", () => {
     state.projects = [bootstrapProject]
-    renderView({ workspaceKind: "cloud" })
+    renderView({ hostKind: "provisioner" })
     expect(workspaceChip()?.options?.length).toBe(2)
     expect(workspaceChip()?.action?.label).toBe("New cloud sandbox")
   })
 
   // The pre-fix behaviour, pinned as the honest empty case: with no cloud
   // workspace to offer, collapsing to the create path is correct.
-  test("offers no options when the project genuinely has no cloud workspace", () => {
+  test("offers no options when the project genuinely has no provisioner-placed workspace", () => {
     state.directory = "/repo/thing"
     state.projects = [{ worktree: "/repo/thing", workspaces: { "/repo/thing": { kind: "local" } } }]
-    renderView({ workspaceKind: "cloud" })
+    renderView({ hostKind: "provisioner" })
     expect(workspaceChip()?.options).toEqual([])
   })
 })
@@ -289,7 +284,7 @@ describe("project option detail", () => {
   test("local rows keep the path as the detail", () => {
     state.directory = "/repo/thing"
     state.projects = [{ worktree: "/repo/thing", workspaces: { "/repo/thing": { kind: "local" } } }]
-    renderView({ workspaceKind: "local" })
+    renderView({ hostKind: "self" })
     expect(projectChip()?.options?.find((option) => option.value === "/repo/thing")?.detail).toBe("/repo/thing")
   })
 })

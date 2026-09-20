@@ -4,7 +4,7 @@
  * `main.tsx` is the hosted one. The difference between them is not a flag: this
  * file exists so that the LOCAL bundle's import graph never reaches an identity
  * provider, a cloud runtime store, or an authenticated transport. A shared
- * entry with `if (authEnabled)` would still ship all of it, which is the whole
+ * entry with a runtime branch would still ship all of it, which is the whole
  * problem the split addresses — the code is in the bundle whether or not the
  * branch runs.
  *
@@ -31,8 +31,9 @@ import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { writeBrowserRoute } from "@/lib/browser-history"
 import { ConfigProvider } from "../providers/config"
+import { resolveDeploymentPosture } from "@/app/boot/data/deployment-posture"
 
-const config = { ...getDefaultConfig(), authEnabled: false }
+const config = getDefaultConfig()
 initClaxedo(config)
 
 const root = document.getElementById("root")
@@ -91,7 +92,12 @@ const platform: Platform = {
   },
 }
 
-function startApp(mount: HTMLElement) {
+async function startApp(mount: HTMLElement) {
+  // The loopback daemon declares that it issues no sessions. Resolved before
+  // the first render so the sign-in gate reads the answer rather than holding
+  // for it, the same ordering the hosted entry keeps.
+  await resolveDeploymentPosture({ baseUrl: config.claxedoServerUrl })
+
   render(
     () => (
       <PlatformProvider value={platform}>
@@ -106,4 +112,4 @@ function startApp(mount: HTMLElement) {
   )
 }
 
-startApp(root)
+void startApp(root)

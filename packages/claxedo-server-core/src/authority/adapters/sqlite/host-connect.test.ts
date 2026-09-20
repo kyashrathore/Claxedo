@@ -1,4 +1,5 @@
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
+import { webcrypto } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -15,6 +16,7 @@ import {
   publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { verifyMachineRequest, type MachineAuthResult } from "@claxedo/server-core/platform/auth/machine-auth"
+import { machineSealAad, machineSealingPublicKey, sealForMachine } from "../../../platform/auth/machine-seal"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases, openAuthorityDb, type SqliteAuthorityDb } from "./workspace-authority-store"
 
@@ -87,20 +89,6 @@ async function enrollByAccount(api: Api, input: { auth?: SignedControlPlaneAuth;
   return { enrollment, keys, hostId }
 }
 
-async function accountBeat(api: Api, input: { auth?: SignedControlPlaneAuth; hostId: string; keys: Keys; workspaceIds: string[] }) {
-  const payload = [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    "ttl_ms=",
-    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
-  ].join("\n")
-  return api.heartbeatHostEnrollment(input.auth ?? owner, {
-    hostId: input.hostId,
-    workspaceIds: input.workspaceIds,
-    signature: signPayload(input.keys.privateKey, payload),
-  })
-}
-
 let nonceCounter = 0
 
 async function machineRequest(keys: Keys, input: { enrollmentId: string; pathname: string; body: unknown; ts?: number; nonce?: string }) {
@@ -134,7 +122,14 @@ async function principalFor(api: Api, keys: Keys, enrollmentId: string) {
   return result.machine
 }
 
-type BeatBody = { enrollmentId: string; hostId: string; generation: number; acks: Array<{ workspaceId: string; revision: number }> }
+type BeatBody = {
+  enrollmentId: string
+  hostId: string
+  generation: number
+  acks: Array<{ workspaceId: string; revision: number }>
+  sealingPublicKey?: string
+  providerConfigAckedRevision?: number
+}
 
 async function machineBeat(api: Api, keys: Keys, body: BeatBody, machine?: MachinePrincipal) {
   const principal = machine ?? await (async () => {
@@ -322,10 +317,17 @@ describe("machine heartbeat, readiness and generations", () => {
     expect(await online(api)).toEqual({ ws_a: true })
     expect(await api.listHostEnrollments!(owner)).toMatchObject([{ acked: [{ workspaceId: "ws_a", revision: 1 }] }])
 
-    // The account path lands its acks at the current revision.
-    await accountBeat(api, { hostId, keys, workspaceIds: [] })
+    // Readiness is rewritten from each beat alone: a beat that stops acking
+    // the workspace takes it out of routing, and the next one that acks it at
+    // the current revision puts it back.
+    await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [] })
     expect(await online(api)).toEqual({ ws_a: false })
-    await accountBeat(api, { hostId, keys, workspaceIds: ["ws_a"] })
+    await machineBeat(api, keys, {
+      enrollmentId: enrollment.enrollment_id,
+      hostId,
+      generation: 0,
+      acks: [{ workspaceId: "ws_a", revision: 1 }],
+    })
     expect(await online(api)).toEqual({ ws_a: true })
   })
 
@@ -354,7 +356,6 @@ describe("machine heartbeat, readiness and generations", () => {
     const bare = await machineBeat(api, first.keys, { enrollmentId: first.enrollment.enrollment_id, hostId: "host_one", generation: 0, acks: [] })
     expect(bare.assigned_workspace_ids).toEqual(["ws_bare", "ws_one"])
     expect(bare.assignments.map((assignment) => assignment.workspace_id)).toEqual(["ws_one"])
-    expect((await accountBeat(api, { hostId: "host_one", keys: first.keys, workspaceIds: [] })).assigned_workspace_ids).toEqual(["ws_bare", "ws_one"])
   })
 
   test("re-pointing bumps the revision with the directory; routing waits for the new revision's ack", async () => {
@@ -589,7 +590,6 @@ describe("invitations", () => {
       public_key_fingerprint: await publicKeyFingerprint(JSON.parse(keys.publicKey)),
       scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
     }])
-    // The machine can now speak for itself.
     expect(await verify(api, keys, { enrollmentId: result.enrollment.enrollment_id, pathname: HEARTBEAT_PATH, body: {} }))
       .toMatchObject({ ok: true, machine: { ownerUserId: owner.user.tokenIdentifier, scope: { revision: 1 } } })
   })
@@ -720,6 +720,33 @@ describe("invitations", () => {
   })
 })
 
+describe("rename", () => {
+  test("the owner renames a machine; another account and an empty name are refused", async () => {
+    const { api, db } = setup()
+    const created = await invite(api)
+    await redeem(api, { token: created.token, hostId: "host_build", keys: hostKeyPair() })
+    const [listed] = await api.listHostEnrollments!(owner)
+
+    expect(await api.renameHostEnrollment!(owner, { enrollmentId: listed.enrollment_id, displayName: "  Build box  " }))
+      .toEqual({ enrollment_id: listed.enrollment_id, display_name: "Build box" })
+    expect((await api.listHostEnrollments!(owner)).map((machine) => machine.display_name)).toEqual(["Build box"])
+
+    expect(await failure(api.renameHostEnrollment!(other, { enrollmentId: listed.enrollment_id, displayName: "mine now" })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(await failure(api.renameHostEnrollment!(owner, { enrollmentId: listed.enrollment_id, displayName: "   " })))
+      .toMatchObject({ code: "invalid_input", status: 400 })
+    expect((await api.listHostEnrollments!(owner)).map((machine) => machine.display_name)).toEqual(["Build box"])
+
+    // One row, for the one rename that landed: a refused rename that still
+    // wrote an audit event would record a change nobody made.
+    expect(db().prepare(`SELECT token_identifier, metadata FROM audit_events WHERE action = 'host_enrollment.renamed'`).all())
+      .toEqual([{
+        token_identifier: owner.user.tokenIdentifier,
+        metadata: JSON.stringify({ enrollment_id: listed.enrollment_id, display_name: "Build box" }),
+      }])
+  })
+})
+
 describe("scope", () => {
   test("assignment is refused outside the roots and admitted inside them, segment-aware", async () => {
     const { api } = setup()
@@ -785,12 +812,7 @@ describe("scope", () => {
     const project = (await api.openWorkspace(owner, { workspaceId: "ws_hidden" })).workspace as { project_id: string }
     expect(await api.projectRole(other, { projectId: asProjectId(project.project_id) })).toMatchObject({ ok: true, role: "viewer" })
 
-    // A direct member sees it; so does an org admin.
-    const target = { kind: "user" as const, userId: other.user.tokenIdentifier }
-    await api.grantWorkspaceShare(owner, { workspaceId: "ws_hidden", target, role: "editor" })
-    await expect(api.openWorkspace(other, { workspaceId: "ws_hidden" })).resolves.toMatchObject({ role: "editor" })
-    await api.revokeWorkspaceShare(owner, { workspaceId: "ws_hidden", target })
-    await expect(api.openWorkspace(other, { workspaceId: "ws_hidden" })).rejects.toThrow()
+    // A member of its project sees it; so does an org admin.
     db().prepare(`INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', 1, 1)`)
       .run(project.project_id, other.user.tokenIdentifier)
     await expect(api.openWorkspace(other, { workspaceId: "ws_hidden" })).resolves.toMatchObject({ role: "editor" })
@@ -985,6 +1007,11 @@ describe("scope", () => {
       assignments: [],
       acked: [],
       scope: undefined,
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: false,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
     }])
     expect(await api.listHostEnrollments!(other)).toEqual([])
   })
@@ -1005,5 +1032,264 @@ describe("scope", () => {
     expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_revoked" })).toBeUndefined()
     expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_theirs" })).toBeUndefined()
     expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_unknown" })).toBeUndefined()
+  })
+})
+
+/** `publicKey` as a machine exports it (with key_ops and ext); `stored` is the form the row keeps and the target returns. */
+async function sealingKeyPair() {
+  const pair = await webcrypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+  const publicKey = JSON.stringify(await webcrypto.subtle.exportKey("jwk", pair.publicKey))
+  return { publicKey, stored: JSON.stringify(machineSealingPublicKey(publicKey)) }
+}
+
+describe("provider configuration", () => {
+  const PLAINTEXT = '{"version":1,"providers":{"anthropic":{"kind":"api-key","apiKey":"sk-ant-secret-plaintext"}}}'
+
+  async function enrolledWithSealingKey(api: Api) {
+    const { enrollment, keys, hostId } = await enrollByAccount(api, { displayName: "Laptop" })
+    const sealing = await sealingKeyPair()
+    const body = { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [] }
+    await machineBeat(api, keys, { ...body, sealingPublicKey: sealing.publicKey })
+    return { enrollment, keys, hostId, sealing, body }
+  }
+
+  async function push(api: Api, enrollmentId: string, plaintext: string | null, auth = owner) {
+    const target = await api.hostProviderConfigTarget!(auth, { enrollmentId })
+    if (!target.sealing_public_key) throw new Error("target has no sealing key")
+    const revision = target.next_revision
+    const sealed = plaintext === null
+      ? null
+      : await sealForMachine(target.sealing_public_key, plaintext, machineSealAad({ enrollmentId, revision }))
+    return api.pushHostProviderConfig!(auth, {
+      enrollmentId,
+      sealed,
+      revision,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: plaintext === null ? [] : Object.keys(JSON.parse(plaintext).providers as Record<string, unknown>),
+    })
+  }
+
+  test("the owner's push rides the next beat, is dropped once the machine acks it, and never stores the plaintext", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, body } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({
+      enrollment_id: enrollmentId, host_id: "host_laptop", display_name: "Laptop", next_revision: 1,
+    })
+
+    expect(await push(api, enrollmentId, PLAINTEXT)).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
+    const stored = enrollmentRow(db, enrollmentId)
+    expect(stored).toMatchObject({ provider_config_revision: 1, provider_config_acked_revision: 0 })
+    expect(typeof stored.provider_config_sealed).toBe("string")
+    expect(stored.provider_config_sealed as string).toMatch(/^mseal1\./)
+    expect(stored.provider_config_sealed as string).not.toContain("sk-ant-secret-plaintext")
+    expect(JSON.stringify(stored)).not.toContain("sk-ant-secret-plaintext")
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([
+      {
+        provider_config_revision: 1,
+        provider_config_acked_revision: 0,
+        sealing_key_declared: true,
+        provider_config_providers: ["anthropic"],
+        provider_config_rekeyed: false,
+      },
+    ])
+
+    // The beat that has not stored revision 1 is told about it; the beat
+    // that declares it is not, and the row records the ack.
+    const undeclared = await machineBeat(api, keys, body)
+    expect(undeclared.provider_config).toEqual({ revision: 1, sealed: stored.provider_config_sealed })
+    const staleAck = await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 0 })
+    expect(staleAck.provider_config).toEqual({ revision: 1, sealed: stored.provider_config_sealed })
+    const acked = await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 1 })
+    expect(acked.provider_config).toBeUndefined()
+    expect(enrollmentRow(db, enrollmentId)).toMatchObject({ provider_config_acked_revision: 1 })
+    expect((await machineBeat(api, keys, body)).provider_config).toBeUndefined()
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([
+      { provider_config_revision: 1, provider_config_acked_revision: 1, sealing_key_declared: true },
+    ])
+
+    expect(db().prepare(`SELECT token_identifier, metadata FROM audit_events WHERE action = 'host_provider_config.pushed'`).all())
+      .toEqual([{
+        token_identifier: owner.user.tokenIdentifier,
+        metadata: JSON.stringify({ enrollment_id: enrollmentId, revision: 1, sealed: true }),
+      }])
+  })
+
+  test("only the owner: another account can neither read the target nor push, and cannot tell the machine exists", async () => {
+    const { api, db } = setup()
+    const { enrollment, sealing } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+
+    expect(await failure(api.hostProviderConfigTarget!(other, { enrollmentId })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(await failure(api.hostProviderConfigTarget!(other, { enrollmentId: "enr_missing" })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    const sealed = await sealForMachine(sealing.publicKey, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    expect(await failure(api.pushHostProviderConfig!(other, {
+      enrollmentId,
+      sealed,
+      revision: 1,
+      sealingPublicKey: sealing.publicKey,
+      providerIds: ["anthropic"],
+    })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(enrollmentRow(db, enrollmentId)).toMatchObject({ provider_config_revision: 0, provider_config_sealed: null })
+    expect(db().prepare(`SELECT COUNT(*) AS count FROM audit_events WHERE action = 'host_provider_config.pushed'`).get())
+      .toEqual({ count: 0 })
+  })
+
+  test("a push sealed for a key the machine has since replaced is refused, and the stored blob is untouched", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, sealing, body } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    await push(api, enrollmentId, PLAINTEXT)
+    const before = enrollmentRow(db, enrollmentId)
+
+    const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
+    const rekeyed = await sealingKeyPair()
+    await machineBeat(api, keys, { ...body, sealingPublicKey: rekeyed.publicKey })
+    const sealed = await sealForMachine(sealing.publicKey, PLAINTEXT, machineSealAad({ enrollmentId, revision: target.next_revision }))
+    expect(await failure(api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: target.next_revision,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: ["anthropic"],
+    }))).toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    expect(enrollmentRow(db, enrollmentId)).toMatchObject({
+      provider_config_revision: before.provider_config_revision,
+      provider_config_sealed: before.provider_config_sealed,
+    })
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ sealing_public_key: rekeyed.stored })
+  })
+
+  test("a push at a stale revision is refused and leaves the stored blob unchanged", async () => {
+    const { api, db } = setup()
+    const { enrollment, sealing } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
+    await push(api, enrollmentId, PLAINTEXT)
+    const before = enrollmentRow(db, enrollmentId)
+
+    const sealed = await sealForMachine(sealing.publicKey, '{"version":1,"providers":{}}', machineSealAad({ enrollmentId, revision: target.next_revision }))
+    expect(await failure(api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: target.next_revision,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: [],
+    }))).toMatchObject({ code: "host_provider_config_revision_stale", status: 409, details: { provider_config_revision: 1 } })
+    expect(await failure(api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: 3,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: [],
+    }))).toMatchObject({ code: "host_provider_config_revision_stale", status: 409 })
+    expect(enrollmentRow(db, enrollmentId)).toEqual(before)
+  })
+
+  test("an empty push is a withdrawal revision with no blob, and an online machine hears of it on its next beat", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, body } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    await push(api, enrollmentId, PLAINTEXT)
+    await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 1 })
+
+    expect(await push(api, enrollmentId, null)).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
+    expect(enrollmentRow(db, enrollmentId)).toMatchObject({
+      provider_config_revision: 2, provider_config_acked_revision: 0, provider_config_sealed: null,
+    })
+    expect((await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 1 })).provider_config)
+      .toEqual({ revision: 2, sealed: null })
+    expect((await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 2 })).provider_config).toBeUndefined()
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ next_revision: 3 })
+  })
+
+  test("a machine that re-keys stops being sent the blob it can no longer open, and the listing says why", async () => {
+    const { api } = setup()
+    const { enrollment, keys, body } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    await push(api, enrollmentId, PLAINTEXT)
+    expect((await machineBeat(api, keys, body)).provider_config).toMatchObject({ revision: 1 })
+
+    const rekeyed = await sealingKeyPair()
+    const afterRekey = await machineBeat(api, keys, { ...body, sealingPublicKey: rekeyed.publicKey })
+    expect(afterRekey.provider_config).toBeUndefined()
+    expect((await machineBeat(api, keys, body)).provider_config).toBeUndefined()
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([
+      {
+        provider_config_revision: 1,
+        provider_config_acked_revision: 0,
+        provider_config_rekeyed: true,
+        provider_config_providers: ["anthropic"],
+      },
+    ])
+
+    // The owner's remedy is another push, sealed to the new key; it clears the flag.
+    await push(api, enrollmentId, PLAINTEXT)
+    expect((await machineBeat(api, keys, body)).provider_config).toMatchObject({ revision: 2 })
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([{ provider_config_rekeyed: false }])
+  })
+
+  test("the next revision outruns the higher of the two counters, so a row restored below the machine is not a wedge", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, body } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    await push(api, enrollmentId, PLAINTEXT)
+    await push(api, enrollmentId, PLAINTEXT)
+    await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 2 })
+
+    // A restore from an older backup: the row goes back to revision 1 while the
+    // machine keeps declaring the 2 it holds and applies only a newer one.
+    db().prepare(`UPDATE host_enrollments SET provider_config_revision = 1 WHERE enrollment_id = ?`).run(enrollmentId)
+    await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 2 })
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ next_revision: 3 })
+    expect(await push(api, enrollmentId, PLAINTEXT)).toMatchObject({ revision: 3 })
+    expect((await machineBeat(api, keys, { ...body, providerConfigAckedRevision: 2 })).provider_config)
+      .toMatchObject({ revision: 3 })
+  })
+
+  test("a machine that has declared no sealing key has none on the target and cannot be pushed to", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, hostId } = await enrollByAccount(api)
+    const enrollmentId = enrollment.enrollment_id
+    await machineBeat(api, keys, { enrollmentId, hostId, generation: 0, acks: [] })
+
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId }))
+      .toEqual({ enrollment_id: enrollmentId, host_id: hostId, sealing_public_key: null, next_revision: 1 })
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([{ sealing_key_declared: false }])
+    expect(await failure(api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed: null,
+      revision: 1,
+      sealingPublicKey: null,
+      providerIds: [],
+    }))).toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    const stray = await sealingKeyPair()
+    const sealed = await sealForMachine(stray.publicKey, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    expect(await failure(api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: 1,
+      sealingPublicKey: stray.publicKey,
+      providerIds: ["anthropic"],
+    }))).toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    expect(enrollmentRow(db, enrollmentId)).toMatchObject({ provider_config_revision: 0, provider_config_sealed: null })
+  })
+
+  test("a beat that omits the key keeps it; a beat declaring a key that cannot be sealed for writes nothing", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, sealing, body } = await enrolledWithSealingKey(api)
+    const enrollmentId = enrollment.enrollment_id
+    await machineBeat(api, keys, body)
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ sealing_public_key: sealing.stored })
+
+    const before = enrollmentRow(db, enrollmentId)
+    expect(await failure(machineBeat(api, keys, { ...body, sealingPublicKey: keys.publicKey.replace('"EC"', '"RSA"') })))
+      .toMatchObject({ code: "invalid_input", status: 400 })
+    expect(await failure(machineBeat(api, keys, { ...body, providerConfigAckedRevision: -1 })))
+      .toMatchObject({ code: "invalid_input", status: 400 })
+    expect(enrollmentRow(db, enrollmentId)).toEqual(before)
   })
 })

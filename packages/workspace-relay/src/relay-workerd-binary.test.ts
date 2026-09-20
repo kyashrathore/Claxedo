@@ -19,7 +19,7 @@ import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
  *   | addEventListener("message")    | ArrayBuffer | Blob        |
  *   | webSocketMessage (hibernation) | ArrayBuffer | ArrayBuffer |
  *
- * Only the listener path flips. Production user-hosted channels run the
+ * Only the listener path flips. Production host-tunnel channels run the
  * hibernation path and cloud client/upstream sockets run the listener path, so
  * the exposure is the cloud path. This boots the real runtime and asserts the
  * decoders survive both shapes.
@@ -184,7 +184,7 @@ describe("real workerd binary frame round-trip", () => {
 
   test("hibernation delivery stays an ArrayBuffer across the flip", async () => {
     // If a future workerd flips the hibernation path to Blob too, the exposure
-    // extends to the user-hosted channels; the decoders already handle Blob,
+    // extends to the host-tunnel channels; the decoders already handle Blob,
     // but wrangler.toml's comment would need updating.
     for (const compatibilityDate of [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_CURRENT]) {
       const report = await sendBinaryFrame({ compatibilityDate, mode: "hibernate" })

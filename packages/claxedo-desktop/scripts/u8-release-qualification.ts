@@ -44,7 +44,7 @@ export const REQUIRED_LIFECYCLE_GATES = [
   "gcPause",
   "unsignedStartup",
   "signedActivation",
-  "userHostedRelay",
+  "machinePlacedRelay",
   "cloudWorkspace",
   "signOutToLocal",
   "secondUnsignedSettle",

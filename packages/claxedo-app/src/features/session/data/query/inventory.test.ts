@@ -44,16 +44,15 @@ describe("mapInventoryToSessions", () => {
 })
 
 describe("signedInventoryItems", () => {
-  test("keeps user-hosted workspaces on synthetic workspace directories", () => {
+  test("keeps a machine-placed workspace on its synthetic workspace directory, and names no driver for it", () => {
     expect(signedInventoryItems({
       workspaces: [{
-        workspace_id: "ws_user_hosted",
+        workspace_id: "ws_machine",
         project_id: "proj_1",
         backing: "local-worktree",
-        access: "user-hosted",
       }],
       sessionsByWorkspace: {
-        ws_user_hosted: [{
+        ws_machine: [{
           session_id: "ses_1",
           title: "Shared",
           created_at: 1,
@@ -64,14 +63,19 @@ describe("signedInventoryItems", () => {
     })).toMatchObject([{
       id: "ses_1",
       title: "Shared",
-      directory: "workspace:ws_user_hosted",
+      directory: "workspace:ws_machine",
       projectID: "proj_1",
       environment: {
-        kind: "user-hosted",
-        driver: "local-worktree",
+        kind: "machine",
       },
       lastTurn: { status: "completed", completedAt: 3, assistantMessageId: "msg_1_r" },
       time: { created: 1, updated: 2 },
     }])
+    // A worktree on somebody's machine is not provisioned; its backing is not a
+    // driver, and reporting one names a thing that does not exist.
+    expect(signedInventoryItems({
+      workspaces: [{ workspace_id: "ws_machine", project_id: "proj_1", backing: "local-worktree" }],
+      sessionsByWorkspace: { ws_machine: [{ session_id: "ses_1", created_at: 1, updated_at: 2 }] },
+    })[0]?.environment).toEqual({ kind: "machine" })
   })
 })

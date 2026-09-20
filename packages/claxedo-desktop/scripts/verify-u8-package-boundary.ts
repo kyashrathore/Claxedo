@@ -18,7 +18,7 @@ export function u8PackageBoundarySteps(
       label: "signed-capable package",
       command: ["bun", "run", "package:mac", "--", "--dir", "--publish", "never"],
       env: {
-        VITE_AUTH_ENABLED: "true",
+        VITE_CLAXEDO_HOSTED_ACTIVATION: "true",
         CSC_IDENTITY_AUTO_DISCOVERY: "false",
       },
     }] : []),

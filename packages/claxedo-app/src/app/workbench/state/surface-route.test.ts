@@ -106,7 +106,7 @@ describe("surface route mirroring", () => {
           sessionId: "ses_signed",
           host: "workspace",
           workspaceId: "ws_signed",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "machine" },
         },
       },
     }
@@ -141,7 +141,7 @@ describe("surface route mirroring", () => {
               sessionId: "new",
               host: "workspace",
               workspaceId: "ws_signed",
-              toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "cloud" },
+              toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "provisioner" },
             },
           },
         },
@@ -434,7 +434,7 @@ describe("surface route mirroring", () => {
     expect(routeMatchesSurface({ id: "ses_1" }, "ws_main", surface, "ws_main")).toBe(false)
   })
 
-  test("keeps local workspace-backed sessions on directory-free session routes", () => {
+  test("keeps sessions backed by a workspace on this machine on directory-free session routes", () => {
     expect(
       focusedSurfaceRouteTarget({
         route: { id: "ses_1" },

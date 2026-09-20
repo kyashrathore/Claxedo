@@ -126,11 +126,11 @@ describe("railWorkspaceSessionBacking", () => {
           },
         },
       }),
-    })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
+    })).toEqual({ workspaceId: "ws_signed", kind: "provisioner" })
   })
 
-  test("resolves a user-hosted row addressed as `workspace:<id>` against its host-directory catalog key", () => {
-    // What the control plane answers with for a user-hosted workspace: the
+  test("resolves a machine-placed row addressed as `workspace:<id>` against its host-directory catalog key", () => {
+    // What the control plane answers with for a machine-placed workspace: the
     // catalog keys it by the HOST's own path, while the session row carries
     // `sessionRowDirectory`'s `workspace:<id>`. The row's identity, not the
     // section's directory, is what the backing comes from — and the signed id
@@ -150,10 +150,10 @@ describe("railWorkspaceSessionBacking", () => {
           },
         },
       }),
-    })).toEqual({ workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11", kind: "user-hosted" })
+    })).toEqual({ workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11", kind: "machine" })
   })
 
-  test("does not infer signed authority from a local workspace", () => {
+  test("does not infer signed authority from a workspace on this machine", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/repo/main",
       project: project({
@@ -182,7 +182,7 @@ describe("railWorkspaceSessionBacking", () => {
       directory: "/runtime/repo",
       workspaceId: "ws_pending",
       sessionRef: "workspace:ws_pending:session:ses_pending",
-      environmentKind: "local",
+      environmentKind: "self",
       project: pending,
     })).toBeUndefined()
 
@@ -197,9 +197,9 @@ describe("railWorkspaceSessionBacking", () => {
       directory: "/runtime/repo",
       workspaceId: "ws_pending",
       sessionRef: "workspace:ws_pending:session:ses_pending",
-      environmentKind: "local",
+      environmentKind: "self",
       project: project({ worktree: "/repo/main" }),
-    })).toEqual({ workspaceId: "ws_pending", kind: "user-hosted" })
+    })).toEqual({ workspaceId: "ws_pending", kind: "machine" })
   })
 
   test("keeps canonical central and local session refs off the relay", () => {
@@ -367,54 +367,54 @@ describe("railWorkspaceMetaLabels", () => {
    * workspace someone else's machine serves says what this account may do with
    * it and whether that machine is up, before any pane opens it.
    */
-  test("a teammate's user-hosted workspace reads viewer and host offline with no pane open", () => {
+  test("a teammate's machine-placed workspace reads viewer and host offline with no pane open", () => {
     expect(railWorkspaceMetaLabels({
-      kind: "user-hosted",
+      kind: "machine",
       role: "viewer",
       hostOnline: false,
-      publishedByThisMachine: false,
+      publishedToYourAccount: false,
       label,
     })).toEqual(["hostOffline", "role:viewer", "sharedWithYou"])
   })
 
   test("the owner's own machine says it publishes the workspace, not that it was shared with them", () => {
     expect(railWorkspaceMetaLabels({
-      kind: "user-hosted",
+      kind: "machine",
       role: "owner",
       hostOnline: true,
-      publishedByThisMachine: true,
+      publishedToYourAccount: true,
       label,
-    })).toEqual(["publishedByThisMachine"])
+    })).toEqual(["publishedToYourAccount"])
   })
 
   test("an editor on a reachable shared workspace reads its role and nothing about the host", () => {
     expect(railWorkspaceMetaLabels({
-      kind: "user-hosted",
+      kind: "machine",
       role: "editor",
       hostOnline: true,
-      publishedByThisMachine: false,
+      publishedToYourAccount: false,
       label,
     })).toEqual(["role:editor", "sharedWithYou"])
   })
 
   test("reachability is only asked about a machine someone owns", () => {
-    // A cloud workspace's runtime is provisioned on demand; an unknown host
-    // state is not an offline one.
+    // A provisioner-owned machine exists only on demand, so an unknown host
+    // state there is not an offline one.
     expect(railWorkspaceMetaLabels({
-      kind: "cloud", role: "editor", publishedByThisMachine: false, label,
+      kind: "provisioner", role: "editor", publishedToYourAccount: false, label,
     })).toEqual([])
     expect(railWorkspaceMetaLabels({
-      kind: "user-hosted", role: "owner", publishedByThisMachine: false, label,
+      kind: "machine", role: "owner", publishedToYourAccount: false, label,
     })).toEqual([])
   })
 
   test("keeps the workspace status the catalog already reported, first", () => {
     expect(railWorkspaceMetaLabels({
-      kind: "user-hosted",
+      kind: "machine",
       status: "offline",
       role: "viewer",
       hostOnline: false,
-      publishedByThisMachine: false,
+      publishedToYourAccount: false,
       label,
     })).toEqual(["offline", "hostOffline", "role:viewer", "sharedWithYou"])
   })

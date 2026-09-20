@@ -22,6 +22,7 @@ import {
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
+  sessionAccessWriteClass,
   type ProcessObserver,
   type SessionAccessStreamDecision,
   type SessionAuthorityInput,
@@ -55,6 +56,7 @@ import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalProjectRoutes, ShellRoutes, githubCloneAuthorization } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
@@ -102,8 +104,8 @@ import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, embeddedAuthPublicOrigin, getEmbeddedAuth } from "./embedded-auth"
 import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { createSqliteUserHostedTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/user-hosted-relay-target"
-import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
+import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/host-tunnel-relay-target"
+import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import { selfHostedTasksClientInput, type TasksSessionGrants } from "../../tasks/session-grants"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
@@ -162,7 +164,7 @@ import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
-import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
+import { hasMachineHostTunnel, startMachineHostTunnel, stopMachineHostTunnel } from "../../host-tunnel"
 import {
   DEFAULT_CLAXEDO_SERVER_PORT,
   embeddedWorkspaceRuntimeSessionAuthority,
@@ -175,6 +177,7 @@ import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-serv
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
+import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
@@ -340,11 +343,13 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
           ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
         })
       } else {
+        const writeClass = sessionAccessWriteClass(input)
         await runtimeAuthority.authorizeRuntimeSession({
           ...principal,
           workspaceId: input.authority.workspaceId,
           sessionId: input.sessionId,
           action,
+          ...(writeClass ? { writeClass } : {}),
         })
       }
       return { allowed: true as const }
@@ -782,7 +787,7 @@ export function createSelfHostedApp(
       ? {
           resolveRelayActor: async (request: Request, workspaceId: string) => {
             // Loopback browser traffic may carry a control-plane JWT; relay-forwarded
-            // user-hosted traffic carries a Runtime Access Token (audience
+            // machine traffic carries a Runtime Access Token (audience
             // `workspace-relay`). A RAT is a first-class actor proof: verifying it as a
             // control-plane bearer throws `invalid_bearer_token`, which would 503 every
             // `/workspaces/:id/*` session route.
@@ -813,7 +818,7 @@ export function createSelfHostedApp(
             if (!match?.[1]) return undefined
             const token = match[1]
 
-            // Relay-forwarded user-hosted hops carry a Relay Host Token
+            // Relay-forwarded machine hops carry a Relay Host Token
             // (audience `workspace-host-service`). Direct loopback clients may
             // still present a Runtime Access Token (`workspace-relay`).
             const relayHostJwk = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK?.trim()
@@ -1010,22 +1015,12 @@ export function createSelfHostedApp(
       ...(services.authority ? { authority: services.authority } : {}),
       targetLookup: localRelayTargetLookup({
         ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-        ...(services.relay.userHostedResolver ? { userHostedResolver: services.relay.userHostedResolver } : {}),
+        ...(services.relay.hostTunnelResolver ? { hostTunnelResolver: services.relay.hostTunnelResolver } : {}),
         telemetry: services.telemetry,
       }),
       localTargetExists: localRelayTargetExists((services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {})),
     }),
   )
-  app.route(
-    "/",
-    BootstrapRoutes({
-      services,
-      env: process.env,
-      hostAggregateEvents: !!runtimeProxy.hostEventStream,
-      ...authRouteOptions(services),
-    }),
-  )
-  app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   const remoteAccessRelayUrl = services.relay.relayUrl ?? Object.values(services.relay.relayUrls ?? {})[0]
   const remoteAccessSigner = services.relay.hostTunnelTokenSigner
   // One machine-share owner for the whole composition: the remote-access
@@ -1041,6 +1036,7 @@ export function createSelfHostedApp(
     listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
       id: workspace.id,
       kind: workspace.kind,
+      directory: workspace.directory,
       displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
       projectId: workspace.project_id,
       repoUrl: workspace.repo_url ?? workspace.git_remote,
@@ -1056,11 +1052,25 @@ export function createSelfHostedApp(
     // inject `embeddedManagedPrivateSessionPolicy` and are `managed-private`,
     // unsigned ones stay on the unbound local policy.
     sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
-    startMachineTunnel: startUserHostedMachineTunnel,
-    stopMachineTunnel: stopUserHostedMachineTunnel,
-    machineTunnelActive: hasUserHostedMachineTunnel,
+    startMachineTunnel: startMachineHostTunnel,
+    stopMachineTunnel: stopMachineHostTunnel,
+    machineTunnelActive: hasMachineHostTunnel,
     capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
   }) : undefined
+  app.route(
+    "/",
+    BootstrapRoutes({
+      services,
+      env: process.env,
+      hostAggregateEvents: !!runtimeProxy.hostEventStream,
+      // Read per request: this node enrolls, re-enrolls and is revoked while
+      // it runs, and a client reads this to tell a workspace row placed here
+      // from one it must reach over the relay.
+      hostEnrollmentId: () => remoteAccessService?.servingEnrollmentId(),
+      ...authRouteOptions(services),
+    }),
+  )
+  app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceRouteOptions(services)))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceRouteOptions(services)))
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
@@ -1467,9 +1477,8 @@ export function createDefaultLocalControlPlaneServices() {
   const trust = deploymentMode(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
   if (trust === "hosted") {
-    // Hosted mode moved to the Better Auth + D1 worker; the Node self-host
-    // entrypoint no longer boots a hosted composition. Fail closed with a
-    // human-actionable error instead of silently running local-only.
+    // This entrypoint composes no hosted control plane, so hosted mode fails
+    // closed here: running local-only under it would look like it worked.
     throw new ControlPlaneCompositionError(
       "hosted_composition_removed",
       "CLAXEDO_DEPLOYMENT_MODE=hosted is not supported by the self-hosted Node entrypoint; deploy the Better Auth + D1 worker instead",
@@ -1482,7 +1491,7 @@ export function createDefaultLocalControlPlaneServices() {
   // migrations, repair checks, WAL checkpointing, and statement preparation.
   ClaxedoDB.raw()
   const authority = createSqliteWorkspaceAuthority()
-  const userHostedResolver = createSqliteUserHostedTargetResolver()
+  const hostTunnelResolver = createSqliteHostTunnelTargetResolver()
   const services = createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
@@ -1501,7 +1510,7 @@ export function createDefaultLocalControlPlaneServices() {
         : {}),
       // Self-host always uses SQLite.
       authority,
-      relay: localRelayFromEnv(sandboxManager, authority, userHostedResolver),
+      relay: localRelayFromEnv(sandboxManager, authority, hostTunnelResolver),
       sandbox: {
         sandboxManager,
       },
@@ -1515,7 +1524,7 @@ export function createDefaultLocalControlPlaneServices() {
       if (closed) return
       closed = true
       if ("close" in authority && typeof authority.close === "function") authority.close()
-      userHostedResolver.close()
+      hostTunnelResolver.close()
       ClaxedoDB.close()
     },
   })
@@ -1524,7 +1533,7 @@ export function createDefaultLocalControlPlaneServices() {
 function localRelayFromEnv(
   sandboxManager = createWorkspaceSupervisorSandboxManager(),
   authority: WorkspaceAuthority = createSqliteWorkspaceAuthority(),
-  userHostedResolver: UserHostedTargetResolver = createSqliteUserHostedTargetResolver(),
+  hostTunnelResolver: HostTunnelTargetResolver = createSqliteHostTunnelTargetResolver(),
 ): ControlPlaneRelay {
   const relayUrl = process.env.CLAXEDO_WORKSPACE_RELAY_URL?.trim()
   const resolverToken = process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()
@@ -1538,7 +1547,7 @@ function localRelayFromEnv(
     ...(relayUrl ? { relayUrl } : {}),
     ...(relayUrls ? { relayUrls } : {}),
     ...(resolverToken ? { resolverToken } : {}),
-    userHostedResolver,
+    hostTunnelResolver,
     ...(runtimeSigner && hostSigner
       ? {
           runtimeAccessTokenSigner: runtimeSigner,
@@ -1551,7 +1560,7 @@ function localRelayFromEnv(
             relay: { relayUrl, relayUrls },
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
-            targetLookup: localRelayTargetLookup({ sandboxManager, userHostedResolver }),
+            targetLookup: localRelayTargetLookup({ sandboxManager, hostTunnelResolver }),
             recordRuntimeAccessToken: (input) => recordRelayRuntimeToken(authority, input),
           }),
         }
@@ -1605,7 +1614,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
     reader: usageRevisionStore,
-    currentFilter: (fact) => fact.location === "local" || fact.location === "user-hosted",
+    currentFilter: (fact) => usageLocation(fact.location) === "local",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
       const [meta, host] = await Promise.all([
@@ -1700,7 +1709,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
-    ...(services.sandbox.defaultDriver ? { default_sandbox_driver: services.sandbox.defaultDriver } : {}),
+    ...(isSandboxDriverID(services.sandbox.defaultDriver)
+      ? { default_sandbox_driver: services.sandbox.defaultDriver }
+      : {}),
   })
 
   // Migrate legacy plaintext credentials into the managed secret backend.

@@ -1,11 +1,13 @@
-import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
+import { generateKeyPairSync, sign as signData, webcrypto, type KeyObject } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/authority"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
 
 /**
  * Machine-wide enrollment, against the real SQLite authority.
@@ -55,20 +57,6 @@ function enrollmentPayload(input: { hostId: string; requestId: string; nonce: st
   ].join("\n")
 }
 
-/**
- * Heartbeat v2: one signature per interval covers the machine's served set
- * (sorted, comma-joined). Deliberately spelled out here rather than imported —
- * the test pins the exact bytes the adapter must verify.
- */
-function heartbeatPayload(input: { hostId: string; ttlMs?: number; workspaceIds?: readonly string[] }) {
-  return [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-    `workspaces=${[...(input.workspaceIds ?? [])].sort().join(",")}`,
-  ].join("\n")
-}
-
 /** Runs the whole handshake and returns the enrollment. */
 async function enroll(
   api: ReturnType<typeof authority>,
@@ -86,6 +74,22 @@ async function enroll(
     ...(input.displayName ? { displayName: input.displayName } : {}),
   })
   return { enrollment, keys, hostId, request }
+}
+
+async function machinePrincipal(api: ReturnType<typeof authority>, hostId: string, auth = owner): Promise<MachinePrincipal> {
+  const listed = (await api.listHostEnrollments!(auth)).find((row) => row.host_id === hostId)
+  if (!listed) throw new Error(`no enrollment for ${hostId}`)
+  const row = await api.machineAuth!.lookupEnrollment(listed.enrollment_id)
+  if (!row) throw new Error(`enrollment ${listed.enrollment_id} is not in the store`)
+  return {
+    enrollmentId: row.enrollment_id,
+    hostId: row.host_id,
+    ownerUserId: row.owner_user_id,
+    ownerActorId: row.owner_actor_id,
+    scope: row.scope,
+    keyVersion: row.key_version,
+    generation: row.serving_generation,
+  }
 }
 
 describe("host enrollment", () => {
@@ -252,85 +256,86 @@ describe("host enrollment", () => {
 })
 
 describe("heartbeat", () => {
-  test("extends the enrollment when signed with the enrolled key", async () => {
+  test("extends the enrollment lease", async () => {
     const api = authority()
-    const { keys, hostId, enrollment } = await enroll(api)
+    const { hostId, enrollment } = await enroll(api)
 
-    const beat = await api.heartbeatHostEnrollment(owner, {
+    const beat = await api.heartbeatHostEnrollmentByMachine!(await machinePrincipal(api, hostId), {
+      enrollmentId: enrollment.enrollment_id,
       hostId,
-      workspaceIds: [],
-      signature: signPayload(keys.privateKey, heartbeatPayload({ hostId })),
+      generation: 0,
+      acks: [],
     })
 
     expect(beat.expires_at).toBeGreaterThanOrEqual(enrollment.expires_at)
     expect(beat.assigned_workspace_ids).toEqual([])
   })
 
-  test("rejects a heartbeat signed with a different key", async () => {
-    // Otherwise anyone can keep a revoked machine's enrollment alive.
+  test("refuses a beat from the instance a newer one superseded", async () => {
+    // Two processes on one machine would otherwise each rewrite the other's
+    // readiness, and the workspace would flicker between them.
     const api = authority()
-    const { hostId } = await enroll(api)
-    const attacker = hostKeyPair()
+    const { hostId, enrollment } = await enroll(api)
+    const first = await machinePrincipal(api, hostId)
+    await api.acquireHostServingGeneration!(first)
 
-    await expect(
-      api.heartbeatHostEnrollment(owner, {
-        hostId,
-        workspaceIds: [],
-        signature: signPayload(attacker.privateKey, heartbeatPayload({ hostId })),
-      }),
-    ).rejects.toThrow()
+    await expect(api.heartbeatHostEnrollmentByMachine!(first, {
+      enrollmentId: enrollment.enrollment_id,
+      hostId,
+      generation: first.generation,
+      acks: [],
+    })).rejects.toThrow(/newer instance/)
   })
 
-  test("rejects a heartbeat for a machine that was never enrolled", async () => {
+  test("refuses a beat for a paused machine", async () => {
+    // Pausing is the owner saying stop. A machine that kept renewing through
+    // it would stay routable for its whole lease.
     const api = authority()
-    const keys = hostKeyPair()
+    const { hostId, enrollment } = await enroll(api)
+    const principal = await machinePrincipal(api, hostId)
+    await api.pauseHostEnrollment(owner, { hostId, paused: true })
 
-    await expect(
-      api.heartbeatHostEnrollment(owner, {
-        hostId: "host_ghost",
-        workspaceIds: [],
-        signature: signPayload(keys.privateKey, heartbeatPayload({ hostId: "host_ghost" })),
-      }),
-    ).rejects.toThrow(/Host enrollment not found/)
-  })
-
-  test("rejects a signature over a different served set than the one claimed", async () => {
-    // The set IS the consent. Accepting a mismatch would let a caller ack
-    // workspaces the machine never signed for.
-    const api = authority()
-    const { keys, hostId } = await enroll(api)
-
-    await expect(
-      api.heartbeatHostEnrollment(owner, {
-        hostId,
-        workspaceIds: ["ws_claimed"],
-        signature: signPayload(keys.privateKey, heartbeatPayload({ hostId, workspaceIds: [] })),
-      }),
-    ).rejects.toThrow(/Invalid host attestation/)
+    await expect(api.heartbeatHostEnrollmentByMachine!(principal, {
+      enrollmentId: enrollment.enrollment_id,
+      hostId,
+      generation: principal.generation,
+      acks: [],
+    })).rejects.toThrow(/paused/)
   })
 })
 
-/** Signs and sends a heartbeat that acks exactly `workspaceIds`. */
+/**
+ * One machine beat acking exactly `workspaceIds`, each at the revision the
+ * owner currently declares for it: readiness is written only for an ack whose
+ * revision matches the assignment, so the revision cannot be guessed here.
+ */
 async function ackHeartbeat(
   api: ReturnType<typeof authority>,
   input: {
     auth?: SignedControlPlaneAuth
     hostId: string
-    keys: ReturnType<typeof hostKeyPair>
     workspaceIds: readonly string[]
     ttlMs?: number
     sessionAuthority?: "local" | "managed-private"
   },
 ) {
-  return api.heartbeatHostEnrollment(input.auth ?? owner, {
-    hostId: input.hostId,
+  const auth = input.auth ?? owner
+  const principal = await machinePrincipal(api, input.hostId, auth)
+  const declared = new Map(
+    ((await api.listHostEnrollments!(auth)).find((row) => row.host_id === input.hostId)?.assignments ?? [])
+      .map((assignment) => [assignment.workspace_id, assignment.revision]),
+  )
+  return api.heartbeatHostEnrollmentByMachine!(principal, {
+    enrollmentId: principal.enrollmentId,
+    hostId: principal.hostId,
+    generation: principal.generation,
+    acks: input.workspaceIds.map((workspaceId) => {
+      const revision = declared.get(workspaceId)
+      if (revision === undefined) throw new Error(`the owner declares no assignment for ${workspaceId}`)
+      return { workspaceId, revision }
+    }),
     ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
-    workspaceIds: [...input.workspaceIds],
     ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
-    signature: signPayload(
-      input.keys.privateKey,
-      heartbeatPayload({ hostId: input.hostId, ttlMs: input.ttlMs, workspaceIds: input.workspaceIds }),
-    ),
   })
 }
 
@@ -367,7 +372,7 @@ describe("workspace assignments", () => {
     expect(again.find((w) => w.workspace_id === "ws_desc")).toMatchObject({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
   })
 
-  test("a user-hosted workspace lives exactly as long as its host assignment", async () => {
+  test("a machine-placed workspace lives exactly as long as its host assignment", async () => {
     const api = authority()
     const { hostId } = await enroll(api, { displayName: "Laptop B" })
     const listed = async () => (await api.listWorkspaces(owner) as Array<{ workspace_id: string }>)
@@ -394,19 +399,19 @@ describe("workspace assignments", () => {
    * any pane opens it, so reachability rides the workspace LIST rather than a
    * per-workspace probe. Same lease `activeWorkspaceHost` routes on.
    */
-  test("stamps host reachability on every user-hosted row of the workspace list", async () => {
+  test("stamps host reachability on every machine-placed row of the workspace list", async () => {
     const api = authority()
-    const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })
+    const { hostId } = await enroll(api, { displayName: "Laptop B" })
     const listed = async () => Object.fromEntries(
       (await api.listWorkspaces(owner) as Array<{ workspace_id: string; host_online?: boolean }>)
         .map((row) => [row.workspace_id, row.host_online]),
     )
 
     // Assigned but never acked: listed, and honestly offline.
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_reach", hostId })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_reach", hostId, remoteDirectory: "/srv/reach" })
     expect(await listed()).toEqual({ ws_reach: false })
 
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_reach"] })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_reach"] })
     expect(await listed()).toEqual({ ws_reach: true })
 
     // Pausing the machine is what makes it unreachable — no revoke, no unassign.
@@ -417,11 +422,11 @@ describe("workspace assignments", () => {
 
   test("routes a workspace through owner assignment AND the machine's acked set", async () => {
     const api = authority()
-    const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })
+    const { hostId } = await enroll(api, { displayName: "Laptop B" })
 
     // Assigning a never-registered workspace cold-registers it, exactly as
     // the retired per-workspace registration did.
-    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId }))
+    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" }))
       .resolves.toEqual({ assigned: true, workspace_id: "ws_alpha", host_id: hostId })
     expect((await api.listWorkspaces(owner) as Array<{ workspace_id: string }>).map((w) => w.workspace_id))
       .toContain("ws_alpha")
@@ -430,7 +435,7 @@ describe("workspace assignments", () => {
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
 
     // Ack the set: now routable, and the response reconciles owner intent.
-    const beat = await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    const beat = await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
     expect(beat.assigned_workspace_ids).toEqual(["ws_alpha"])
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({
       active: true,
@@ -451,9 +456,9 @@ describe("workspace assignments", () => {
     // one of them would still satisfy a single-value test.
     for (const declared of ["local", "managed-private"] as const) {
       const api = authority()
-      const { keys, hostId } = await enroll(api)
-      await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
-      await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], sessionAuthority: declared })
+      const { hostId } = await enroll(api)
+      await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
+      await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], sessionAuthority: declared })
 
       expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
         .toMatchObject({ active: true, session_authority: declared })
@@ -462,12 +467,12 @@ describe("workspace assignments", () => {
 
   test("a machine that declared no composition routes with none, rather than a default", async () => {
     // The failure this replaces was a control plane that answered "local" for
-    // every user-hosted workspace. Silence must stay silence all the way to
+    // every machine-placed workspace. Silence must stay silence all the way to
     // the mint: a caller that reads a value here would be reading a guess.
     const api = authority()
-    const { keys, hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    const { hostId } = await enroll(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
 
     const routed = await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })
     expect(routed).toMatchObject({ active: true })
@@ -480,18 +485,18 @@ describe("workspace assignments", () => {
     // composition of its LATEST beat, and one that stops declaring must go
     // back to undeclared.
     const api = authority()
-    const { keys, hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
+    const { hostId } = await enroll(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
 
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], sessionAuthority: "managed-private" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], sessionAuthority: "managed-private" })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
       .toMatchObject({ session_authority: "managed-private" })
 
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], sessionAuthority: "local" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], sessionAuthority: "local" })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
       .toMatchObject({ session_authority: "local" })
 
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
       .not.toHaveProperty("session_authority")
   })
@@ -510,7 +515,7 @@ describe("workspace assignments", () => {
     // Cold registration makes assigning a two-write operation, and the writes
     // are not independent: the workspace row exists only to be assigned. If
     // the first commits while the second fails, the owner is left with a
-    // user-hosted workspace no machine serves — visible in the workspace list
+    // machine-placed workspace no machine serves — visible in the workspace list
     // as a share that does not work, and unreachable by retry, because the
     // second attempt now finds an `existing` row and takes the authorize
     // branch instead of re-registering.
@@ -520,13 +525,13 @@ describe("workspace assignments", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-assign-rollback-")), "authority.db")
     const api = createSqliteWorkspaceAuthority({ path: file })
     const reader = new Database(file, { readonly: false })
-    const { keys, hostId } = await enroll(api)
+    const { hostId } = await enroll(api)
     reader.exec(`
       CREATE TRIGGER fail_assignment BEFORE INSERT ON host_workspace_assignments
       BEGIN SELECT RAISE(FAIL, 'forced assignment failure'); END
     `)
 
-    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId }))
+    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId, remoteDirectory: "/srv/cold" }))
       .rejects.toThrow(/forced assignment failure/)
 
     // The whole operation rolled back: no workspace, no assignment, and
@@ -540,9 +545,9 @@ describe("workspace assignments", () => {
     // And the retry still takes the cold-register path, which is the property
     // a half-committed first attempt would have destroyed.
     reader.exec(`DROP TRIGGER fail_assignment`)
-    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId }))
+    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId, remoteDirectory: "/srv/cold" }))
       .resolves.toEqual({ assigned: true, workspace_id: "ws_cold", host_id: hostId })
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_cold"] })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_cold"] })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_cold" })).toMatchObject({
       active: true,
       workspace_id: "ws_cold",
@@ -552,9 +557,9 @@ describe("workspace assignments", () => {
 
   test("unassign wins over a still-acked set: routing is intent AND consent", async () => {
     const api = authority()
-    const { keys, hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    const { hostId } = await enroll(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
 
     await expect(api.unassignWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
@@ -569,9 +574,9 @@ describe("workspace assignments", () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000_000)
     const api = authority()
-    const { keys, hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], ttlMs: 8_000 })
+    const { hostId } = await enroll(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], ttlMs: 8_000 })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
 
     vi.setSystemTime(1_000_000 + 8_001)
@@ -581,7 +586,7 @@ describe("workspace assignments", () => {
 
     // The assignment survived the lapse: one fresh ack restores routing with
     // no owner action.
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
   })
 
@@ -591,25 +596,24 @@ describe("workspace assignments", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-assignments-")), "authority.db")
     const api = createSqliteWorkspaceAuthority({ path: file })
     const reader = new Database(file, { readonly: false })
-    const { keys, hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    const { hostId } = await enroll(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
 
     await api.revokeHostEnrollment(owner, { hostId })
 
     const dangling = reader.prepare(`SELECT COUNT(*) AS n FROM host_workspace_assignments`).get() as { n: number }
     expect(dangling.n).toBe(0)
     expect(await api.activeHostEnrollment(owner)).toEqual({ active: false, reason: "revoked" })
-    // The machine's workspaces go with it.
     await expect(api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).rejects.toThrow("Workspace not found")
     expect(await api.listWorkspaces(owner)).toEqual([])
   })
 
   test("marking a second device open lands on the assignment", async () => {
     const api = authority()
-    const { keys, hostId } = await enroll(api)
-    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId })
-    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    const { hostId } = await enroll(api)
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
+    await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
 
     const marked = await api.markSecondDeviceOpen(owner, { workspaceId: "ws_alpha" })
 
@@ -788,5 +792,125 @@ describe("host_enrollment_requests retention", () => {
         ),
       }),
     ).rejects.toThrow(/Invalid host enrollment request/)
+  })
+})
+
+describe("provider configuration", () => {
+  const SECRET = "sk-ant-only-the-machine-may-read-this"
+  const PLAINTEXT = `{"version":1,"providers":{"anthropic":{"kind":"api-key","apiKey":"${SECRET}"}}}`
+
+  function fileAuthority() {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-provider-config-")), "authority.db")
+    return { api: createSqliteWorkspaceAuthority({ path: file }), reader: new Database(file, { readonly: false }) }
+  }
+
+  async function sealingPublicKey() {
+    const pair = await webcrypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+    return JSON.stringify(await webcrypto.subtle.exportKey("jwk", pair.publicKey))
+  }
+
+  async function beat(api: ReturnType<typeof authority>, hostId: string, extra: { sealingPublicKey?: string; providerConfigAckedRevision?: number } = {}) {
+    const principal = await machinePrincipal(api, hostId)
+    return api.heartbeatHostEnrollmentByMachine!(principal, {
+      enrollmentId: principal.enrollmentId,
+      hostId,
+      generation: principal.generation,
+      acks: [],
+      ...extra,
+    })
+  }
+
+  async function refusal(promise: Promise<unknown>) {
+    try {
+      await promise
+    } catch (error) {
+      return error as { code?: string; status?: number }
+    }
+    throw new Error("expected a refusal")
+  }
+
+  test("the owner's sealed push reaches the machine on its next beat, stops once acked, and the row never holds the secret", async () => {
+    const { api, reader } = fileAuthority()
+    const { enrollment, hostId } = await enroll(api)
+    const enrollmentId = enrollment.enrollment_id
+    await beat(api, hostId, { sealingPublicKey: await sealingPublicKey() })
+
+    const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
+    expect(target).toMatchObject({ enrollment_id: enrollmentId, host_id: hostId, next_revision: 1 })
+    const sealed = await sealForMachine(target.sealing_public_key!, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    expect(await api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: 1,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: ["openai"],
+    })).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
+
+    const row = reader.prepare(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId) as Record<string, unknown>
+    expect(row.provider_config_sealed).toBe(sealed)
+    expect(JSON.stringify(row)).not.toContain(SECRET)
+    expect(JSON.stringify(reader.prepare(`SELECT * FROM audit_events`).all())).not.toContain(SECRET)
+
+    expect((await beat(api, hostId)).provider_config).toEqual({ revision: 1, sealed })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 1 })).provider_config).toBeUndefined()
+    expect((await beat(api, hostId)).provider_config).toBeUndefined()
+    expect(await api.listHostEnrollments!(owner)).toMatchObject([
+      {
+        enrollment_id: enrollmentId,
+        provider_config_revision: 1,
+        provider_config_acked_revision: 1,
+        sealing_key_declared: true,
+        provider_config_providers: ["openai"],
+        provider_config_rekeyed: false,
+      },
+    ])
+  })
+
+  test("another account can neither read the target nor push: the machine does not exist for it", async () => {
+    const { api, reader } = fileAuthority()
+    const { enrollment, hostId } = await enroll(api)
+    const enrollmentId = enrollment.enrollment_id
+    const key = await sealingPublicKey()
+    await beat(api, hostId, { sealingPublicKey: key })
+
+    expect(await refusal(api.hostProviderConfigTarget!(other, { enrollmentId })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    const sealed = await sealForMachine(key, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    expect(await refusal(api.pushHostProviderConfig!(other, { enrollmentId, sealed, revision: 1, sealingPublicKey: key, providerIds: ["openai"] })))
+      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(reader.prepare(`SELECT provider_config_revision, provider_config_sealed FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId))
+      .toEqual({ provider_config_revision: 0, provider_config_sealed: null })
+    expect((await beat(api, hostId)).provider_config).toBeUndefined()
+  })
+
+  test("a withdrawal is an empty revision the machine is told about; an undeclared key refuses every push", async () => {
+    const { api } = fileAuthority()
+    const { enrollment, hostId } = await enroll(api)
+    const enrollmentId = enrollment.enrollment_id
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ sealing_public_key: null, next_revision: 1 })
+    expect(await refusal(api.pushHostProviderConfig!(owner, { enrollmentId, sealed: null, revision: 1, sealingPublicKey: null, providerIds: [] })))
+      .toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+
+    await beat(api, hostId, { sealingPublicKey: await sealingPublicKey() })
+    const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
+    const sealed = await sealForMachine(target.sealing_public_key!, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    await api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed,
+      revision: 1,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: ["openai"],
+    })
+    await beat(api, hostId, { providerConfigAckedRevision: 1 })
+
+    expect(await api.pushHostProviderConfig!(owner, {
+      enrollmentId,
+      sealed: null,
+      revision: 2,
+      sealingPublicKey: target.sealing_public_key,
+      providerIds: [],
+    })).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 1 })).provider_config).toEqual({ revision: 2, sealed: null })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 2 })).provider_config).toBeUndefined()
   })
 })

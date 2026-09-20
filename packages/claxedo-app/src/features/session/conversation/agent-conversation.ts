@@ -127,7 +127,20 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
     // one message at a time so unchanged rows preserve their object identity,
     // while equal-length text changes and same-rank tool updates still reach
     // the authoritative merge path.
-    if (unchangedSnapshotMessage(existing, message)) continue
+    if (unchangedSnapshotMessage(existing, message)) {
+      // Equal bytes can still be a stronger claim about the same row. A turn
+      // the runtime persisted with no parts at all — a provider error stores
+      // the assistant envelope and nothing under it — has a `latest-surface`
+      // projection equal to its canonical page, so the canonical read lands
+      // here and would leave the surface's mark on a message it has now
+      // described whole. A fresh object is what carries the lift: the store
+      // republishes on identity, not on a flag.
+      if (options?.canonicalPartMessageIDs?.has(message.id) === true && fragmentPartMessages.has(existing)) {
+        merged[index] = { ...existing }
+        changed = true
+      }
+      continue
+    }
     if (existing.id !== message.id) {
       indexById.delete(existing.id)
       indexById.set(message.id, index)

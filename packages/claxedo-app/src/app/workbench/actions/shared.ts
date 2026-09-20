@@ -13,7 +13,7 @@ import type { useGlobalBootstrapActions } from "../../integrations/sync/global-b
 import type { useProjectInventoryActions } from "../../integrations/sync/project-inventory"
 import { sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
-import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, inventoryHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 
@@ -47,7 +47,7 @@ export type ActionProps = {
   activeWorkspaceRouteId: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
   workspaceRouteId: (dir: string) => string | undefined
-  workspaceKindForRoute: (routeId: string) => "cloud" | "user-hosted" | "local" | undefined
+  hostKindForRoute: (routeId: string) => WorkspaceHostKind | undefined
   canUseDocuments?: Accessor<boolean>
   /**
    * What the connected server says about itself; today whether it runs
@@ -106,7 +106,7 @@ export function findWorkspaceForDirectory(
   if (!project) return undefined
   const ws = projectWorkspaceForRef(project.workspaces, workspaceDir)
   const main = project.worktree === workspaceDir
-  const cloud = ws?.kind === "cloud"
+  const cloud = inventoryHostKind(ws?.kind) === "provisioner"
   return {
     id: workspaceDir,
     directory: workspaceDir,
@@ -124,12 +124,12 @@ export function sessionRefForActionWorkspace(input: {
   workspaceDir: string
   sessionId: string
   workspaceRouteId?: string
-  workspaceKind?: "cloud" | "user-hosted" | "local"
+  hostKind?: WorkspaceHostKind
 }) {
   const catalogWorkspace = signedWorkspaceFromProjects(input.projects(), input.workspaceDir)
-  const connectedKind = workspaceKind(input.workspaceKind)
+  const connectedKind = asHostKind(input.hostKind)
   const workspace = catalogWorkspace ?? (
-    input.workspaceRouteId && connectedKind && connectedKind !== "local"
+    input.workspaceRouteId && connectedKind && connectedKind !== "self"
       ? { workspaceId: input.workspaceRouteId, kind: connectedKind }
       : undefined
   )

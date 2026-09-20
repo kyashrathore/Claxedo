@@ -23,8 +23,9 @@
 // Prereqs: the echo server must already be running inside the sandbox on
 // --local-url's port (bench/setup-target.ts starts one on 3939; only its
 // localhost listener is used here, not its preview URL), and the deployed relay
-// must be configured with the resolver in user-hosted mode (ACCESS_MODE=
-// user-hosted) so it routes clients into the tunnel instead of dialing out.
+// must be configured with the resolver in local-worktree mode
+// (TARGET_BACKING=local-worktree) so it routes clients into the tunnel instead
+// of dialing out.
 //
 // Prints (stderr + JSON to bench/reports/dialin-<stamp>.json):
 //   bundlePath        — the produced agent .cjs

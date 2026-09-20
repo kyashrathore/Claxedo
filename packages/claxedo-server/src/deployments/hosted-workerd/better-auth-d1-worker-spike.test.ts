@@ -7,10 +7,12 @@ import { getMigrations } from "better-auth/db/migration"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 
+import { sha256Hex } from "@claxedo/helpers/crypto"
 import {
-  hostEnrollmentHeartbeatPayloadV2,
-  hostEnrollmentPayload,
-} from "../../authority/adapters/d1/host-access-authority"
+  MACHINE_REQUEST_HEADERS,
+  machineRequestPayload,
+} from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { hostEnrollmentPayload } from "../../authority/adapters/d1/host-access-authority"
 
 import {
   BETTER_AUTH_SESSION_COOKIE,
@@ -32,6 +34,7 @@ import {
   BETTER_AUTH_REFRESH_TOKEN_PREFIX,
   betterAuthOAuthTokenHash,
 } from "../../platform/auth/better-auth-token-hash"
+import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 
 const API_ORIGIN = "https://api.claxedo.test"
 const APP_ORIGIN = "https://app.claxedo.test"
@@ -42,24 +45,7 @@ const EVIDENCE_MIGRATION_PATH = fileURLToPath(
   new URL("../../../migrations/auth/0003_authentication_evidence.sql", import.meta.url),
 )
 const WORKER_PATH = fileURLToPath(new URL("./better-auth-d1-worker-spike.cf.ts", import.meta.url))
-// The control-plane tables the D1 authority + relay-target resolver read:
-// identities/orgs/workspaces (0002), host access + sharing (0004), and the
-// machine-wide grain — enrollments plus owner assignments (0012–0014).
-const CONTROL_PLANE_MIGRATION_PATHS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0005_agent_extensions_and_audit.sql",
-  "0012_cold_local_host_challenges.sql",
-  "0013_org_team_session_sharing.sql",
-  "0014_host_workspace_assignments.sql",
-  "0015_drop_local_host_links.sql",
-  "0016_host_session_authority.sql",
-  "0028_workspace_org_member_visible.sql",
-  "0029_host_connect.sql",
-  "0030_workspace_host_assignment_revision.sql",
-].map((name) => fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url)))
+const CONTROL_PLANE_MIGRATION_PATHS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 
 function body(input: Record<string, string>) {
   return new URLSearchParams(input).toString()
@@ -1004,7 +990,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     expect(counts).toMatchObject({ users: 1, links: 4, evidence: 0 })
   })
 
-  test("runs machine enrollment → owner assignment → heartbeat v2 → relay-target routing end-to-end", async () => {
+  test("runs machine enrollment → owner assignment → machine-signed beat → relay-target routing end-to-end", async () => {
     // The whole remote-sharing grain, through the REAL routes inside workerd,
     // against the REAL D1 authority, authenticated by Better Auth: enroll the
     // machine once, assign a workspace to it, ack it with ONE P-256 signature
@@ -1077,15 +1063,52 @@ describe("Better Auth + D1 inside Workerd", () => {
       },
     })
     expect(enroll.status, await enroll.clone().text()).toBe(200)
-    expect(await enroll.json()).toMatchObject({ enrollment: { host_id: hostId, display_name: "Spike laptop" } })
+    const enrolled = (await enroll.json()) as { enrollment: { enrollment_id: string; host_id: string } }
+    expect(enrolled.enrollment).toMatchObject({ host_id: hostId })
 
-    // Enrolled but not yet assigned: nothing routes.
+    // From here the machine speaks for itself: four headers and a signature
+    // over method, path, body hash, timestamp, nonce and enrollment id. The
+    // owner's cookie is not sent, and would buy nothing if it were.
+    let nonce = 0
+    const machineCall = async (pathname: string, body: unknown) => {
+      const bodyText = JSON.stringify(body)
+      const ts = Date.now()
+      const requestNonce = `nonce${String(++nonce).padStart(12, "0")}`
+      return await miniflare.dispatchFetch(`${API_ORIGIN}${pathname}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [MACHINE_REQUEST_HEADERS.enrollmentId]: enrolled.enrollment.enrollment_id,
+          [MACHINE_REQUEST_HEADERS.ts]: String(ts),
+          [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
+          [MACHINE_REQUEST_HEADERS.signature]: signPayload(machineRequestPayload({
+            method: "POST",
+            pathname,
+            bodySha256Hex: await sha256Hex(bodyText),
+            ts,
+            nonce: requestNonce,
+            enrollmentId: enrolled.enrollment.enrollment_id,
+          })),
+        },
+        body: bodyText,
+      })
+    }
+
     expect(await relayTarget(workspaceId)).toEqual({ active: false })
 
     // 2. Owner assignment cold-registers the workspace and mints the Host
-    //    Tunnel Token immediately — no machine signature on this leg.
+    //    Tunnel Token immediately — no machine signature on this leg. The
+    //    directory is part of the declaration: it is what the machine is
+    //    handed back to ack, and an assignment without one describes nothing
+    //    for a machine caller to consent to.
     const assign = await call(`/api/workspace/${workspaceId}/host-assignment`, {
-      body: { hostId, displayName: "Spike workspace", repoName: "spike", gitBranch: "main" },
+      body: {
+        hostId,
+        displayName: "Spike workspace",
+        repoName: "spike",
+        gitBranch: "main",
+        remoteDirectory: "/Users/spike/projects/app",
+      },
     })
     expect(assign.status, await assign.clone().text()).toBe(200)
     expect(await assign.json()).toMatchObject({
@@ -1096,25 +1119,37 @@ describe("Better Auth + D1 inside Workerd", () => {
     // Assigned but not yet acked by the machine: still not routable.
     expect(await relayTarget(workspaceId)).toEqual({ active: false })
 
-    // 3. Heartbeat v2: ONE signature over the exact payload literal covers the
-    //    served set. A signature over a DIFFERENT set must be refused first.
-    const forged = await call("/api/claxedo/host/enrollments/heartbeat", {
-      body: {
-        hostId,
-        signature: signPayload(hostEnrollmentHeartbeatPayloadV2({ hostId, workspaceIds: [] })),
-        workspaceIds: [workspaceId],
-      },
+    // 3. The machine claims a serving generation, then beats. An account
+    //    credential earns no beat at all on this route.
+    const accountBeat = await call("/api/claxedo/host/enrollments/heartbeat", {
+      body: { enrollmentId: enrolled.enrollment.enrollment_id, hostId, generation: 1, acks: [] },
     })
-    expect(forged.status).toBe(403)
-    expect(await forged.json()).toMatchObject({ error: { code: "host_attestation_denied" } })
+    expect(accountBeat.status).toBe(400)
+    expect(await accountBeat.json()).toMatchObject({ error: { code: "machine_headers_invalid" } })
+
+    const acquire = await machineCall("/api/claxedo/host/enrollments/acquire", {
+      enrollmentId: enrolled.enrollment.enrollment_id,
+      hostId,
+    })
+    expect(acquire.status, await acquire.clone().text()).toBe(200)
+    const { generation } = (await acquire.json()) as { generation: number }
+
+    // An ack at a revision the owner has moved past is not readiness for
+    // anything: the lease renews, the workspace stays unroutable.
+    const stale = await machineCall("/api/claxedo/host/enrollments/heartbeat", {
+      enrollmentId: enrolled.enrollment.enrollment_id,
+      hostId,
+      generation,
+      acks: [{ workspaceId, revision: 99 }],
+    })
+    expect(stale.status, await stale.clone().text()).toBe(200)
     expect(await relayTarget(workspaceId)).toEqual({ active: false })
 
-    const beat = await call("/api/claxedo/host/enrollments/heartbeat", {
-      body: {
-        hostId,
-        signature: signPayload(hostEnrollmentHeartbeatPayloadV2({ hostId, workspaceIds: [workspaceId] })),
-        workspaceIds: [workspaceId],
-      },
+    const beat = await machineCall("/api/claxedo/host/enrollments/heartbeat", {
+      enrollmentId: enrolled.enrollment.enrollment_id,
+      hostId,
+      generation,
+      acks: [{ workspaceId, revision: 1 }],
     })
     expect(beat.status, await beat.clone().text()).toBe(200)
     const beatBody = (await beat.json()) as Record<string, unknown>

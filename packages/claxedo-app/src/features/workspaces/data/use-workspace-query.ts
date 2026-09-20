@@ -12,8 +12,8 @@ import { isWorkspaceReady } from "./workspace-connection"
 // solid-query parks the query (no fetch, no error, no toast). When it flips back
 // to `ready`, the query re-enables and refetches.
 //
-// Local workspaces are always `ready`, so this is a no-op gate for loopback —
-// zero regression.
+// A workspace this process serves over loopback is `ready` from its first
+// frame (`acquireWorkspaceConnection`), so the gate never parks its queries.
 
 export type WorkspaceQueryOptions<
   TQueryFnData = unknown,
@@ -21,18 +21,17 @@ export type WorkspaceQueryOptions<
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
 > = Omit<SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey>, "initialData"> & {
-  // The workspaceId whose connection gates this query. A relay-backed workspace
-  // (cloud / user-hosted) supplies its real id and the query is gated on the
-  // authority flipping that id to `ready`.
+  // The workspaceId whose connection gates this query. A workspace the attached
+  // server does not serve itself supplies its real id and the query is gated on
+  // the authority flipping that id to `ready`.
   //
-  // `undefined` means there is NO relay backing for this scope — i.e. the query
-  // targets the central / loopback-local server, which is reachable as soon as
-  // the global bootstrap has happened. By default that is treated as a LOCAL
-  // workspace (always ready), so the gate is a no-op for loopback — matching the
-  // authority's "local workspaces are synthesized ready immediately" contract.
+  // `undefined` means there is NO relay backing for this scope — the query
+  // targets the central / loopback server, which is reachable as soon as the
+  // global bootstrap has happened. By default that reads as ready, the same
+  // answer the authority gives a workspace this process serves over loopback.
   // Pass `gateWhenUnbacked: true` to instead keep the query disabled when no
   // workspaceId is known (for the rare case where a missing id is an error, not
-  // a local fallback).
+  // a loopback fallback).
   workspaceId: string | undefined
   // When `true`, an `undefined` workspaceId DISABLES the query instead of
   // treating it as the local/central fallback. Defaults to `false` (fallback).

@@ -196,7 +196,7 @@ describe("the local entry", () => {
     // its `useAuth` from `configureAuthSession` instead of importing it, which
     // is what removed the shell's provider tree from the local closure. Delete
     // the binding and every signed-in build compiles, renders, and reports
-    // anonymous — account menu stuck on "Local workspace", with a green suite.
+    // anonymous — account menu stuck on "Not signed in", with a green suite.
     expect(hosted).toMatch(/configureAuthSession\s*\(\s*browserAuthAdapter\.useAuth\s*\)/)
 
     // The desktop is signed through Electron main, not a second renderer auth

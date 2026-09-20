@@ -45,7 +45,7 @@ RUN bun run build:packages
 # the runtime stage. Node sizes its default heap from the cgroup, so the same
 # build passes outside Docker and dies with `Reached heap limit` inside it.
 # 4096 rather than the runtime's 2048: this bundle emits hidden sourcemaps.
-RUN cd packages/claxedo-app && VITE_CLAXEDO_SERVER_URL="" VITE_AUTH_ENABLED=false \
+RUN cd packages/claxedo-app && VITE_CLAXEDO_SERVER_URL="" \
     NODE_OPTIONS=--max-old-space-size=4096 \
     node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts --outDir dist-selfhost
 

@@ -317,8 +317,8 @@ export function DialogSelectFile(props: {
     const current = project()
     const kind =
       current && directory === current.worktree
-        ? language.t("workspace.type.local")
-        : language.t("workspace.type.sandbox")
+        ? language.t("workspace.directory.project")
+        : language.t("workspace.directory.sandbox")
     const home = homedir()
     const path = home ? directory.replace(home, "~") : directory
     const name = getFilename(directory)

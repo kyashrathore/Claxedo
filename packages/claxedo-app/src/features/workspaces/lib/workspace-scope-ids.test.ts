@@ -66,7 +66,7 @@ describe("openWorkspaceScopeIds", () => {
             toolSandbox: {
               kind: "workspace",
               workspaceId: "ws_cloud_1",
-              hosting: "cloud",
+              hosting: "provisioner",
             },
           },
         },

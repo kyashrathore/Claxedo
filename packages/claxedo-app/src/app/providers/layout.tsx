@@ -18,7 +18,6 @@ import {
   sidebarProjectsMissingFromApi,
   syncApiProjectsToSidebar,
 } from "@/app/providers/layout-projects"
-import { isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { setProjectIcon, upsertProjectMeta } from "../../features/workspaces/data/query/project-meta"
@@ -72,7 +71,7 @@ export type LocalProject = Partial<Project> & { worktree: string; expanded: bool
 export type ReviewDiffStyle = "unified" | "split"
 
 function isSignedWorkspaceDirectory(input: string | undefined) {
-  return !!(input && sessionWorkspaceRuntimeRef({ directory: input })) || isUserHostedWorkspaceDirectory(input)
+  return !!(input && sessionWorkspaceRuntimeRef({ directory: input }))
 }
 
 function createLayoutContextValue() {

@@ -79,7 +79,8 @@ describe("mock-runtime canonical route bindings", () => {
       workspaceId: "ws_cloud",
       projectId: "project_1",
       directory: "/repo/cloud",
-      access: "cloud",
+      // The resolve projection's OBJECT backing, not the list row's bare word.
+      backing: { kind: "cloud-vm", driver: "daytona", remoteDirectory: "/repo/cloud" },
       kind: "cloud",
       driver: "daytona",
       status: "ready",
@@ -187,34 +188,35 @@ describe("mock-runtime canonical route bindings", () => {
       project_id: "proj_1",
       display_name: "main",
       backing: "cloud-vm",
-      access: "cloud",
+      placement: { directory: "/workspace" },
       remote_directory: "/workspace",
       role: "owner",
     }
-    const userHosted: ControlPlaneWorkspaceRow = {
+    const machinePlaced: ControlPlaneWorkspaceRow = {
       workspace_id: "ws_shared",
       org_id: "org_1",
       project_id: "proj_1",
       display_name: "shared",
       backing: "local-worktree",
-      access: "user-hosted",
+      placement: { host_enrollment_id: "enr_shared_host", directory: "/repo/shared" },
       remote_directory: "/repo/shared",
       role: "viewer",
-      // Only a user-hosted row carries reachability — the rail reads it as
+      // Only a machine-placed row carries reachability — the rail reads it as
       // "host offline" before any pane opens the workspace.
       host_online: false,
     }
-    const workspaces = [cloud, userHosted]
+    const workspaces = [cloud, machinePlaced]
 
-    // `?access=user-hosted` is the ONLY filtering value.
-    expect(workspaceListResponse({ access: "user-hosted", workspaces })).toEqual({
-      workspaces: [userHosted],
+    // `?host=machine` is the ONLY filtering value, and it keeps the rows
+    // placed on an enrolled machine.
+    expect(workspaceListResponse({ host: "machine", workspaces })).toEqual({
+      workspaces: [machinePlaced],
     })
-    // `?access=cloud` is "what can this principal reach", not "cloud only" —
-    // it answers the whole visible inventory, which is why the catalog can
-    // fold the two calls without losing a row.
-    expect(workspaceListResponse({ access: "cloud", workspaces })).toEqual({ workspaces })
-    expect(workspaceListResponse({ access: null, workspaces })).toEqual({ workspaces })
+    // `?host=provisioner` is "what can this principal reach", not "the
+    // provisioner's only" — it answers the whole visible inventory, which is
+    // why the catalog can fold the two calls without losing a row.
+    expect(workspaceListResponse({ host: "provisioner", workspaces })).toEqual({ workspaces })
+    expect(workspaceListResponse({ host: null, workspaces })).toEqual({ workspaces })
   })
 
   test("matches only the BARE workspace list path, never a sibling workspace route", () => {

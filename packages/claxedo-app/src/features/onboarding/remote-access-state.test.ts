@@ -181,7 +181,7 @@ describe("remote access onboarding state", () => {
 
   test("the device link is the app ROOT, because sharing is machine level", () => {
     // Nothing to fetch and no workspace to choose: enabling remote access
-    // publishes every local workspace on the machine, so the destination is
+    // publishes every workspace the machine serves, so the destination is
     // the account's own list. A staging build must land on staging, and a
     // stale workspace path in the configured origin must not survive.
     expect(remoteAccessDeviceLink({ appOrigin: "https://staging.claxedo.test", sourceClientId: "desktop-client" }))

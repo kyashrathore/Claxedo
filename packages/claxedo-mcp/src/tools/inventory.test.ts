@@ -63,7 +63,11 @@ describe("the runtime route inventory", () => {
     expect(RUNTIME_OPERATIONS.get("prompt")).toEqual({
       operation: "prompt",
       write: true,
-      routes: ["POST /session/:id/message", "POST /session/:id/prompt_async"],
+      routes: [
+        "POST /session/:id/queue/:seq/:action",
+        "POST /session/:id/message",
+        "POST /session/:id/prompt_async",
+      ],
     })
     expect(RUNTIME_OPERATIONS.get("session_list")).toMatchObject({ write: false })
     // `GET /agent` is a `workspace` decision, so it contributes no operation.

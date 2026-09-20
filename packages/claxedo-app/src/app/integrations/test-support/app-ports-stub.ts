@@ -85,7 +85,7 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   usePaneCtx: lazy("@/app/workbench/context/pane-ctx", "usePaneCtx"),
   useWorkspaceQuery: lazy("@/features/workspaces/data/use-workspace-query", "useWorkspaceQuery"),
   isWorkspaceReady: lazy("@/features/workspaces/data/workspace-connection", "isWorkspaceReady"),
-  workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),
+  workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspaceRelayPlacement"),
   createCloudWorkspace: lazy("@/features/workspaces/data/workspace-create-api", "createCloudWorkspace"),
   WorkspaceGate: lazy("@/features/workspaces/data/workspace-gate", "WorkspaceGate"),
   useWorkspaceScopeRegistryOptional: lazy(
@@ -122,7 +122,7 @@ const terminalThunks: Thunks<TerminalAppPorts> = {
   NavigationStatusDot: lazy("@/app/workbench/navigation/navigation-row", "NavigationStatusDot"),
   NavigationRowStatusGutter: lazy("@/app/workbench/navigation/navigation-row", "NavigationRowStatusGutter"),
   NavigationRowGlyph: lazy("@/app/workbench/navigation/navigation-row", "NavigationRowGlyph"),
-  workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),
+  workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspaceRelayPlacement"),
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),
   TerminalNewView: lazy("@/app/workbench/terminal/terminal-new-view", "TerminalNewView"),
 }

@@ -148,13 +148,12 @@ function installErrorReporting() {
 }
 
 function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
-  // Desktop identity is never a renderer auth session. `authEnabled` stays
-  // false even in a signed-capable release; the Electron AccountPort owns the
-  // transition that activates `loadHostedContributions`.
+  // Desktop identity is never a renderer auth session: the daemon this shell
+  // talks to declares that it issues no sessions, and the Electron AccountPort
+  // owns the transition that activates `loadHostedContributions`.
   const baseConfig = getDefaultConfig()
   const config = {
     ...baseConfig,
-    authEnabled: false,
     // Signed-capable desktop builds own cloud sandbox creation and Connections.
     // `getDefaultConfig()` follows Vite product-UI env, which the inner desktop
     // bundle does not load, so composition derives them from the hosted loader.
@@ -183,7 +182,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
   })()
 
   // The desktop renderer knows its plane synchronously — no provider mount needed.
-  setDeploymentMode(resolveDeploymentMode({ platform: "desktop", authEnabled: false }))
+  setDeploymentMode(resolveDeploymentMode({ platform: "desktop", issuesSessions: false }))
   phCapture("app_launched", {
     ...identityProps(),
     surface: "app_shell",

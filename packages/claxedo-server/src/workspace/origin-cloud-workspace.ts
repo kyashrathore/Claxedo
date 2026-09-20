@@ -113,7 +113,7 @@ export async function allocateOriginCloudWorkspace(
   if (!sandboxManager) {
     return {
       code: "placement_unsupported",
-      detail: "No cloud sandbox driver is configured on this control plane",
+      detail: "This control plane provisions no cloud sandboxes",
     }
   }
 
@@ -188,6 +188,16 @@ async function allocate(
       detail: `Project ${input.projectId} has no remote this control plane can clone into an isolated cloud root`,
     }
   }
+  const driver = input.services.sandbox.defaultDriver
+  // The driver is this root's placement: the provisioner owns the machine it
+  // provisions. A row stored without it names no machine at all, and the store
+  // refuses it.
+  if (!driver) {
+    return {
+      code: "placement_unsupported",
+      detail: "This control plane's sandbox provisioner is not one a workspace placement can name",
+    }
+  }
   const workspace = await ensureWorkspace({
     workspaceId,
     ...(root.org_id ? { org_id: root.org_id } : {}),
@@ -195,7 +205,7 @@ async function allocate(
     workspace_name: input.displayName,
     directory: WORKSPACE_DIR,
     kind: "cloud",
-    ...(input.services.sandbox.defaultDriver ? { driver: input.services.sandbox.defaultDriver } : {}),
+    driver,
     repo_url: repoUrl,
     ...(root.git_branch ? { git_branch: root.git_branch } : {}),
     remote_directory: WORKSPACE_DIR,

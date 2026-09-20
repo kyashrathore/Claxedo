@@ -18,6 +18,7 @@ import {
   type RuntimeCredentialClaims,
 } from "../server"
 import { registerSessionTools } from "./sessions"
+import { controlPlaneWorkspaceRow, workspaceListHostRows } from "../client/control-plane-workspaces.fixture"
 
 type FixtureSession = {
   id: string
@@ -34,7 +35,7 @@ type Workspace = {
   id: string
   directory: string
   online: boolean
-  access: "cloud" | "user-hosted"
+  backing: "cloud-vm" | "local-worktree"
   name?: string
   sessions: FixtureSession[]
   status: Record<string, AgentRuntimeStatus>
@@ -45,12 +46,13 @@ type Workspace = {
   deleted: string[]
   worktrees: Array<{ name?: string; query: Record<string, string> }>
   requests: string[]
+  modes: Record<string, string>
 }
 
 function workspace(input: Partial<Workspace> & Pick<Workspace, "id" | "directory">): Workspace {
   return {
     online: true,
-    access: "user-hosted",
+    backing: "local-worktree",
     sessions: [],
     status: {},
     messages: [],
@@ -60,9 +62,21 @@ function workspace(input: Partial<Workspace> & Pick<Workspace, "id" | "directory
     deleted: [],
     worktrees: [],
     requests: [],
+    modes: {},
     ...input,
   }
 }
+
+/**
+ * The rungs a native harness reports. `acceptEdits` carries no rung, so it can
+ * never be chosen as the widest mode under a ceiling.
+ */
+const PERMISSION_MODES = [
+  { id: "ask", name: "Ask", level: "ask" as const },
+  { id: "acceptEdits", name: "Accept edits" },
+  { id: "auto", name: "Auto", level: "auto" as const },
+  { id: "full", name: "Full", level: "full" as const },
+]
 
 function message(id: string, text: string): AgentMessage {
   return { info: { id, role: "assistant" }, parts: [{ type: "text", text }] } as unknown as AgentMessage
@@ -101,7 +115,6 @@ function runtimeApp(state: Workspace) {
       if (row && harness) row.harness = harness
       return { harness: { id: row?.harness ?? "claude", access: "native" as const }, agent: "build", variant: null }
     },
-    sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
       instructionChannel: "none" as const,
@@ -159,6 +172,12 @@ function runtimeApp(state: Workspace) {
       },
       listPermissions: async () => [],
       listQuestions: async () => [],
+      listDraftPermissionModes: async () => ({ modes: PERMISSION_MODES, appliesFrom: "next-turn" as const }),
+      listPermissionModes: async (binding) => ({ modes: PERMISSION_MODES, currentModeId: state.modes[binding.sessionId] ?? "ask", appliesFrom: "next-turn" as const }),
+      setPermissionMode: async (binding, modeId) => {
+        state.modes[binding.sessionId] = modeId
+        return { modes: PERMISSION_MODES, currentModeId: modeId, appliesFrom: "next-turn" as const }
+      },
     }),
   })
   const app = new Hono()
@@ -199,22 +218,19 @@ function controlPlane(workspaces: readonly Workspace[], created: Workspace[]) {
       })
     }
     if (url.pathname === "/api/workspace" && init?.method !== "POST") {
-      const access = url.searchParams.get("access")
-      return Response.json({
-        workspaces: [...workspaces, ...created]
-          .filter((row) => row.access === access)
-          .map((row) => ({
-            workspace_id: row.id,
-            access: row.access,
-            host_online: row.online,
-            remote_directory: row.directory,
-            ...(row.name ? { display_name: row.name } : {}),
-          })),
-      })
+      const rows = [...workspaces, ...created].map((row) =>
+        controlPlaneWorkspaceRow({
+          workspace_id: row.id,
+          backing: row.backing,
+          host_online: row.online,
+          remote_directory: row.directory,
+          ...(row.name ? { display_name: row.name } : {}),
+        }))
+      return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
     }
     if (url.pathname === "/api/workspace/create") {
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { workspaceName?: string }
-      const row = workspace({ id: `ws_cloud_${created.length + 1}`, directory: "/workspace", access: "cloud", ...(body.workspaceName ? { name: body.workspaceName } : {}) })
+      const row = workspace({ id: `ws_cloud_${created.length + 1}`, directory: "/workspace", backing: "cloud-vm", ...(body.workspaceName ? { name: body.workspaceName } : {}) })
       created.push(row)
       return Response.json({ workspaceId: row.id, directory: row.directory })
     }
@@ -343,19 +359,24 @@ describe("session_create", () => {
     const state = local()
     const { url } = await listen({ local: state, claims: { permissionMode: "auto" } })
     const client = await connect(url, "rt-token")
-    expect(await json(client, "session_create", {})).toMatchObject({ permissionCeiling: "auto" })
+    const created = await json(client, "session_create", {})
+    expect(created).toMatchObject({ permissionCeiling: "auto" })
     expect(state.creates.at(-1)?.body).toMatchObject({ permissionCeiling: "auto" })
+    expect(state.modes[String(created.id)]).toBe("auto")
   })
 
   test("caps at ask when the runtime credential declares no mode, and names no ceiling for a person", async () => {
     const state = local()
     const runtime = await listen({ local: state })
-    expect(await json(await connect(runtime.url, "rt-token"), "session_create", {})).toMatchObject({ permissionCeiling: "ask" })
+    const capped = await json(await connect(runtime.url, "rt-token"), "session_create", {})
+    expect(capped).toMatchObject({ permissionCeiling: "ask" })
     expect(state.creates.at(-1)?.body).toMatchObject({ permissionCeiling: "ask" })
+    expect(state.modes[String(capped.id)]).toBe("ask")
 
     const person = await listen({ local: state })
-    await json(await connect(person.url, "cli-jwt"), "session_create", {})
+    const uncapped = await json(await connect(person.url, "cli-jwt"), "session_create", {})
     expect(state.creates.at(-1)?.body).toEqual({})
+    expect(state.modes[String(uncapped.id)]).toBeUndefined()
   })
 
   test("registers a worktree first and creates the session in the directory it answers with", async () => {
@@ -369,7 +390,7 @@ describe("session_create", () => {
     expect(state.creates.at(-1)?.query).toMatchObject({ directory: "/w/../review" })
   })
 
-  test("creates the cloud workspace at the control plane and the session through the relay", async () => {
+  test("creates the provisioner-placed workspace at the control plane and the session through the relay", async () => {
     const state = local()
     const { url, control, created } = await listen({ mount: "hosted", workspaces: [state] })
     const client = await connect(url, "cli-jwt")
@@ -413,7 +434,7 @@ describe("sessions_list", () => {
     const cloud = workspace({
       id: "ws_cloud",
       directory: "/workspace",
-      access: "cloud",
+      backing: "cloud-vm",
       sessions: [{ id: "ses_cloud", title: "Cloud run", harness: "codex" }],
       status: { ses_cloud: { type: "idle" } },
     })
@@ -424,7 +445,7 @@ describe("sessions_list", () => {
     expect(listed.map((row) => String(row.workspace)).toSorted((left, right) => left.localeCompare(right)))
       .toEqual(["ws_cloud", "ws_local"])
     const mac = listed.find((row) => row.workspace === "ws_local")
-    expect(mac).toMatchObject({ name: "Mac", kind: "user-hosted" })
+    expect(mac).toMatchObject({ name: "Mac", host: "machine" })
     const macSessions = (mac?.sessions ?? []) as Array<Record<string, unknown>>
     expect(macSessions.map((row) => row.id)).toEqual(["ses_root"])
     expect(macSessions[0]).toMatchObject({ status: { type: "busy" } })
@@ -437,7 +458,7 @@ describe("sessions_list", () => {
     const client = await connect(url, "cli-jwt")
     const listed = (await json(client, "sessions_list")).workspaces as Array<Record<string, unknown>>
 
-    expect(listed.find((row) => row.workspace === "ws_off")).toEqual({ workspace: "ws_off", kind: "user-hosted", unavailable: "machine offline" })
+    expect(listed.find((row) => row.workspace === "ws_off")).toEqual({ workspace: "ws_off", host: "machine", unavailable: "machine offline" })
     expect(offline.requests).toEqual([])
   })
 

@@ -20,7 +20,7 @@ export type TerminalAppPorts = {
   NavigationStatusDot: typeof Navigation.NavigationStatusDot
   NavigationRowGlyph: typeof Navigation.NavigationRowGlyph
   NavigationRowStatusGutter: typeof Navigation.NavigationRowStatusGutter
-  workspacePlacement: typeof WorkspaceConnection.workspacePlacement
+  workspacePlacement: typeof WorkspaceConnection.workspaceRelayPlacement
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   /**
    * The creator shown for a terminal surface still in its `new` state. It lives

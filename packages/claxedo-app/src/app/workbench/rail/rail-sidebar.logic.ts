@@ -5,7 +5,7 @@ import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import { remoteAccessSessionLink } from "@/features/onboarding/remote-access-state"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
-import { isRelayBackedWorkspaceKind, isUserHostedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { type WorkspaceHostKind, asHostKind, inventoryHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { sessionDeepLink } from "../state/route-deep-links"
 
@@ -95,10 +95,10 @@ export function workspaceRuntimeKind(
   directory: string,
   mainIsCloud?: boolean,
 ): RuntimeKind {
-  const kind = workspaceKind(projectWorkspaceForRef(project.workspaces, directory)?.kind)
+  const kind = inventoryHostKind(projectWorkspaceForRef(project.workspaces, directory)?.kind)
   if (kind) return kind
-  if (directory === project.worktree && mainIsCloud) return "cloud"
-  return "local"
+  if (directory === project.worktree && mainIsCloud) return "provisioner"
+  return "self"
 }
 
 // `directory` is a directory string, spelled as one. It used to be a
@@ -121,23 +121,22 @@ export function railWorkspaceSessionBacking(input: {
   // is what makes the two meet, so the row's own kind and id decide the
   // backing instead of the `ws_*`-shape guess below.
   const workspace = projectWorkspaceForRef(input.project.workspaces, input.directory)
-  const kind = input.environmentKind ?? workspace?.kind
+  const rowKind = inventoryHostKind(workspace?.kind)
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
   // The project inventory is authoritative for a workspace it already knows. A
   // `workspace:<uuid>` navigation ref is also how the local sidecar associates
   // sessions with a project; it is not evidence of relay hosting, so a
-  // confirmed-local inventory record must win over the optimistic user-hosted
-  // guess below.
-  if (workspace?.kind === "local") return undefined
-  const relayKind = workspaceKind(kind)
-  if (isRelayBackedWorkspaceKind(relayKind)) {
+  // confirmed-self inventory record must win over the optimistic guess below.
+  if (rowKind === "self") return undefined
+  const relayKind = asHostKind(input.environmentKind) ?? rowKind
+  if (isRelayHostKind(relayKind)) {
     return workspaceId ? { workspaceId, kind: relayKind } : undefined
   }
   if (!input.workspaceId) return undefined
   if (localWorkspaceAssociationId(input.workspaceId)) return undefined
   // An unknown `ws_*` row can still predate signed inventory hydration. UUIDs
   // and inventory-confirmed local records have already returned above.
-  return { workspaceId: input.workspaceId, kind: "user-hosted" }
+  return { workspaceId: input.workspaceId, kind: "machine" }
 }
 
 /**
@@ -327,30 +326,30 @@ export function railRowStatusType(input: {
  *
  * All of it comes from the CATALOG, so a workspace a teammate shares says what
  * this account may do with it and whether the machine serving it is up before
- * any pane opens it. The two sharing badges are different facts and were one
- * word ("Shared") that meant only the first:
+ * any pane opens it. The two sharing badges are different facts and one word
+ * for both would state only the first:
  *
- * - "published by this machine" — this desktop is the host serving it out;
+ * - "published to your account" — this desktop serves the workspace out;
  * - "shared with you" — someone else's machine serves it and this account
  *   holds a granted role on it.
  */
 export function railWorkspaceMetaLabels(input: {
-  kind: string | undefined
+  kind: WorkspaceHostKind | undefined
   status?: string
   role?: string
   hostOnline?: boolean
-  publishedByThisMachine: boolean
-  label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedByThisMachine", role?: string) => string
+  publishedToYourAccount: boolean
+  label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedToYourAccount", role?: string) => string
 }) {
-  const userHosted = isUserHostedWorkspaceKind(workspaceKind(input.kind))
-  const granted = userHosted && !!input.role && input.role !== "owner"
+  const onAMachine = input.kind === "machine"
+  const granted = onAMachine && !!input.role && input.role !== "owner"
   return [
     input.status,
-    // Reachability is only a question about a machine someone owns; a cloud
-    // workspace's runtime is provisioned on demand and reports its own state.
-    userHosted && input.hostOnline === false ? input.label("hostOffline") : undefined,
+    // Reachability is only a question about a machine someone owns; the
+    // provisioner brings a runtime up on demand and reports its own state.
+    onAMachine && input.hostOnline === false ? input.label("hostOffline") : undefined,
     granted ? input.label("role", input.role) : undefined,
-    input.publishedByThisMachine ? input.label("publishedByThisMachine") : undefined,
-    granted && !input.publishedByThisMachine ? input.label("sharedWithYou") : undefined,
+    input.publishedToYourAccount ? input.label("publishedToYourAccount") : undefined,
+    granted && !input.publishedToYourAccount ? input.label("sharedWithYou") : undefined,
   ].filter((item): item is string => !!item)
 }

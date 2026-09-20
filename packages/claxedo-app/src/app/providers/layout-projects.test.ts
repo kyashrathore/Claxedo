@@ -215,7 +215,7 @@ describe("layout project catalog", () => {
     // so the sidebar can read per-workspace kind/name.
     const workspaces = {
       "/projects/a": { kind: "local", workspace_name: "main" },
-      "workspace:ws_cloud": { kind: "cloud", workspace_name: "main" },
+      "workspace:ws_cloud": { kind: "provisioner", workspace_name: "main" },
     }
     const apiProject = {
       id: "proj_a",

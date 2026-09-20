@@ -17,7 +17,6 @@ import { useSDK } from "@/app/providers/sdk/sdk"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
 import { ModelsProvider } from "@/features/session/providers/models"
-import { modelStoreWorkspaceKey } from "@/platform/identity/workspace-address"
 import { harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
@@ -32,7 +31,7 @@ import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute, tasksRoute } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, modelStoreWorkspaceKey, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import {
   refreshDirectorySessionCache,
   sessionLoadMetaKey,
@@ -173,7 +172,7 @@ function DirectoryDataProvider(props: ParentProps<{
   // names when it edits the store for this workspace.
   const modelsWorkspaceKey = createMemo(() => {
     const workspace = sdk.workspace(props.directory)
-    return modelStoreWorkspaceKey({ kind: workspace?.kind, workspaceId: workspace?.workspaceId, hostDirectory: props.directory })
+    return modelStoreWorkspaceKey({ host: workspace?.kind, workspaceId: workspace?.workspaceId, hostDirectory: props.directory })
   })
   const modelsSelection = createMemo(() => props.harnessSelection?.() ?? props.sessionRef?.()?.harness)
   const modelsHarness = createMemo(() => {
@@ -240,7 +239,7 @@ export function DirectoryScope(props: ParentProps<{
   directory: string
   sessionRef?: Accessor<SessionRef | undefined>
   workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<WorkspaceKind>
+  hostKind?: Accessor<WorkspaceHostKind>
   harnessType?: Accessor<string | undefined>
   harnessSelection?: Accessor<HarnessSelection | undefined>
   active?: Accessor<boolean>
@@ -266,8 +265,8 @@ export function DirectoryScope(props: ParentProps<{
   // consumer read.
   const runtimeRef = createMemo(() => {
     const workspaceId = props.workspaceId?.()
-    const kind = props.workspaceKind?.()
-    if (workspaceId && isRelayBackedWorkspaceKind(kind)) return { workspaceId, kind }
+    const kind = props.hostKind?.()
+    if (workspaceId && isRelayHostKind(kind)) return { workspaceId, kind }
     return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
   })
   // Harness-KEYED reads (agent profiles, the model store) take the pane's

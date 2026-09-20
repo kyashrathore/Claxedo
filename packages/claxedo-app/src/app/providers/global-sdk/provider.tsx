@@ -30,7 +30,7 @@ import {
   initialRouteWorkspace,
   shouldUseSignedEventAccess,
 } from "./route-event-scope"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent } from "@/features/session/subagents/subagent-ingress"
 export { globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession } from "./live-session"
 import {
@@ -71,7 +71,7 @@ const globalSDKContextInput = {
         ? sessionWorkspaceRuntimeRef({ directory, projects: cachedProjectInventory(server.current?.http.url) })
         : undefined
       if (!ref) return undefined
-      return { sessionID: "route", directory, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
+      return { sessionID: "route", directory, workspaceId: ref.workspaceId, hostKind: ref.kind }
     }
     const signedEventAccess = () => shouldUseSignedEventAccess({
       // The surface type is not authority: local/mock browser lanes are web
@@ -149,7 +149,7 @@ const globalSDKContextInput = {
           subagents.replayGap()
           return
         }
-        const kind = workspaceKind(live.workspaceKind)
+        const kind = asHostKind(live.hostKind)
         void resetStreamGapState({
           baseUrl: currentServer.http.url,
           directory: live.directory ?? "global",
@@ -163,7 +163,7 @@ const globalSDKContextInput = {
           projection: {
             signedControlPlane: signedEventAccess(),
             ...(live.workspaceId ? { workspaceId: live.workspaceId } : {}),
-            ...(isRelayBackedWorkspaceKind(kind) ? { workspaceKind: kind } : {}),
+            ...(isRelayHostKind(kind) ? { hostKind: kind } : {}),
           },
         })
         return
@@ -234,7 +234,7 @@ const globalSDKContextInput = {
       request: platform.fetch ?? authFetch,
     })
 
-    const setLiveSession = (sessionID: string, opts?: { host?: "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }) => {
+    const setLiveSession = (sessionID: string, opts?: { host?: "workspace"; directory?: string; workspaceId?: string; hostKind?: string; sessionRef?: SessionRef }) => {
       const transition = liveSessionTransition(liveSession, sessionID, opts)
       liveSession = transition.next
       if (transition.workspaceScopeChanged) subagents.workspaceChanged()

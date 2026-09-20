@@ -116,7 +116,7 @@ describe("two-user signed app transport", () => {
     await authority.ensureDefaultTeam!(aliceAuth, { orgId: org.org_id })
 
     // Add Casey to the organization only after default-team reconciliation so
-    // the later direct workspace share does not also make Casey a team member.
+    // Casey is never swept onto the default team.
     inspectAuthority().prepare(`
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
       VALUES (?, ?, 'member', ?, ?)
@@ -128,12 +128,15 @@ describe("two-user signed app transport", () => {
     })
     expect(addMember.status).toBe(200)
 
-    // Casey: workspace editor only (not on the team).
-    const caseyShare = await signedRequest(alice.token, "/api/workspace/ws_signed_private/shares", {
-      method: "POST",
-      body: JSON.stringify({ role: "editor", target: { kind: "actor", actorId: caseyIdentity.actor_id } }),
-    })
-    expect(caseyShare.status).toBe(200)
+    // Casey: a rank on the workspace's project and nothing else (not on the
+    // team, and no grant on the session).
+    const caseyProject = inspectAuthority()
+      .prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_signed_private'`)
+      .get() as { project_id: string }
+    inspectAuthority().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'editor', ?, ?)
+    `).run(caseyProject.project_id, caseyIdentity.token_identifier, membershipNow, membershipNow)
 
     await authority.reserveSession(aliceAuth, {
       operationId: "op_signed_private",
@@ -201,7 +204,8 @@ describe("two-user signed app transport", () => {
       }),
     })
     expect(shared.status).toBe(200)
-    await expect(shared.json()).resolves.toMatchObject({ grant_id: expect.any(String) })
+    const followGrant = await shared.json() as { grant_id: string; level: string }
+    expect(followGrant).toMatchObject({ grant_id: expect.any(String), level: "follow" })
 
     const bobList = await signedRequest(bob.token, "/api/control/sessions?workspaceId=ws_signed_private")
     expect(bobList.status).toBe(200)
@@ -217,6 +221,28 @@ describe("two-user signed app transport", () => {
       allowed: true,
       messages: [{ id: "msg_alice", role: "user" }],
     })
+    // A turn is how a prompt is admitted, so the level rule is what this asks
+    // about: the same reader who just read the transcript cannot open one.
+    await expect(authority.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bobIdentity.token_identifier,
+      actorKind: "human",
+      workspaceId: "ws_signed_private",
+      sessionId: "ses_signed_private",
+      turnId: "msg_bob_while_following",
+    })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+
+    const raised = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
+      method: "POST",
+      body: JSON.stringify({
+        workspaceId: "ws_signed_private",
+        grantedToTeamId: org.default_team_id,
+        level: "send",
+      }),
+    })
+    expect(raised.status).toBe(200)
+    await expect(raised.json()).resolves.toEqual({ grant_id: followGrant.grant_id, level: "send" })
+
     const bobTurn = await authority.acquireSessionTurn({
       principalKind: "user",
       actorId: bobIdentity.token_identifier,

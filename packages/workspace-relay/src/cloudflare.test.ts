@@ -114,7 +114,7 @@ class SilentCloseSocket extends FakeSocket {
 }
 
 async function roomHarness(input: {
-  resolveTarget?: "cloud" | "user-hosted" | ((claims: RuntimeAccessTokenClaims) => WorkspaceRelayTarget | undefined | Promise<WorkspaceRelayTarget | undefined>)
+  resolveTarget?: "cloud-vm" | "local-worktree" | ((claims: RuntimeAccessTokenClaims) => WorkspaceRelayTarget | undefined | Promise<WorkspaceRelayTarget | undefined>)
   fetch?: typeof fetch
   connectWebSocket?: WorkspaceRelayDurableObjectConnectWebSocket
   forwardTimeoutMs?: number
@@ -170,9 +170,7 @@ async function roomHarness(input: {
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
           baseUrl: "https://runtime.test",
-          ...(input.resolveTarget === "user-hosted"
-            ? { access: "user-hosted" as const, backing: "local-worktree" as const }
-            : { access: "cloud" as const, backing: "cloud-vm" as const }),
+          backing: input.resolveTarget === "local-worktree" ? "local-worktree" as const : "cloud-vm" as const,
         },
     directory,
     ...(input.fetch ? { fetch: input.fetch } : {}),
@@ -864,7 +862,6 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
     })).resolves.toMatchObject({
-      access: "cloud",
       backing: "cloud-vm",
       role: "editor",
     })
@@ -1018,8 +1015,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
-  test("admits a user-hosted client only after the matching host tunnel is present in the room", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("admits a tunnelled client only after the matching host tunnel is present in the room", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     const offline = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         upgrade: "websocket",
@@ -1029,7 +1026,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(offline.status).toBe(503)
     await expect(offline.json()).resolves.toMatchObject({
       error: {
-        code: "user_hosted_app_offline",
+        code: "host_tunnel_offline",
       },
     })
 
@@ -1054,8 +1051,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
-  test("round-trips user-hosted WebSocket frames over the admitted host tunnel", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("round-trips tunnelled WebSocket frames over the admitted host tunnel", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1088,6 +1085,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(open.headers.cookie).toBeUndefined()
     expect(open.headers["sec-websocket-protocol"]).toBeUndefined()
     expect(open.headers.authorization).toStartWith("Bearer ")
+    // The host replays this upgrade onto its own loopback listener, where it is
+    // indistinguishable from its user's by address; this marker is the only
+    // thing on it that says a remote caller is behind it.
+    expect(open.headers["x-forwarded-by"]).toBe("workspace-relay")
 
     hostSocket.message(JSON.stringify({
       type: "ws.frame",
@@ -1112,8 +1113,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
-  test("accepts user-hosted sockets with Durable Object hibernation attachments", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true })
+  test("accepts tunnelled sockets with Durable Object hibernation attachments", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", hibernation: true })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1138,18 +1139,18 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       workspaceIds: ["ws_1"],
     })
     expect(clientSocket.attachment).toMatchObject({
-      kind: "user-hosted-client",
+      kind: "host-tunnel-client",
       target: {
         workspaceId: "ws_1",
         hostId: "host_1",
-        access: "user-hosted",
+        backing: "local-worktree",
       },
       path: "/api/claxedo/pty/pty_1/connect",
     })
   })
 
-  test("rebuilds hibernated user-hosted sockets and routes messages after wake", async () => {
-    const first = await roomHarness({ resolveTarget: "user-hosted", hibernation: true })
+  test("rebuilds hibernated tunnelled sockets and routes messages after wake", async () => {
+    const first = await roomHarness({ resolveTarget: "local-worktree", hibernation: true })
     await first.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1169,7 +1170,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     hostSocket.sent.length = 0
 
     const second = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       hibernation: true,
       hibernatedSockets: first.hibernatedSockets,
     })
@@ -1196,8 +1197,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(clientSocket.sent).toEqual(["from-host-after-wake"])
   })
 
-  test("clamps invalid user-hosted WebSocket close codes from the host tunnel", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("clamps invalid tunnelled WebSocket close codes from the host tunnel", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1230,10 +1231,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
-  test("closes active user-hosted WebSocket clients when the Runtime Access Token is revoked", async () => {
+  test("closes active tunnelled WebSocket clients when the Runtime Access Token is revoked", async () => {
     let revoked = false
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       runtimeAccessTokenActiveCheckIntervalMs: 1,
       isRuntimeAccessTokenActive: () => revoked
         ? { active: false, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" }
@@ -1272,7 +1273,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
-  test("closes active user-hosted WebSocket clients when the target resolver stops returning the host", async () => {
+  test("closes active tunnelled WebSocket clients when the target resolver stops returning the host", async () => {
     let targetActive = true
     const harness = await roomHarness({
       resolveTarget: (claims) => targetActive
@@ -1280,7 +1281,6 @@ describe("workspace relay Cloudflare Durable Object room", () => {
             workspaceId: claims.workspace_id,
             hostId: claims.host_id,
             baseUrl: "https://runtime.test",
-            access: "user-hosted",
             backing: "local-worktree",
           }
         : undefined,
@@ -1309,19 +1309,19 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     expect(clientSocket.closed).toEqual({
       code: 1011,
-      reason: "User-hosted workspace is offline",
+      reason: "The machine serving this workspace is offline",
     })
     expect(JSON.parse(frameText(hostSocket.sent[1]))).toMatchObject({
       type: "ws.close",
       protocol: TUNNEL_PROTOCOL_VERSION,
       code: 1011,
-      reason: "User-hosted workspace is offline",
+      reason: "The machine serving this workspace is offline",
     })
   })
 
-  test("closes active user-hosted WebSocket clients when directory presence disappears", async () => {
+  test("closes active tunnelled WebSocket clients when directory presence disappears", async () => {
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       workspaceTargetActiveCheckIntervalMs: 1,
     })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
@@ -1347,18 +1347,18 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     expect(clientSocket.closed).toEqual({
       code: 1011,
-      reason: "User-hosted workspace is offline",
+      reason: "The machine serving this workspace is offline",
     })
     expect(JSON.parse(frameText(hostSocket.sent[1]))).toMatchObject({
       type: "ws.close",
       protocol: TUNNEL_PROTOCOL_VERSION,
       code: 1011,
-      reason: "User-hosted workspace is offline",
+      reason: "The machine serving this workspace is offline",
     })
   })
 
-  test("rejects user-hosted WebSocket clients after the room channel cap", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelChannelCap: 1 })
+  test("rejects tunnelled WebSocket clients after the room channel cap", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelChannelCap: 1 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1388,8 +1388,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
-  test("forwards user-hosted HTTP requests over the admitted host tunnel", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("forwards tunnelled HTTP requests over the admitted host tunnel", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1423,6 +1423,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
     expect(requestMessage.headers.cookie).toBeUndefined()
     expect(requestMessage.headers.authorization).toStartWith("Bearer ")
+    expect(requestMessage.headers["x-forwarded-by"]).toBe("workspace-relay")
 
     hostSocket.message(JSON.stringify({
       type: "http.response.start",
@@ -1437,7 +1438,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       type: "http.response.chunk",
       protocol: TUNNEL_PROTOCOL_VERSION,
       request_id: requestMessage.request_id,
-      body_base64: btoa("user-hosted-ok"),
+      body_base64: btoa("host-tunnel-ok"),
     }))
     hostSocket.message(JSON.stringify({
       type: "http.response.end",
@@ -1448,11 +1449,11 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     const res = await pending
     expect(res.status).toBe(203)
     expect(res.headers.get("content-type")).toBe("text/plain")
-    await expect(res.text()).resolves.toBe("user-hosted-ok")
+    await expect(res.text()).resolves.toBe("host-tunnel-ok")
   })
 
-  test("returns user-hosted 204 HTTP responses without opening a body stream", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("returns tunnelled 204 HTTP responses without opening a body stream", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1496,8 +1497,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 
-  test("streams user-hosted HTTP response chunks before the tunnel response ends", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("streams tunnelled HTTP response chunks before the tunnel response ends", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1549,8 +1550,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 
-  test("keeps started user-hosted HTTP streams open past the initial response timeout", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", forwardTimeoutMs: 1 })
+  test("keeps started tunnelled HTTP streams open past the initial response timeout", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", forwardTimeoutMs: 1 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1597,7 +1598,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   test("evicts the oldest started stream when the started-stream cap is exceeded", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelStartedStreamCap: 1 })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelStartedStreamCap: 1 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1634,7 +1635,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   test("frees the pending slot and aborts the host upstream when the client cancels a streaming response", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1677,9 +1678,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     ])
   })
 
-  test("fails and cleans up user-hosted HTTP streams when the downstream consumer stays slow", async () => {
+  test("fails and cleans up tunnelled HTTP streams when the downstream consumer stays slow", async () => {
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       slowConsumerHighWaterMarkBytes: 3,
       slowConsumerTimeoutMs: 5,
     })
@@ -1733,7 +1734,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
   test("pauses and resumes host HTTP streaming when downstream backpressure drains", async () => {
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       slowConsumerHighWaterMarkBytes: 3,
       slowConsumerTimeoutMs: 5_000,
     })
@@ -1802,7 +1803,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   test("drain pending count and waitForDrain track in-flight tunnel HTTP requests", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1831,8 +1832,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     await expect(harness.room.drain.waitForDrain(100)).resolves.toEqual({ drained: true, remaining: 0 })
   })
 
-  test("rejects user-hosted HTTP requests after the pending request cap", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelPendingHttpCap: 1 })
+  test("rejects tunnelled HTTP requests after the pending request cap", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelPendingHttpCap: 1 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1869,8 +1870,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     await expect(first.then((res) => res.status)).resolves.toBe(200)
   })
 
-  test("rejects user-hosted HTTP request bodies over the room body cap", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelRequestBodyMaxBytes: 3 })
+  test("rejects tunnelled HTTP request bodies over the room body cap", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelRequestBodyMaxBytes: 3 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1895,8 +1896,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.socket(0).sent).toHaveLength(0)
   })
 
-  test("rejects user-hosted HTTP responses over the room body cap", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelResponseBodyMaxBytes: 3 })
+  test("rejects tunnelled HTTP responses over the room body cap", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelResponseBodyMaxBytes: 3 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1931,12 +1932,12 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     const res = await pending
     expect(res.status).toBe(200)
-    await expect(res.text()).rejects.toThrow("User-hosted response body exceeds the relay limit")
+    await expect(res.text()).rejects.toThrow("Host tunnel response body exceeds the relay limit")
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 
-  test("maps user-hosted tunnel errors to fail-closed HTTP responses", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("maps host tunnel errors to fail-closed HTTP responses", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -1964,7 +1965,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       status: 503,
       body: {
         error: {
-          code: "user_hosted_tunnel_unavailable",
+          code: "host_tunnel_unavailable",
         },
       },
     })
@@ -1988,7 +1989,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
   test("keeps host presence alive past the directory TTL while tunnel pings flow", async () => {
     let clock = 1_000_000_000_000
-    const harness = await roomHarness({ resolveTarget: "user-hosted", now: () => clock })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", now: () => clock })
     const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2027,7 +2028,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
   test("expires host presence when tunnel pings stop", async () => {
     let clock = 1_000_000_000_000
-    const harness = await roomHarness({ resolveTarget: "user-hosted", now: () => clock })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", now: () => clock })
     const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2047,14 +2048,14 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(503)
     await expect(res.json()).resolves.toMatchObject({
       error: {
-        code: "user_hosted_app_offline",
+        code: "host_tunnel_offline",
       },
     })
   })
 
   test("refreshes host presence on any real host frame, not just pings, on the hibernation path", async () => {
     let clock = 1_000_000_000_000
-    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true, now: () => clock })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", hibernation: true, now: () => clock })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2083,7 +2084,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
   test("an attached hibernating host socket remains authoritative after directory TTL expiry", async () => {
     let clock = 1_000_000_000_000
-    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true, now: () => clock })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", hibernation: true, now: () => clock })
     const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2105,7 +2106,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
   test("a closed hibernating host socket cannot revive expired directory presence", async () => {
     let clock = 1_000_000_000_000
-    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true, now: () => clock })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", hibernation: true, now: () => clock })
     const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2127,7 +2128,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(offline.status).toBe(503)
     await expect(offline.json()).resolves.toMatchObject({
       error: {
-        code: "user_hosted_app_offline",
+        code: "host_tunnel_offline",
       },
     })
   })
@@ -2148,8 +2149,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.headers.get("sec-websocket-protocol")).toBe(`claxedo-rat.${token}`)
   })
 
-  test("echoes the authenticated subprotocol on the user-hosted client 101 response", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+  test("echoes the authenticated subprotocol on the tunnelled client 101 response", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2169,7 +2170,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   test("passes WebSocket upgrades through untouched when the browser sends an Origin header", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted" })
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2208,8 +2209,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.headers.get("sec-websocket-protocol")).toBeNull()
   })
 
-  test("rejects oversized streamed user-hosted request bodies without buffering them", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelRequestBodyMaxBytes: 4096 })
+  test("rejects oversized streamed tunnelled request bodies without buffering them", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelRequestBodyMaxBytes: 4096 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2243,8 +2244,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.socket(0).sent).toHaveLength(0)
   })
 
-  test("rejects user-hosted request bodies whose content-length exceeds the cap before reading", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", tunnelRequestBodyMaxBytes: 4096 })
+  test("rejects tunnelled request bodies whose content-length exceeds the cap before reading", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", tunnelRequestBodyMaxBytes: 4096 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2330,7 +2331,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   test("signals the host tunnel to abort when a pending HTTP request times out", async () => {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", forwardTimeoutMs: 5 })
+    const harness = await roomHarness({ resolveTarget: "local-worktree", forwardTimeoutMs: 5 })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2346,7 +2347,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(503)
     await expect(res.json()).resolves.toMatchObject({
       error: {
-        code: "user_hosted_tunnel_timeout",
+        code: "host_tunnel_timeout",
       },
     })
 
@@ -2418,8 +2419,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   describe("binary frame shapes that used to be dropped silently", () => {
     const bytes = new Uint8Array([0, 1, 0x7f, 0x80, 0xfe, 0xff])
 
-    async function userHostedChannel() {
-      const harness = await roomHarness({ resolveTarget: "user-hosted" })
+    async function hostTunnelChannel() {
+      const harness = await roomHarness({ resolveTarget: "local-worktree" })
       await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
         headers: {
           upgrade: "websocket",
@@ -2442,7 +2443,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }
 
     test("forwards a Blob client frame to the host tunnel as binary", async () => {
-      const { hostSocket, clientSocket } = await userHostedChannel()
+      const { hostSocket, clientSocket } = await hostTunnelChannel()
 
       clientSocket.message(new Blob([bytes]))
       await waitForSent(hostSocket, 1)
@@ -2455,7 +2456,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
 
     test("forwards a DataView client frame to the host tunnel as binary", async () => {
-      const { hostSocket, clientSocket } = await userHostedChannel()
+      const { hostSocket, clientSocket } = await hostTunnelChannel()
 
       clientSocket.message(new DataView(bytes.buffer.slice(0)))
       await waitForSent(hostSocket, 1)
@@ -2468,7 +2469,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
 
     test("forwards a typed-array view respecting its byte offset", async () => {
-      const { hostSocket, clientSocket } = await userHostedChannel()
+      const { hostSocket, clientSocket } = await hostTunnelChannel()
       // A view over the MIDDLE of a larger buffer: forwarding the whole
       // underlying buffer instead of the view's window is the classic bug here.
       const backing = new Uint8Array([0xaa, 0xbb, ...bytes, 0xcc])
@@ -2531,7 +2532,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       // The hibernation path goes through `webSocketMessage`, not an event
       // listener, so it needs its own coverage — and it is the path where the
       // per-frame check is the only auth enforcement.
-      const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true })
+      const harness = await roomHarness({ resolveTarget: "local-worktree", hibernation: true })
       await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
         headers: {
           upgrade: "websocket",
@@ -2573,8 +2574,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
  * against.
  */
 describe("workspace relay failure semantics", () => {
-  async function userHostedChannel(input: Parameters<typeof roomHarness>[0] = {}) {
-    const harness = await roomHarness({ resolveTarget: "user-hosted", ...input })
+  async function hostTunnelChannel(input: Parameters<typeof roomHarness>[0] = {}) {
+    const harness = await roomHarness({ resolveTarget: "local-worktree", ...input })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
         upgrade: "websocket",
@@ -2605,7 +2606,7 @@ describe("workspace relay failure semantics", () => {
       }
     }
     let created = 0
-    const { hostSocket, clientSocket, channelId } = await userHostedChannel({
+    const { hostSocket, clientSocket, channelId } = await hostTunnelChannel({
       // Only the CLIENT socket (the second pair) rejects sends; the host tunnel
       // must stay usable so the ws.close notification can be observed.
       createServerSocket: () => (created++ === 1 ? new RejectingSocket() : new FakeSocket()),
@@ -2640,7 +2641,7 @@ describe("workspace relay failure semantics", () => {
     // starts throwing once the channel is established.
     let established = false
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       hibernation: true,
       isRuntimeAccessTokenActive: () => {
         if (!established) return { active: true as const }
@@ -2674,7 +2675,7 @@ describe("workspace relay failure semantics", () => {
       }
     }
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       createServerSocket: () => new RejectingSocket(),
     })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
@@ -2686,7 +2687,7 @@ describe("workspace relay failure semantics", () => {
 
     expect(res.status).toBe(503)
     await expect(res.json()).resolves.toMatchObject({
-      error: { code: "user_hosted_app_offline" },
+      error: { code: "host_tunnel_offline" },
     })
     // The half-open channel must not be left behind.
     expect(harness.room.state()).toMatchObject({ clientCount: 0 })
@@ -2766,7 +2767,7 @@ describe("workspace relay failure semantics", () => {
 })
 
 /**
- * On the hibernating path `admitUserHostedClient` installs no watchers, because
+ * On the hibernating path `admitHostTunnelClient` installs no watchers, because
  * `setInterval` does not survive DO eviction. That leaves the per-frame cached
  * check as the only enforcement, which never fires for an idle connection — so
  * without the alarm a revoked token could hold a hibernated socket open
@@ -2810,7 +2811,7 @@ describe("workspace relay hibernated revocation alarm", () => {
   } = {}) {
     const alarmState = fakeAlarms()
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       hibernation: true,
       hibernatedRevocationCheckIntervalMs: 30_000,
       alarms: alarmState.alarms,
@@ -2937,7 +2938,7 @@ describe("workspace relay hibernated revocation alarm", () => {
     const countAfterManualSet = alarmState.scheduled.length
 
     const harness = await roomHarness({
-      resolveTarget: "user-hosted",
+      resolveTarget: "local-worktree",
       hibernation: true,
       hibernatedRevocationCheckIntervalMs: 30_000,
       alarms: alarmState.alarms,

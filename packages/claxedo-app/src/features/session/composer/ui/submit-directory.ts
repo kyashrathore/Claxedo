@@ -1,23 +1,23 @@
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
 import { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { workspaceStartup } from "@/platform/runtime/workspace-startup"
 import type { WorkspaceStartupPort } from "@/platform/runtime/workspace-startup-port"
 import type { SubmitDirectory } from "../../submit/index"
 import { resolveSubmitDirectory } from "../../submit/index"
 import {
-  knownWorkspaceKind,
-  isRemoteWorkspaceKind,
   projectForDirectory,
   resolveWorkspaceSubmitPlan,
   type ProjectCatalogItem,
   type RuntimeWorkspaceRef,
 } from "../workspace-resolver"
 import type { CloudStartupState } from "./submit-create-session"
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 type RuntimeEvents = Parameters<WorkspaceStartupPort["prepareWorkspaceRuntime"]>[0]["events"]
-type PrepareUserHostedRuntime = WorkspaceStartupPort["prepareUserHostedRuntime"]
+type PrepareMachineRuntime = WorkspaceStartupPort["prepareMachineRuntime"]
 type PrepareWorkspaceRuntime = WorkspaceStartupPort["prepareWorkspaceRuntime"]
 type PrepareWorkspaceSessionWorktree = WorkspaceStartupPort["prepareWorkspaceSessionWorktree"]
 
@@ -33,10 +33,10 @@ export type SubmitDirectoryProvisionInput = {
   readonly fallbackDirectory: SubmitDirectory | undefined
   readonly defaultDirectory: SubmitDirectory
   readonly worktreeSelection: string
-  readonly workspaceKind: string
+  readonly hostKind: WorkspaceHostKind
   readonly projects: readonly ProjectCatalogItem[]
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
-  readonly workspaceForDirectory: (directory: SubmitDirectory) => { readonly kind?: string; readonly workspaceId: string } | undefined
+  readonly workspaceForDirectory: (directory: SubmitDirectory) => SignedWorkspaceInfo | undefined
   readonly isWorkspaceReady: (workspaceId: string) => boolean
   readonly baseUrl: string
   readonly request: typeof fetch
@@ -59,7 +59,7 @@ export type SubmitDirectoryProvisionInput = {
     readonly attachWorkspaceBeforePrompt: string
     readonly attachProjectBeforeCloudWorkspace: string
   }
-  readonly prepareUserHostedRuntime?: PrepareUserHostedRuntime
+  readonly prepareMachineRuntime?: PrepareMachineRuntime
   readonly prepareWorkspaceRuntime?: PrepareWorkspaceRuntime
   readonly prepareWorkspaceSessionWorktree?: PrepareWorkspaceSessionWorktree
 }
@@ -69,20 +69,19 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
     isNewSession: input.isNewSession,
     defaultDirectory: input.defaultDirectory,
     worktreeSelection: input.worktreeSelection,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     showMissingWorkspace: () => {
       input.showToast({
         title: input.text.missingWorkspaceTitle,
         description: input.text.attachWorkspaceBeforePrompt,
       })
     },
-    resolveCloudSessionDirectory: (worktreeSelection, projectDirectory, fallbackDirectory, workspaceKind) =>
+    resolveCloudSessionDirectory: (worktreeSelection, projectDirectory, fallbackDirectory) =>
       resolveCloudSessionDirectory({
         ...input,
         worktreeSelection,
         projectDirectory,
         fallbackDirectory,
-        workspaceKind,
       }),
     prepareCloudSessionDirectory: (directory) =>
       prepareRemoteSubmitDirectory({
@@ -105,7 +104,7 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
   // sometimes leak in as sdk.directory before the project catalog remaps them.
   // Only refuse unresolved association UUIDs — every other opaque key keeps the
   // historical pass-through (matches origin/dev submit behavior).
-  if (isRemoteWorkspaceKind(input.workspaceKind)) return resolved
+  if (isRelayHostKind(input.hostKind)) return resolved
   if (!localWorkspaceAssociationId(resolved.directory)) return resolved
   const filesystemDirectory = workspaceRouteIdentity(input.projects, resolved.directory)?.directory
   if (filesystemDirectory) {
@@ -122,15 +121,14 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
   readonly worktreeSelection: string
   readonly projectDirectory: SubmitDirectory | undefined
   readonly fallbackDirectory: SubmitDirectory | undefined
-  readonly workspaceKind: string
+  readonly hostKind: WorkspaceHostKind
 }) {
   const runtimeWorkspaceRef = (directory: SubmitDirectory | undefined): RuntimeWorkspaceRef | undefined => {
     const parsed = input.runtimeWorkspaceRef(directory)
     if (parsed || !directory) return parsed
     const workspace = input.workspaceForDirectory(directory)
-    const kind = knownWorkspaceKind(workspace?.kind)
-    if (!workspace || !kind || kind === "local") return undefined
-    return { workspaceId: workspace.workspaceId, kind }
+    if (!workspace) return undefined
+    return { workspaceId: workspace.workspaceId, kind: workspace.kind }
   }
   const existingRemoteDirectory = existingRemoteWorkspaceDirectoryForSubmit({
     ...input,
@@ -142,7 +140,7 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
     isNewSession: true,
     defaultDirectory: input.defaultDirectory,
     worktreeSelection: input.worktreeSelection,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     projects: input.projects,
     runtimeWorkspaceRef,
     ...(input.projectDirectory === undefined ? {} : { projectDirectory: input.projectDirectory }),
@@ -152,7 +150,7 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
   if (plan.status !== "provision-cloud-workspace") {
     input.showToast({
       title: input.text.cloudWorkspaceCreateFailedTitle,
-      description: input.workspaceKind === "user-hosted"
+      description: input.hostKind === "machine"
         ? input.text.attachWorkspaceBeforePrompt
         : input.text.attachProjectBeforeCloudWorkspace,
     })
@@ -189,10 +187,10 @@ function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisi
   readonly worktreeSelection: string
   readonly projectDirectory: SubmitDirectory | undefined
   readonly fallbackDirectory: SubmitDirectory | undefined
-  readonly workspaceKind: string
+  readonly hostKind: WorkspaceHostKind
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
 }) {
-  if (!isRemoteWorkspaceKind(input.workspaceKind)) return undefined
+  if (!isRelayHostKind(input.hostKind)) return undefined
   // Explicit "create new cloud sandbox" must provision — never reuse an existing
   // remote directory from the project catalog (see core-composer-hosted-chips e2e).
   if (input.worktreeSelection === "create") return undefined
@@ -200,10 +198,8 @@ function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisi
   const remoteDirectory = (directory: SubmitDirectory | undefined) => {
     if (!directory) return undefined
     const ref = input.runtimeWorkspaceRef(directory)
-    if (isRemoteWorkspaceKind(ref?.kind)) return directory
-    const workspace = input.workspaceForDirectory(directory)
-    const kind = knownWorkspaceKind(workspace?.kind)
-    if (workspace && isRemoteWorkspaceKind(kind)) return directory
+    if (isRelayHostKind(ref?.kind)) return directory
+    if (input.workspaceForDirectory(directory)) return directory
     return undefined
   }
 
@@ -301,14 +297,13 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
   }
 
   let logs: NonNullable<CloudStartupState["logs"]> = []
-  // `overlay: false` suppresses the submit-time cloud-startup overlay
-  // (`onCloudStartup`) while still remembering the last state for the harness
-  // handoff (`onPublish`). User-hosted workspaces own their connection UI via
-  // WorkspaceGate (see resolveSubmitDirectory's comment), so surfacing the
-  // overlay here would double up — and worse, strand it: the overlay's clear
-  // path (`clearCloudStartup`) is gated to `workspaceKind === "cloud"` in
-  // submit.ts, so an overlay opened for a user-hosted submit is NEVER closed and
-  // permanently masks the session timeline once the send navigates.
+  // `overlay: false` publishes a state to the harness handoff (`onPublish`)
+  // without opening the submit-time startup overlay (`onCloudStartup`). A
+  // machine-placed workspace shows its connection through WorkspaceGate (see
+  // resolveSubmitDirectory), so an overlay here would double up — and strand:
+  // the overlay's clear path (`clearCloudStartup`) in submit.ts runs only for
+  // `hostKind === "provisioner"`, so an overlay opened for a machine submit is
+  // never closed and masks the session timeline once the send navigates.
   const publish = (state: Omit<CloudStartupState, "open">, opts?: { overlay?: boolean }) => {
     const next = {
       logs,
@@ -322,13 +317,13 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     }
     input.onPublish?.(next)
   }
-  const userHostedWorkspace = (() => {
+  const machineWorkspace = (() => {
     const workspace = input.workspaceForDirectory(input.directory)
-    return workspace?.kind === "user-hosted" ? workspace : undefined
+    return workspace?.kind === "machine" ? workspace : undefined
   })()
-  if (userHostedWorkspace) {
-    const result = await (input.prepareUserHostedRuntime ?? workspaceStartup().prepareUserHostedRuntime)({
-      workspaceId: userHostedWorkspace.workspaceId,
+  if (machineWorkspace) {
+    const result = await (input.prepareMachineRuntime ?? workspaceStartup().prepareMachineRuntime)({
+      workspaceId: machineWorkspace.workspaceId,
       directory: input.directory,
       baseUrl: input.baseUrl,
       request: input.request,
@@ -364,7 +359,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     request: input.request,
     ...(input.events === undefined ? {} : { events: input.events }),
     onResolved: (workspace) => {
-      if (!workspace || workspace.kind !== "cloud" || workspace.status === "ready") return
+      if (!workspace || workspace.kind !== "provisioner" || workspace.status === "ready") return
       publish({
         id: workspace.workspaceId,
         status: workspace.status ?? "acquiring_sandbox",

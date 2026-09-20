@@ -7,13 +7,13 @@ import { isRecord, readUnknown } from "../../shared/json-read"
 /**
  * The port over Electron IPC, where the Host Connector lives.
  *
- * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route — those
- * paths belong to the Host Connector now, and the connector is in Electron
- * main because that is where the machine key and the account credential are.
- * So this renderer performs no request at all: it names one of four operations
- * and receives a snapshot back.
+ * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route. The
+ * Host Connector owns machine publication, and it lives in Electron main
+ * because that is where the machine key and the account credential are. So
+ * this renderer performs no request at all: it names one of a closed set of
+ * operations and receives a snapshot back.
  *
- * ## Why the bridge has exactly four members and no fifth
+ * ## Why the bridge is a closed set and not a request
  *
  * Main holds the account bearer. A bridge member shaped
  * `run(url, method, body)` would let a compromised renderer spend that bearer
@@ -24,7 +24,9 @@ import { isRecord, readUnknown } from "../../shared/json-read"
  * closed, reviewable, and takes no request shape from this process.
  *
  * Nothing here ever receives a token. `HostConnectorSnapshot` is a projection
- * of the connector's state — a status word, an id, an expiry, a reason — and
+ * of the connector's state — a status word, an expiry, a reason, the ids of
+ * the workspaces it publishes and the name it is published under; no host id
+ * and no enrollment id — and
  * `claxedo-desktop/src/main/host-connector/status-channel.ts` is the single
  * place that builds it.
  */
@@ -48,6 +50,8 @@ export type HostConnectorSnapshot = {
   detail?: string
   /** Workspaces this machine currently publishes. */
   sharedWorkspaceIds?: readonly string[]
+  /** The name this machine is published under. Main derives or remembers it. */
+  displayName?: string
 }
 
 /** The bridge the preload exposes. Absent in every non-Electron build. */
@@ -60,17 +64,19 @@ export type HostConnectorBridge = {
   share: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorSnapshot>
   /** Withdraw one workspace. */
   unshare: (input: { workspaceId: string }) => Promise<HostConnectorSnapshot>
+  /** Name this machine. No host id crosses — main reads it from the connector. */
+  rename: (input: { displayName: string }) => Promise<HostConnectorSnapshot>
   onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => () => void
 }
 
-const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "unshare", "onStatus"] as const
+const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "unshare", "rename", "onStatus"] as const
 
 /**
  * The bridge, if this build has one.
  *
  * Read through a narrow accessor rather than at module scope so a browser build
  * never touches `window.api`, and so the check is one expression a test can
- * exercise. All five members or none: a partial bridge is a preload that
+ * exercise. Every member or none: a partial bridge is a preload that
  * changed under a renderer that did not, and the half that is missing would
  * fail at the worst moment rather than at startup.
  */
@@ -113,7 +119,7 @@ export function machineRemoteAccessStatus(snapshot: HostConnectorSnapshot): Mach
     enabled: enrolled,
     // The desktop is the machine that PUBLISHED itself, so it is never the
     // second device. Whether some other client opened the workspace is a fact
-    // only the control plane holds, and reading it is not one of the four
+    // only the control plane holds, and reading it is not one of the
     // operations. Reported false rather than guessed.
     secondDeviceOpen: false,
     // The connector already reports what it publishes on every snapshot, so
@@ -123,6 +129,13 @@ export function machineRemoteAccessStatus(snapshot: HostConnectorSnapshot): Mach
     // knows. A machine that is not enrolled publishes nothing, whatever a stale
     // snapshot still lists.
     sharedWorkspaceIds: enrolled ? [...(snapshot.sharedWorkspaceIds ?? [])] : [],
+    // The only machine this product can name, and it can name it before the
+    // first enrollment: the derivation reads this computer, not the account.
+    // `devices` stays absent, so without this the Machines list would be empty
+    // on the very computer the user is sitting at.
+    ...(snapshot.displayName
+      ? { machine: { displayName: snapshot.displayName, online: enrolled } }
+      : {}),
   }
 }
 
@@ -132,11 +145,9 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
       return machineRemoteAccessStatus(await bridge.status())
     },
 
-    // `displayName` and `startAtLogin` are deliberately unread. Main labels the
-    // machine itself — the label is not the renderer's to choose when main is
-    // the process that signs the enrollment — and the desktop's login item is
-    // set through the platform descriptor's `setStartAtLogin`, which the
-    // controller already calls beside this.
+    // `startAtLogin` is deliberately unread: the desktop's login item is set
+    // through the platform descriptor's `setStartAtLogin`, which the controller
+    // already calls beside this.
     async enable() {
       const snapshot = await bridge.start()
       if (snapshot.status !== "enrolled") {
@@ -179,12 +190,26 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
       }
     },
 
+    /**
+     * Rename this machine.
+     *
+     * `hostId` is not forwarded, for the same reason `revoke` ignores it: main
+     * renames the enrollment the connector itself holds, so the only machine
+     * this can name is the one the user is sitting at. The surface only ever
+     * passes this machine's own id, because `devices` is absent here and
+     * `status().machine` is the one row it can render.
+     */
+    async rename(input) {
+      const snapshot = await bridge.rename({ displayName: input.displayName })
+      if (snapshot.status !== "enrolled") {
+        throw new Error(snapshot.detail ?? `Remote access is not active (${snapshot.status})`)
+      }
+      return { displayName: snapshot.displayName ?? input.displayName }
+    },
+
     // `devices` stays absent here, as the port documents. Enumerating the
-    // account's machines is not one of the closed operations, and a synthetic
-    // "this machine" row would be a second, weaker source for
-    // `sharedWorkspaceIds` than `status()`, which already carries it — and it
-    // would make a one-machine desktop render an "Enrolled machines" list it
-    // cannot actually enumerate.
+    // account's machines is not one of the closed operations; `status().machine`
+    // answers for THIS machine, which is the only one this product knows.
 
     subscribe(listener) {
       return bridge.onStatus((snapshot) => listener(machineRemoteAccessStatus(snapshot)))

@@ -68,7 +68,7 @@ export function createComposerPermissionModeWiring(input: {
     return {
       claxedoServerUrl: input.claxedoServerUrl(),
       signedControlPlane: input.signedControlPlane(),
-      ...(workspace ? { workspaceId: workspace.workspaceId, workspaceKind: workspace.kind } : {}),
+      ...(workspace ? { workspaceId: workspace.workspaceId, hostKind: workspace.kind } : {}),
       sessionRef: input.sessionRef(),
     }
   }

@@ -155,7 +155,7 @@ export const SECOND_DEVICE_STASH_KEY = "claxedo.remote-access.second-device"
  * The URL a second device opens to reach THIS machine.
  *
  * Machine-level sharing has no single workspace to point at — enabling remote
- * access publishes every local workspace on the machine, including the ones
+ * access publishes every workspace the machine serves, including the ones
  * opened afterwards — so the destination is the app root, where the account's
  * workspaces are listed. It is a pure string over a baked deployment origin,
  * which is what lets the surface render its QR with no round trip: there is

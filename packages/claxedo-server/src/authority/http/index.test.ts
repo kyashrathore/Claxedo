@@ -407,7 +407,7 @@ describe("control plane HTTP protocol", () => {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
-        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
       })),
       upsertSessionVisibility: vi.fn(async () => ({})),
     } as never
@@ -459,7 +459,7 @@ describe("control plane HTTP protocol", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "editor",
-        workspace: { workspace_id: "ws_1", ...authority, backing: "cloud-vm", access: "cloud" },
+        workspace: { workspace_id: "ws_1", ...authority, backing: "cloud-vm" },
       })),
     } as never
     const runtimeFetch = vi.fn()
@@ -472,7 +472,7 @@ describe("control plane HTTP protocol", () => {
     expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 
-  test("pulls a user-hosted runtime through its active authority host link", async () => {
+  test("pulls a machine-placed runtime through its active authority host link", async () => {
     const svc = services()
     mocks.resolveWorkspace.mockResolvedValue({
       id: "ws_1",
@@ -495,7 +495,6 @@ describe("control plane HTTP protocol", () => {
           workspace_id: "ws_1",
           org_id: "org_1",
           backing: "local-worktree",
-          access: "user-hosted",
           home_region: "eu-west",
         },
       })),
@@ -526,14 +525,14 @@ describe("control plane HTTP protocol", () => {
 
   test.each([
     {
-      name: "inactive user-hosted",
-      workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree", access: "user-hosted" },
-      code: "user_hosted_workspace_unavailable",
+      name: "a machine that is not serving",
+      workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree" },
+      code: "workspace_host_offline",
       activeWorkspaceHost: vi.fn(async () => ({ active: false as const })),
     },
     {
-      name: "unsupported placement",
-      workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree", access: "cloud" },
+      name: "a placement this deployment cannot reach",
+      workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "quantum-vm" },
       code: "workspace_runtime_unavailable",
       activeWorkspaceHost: vi.fn(),
     },
@@ -573,7 +572,7 @@ describe("control plane HTTP protocol", () => {
     svc.authority = {
       openWorkspace: vi.fn(async () => ({
         role: "viewer",
-        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
       })),
     } as never
     const runtimeFetch = vi.fn()
@@ -591,7 +590,7 @@ describe("control plane HTTP protocol", () => {
     svc.authority = {
       openWorkspace: vi.fn(async () => ({
         role: "editor",
-        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
       })),
       authorizeSessionWrite: vi.fn(async () => {
         throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session write access denied")

@@ -11,6 +11,7 @@ import {
   type SessionGoalData,
   type SessionGoalMutation,
 } from "./session-goal-query"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export function createSessionGoalController(input: {
   active: Accessor<boolean>
@@ -19,7 +20,7 @@ export function createSessionGoalController(input: {
   serverUrl: Accessor<string | undefined>
   signedControlPlane?: Accessor<boolean | undefined>
   workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
+  hostKind?: Accessor<RelayHostKind | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   source: Accessor<SessionGoalData | undefined>
   suppressed: (sessionID: string) => boolean
@@ -37,7 +38,7 @@ export function createSessionGoalController(input: {
       claxedoServerUrl: input.serverUrl(),
       signedControlPlane,
       workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
-      workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+      hostKind: signedControlPlane ? input.hostKind?.() : undefined,
       sessionRef: input.sessionRef?.(),
       signal,
     }

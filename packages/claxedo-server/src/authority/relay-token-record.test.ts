@@ -35,7 +35,7 @@ describe("recordRelayRuntimeToken", () => {
    * THE bug: both hosted compositions sent every mint down the service path,
    * which refuses any actor but the control plane's own. A user's token
    * minted through the provider was denied on the live worker — the control
-   * plane could not read sessions off a user-hosted machine on the user's
+   * plane could not read sessions off a machine-placed workspace on the user's
    * behalf, and the web app listed none.
    */
   test("records a user-principal token under the signed caller, never the service path", async () => {

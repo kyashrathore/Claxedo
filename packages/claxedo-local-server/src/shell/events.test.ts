@@ -88,7 +88,7 @@ describe("signed control-plane visibility", () => {
     expect(signedControlPlaneEventVisibleTo(provision("ws_2", "ready", "org_2"), principal)).toBe(false)
     expect(signedControlPlaneEventVisibleTo(worktree("a"), principal)).toBe(false)
     expect(signedControlPlaneEventVisibleTo(
-      { type: "session.share.changed", phase: "granted", ownerUserId: "user_1", sessionId: "s", workspaceId: "w", ts: 1 },
+      { type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_1", sessionId: "s", workspaceId: "w", ts: 1 },
       principal,
     )).toBe(true)
     expect(signedControlPlaneEventVisibleTo(

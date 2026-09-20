@@ -26,7 +26,7 @@ beforeEach(() => h.resetSubmitHarness())
 afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Workspace-runtime transport + model resolution", () => {
-  test("loopback cloud workspace refs use workspace runtime transport for create and prompt", async () => {
+  test("loopback provisioner-placed workspace refs use workspace runtime transport for create and prompt", async () => {
     state.runtimeSessionUrl = "http://runtime.example.com"
     state.harnessMode = false
 

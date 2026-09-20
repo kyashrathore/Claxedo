@@ -2,12 +2,26 @@ import type { createNodeWebSocket } from "@hono/node-ws"
 import type { Context, Hono as HonoType, Next } from "hono"
 import { connectEmbeddedWorkspacePty } from "../../deployments/local/embedded-workspace-runtime"
 import {
+  embedded,
   resolveWorkspaceRuntimeHit,
   resolveWorkspaceRuntimeHitForWorkspaceId,
   type RuntimeProxyOptions,
 } from "../../workspace/runtime-dispatch/internals"
+import { resolveIngressProvenance } from "../../workspace/runtime-dispatch/ingress-provenance"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+
+const PTY_ROUTE_PREFIX = "/api/wr/pty"
+
+type IngressOptions = Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor" | "verifyRelayIngress">
+
+function ingressOptions(options: RuntimeProxyOptions): IngressOptions {
+  return {
+    ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+    ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+    ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
+  }
+}
 
 type UpgradeWebSocket = ReturnType<typeof createNodeWebSocket>["upgradeWebSocket"]
 
@@ -56,6 +70,40 @@ function requestWorkspace(c: Context) {
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
     directory: decoded(c.req.query("directory") || c.req.header("x-claxedo-directory")),
   })
+}
+
+/**
+ * Whether this caller may attach to an in-process terminal, answered before the
+ * upgrade and answered by the runtime that owns the terminal.
+ *
+ * The socket itself cannot ask: the runtime's own `/:ptyID/connect` upgrade is
+ * bound to the `@hono/node-ws` instance `createWorkspaceRuntimeApp` builds for
+ * its own app, nothing ever attaches that instance to a listener, and a
+ * replayed `app.fetch` therefore reaches the handler and dies writing the
+ * connection symbol onto an absent `env`. So the same decision is taken over a
+ * plain in-process fetch: `GET /api/wr/pty/:ptyID` resolves ingress provenance,
+ * denies a workspace viewer, and runs the session policy's `pty_read` for the
+ * session this terminal is bound to. Anything but 200 is the answer the
+ * upgrade gets.
+ *
+ * A loopback-direct caller is not asked at all: no stamp reaches the runtime,
+ * so the only refusal it could return is a terminal that is already gone —
+ * which the connect below answers with the close code its client reads.
+ */
+async function localWorkspacePtyRefusal(
+  c: Context,
+  ws: Workspace,
+  ptyId: string,
+  options: RuntimeProxyOptions,
+): Promise<Response | undefined> {
+  const ingress = ingressOptions(options)
+  const provenance = await resolveIngressProvenance(c.req.raw, ws.id, ingress)
+  if (provenance.kind === "rejected") return provenance.response
+  if (provenance.kind === "loopback-direct") return undefined
+  const decision = await embedded(c, ws, `${PTY_ROUTE_PREFIX}/${encodeURIComponent(ptyId)}`, ingress)
+  if (!decision.ok) return decision
+  await decision.body?.cancel()
+  return undefined
 }
 
 function connectLocalWorkspacePty(
@@ -226,7 +274,10 @@ export function mountWorkspaceRuntimePtyWebSocketProxy(
 
     const workspace = await requestWorkspace(c).catch(() => undefined)
     if (workspace && workspace.kind !== "cloud") {
-      return connectLocalWorkspacePty(upgradeWebSocket, c, next, workspace, c.req.param("ptyID"))
+      const ptyId = c.req.param("ptyID")
+      const refusal = await localWorkspacePtyRefusal(c, workspace, ptyId, options)
+      if (refusal) return refusal
+      return connectLocalWorkspacePty(upgradeWebSocket, c, next, workspace, ptyId)
     }
 
     const hit = await resolveWorkspaceRuntimeHit(c, options).catch(() => undefined)
@@ -250,7 +301,10 @@ export function mountWorkspaceRuntimePtyWebSocketProxy(
     if (!workspaceId) return next()
     const workspace = await resolveWorkspace({ workspaceId }).catch(() => undefined)
     if (workspace && workspace.kind !== "cloud") {
-      return connectLocalWorkspacePty(upgradeWebSocket, c, next, workspace, c.req.param("ptyID"))
+      const ptyId = c.req.param("ptyID")
+      const refusal = await localWorkspacePtyRefusal(c, workspace, ptyId, options)
+      if (refusal) return refusal
+      return connectLocalWorkspacePty(upgradeWebSocket, c, next, workspace, ptyId)
     }
     const hit = await resolveWorkspaceRuntimeHitForWorkspaceId(workspaceId, options).catch(() => undefined)
     if (!hit) return next()

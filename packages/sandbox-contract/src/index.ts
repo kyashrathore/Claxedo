@@ -12,6 +12,17 @@ export const sandboxDriverIds = ["exe", "daytona", "modal", "vercel", "cloudflar
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
 /**
+ * Every provisioner a workspace placement can name.
+ *
+ * `fetch` is the HTTP bridge a hosted deployment points at an operator-run
+ * provisioning service. It has no catalog entry, no credential fields and no
+ * metadata, because this repository implements none of it — but a workspace it
+ * provisions still has to record whose machine it runs on, so a placement must
+ * be able to name it.
+ */
+export type SandboxProvisionerID = SandboxDriverID | "fetch"
+
+/**
  * How a driver can honor a credential the sandbox may USE but must never READ.
  *
  * Here rather than in `@claxedo/sandbox-manager` because both sides of the
@@ -79,6 +90,10 @@ export const sandboxDriverLabels = {
 
 export function isSandboxDriverID(input: string | undefined): input is SandboxDriverID {
   return !!input && (sandboxDriverIds as readonly string[]).includes(input)
+}
+
+export function isSandboxProvisionerID(input: string | undefined): input is SandboxProvisionerID {
+  return input === "fetch" || isSandboxDriverID(input)
 }
 
 export type SandboxDriverEnv = Record<string, string | undefined>

@@ -19,7 +19,7 @@ test.describe("desktop signed embedded-shared @core @tier-real @surface-desktop"
 
   test.beforeAll(async () => {
     const fixture = await startSignedFixture({
-      access: "user-hosted",
+      backing: "local-worktree",
       claudeScriptedEnv,
       startScriptedModelServer,
       logLabel: "desktop-signed-embedded-shared",

@@ -14,7 +14,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
  *     hosts (no challenge, no machine signature — machine consent is the
  *     enrollment heartbeat's acked served set),
  *   - mints the Host Tunnel Token via the injected signer on assignment,
- *   - answers 404 on the retired per-workspace user-hosted quartet,
+ *   - answers 404 on the retired per-workspace machine-placement quartet,
  *   - and NEVER starts a tunnel / reads local host identity / hits the disk.
  *
  * The signature-verification and routing policy behind assignment lives in
@@ -49,7 +49,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     openWorkspace: vi.fn(async () => ({
       allowed: true,
       role: "owner",
-      workspace: { workspace_id: "ws_1", access: "user-hosted", backing: "local-worktree" },
+      workspace: { workspace_id: "ws_1", backing: "local-worktree" },
     })),
     activeWorkspaceHost: vi.fn(async () => ({
       active: true,
@@ -60,7 +60,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
       // What this machine declared on its last heartbeat. A `claxedo up` host
       // against a hosted control plane injects a session authority into its
       // embedded runtime and is therefore managed-private — which is why no
-      // assumption about "every user-hosted workspace runs an unbound local
+      // assumption about "every machine-placed workspace runs an unbound local
       // policy" can stand in for the declaration.
       session_authority: "managed-private" as const,
     })),
@@ -68,8 +68,8 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     revokeRuntimeAccessToken: vi.fn(async () => ({})),
     runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
     listWorkspaces: vi.fn(async () => [
-      { workspace_id: "ws_user", access: "user-hosted" },
-      { workspace_id: "ws_cloud", access: "cloud" },
+      { workspace_id: "ws_user", backing: "local-worktree" },
+      { workspace_id: "ws_cloud", backing: "cloud-vm" },
     ]),
     assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
     unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
@@ -335,7 +335,7 @@ describe("host unassignment (DELETE /:id/host-assignment)", () => {
   })
 })
 
-describe("the retired per-workspace user-hosted routes are gone", () => {
+describe("the retired per-workspace machine-placement routes are gone", () => {
   test("challenge/register/heartbeat/pause answer 404, not a handler", async () => {
     // NO backward compatibility: a 400/401/409 here would mean a handler is
     // still mounted behind the path. Machine enrollment + owner assignment
@@ -351,13 +351,12 @@ describe("the retired per-workspace user-hosted routes are gone", () => {
 })
 
 describe("hosted connection", () => {
-  test("mints a Runtime Access Token for a user-hosted workspace", async () => {
+  test("mints a Runtime Access Token for a machine-placed workspace", async () => {
     const { app, authority, capture } = buildApp({})
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
     expect(authority!.recordRuntimeAccessToken).toHaveBeenCalled()
     expect(await res.json()).toMatchObject({
-      access: "user-hosted",
       backing: "local-worktree",
       // Straight from what the HOST declared on its heartbeat, never derived
       // from the workspace's access or backing. Only the mint can tell the
@@ -369,9 +368,7 @@ describe("hosted connection", () => {
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
       workspaceId: "ws_1",
-      access: "user-hosted",
       backing: "local-worktree",
-      runtimeKind: "user-hosted",
       homeRegion: "us-east",
       relayRoom: "ws_1",
       hostId: "host_1",
@@ -381,7 +378,7 @@ describe("hosted connection", () => {
       "runtime_access_token.minted",
       expect.objectContaining({
         workspaceId: "ws_1",
-        access: "user-hosted",
+        backing: "local-worktree",
         relayRoom: "ws_1",
         relayUrl: "https://relay.test",
         jti: "jti_rat",
@@ -397,7 +394,6 @@ describe("hosted connection", () => {
         role: "owner",
         workspace: {
           workspace_id: "ws_1",
-          access: "user-hosted",
           backing: "local-worktree",
           home_region: "eu-west",
         },
@@ -415,8 +411,7 @@ describe("hosted connection", () => {
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
-      access: "user-hosted",
-      runtimeKind: "user-hosted",
+      backing: "local-worktree",
       homeRegion: "eu-west",
       relayUrl: "https://relay.eu.test",
     })
@@ -428,7 +423,6 @@ describe("hosted connection", () => {
     expect(res.status).toBe(200)
     expect(authority!.recordRuntimeAccessToken).toHaveBeenCalled()
     expect(await res.json()).toMatchObject({
-      access: "user-hosted",
       backing: "local-worktree",
       workspaceId: "ws_1",
       relayUrl: "https://relay.test",
@@ -441,7 +435,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "apac-south" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "apac-south" },
       })),
     })
     const sandboxManager = {
@@ -456,9 +450,7 @@ describe("hosted connection", () => {
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
       workspaceId: "ws_1",
-      access: "cloud",
       backing: "cloud-vm",
-      runtimeKind: "cloud",
       homeRegion: "apac-south",
       relayRoom: "ws_1",
     })
@@ -473,7 +465,6 @@ describe("hosted connection", () => {
     expect(await res.json()).toEqual({
       status: "provisioning",
       workspaceId: "ws_1",
-      runtimeKind: "cloud",
       homeRegion: "apac-south",
       retryAfterMs: 2_000,
     })
@@ -484,7 +475,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "editor",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "eu-west" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "eu-west" },
       })),
     })
     const sandboxManager = {
@@ -533,7 +524,6 @@ describe("hosted connection", () => {
       "runtime_access_token.minted",
       expect.objectContaining({
         workspaceId: "ws_1",
-        access: "cloud",
         backing: "cloud-vm",
         relayRoom: "ws_1",
         relayUrl: "https://relay.test",
@@ -544,9 +534,7 @@ describe("hosted connection", () => {
     expect(JSON.stringify(capture.mock.calls)).not.toContain("rat-token")
     const body = await res.json()
     expect(body).toMatchObject({
-      access: "cloud",
       backing: "cloud-vm",
-      runtimeKind: "cloud",
       // A provisioned sandbox delegates to the control plane's session
       // authority, so it serves SESSION-SCOPED streams only.
       sessionAuthority: "managed-private",
@@ -567,7 +555,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "eu-west" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "eu-west" },
       })),
     })
     const sandboxManager = {
@@ -597,7 +585,7 @@ describe("hosted connection", () => {
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.unavailable", {
       workspaceId: "ws_1",
-      runtimeKind: "cloud",
+      backing: "cloud-vm",
       homeRegion: "eu-west",
       relayRoom: "ws_1",
       retryAfterMs: 5_000,
@@ -609,7 +597,7 @@ describe("hosted connection", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm" },
       })),
     })
     const { app } = buildApp({ authority: authority })
@@ -647,7 +635,7 @@ describe("hosted connection rate limiting (mint-only)", () => {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm", home_region: "us-east" },
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
       })),
     })
   }
@@ -693,11 +681,9 @@ describe("hosted connection rate limiting (mint-only)", () => {
     for (let i = 0; i < 3; i++) {
       expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     }
-    // Two real mints consume the budget…
     expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     expect(authority!.recordRuntimeAccessToken).toHaveBeenCalledTimes(2)
-    // …and the third mint attempt is rejected at the cap.
     const limited = await app.fetch(get("/ws_1/connection"))
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "runtime_access_token_rate_limited" } })
@@ -764,29 +750,29 @@ describe("hosted connection rate limiting (mint-only)", () => {
 })
 
 describe("hosted workspace list (GET /api/workspace)", () => {
-  test("signed access=user-hosted returns only the caller's user-hosted workspaces", async () => {
+  test("signed host=machine returns only the caller's machine-placed workspaces", async () => {
     const { app, authority } = buildApp({})
-    const res = await app.fetch(get("/?access=user-hosted"))
+    const res = await app.fetch(get("/?host=machine"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
-    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", access: "user-hosted" }])
+    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", backing: "local-worktree" }])
     expect(authority!.usersMe).toHaveBeenCalledTimes(1)
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
-  test("signed access=cloud returns the full list (no user-hosted filter)", async () => {
+  test("signed host=provisioner returns the full list (no machine-placement filter)", async () => {
     const { app, authority } = buildApp({})
-    const res = await app.fetch(get("/?access=cloud"))
+    const res = await app.fetch(get("/?host=provisioner"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([
-      { workspace_id: "ws_user", access: "user-hosted" },
-      { workspace_id: "ws_cloud", access: "cloud" },
+      { workspace_id: "ws_user", backing: "local-worktree" },
+      { workspace_id: "ws_cloud", backing: "cloud-vm" },
     ])
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
-  test("unsigned (no access query) returns an empty list and never touches the authority", async () => {
+  test("unsigned (no host query) returns an empty list and never touches the authority", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(new Request("http://cp.test/"))
     expect(res.status).toBe(200)
@@ -796,9 +782,9 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 
-  test("access=user-hosted with no bearer token fails closed (signed required)", async () => {
+  test("host=machine with no bearer token fails closed (signed required)", async () => {
     const { app, authority } = buildApp({})
-    const res = await app.fetch(new Request("http://cp.test/?access=user-hosted"))
+    const res = await app.fetch(new Request("http://cp.test/?host=machine"))
     expect(res.status).toBe(401)
     expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
@@ -809,8 +795,8 @@ describe("hosted workspace list (GET /api/workspace)", () => {
         controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1, windowMs: 60_000 }),
       },
     })
-    expect((await app.fetch(get("/?access=user-hosted"))).status).toBe(200)
-    const limited = await app.fetch(get("/?access=user-hosted"))
+    expect((await app.fetch(get("/?host=machine"))).status).toBe(200)
+    const limited = await app.fetch(get("/?host=machine"))
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
     // The rate-limited request did not reach the workspace listing.
@@ -978,38 +964,6 @@ describe("hosted cloud workspace create (POST /create)", () => {
       }),
     )
     expect([401, 403]).toContain(res.status)
-  })
-})
-
-describe("workspace shares (POST/DELETE /:id/shares)", () => {
-  test("grants a share through the authority for a signed caller", async () => {
-    const grantWorkspaceShare = vi.fn(async () => ({ granted: true, grant_id: "grant_1" }))
-    const { app } = buildApp({ authority: fakeAuthority({ grantWorkspaceShare }) })
-    const res = await app.request(post("/ws_user/shares", {
-      role: "viewer",
-      target: { kind: "user", userId: "user_2" },
-    }))
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ granted: true, grant_id: "grant_1" })
-    expect(grantWorkspaceShare).toHaveBeenCalledWith(expect.anything(), {
-      workspaceId: "ws_user",
-      role: "viewer",
-      target: { kind: "user", userId: "user_2" },
-    })
-  })
-
-  test("refuses an anonymous caller and a share with no target", async () => {
-    const grantWorkspaceShare = vi.fn(async () => ({ granted: true }))
-    const { app } = buildApp({ authority: fakeAuthority({ grantWorkspaceShare }) })
-    const anonymous = await app.request(new Request("http://cp.test/ws_user/shares", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ role: "viewer", target: { kind: "user", userId: "user_2" } }),
-    }))
-    expect(anonymous.status).toBe(401)
-    const targetless = await app.request(post("/ws_user/shares", { role: "viewer" }))
-    expect(targetless.status).toBe(400)
-    expect(grantWorkspaceShare).not.toHaveBeenCalled()
   })
 })
 

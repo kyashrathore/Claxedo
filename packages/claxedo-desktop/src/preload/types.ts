@@ -185,21 +185,14 @@ export type ElectronAPI = {
   processDiagnostics: ProcessDiagnosticsBridge
   browser: BrowserBridge
   /**
-   * The account, by named operation only.
-   *
-   * `run` deliberately takes a name and parameters rather than a request: the
-   * credential lives in main, and a bridge that could describe a request would
-   * make main a confused deputy. The names come from
-   * `docs/tech-docs/desktop-hosted-operation-matrix.md`.
-   */
-  /**
    * Machine remote access, by named operation only.
    *
-   * Four operations and a status subscription. None of them takes an argument,
-   * which is stronger than the account bridge below and deliberately so: main
-   * holds the account bearer AND a machine signing key that never expires, so
-   * there must be nothing in a message for a handler to act on. A message picks
-   * which of four things happens; it cannot describe one.
+   * Seven operations and a status subscription. `status`, `start`, `pause` and
+   * `revoke` take nothing; `share`, `unshare` and `rename` carry data the user
+   * chose — a workspace id, a label, a name — and never a route, a verb or a
+   * machine. Stronger than the account bridge below, deliberately: main holds
+   * the account bearer AND a machine signing key that never expires. A message
+   * picks which fixed thing happens; it cannot describe one.
    *
    * `main/host-connector/ipc.ts` is the closed set, and
    * `main/host-connector/ipc.test.ts` asserts this bridge names exactly it.
@@ -213,9 +206,19 @@ export type ElectronAPI = {
     share: (input: { workspaceId: string; displayName?: string }) => Promise<unknown>
     /** Withdraw one workspace from this machine. */
     unshare: (input: { workspaceId: string }) => Promise<unknown>
+    /** Name THIS machine. No host id crosses: main takes it from the connector. */
+    rename: (input: { displayName: string }) => Promise<unknown>
     /** Push, for the transitions the user did not cause. Returns an unsubscribe. */
     onStatus: (listener: (status: unknown) => void) => () => void
   }
+  /**
+   * The account, by named operation only.
+   *
+   * `run` deliberately takes a name and parameters rather than a request: the
+   * credential lives in main, and a bridge that could describe a request would
+   * make main a confused deputy. The names come from
+   * `docs/tech-docs/desktop-hosted-operation-matrix.md`.
+   */
   account: {
     state: () => Promise<unknown>
     /** Pushes authoritative main-process transitions, including passive revocation. */

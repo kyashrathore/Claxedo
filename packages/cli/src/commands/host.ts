@@ -1,3 +1,4 @@
+import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -6,7 +7,7 @@ import { normalizeAbsolutePath } from "@claxedo/host-connector/host-state"
 import { requireAccessToken } from "../auth/token-store"
 import { config, url } from "../config"
 import { takeValue } from "../connect/args"
-import { requestJson } from "../http"
+import { ApiError, requestJson } from "../http"
 
 export type HostDeps = {
   request: typeof requestJson
@@ -14,6 +15,7 @@ export type HostDeps = {
   controlPlaneUrl: string
   log: (line: string) => void
   now: () => number
+  readFile: (file: string) => Promise<string>
 }
 
 export function defaultHostCommandDeps(): HostDeps {
@@ -23,6 +25,7 @@ export function defaultHostCommandDeps(): HostDeps {
     controlPlaneUrl: config().controlPlaneUrl,
     log: (line) => console.log(line),
     now: () => Date.now(),
+    readFile: (file) => fs.readFile(file, "utf8"),
   }
 }
 
@@ -31,6 +34,8 @@ claxedo host list
 claxedo host assign --machine <name|enrollment_id> <dir> [--name N]
 claxedo host unassign --machine <name|enrollment_id> <dir>
 claxedo host scope --machine <name|enrollment_id> --root DIR... [--org-visible]
+claxedo host push-config --machine <name|enrollment_id> --from-file FILE
+claxedo host push-config --machine <name|enrollment_id> --clear
 claxedo host revoke --machine <name|enrollment_id>`
 
 export const hostHelp = `${hostUsage}
@@ -41,6 +46,11 @@ Owner commands, run from a signed-in laptop (\`claxedo login\`), never on the ho
   assign    have a machine serve <dir> (absolute, under its roots); re-points the workspace already assigned to that machine at <dir>, else creates a new one
   unassign  stop serving <dir>; the workspace assigned to that machine at <dir> is retired
   scope     replace a machine's allowed roots; assignments outside them are retired
+  push-config
+            seal provider credentials for ONE machine and deliver them on its next beat; FILE is JSON
+            {"providers": {"<providerId>": {"baseUrl": ..., "placeholder": ..., "authMode": "bearer"|"api-key"}}}
+            and a pushed provider is used ahead of the machine's own login for it. --clear withdraws them.
+            Credentials travel only in the file, never on the command line.
   revoke    revoke a machine for good (assignments, readiness and tokens cascade); its next beat is refused and \`claxedo connect\` exits 78
 --machine matches an enrollment id, else a display name exactly (case-sensitive); an ambiguous name is refused.
 --org-visible lets ordinary org members open the machine's workspaces; default is owner, direct and project members, and org admins only.`
@@ -114,10 +124,12 @@ type Parsed = {
   roots: string[]
   expires?: string
   orgVisible: boolean
+  fromFile?: string
+  clear: boolean
 }
 
 function parseHostArgs(args: string[]): Parsed {
-  const parsed: Parsed = { positional: [], roots: [], orgVisible: false }
+  const parsed: Parsed = { positional: [], roots: [], orgVisible: false, clear: false }
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? ""
     if (arg === "--machine" || arg.startsWith("--machine=")) {
@@ -147,6 +159,18 @@ function parseHostArgs(args: string[]): Parsed {
     }
     if (arg === "--org-visible") {
       parsed.orgVisible = true
+      continue
+    }
+    // A credential is only ever read from a file: an `--api-key` flag would
+    // put the secret in argv, where every user on the box reads it from `ps`.
+    if (arg === "--from-file" || arg.startsWith("--from-file=")) {
+      const taken = takeValue(args, i, "--from-file")
+      parsed.fromFile = path.resolve(taken.value)
+      i = taken.next
+      continue
+    }
+    if (arg === "--clear") {
+      parsed.clear = true
       continue
     }
     if (arg.startsWith("-")) throw new Error(`Unknown host option: ${arg}\n${hostUsage}`)
@@ -330,6 +354,57 @@ async function scopeMachine(deps: HostDeps, parsed: Parsed) {
   )
 }
 
+/** The file's `providers` map, shape-checked only as far as the control plane's own validation is not: rows are its to refuse. */
+async function readProviderConfigFile(deps: HostDeps, file: string): Promise<Record<string, unknown>> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await deps.readFile(file))
+  } catch (error) {
+    throw new Error(`${file} is not a JSON file: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+  }
+  const providers = asRecordOrEmpty(parsed).providers
+  if (typeof providers !== "object" || providers === null || Array.isArray(providers) || Object.keys(providers).length === 0) {
+    throw new Error(`${file} must hold {"providers": {"<providerId>": {...}}} with at least one provider; \`--clear\` withdraws them`)
+  }
+  return { ...providers }
+}
+
+async function pushConfig(deps: HostDeps, parsed: Parsed) {
+  const selector = requireMachineSelector(parsed)
+  if (parsed.clear === (parsed.fromFile !== undefined)) {
+    throw new Error(`push-config takes exactly one of --from-file FILE or --clear\n${hostUsage}`)
+  }
+  const providers = parsed.fromFile === undefined ? {} : await readProviderConfigFile(deps, parsed.fromFile)
+  const token = await deps.token()
+  const machine = await selectMachine(deps, token, selector)
+  const name = machine.display_name || machine.enrollment_id
+  let response: Record<string, unknown>
+  try {
+    response = asRecordOrEmpty(
+      await deps.request({
+        url: url(deps.controlPlaneUrl, `/api/claxedo/host/enrollments/${encodeURIComponent(machine.enrollment_id)}/provider-config`),
+        token,
+        body: { providers },
+      }),
+    )
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "host_sealing_key_undeclared") {
+      throw new Error(
+        `${name} has not beaten since it learned to receive configuration, so there is no sealing key to seal to yet; once \`claxedo connect\` there is current and \`claxedo host list\` shows it online, push again`,
+        { cause: error },
+      )
+    }
+    throw error
+  }
+  const revision = asFiniteNumber(response.revision)
+  const stamp = revision === undefined ? "" : ` (revision ${revision})`
+  if (parsed.clear) {
+    deps.log(`${name}: provider configuration withdrawn${stamp}; the machine drops it within one beat`)
+    return
+  }
+  deps.log(`${name}: sealed ${Object.keys(providers).sort().join(", ")}${stamp}; the machine applies it on its next beat`)
+}
+
 async function revokeMachine(deps: HostDeps, parsed: Parsed) {
   const selector = requireMachineSelector(parsed)
   const token = await deps.token()
@@ -356,6 +431,7 @@ export async function hostCommand(args: string[], deps: HostDeps = defaultHostCo
   if (subcommand === "assign") return assignFolder(deps, parsed)
   if (subcommand === "unassign") return unassignFolder(deps, parsed)
   if (subcommand === "scope") return scopeMachine(deps, parsed)
+  if (subcommand === "push-config") return pushConfig(deps, parsed)
   if (subcommand === "revoke") return revokeMachine(deps, parsed)
   throw new Error(`Unknown host subcommand: ${subcommand}\n${hostUsage}`)
 }

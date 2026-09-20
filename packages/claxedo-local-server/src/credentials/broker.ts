@@ -28,6 +28,7 @@ import {
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
 import type { ProviderProjectionSource } from "@claxedo/workspace-runtime/config"
+import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-sdk-runtime"
 import {
   markCredentialUsed,
   readSecretById,
@@ -137,6 +138,22 @@ export type LocalCredentialBroker = {
   runtimeIdentity: (workspaceId: string, orgId?: string) => RuntimeIdentity
 }
 
+/**
+ * The placeholder a binding keeps handing back, and what ends it.
+ *
+ * Minting a fresh one per projection changes the projected row every wall-clock
+ * second — `mintRuntimeToken` floors `iat` and `exp` to seconds — and the
+ * runtime's unchanged-snapshot no-op then never fires. Every dispatched request
+ * re-applies live config, every re-apply restarts the harness processes, and a
+ * session whose harness has not written its file yet is lost with no way back.
+ */
+type MintedLease = {
+  leaseGeneration: number
+  placeholder: string
+  expiresAt: number
+  renewAt: number | undefined
+}
+
 /** What a binding names, so a request resolves from its id alone. */
 type MintedBinding = {
   providerId: string
@@ -145,6 +162,7 @@ type MintedBinding = {
   scope: SecretScope
   /** The row the placeholder now in the harness was minted for. */
   credentialId: string
+  lease?: MintedLease
 }
 
 export function createLocalCredentialBroker(input: {
@@ -395,7 +413,12 @@ export function createLocalCredentialBroker(input: {
         return rows
       }
       projected.add(leaseKey(org, workspaceId))
-      const bindable: { id: string; credential: CredentialMetadata; destination: ProviderDestination }[] = []
+      const bindable: {
+        id: string
+        entry: MintedBinding
+        credential: CredentialMetadata
+        destination: ProviderDestination
+      }[] = []
       for (const { credential, unavailable } of selection) {
         // A marked account that cannot be bound is reported, never dropped: the
         // harness has to refuse the turn rather than run on the machine's login.
@@ -409,23 +432,46 @@ export function createLocalCredentialBroker(input: {
           continue
         }
         const id = bindingId(org, workspaceId, credential.provider_id)
-        const entry = minted.get(id)
+        let entry = minted.get(id)
         if (entry) bindCurrentAccount(id, entry, credential)
-        else minted.set(id, { providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id })
-        bindable.push({ id, credential, destination })
+        else {
+          entry = { providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id }
+          minted.set(id, entry)
+        }
+        bindable.push({ id, entry, credential, destination })
       }
       // Read after every switch above has moved the lease on, so one projection
       // mints every placeholder under the same generation.
       const identity = runtimeIdentity(workspaceId, org)
-      const expiresAt = now() + BROKER_TOKEN_TTL_MS
-      for (const { id, credential, destination } of bindable) {
-        rows[credential.provider_id] = {
+      const at = now()
+      for (const { id, entry, credential, destination } of bindable) {
+        // The destination is read live on every projection: a rotation that
+        // moves the account's vendor host has to reach the harness even while
+        // the placeholder it holds stays valid.
+        const route = {
           baseUrl: bindingBaseUrl(input.brokerOrigin, id),
-          placeholder: await mintRuntimeToken({ ...identity, bindingIds: [id], expiresAt }, state.signingKey, now()),
           authMode: destinationAuthMode(destination),
-          expiresAt,
           ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
         }
+        let lease = entry.lease
+        if (
+          !lease
+          || lease.leaseGeneration !== identity.leaseGeneration
+          || projectionRenewalDue({ at }, lease.renewAt)
+        ) {
+          const expiresAt = at + BROKER_TOKEN_TTL_MS
+          const placeholder = await mintRuntimeToken({ ...identity, bindingIds: [id], expiresAt }, state.signingKey, at)
+          lease = {
+            leaseGeneration: identity.leaseGeneration,
+            placeholder,
+            expiresAt,
+            // The same policy the host schedules its renewal on, so a
+            // placeholder is replaced exactly when the host comes back for it.
+            renewAt: projectionRenewalDueAt({ [id]: { ...route, placeholder, expiresAt } }, at),
+          }
+          entry.lease = lease
+        }
+        rows[credential.provider_id] = { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt }
       }
       return rows
     },

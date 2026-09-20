@@ -2,7 +2,7 @@ import { authFetch, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import { createTransport } from "@/platform/runtime/transport"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type AgentConfigResource = "agents" | "commands"
 export type WorkspaceRuntimeAgentConfigResource = "agent" | "command"
@@ -69,10 +69,10 @@ export async function workspaceScopedResourceList<T>(input: {
   parse: (data: unknown) => T[]
 }): Promise<T[]> {
   const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
-  if (!input.workspace || !isRelayBackedWorkspaceKind(input.workspace.kind)) {
+  if (!input.workspace || !isRelayHostKind(input.workspace.kind)) {
     // Rubric Q4: declare auth intent at the call site. Loopback Claxedo
     // server bypasses the bearer (`unsignedLocalFetch`); cloud /
-    // user-hosted control plane uses the signed fetch.
+    // machine-placed control plane uses the signed fetch.
     const claxedoFetch = agentConfigRequest({ baseUrl, request: input.request })
     const res = await claxedoFetch(
       agentConfigUrl({

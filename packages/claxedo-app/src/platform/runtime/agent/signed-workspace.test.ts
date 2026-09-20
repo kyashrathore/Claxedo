@@ -17,7 +17,7 @@ describe("signed workspace lookup", () => {
       workspaceId: "ws_cached",
       directory: "/tmp/project",
       workspaceName: undefined,
-      kind: "cloud",
+      kind: "provisioner",
     })
   })
 
@@ -52,7 +52,7 @@ describe("signed workspace lookup", () => {
     }], "ws_nullable")).toEqual({
       workspaceId: "ws_nullable",
       directory: "ws_nullable",
-      kind: "user-hosted",
+      kind: "machine",
     })
   })
 
@@ -70,6 +70,66 @@ describe("signed workspace lookup", () => {
     expect(localWorkspaceInProjects(projects, projectId)).toBe(true)
     expect(localWorkspaceInProjects(projects, worktree)).toBe(true)
     expect(signedWorkspaceFromProjects(projects, projectId)).toBeUndefined()
+  })
+
+  // The exact grouping `signedBootstrapProjects` answers with
+  // (`claxedo-local-server/src/deployments/shared-routes/bootstrap.ts`), and the
+  // same shape the hosted shell's `signedShellProjects` serves: every entry
+  // states `backing` and no `kind`, is addressed by `workspace:<id>`, and
+  // carries no `placement`.
+  const bootstrapProjects = [{
+    id: "prj_1",
+    name: "prj_1",
+    worktree: "ws_machine",
+    sandboxes: ["ws_machine", "ws_sandbox"],
+    workspaces: {
+      ws_machine: {
+        id: "ws_machine",
+        backing: "local-worktree",
+        workspace_name: "Main",
+        directory: "workspace:ws_machine",
+        remote_directory: "/Users/host/repo",
+      },
+      ws_sandbox: {
+        id: "ws_sandbox",
+        backing: "cloud-vm",
+        workspace_name: "Sandbox",
+        directory: "workspace:ws_sandbox",
+      },
+    },
+  }]
+
+  test("resolves a signed bootstrap row, which states backing and no kind", () => {
+    expect(signedWorkspaceFromProjects(bootstrapProjects, "workspace:ws_machine")).toEqual({
+      workspaceId: "ws_machine",
+      directory: "workspace:ws_machine",
+      workspaceName: "Main",
+      kind: "machine",
+    })
+    expect(signedWorkspaceFromProjects(bootstrapProjects, "ws_sandbox")?.kind).toBe("provisioner")
+  })
+
+  // A bootstrap row's `local-worktree` names a machine the relay reaches, never
+  // the server this client is attached to, so it must not read as local — the
+  // caller would then refuse to open a relay it does need.
+  test("a machine-placed bootstrap row is not a workspace this server serves", () => {
+    expect(localWorkspaceInProjects(bootstrapProjects, "workspace:ws_machine")).toBe(false)
+  })
+
+  // The daemon's own store has a `kind` column and no backing, so both
+  // vocabularies are in circulation and both resolve through one narrower.
+  test("a daemon store row, which states kind and no backing, resolves the same placements", () => {
+    const daemonProjects = [{
+      id: "prj_2",
+      worktree: "/repo/main",
+      workspaces: {
+        "/repo/main": { id: "ws_own", kind: "local", directory: "/repo/main" },
+        "/repo/sandbox": { id: "ws_cloud", kind: "cloud", directory: "/repo/sandbox" },
+      },
+    }]
+
+    expect(localWorkspaceInProjects(daemonProjects, "/repo/main")).toBe(true)
+    expect(signedWorkspaceFromProjects(daemonProjects, "/repo/sandbox")?.kind).toBe("provisioner")
   })
 
   test("treats a desktop project UUID as local even when inventory omitted kind: local", () => {

@@ -34,7 +34,7 @@ describe("workspace store boot", () => {
       return rename(from, to)
     })
 
-    const write = ensureWorkspace({ kind: "cloud", directory: "/workspace", repo_url: "https://github.com/acme/repo.git" })
+    const write = ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/repo.git" })
     await renameStarted
     const read = listWorkspaces()
     release()
@@ -46,7 +46,7 @@ describe("workspace store boot", () => {
   })
 
   test("a store file deleted underneath a loaded store reloads as empty", async () => {
-    const created = await ensureWorkspace({ kind: "cloud", directory: "/workspace", repo_url: "https://github.com/acme/repo.git" })
+    const created = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/repo.git" })
     expect(created).toBeDefined()
     await fs.rm(path.join(dir, "workspaces.json"))
     expect(await listWorkspaces()).toEqual([])
@@ -108,7 +108,7 @@ describe("the project catalog's session composition", () => {
       fetch: async () => new Response(null, { status: 404 }),
       sessionAuthority: () => "managed-private",
     })
-    await ensureWorkspace({ kind: "cloud", directory: "/workspace", repo_url: "https://github.com/acme/repo.git" })
+    await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/repo.git" })
     expect(await workspaceRows()).toEqual([
       expect.not.objectContaining({ session_authority: expect.anything() }),
     ])

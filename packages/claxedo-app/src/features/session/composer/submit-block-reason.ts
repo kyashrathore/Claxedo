@@ -1,15 +1,17 @@
 import type { HarnessReadiness } from "@/features/session/harness/selection"
 
+/** Which authority refuses the send: the workspace's role, or the session's share. */
+export type SubmitAuthorityBlock = "workspace-role" | "session-share"
+
 /**
  * The single, priority-ordered vocabulary for "why is Send blocked?".
  *
- * T5 (error proposal §B2/§T5): the composer used to derive `submitDisabled`
- * from six independent booleans, none of which could name the reason. This is the one
- * ordered source of truth. `submitDisabled` and the explain-on-intent copy both derive
- * from `submitBlockReason` — they never diverge.
+ * `submitDisabled`, the composer placeholder and the explain-on-intent copy all
+ * derive from `submitBlockReason`, so they cannot name different reasons for one
+ * refusal.
  */
 export type SubmitBlockReason =
-  | "viewer-role"
+  | SubmitAuthorityBlock
   | "session-loading"
   | "harness-degraded"
   | "harness-error"
@@ -32,8 +34,8 @@ export type SubmitBlock = {
 
 export type SubmitBlockInput = {
   readonly sessionStatusReady?: boolean
-  /** Read-only workspace / insufficient role. Always hard-blocks the handler. */
-  readonly roleBlocked: boolean
+  /** Which authority refuses the send, from `submitAuthorityBlock`. Always hard-blocks the handler. */
+  readonly authorityBlock: SubmitAuthorityBlock | undefined
   /** Whether harness-readiness gating applies to the selected runtime. */
   readonly harnessMode: boolean
   readonly harnessReadiness: HarnessReadiness
@@ -56,7 +58,8 @@ export type SubmitBlockInput = {
 
 const COPY = {
   "session-loading": "Checking session…",
-  "viewer-role": "Read-only workspace (viewer)",
+  "workspace-role": "Read-only workspace (viewer)",
+  "session-share": "You can follow this session, not send to it",
   "harness-degraded": "The selected agent is unavailable",
   "harness-error": "The agent isn't running",
   "harness-polling": "Checking the agent…",
@@ -68,15 +71,19 @@ const COPY = {
 
 // Actionable reasons have a real fix the user can reach; inert ones resolve on their
 // own (loading/booting) or by typing. Actionable → dim + clickable + explain-on-intent;
-// inert → hard-disabled. "viewer-role" is deliberately NOT actionable: unlike the other
-// entries here, a read-only role has no in-composer remedy the user can reach (no
-// "request access" action exists), so it hard-disables the Send control exactly like
-// "empty"/"booting" rather than staying dimmed-but-clickable.
+// inert → hard-disabled. Neither authority refusal is actionable: unlike the other
+// entries here, a workspace role and a follow share have no in-composer remedy the
+// user can reach (no "request access" action exists), so they hard-disable the Send
+// control exactly like "empty"/"booting" rather than staying dimmed-but-clickable.
 const ACTIONABLE: ReadonlySet<SubmitBlockReason> = new Set<SubmitBlockReason>([
   "harness-degraded",
   "harness-error",
   "no-model",
 ])
+
+export function submitBlockCopy(reason: SubmitBlockReason) {
+  return COPY[reason]
+}
 
 function block(reason: SubmitBlockReason): SubmitBlock {
   return { reason, copy: COPY[reason], actionable: ACTIONABLE.has(reason) }
@@ -86,7 +93,7 @@ function block(reason: SubmitBlockReason): SubmitBlock {
  * Priority-ordered (most specific first). Returns `null` when Send is free to fire.
  */
 export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
-  if (input.roleBlocked) return block("viewer-role")
+  if (input.authorityBlock) return block(input.authorityBlock)
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode) {

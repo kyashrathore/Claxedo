@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { localSessionRefForDirectory, type SessionRef } from "@/platform/identity/session-ref"
-import type { ComposerMode, DraftWorkspaceKind } from "@/features/session/composer/mode"
+import type { ComposerMode, DraftHostKind } from "@/features/session/composer/mode"
 import type { WorkspaceDirectory } from "@/features/session/composer/workspace-resolver"
 
 export function createSessionComposerModes(input: {
@@ -10,7 +10,7 @@ export function createSessionComposerModes(input: {
   sessionRef: Accessor<SessionRef | undefined>
   signedControlPlane: Accessor<boolean>
   workspaceId: Accessor<string | undefined>
-  workspaceKind: Accessor<DraftWorkspaceKind>
+  hostKind: Accessor<DraftHostKind>
   worktree: Accessor<string>
 }) {
   const draft = createMemo(() => {
@@ -21,7 +21,7 @@ export function createSessionComposerModes(input: {
       ...(draftId ? { draftId } : {}),
       signedControlPlane: input.signedControlPlane(),
       ...(workspaceId ? { workspaceId } : {}),
-      workspaceKind: input.workspaceKind(),
+      hostKind: input.hostKind(),
       worktree: input.worktree(),
     })
   })
@@ -41,7 +41,7 @@ export function newSessionComposerMode(input: {
   draftId?: string
   signedControlPlane: boolean
   workspaceId?: string
-  workspaceKind: DraftWorkspaceKind
+  hostKind: DraftHostKind
   worktree: string
 }): ComposerMode {
   return {
@@ -50,7 +50,7 @@ export function newSessionComposerMode(input: {
     target: {
       directory: input.directory,
       worktree: input.worktree,
-      workspaceKind: input.workspaceKind,
+      hostKind: input.hostKind,
       signedControlPlane: input.signedControlPlane,
       ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     },

@@ -63,7 +63,6 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
           workspaceId: "ws_1",
           hostId: "host_1",
           baseUrl: "https://runtime.test",
-          access: "cloud",
           backing: "cloud-vm",
         })
       }
@@ -72,7 +71,7 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
 
     await expect(client.target("ws_1", "host_1")).resolves.toMatchObject({
       baseUrl: "https://runtime.test",
-      access: "cloud",
+      backing: "cloud-vm",
     })
     await expect(client.revocation({ jti: "jti_1", workspaceId: "ws_1", hostId: "host_1" })).resolves.toEqual({ active: true })
     expect(requests.map((request) => request.headers.get("authorization"))).toEqual([
@@ -96,7 +95,6 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
           workspaceId: "ws_1",
           hostId: "host_1",
           baseUrl: "https://runtime.test",
-          access: "cloud",
           backing: "cloud-vm",
         })
       }

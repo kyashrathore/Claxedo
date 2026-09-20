@@ -182,7 +182,6 @@ describe("a connect fleet on the signed self-hosted node", () => {
       workspaceId: "ws_box_api",
       hostId,
       baseUrl: "",
-      access: "user-hosted",
       backing: "local-worktree",
     })
     await expect(json(await composed.app.request(`/internal/relay/host-generation?enrollmentId=${enrollmentId}`))).resolves.toEqual({
@@ -191,7 +190,7 @@ describe("a connect fleet on the signed self-hosted node", () => {
       revoked: false,
     })
     const catalog = await json<{ workspaces: Array<{ workspace_id: string; host_online?: boolean }> }>(
-      await composed.app.request("/api/workspace?access=user-hosted", { headers: owner }),
+      await composed.app.request("/api/workspace?host=machine", { headers: owner }),
     )
     expect(catalog.workspaces).toEqual([expect.objectContaining({ workspace_id: "ws_box_api", host_online: true })])
 

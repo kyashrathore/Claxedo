@@ -9,11 +9,29 @@ import {
   workspaceResponse,
   type WorkspaceResponse,
 } from "../../../../claxedo-server/src/workspace/workspace-response"
+import { signedWorkspaceJson } from "../../../../claxedo-server/src/workspace/signed-access"
+import type { ControlPlaneWorkspaceRow } from "./workspace-list"
 
 export function workspaceResolveResponse(workspace: Workspace): WorkspaceResponse {
   const response = workspaceResponse(workspace)
   if (!response) throw new Error(`workspace resolve contract produced no response for ${workspace.id}`)
   return response
+}
+
+/**
+ * Resolve as a SIGNED control plane answers it, from the same authority row the
+ * list returns.
+ *
+ * A different producer from `workspaceResolveResponse` above, not a variant of
+ * it: that one projects a row this server stores and states a `kind` saying it
+ * serves the directory itself, while this one projects a row the AUTHORITY
+ * holds for a workspace some other host serves and states only the placement.
+ * A fixture that picked the wrong producer would hand the app a `kind` the real
+ * route never sends it, and the app would open a loopback runtime for a
+ * workspace on somebody else's machine.
+ */
+export function signedWorkspaceResolveResponse(row: ControlPlaneWorkspaceRow) {
+  return signedWorkspaceJson({ workspace: row }, row.workspace_id)
 }
 
 /**

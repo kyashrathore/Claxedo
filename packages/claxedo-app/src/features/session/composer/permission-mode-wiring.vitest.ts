@@ -38,10 +38,10 @@ function wiringHarness(input: { signed?: boolean } = {}) {
       },
       claxedoServerUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => input.signed !== false,
-      workspace: () => input.signed === false ? undefined : ({ workspaceId: "ws_signed", kind: "user-hosted" }),
+      workspace: () => input.signed === false ? undefined : ({ workspaceId: "ws_signed", kind: "machine" }),
       sessionRef: () => input.signed === false
         ? ({ sessionId: "ses_1", host: "workspace", cwd: "/repo", toolSandbox: { kind: "local", cwd: "/repo" } })
-        : ({ sessionId: "ses_1", host: "workspace", workspaceId: "ws_signed", toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" } }),
+        : ({ sessionId: "ses_1", host: "workspace", workspaceId: "ws_signed", toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "machine" } }),
       requestFailedTitle: () => "failed",
     })
   })
@@ -124,7 +124,7 @@ describe("permission-mode wiring resource key", () => {
     for (const call of [fetchModes.mock.calls[0]?.[0], setMode.mock.calls[0]?.[0]]) {
       expect(call).toMatchObject({ signedControlPlane: false })
       expect(call).not.toHaveProperty("workspaceId")
-      expect(call).not.toHaveProperty("workspaceKind")
+      expect(call).not.toHaveProperty("hostKind")
       // The ref's local tool sandbox is what places the request on the loopback
       // runtime; without it a draft has nothing to route by and the fetch throws.
       expect(call).toMatchObject({ sessionRef: { toolSandbox: { kind: "local", cwd: "/repo" } } })
@@ -160,7 +160,7 @@ describe("permission-mode wiring resource key", () => {
       claxedoServerUrl: "http://127.0.0.1:3001",
       signedControlPlane: true,
       workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
     }
     expect(fetchModes.mock.calls[0]?.[0]).toMatchObject(scope)
     expect(setMode.mock.calls[0]?.[0]).toMatchObject(scope)
@@ -168,14 +168,14 @@ describe("permission-mode wiring resource key", () => {
       sessionRef: {
         sessionId: "ses_1",
         workspaceId: "ws_signed",
-        toolSandbox: { kind: "workspace", hosting: "user-hosted" },
+        toolSandbox: { kind: "workspace", hosting: "machine" },
       },
     })
     expect(setMode.mock.calls[0]?.[0]).toMatchObject({
       sessionRef: {
         sessionId: "ses_1",
         workspaceId: "ws_signed",
-        toolSandbox: { kind: "workspace", hosting: "user-hosted" },
+        toolSandbox: { kind: "workspace", hosting: "machine" },
       },
     })
     dispose()

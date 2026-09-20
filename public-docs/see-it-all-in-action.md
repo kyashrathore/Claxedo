@@ -26,7 +26,7 @@ workspace, and deployment backends underneath.
 | Local worktree | `workspace-runtime` runs next to a project directory on the user's machine. The product can call it over loopback. |
 | Container or Docker workspace | `workspace-runtime` runs inside or beside a container where the project directory is mounted, for example `/workspace/repo`. |
 | Cloud VM | `workspace-runtime` runs on the VM next to the project checkout. The control plane reaches it directly on private networking or through Relay. |
-| User-hosted team workspace | A user runs the runtime locally, it attaches to Relay, and authorized teammates reach that workspace through the hosted/self-hosted control plane. |
+| Team workspace on a machine | Someone runs the runtime on their own machine, it attaches to Relay through a host tunnel, and authorized teammates reach that workspace through the hosted/self-hosted control plane. |
 
 ## Full App In A Few Pieces
 
@@ -38,7 +38,7 @@ workspace, and deployment backends underneath.
 | Agent Plugins module | Optional product-owned catalog, activation, retained artifacts, MCP adaptation, and runtime projection. |
 | Agent SDK Runtime | Runtime facade, harness factories, stores, turns, events, and capability checks. |
 | Agent Event Runtime | Canonical event model and projections. |
-| Workspace Relay | Remote access to cloud or user-hosted runtime hosts. |
+| Workspace Relay | Remote access to a runtime host, whether a provisioned sandbox or an enrolled machine. |
 | Claxedo MCP | Tool layer for MCP clients to orchestrate runtime/server APIs. |
 
 ## Compose A Local Runtime
@@ -251,10 +251,11 @@ startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
 The product control plane decides how to reach the workspace:
 
 1. Authorize the user against your own org/workspace policy.
-2. Resolve the workspace backing: local worktree, container, cloud VM, or
-   user-hosted runtime.
-3. Route directly to `workspace-runtime` for local/private access, or through
-   `workspace-relay` for cloud/user-hosted access.
+2. Resolve where the workspace is placed: a directory on this machine, or a
+   directory on another host, which may be a provisioned VM or an enrolled
+   machine.
+3. Route directly to `workspace-runtime` when this process serves the
+   placement, or through `workspace-relay` when another host does.
 4. Read runtime health and capabilities.
 
 ```ts
@@ -385,9 +386,9 @@ can also point at the local server with:
 }
 ```
 
-## Cloud Or User-Hosted Composition
+## Composition For A Workspace On Another Host
 
-For a cloud VM or user-hosted runtime:
+For a provisioned VM or an enrolled machine:
 
 ```text
 Product UI

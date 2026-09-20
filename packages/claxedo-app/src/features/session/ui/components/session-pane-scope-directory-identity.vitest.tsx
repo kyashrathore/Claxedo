@@ -96,7 +96,7 @@ describe("SessionPaneScope directory identity", () => {
     render(() => (
       <SessionPaneScope
         directory="/workspace/repo"
-        sessionRef={() => ({ sessionId: "ses_pi", host: "workspace", workspaceId: "ws_pi", harness: { kind: "native", harnessId: "pi" }, toolSandbox: { kind: "workspace", workspaceId: "ws_pi", hosting: "cloud" } })}
+        sessionRef={() => ({ sessionId: "ses_pi", host: "workspace", workspaceId: "ws_pi", harness: { kind: "native", harnessId: "pi" }, toolSandbox: { kind: "workspace", workspaceId: "ws_pi", hosting: "provisioner" } })}
         paneId={() => "pane-1"}
       >
         <RouteDirectoryProbe />

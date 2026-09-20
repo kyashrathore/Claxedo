@@ -11,14 +11,21 @@
  *   Account callers (the desktop, the panel, the CLI on the owner's account)
  *     POST /requests   → a one-use nonce. Mutates no enrollment.
  *     POST /           → verify the machine's signature, record the enrollment.
- *     POST /heartbeat  → v2, client-signed over the served set; extend.
- *     POST /pause, GET /, PATCH /:id/scope
+ *     POST /pause, GET /, PATCH /:id/scope, PATCH /:id/display-name
+ *     POST /:id/provider-config → seal the owner's provider credentials to the
+ *                                 machine's declared key; the store keeps only
+ *                                 the ciphertext.
  *     and, mounted beside these, the invitation routes.
  *
- *   The machine itself (a `claxedo connect` host with no account on the box)
+ *   The machine itself, once enrolled — a `claxedo connect` host with no
+ *   account on the box, or the desktop's connector child after its owner
+ *   enrolled it
  *     POST /redeem     → no auth: the single-use invitation secret is the credential.
  *     POST /acquire    → machine-signed: claim the next serving generation.
- *     POST /heartbeat  → machine-signed v3: renew, ack descriptions, discover assignments.
+ *     POST /heartbeat  → machine-signed: renew, ack descriptions, discover assignments.
+ *
+ * An account credential buys no beat here. Enrollment is where the owner
+ * speaks; everything after it is the machine speaking for itself.
  *
  * The server never holds the host key. It stores the public half and verifies;
  * `@claxedo/host-connector` holds the private half on the user's machine.
@@ -37,11 +44,13 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { MACHINE_REQUEST_HEADERS } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
+import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
+import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { providerProjectionRecord, type ProviderProjectionSource } from "@claxedo/agent-sdk-runtime/provider-projection"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKey } from "../../platform/auth/request-guard"
@@ -50,7 +59,6 @@ import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards
 import {
   configuredHostRelay,
   configuredHostTunnelTokenSigner,
-  configuredRelayUrl,
   parsedBody,
   signedOrError,
   type WorkspaceRouteOptions,
@@ -66,6 +74,8 @@ const scopeBody = z
   })
   .strict()
 
+const renameBody = z.object({ displayName: z.string().trim().min(1).max(120) }).strict()
+
 const requestBody = z.object({ hostId }).strict()
 
 const enrollBody = z
@@ -76,21 +86,6 @@ const enrollBody = z
     signature: z.string().min(1).max(4_000),
     displayName: z.string().trim().min(1).max(120).optional(),
     ttlMs: z.number().int().positive().optional(),
-  })
-  .strict()
-
-const heartbeatBody = z
-  .object({
-    hostId,
-    signature: z.string().min(1).max(4_000),
-    ttlMs: z.number().int().positive().optional(),
-    // The served set the signature covers (heartbeat payload v2): one
-    // signature per interval carries the machine's whole consent set.
-    workspaceIds: z.array(z.string().min(1).max(200)).max(200),
-    // How the runtime this machine serves composed its session access. The
-    // machine is the only party that knows, so it says here; a beat that omits
-    // it leaves the enrollment undeclared and mints no stream scope.
-    sessionAuthority: z.enum(["local", "managed-private"]).optional(),
   })
   .strict()
 
@@ -108,7 +103,18 @@ const machineHeartbeatBody = z
     acks: z.array(z.object({ workspaceId: z.string().min(1).max(200), revision: z.number().int().min(1) }).strict()).max(200),
     ttlMs: z.number().int().positive().optional(),
     sessionAuthority: z.enum(["local", "managed-private"]).optional(),
+    sealingPublicKey: z.string().min(1).max(4_000).optional(),
+    providerConfigRevision: z.number().int().min(0).optional(),
   })
+  .strict()
+
+/**
+ * Rows are validated below with the runtime's own reader rather than typed
+ * here, so what the control plane seals is exactly what the host will accept;
+ * an empty map is the withdrawal.
+ */
+const providerConfigBody = z
+  .object({ providers: z.record(z.string().min(1).max(200), z.record(z.string(), z.unknown())) })
   .strict()
 
 const acquireBody = z.object({ enrollmentId, hostId, keyVersion: z.number().int().min(1).optional() }).strict()
@@ -203,6 +209,27 @@ const DEFAULT_INVITATION_REDEEM_WINDOW_MS = 60_000
 
 const MACHINE_BODY_LIMIT_BYTES = 16 * 1024
 const REDEEM_BODY_LIMIT_BYTES = 8 * 1024
+/**
+ * A credential set, not a heartbeat: a placeholder can be an OAuth access
+ * token of 2-4 KiB, and an owner with a dozen providers at that size needs
+ * more than the machine routes' 16 KiB. Sealing is per request and the
+ * ciphertext is stored, so the cap is also the row's size bound.
+ */
+const PROVIDER_CONFIG_BODY_LIMIT_BYTES = 32 * 1024
+
+/** The push route's own refusals; every authority refusal already carries a code and a status. */
+class HostProviderConfigError extends ClaxedoError<"invalid_provider_configuration" | "host_sealing_key_undeclared"> {}
+
+/**
+ * Decided by the runtime's own reader under the policy a host applies on
+ * arrival, so the control plane never seals a set the host would refuse whole
+ * and leave unacked forever. An empty map passes: it is the withdrawal.
+ */
+function hostReadableProviders(
+  input: Record<string, Record<string, unknown>>,
+): input is Record<string, ProviderProjectionSource> {
+  return providerProjectionRecord(input, {}, { onInvalid: "reject" }) !== undefined
+}
 
 export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   /** Overridable so tests can drive the budget without issuing ten real calls. */
@@ -259,10 +286,6 @@ function parseJsonText(text: string): unknown {
   } catch {
     return {}
   }
-}
-
-function machineHeadersPresent(request: Request) {
-  return Object.values(MACHINE_REQUEST_HEADERS).some((name) => request.headers.has(name))
 }
 
 function unsupported(c: Context, what: string) {
@@ -411,45 +434,6 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     }
   }
 
-  const accountHeartbeat = handle(heartbeatBody, async ({ body, auth, authority }) => {
-    const result = await authority.heartbeatHostEnrollment(auth, {
-      hostId: body.hostId,
-      signature: body.signature,
-      workspaceIds: body.workspaceIds,
-      ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
-      ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
-    })
-    // The serving credential rides the ack: ONE Host Tunnel Token whose
-    // workspace_ids claim is exactly the set that is BOTH owner-assigned
-    // and covered by the signature this beat just verified. The machine
-    // (re)opens or re-registers its single relay connection from the same
-    // response that renewed its lease. Local workspaces have no home
-    // region of their own; the deployment default names the relay.
-    const assigned = new Set(result.assigned_workspace_ids ?? [])
-    const serveable = body.workspaceIds.filter((workspaceId) => assigned.has(workspaceId)).sort()
-    const signer = configuredHostTunnelTokenSigner(options)
-    const relayUrl = configuredRelayUrl(options)
-    if (!signer || serveable.length === 0) return result
-    const credential = await signer({
-      subject: auth.user.subject,
-      hostId: body.hostId,
-      workspaceIds: serveable,
-    })
-    return {
-      ...result,
-      hostTunnel: {
-        ...credential,
-        hostId: body.hostId,
-        workspaceIds: serveable,
-        ...(relayUrl ? { relayUrl } : {}),
-      },
-    }
-  }, "POST", {
-    limiter: controlPlaneRateLimiter,
-    key: "host.enrollments.heartbeat",
-    action: "host_enrollment.heartbeat.denied",
-  })
-
   const machineHeartbeat = machine(machineHeartbeatBody, async ({ body, machine: caller, authority }) => {
     if (!authority.heartbeatHostEnrollmentByMachine) throw unsupportedError("Machine heartbeat")
     const result = await authority.heartbeatHostEnrollmentByMachine(caller, {
@@ -459,6 +443,8 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       acks: body.acks,
       ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
       ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
+      ...(body.sealingPublicKey ? { sealingPublicKey: body.sealingPublicKey } : {}),
+      ...(body.providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: body.providerConfigRevision }),
     })
     // Exactly the set the batch just made ready: an ack at the assignment's
     // current revision. A stale ack renews the lease but earns no credential
@@ -485,6 +471,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       hostTunnel: {
         ...credential,
         hostId: caller.hostId,
+        // Restates the token's own `enrollment_id` claim. The process that
+        // declares this machine's identity to its local clients is the daemon
+        // holding the credential, and the credential is all of the enrollment
+        // it ever receives.
+        enrollmentId: caller.enrollmentId,
         workspaceIds: ready,
         ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
       },
@@ -526,13 +517,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         action: "host_enrollment.enroll.denied",
       }),
     )
-    .post("/heartbeat", tooLarge(MACHINE_BODY_LIMIT_BYTES), async (c) => {
-      // The account path answers every request that carries an account
-      // credential — a bearer or a browser session — valid or not. Only a
-      // request with no credential and the machine headers is a machine beat.
-      if (!c.req.header("authorization") && machineHeadersPresent(c.req.raw)) return machineHeartbeat(c)
-      return accountHeartbeat(c)
-    })
+    .post("/heartbeat", tooLarge(MACHINE_BODY_LIMIT_BYTES), machineHeartbeat)
     .post("/acquire", tooLarge(MACHINE_BODY_LIMIT_BYTES), machine(acquireBody, async ({ machine: caller, authority }) => {
       if (!authority.acquireHostServingGeneration) throw unsupportedError("Serving generation acquisition")
       const result = await authority.acquireHostServingGeneration(caller)
@@ -595,6 +580,74 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.scope",
         action: "host_enrollment.scope.denied",
+      }),
+    )
+    .patch(
+      "/:id/display-name",
+      handle(renameBody, async ({ body, auth, authority, c }) => {
+        if (!authority.renameHostEnrollment) throw unsupportedError("Enrollment rename")
+        return await authority.renameHostEnrollment(auth, {
+          enrollmentId: c.req.param("id"),
+          displayName: body.displayName,
+        })
+      }, "PATCH", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.rename",
+        action: "host_enrollment.rename.denied",
+      }),
+    )
+    .post(
+      "/:id/provider-config",
+      tooLarge(PROVIDER_CONFIG_BODY_LIMIT_BYTES),
+      handle(providerConfigBody, async ({ body, auth, authority, c }) => {
+        if (!authority.hostProviderConfigTarget || !authority.pushHostProviderConfig) {
+          throw unsupportedError("Host provider configuration")
+        }
+        if (!hostReadableProviders(body.providers)) {
+          throw new HostProviderConfigError({
+            code: "invalid_provider_configuration",
+            status: 400,
+            message: "providers names a row the host could not read",
+          })
+        }
+        const providers = body.providers
+        const providerIds = Object.keys(providers).sort()
+        const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: c.req.param("id") })
+        if (target.sealing_public_key === null) {
+          throw new HostProviderConfigError({
+            code: "host_sealing_key_undeclared",
+            status: 409,
+            message: "The machine has not declared a sealing key; it declares one on its next heartbeat",
+          })
+        }
+        const enrollmentId = target.enrollment_id
+        const revision = target.next_revision
+        // The plaintext exists only as this argument. The store receives the
+        // ciphertext and the audit the provider ids; nothing below reads
+        // `providers` again.
+        const sealed = providerIds.length === 0
+          ? null
+          : await sealForMachine(
+            target.sealing_public_key,
+            serializeHostProviderConfig(providers),
+            machineSealAad({ enrollmentId, revision }),
+          )
+        const result = await authority.pushHostProviderConfig(auth, {
+          enrollmentId,
+          sealed,
+          revision,
+          sealingPublicKey: target.sealing_public_key,
+          providerIds,
+        })
+        await authority.auditAllow(auth, {
+          action: "host_provider_config.pushed",
+          metadata: { enrollmentId, revision: result.revision, providerIds },
+        })
+        return { enrollment_id: result.enrollment_id, revision: result.revision, sealed: result.sealed }
+      }, "POST", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.provider-config",
+        action: "host_provider_config.push.denied",
       }),
     )
     .get(

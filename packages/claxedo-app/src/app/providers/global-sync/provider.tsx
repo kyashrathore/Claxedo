@@ -204,13 +204,14 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       draft.loading = true
     })
     try {
-      // Two independent reasons to take the hosted snapshot, kept as a union.
-      // The first two are session-read authority (a signed route, a non-loopback
-      // control plane, an already-known signed workspace). The third is plain
-      // hosted-workspace DISCOVERY, which must also run on loopback: session
-      // reads stay local there, but without it the first cloud workspace can
-      // never enter the project cache. The `!== "loopback"` guard below is what
-      // keeps the discovery-only case from taking over the local list.
+      // Two independent reasons to fetch the signed snapshot, kept as one union.
+      // The first two terms are session-read authority (a signed route, a
+      // non-loopback control plane, an already-known signed workspace). The
+      // third is catalog DISCOVERY, which has to run on loopback too: session
+      // reads stay on this machine there, but without the fetch a workspace
+      // another machine serves never enters the project cache. The
+      // `!== "loopback"` guard below keeps the discovery-only case from
+      // replacing this machine's own list.
       const useSignedSnapshot =
         shouldUseSignedSessionInventory({
           hasSignedAccess: hasSignedAccess(),

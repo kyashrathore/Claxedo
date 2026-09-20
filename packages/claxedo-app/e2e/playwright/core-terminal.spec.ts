@@ -33,6 +33,7 @@ import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { expectActiveTerminalSurfaceParity } from "../helpers/surface-parity"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import sharp from "sharp"
+import { bootstrapDeployment } from "../helpers/mock-runtime"
 
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
@@ -149,6 +150,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: dir, directory: dir, home: "/tmp" },
           events: { hostAggregate: true },
+          deployment: bootstrapDeployment(),
           project: [{
             id: projectId,
             worktree: dir,

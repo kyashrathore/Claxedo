@@ -130,7 +130,7 @@ describe("harness store policy", () => {
   // same tuple `session-capabilities-query.ts` keys on, from the same builder.
   test("the harness-change and session-model keys carry server, workspace and harness", () => {
     const local = { serverUrl: "http://127.0.0.1:3001", directory: "/tmp/project", sessionId: "ses_1" }
-    const cloud = { ...local, workspaceId: "ws_1", workspaceKind: "cloud" as const }
+    const cloud = { ...local, workspaceId: "ws_1", hostKind: "provisioner" as const }
 
     expect(harnessChangeKey(local, { kind: "connection", connectionId: "acp:codex" })).not.toEqual(
       harnessChangeKey(cloud, { kind: "connection", connectionId: "acp:codex" }),
@@ -163,37 +163,38 @@ describe("harness store policy", () => {
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: true,
-        workspaceKind: "local",
+        hostKind: "self",
       }),
     ).toBe(true)
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: true,
-        workspaceKind: "cloud",
+        hostKind: "provisioner",
       }),
     ).toBe(false)
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: false,
         workspaceRuntime: false,
-        workspaceKind: "local",
+        hostKind: "self",
       }),
     ).toBe(false)
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: false,
-        workspaceKind: "cloud",
+        hostKind: "provisioner",
       }),
     ).toBe(true)
-    // A user-hosted workspace is a machine's workspace: its draft starts from
-    // that machine's harness, even though its config API is never loopback.
+    // A workspace reached through the relay still sits on a machine, so its
+    // draft starts from that machine's harness even though its config API is
+    // never loopback.
     expect(
       shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: false,
         workspaceRuntime: true,
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
       }),
     ).toBe(true)
     expect(
@@ -261,22 +262,22 @@ describe("harness store policy", () => {
     expect(
       shouldUseLocalHarnessConfigApi({
         baseUrl: "http://127.0.0.1:3001",
-        directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-        workspaceKind: "user-hosted",
+        directory: "/home/dev/.claxedo/workspaces/ws_1",
+        hostKind: "machine",
       }),
     ).toBe(false)
   })
 
-  test("resolves the workspace runtime ref for a signed user-hosted directory only when the inventory is passed in", () => {
+  test("resolves the workspace runtime ref for a machine-placed directory only when the inventory is passed in", () => {
     const projects = [
       {
         worktree: "/repo",
         workspaces: {
-          ws_uh1: {
-            id: "ws_uh1",
-            workspaceId: "ws_uh1",
+          ws_machine1: {
+            id: "ws_machine1",
+            workspaceId: "ws_machine1",
             kind: "user-hosted" as const,
-            directory: "/repo/user-hosted/ws_uh1-dir",
+            directory: "/repo/worktrees/shared",
           },
         },
       },
@@ -284,13 +285,13 @@ describe("harness store policy", () => {
 
     // Without the signed inventory, a plain filesystem-path directory can't be
     // told apart from an ordinary local one — the ref stays unresolved.
-    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" })).toBeUndefined()
+    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/worktrees/shared" })).toBeUndefined()
 
-    // Threading the inventory through lets the directory match the signed
-    // user-hosted workspace and resolve to its real workspaceId.
-    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" }, projects)).toEqual({
-      workspaceId: "ws_uh1",
-      kind: "user-hosted",
+    // Threading the inventory through lets the directory match the placed
+    // workspace and resolve to its real workspaceId.
+    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/worktrees/shared" }, projects)).toEqual({
+      workspaceId: "ws_machine1",
+      kind: "machine",
     })
   })
 

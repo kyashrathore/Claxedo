@@ -35,7 +35,7 @@ import type { ContentMeta } from "./types"
 import { routeSessionHarness } from "./route-session-harness"
 import { isNarrowViewport } from "../workbench/index"
 import { isRouteIntentClosed, markRouteIntentClosed } from "./route-bridge-resolution"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
 export {
   CLOSED_ROUTE_MAX,
   isRouteIntentClosed,
@@ -112,8 +112,8 @@ type SessionRouteResolution =
 export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel" | "terminal">
 
 function workspaceBacking(input: { workspaceId?: string; kind?: string }): WorkspaceSessionBacking | undefined {
-  const kind = workspaceKind(input.kind)
-  if (!input.workspaceId || !isRelayBackedWorkspaceKind(kind)) return undefined
+  const kind = asHostKind(input.kind)
+  if (!input.workspaceId || !isRelayHostKind(kind)) return undefined
   return {
     workspaceId: input.workspaceId,
     kind,
@@ -195,7 +195,6 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
   if (matches.length !== 1) return undefined
   return matches[0]
 }
-
 
 function resolvedSessionTarget(sessionId: string, target: ResolvedSessionTarget): InventorySessionTarget {
   return {

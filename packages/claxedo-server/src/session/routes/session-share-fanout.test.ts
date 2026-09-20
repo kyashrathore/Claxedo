@@ -70,10 +70,14 @@ describe("resolveSessionShareRecipientSubjects", () => {
 
 describe("notifySessionShareChanged", () => {
   test("publishes one doorbell per recipient and survives sink failures", async () => {
-    const published: Array<{ ownerUserId: string; phase: string }> = []
+    const published: Array<{ ownerUserId: string; phase: string; level?: string }> = []
     const sink: SessionShareChangedSink = async (event) => {
       if (event.ownerUserId === "user_fail") throw new Error("nudge failed")
-      published.push({ ownerUserId: event.ownerUserId, phase: event.phase })
+      published.push({
+        ownerUserId: event.ownerUserId,
+        phase: event.phase,
+        ...(event.phase === "granted" ? { level: event.level } : {}),
+      })
     }
     await notifySessionShareChanged({
       auth: aliceAuth,
@@ -87,14 +91,15 @@ describe("notifySessionShareChanged", () => {
         listTeams: async () => [],
       },
       phase: "granted",
+      level: "send",
       sessionId: "ses_1",
       workspaceId: "ws_1",
       target: { grantedToTeamPublicId: "team_eng" },
       sink,
     })
     expect(published).toEqual([
-      { ownerUserId: "user_bob", phase: "granted" },
-      { ownerUserId: "user_dana", phase: "granted" },
+      { ownerUserId: "user_bob", phase: "granted", level: "send" },
+      { ownerUserId: "user_dana", phase: "granted", level: "send" },
     ])
   })
 

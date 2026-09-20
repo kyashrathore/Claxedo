@@ -81,7 +81,7 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.agentRuntimeClientOptions({ directory: "workspace:ws_cloud" })).toEqual({
       request,
       workspaceId: "ws_cloud",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     })
   })
 
@@ -189,7 +189,7 @@ describe("harness config runtime", () => {
       }],
     })
 
-    expect(harnessRuntime.workspaceKind({ directory: "/repo/signed" })).toBe("cloud")
+    expect(harnessRuntime.hostKind({ directory: "/repo/signed" })).toBe("provisioner")
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/signed" })).toBe(false)
   })
 
@@ -210,12 +210,12 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/local" })).toBe(true)
   })
 
-  // A signed user-hosted workspace addressed by its filesystem-path directory
-  // (the registration-stored remote_directory, not a `ws_`/`workspace:` ref)
-  // must still resolve to its workspaceId and get a relay placement — not fall
-  // through to the plain central transport, which serves none of the
+  // A signed machine-placed workspace addressed by its filesystem-path
+  // directory (the registration-stored remote_directory, not a
+  // `ws_`/`workspace:` ref) must still resolve to its workspaceId and get a
+  // relay placement; the plain central transport serves none of the
   // `/api/wr/*` runtime paths.
-  test("routes signed user-hosted harness config options through the workspace relay for a filesystem directory", async () => {
+  test("routes signed machine-placed harness config options through the workspace relay for a filesystem directory", async () => {
     const placements: unknown[] = []
     const urls: string[] = []
     const harnessRuntime = createHarnessConfigRuntime({
@@ -224,11 +224,11 @@ describe("harness config runtime", () => {
       projects: () => [{
         worktree: "/repo",
         workspaces: {
-          ws_uh1: {
-            id: "ws_uh1",
-            workspaceId: "ws_uh1",
+          ws_machine1: {
+            id: "ws_machine1",
+            workspaceId: "ws_machine1",
             kind: "user-hosted",
-            directory: "/repo/user-hosted/ws_uh1-dir",
+            directory: "/repo/on-a-machine/ws_machine1-dir",
           },
         },
       }],
@@ -245,11 +245,11 @@ describe("harness config runtime", () => {
       },
     })
 
-    await harnessRuntime.configOptionsFetch(connectionHarness("claude-agent"), { directory: "/repo/user-hosted/ws_uh1-dir" })
+    await harnessRuntime.configOptionsFetch(connectionHarness("claude-agent"), { directory: "/repo/on-a-machine/ws_machine1-dir" })
 
-    expect(urls).toEqual(["/api/wr/harness-config-options?directory=%2Frepo%2Fuser-hosted%2Fws_uh1-dir&connectionId=claude-agent"])
+    expect(urls).toEqual(["/api/wr/harness-config-options?directory=%2Frepo%2Fon-a-machine%2Fws_machine1-dir&connectionId=claude-agent"])
     expect(placements).toEqual([{
-      workspaceId: "ws_uh1",
+      workspaceId: "ws_machine1",
       hosting: "workspace",
       transport: "workspace-relay",
     }])

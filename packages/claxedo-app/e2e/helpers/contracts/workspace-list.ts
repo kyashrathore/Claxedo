@@ -1,21 +1,21 @@
-// CONTRACT BINDING: GET /api/workspace?access=<cloud|user-hosted>
+// CONTRACT BINDING: GET /api/workspace?host=<machine|provisioner>
 //
 // The control plane's workspace list — the ONLY source the sidebar catalog has
 // for relay-backed workspaces once the hosted boot aggregate
 // (`GET /api/claxedo/bootstrap`) stopped carrying them. `workspaceCatalogQuery`
-// (src/features/workspaces/data/workspace-catalog.ts) asks for BOTH access
-// kinds concurrently and folds the two answers into one catalog.
+// (src/features/workspaces/data/workspace-catalog.ts) asks for BOTH hosts
+// concurrently and folds the two answers into one catalog.
 //
 // Two real handlers serve this route and they are deliberately identical in
 // shape (the hosted one says so in its own comment):
 //   - packages/claxedo-server/src/workspace/routes/index.ts        GET "/"
 //   - packages/claxedo-server/src/routes/hosted/workspace.ts       GET "/"
 // Both answer `{ workspaces: [...] }` from `authority.listWorkspaces(auth)` and
-// filter to `access === "user-hosted"` rows ONLY for `?access=user-hosted`;
-// `?access=cloud` is NOT a filter — it is "list what this principal can reach",
-// so it returns every visible row of both kinds. `mergeWorkspaceCatalog` keys
-// rows by directory, so the overlap between the two calls collapses instead of
-// double-listing.
+// filter to `backing === "local-worktree"` rows ONLY for `?host=machine`;
+// `?host=provisioner` is NOT a filter — it is "list what this principal can
+// reach", so it returns every visible row whatever its placement. `mergeWorkspaceCatalog`
+// keys rows by directory, so the overlap between the two calls collapses instead
+// of double-listing.
 //
 // The ROW TYPE is taken from a real producer rather than restated here, so a
 // field added, renamed, or dropped in the authority fails this package's
@@ -37,8 +37,8 @@ import type { D1WorkspaceAuthority } from "../../../../claxedo-server/src/author
 /** One row of `{ workspaces }`, exactly as the authority projects it. */
 export type ControlPlaneWorkspaceRow = Awaited<ReturnType<D1WorkspaceAuthority["listWorkspaces"]>>[number]
 
-/** `?access` values the route treats as a signed control-plane list. */
-export type WorkspaceListAccess = ControlPlaneWorkspaceRow["access"]
+/** `?host` values the route treats as a signed control-plane list. */
+export type WorkspaceListHost = "provisioner" | "machine"
 
 /** `page.route` URL predicate for the BARE list (never `/resolve`, `/create`, `/:id/...`). */
 export function isWorkspaceListPath(pathname: string) {
@@ -46,18 +46,19 @@ export function isWorkspaceListPath(pathname: string) {
 }
 
 /**
- * The list body for one `?access` query.
+ * The list body for one `?host` query.
  *
- * Mirrors both route handlers: `user-hosted` filters, every other value
- * (including `cloud`) returns the caller's whole visible inventory.
+ * Mirrors both route handlers: `machine` keeps the rows placed on an enrolled
+ * machine, every other value (including `provisioner`) returns the caller's
+ * whole visible inventory.
  */
 export function workspaceListResponse(input: {
-  access: string | null
+  host: string | null
   workspaces: readonly ControlPlaneWorkspaceRow[]
 }): { workspaces: ControlPlaneWorkspaceRow[] } {
   return {
-    workspaces: input.access === "user-hosted"
-      ? input.workspaces.filter((row) => row.access === "user-hosted")
+    workspaces: input.host === "machine"
+      ? input.workspaces.filter((row) => row.backing === "local-worktree")
       : [...input.workspaces],
   }
 }

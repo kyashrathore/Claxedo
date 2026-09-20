@@ -285,7 +285,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kan ikke bruge denne vedhæftning",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} har ingen prompt-input til {{mime}}, og denne session har intet lokalt arbejdsområde at gemme filen i.",
+    "{{harness}} har ingen prompt-input til {{mime}}, og denne session har ingen arbejdsområdemappe at gemme filen i.",
   "prompt.toast.attachmentUnreadable.title": "Vedhæftningen kunne ikke læses",
   "prompt.toast.attachmentUnreadable.description":
     "{{filename}} kunne ikke læses fra denne enhed.",
@@ -438,7 +438,7 @@ export const dict = {
 
   "home.recentProjects": "Seneste projekter",
   "home.empty.title": "Ingen seneste projekter",
-  "home.empty.description": "Kom i gang ved at åbne et lokalt projekt",
+  "home.empty.description": "Kom i gang ved at åbne en mappe fra denne computer",
 
   "home.title": "Hjem",
   "session.timeline.scrollToBottom": "Rul til seneste besked",
@@ -499,12 +499,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projekter og sessioner",
   "sidebar.settings": "Indstillinger",
   "sidebar.help": "Hjælp",
-  "sidebar.workspace.role.viewer": "Læser",
-  "sidebar.workspace.role.editor": "Redaktør",
-  "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Vært offline",
-  "sidebar.workspace.sharedWithYou": "Delt med dig",
-  "sidebar.workspace.publishedByThisMachine": "Udgivet fra denne maskine",
 
   "settings.section.desktop": "Desktop",
   "settings.section.workspace": "Arbejdsområde",
@@ -682,8 +676,6 @@ export const dict = {
   "session.delete.button": "Slet session",
 
   "workspace.new": "Nyt arbejdsområde",
-  "workspace.type.local": "lokal",
-  "workspace.type.sandbox": "sandkasse",
   "workspace.error.stillPreparing": "Arbejdsområdet er stadig ved at blive klargjort",
   "workspace.status.checking": "Tjekker for uflettede ændringer...",
   "workspace.status.error": "Kunne ikke bekræfte git-status.",

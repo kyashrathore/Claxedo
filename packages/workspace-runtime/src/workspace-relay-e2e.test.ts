@@ -246,7 +246,6 @@ async function relayHarness() {
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
       baseUrl: runtimeUrl,
-      access: "cloud",
       backing: "cloud-vm",
     }),
     isRuntimeAccessTokenActive: (claims) =>
@@ -414,7 +413,6 @@ async function processSeparatedRelayHarness() {
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
       baseUrl: runtimeUrl,
-      access: "cloud",
       backing: "cloud-vm",
     }),
     audit: (event) => {

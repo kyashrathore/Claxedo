@@ -9,22 +9,12 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
 import { useLanguage } from "@/platform/i18n/provider"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
-import { forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
+import { forkNeedsReservation, forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
 import { sessionRoute } from "@/platform/identity/route"
 import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
-}
-
-function managedWorkspaceKind(kind: "local" | "cloud" | "user-hosted" | undefined) {
-  switch (kind) {
-    case "cloud":
-    case "user-hosted":
-      return true
-    default:
-      return false
-  }
 }
 
 export const DialogFork: Component = () => {
@@ -51,17 +41,13 @@ export const DialogFork: Component = () => {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })
-    const workspace = sdk.workspace(sdk.directory) as {
-      id?: string
-      workspaceId?: string
-      kind?: "local" | "cloud" | "user-hosted"
-    } | undefined
+    const workspace = sdk.workspace(sdk.directory)
     forkSessionWithReservation({
       client: sdk.client.session,
       sessionId: sessionID,
       messageId: item.id,
-      managed: managedWorkspaceKind(workspace?.kind),
-      workspaceId: workspace?.workspaceId ?? workspace?.id,
+      managed: forkNeedsReservation(workspace),
+      workspaceId: workspace?.workspaceId,
       serverUrl: globalSDK.url,
     })
       .then((forked) => {

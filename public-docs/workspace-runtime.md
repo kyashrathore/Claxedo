@@ -65,7 +65,7 @@ route mounting the package handles for you.
 | Harness can change after startup | Yes, through config apply. | Yes, through config apply or direct `host.apply`. | Yes, through direct `host.apply`. |
 | Relay host tunnel | Yes, when `options.hostTunnel` is set. | No automatic tunnel startup. You can wire tunnel helpers yourself. | No automatic tunnel startup. You can wire tunnel helpers yourself. |
 | Signal drain handling | Opt-in. Only when you pass `{ signals: true }` as the third `lifecycle` argument does `startServer` register SIGTERM/SIGINT handlers; it then closes the server/tunnel and disposes the host. | No. Your process owns drain. | No. Your process owns drain. |
-| Best fit | One runtime process per workspace, container, VM, or user-hosted laptop runtime. | Product already has a Node/Hono server but wants the full runtime app. | Framework/platform code that wants to compose only selected host routes and lifecycle calls. |
+| Best fit | One runtime process per workspace, container, VM, or laptop someone runs it on. | Product already has a Node/Hono server but wants the full runtime app. | Framework/platform code that wants to compose only selected host routes and lifecycle calls. |
 
 ## Embed The Runtime App
 

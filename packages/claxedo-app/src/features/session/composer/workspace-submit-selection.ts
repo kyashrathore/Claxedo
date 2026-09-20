@@ -1,4 +1,4 @@
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { asHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type WorkspaceSubmitSelectionInput = {
   isNewSession: boolean
@@ -7,7 +7,7 @@ export type WorkspaceSubmitSelectionInput = {
   fallbackDirectory?: string
   defaultDirectory: string
   worktreeSelection: string
-  workspaceKind: string
+  hostKind: string
 }
 
 export type WorkspaceSubmitSelection =
@@ -23,7 +23,7 @@ export function resolveWorkspaceSubmitSelection(input: WorkspaceSubmitSelectionI
   if (input.draftId && !input.projectDirectory && input.worktreeSelection === "main") {
     return { status: "missing-workspace" }
   }
-  if (isRelayBackedWorkspaceKind(workspaceKind(input.workspaceKind))) {
+  if (isRelayHostKind(asHostKind(input.hostKind))) {
     return { status: "resolve-remote-workspace" }
   }
   if (input.worktreeSelection === "create") {

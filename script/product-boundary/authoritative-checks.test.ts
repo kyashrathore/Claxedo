@@ -46,7 +46,7 @@ describe("product boundary authoritative checks", () => {
       "desktop production build with optional contributions",
       "unsigned renderer and packaged-resource boundaries",
     ])
-    expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.[0]?.env).toEqual({ VITE_AUTH_ENABLED: "true" })
+    expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.[0]?.env).toEqual({ VITE_CLAXEDO_HOSTED_ACTIVATION: "true" })
     expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
       "hosted workerd production build",
       "hosted workerd built entry smoke",

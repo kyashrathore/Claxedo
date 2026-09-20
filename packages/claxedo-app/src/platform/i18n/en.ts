@@ -286,7 +286,7 @@ export const dict = {
   "prompt.action.readOnlyWorkspace": "Read-only workspace",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} cannot take this attachment",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} has no prompt input for {{mime}}, and this session has no local workspace to keep the file in.",
+    "{{harness}} has no prompt input for {{mime}}, and this session has no workspace folder to keep the file in.",
   "prompt.toast.attachmentUnreadable.title": "Attachment could not be read",
   "prompt.toast.attachmentUnreadable.description":
     "{{filename}} could not be read from this device.",
@@ -451,7 +451,7 @@ export const dict = {
 
   "home.recentProjects": "Recent projects",
   "home.empty.title": "No recent projects",
-  "home.empty.description": "Get started by opening a local project",
+  "home.empty.description": "Get started by opening a folder from this computer",
   "home.title": "Home",
 
   "session.timeline.scrollToBottom": "Scroll to latest message",
@@ -543,12 +543,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projects and sessions",
   "sidebar.settings": "Settings",
   "sidebar.help": "Help",
-  "sidebar.workspace.role.viewer": "Viewer",
-  "sidebar.workspace.role.editor": "Editor",
-  "sidebar.workspace.role.admin": "Admin",
-  "sidebar.workspace.hostOffline": "Host offline",
-  "sidebar.workspace.sharedWithYou": "Shared with you",
-  "sidebar.workspace.publishedByThisMachine": "Published by this machine",
 
 
 
@@ -741,8 +735,6 @@ export const dict = {
   "session.delete.button": "Delete session",
 
   "workspace.new": "New workspace",
-  "workspace.type.local": "local",
-  "workspace.type.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Workspace is still preparing",
   "workspace.status.checking": "Checking for unmerged changes...",
   "workspace.status.error": "Unable to verify git status.",

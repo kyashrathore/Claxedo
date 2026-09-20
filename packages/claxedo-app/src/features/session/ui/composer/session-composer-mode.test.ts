@@ -14,7 +14,7 @@ describe("session composer mode", () => {
       draftId: "pane_1",
       signedControlPlane: true,
       workspaceId: "ws_1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       worktree: "feature",
     })).toEqual({
       kind: "draft",
@@ -22,7 +22,7 @@ describe("session composer mode", () => {
       target: {
         directory: "/repo",
         worktree: "feature",
-        workspaceKind: "user-hosted",
+        hostKind: "machine",
         signedControlPlane: true,
         workspaceId: "ws_1",
       },
@@ -32,7 +32,7 @@ describe("session composer mode", () => {
   test("uses a routed session ref when the composer is attached to an existing session", () => {
     const ref = workspaceBackedSessionRef({
       sessionId: "ses_1",
-      workspace: { workspaceId: "ws_1", kind: "cloud" },
+      workspace: { workspaceId: "ws_1", kind: "provisioner" },
     })!
 
     expect(sessionComposerMode({
@@ -42,7 +42,7 @@ describe("session composer mode", () => {
       draft: newSessionComposerMode({
         directory: "/repo",
         signedControlPlane: false,
-        workspaceKind: "local",
+        hostKind: "self",
         worktree: "main",
       }),
     })).toEqual({ kind: "session", ref })
@@ -52,7 +52,7 @@ describe("session composer mode", () => {
     const draft = newSessionComposerMode({
       directory: "/repo",
       signedControlPlane: false,
-      workspaceKind: "local",
+      hostKind: "self",
       worktree: "main",
     })
 
@@ -68,7 +68,7 @@ describe("session composer mode", () => {
       draft: newSessionComposerMode({
         directory: "/repo",
         signedControlPlane: false,
-        workspaceKind: "local",
+        hostKind: "self",
         worktree: "main",
       }),
     })
@@ -88,7 +88,7 @@ describe("session composer mode", () => {
       sessionId: "ses_remote",
       sessionRef: undefined,
       workspaceId: "ws_1",
-      draft: newSessionComposerMode({ directory: "workspace:ws_1", signedControlPlane: true, workspaceId: "ws_1", workspaceKind: "cloud", worktree: "main" }),
+      draft: newSessionComposerMode({ directory: "workspace:ws_1", signedControlPlane: true, workspaceId: "ws_1", hostKind: "provisioner", worktree: "main" }),
     })).toThrow("Session workspace identity is not resolved")
 
   })
@@ -102,7 +102,7 @@ describe("session composer mode", () => {
         sessionRef: () => undefined,
         signedControlPlane: () => false,
         workspaceId: () => undefined,
-        workspaceKind: () => "local",
+        hostKind: () => "self",
         worktree: () => "main",
       })
 
@@ -112,7 +112,7 @@ describe("session composer mode", () => {
         target: {
           directory: "/repo",
           worktree: "main",
-          workspaceKind: "local",
+          hostKind: "self",
           signedControlPlane: false,
         },
       })

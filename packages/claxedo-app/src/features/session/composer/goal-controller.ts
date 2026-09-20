@@ -15,7 +15,7 @@ export function createComposerGoalController(input: {
   serverUrl: Accessor<string | undefined>
   signedControlPlane: Accessor<boolean>
   workspaceId: Accessor<string | undefined>
-  workspaceKind: Accessor<CapabilityRequest["workspaceKind"]>
+  hostKind: Accessor<CapabilityRequest["hostKind"]>
   sessionRef: Accessor<CapabilityRequest["sessionRef"]>
   sessionCapabilities: Accessor<AgentRuntimeGoalCapabilities | undefined>
   /**
@@ -44,7 +44,7 @@ export function createComposerGoalController(input: {
         harness ? harnessSelectionKey(harness) : undefined,
         signed ? "signed" : "local",
         input.workspaceId() ?? "",
-        input.workspaceKind() ?? "",
+        input.hostKind() ?? "",
       ] as const,
       queryFn: ({ signal }: { signal: AbortSignal }) => fetchSessionCapabilitiesByTransport({
         directory,
@@ -52,7 +52,7 @@ export function createComposerGoalController(input: {
         claxedoServerUrl: input.serverUrl(),
         signedControlPlane: signed,
         workspaceId: signed ? input.workspaceId() : undefined,
-        workspaceKind: signed ? input.workspaceKind() : undefined,
+        hostKind: signed ? input.hostKind() : undefined,
         sessionRef: input.sessionRef(),
         signal,
       }),

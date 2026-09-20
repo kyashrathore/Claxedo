@@ -60,7 +60,7 @@ function runtimeClient(): ClaxedoMcpClient {
     runtime: async () => async () => new Response(null, { status: 204 }),
     resolveTarget: async () => ({ kind: "node", workspaceId: "ws_box", baseUrl: "", headers: {} }),
     server: async () => server,
-    workspaces: async () => [{ id: "ws_box", kind: "user-hosted" }],
+    workspaces: async () => [{ id: "ws_box", host: "machine" }],
   }
 }
 

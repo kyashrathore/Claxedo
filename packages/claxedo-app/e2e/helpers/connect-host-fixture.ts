@@ -14,6 +14,7 @@ import path from "node:path"
 import { stopChild as stopOwnedChild } from "./child-process"
 import { claudeScriptedEnv, type ScriptedModelServer } from "./scripted-model-server"
 import { REPO_ROOT, SERVER_DIR } from "./web-signed-relay-harness"
+import type { ControlPlaneWorkspaceRow } from "./contracts/workspace-list"
 
 export const CLI_ENTRY = path.join(REPO_ROOT, "packages", "cli", "src", "index.ts")
 
@@ -168,7 +169,19 @@ export function invitationTokenFrom(output: string) {
   return token
 }
 
-export type Machine = { display_name: string; enrollment_id: string; host_id: string; serving_generation?: number; expires_at?: number; scope?: { allowed_roots: string[] } }
+export type Machine = {
+  display_name: string
+  enrollment_id: string
+  host_id: string
+  serving_generation?: number
+  expires_at?: number
+  scope?: { allowed_roots: string[] }
+  /** The owner's latest push; 0 until one lands. */
+  provider_config_revision: number
+  /** The revision the machine last declared on a beat, after storing, opening and applying it. */
+  provider_config_acked_revision: number
+  sealing_key_declared: boolean
+}
 
 async function json<T>(response: Response, label: string): Promise<T> {
   const text = await response.text()
@@ -188,12 +201,18 @@ export async function machines(fixture: RunningConnectFixture): Promise<Machine[
   return body.machines ?? []
 }
 
-export type UserHostedWorkspace = { workspace_id: string; remote_directory?: string; host_online?: boolean; display_name?: string }
-
-export async function userHostedWorkspaces(fixture: RunningConnectFixture, token?: string): Promise<UserHostedWorkspace[]> {
-  const body = await json<{ workspaces: UserHostedWorkspace[] }>(
-    await fetch(`${fixture.info.backendUrl}/api/workspace?access=user-hosted`, { headers: owner(fixture, token) }),
-    "list user-hosted workspaces",
+/**
+ * The rows for workspaces placed on an enrolled machine.
+ *
+ * The row type is the authority's own projection rather than a field list
+ * restated here, so a field renamed or dropped in `listWorkspaces` fails this
+ * package's typecheck instead of silently answering `undefined` to a spec.
+ * `host_online` is reachability and only a `local-worktree` row carries it.
+ */
+export async function placedWorkspaces(fixture: RunningConnectFixture, token?: string): Promise<ControlPlaneWorkspaceRow[]> {
+  const body = await json<{ workspaces: ControlPlaneWorkspaceRow[] }>(
+    await fetch(`${fixture.info.backendUrl}/api/workspace?host=machine`, { headers: owner(fixture, token) }),
+    "machine-placed workspace list",
   )
   return body.workspaces
 }
@@ -283,6 +302,8 @@ export type ConnectStatus = {
     run?: { pid: number; generation: number; last_beat_ok_at?: number; lease_expires_at?: number; last_beat_error?: string; served?: Array<{ workspace_id: string; revision: number; connected: boolean }> }
     scope?: { revision: number; allowed_roots: string[] }
     service?: { kind: "systemd-user" | "launchd"; unit: string; installed_at: number }
+    /** The pushed provider configuration as delivered: ciphertext, or null once withdrawn. */
+    provider_config?: { revision: number; sealed: string | null }
   } | null
   /** Whether the invitation the instance was started with is still on disk. */
   invitationTokenPresent: boolean
@@ -405,12 +426,21 @@ export const faults = {
 
 export type Teammate = { subject: string; tokenIdentifier: string; role: string; controlPlaneToken: string; name?: string }
 
-export async function teammate(fixture: RunningConnectFixture, input: { subject: string; role: "viewer" | "editor"; name: string; workspaceId: string }) {
+/**
+ * A second identity ranked at `role` on the project behind the named
+ * workspace. `joinOrg` also adds an `org_memberships` row on the fixture's
+ * organization, which a session share offered to this person requires.
+ */
+export async function teammate(
+  fixture: RunningConnectFixture,
+  input: { subject: string; role: "viewer" | "editor"; name: string; workspaceId: string; joinOrg?: boolean },
+) {
   const url = new URL(`${fixture.info.backendUrl}/__fixture/authority-identity`)
   url.searchParams.set("subject", input.subject)
   url.searchParams.set("role", input.role)
   url.searchParams.set("name", input.name)
   url.searchParams.set("workspaceId", input.workspaceId)
+  if (input.joinOrg) url.searchParams.set("joinOrg", "1")
   return await json<Teammate>(await fetch(url), `teammate ${input.subject}`)
 }
 

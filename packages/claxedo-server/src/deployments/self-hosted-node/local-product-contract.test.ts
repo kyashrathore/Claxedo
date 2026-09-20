@@ -211,6 +211,8 @@ describe("desktop-local product contract", () => {
       "/api/channels/whatsapp",
       "/api/channels/whatsapp/*",
       "/api/claxedo/host/enrollments",
+      "/api/claxedo/host/enrollments/:id/display-name",
+      "/api/claxedo/host/enrollments/:id/provider-config",
       "/api/claxedo/host/enrollments/:id/scope",
       "/api/claxedo/host/enrollments/acquire",
       "/api/claxedo/host/enrollments/heartbeat",
@@ -243,7 +245,6 @@ describe("desktop-local product contract", () => {
       "/api/workspace/:id/connection/refresh",
       "/api/workspace/:id/host-assignment",
       "/api/workspace/:id/lifecycle/:operation",
-      "/api/workspace/:id/shares",
       "/api/workspace/create",
       "/api/workspace/drivers",
       "/api/workspace/drivers/:id/auth",
@@ -322,14 +323,14 @@ describe("desktop-local product contract", () => {
 
   test("answers the workspace list in one envelope, signed or not, so the MCP client can read it", async () => {
     const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
-    const shared = await ensureWorkspace({ kind: "cloud", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
+    const shared = await ensureWorkspace({ kind: "cloud", driver: "daytona", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
     if (!shared) throw new Error("the store refused the fixture workspace")
     const app = localApp()
 
-    for (const access of ["cloud", "user-hosted"] as const) {
-      const response = await app.request(`/api/workspace?access=${access}`)
-      expect(response.status, access).toBe(200)
-      expect(await response.json(), access).toMatchObject({ workspaces: expect.any(Array) })
+    for (const host of ["provisioner", "machine"] as const) {
+      const response = await app.request(`/api/workspace?host=${host}`)
+      expect(response.status, host).toBe(200)
+      expect(await response.json(), host).toMatchObject({ workspaces: expect.any(Array) })
     }
 
     const client = createClaxedoMcpClient({
@@ -337,8 +338,8 @@ describe("desktop-local product contract", () => {
       local: { fetch: async (path, init) => await app.request(path, init), workspace: { workspaceId: shared.id } },
       controlPlane: { fetch: async (path, init) => await app.request(path, init) },
     })
-    expect((await client.workspaces()).map((row) => ({ id: row.id, kind: row.kind, name: row.name })))
-      .toEqual([{ id: shared.id, kind: "user-hosted", name: "shared box" }])
+    expect((await client.workspaces()).map((row) => ({ id: row.id, host: row.host, name: row.name })))
+      .toEqual([{ id: shared.id, host: "provisioner", name: "shared box" }])
   })
 
   test("resolves the profile root from the product data directory, not the package location", async () => {

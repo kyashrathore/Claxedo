@@ -25,6 +25,7 @@ const ENTRIES = [
   "src/runtime-event-hub.ts",
   "src/runtime.ts",
   "src/sse.ts",
+  "src/provider-projection.ts",
   "src/mcp-resolver.ts",
   "src/subagent-admission.ts",
   "src/stores/memory.ts",

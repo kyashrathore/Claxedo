@@ -11,7 +11,7 @@
  * The Worker fails closed if any required hosted dependency is missing: signed
  * auth, workspace authority, relay URL, resolver token, and a token signing key.
  *
- * Adapter entrypoints inject authority, native-auth state, user-hosted target,
+ * Adapter entrypoints inject authority, native-auth state, machine target,
  * and optional sandbox driver/lease boundaries. This module names no provider
  * implementation and therefore stays in every selected Worker closure.
  */
@@ -33,7 +33,7 @@ import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/p
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import type { RuntimeSessionAuthorityOptions } from "../routes/runtime-session-authority"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
-import { sandboxRelayTargetLookup, type UserHostedTargetResolver } from "./sandbox-relay-target"
+import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { CliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
@@ -43,6 +43,7 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLease
 import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -105,14 +106,12 @@ function safetyLimits(env: HostedWorkerEnv): HostedSafetyLimits {
  * Route the sandbox manager's egress-unenforced warning into ops telemetry,
  * without giving up the console line.
  *
- * The gap this closes is a DEPLOYMENT one, and it is silent by construction:
- * a selected cloudflare driver declares `egressControl: "none"`, and since
- * the 2026-07-28 directive ("enforce where
- * we can and document where we can't") such a deployment boots fine and creates
- * fine — every hosted sandbox just comes up able to reach any host on the
- * internet. The manager already warns at composition, but `console.warn` inside
- * a Worker isolate reaches only whoever is tailing logs at that moment, which
- * is nobody on the day the driver is switched.
+ * The gap is a DEPLOYMENT one and silent by construction: a cloudflare driver
+ * declares `egressControl: "none"`, so such a deployment boots and provisions
+ * normally while every hosted sandbox comes up able to reach any host on the
+ * internet. The manager warns at composition, but `console.warn` inside a
+ * Worker isolate reaches only whoever is tailing logs at that moment, which is
+ * nobody on the day the driver is switched.
  *
  * So the event also becomes a queryable ops fact. Deliberately NOT a hard
  * `HostedWorkerCompositionError`: refusing composition would take the entire
@@ -223,7 +222,7 @@ export type HostedControlPlane = {
   resolverToken: string
   safetyLimits: HostedSafetyLimits
   /**
-   * The ONE composed relay target lookup (cloud lease + user-hosted host link),
+   * The ONE composed relay target lookup (cloud lease + machine host link),
    * consumed by both the relay provider and the internal relay resolver route.
    */
   relayTargetLookup: RelayTargetLookup
@@ -247,7 +246,7 @@ export type HostedControlPlane = {
 export type HostedControlPlaneAdapterBindings = {
   auth: ControlPlaneAuthAdapter
   authority: WorkspaceAuthority
-  userHostedResolver: UserHostedTargetResolver
+  hostTunnelResolver: HostTunnelTargetResolver
   /** Adapter-owned native sessions own this registry; Better Auth owns OAuth state in AUTH_DB. */
   cliSessionTokenRegistry?: CliSessionTokenRegistry
   /** Required only when the static sandbox posture selects a driver. */
@@ -326,13 +325,18 @@ export function composeProviderNeutralHostedControlPlane(
   // sink that does not exist yet cannot receive it.
   const telemetry = workerTelemetry(env)
   const manager = sandboxManager(env, telemetry, bindings.sandbox)
+  // The provisioner this deployment places every cloud workspace on. A driver
+  // whose id names no provisioner leaves it undeclared, and the allocator
+  // refuses rather than storing a root whose machine nothing names.
+  const injectedDriverId = bindings.sandbox?.driver.id
+  const managerDriver = manager && isSandboxProvisionerID(injectedDriverId) ? injectedDriverId : undefined
   const homeRegion = defaultHomeRegion(env)
   const relayUrls = relayEndpointsFromEnv(env, relayUrl)
   const runtimeAccessSigner = runtimeAccessTokenSigner(env)
   const hostTunnelSigner = hostTunnelTokenSigner(env)
   const relayTargetLookup = sandboxRelayTargetLookup({
     ...(manager ? { sandboxManager: manager } : {}),
-    userHostedResolver: bindings.userHostedResolver,
+    hostTunnelResolver: bindings.hostTunnelResolver,
     telemetry,
     env,
   })
@@ -362,7 +366,7 @@ export function composeProviderNeutralHostedControlPlane(
       runtimeAccessTokenSigner: runtimeAccessSigner,
       hostTunnelTokenSigner: hostTunnelSigner,
     },
-    sandbox: (manager ? { sandboxManager: manager } : {}),
+    sandbox: (manager ? { sandboxManager: manager, ...(managerDriver ? { defaultDriver: managerDriver } : {}) } : {}),
     telemetry,
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,

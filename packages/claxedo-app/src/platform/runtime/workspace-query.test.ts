@@ -46,8 +46,8 @@ describe("workspace vcs query", () => {
       }
       if (req.url === "http://runtime.test/api/workspace/ws_known/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_known",
           relayUrl: "https://relay.runtime.test",
           runtimeAccessToken: "rat_known",

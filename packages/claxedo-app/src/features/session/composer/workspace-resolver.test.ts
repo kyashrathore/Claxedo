@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  composerUsesSignedTransport,
   existingRemoteWorkspaceDirectory,
   projectForDirectory,
   resolveWorkspaceSubmitPlan,
   sessionRefForSubmitTarget,
-  signedWorkspaceForDirectory,
+  signedWorkspaceHostKind,
   selectedNewSessionWorkspace,
   submitSessionDirectory,
   workspaceForDirectory,
@@ -32,25 +33,25 @@ describe("projectRepoUrl", () => {
 })
 
 describe("selectedNewSessionWorkspace", () => {
-  test("carries an explicitly selected cloud workspace into submit authority", () => {
+  test("carries an explicitly selected provisioner-placed workspace into submit authority", () => {
     expect(selectedNewSessionWorkspace({
       newSession: true,
-      kind: "cloud",
+      kind: "provisioner",
       worktree: "ws_cloud",
-    })).toEqual({ kind: "cloud", workspaceId: "ws_cloud" })
+    })).toEqual({ kind: "provisioner", workspaceId: "ws_cloud" })
   })
 
   test("marks new cloud provisioning as signed without inventing a workspace id", () => {
     expect(selectedNewSessionWorkspace({
       newSession: true,
-      kind: "cloud",
+      kind: "provisioner",
       worktree: "create",
-    })).toEqual({ kind: "cloud" })
+    })).toEqual({ kind: "provisioner" })
   })
 
   test("does not classify local or existing-session input as remote", () => {
-    expect(selectedNewSessionWorkspace({ newSession: true, kind: "local", worktree: "main" })).toBeUndefined()
-    expect(selectedNewSessionWorkspace({ newSession: false, kind: "cloud", worktree: "ws_cloud" })).toBeUndefined()
+    expect(selectedNewSessionWorkspace({ newSession: true, kind: "self", worktree: "main" })).toBeUndefined()
+    expect(selectedNewSessionWorkspace({ newSession: false, kind: "provisioner", worktree: "ws_cloud" })).toBeUndefined()
   })
 })
 
@@ -66,14 +67,81 @@ const projects = [
         directory: "/repo/cloud-main",
         workspace_name: "main",
       },
-      ws_user_hosted: {
-        workspaceId: "ws_user_hosted",
+      ws_machine: {
+        workspaceId: "ws_machine",
         kind: "user-hosted",
         directory: "/tmp/hosted",
       },
     },
   },
 ] satisfies ProjectCatalogItem[]
+
+describe("signedWorkspaceHostKind", () => {
+  test("reads the sdk workspace's host kind without translating it as a wire word", () => {
+    expect(signedWorkspaceHostKind({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_m", kind: "machine", directory: "/repo/elsewhere" },
+    })).toBe("machine")
+    expect(signedWorkspaceHostKind({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_p", kind: "provisioner", directory: "/repo/elsewhere" },
+    })).toBe("provisioner")
+  })
+
+  test("narrows a catalog row's wire word, which the sdk's answer outranks", () => {
+    expect(signedWorkspaceHostKind({ directory: "/tmp/hosted", projects })).toBe("machine")
+    expect(signedWorkspaceHostKind({ directory: "/repo/cloud-main", projects })).toBe("provisioner")
+    expect(signedWorkspaceHostKind({
+      directory: "/tmp/hosted",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_p", kind: "provisioner" },
+    })).toBe("provisioner")
+  })
+})
+
+describe("composerUsesSignedTransport", () => {
+  const loopback = "http://127.0.0.1:3001"
+
+  test("an sdk workspace on a machine takes signed transport on a loopback server", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_m", kind: "machine", directory: "/repo/elsewhere" },
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(true)
+  })
+
+  test("an sdk workspace on the provisioner takes signed transport on a loopback server", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/repo/elsewhere",
+      projects,
+      sdkWorkspace: { workspaceId: "ws_p", kind: "provisioner", directory: "/repo/elsewhere" },
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(true)
+  })
+
+  test("a catalog row the sdk has not matched still takes signed transport", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/tmp/hosted",
+      projects,
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(true)
+  })
+
+  test("a directory no source places remotely stays on loopback", () => {
+    expect(composerUsesSignedTransport({
+      directory: "/repo/main",
+      projects,
+      principalHasSignedAccess: false,
+      serverUrl: loopback,
+    })).toBe(false)
+  })
+})
 
 describe("composer workspace resolver", () => {
   test("matches projects and workspaces by worktree, sandbox, workspace id, and normalized directory", () => {
@@ -92,11 +160,11 @@ describe("composer workspace resolver", () => {
       directory: "/repo/cloud-main",
       projects,
     })).toBe("/repo/cloud-main")
-    expect(signedWorkspaceForDirectory({
+    expect(submitSessionDirectory({
       directory: "/repo/main",
       projects,
-      sdkWorkspace: { workspaceId: "ws_sdk", kind: "cloud", directory: "/repo/sdk" },
-    })?.workspaceId).toBe("ws_sdk")
+      sdkWorkspace: { workspaceId: "ws_sdk", kind: "provisioner", directory: "/repo/sdk" },
+    })).toBe("/repo/sdk")
   })
 
   test("existing sessions resolve to project, fallback, then default directory", () => {
@@ -105,7 +173,7 @@ describe("composer workspace resolver", () => {
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "main",
-      workspaceKind: "local",
+      hostKind: "self",
       projects,
     })).toEqual({ status: "ready", directory: "/repo/main" })
     expect(resolveWorkspaceSubmitPlan({
@@ -113,14 +181,14 @@ describe("composer workspace resolver", () => {
       fallbackDirectory: "/fallback",
       defaultDirectory: "/default",
       worktreeSelection: "main",
-      workspaceKind: "local",
+      hostKind: "self",
       projects,
     })).toEqual({ status: "ready", directory: "/fallback" })
     expect(resolveWorkspaceSubmitPlan({
       isNewSession: false,
       defaultDirectory: "/default",
       worktreeSelection: "main",
-      workspaceKind: "local",
+      hostKind: "self",
       projects,
     })).toEqual({ status: "ready", directory: "/default" })
   })
@@ -131,7 +199,7 @@ describe("composer workspace resolver", () => {
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "create",
-      workspaceKind: "local",
+      hostKind: "self",
       projects,
     })).toEqual({ status: "create-local-worktree", baseDirectory: "/repo/main" })
     expect(resolveWorkspaceSubmitPlan({
@@ -139,7 +207,7 @@ describe("composer workspace resolver", () => {
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "/repo/feature",
-      workspaceKind: "local",
+      hostKind: "self",
       projects,
     })).toEqual({ status: "ready", directory: "/repo/feature" })
   })
@@ -150,7 +218,7 @@ describe("composer workspace resolver", () => {
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "main",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projects,
     })).toEqual({ status: "prepare-remote-workspace", directory: "ws_cloud_main" })
   })
@@ -161,21 +229,21 @@ describe("composer workspace resolver", () => {
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "create",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projects,
     })).toEqual({ status: "provision-cloud-workspace", projectId: "proj_1" })
   })
 
-  test("cloud workspace id routes keep the routed workspace instead of project main", () => {
+  test("provisioner-placed workspace id routes keep the routed workspace instead of project main", () => {
     expect(resolveWorkspaceSubmitPlan({
       isNewSession: true,
       projectDirectory: "ws_live",
       defaultDirectory: "/default",
       worktreeSelection: "main",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projects,
       runtimeWorkspaceRef: (directory) =>
-        directory === "ws_live" ? { workspaceId: "ws_live", kind: "cloud" } : undefined,
+        directory === "ws_live" ? { workspaceId: "ws_live", kind: "provisioner" } : undefined,
     })).toEqual({ status: "prepare-remote-workspace", directory: "ws_live" })
   })
 
@@ -185,18 +253,18 @@ describe("composer workspace resolver", () => {
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "main",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       projects: [{ id: "proj_1", worktree: "/repo/main", workspaces: {} }],
     })).toEqual({ status: "provision-cloud-workspace", projectId: "proj_1" })
   })
 
-  test("user-hosted workspaces never plan cloud provisioning", () => {
+  test("machine-placed workspaces never plan provisioning", () => {
     expect(resolveWorkspaceSubmitPlan({
       isNewSession: true,
       projectDirectory: "/repo/main",
       defaultDirectory: "/default",
       worktreeSelection: "/repo/not-registered",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       projects,
     })).toEqual({ status: "missing-workspace" })
   })
@@ -207,7 +275,7 @@ describe("composer workspace resolver", () => {
       directory: "workspace:ws_live",
       projects: [],
       runtimeWorkspaceRef: (directory) =>
-        directory === "workspace:ws_live" ? { workspaceId: "ws_live", kind: "user-hosted" } : undefined,
+        directory === "workspace:ws_live" ? { workspaceId: "ws_live", kind: "machine" } : undefined,
     })).toBe("workspace:ws_live")
   })
 
@@ -216,14 +284,14 @@ describe("composer workspace resolver", () => {
       sessionId: "ses_runtime",
       directory: "/repo/cloud-main",
       projects,
-      runtimeWorkspaceRef: { workspaceId: "ws_live", kind: "cloud" },
-    })?.toolSandbox).toEqual({ kind: "workspace", workspaceId: "ws_live", hosting: "cloud" })
+      runtimeWorkspaceRef: { workspaceId: "ws_live", kind: "provisioner" },
+    })?.toolSandbox).toEqual({ kind: "workspace", workspaceId: "ws_live", hosting: "provisioner" })
 
     expect(sessionRefForSubmitTarget({
       sessionId: "ses_inventory",
       directory: "/repo/cloud-main",
       projects,
-    })?.toolSandbox).toEqual({ kind: "workspace", workspaceId: "ws_cloud_main", hosting: "cloud" })
+    })?.toolSandbox).toEqual({ kind: "workspace", workspaceId: "ws_cloud_main", hosting: "provisioner" })
 
     expect(sessionRefForSubmitTarget({
       sessionId: "ses_local",

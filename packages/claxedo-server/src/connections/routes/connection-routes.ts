@@ -9,7 +9,7 @@ import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "../cloud-connection"
-import { userHostedConnectionInfo } from "../user-hosted-connection"
+import { hostTunnelConnectionInfo } from "../host-tunnel-connection"
 import { signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { connectionRateLimitError } from "../../workspace/runtime-token-guards"
 
@@ -48,7 +48,7 @@ export function workspaceConnectionRoutes(
         if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
         const result = ws?.kind === "cloud"
           ? await cloudConnectionInfo(services, options, auth, ws)
-          : await userHostedConnectionInfo(services, options, auth, workspaceId)
+          : await hostTunnelConnectionInfo(services, options, auth, workspaceId)
         if ("error" in result) return c.json({ error: result.error }, result.status)
         return c.json(result.connection)
       } catch (err) {
@@ -82,7 +82,7 @@ export function workspaceConnectionRoutes(
         if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
         const result = ws?.kind === "cloud"
           ? await cloudConnectionInfo(services, options, auth, ws, body.previousJti)
-          : await userHostedConnectionInfo(services, options, auth, workspaceId, body.previousJti)
+          : await hostTunnelConnectionInfo(services, options, auth, workspaceId, body.previousJti)
         if ("error" in result) return c.json({ error: result.error }, result.status)
         return c.json(result.connection)
       } catch (err) {

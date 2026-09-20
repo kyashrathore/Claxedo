@@ -146,6 +146,7 @@ const subscriber = (subject: string, internalOrgId?: string): LiveSyncSubscriber
 const sessionShareChanged = (ownerUserId: string): ControlPlaneEvent => ({
   type: "session.share.changed",
   phase: "granted",
+  level: "send",
   ownerUserId,
   sessionId: "ses_1",
   workspaceId: "ws_1",
@@ -693,10 +694,8 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
 })
 
 /**
- * The held-connection cap — previously enforced at two sites with zero
- * coverage, so nothing caught that the two counters were independent budgets:
- * a room at the WS limit would still admit a full second population on the SSE
- * path. These tests pin the 503 on both paths AND the shared budget.
+ * The held-connection cap: the WebSocket and SSE paths spend ONE budget, so a
+ * room at the limit on either path refuses 503 on both.
  *
  * The cap is overridden per test rather than driven to its real default: the
  * behaviour under test is "the limit is enforced and reports 503", which does
@@ -785,12 +784,6 @@ describe("LiveSyncRoom — held-connection cap", () => {
     for (const reader of readers) await reader.cancel()
   })
 
-  /**
-   * The defect the two independent counters hid: before this, the WS path
-   * counted only `state.getWebSockets()` and the SSE path only
-   * `this.connections`, so a room at its WS limit still admitted a whole second
-   * population of SSE connections — twice the load the cap was set to allow.
-   */
   test("the two hold mechanisms share ONE budget rather than getting a cap each", async () => {
     const { room } = hibernatingRoom(2)
     for (const subject of ["ws0", "ws1"]) {
@@ -798,7 +791,6 @@ describe("LiveSyncRoom — held-connection cap", () => {
     }
     expect(room.size).toBe(2)
 
-    // A room full of WebSockets must refuse an SSE connection too.
     const rejected = await room.fetch(connectRequest("sse-overflow"))
     expect(rejected.status).toBe(503)
   })
@@ -814,9 +806,8 @@ describe("LiveSyncRoom — held-connection cap", () => {
   })
 
   test("the cap defaults to the measured value and clamps a nonsense override", async () => {
-    // Pins the measurement's conclusion (see the constant's docblock and
-    // `docs/cf-reliability-scalability-review-2026-07-28.md`): a
-    // silent revert to a guessed 256 should fail here, not in production.
+    // The default is a measured capacity, not a guess; a silent change to it
+    // fails here rather than in production.
     expect(DEFAULT_MAX_CONNECTIONS).toBe(2_000)
 
     for (const override of ["", "abc", "0", "-5", undefined]) {

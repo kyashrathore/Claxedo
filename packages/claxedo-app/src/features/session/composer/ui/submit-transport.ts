@@ -12,13 +12,14 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
-import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { requestWorkspaceRecord } from "@/platform/runtime/workspace-runtime-record"
 import {
   centralTransportForServer,
   submitTransportForPlacement,
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitSessionGetClient } from "../../submit/index"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -37,7 +38,7 @@ export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["cl
    */
   readonly projects: () => readonly ProjectCatalogItem[]
   readonly workspaceId: () => string | undefined
-  readonly workspaceKind: () => "cloud" | "user-hosted" | undefined
+  readonly hostKind: () => RelayHostKind | undefined
   readonly sessionRef?: () => SessionRef | undefined
   readonly request: typeof fetch
   readonly localRequest: typeof fetch
@@ -73,14 +74,14 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
 /**
  * The workspace a signed submit reserves against. The composer's accessor names
  * it when the route did; a session created in a workspace the route has not
- * named yet (a fresh cloud workspace, a `ws_…` directory) takes it from the
+ * named yet (a freshly provisioned one, a `ws_…` directory) takes it from the
  * directory's runtime ref — the same owner finalize and the transport read.
  *
  * A workspace the signed server also serves from this machine has neither: its
- * catalog row is a plain local worktree at a filesystem directory, and only the
+ * catalog row is a plain worktree at a filesystem directory, and only the
  * project catalog carries the id the control plane registered it under. That
- * row is the last resort, so a relay-backed workspace still resolves through
- * the runtime ref exactly as before.
+ * row is the last resort, so a workspace reached through the relay still
+ * resolves through the runtime ref.
  */
 export function signedSubmitWorkspaceId(
   explicit: string | undefined,
@@ -98,7 +99,7 @@ export function signedSubmitWorkspaceId(
 export function submitWorkspaceBacking(input: {
   sessionRef?: SessionRef
   workspaceId?: string
-  workspaceKind?: WorkspaceSessionBacking["kind"]
+  hostKind?: WorkspaceSessionBacking["kind"]
 }): WorkspaceSessionBacking | undefined {
   const sandbox = input.sessionRef?.toolSandbox
   if (sandbox?.kind === "workspace") {
@@ -109,8 +110,8 @@ export function submitWorkspaceBacking(input: {
     }
   }
   const workspaceId = input.workspaceId?.trim()
-  if (!workspaceId || !input.workspaceKind) return undefined
-  return { workspaceId, kind: input.workspaceKind }
+  if (!workspaceId || !input.hostKind) return undefined
+  return { workspaceId, kind: input.hostKind }
 }
 
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
@@ -121,7 +122,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     return submitTransportForPlacement({
       serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
       ...(sessionAuthority ? { sessionAuthority } : {}),
-      workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
+      workspaceId: input.workspaceId(), hostKind: input.hostKind(),
     })
   }
 
@@ -154,14 +155,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       directory: dir,
       request: input.request,
       relayRequest: input.request,
-      resolveWorkspaceRuntime: async ({ directory }) => {
-        const res = await input.request(workspaceResolveUrl({ baseUrl: input.serverUrl(), scope: directory }), {
-          headers: { Accept: "application/json" },
-        })
-        if (res.status === 404) return null
-        if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
-        return await res.json()
-      },
+      resolveWorkspaceRuntime: ({ directory }) =>
+        requestWorkspaceRecord({ baseUrl: input.serverUrl(), directory, request: input.request }),
     }).sdkFetch
   }
 
@@ -195,7 +190,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       signedControlPlane: clientInput.signedControlPlane,
       sessionRef: clientInput.sessionRef,
       workspaceId: input.workspaceId(),
-      workspaceKind: input.workspaceKind(),
+      hostKind: input.hostKind(),
     })
     const runtimePromptClient: PromptDispatchInput["client"] = {
       session: {

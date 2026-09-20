@@ -6,8 +6,10 @@ import os from "node:os"
 import path from "node:path"
 import { exportJWK, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
+import { projectRuntimeAuth } from "@claxedo/server-core/agent-config/index"
+import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 
-import { createHostRuntimeListener, type HostRuntimeListener } from "./runtime"
+import { createHostRuntimeListener, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
 
 const HOST_ID = "host_machine-1"
 const WS_A = "11111111-1111-4111-8111-111111111111"
@@ -35,6 +37,7 @@ describe("host workspace runtime behind the loopback listener", () => {
   let sessionAuthorityUrl: string
   let listener: HostRuntimeListener
   let root: string
+  const previousDataDir = process.env.CLAXEDO_DATA_DIR
   const authorityCalls: AuthorityCall[] = []
   let authorityVerdict: { status: number; body: unknown } = { status: 200, body: {} }
 
@@ -58,6 +61,10 @@ describe("host workspace runtime behind the loopback listener", () => {
     jwksUrl = `${await listen(jwks)}/.well-known/jwks.json`
     sessionAuthorityUrl = `${await listen(authority)}/api/runtime-authority/session-authorize`
     root = await fs.mkdtemp(path.join(os.tmpdir(), "host-serving-runtime-"))
+    // The snapshot a runtime applies is resolved from this process's user
+    // agent config; a developer's own `~/.claxedo` must not be what it reads.
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    installHostProviderConfigAuthority()
     listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 2_000 })
     for (const workspaceId of [WS_A, WS_B]) {
       const directory = path.join(root, workspaceId)
@@ -74,6 +81,9 @@ describe("host workspace runtime behind the loopback listener", () => {
   })
 
   afterAll(async () => {
+    setHostProviderConfig(null)
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
     await listener?.close()
     await new Promise<void>((resolve) => jwks?.close(() => resolve()))
     await new Promise<void>((resolve) => authority?.close(() => resolve()))
@@ -92,7 +102,6 @@ describe("host workspace runtime behind the loopback listener", () => {
       hostId: input.hostId ?? HOST_ID,
       role: "editor",
       parentJti: "rat_jti_1",
-      access: "user-hosted",
       backing: "local-worktree",
       kid: input.kid ?? KID,
     }, key.privateKey, "EdDSA")
@@ -141,7 +150,6 @@ describe("host workspace runtime behind the loopback listener", () => {
       hostId: HOST_ID,
       role: "editor",
       parentJti: "rat_jti_1",
-      access: "user-hosted",
       backing: "local-worktree",
       kid: KID,
     }, other.privateKey, "EdDSA")
@@ -242,5 +250,50 @@ describe("host workspace runtime behind the loopback listener", () => {
     expect(listener.workspaceIds()).toEqual([WS_A])
     const health = await fetch(`${listener.url}/workspaces/${WS_A}/global/health`)
     expect(health.status).toBe(200)
+  })
+
+  test("a pushed provider is what a runtime resolves: at creation, on re-apply for the ones already live, and gone again once withdrawn", async () => {
+    const WS_C = "44444444-4444-4444-8444-444444444444"
+    const WS_D = "55555555-5555-4555-8555-555555555555"
+    const workspace = (workspaceId: string) => ({
+      workspaceId,
+      directory: path.join(root, workspaceId),
+      hostId: HOST_ID,
+      relay: { jwksUrl },
+      sessionAuthorityUrl,
+      storeRoot: path.join(root, "state", workspaceId),
+    })
+    await fs.mkdir(path.join(root, WS_C), { recursive: true })
+    await fs.mkdir(path.join(root, WS_D), { recursive: true })
+    const row = { baseUrl: "https://broker.example/b/1", placeholder: "sk-pushed-secret", authMode: "bearer" as const }
+
+    const live = await listener.ensure(workspace(WS_C))
+    expect(live.host.detail().configApply, "creation applied the snapshot once").toMatchObject({ state: "applied", revision: 1 })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({})
+
+    setHostProviderConfig(JSON.stringify({ version: 1, providers: { "claude-sdk": row } }))
+
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ "claude-sdk": row })
+    const created = await listener.ensure(workspace(WS_D))
+    expect(created.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
+    expect((await createClaxedoAppliedRuntimeConfig({ workspaceDir: path.join(root, WS_D), workspaceId: WS_D })).auth, "the snapshot a new runtime applied").toEqual({ "claude-sdk": row })
+    expect(live.host.detail().configApply.revision, "a live runtime holds its snapshot until re-applied").toBe(1)
+
+    await listener.applyRuntimeConfig()
+
+    expect(live.host.detail().configApply).toMatchObject({ state: "applied", revision: 2 })
+    expect(created.host.detail().configApply, "an identical snapshot is not re-applied").toMatchObject({ state: "applied", revision: 1 })
+
+    setHostProviderConfig(null)
+    await listener.applyRuntimeConfig()
+
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({})
+    expect(live.host.detail().configApply).toMatchObject({ state: "applied", revision: 3 })
+    expect(created.host.detail().configApply).toMatchObject({ state: "applied", revision: 2 })
+
+    setHostProviderConfig(JSON.stringify({ version: 1, providers: { "claude-sdk": row } }))
+    expect(() => setHostProviderConfig(JSON.stringify({ version: 2, providers: {} }))).toThrow("version 2, not 1")
+    expect(() => setHostProviderConfig("{")).toThrow("not JSON")
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "an unreadable payload leaves the rows in place").toEqual({ "claude-sdk": row })
   })
 })

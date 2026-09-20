@@ -20,6 +20,21 @@ export type HostScope = { revision: number; allowed_roots: string[]; visibility:
 export type HostState = {
   host_id: string
   private_key_jwk: JsonWebKey
+  /**
+   * The ECDH half of this machine's identity, minted on the first run that
+   * needs it and declared on every beat. Separate from `private_key_jwk`
+   * because Web Crypto will not derive bits with an ECDSA key; see
+   * `./machine-seal`.
+   */
+  sealing_private_key_jwk?: JsonWebKey
+  /**
+   * The owner's provider configuration as the control plane sealed it, stored
+   * verbatim. It is ciphertext for THIS machine's sealing key, so the file is
+   * at rest exactly as the wire had it and no plaintext secret is ever
+   * written. `sealed: null` is a revocation the machine has recorded, kept so
+   * a restart states the revision it has rather than asking for the blob again.
+   */
+  provider_config?: { revision: number; sealed: string | null }
   created_at: number
   /** Frozen at first redeem; a different URL is a different host state. */
   control_plane_url: string
@@ -115,15 +130,22 @@ function stateNumberOrUndefined(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
-function privateKeyJwk(value: unknown): JsonWebKey {
-  const jwk = stateRecord(value, "private_key_jwk")
+function privateKeyJwk(value: unknown, field = "private_key_jwk"): JsonWebKey {
+  const jwk = stateRecord(value, field)
   return {
-    kty: stateString(jwk.kty, "private_key_jwk.kty"),
-    crv: stateString(jwk.crv, "private_key_jwk.crv"),
-    x: stateString(jwk.x, "private_key_jwk.x"),
-    y: stateString(jwk.y, "private_key_jwk.y"),
-    d: stateString(jwk.d, "private_key_jwk.d"),
+    kty: stateString(jwk.kty, `${field}.kty`),
+    crv: stateString(jwk.crv, `${field}.crv`),
+    x: stateString(jwk.x, `${field}.x`),
+    y: stateString(jwk.y, `${field}.y`),
+    d: stateString(jwk.d, `${field}.d`),
   }
+}
+
+function providerConfigRecord(value: unknown): NonNullable<HostState["provider_config"]> {
+  const record = stateRecord(value, "provider_config")
+  const sealed = record.sealed
+  if (sealed !== null && (typeof sealed !== "string" || !sealed)) stateFieldError("provider_config.sealed", "must be a string or null")
+  return { revision: stateNumber(record.revision, "provider_config.revision"), sealed }
 }
 
 function scopeRecord(value: unknown): HostScope {
@@ -205,6 +227,10 @@ export function parseHostState(text: string): HostState {
     const record = stateRecord(value.authority, "authority")
     state.authority = { sessionAuthorityUrl: stateString(record.sessionAuthorityUrl, "authority.sessionAuthorityUrl") }
   }
+  if (value.sealing_private_key_jwk !== undefined) {
+    state.sealing_private_key_jwk = privateKeyJwk(value.sealing_private_key_jwk, "sealing_private_key_jwk")
+  }
+  if (value.provider_config !== undefined) state.provider_config = providerConfigRecord(value.provider_config)
   if (value.scope !== undefined) state.scope = scopeRecord(value.scope)
   if (value.roots_canonical !== undefined) {
     const record = stateRecord(value.roots_canonical, "roots_canonical")

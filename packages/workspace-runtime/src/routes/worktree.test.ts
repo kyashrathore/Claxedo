@@ -33,7 +33,6 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
     workspace_id: "ws_1",
     host_id: "host_1",
     role,
-    access: "cloud",
     backing: "cloud-vm",
     exp: now + 60,
     iat: now,
@@ -116,7 +115,7 @@ describe("WorktreeRoutes managed private-session access", () => {
     await expect(denied.json()).resolves.toMatchObject({ error: { code: "session_private" } })
   })
 
-  test("authorizes create before manager mutation and denies viewer writes", async () => {
+  test("authorizes create before manager mutation and leaves the rank out of it", async () => {
     const { manager, ensure } = fixture()
 
     const denied = await managedApp(manager).request("http://localhost/", {
@@ -132,8 +131,16 @@ describe("WorktreeRoutes managed private-session access", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId: "ses_visible" }),
     })
-    expect(viewer.status).toBe(403)
-    expect(ensure.mock.calls.length).toBe(0)
+    expect(viewer.status).toBe(201)
+    expect(ensure).toHaveBeenCalledTimes(1)
+
+    const refusedForViewer = await managedApp(manager, { role: "viewer" }).request("http://localhost/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "ses_private" }),
+    })
+    expect(refusedForViewer.status).toBe(403)
+    expect(ensure).toHaveBeenCalledTimes(1)
 
     const created = await managedApp(manager).request("http://localhost/", {
       method: "POST",
@@ -141,7 +148,7 @@ describe("WorktreeRoutes managed private-session access", () => {
       body: JSON.stringify({ sessionId: "ses_visible" }),
     })
     expect(created.status).toBe(201)
-    expect(ensure).toHaveBeenCalledTimes(1)
+    expect(ensure).toHaveBeenCalledTimes(2)
   })
 
   test("fails closed for a verified remote caller when the selected policy is unavailable", async () => {

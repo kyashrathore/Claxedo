@@ -287,7 +287,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ne može primiti ovaj prilog",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} nema ulaz upita za {{mime}}, a ova sesija nema lokalni radni prostor u kojem bi datoteka ostala.",
+    "{{harness}} nema ulaz upita za {{mime}}, a ova sesija nema folder radnog prostora u kojem bi datoteka ostala.",
   "prompt.toast.attachmentUnreadable.title": "Prilog se nije mogao pročitati",
   "prompt.toast.attachmentUnreadable.description":
     "{{filename}} se nije mogao pročitati s ovog uređaja.",
@@ -441,7 +441,7 @@ export const dict = {
 
   "home.recentProjects": "Nedavni projekti",
   "home.empty.title": "Nema nedavnih projekata",
-  "home.empty.description": "Kreni tako što ćeš otvoriti lokalni projekat",
+  "home.empty.description": "Kreni tako što ćeš otvoriti folder s ovog računara",
 
   "home.title": "Početna",
   "session.timeline.scrollToBottom": "Pomjeri na najnoviju poruku",
@@ -505,12 +505,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Projekti i sesije",
   "sidebar.settings": "Postavke",
   "sidebar.help": "Pomoć",
-  "sidebar.workspace.role.viewer": "Gledalac",
-  "sidebar.workspace.role.editor": "Urednik",
-  "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Domaćin je offline",
-  "sidebar.workspace.sharedWithYou": "Podijeljeno s vama",
-  "sidebar.workspace.publishedByThisMachine": "Objavljeno s ovog uređaja",
 
 
   "settings.section.desktop": "Desktop",
@@ -691,8 +685,6 @@ export const dict = {
   "session.delete.button": "Izbriši sesiju",
 
   "workspace.new": "Novi radni prostor",
-  "workspace.type.local": "lokalno",
-  "workspace.type.sandbox": "sandbox",
   "workspace.error.stillPreparing": "Radni prostor se još priprema",
   "workspace.status.checking": "Provjera neobjedinjenih promjena...",
   "workspace.status.error": "Nije moguće provjeriti git status.",

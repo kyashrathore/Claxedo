@@ -133,7 +133,7 @@ jobs:
         env:
           CLAXEDO_CHANNEL: prod
           RUST_TARGET: ${{ matrix.target }}
-          VITE_AUTH_ENABLED: "true"
+          VITE_CLAXEDO_HOSTED_ACTIVATION: "true"
           CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
         working-directory: packages/claxedo-desktop
         run: bun run build

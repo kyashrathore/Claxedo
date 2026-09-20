@@ -65,10 +65,10 @@ describe("HOSTED_OPERATIONS", () => {
   })
 
   test("declares no caller-selected query", () => {
-    // A query may be part of a fixed path (`?access=cloud`), and the two
+    // A query may be part of a fixed path (`?host=provisioner`), and the two
     // workspace-list rows are. It may never be SUBSTITUTED: `resolveHostedOperation`
     // fills a `:name` wherever it appears, query string included, so
-    // `?access=:access` would compile, run, and quietly turn one reviewed
+    // `?host=:host` would compile, run, and quietly turn one reviewed
     // operation into a family of requests the renderer chooses between. That is
     // the closed set opening by one character, which is why it is asserted
     // rather than left to review.
@@ -78,26 +78,26 @@ describe("HOSTED_OPERATIONS", () => {
 
     expect(substitutedQuery).toEqual([])
     // Positive control: the check must be able to see one.
-    expect(/:[A-Za-z]/.test("/api/workspace?access=:access".split("?")[1] ?? "")).toBe(true)
+    expect(/:[A-Za-z]/.test("/api/workspace?host=:host".split("?")[1] ?? "")).toBe(true)
   })
 
-  test("lists workspaces per access kind, with the kind fixed in the path", () => {
-    // The defect this pair replaced: `GET /api/workspace` with no `access`
-    // answers `{ workspaces: [] }` unconditionally, so the single access-less
-    // row could never return a workspace. Pinned here as well as in the matrix
-    // because the value is load-bearing — `cloud` and `user-hosted` are the only
-    // two the hosted handler acts on.
-    expect(resolveHostedOperation("workspace.list.cloud")).toEqual({
+  test("lists workspaces per host, with the host fixed in the path", () => {
+    // The defect this pair replaced: `GET /api/workspace` with no `host`
+    // answers `{ workspaces: [] }` unconditionally, so the single host-less row
+    // could never return a workspace. Pinned here as well as in the matrix
+    // because the value is load-bearing — `provisioner` and `machine` are the
+    // only two the hosted handler acts on.
+    expect(resolveHostedOperation("workspace.list.provisioner")).toEqual({
       method: "GET",
-      path: "/api/workspace?access=cloud",
+      path: "/api/workspace?host=provisioner",
     })
-    expect(resolveHostedOperation("workspace.list.userHosted")).toEqual({
+    expect(resolveHostedOperation("workspace.list.machine")).toEqual({
       method: "GET",
-      path: "/api/workspace?access=user-hosted",
+      path: "/api/workspace?host=machine",
     })
-    // And the kind cannot be talked out of the path by a caller.
-    expect(resolveHostedOperation("workspace.list.cloud", { access: "user-hosted" }).path).toBe(
-      "/api/workspace?access=cloud",
+    // And the host cannot be talked out of the path by a caller.
+    expect(resolveHostedOperation("workspace.list.provisioner", { host: "machine" }).path).toBe(
+      "/api/workspace?host=provisioner",
     )
   })
 })
@@ -149,6 +149,33 @@ describe("resolveHostedOperation", () => {
       workspaceId: "ws a&b=c",
     })
     expect(resolved.path).toBe("/api/control/sessions/ses_1/shares?workspaceId=ws+a%26b%3Dc")
+  })
+
+  test("carries the share level and both recipient spellings into the grant body", () => {
+    expect(resolveHostedOperation("session.shares.grant", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      level: "send",
+      grantedToUserId: "user_bob",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/sessions/ses_1/shares",
+      body: { workspaceId: "ws_1", level: "send", grantedToUserId: "user_bob" },
+    })
+    expect(resolveHostedOperation("session.shares.grant", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      level: "follow",
+      grantedToTokenIdentifier: "https://issuer.test|user_bob",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/sessions/ses_1/shares",
+      body: {
+        workspaceId: "ws_1",
+        level: "follow",
+        grantedToTokenIdentifier: "https://issuer.test|user_bob",
+      },
+    })
   })
 
   test("resolves DELETE session share revoke with body fields", () => {
@@ -293,17 +320,15 @@ describe("resolveHostedOperation", () => {
   })
 
   test("refuses a non-scalar parameter instead of sending [object Object]", () => {
-    // A path segment, a query value and a header all used to be built with
-    // `String(value)`, so an object parameter became the literal
-    // `[object Object]` and travelled to the control plane as if the caller
-    // had meant it.
+    // A path segment, a query value and a header are all built from the
+    // parameter as text; `String(value)` on an object would send the literal
+    // `[object Object]` as if the caller had meant it.
     expect(() =>
       resolveHostedOperation("workspace.lifecycle", { id: { evil: true }, operation: "start" }),
     ).toThrow(MissingOperationParameter)
     expect(() => resolveHostedOperation("session.list", { workspaceId: { evil: true } })).toThrow(
       MissingOperationParameter,
     )
-    // A number is still a legitimate parameter.
     expect(resolveHostedOperation("workspace.lifecycle", { id: 7, operation: "start" }).path).toBe(
       "/api/workspace/7/lifecycle/start",
     )

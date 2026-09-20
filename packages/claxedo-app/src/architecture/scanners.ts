@@ -21,7 +21,7 @@ export type MetricName =
   | "isFilesystemDirectory"
   | "isLoopbackHttpUrl"
   | "filesystemShapeRegexClones"
-  | "userHostedComparisons"
+  | "hostKindComparisons"
   | "legacyDirectoryRouteKeyRefs"
   | "isSignedInGates"
   | "timerDrivenDataPolls"
@@ -131,11 +131,7 @@ export const metrics: readonly Metric[] = [
     "copy-pasted filesystem-shape regex clones",
     /startsWith\("\/"\)\s*\|\|\s*\/\^\[A-Za-z\]/g,
   ),
-  regexMetric(
-    "userHostedComparisons",
-    "`user-hosted` string comparisons",
-    /(?:===?\s*["']user-hosted["']|["']user-hosted["']\s*===?)/g,
-  ),
+  hostKindComparisonMetric(),
   regexMetric("legacyDirectoryRouteKeyRefs", "`legacyDirectoryRouteKey` references", /legacyDirectoryRouteKey/g),
   isSignedInGateMetric(),
   timerDrivenDataPollMetric(),
@@ -289,6 +285,26 @@ function regexMetric(name: MetricName, description: string, pattern: RegExp): Me
     name,
     description,
     scan: (files) => files.flatMap((file) => findMatches(file, pattern)),
+  }
+}
+
+/**
+ * A host kind compared by literal outside `placement-wire.ts`.
+ *
+ * The resolver owns the three words and the translation from the control
+ * plane's. A literal anywhere else is a branch whose vocabulary nothing
+ * checks: the two sets share no member, so narrowing one with the other's
+ * reader answers `undefined` and the branch goes dead in silence.
+ */
+function hostKindComparisonMetric(): Metric {
+  const pattern = /(?:===?\s*["'](?:self|machine|provisioner)["']|["'](?:self|machine|provisioner)["']\s*===?)/g
+  return {
+    name: "hostKindComparisons",
+    description: "host-kind literal comparisons outside the placement resolver",
+    scan: (files) =>
+      files
+        .filter((file) => file.path !== "platform/runtime/placement-wire.ts")
+        .flatMap((file) => findMatches(file, pattern)),
   }
 }
 

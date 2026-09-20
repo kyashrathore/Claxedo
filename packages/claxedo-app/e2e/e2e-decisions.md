@@ -82,7 +82,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
   - **B**: quarantine as flaky with a tracking issue and re-enable once runner contention is understood.
 - **Decision**: _(owner fills in)_
 
-### 7. core-user-hosted-workspace — ready-send + Share pair (behaviors 2/3, 7)
+### 7. core-host-tunnel-workspace — ready-send + Share pair (behaviors 2/3, 7)
 - **Status**: failing-CI-only (still red on the 12-shard × 2-worker tune)
 - **Tests**: b2/3 (`:668`) — ready unlocks the composer and a send is proven by the oracle through the relay lane; b7 (`:798`) — the in-app "Share workspace" entry point registers the workspace and shows a confirmation toast.
 - **Expected**: both pass; they pass locally.
@@ -211,9 +211,9 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
 - **Status**: skipped (test.fixme, `:810` + `:878`)
 - **Tests**: the Sandbox settings tab is absent when `sandboxEnabled` is false (`:810`); the account section is hidden entirely for a `local` principal (`:878`).
 - **Expected**: negative-path rendering when the flag is off.
-- **Why**: unreachable — `VITE_SANDBOX_ENABLED` and `VITE_AUTH_ENABLED` are baked true at Vite start for the whole shared dev server (`.env.local`), not flippable per-spec. Reaching `principal.kind==="local"` needs `authEnabled=false`, and the Sandbox-absent path needs `sandboxEnabled=false` — neither is settable from a spec.
+- **Why**: the Sandbox-absent path needs `sandboxEnabled=false`, which `VITE_SANDBOX_ENABLED` bakes true at Vite start for the whole shared dev server and no spec can flip. The local-principal half is no longer blocked: `principal.kind==="local"` follows the server's `deployment.issuesSessions` declaration, which a spec sets per test through `installMockRuntime({ issuesSessions: false })` (see `core-deployment-posture.spec.ts`).
 - **Options**:
-  - **A (recommended)**: add a per-spec/per-project build variant (or runtime override) that flips these VITE flags, then implement both. M.
+  - **A (recommended)**: implement the local-principal half against the posture declaration; the Sandbox half still needs a per-spec build variant that flips `VITE_SANDBOX_ENABLED`. M.
   - **B**: keep fixme as documented baked-flag gaps.
   - **C**: delete — the flag-off branches are covered by reading source; low value without a build variant.
 - **Decision**: _(owner fills in)_
@@ -956,7 +956,7 @@ These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: rea
 | live-agent-extensions-materialization `:463/:756` | cloud-half / gates | `test.skip` on `CLAXEDO_ENABLE_DOCKER_SANDBOX=1` (+ built sandbox image/authority wiring) | keep as env-gated skip; implement once docker sandbox lands |
 | live-real-harness-smoke `:595` | codex native SDK completes 3 turns + survives reload — behavior 5 | REAL BUG: against codex-cli 0.143.0 every `turn/start` fails `thread not found` for the uuid `thread/start` just returned (`driver.ts:78-92,160-174`); `codex-acp` mode works | app: fix the native codex driver thread lifecycle |
 | live-real-harness-smoke `:517/:556/:569/:584` | Tier L + missing-binary gates | `test.skip(!LIVE)` and per-binary `test.skip(!claude/!codex on PATH)` | keep as loud named skips |
-| live-user-hosted-relay `:795` | prompt through the relay lane completes a real turn — behavior 3 | REAL GAP: a fresh DRAFT nav to `/w/:workspaceId/session` for a `ws_`-shaped id renders the Local/Cloud draft picker and mis-routes through the CLOUD pipeline instead of the user-hosted gate (`session-new-workspace-options.ts` / `WorkspaceGate` mount order) | app: resolve inventory kind before rendering the Local/Cloud draft picker for a known relay-backed id |
-| live-user-hosted-relay `:880` | pause/resume the real host tunnel surfaces offline + Retry — behaviors 5,6 | BLOCKED by behavior 3's gap (gate can't reliably reach the genuine ready state for the draft-nav pattern); the tunnel lifecycle itself is proven real | fix behavior 3 first, then re-enable |
-| live-user-hosted-relay `:931` | near-expiry token triggers a real refresh, workspace stays usable — behavior 4 | UNCONFIRMED (not disproven): no `POST .../connection/refresh` observed within 20s once the gate reached ready; a different, narrower gap than 3/5/6 | diagnose the refresh trigger timing; distinguish from the draft-nav gaps |
-| live-user-hosted-relay `:682/:904` | Tier L + TTL gates | `test.skip(!LIVE)` describe gates (main + token-refresh block with shortened TTL) | keep as env-gated skips |
+| live-host-tunnel-relay `:795` | prompt through the relay lane completes a real turn — behavior 3 | REAL GAP: a fresh DRAFT nav to `/w/:workspaceId/session` for a `ws_`-shaped id renders the Local/Cloud draft picker and mis-routes through the CLOUD pipeline instead of the user-hosted gate (`session-new-workspace-options.ts` / `WorkspaceGate` mount order) | app: resolve inventory kind before rendering the Local/Cloud draft picker for a known relay-backed id |
+| live-host-tunnel-relay `:880` | pause/resume the real host tunnel surfaces offline + Retry — behaviors 5,6 | BLOCKED by behavior 3's gap (gate can't reliably reach the genuine ready state for the draft-nav pattern); the tunnel lifecycle itself is proven real | fix behavior 3 first, then re-enable |
+| live-host-tunnel-relay `:931` | near-expiry token triggers a real refresh, workspace stays usable — behavior 4 | UNCONFIRMED (not disproven): no `POST .../connection/refresh` observed within 20s once the gate reached ready; a different, narrower gap than 3/5/6 | diagnose the refresh trigger timing; distinguish from the draft-nav gaps |
+| live-host-tunnel-relay `:682/:904` | Tier L + TTL gates | `test.skip(!LIVE)` describe gates (main + token-refresh block with shortened TTL) | keep as env-gated skips |

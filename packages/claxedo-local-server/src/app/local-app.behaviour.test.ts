@@ -432,7 +432,6 @@ describe("local composition — workspace registration", () => {
       projectId: expect.any(String),
       workspaceId: expect.any(String),
       kind: "local",
-      access: "local",
       backing: {
         kind: "local-worktree",
         directory: canonicalDirectory,

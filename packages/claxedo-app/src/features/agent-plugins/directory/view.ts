@@ -138,7 +138,7 @@ function authorityPhrase(winner: string) {
     case "claxedo":
       return "Claxedo default"
     case "machine":
-      return "this machine"
+      return "this computer"
     default:
       return "no default"
   }

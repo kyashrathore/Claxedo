@@ -1,5 +1,5 @@
 /**
- * Journeys shared by `web-signed-cloud.spec.ts` and `web-signed-userhosted.spec.ts`.
+ * Journeys shared by `web-signed-cloud.spec.ts` and `web-signed-host-tunnel.spec.ts`.
  * Each takes a `JourneyCtx` (booted fixture + fresh page) and does its own navigation,
  * so a spec's test body is one call into this module.
  */
@@ -36,7 +36,7 @@ import {
   submitControl,
   submitDraft,
   type RelayFixtureInfo,
-  type SignedRelayAccess,
+  type SignedRelayBacking,
 } from "./web-signed-relay-harness"
 
 export type JourneyCtx = {
@@ -46,7 +46,7 @@ export type JourneyCtx = {
   scripted: ScriptedModelServer
   /** Spec basename for `turn-oracle`'s evidence path, e.g. "web-signed-cloud". */
   spec: string
-  kind: SignedRelayAccess
+  backing: SignedRelayBacking
 }
 
 /**
@@ -73,8 +73,8 @@ async function openNewDraftInProject(page: Page): Promise<Locator> {
 
 /** Navigates fresh to the workspace-scoped draft route and waits for the connect gate — every journey's entry point. */
 async function openReadyDraft(ctx: JourneyCtx): Promise<Locator> {
-  const { page, frontendUrl, info, kind } = ctx
-  await seedWorkspace(page, info, kind)
+  const { page, frontendUrl, info, backing } = ctx
+  await seedWorkspace(page, info, backing)
   await page.goto(`${frontendUrl}${sessionRoute(info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
   await gateReachesReady(page)
   // The relay fixture is shared across tests, so the workspace may already have sessions;

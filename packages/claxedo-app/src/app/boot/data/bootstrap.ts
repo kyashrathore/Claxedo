@@ -2,7 +2,7 @@ import type { AgentCommand } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceVcsInfo } from "@claxedo/workspace-runtime/client"
 import type { ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
-import { asRecord, readBoolean, readString } from "@/lib/record"
+import { asRecord, readBoolean, readNullableString, readString } from "@/lib/record"
 import { retry } from "@/lib/retry"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -10,7 +10,7 @@ import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { setProviderQueryData } from "@/platform/query/provider-cache"
-import { providerListQuery, projectCatalogMissingWorkspace, setHostAggregateDeclaration } from "@/platform/query/control-plane"
+import { providerListQuery, projectCatalogMissingWorkspace, setHostAggregateDeclaration, setSelfHostDeclaration } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
 import { agentListQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
@@ -25,6 +25,7 @@ import {
   activateServicesForLocalCentral,
   synchronizeServiceCatalogFromBootstrap,
 } from "@/app/composition/service-contributions"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 type DataResponse<T> = Promise<{ data?: T }>
 
@@ -59,6 +60,13 @@ type Boot = {
    * declared" rather than as `false` — see `hostAggregateDeclaration`.
    */
   hostAggregate?: boolean
+  /**
+   * This machine's enrollment id, as the server it is talking to declares it.
+   * `null` is an explicit "this server is not enrolled"; absent is a server
+   * that does not declare the field at all, and both mean the same to the
+   * resolver: nothing here recognises itself in a control-plane row.
+   */
+  hostEnrollment?: string | null
 }
 
 /**
@@ -77,6 +85,7 @@ function toBoot(input: unknown): Boot | undefined {
     healthy: readBoolean(data, "healthy"),
     path: toPath(data.path),
     hostAggregate: readBoolean(data.events, "hostAggregate"),
+    hostEnrollment: readNullableString(data.host, "enrollment"),
   }
 }
 
@@ -154,8 +163,8 @@ export function runIdleWarmup(task: () => Promise<void>) {
 
 function isRemoteWorkspace(
   workspace: WorkspaceRuntimeSnapshot | null | undefined,
-): workspace is WorkspaceRuntimeSnapshot & { workspaceId: string; kind: "cloud" | "user-hosted" } {
-  return !!workspace?.workspaceId && (workspace.kind === "cloud" || workspace.kind === "user-hosted")
+): workspace is WorkspaceRuntimeSnapshot & { workspaceId: string; kind: RelayHostKind } {
+  return !!workspace?.workspaceId && (workspace.kind === "provisioner" || workspace.kind === "machine")
 }
 
 function workspaceDirectoryRef(directory: BootstrapDirectory) {
@@ -251,6 +260,9 @@ export async function bootstrapGlobal(input: {
     input.setGlobalState({ path })
     queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), path)
     if (boot.hostAggregate !== undefined) setHostAggregateDeclaration(input.baseUrl, boot.hostAggregate)
+    setSelfHostDeclaration(input.baseUrl, boot.hostEnrollment
+      ? { kind: "enrolled", enrollmentId: boot.hostEnrollment }
+      : { kind: "unenrolled" })
     input.setGlobalState({ ready: true })
     return
   }
@@ -293,7 +305,7 @@ export async function bootstrapDirectory(input: {
   baseUrl: string
   harnessType?: string
   quiet?: boolean
-  workspace?: WorkspaceRuntimeSnapshot & { workspaceId: string; kind: "cloud" | "user-hosted" }
+  workspace?: WorkspaceRuntimeSnapshot & { workspaceId: string; kind: RelayHostKind }
 }) {
   const harnessType = input.harnessType
   const providerHarnessType = harnessType
@@ -394,9 +406,10 @@ export async function bootstrapDirectory(input: {
           // in the claxedo store, so until it resolves the catalog seeded by
           // global bootstrap can legitimately be missing it (see
           // `projectCatalogMissingWorkspace`). The catalog is cached with a
-          // five-minute `staleTime` and nothing else refetches it, which used
-          // to leave the rail on the engine-shaped payload — worktree basename
-          // for a name, and no sessions — until the user opened a surface.
+          // five-minute `staleTime` and nothing else refetches it, so without
+          // this the rail stays on the engine-shaped payload — worktree
+          // basename for a name, and no sessions — until the user opens a
+          // surface.
           // Refetch only when the catalog really is missing this workspace, so
           // the common warm boot stays a no-op. `refetchType: "all"` because
           // the catalog query need not have an observer at this moment (a

@@ -19,7 +19,7 @@ import {
   sessionResourceUrl,
 } from "./harness-config-routes"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
-import { isRelayBackedWorkspaceKind, type SignedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, type RelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getSeen(scope: string): string | undefined
@@ -56,15 +56,15 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   workspaceRuntime(params?: ScopeInput): boolean
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
-    workspaceKind?(params?: ScopeInput): WorkspaceKind | null | undefined
+    hostKind?(params?: ScopeInput): WorkspaceHostKind | null | undefined
     /**
      * The workspace record itself, for a `workspace:` ref the inventory has not
      * described yet. A draft's harness comes from the machine serving the
      * workspace, so the draft cannot decide until the workspace is known.
      */
-    workspace?(params?: ScopeInput): Promise<{ kind?: WorkspaceKind | null; workspaceId?: string } | undefined>
+    workspace?(params?: ScopeInput): Promise<{ kind?: WorkspaceHostKind | null; workspaceId?: string } | undefined>
     /** The relay-backed workspace the inventory already describes for a scope. */
-    workspaceRef?(params?: ScopeInput): { workspaceId: string; kind: SignedWorkspaceKind } | undefined
+    workspaceRef?(params?: ScopeInput): { workspaceId: string; kind: RelayHostKind } | undefined
     harnessSessionFetch(params?: ScopeInput): typeof fetch
     localHarnessConfigFetch(params?: ScopeInput): typeof fetch
   }
@@ -231,19 +231,19 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
    */
   const draftWorkspaceBacking = async (params: ScopeInput, useLocalHarnessConfig: boolean) => {
     const ref = input.runtime.workspaceRef?.(params)
-    const known = ref?.kind ?? input.runtime.workspaceKind?.(params)
+    const known = ref?.kind ?? input.runtime.hostKind?.(params)
     if (known || useLocalHarnessConfig || !workspaceIdFromRef(params.directory)) {
       return {
         workspaceRuntime: input.workspaceRuntime(params),
-        workspaceKind: known,
+        hostKind: known,
         ...(ref ? { workspaceId: ref.workspaceId } : {}),
       }
     }
     const resolved = await input.runtime.workspace?.(params).catch(() => undefined)
     const kind = resolved?.kind
     return {
-      workspaceRuntime: input.workspaceRuntime(params) || isRelayBackedWorkspaceKind(kind),
-      workspaceKind: kind,
+      workspaceRuntime: input.workspaceRuntime(params) || isRelayHostKind(kind),
+      hostKind: kind,
       ...(resolved?.workspaceId ? { workspaceId: resolved.workspaceId } : {}),
     }
   }

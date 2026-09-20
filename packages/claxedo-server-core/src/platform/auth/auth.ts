@@ -157,6 +157,20 @@ function betterAuthSubject(session: BetterAuthSession) {
   return session.subject ?? session.userId ?? session.user?.id
 }
 
+/**
+ * Whether a composition with this config issues the sessions a caller must
+ * hold to reach it — the `deployment.issuesSessions` every bootstrap producer
+ * declares.
+ *
+ * Only an explicitly local-only composition says false. A misconfigured one
+ * says true: its signed routes refuse every caller either way, and a client
+ * that read it as a personal machine would enter a shell where nothing it does
+ * can work.
+ */
+export function issuesSessions(config: ControlPlaneAuthConfig): boolean {
+  return config.enabled ? true : config.mode !== "local-only"
+}
+
 export function localOnlyAuthAdapter(reason = "signed/cloud auth is disabled"): ControlPlaneAuthAdapter {
   return {
     config: {

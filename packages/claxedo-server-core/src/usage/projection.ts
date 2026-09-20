@@ -55,7 +55,7 @@ export function isUsageBreakdownDimension(value: string): value is UsageBreakdow
 }
 
 export function usageLocation(value: TurnUsageRevision["location"]) {
-  return value === "local" || value === "user-hosted" ? "local" : "cloud"
+  return value === "local" ? "local" : "cloud"
 }
 
 export function usageModelKey(provider: string, model: string) {

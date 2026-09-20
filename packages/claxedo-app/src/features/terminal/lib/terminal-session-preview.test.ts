@@ -122,7 +122,7 @@ describe("terminal session preview aliases", () => {
     expect(out?.tabId).toBe("tab-1")
   })
 
-  test("loadTerminalSessionPreview scopes local workspace previews by directory", async () => {
+  test("loadTerminalSessionPreview scopes previews for a workspace this machine serves by directory", async () => {
     let seen = ""
     const out = await loadTerminalSessionPreview("http://server.test", "pty-local", {
       directory: "/Users/example/project",
@@ -136,7 +136,7 @@ describe("terminal session preview aliases", () => {
         }))
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "local",
+        kind: "self",
       }),
     })
 
@@ -144,7 +144,7 @@ describe("terminal session preview aliases", () => {
     expect(seen).toBe("http://server.test/api/wr/hook/terminal-session?terminalId=pty-local&directory=%2FUsers%2Fexample%2Fproject")
   })
 
-  test("loadTerminalSessionPreview routes cloud workspace previews through Workspace Relay", async () => {
+  test("loadTerminalSessionPreview routes provisioner-placed workspace previews through Workspace Relay", async () => {
     const seen: Array<{ url: string; method: string; authorization: string | null }> = []
     const request = (async (input, init) => {
       const req = new Request(input, init)
@@ -156,8 +156,8 @@ describe("terminal session preview aliases", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_1/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_1",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_1",
@@ -186,7 +186,7 @@ describe("terminal session preview aliases", () => {
       directory: "/workspace",
       request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_1",
       }),
     })
@@ -199,7 +199,7 @@ describe("terminal session preview aliases", () => {
     expect(seen[1]?.authorization).toBe("Bearer rat_1")
   })
 
-  test("loadTerminalSessionPreview keeps loopback workspace previews on the local workspace proxy", async () => {
+  test("loadTerminalSessionPreview keeps loopback workspace previews on this machine's workspace proxy", async () => {
     const seen: string[] = []
     const out = await loadTerminalSessionPreview("http://127.0.0.1:3001", "pty-cloud-local", {
       directory: "/workspace",
@@ -221,7 +221,7 @@ describe("terminal session preview aliases", () => {
         throw new Error(`Unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_local",
       }),
     })

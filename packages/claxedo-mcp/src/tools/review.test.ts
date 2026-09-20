@@ -55,7 +55,6 @@ function runtimeApp() {
     }),
     listSessions: async () => sessions.map((row) => ({ ...row })),
     getSession: (_c, _directory, sessionId) => sessions.find((row) => row.id === sessionId) ?? null,
-    sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
       instructionChannel: "none" as const,

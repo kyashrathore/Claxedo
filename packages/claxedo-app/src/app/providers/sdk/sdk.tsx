@@ -10,7 +10,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
-import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { requestWorkspaceRecord } from "@/platform/runtime/workspace-runtime-record"
 import { createTransport } from "@/platform/runtime/transport"
 import { createWorkspaceGitClient } from "@/platform/runtime/workspace-git-client"
 
@@ -77,13 +77,13 @@ const sDKContextInput = {
       const byDir = signedWorkspaceFromProjects(projects(), dir)
       if (byDir) return byDir
       // Last resort: a known relay workspaceId not (yet) in the inventory. Both
-      // cloud and user-hosted route through the relay, so default to the
+      // every host but this one routes through the relay, so default to the
       // non-provisioning kind for routing purposes.
       if (!wid) return undefined
       const key = `${wid}\0${dir}`
       const cached = fallbackWorkspaceCache.get(key)
       if (cached) return cached
-      const fallback = { workspaceId: wid, kind: "user-hosted" as const, directory: dir }
+      const fallback = { workspaceId: wid, kind: "machine" as const, directory: dir }
       fallbackWorkspaceCache.set(key, fallback)
       return fallback
     }
@@ -116,20 +116,15 @@ const sDKContextInput = {
           if (fastSessionSwitchAnyNetworkQuiet()) return null
           const known = signedWorkspaceFromProjects(projects(), directory)
           if (known) return known
-          // Workspace resolution lives on claxedo-server,
-          // NOT opencode/workspace-runtime. `globalSDK.url` is
-          // normalized to the opencode port (:4096), so hitting that
-          // host returned the HTML index page, which we then tried to
-          // JSON.parse — every file-tree request silently no-op'd
-          // because the resolver "succeeded" with garbage. Route the
-          // resolve through RuntimeGateway with `getClaxedoServerUrl()`
-          // so it hits the service that owns the route.
-          const response = await runtimeFetch(workspaceResolveUrl({ baseUrl: getClaxedoServerUrl(), scope: directory }), {
-            headers: { Accept: "application/json" },
+          // Workspace resolution lives on claxedo-server, NOT
+          // opencode/workspace-runtime. `globalSDK.url` is normalized to the
+          // opencode port (:4096), which answers the HTML index page for this
+          // path, and a JSON.parse of that "succeeds" with garbage.
+          return await requestWorkspaceRecord({
+            baseUrl: getClaxedoServerUrl(),
+            directory,
+            request: runtimeFetch,
           })
-          if (response.status === 404) return null
-          if (!response.ok) throw new Error((await response.text()) || `workspace resolve failed: ${response.status}`)
-          return await response.json()
         },
       })
     }

@@ -34,7 +34,7 @@ describe("architecture scanners", () => {
         isFilesystemDirectory(value)
         isLoopbackHttpUrl(value)
         value.startsWith("/") || /^[A-Za-z]:/.test(value)
-        if (kind === "user-hosted") return
+        if (hostKind === "machine") return
         legacyDirectoryRouteKey(directory)
         auth.isSignedIn()
         setInterval(work, 1000)
@@ -52,7 +52,7 @@ describe("architecture scanners", () => {
     expect(counts.isFilesystemDirectory).toBe(1)
     expect(counts.isLoopbackHttpUrl).toBe(1)
     expect(counts.filesystemShapeRegexClones).toBe(1)
-    expect(counts.userHostedComparisons).toBe(1)
+    expect(counts.hostKindComparisons).toBe(1)
     expect(counts.legacyDirectoryRouteKeyRefs).toBe(1)
     expect(counts.isSignedInGates).toBe(1)
     expect(counts.timerDrivenDataPolls).toBe(1)
@@ -60,6 +60,13 @@ describe("architecture scanners", () => {
     expect(counts.setQueryDataCalls).toBe(1)
     expect(counts.deepSessionUiImports).toBe(1)
     expect(counts.sdkImportingFiles).toBe(1)
+  })
+
+  test("the placement resolver may name the host vocabulary it owns", () => {
+    const body = `if (kind === "self") return "loopback"\nif (kind === "provisioner") return "relay"\n`
+    const metric = metrics.find((item) => item.name === "hostKindComparisons")!
+    expect(metric.scan([source("platform/runtime/placement-wire.ts", body)])).toHaveLength(0)
+    expect(metric.scan([source("platform/runtime/placement.ts", body)])).toHaveLength(2)
   })
 
   test("does not count near-miss package names as SDK imports", () => {

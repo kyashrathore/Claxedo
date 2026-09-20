@@ -20,7 +20,7 @@ describe("createNewSessionWorkspaceState", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: "/repo/feature",
-      workspaceKind: "local",
+      hostKind: "self",
       sandboxes: ["ws_feature", "/repo/feature"],
       workspaces: {
         ws_main: { id: "ws_main", directory: "/repo/main", kind: "local" },
@@ -33,13 +33,13 @@ describe("createNewSessionWorkspaceState", () => {
     expect(state.creatingWorkspace).toBe(false)
   })
 
-  test("filters local and cloud workspace choices separately", () => {
+  test("filters this machine's workspace choices from the provisioner-placed ones", () => {
     const sandboxes = ["/repo/local-feature", "workspace:cloud-main", "workspace:cloud-feature"]
 
     expect(createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "local",
+      hostKind: "self",
       sandboxes,
       workspaces,
     }).options).toEqual([MAIN_WORKTREE, "/repo/local-feature"])
@@ -47,7 +47,7 @@ describe("createNewSessionWorkspaceState", () => {
     expect(createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: "workspace:cloud-main",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       sandboxes,
       workspaces,
     }).options).toEqual(["workspace:cloud-main", "workspace:cloud-feature"])
@@ -57,7 +57,7 @@ describe("createNewSessionWorkspaceState", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: CREATE_WORKTREE,
-      workspaceKind: "local",
+      hostKind: "self",
       sandboxes: ["/repo/local-feature"],
       workspaces,
     })
@@ -66,11 +66,11 @@ describe("createNewSessionWorkspaceState", () => {
     expect(state.currentWorktree).toBe(MAIN_WORKTREE)
   })
 
-  test("cloud mode defaults to create-new when no cloud workspace exists", () => {
+  test("the provisioner defaults to create-new when no provisioner-placed workspace exists", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       sandboxes: ["/repo/local-feature"],
       workspaces: {
         "/repo/main": { kind: "local" },
@@ -87,58 +87,59 @@ describe("createNewSessionWorkspaceState", () => {
     expect(createNewSessionWorkspaceState({
       projectRoot: "ws_raw",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     }).options).toEqual([MAIN_WORKTREE])
 
     expect(createNewSessionWorkspaceState({
       projectRoot: "workspace:ws_prefixed",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     }).options).toEqual([MAIN_WORKTREE])
 
     expect(createNewSessionWorkspaceState({
       projectRoot: "workspace:ws_prefixed",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "local",
+      hostKind: "self",
     }).options).toEqual([])
   })
 
-  // Regression for the accidental-VM bug: a self-hosted (user-hosted) workspace
-  // is its OWN kind and must never be collapsed into "cloud" — collapsing is what
-  // dropped it into the cloud-provision create path.
-  test("self-hosted workspaces are a distinct kind, never collapsed to cloud", () => {
-    const userHostedWorkspaces = {
+  // Regression for the accidental-VM bug: a workspace on the owner's machine is
+  // its OWN placement and must never be collapsed into the provisioner's —
+  // collapsing is what dropped it into the cloud-provision create path.
+  test("machine-placed workspaces are a distinct placement, never collapsed into the provisioner's", () => {
+    const machineWorkspaces = {
       "/repo/main": { kind: "local" as const },
       "workspace:self-hosted": { kind: "user-hosted" as const, workspace_name: "my-machine" },
     }
     const sandboxes = ["workspace:self-hosted"]
 
-    // It appears ONLY under the user-hosted kind...
+    // It appears ONLY under the machine placement...
     expect(createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: "workspace:self-hosted",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       sandboxes,
-      workspaces: userHostedWorkspaces,
+      workspaces: machineWorkspaces,
     }).options).toEqual(["workspace:self-hosted"])
 
     // ...and is NOT offered as a cloud choice.
     expect(createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       sandboxes,
-      workspaces: userHostedWorkspaces,
+      workspaces: machineWorkspaces,
     }).options).toEqual([])
   })
 
-  // The fail-closed property: an empty user-hosted option set must NOT auto-flip
-  // into create mode (that path only exists for "cloud"). No silent provisioning.
-  test("user-hosted with no options never enters create-new mode", () => {
+  // The fail-closed property: an empty option set for a machine must NOT
+  // auto-flip into create mode (that path exists only for the provisioner).
+  // No silent provisioning.
+  test("a machine placement with no options never enters create-new mode", () => {
     const state = createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       sandboxes: [],
       workspaces: { "/repo/main": { kind: "local" } },
     })
@@ -150,7 +151,7 @@ describe("createNewSessionWorkspaceState", () => {
     expect(createNewSessionWorkspaceState({
       projectRoot: "/repo/main",
       selectedWorktree: "workspace:cloud-main",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       sandboxes: ["workspace:cloud-main", "workspace:cloud-feature"],
       workspaces: {
         ...workspaces,
@@ -162,22 +163,22 @@ describe("createNewSessionWorkspaceState", () => {
 
 describe("newSessionEnvironmentOptions", () => {
   test("a server with no filesystem offers cloud only", () => {
-    expect(newSessionEnvironmentOptions({ localExecution: false, signed: true })).toEqual(["cloud"])
-    expect(newSessionEnvironmentOptions({ localExecution: false, signed: false })).toEqual(["cloud"])
+    expect(newSessionEnvironmentOptions({ localExecution: false, signed: true })).toEqual(["provisioner"])
+    expect(newSessionEnvironmentOptions({ localExecution: false, signed: false })).toEqual(["provisioner"])
   })
 
   test("a server with its own filesystem offers local, signed in or not", () => {
-    expect(newSessionEnvironmentOptions({ localExecution: true, signed: true })).toEqual(["local", "cloud"])
-    expect(newSessionEnvironmentOptions({ localExecution: true, signed: false })).toEqual(["local", "cloud"])
+    expect(newSessionEnvironmentOptions({ localExecution: true, signed: true })).toEqual(["self", "provisioner"])
+    expect(newSessionEnvironmentOptions({ localExecution: true, signed: false })).toEqual(["self", "provisioner"])
   })
 
   test("a server that says nothing about its filesystem falls back to the product its mode has always been", () => {
-    expect(newSessionEnvironmentOptions({ localExecution: undefined, signed: false })).toEqual(["local", "cloud"])
-    expect(newSessionEnvironmentOptions({ localExecution: undefined, signed: true })).toEqual(["cloud"])
+    expect(newSessionEnvironmentOptions({ localExecution: undefined, signed: false })).toEqual(["self", "provisioner"])
+    expect(newSessionEnvironmentOptions({ localExecution: undefined, signed: true })).toEqual(["provisioner"])
   })
 
   test("cloud disappears where sandbox creation is off", () => {
-    expect(newSessionEnvironmentOptions({ localExecution: true, signed: false, sandboxEnabled: false })).toEqual(["local"])
+    expect(newSessionEnvironmentOptions({ localExecution: true, signed: false, sandboxEnabled: false })).toEqual(["self"])
   })
 })
 
@@ -267,7 +268,7 @@ describe("createNewSessionWorkspaceState duplicate roots", () => {
     expect(createNewSessionWorkspaceState({
       projectRoot: "/workspace",
       selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
       sandboxes: ["/workspace", "/workspace-2"],
       workspaces: {
         "/workspace": { kind: "cloud", workspace_name: "main" },

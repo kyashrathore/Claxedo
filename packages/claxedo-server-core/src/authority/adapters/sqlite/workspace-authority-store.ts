@@ -181,7 +181,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   project_id TEXT NOT NULL,
   owner_token_identifier TEXT NOT NULL,
   backing TEXT NOT NULL,
-  access TEXT NOT NULL,
   display_name TEXT,
   second_device_open_at INTEGER,
   home_region TEXT,
@@ -199,33 +198,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS workspace_memberships (
-  workspace_id TEXT NOT NULL,
-  token_identifier TEXT NOT NULL,
-  role TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (workspace_id, token_identifier)
-);
-CREATE TABLE IF NOT EXISTS workspace_share_grants (
-  grant_id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  target_key TEXT NOT NULL,
-  granted_to_token_identifier TEXT,
-  granted_to_subject TEXT,
-  granted_to_org_id TEXT,
-  granted_to_team_id TEXT,
-  role TEXT NOT NULL,
-  created_by_token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  CHECK (
-    (granted_to_token_identifier IS NOT NULL)
-    + (granted_to_subject IS NOT NULL)
-    + (granted_to_org_id IS NOT NULL)
-    + (granted_to_team_id IS NOT NULL) = 1
-  )
 );
 -- Machine-wide remote access. One row per (owner, machine) — NOT per
 -- workspace: a user with twelve projects on one laptop enrolls the laptop
@@ -266,6 +238,24 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   -- NULL for an account enrollment: it has no roots and no visibility rule.
   scope_json TEXT,
   scope_revision INTEGER NOT NULL DEFAULT 0,
+  -- The ECDH P-256 public JWK the machine declared on a beat, stored as
+  -- machineSealingPublicKey normalizes it so a push can re-assert it by
+  -- text equality. NULL until a beat declares one; never cleared.
+  sealing_public_key_json TEXT,
+  -- The owner's provider configuration sealed for that key, or NULL: at
+  -- revision 0 nothing was ever pushed, above it NULL is a withdrawal. The
+  -- machine's acked revision trails provider_config_revision until it has
+  -- stored the blob, and the beat restates the row while they differ.
+  provider_config_sealed TEXT,
+  provider_config_revision INTEGER NOT NULL DEFAULT 0,
+  provider_config_acked_revision INTEGER NOT NULL DEFAULT 0,
+  provider_config_updated_at INTEGER,
+  -- The key that blob was sealed to, and the provider ids inside it. A beat
+  -- may replace sealing_public_key_json at any time, which leaves the blob
+  -- openable by nobody: the two key columns differing is what stops the beat
+  -- restating a dead payload forever and what tells the owner to push again.
+  provider_config_sealed_key_json TEXT,
+  provider_config_provider_ids TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (owner_token_identifier, host_id)
@@ -445,7 +435,8 @@ CREATE TABLE IF NOT EXISTS session_share_grants (
   granted_to_team_id TEXT,
   created_by_token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  level TEXT NOT NULL DEFAULT 'follow' CHECK (level IN ('follow', 'send'))
 );
 CREATE INDEX IF NOT EXISTS session_share_grants_by_session ON session_share_grants (session_id);
 CREATE INDEX IF NOT EXISTS session_share_grants_by_workspace ON session_share_grants (workspace_id);
@@ -571,7 +562,6 @@ export function migrateAuthorityTenancySchema(db: SqliteAuthorityDb) {
     addColumn(db, "runtime_access_tokens", "workspace_role", "TEXT")
     addColumn(db, "runtime_access_tokens", "principal_kind", "TEXT")
     addColumn(db, "runtime_access_tokens", "minted_for_actor_kind", "TEXT")
-    addColumn(db, "workspace_share_grants", "target_key", "TEXT")
     // D17/D18 tables for existing authority DBs that already passed tenancy v2.
     db.exec(`
 CREATE TABLE IF NOT EXISTS teams (
@@ -613,123 +603,28 @@ CREATE TABLE IF NOT EXISTS session_share_grants (
   granted_to_team_id TEXT,
   created_by_token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  level TEXT NOT NULL DEFAULT 'follow' CHECK (level IN ('follow', 'send'))
 );
 CREATE INDEX IF NOT EXISTS session_share_grants_by_session ON session_share_grants (session_id);
 CREATE INDEX IF NOT EXISTS session_share_grants_by_workspace ON session_share_grants (workspace_id);
 CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants (granted_to_team_id);
 `)
-    // Team target column first; CHECK rebuild waits until target_key is backfilled below.
-    addColumn(db, "workspace_share_grants", "granted_to_team_id", "TEXT")
+    // A row with no level is not a row whose sender was vetted, so it reads as
+    // `follow` and the send capability is re-granted deliberately. SQLite
+    // cannot add a CHECK to an existing table without rebuilding it; the
+    // authority refuses any other value on the way in.
+    addColumn(db, "session_share_grants", "level", "TEXT NOT NULL DEFAULT 'follow'")
 
-    if (hasTable(db, "workspace_share_grants")) {
-      // One-time remap of grants still keyed by the retired identity provider's
-      // org alias. Guarded on the column because `dropRetiredProviderOrgAlias`
-      // below removes it once this has run — a database opened a second time
-      // has no alias left to remap, which is the point.
-      if (hasColumn(db, "orgs", "clerk_org_id")) {
-        db.exec(`
-          UPDATE workspace_share_grants AS share
-          SET granted_to_org_id = (
-            SELECT org_id FROM orgs
-            WHERE clerk_org_id = share.granted_to_org_id AND deleted_at IS NULL
-            LIMIT 1
-          )
-          WHERE granted_to_org_id IS NOT NULL
-            AND EXISTS (
-              SELECT 1 FROM orgs
-              WHERE clerk_org_id = share.granted_to_org_id AND deleted_at IS NULL
-            );
-        `)
-      }
-      const subjectTargetSql = hasTable(db, "users")
-        ? `WHEN granted_to_subject IS NOT NULL AND (
-            SELECT COUNT(*) FROM users WHERE subject = granted_to_subject
-          ) = 1 THEN 'token:' || (
-            SELECT token_identifier FROM users WHERE subject = granted_to_subject LIMIT 1
-          )
-          WHEN granted_to_subject IS NOT NULL THEN 'subject:' || granted_to_subject`
-        : "WHEN granted_to_subject IS NOT NULL THEN 'subject:' || granted_to_subject"
-      const invalidShare = db.prepare<unknown[], { grant_id: string }>(`
-        SELECT grant_id FROM workspace_share_grants
-        WHERE revoked_at IS NULL AND (
-          (granted_to_token_identifier IS NOT NULL)
-          + (granted_to_subject IS NOT NULL)
-          + (granted_to_org_id IS NOT NULL)
-          + (granted_to_team_id IS NOT NULL) != 1
-        )
-        LIMIT 1
-      `).get()
-      if (invalidShare) throw new Error(`workspace_share_target_invalid:${invalidShare.grant_id}`)
-      db.exec(`
-        UPDATE workspace_share_grants
-        SET target_key = CASE
-          WHEN granted_to_token_identifier IS NOT NULL THEN 'token:' || granted_to_token_identifier
-          ${subjectTargetSql}
-          WHEN granted_to_org_id IS NOT NULL THEN 'org:' || granted_to_org_id
-          WHEN granted_to_team_id IS NOT NULL THEN 'team:' || granted_to_team_id
-        END
-        WHERE target_key IS NULL;
-        UPDATE workspace_share_grants
-        SET revoked_at = created_at
-        WHERE grant_id IN (
-          SELECT grant_id FROM (
-            SELECT grant_id, ROW_NUMBER() OVER (
-              PARTITION BY workspace_id, target_key
-              ORDER BY created_at DESC, grant_id DESC
-            ) AS duplicate_rank
-            FROM workspace_share_grants
-            WHERE revoked_at IS NULL AND target_key IS NOT NULL
-          ) WHERE duplicate_rank > 1
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS workspace_share_grants_active_target
-        ON workspace_share_grants (workspace_id, target_key)
-        WHERE revoked_at IS NULL AND target_key IS NOT NULL;
-      `)
-      // Expand CHECK to allow team targets only after every active row has a non-null target_key.
-      const hasTeamCheck = (db.prepare<unknown[], { sql?: string }>(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workspace_share_grants'`)
-        .get())?.sql?.includes("granted_to_team_id IS NOT NULL")
-      if (!hasTeamCheck) {
-        const nullTarget = db.prepare<unknown[], { grant_id: string }>(`
-          SELECT grant_id FROM workspace_share_grants WHERE target_key IS NULL LIMIT 1
-        `).get()
-        if (nullTarget) throw new Error(`workspace_share_target_key_unresolved:${nullTarget.grant_id}`)
-        db.exec(`
-          CREATE TABLE workspace_share_grants_v3 (
-            grant_id TEXT PRIMARY KEY,
-            workspace_id TEXT NOT NULL,
-            target_key TEXT NOT NULL,
-            granted_to_token_identifier TEXT,
-            granted_to_subject TEXT,
-            granted_to_org_id TEXT,
-            granted_to_team_id TEXT,
-            role TEXT NOT NULL,
-            created_by_token_identifier TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            revoked_at INTEGER,
-            CHECK (
-              (granted_to_token_identifier IS NOT NULL)
-              + (granted_to_subject IS NOT NULL)
-              + (granted_to_org_id IS NOT NULL)
-              + (granted_to_team_id IS NOT NULL) = 1
-            )
-          );
-          INSERT INTO workspace_share_grants_v3 (
-            grant_id, workspace_id, target_key, granted_to_token_identifier, granted_to_subject,
-            granted_to_org_id, granted_to_team_id, role, created_by_token_identifier, created_at, revoked_at
-          )
-          SELECT
-            grant_id, workspace_id, target_key, granted_to_token_identifier, granted_to_subject,
-            granted_to_org_id, granted_to_team_id, role, created_by_token_identifier, created_at, revoked_at
-          FROM workspace_share_grants;
-          DROP TABLE workspace_share_grants;
-          ALTER TABLE workspace_share_grants_v3 RENAME TO workspace_share_grants;
-          CREATE UNIQUE INDEX IF NOT EXISTS workspace_share_grants_active_target
-          ON workspace_share_grants (workspace_id, target_key)
-          WHERE revoked_at IS NULL;
-        `)
-      }
-    }
+    // A workspace folder is not a thing a person is added to: the only
+    // cross-person grant is a session share, and a rank comes from the
+    // project, the organization or a team's grant. Dropping both tables is
+    // what makes a stale row unable to compose a role on the next open;
+    // nothing in the product ever wrote `workspace_memberships`.
+    db.exec(`
+      DROP TABLE IF EXISTS workspace_share_grants;
+      DROP TABLE IF EXISTS workspace_memberships;
+    `)
 
     db.exec(`
       UPDATE users
@@ -926,7 +821,8 @@ function dropRetiredProviderOrgAlias(db: SqliteAuthorityDb) {
  * Columns the host-connect tables gained after the CREATE above already ran
  * on a database. Every default is what the pre-connect rows meant: one key
  * version, no acquired instance, enrolled through the account, first
- * assignment revision, visible to org members. Runs after the tenancy
+ * assignment revision, visible to org members, no sealing key and no pushed
+ * provider configuration. Runs after the tenancy
  * migration because that one rebuilds `workspaces` from an explicit column
  * list and would drop `org_member_visible` if it were added first.
  *
@@ -944,6 +840,13 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
     addColumn(db, "host_enrollments", "enrolled_via", "TEXT NOT NULL DEFAULT 'account'")
     addColumn(db, "host_enrollments", "scope_json", "TEXT")
     addColumn(db, "host_enrollments", "scope_revision", "INTEGER NOT NULL DEFAULT 0")
+    addColumn(db, "host_enrollments", "sealing_public_key_json", "TEXT")
+    addColumn(db, "host_enrollments", "provider_config_sealed", "TEXT")
+    addColumn(db, "host_enrollments", "provider_config_revision", "INTEGER NOT NULL DEFAULT 0")
+    addColumn(db, "host_enrollments", "provider_config_acked_revision", "INTEGER NOT NULL DEFAULT 0")
+    addColumn(db, "host_enrollments", "provider_config_updated_at", "INTEGER")
+    addColumn(db, "host_enrollments", "provider_config_sealed_key_json", "TEXT")
+    addColumn(db, "host_enrollments", "provider_config_provider_ids", "TEXT")
     addColumn(db, "host_workspace_assignments", "revision", "INTEGER NOT NULL DEFAULT 1")
     addColumn(db, "workspaces", "org_member_visible", "INTEGER NOT NULL DEFAULT 1")
     addColumn(db, "workspaces", "host_assignment_revision", "INTEGER NOT NULL DEFAULT 0")
@@ -960,8 +863,22 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
         WHERE assignment.revision > workspace.host_assignment_revision
       )
     `)
-    normalizeUserHostedDirectories(db)
+    normalizeMachinePlacedDirectories(db)
+    dropWorkspaceAccessMode(db)
   })()
+}
+
+/**
+ * Drops `workspaces.access`, whose every value was decided by `backing`.
+ *
+ * A failure is fatal rather than tolerated: the column is `NOT NULL` with no
+ * default and nothing writes it any more, so a database that kept it would
+ * refuse every workspace insert. `rebuildWorkspacesIfNeeded` also removes it,
+ * but only for a database whose tenancy columns are still nullable.
+ */
+function dropWorkspaceAccessMode(db: SqliteAuthorityDb) {
+  if (!hasColumn(db, "workspaces", "access")) return
+  db.exec("ALTER TABLE workspaces DROP COLUMN access")
 }
 
 /**
@@ -969,10 +886,10 @@ function migrateHostConnectSchema(db: SqliteAuthorityDb) {
  * paths now store `normalizeStoredDirectory`'s form, so this converges in one
  * pass and rewrites nothing on later opens.
  */
-function normalizeUserHostedDirectories(db: SqliteAuthorityDb) {
+function normalizeMachinePlacedDirectories(db: SqliteAuthorityDb) {
   const rows = db.prepare<unknown[], { workspace_id: string; remote_directory: string }>(`
     SELECT workspace_id, remote_directory FROM workspaces
-    WHERE access = 'user-hosted' AND remote_directory IS NOT NULL
+    WHERE backing = 'local-worktree' AND remote_directory IS NOT NULL
   `).all()
   const update = db.prepare(`UPDATE workspaces SET remote_directory = ? WHERE workspace_id = ?`)
   for (const row of rows) {
@@ -1080,7 +997,6 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
       project_id TEXT NOT NULL,
       owner_token_identifier TEXT NOT NULL,
       backing TEXT NOT NULL,
-      access TEXT NOT NULL,
       display_name TEXT,
       second_device_open_at INTEGER,
       home_region TEXT,
@@ -1093,10 +1009,10 @@ function rebuildWorkspacesIfNeeded(db: SqliteAuthorityDb) {
       deleted_at INTEGER
     );
     INSERT INTO workspaces_tenant_v2
-      (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+      (workspace_id, org_id, project_id, owner_token_identifier, backing, display_name,
        second_device_open_at, home_region, repo_url, repo_name, git_branch, remote_directory,
        created_at, updated_at, deleted_at)
-    SELECT workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+    SELECT workspace_id, org_id, project_id, owner_token_identifier, backing, display_name,
        second_device_open_at, home_region, repo_url, repo_name, git_branch, remote_directory,
        created_at, updated_at, deleted_at FROM workspaces;
     DROP TABLE workspaces;
@@ -1217,7 +1133,6 @@ export type WorkspaceRow = {
   project_id: string
   owner_token_identifier: string
   backing: string
-  access: string
   display_name: string | null
   home_region: string | null
   repo_url: string | null
@@ -1239,26 +1154,10 @@ export type ProjectRow = {
 }
 
 /**
- * A row of `workspace_share_grants` / `session_share_grants` as the schema
- * above declares them. Both tables were previously re-described inline at every
- * read, once per SELECT and once per column subset, so a column rename had as
- * many places to miss as there were queries. Reads that project a subset say so
- * with `Pick<…>` instead of restating the shape.
+ * A row of `session_share_grants` as the schema above declares it. Reads that
+ * project a subset say so with `Pick<…>` rather than restating the shape, so a
+ * column rename has one place to miss instead of one per SELECT.
  */
-export type WorkspaceShareGrantRow = {
-  grant_id: string
-  workspace_id: string
-  target_key: string
-  granted_to_token_identifier: string | null
-  granted_to_subject: string | null
-  granted_to_org_id: string | null
-  granted_to_team_id: string | null
-  role: string
-  created_by_token_identifier: string
-  created_at: number
-  revoked_at: number | null
-}
-
 export type SessionShareGrantRow = {
   grant_id: string
   session_id: string
@@ -1269,6 +1168,7 @@ export type SessionShareGrantRow = {
   created_by_token_identifier: string
   created_at: number
   revoked_at: number | null
+  level: string
 }
 
 /**
@@ -1443,12 +1343,6 @@ export function projectByPublicId(db: SqliteAuthorityDb, projectId: string) {
     .get(projectId)
 }
 
-function directWorkspaceRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM workspace_memberships WHERE workspace_id = ? AND token_identifier = ?`)
-    .get(workspaceId, user.token_identifier)
-  return workspaceRoleValue(row?.role)
-}
-
 function directProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId: string) {
   const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
     .get(projectId, user.token_identifier)
@@ -1480,6 +1374,23 @@ function workspaceOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, workspace:
   return role
 }
 
+/**
+ * Being in the organization is what makes a person offerable as a share
+ * recipient. It carries no standing on the session, the workspace or the
+ * machine; only the grant they are then given does.
+ */
+export function orgMemberForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
+  if (!orgId) return false
+  const org = db.prepare<unknown[], {
+    owner_token_identifier: string | null
+    deleted_at: number | null
+  }>(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId)
+  if (!org || org.deleted_at) return false
+  const membership = db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+    .get(orgId, user.token_identifier)
+  return !!membership || org.owner_token_identifier === user.token_identifier
+}
+
 export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
   if (!orgId) return false
   const org = db.prepare<unknown[], {
@@ -1491,38 +1402,6 @@ export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgI
     .get(orgId, user.token_identifier)
   if (membership) return membership.role === "admin" || membership.role === "owner"
   return org.owner_token_identifier === user.token_identifier
-}
-
-function shareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const subjectOwner = user.subject ? userBySubject(db, user.subject) : undefined
-  const targetKeys = [
-    `token:${user.token_identifier}`,
-    ...(subjectOwner?.token_identifier === user.token_identifier ? [`subject:${user.subject}`] : []),
-  ]
-  const rows = targetKeys.flatMap((targetKey) => db.prepare<unknown[], { role: string }>(`
-    SELECT role FROM workspace_share_grants
-    WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
-  `).all(workspaceId, targetKey))
-  return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
-}
-
-function orgShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const rows = db.prepare<unknown[], { role: string }>(`
-    SELECT g.role AS role FROM workspace_share_grants g
-    JOIN org_memberships m ON m.org_id = g.granted_to_org_id
-    WHERE g.workspace_id = ? AND g.target_key = 'org:' || m.org_id
-      AND g.revoked_at IS NULL AND m.token_identifier = ?
-  `).all(workspaceId, user.token_identifier)
-  return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
-}
-
-function teamShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const rows = db.prepare<unknown[], { role: string }>(`
-    SELECT g.role AS role FROM workspace_share_grants g
-    JOIN team_memberships m ON m.team_id = g.granted_to_team_id
-    WHERE g.workspace_id = ? AND g.revoked_at IS NULL AND m.user_token_identifier = ?
-  `).all(workspaceId, user.token_identifier)
-  return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 
 function teamProjectRole(
@@ -1558,13 +1437,9 @@ export function workspaceRoleForUser(
   if (workspace.owner_token_identifier === user.token_identifier) return "owner"
   const project = workspace.project_id ? projectByPublicId(db, workspace.project_id) : undefined
   return maxRole([
-    directWorkspaceRole(db, user, workspace.workspace_id),
     project ? directProjectRole(db, user, project.project_id) : undefined,
     workspaceOrgRole(db, user, workspace),
     teamProjectRole(db, user, project?.project_id ?? workspace.project_id, workspace.org_id),
-    shareRole(db, user, workspace.workspace_id),
-    orgShareRole(db, user, workspace.workspace_id),
-    teamShareRole(db, user, workspace.workspace_id),
   ])
 }
 

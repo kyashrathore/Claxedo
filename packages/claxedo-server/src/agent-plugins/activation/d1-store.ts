@@ -95,7 +95,6 @@ type WorkspaceAccessRow = {
   project_id: string
   owner_user_id: string
   backing: string
-  access: string
   role_rank: number
 }
 
@@ -105,7 +104,6 @@ type WorkspaceRow = {
   project_id: string
   owner_user_id: string
   backing: string
-  access: string
 }
 
 /**
@@ -153,10 +151,9 @@ const PROJECT_ACCESS_SQL = `
 `
 
 const WORKSPACE_ACCESS_SQL = `
-  select w.workspace_id, w.org_id, w.project_id, w.owner_user_id, w.backing, w.access,
+  select w.workspace_id, w.org_id, w.project_id, w.owner_user_id, w.backing,
     max(
       case when w.owner_user_id = ? then 4 else 0 end,
-      coalesce(case wm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
       coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
       coalesce((
         select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
@@ -176,8 +173,6 @@ const WORKSPACE_ACCESS_SQL = `
   from workspaces w
   join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null
   join orgs o on o.org_id = w.org_id and o.deleted_at is null
-  left join workspace_memberships wm
-    on wm.workspace_id = w.workspace_id and wm.user_id = ? and wm.revoked_at is null
   left join project_memberships pm
     on pm.project_id = w.project_id and pm.user_id = ? and pm.revoked_at is null
   left join org_memberships om
@@ -514,12 +509,12 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   async runtimeSnapshot(workspaceId: string): Promise<SignedAgentPluginRuntimeSnapshot> {
     const workspace = await this.database
       .prepare(`
-        select workspace_id, org_id, project_id, owner_user_id, backing, access
+        select workspace_id, org_id, project_id, owner_user_id, backing
         from workspaces where workspace_id = ? and deleted_at is null
       `)
       .bind(workspaceId)
       .first<WorkspaceRow>()
-    if (!workspace || workspace.backing !== "cloud-vm" || workspace.access !== "cloud") {
+    if (!workspace || workspace.backing !== "cloud-vm") {
       throw new Error("Agent Plugins cloud workspace not found")
     }
     const identity = {
@@ -691,7 +686,6 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       this.database
         .prepare(WORKSPACE_ACCESS_SQL)
         .bind(
-          ownerUserId,
           ownerUserId,
           ownerUserId,
           ownerUserId,

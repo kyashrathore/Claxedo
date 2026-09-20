@@ -599,6 +599,12 @@ function boot(fixture: ReturnType<typeof fixtureFor>) {
   return {
     healthy: true,
     version: "perf-browser",
+    // The harness models the desktop daemon: every runtime is in-process
+    // behind this one origin, and it has no accounts. Omitting either
+    // declaration makes the app resolve an error before its first render and
+    // measures a boot no deployment performs.
+    events: { hostAggregate: true },
+    deployment: { issuesSessions: false },
     path: fixture.path,
     project: fixture.projects,
     provider: fixture.provider,

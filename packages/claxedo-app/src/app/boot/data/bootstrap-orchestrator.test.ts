@@ -18,10 +18,10 @@ afterEach(() => queryClient.clear())
 describe("bootstrapSessionRuntimeTarget", () => {
   test("uses explicit signed workspace backing for the session-list client", () => {
     expect(bootstrapSessionRuntimeTarget({
-      workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+      workspace: { workspaceId: "ws_signed", kind: "machine" },
     })).toEqual({
       workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       signedControlPlane: true,
     })
   })
@@ -31,7 +31,7 @@ describe("bootstrapSessionRuntimeTarget", () => {
   })
 
   test("only reuses signed inventory proven to belong to the requested workspace", () => {
-    const workspace = { workspaceId: "ws_signed", kind: "user-hosted" } as const
+    const workspace = { workspaceId: "ws_signed", kind: "machine" } as const
 
     expect(sessionInventoryMatchesWorkspace({ workspaceId: "ws_signed" }, workspace)).toBe(true)
     expect(sessionInventoryMatchesWorkspace({ workspaceId: "ws_other" }, workspace)).toBe(false)
@@ -43,7 +43,7 @@ describe("bootstrapSessionRuntimeTarget", () => {
     const local = bootstrapRequestKey("/workspace/project", "opencode")
     const signed = bootstrapRequestKey("/workspace/project", "opencode", {
       workspaceId: "ws_signed",
-      kind: "user-hosted",
+      kind: "machine",
     })
 
     expect(local).not.toEqual(signed)
@@ -53,7 +53,7 @@ describe("bootstrapSessionRuntimeTarget", () => {
   test("keeps explicit workspace identity when signed inventory has not hydrated", () => {
     expect(runtimeInventoryWorkspaceIdentity({
       directory: "/runtime/repo",
-      requestedWorkspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+      requestedWorkspace: { workspaceId: "ws_signed", kind: "machine" },
     })).toEqual({
       workspaceId: "ws_signed",
       directory: "/runtime/repo",
@@ -63,7 +63,7 @@ describe("bootstrapSessionRuntimeTarget", () => {
 
   test("a pending local load cannot satisfy a later signed authority request", async () => {
     const directory = "/workspace/project"
-    const workspace = { workspaceId: "ws_signed", kind: "user-hosted" } as const
+    const workspace = { workspaceId: "ws_signed", kind: "machine" } as const
     let releaseLocal!: () => void
     const localPending = new Promise<void>((resolve) => {
       releaseLocal = resolve

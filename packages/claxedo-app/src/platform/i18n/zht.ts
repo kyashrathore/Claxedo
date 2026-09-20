@@ -289,7 +289,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 無法使用此附件",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的本機工作區。",
+    "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的工作區資料夾。",
   "prompt.toast.attachmentUnreadable.title": "無法讀取附件",
   "prompt.toast.attachmentUnreadable.description":
     "無法從此裝置讀取 {{filename}}。",
@@ -439,7 +439,7 @@ export const dict = {
 
   "home.recentProjects": "最近專案",
   "home.empty.title": "沒有最近專案",
-  "home.empty.description": "透過開啟本地專案開始使用",
+  "home.empty.description": "透過開啟這台電腦上的資料夾開始使用",
 
   "home.title": "首頁",
   "session.timeline.scrollToBottom": "捲動到最新訊息",
@@ -500,12 +500,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "專案與工作階段",
   "sidebar.settings": "設定",
   "sidebar.help": "說明",
-  "sidebar.workspace.role.viewer": "檢視者",
-  "sidebar.workspace.role.editor": "編輯者",
-  "sidebar.workspace.role.admin": "管理員",
-  "sidebar.workspace.hostOffline": "主機離線",
-  "sidebar.workspace.sharedWithYou": "已與你共用",
-  "sidebar.workspace.publishedByThisMachine": "由本機發布",
 
   "settings.section.desktop": "桌面",
   "settings.section.workspace": "工作區",
@@ -680,8 +674,6 @@ export const dict = {
   "session.delete.button": "刪除工作階段",
 
   "workspace.new": "新增工作區",
-  "workspace.type.local": "本地",
-  "workspace.type.sandbox": "沙盒",
   "workspace.error.stillPreparing": "工作區仍在準備中",
   "workspace.status.checking": "正在檢查未合併的變更...",
   "workspace.status.error": "無法驗證 git 狀態。",

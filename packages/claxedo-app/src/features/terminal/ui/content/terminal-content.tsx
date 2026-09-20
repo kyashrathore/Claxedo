@@ -236,7 +236,7 @@ function TerminalContentInner(props: {
       request: authFetch,
       directory: dir,
     })
-    return workspace?.kind === "local" ? undefined : workspace?.workspaceId
+    return workspace?.kind === "self" ? undefined : workspace?.workspaceId
   }
 
   const pollPendingCreateFromServer = (pendingId: string, dir: string, nextTitle: string, nextCommand?: string) => {

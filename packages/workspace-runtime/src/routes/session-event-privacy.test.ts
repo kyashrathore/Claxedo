@@ -19,26 +19,35 @@ function policy(overrides: Partial<SessionAccessPolicy> = {}): SessionAccessPoli
   }
 }
 
-function verifiedApp(accessPolicy: SessionAccessPolicy, capture?: (scope: SessionEventScope) => void) {
+function scopedApp(
+  accessPolicy: SessionAccessPolicy,
+  options: { stamped: boolean; capture?: (scope: SessionEventScope) => void },
+) {
   const app = new Hono()
   app.use("*", async (c, next) => {
-    ;(c as any).set("relayHostAuth", {
-      actor_id: "actor_1",
-      actor_kind: "human",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      host_id: "host_1",
-      role: "editor",
-    })
+    if (options.stamped) {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+    }
     await next()
   })
   app.get("/api/wr/events", async (c) => {
     const scope = await authorizeSessionEventScope(c, accessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
-    capture?.(scope)
+    options.capture?.(scope)
     return c.text("ok")
   })
   return app
+}
+
+function verifiedApp(accessPolicy: SessionAccessPolicy, capture?: (scope: SessionEventScope) => void) {
+  return scopedApp(accessPolicy, { stamped: true, ...(capture ? { capture } : {}) })
 }
 
 describe("managed session event stream leases", () => {
@@ -77,5 +86,41 @@ describe("managed session event stream leases", () => {
       expect(scope.lease).toBe("lease_1")
       expect(scope.expiresAt).toBeLessThanOrEqual(Date.now() + 15_000)
     }
+  })
+
+  test("refuses a stamped reader the authority keeps out of the workspace, naming the code that sends it to one session", async () => {
+    const accessPolicy = policy({
+      authorizeHost: () => ({ allowed: false, status: 403, code: "host_authority_denied", message: "denied" }),
+    })
+
+    const response = await verifiedApp(accessPolicy).request("http://localhost/api/wr/events")
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      error: { code: "workspace_event_stream_denied", cause: "host_authority_denied" },
+    })
+  })
+
+  test("an UNSTAMPED reader of the same managed runtime gets the broad stream and asks no authority", async () => {
+    // The desktop daemon mounts the private-session policy for the members the
+    // relay replays onto it, and answers its own user on the same runtime. A
+    // reader with no verified stamp is that user: the ingress refuses a relayed
+    // request it cannot verify rather than letting it through unstamped, so
+    // there is no third case here.
+    const asked: string[] = []
+    const accessPolicy = policy({
+      authorizeHost: () => { asked.push("host"); return { allowed: false, status: 403, code: "host_authority_denied", message: "denied" } },
+      authorizeStream: () => { asked.push("stream"); return { allowed: false, status: 403, code: "session_private", message: "denied" } },
+    })
+    let scope: SessionEventScope | undefined
+    const app = scopedApp(accessPolicy, { stamped: false, capture: (value) => { scope = value } })
+
+    const workspaceWide = await app.request("http://localhost/api/wr/events")
+    const sessionScoped = await app.request("http://localhost/api/wr/events?sessionID=ses_1")
+
+    expect(workspaceWide.status).toBe(200)
+    expect(sessionScoped.status).toBe(200)
+    expect(scope).toEqual({ managed: false })
+    expect(asked).toEqual([])
   })
 })

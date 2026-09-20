@@ -258,7 +258,7 @@ jobs:
           RUST_TARGET: ${{ matrix.target }}
           # Emit the optional hosted-contribution chunk, while keeping the
           # renderer's base document and account boundary local/tokenless.
-          VITE_AUTH_ENABLED: "true"
+          VITE_CLAXEDO_HOSTED_ACTIVATION: "true"
           # The selected core origin is the only baked authentication trust
           # anchor. Its live descriptor owns all public-client endpoints, ids,
           # resources and scopes.

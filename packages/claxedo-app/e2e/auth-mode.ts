@@ -23,7 +23,7 @@ const e2ePreviewSettingsFlags = {
  * production build and gateway (`e2e/helpers/web-signed-relay-harness.ts`),
  * and the desktop lane's forwarded-for proxy
  * (`e2e/helpers/desktop-signed-server.ts` through
- * `e2e/helpers/live-user-hosted-relay-frontend-server.mjs`).
+ * `e2e/helpers/live-host-tunnel-relay-frontend-server.mjs`).
  *
  * One owner rather than one list per launcher: `vite.cloud.config.ts` calls
  * `resolveBrowserAuthBuildSelection`, which refuses to pick a browser auth
@@ -42,17 +42,12 @@ export function e2eAppViteEnvironment(mode: E2EAuthMode = resolveE2EAuthMode()):
 }
 
 function e2eAuthEnvironment(mode: E2EAuthMode): Record<string, string> {
-  if (mode === "local-unsigned") {
-    return {
-      VITE_AUTH_ENABLED: "true",
-      VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1",
-      VITE_SANDBOX_ENABLED: "true",
-      ...e2ePreviewSettingsFlags,
-    }
-  }
   return {
-    VITE_AUTH_ENABLED: "true",
-    VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "0",
+    // The one difference between the two modes. Whether the app requires a
+    // signed session is the SERVER's declaration, so a spec that wants the
+    // signed posture mocks the bootstrap body rather than needing its own
+    // build.
+    VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: mode === "local-unsigned" ? "1" : "0",
     VITE_SANDBOX_ENABLED: "true",
     ...e2ePreviewSettingsFlags,
   }

@@ -3,11 +3,18 @@ import { describe, expect, test } from "vitest"
 import { transientHeartbeatFailure } from "./connector"
 import { createFakeControlPlane, decodeFakeTunnelToken, enrollFakeHost } from "./fake-control-plane.test-support"
 import { createHostKeyPair } from "./host-identity"
-import { createMachineSignedTransport, decisionCode, HostedHttpError, HostedRequestTimeoutError } from "./machine-transport"
+import { createMachineSealingKeyPair } from "./machine-seal"
+import {
+  createMachineSignedTransport,
+  decisionCode,
+  decodeProviderConfig,
+  HostedHttpError,
+  HostedRequestTimeoutError,
+} from "./machine-transport"
 
 /**
- * The transport against a control plane that enforces P1.1. Each refusal
- * below is one the fake really issues — a transport that sent a stale
+ * The transport against a control plane that enforces the machine-request
+ * signature contract. Each refusal below is one the fake really issues — a transport that sent a stale
  * timestamp or reused a nonce would fail here, not on a real host.
  */
 
@@ -162,7 +169,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
 })
 
 describe("heartbeat", () => {
-  test("sends body v3 and decodes the control plane's snake_case answer", async () => {
+  test("sends the signed beat body and decodes the control plane's snake_case answer", async () => {
     const { cp, enrolled, transport } = await host()
     const { generation } = await transport.acquire()
     const revision = cp.assign({
@@ -184,6 +191,8 @@ describe("heartbeat", () => {
       ttlMs: 30_000,
       sessionAuthority: "managed-private",
     })
+    expect(beat?.body.sealingPublicKey, "a caller that declared no sealing key sends no field").toBeUndefined()
+    expect(beat?.body.providerConfigRevision, "nor a revision it does not hold").toBeUndefined()
     expect(first).toMatchObject({
       expires_at: expect.any(Number),
       assignments: [{ workspaceId: "ws_1", remoteDirectory: "/srv/api", displayName: "API", revision }],
@@ -228,11 +237,43 @@ describe("heartbeat", () => {
   })
 })
 
-test("createRequest and enroll are not part of a machine's protocol", async () => {
-  const { transport } = await host()
+describe("the provider-config revision on the wire", () => {
+  test("the declared key and held revision are sent, and the answer's snake_case member is decoded", async () => {
+    const { cp, enrolled, transport } = await host()
+    const sealing = await createMachineSealingKeyPair()
+    const { generation } = await transport.acquire()
+    await transport.heartbeat({ generation, acks: [], sealingPublicKey: sealing.publicKey })
+    expect(cp.sealingPublicKey(enrolled.enrollmentId)).toBe(sealing.publicKey)
 
-  await expect(transport.createRequest({ hostId: "h" })).rejects.toThrow(/already enrolled/)
-  await expect(
-    transport.enroll({ hostId: "h", publicKey: "{}", requestId: "r", signature: "s" }),
-  ).rejects.toThrow(/already enrolled/)
+    const revision = await cp.pushProviderConfig(enrolled.enrollmentId, "the sealed payload")
+    const answer = await transport.heartbeat({ generation, acks: [], sealingPublicKey: sealing.publicKey })
+    expect(answer.providerConfig?.revision).toBe(revision)
+    expect(answer.providerConfig?.sealed).toEqual(expect.stringContaining("mseal1."))
+
+    const held = await transport.heartbeat({
+      generation,
+      acks: [],
+      sealingPublicKey: sealing.publicKey,
+      providerConfigRevision: revision,
+    })
+    expect(cp.log.at(-1)?.body.providerConfigRevision).toBe(revision)
+    expect(held.providerConfig, "a revision the machine holds is not restated").toBeUndefined()
+  })
+
+  test("a withdrawal decodes as a revision with a null blob", () => {
+    expect(decodeProviderConfig({ revision: 3, sealed: null })).toEqual({ revision: 3, sealed: null })
+  })
+
+  test("a revision whose blob is unreadable is refused rather than read as a withdrawal", () => {
+    expect(() => decodeProviderConfig({ revision: 3, sealed: 12 })).toThrow("malformed provider configuration")
+    expect(() => decodeProviderConfig({ revision: 3, sealed: "" })).toThrow("malformed provider configuration")
+  })
+
+  test("a revision with no number names the field", () => {
+    expect(() => decodeProviderConfig({ sealed: "mseal1.a.b.c" })).toThrow("providerConfig.revision")
+  })
+
+  test("an ack carrying no provider configuration decodes to none", () => {
+    expect(decodeProviderConfig(undefined)).toBeUndefined()
+  })
 })

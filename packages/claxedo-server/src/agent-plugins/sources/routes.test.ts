@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -18,19 +16,11 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneServices } from "../../authority/services"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 import { D1AgentPluginSourceStore } from "./d1-store"
 import { HostedAgentPluginSourceRoutes } from "./routes"
 
-const MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0013_org_team_session_sharing.sql",
-  "0017_adapter_custom.sql",
-  "0018_drop_agent_extensions.sql",
-  "0023_agent_plugin_sources.sql",
-]
+const MIGRATIONS = controlPlaneMigrations()
 
 const EMPTY_BASE: CatalogSourceProvider = { listAuthorizedSources: async () => [] }
 
@@ -45,13 +35,7 @@ function identity(subject: string): AuthIdentity {
 }
 
 async function migrate(database: D1Database) {
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
+  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
 }
 
 async function signed(

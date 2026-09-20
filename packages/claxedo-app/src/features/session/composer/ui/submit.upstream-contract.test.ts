@@ -47,7 +47,7 @@ describe("upstream contract", () => {
 
     const submit = createSubmit({
       newSessionWorktree: () => selected,
-      newSessionWorkspaceKind: () => "local",
+      newSessionHostKind: () => "self",
     })
 
     await submit.handleSubmit(submitEvent())
@@ -66,7 +66,7 @@ describe("upstream contract", () => {
     const submit = createSubmit({
       autoAccept: () => true,
       newSessionWorktree: () => "/repo/main",
-      newSessionWorkspaceKind: () => "local",
+      newSessionHostKind: () => "self",
     })
 
     await submit.handleSubmit(submitEvent())

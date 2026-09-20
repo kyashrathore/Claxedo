@@ -1,18 +1,38 @@
 import type { Placement } from "@/platform/runtime/placement"
 import { can } from "@/platform/auth/role"
-import { workspacePlacement } from "@/features/session/app-ports"
+import { submitBlockCopy, type SubmitAuthorityBlock } from "./submit-block-reason"
 
 export function submitBlockedByRole(placement: Placement | undefined) {
   if (!placement) return false
   return !can("mutate.session", placement)
 }
 
-export function submitBlockedByWorkspaceRole(workspaceId: string | undefined) {
-  return submitBlockedByRole(workspacePlacement(workspaceId))
+/**
+ * Who answers "may this composer send".
+ *
+ * A session share admits someone the workspace ranks `viewer` or does not rank
+ * at all, so the workspace role cannot answer for a session that exists: the
+ * runtime reports the session authority's own answer with that session's
+ * capabilities, and it decides. Only a draft, which names no session yet,
+ * falls back to the workspace — a session is created against the workspace,
+ * and a share carries no standing to create one.
+ */
+export function submitAuthorityBlock(input: {
+  sessionPromptAdmitted: boolean | undefined
+  workspacePlacement: Placement | undefined
+}): SubmitAuthorityBlock | undefined {
+  if (input.sessionPromptAdmitted !== undefined) {
+    return input.sessionPromptAdmitted ? undefined : "session-share"
+  }
+  return submitBlockedByRole(input.workspacePlacement) ? "workspace-role" : undefined
 }
 
-export function promptDesignPlaceholder(input: { roleBlocked: boolean; mode: "normal" | "shell"; shellPlaceholder: string }) {
-  if (input.roleBlocked) return "Read-only workspace (viewer)"
+export function promptDesignPlaceholder(input: {
+  authorityBlock: SubmitAuthorityBlock | undefined
+  mode: "normal" | "shell"
+  shellPlaceholder: string
+}) {
+  if (input.authorityBlock) return submitBlockCopy(input.authorityBlock)
   if (input.mode === "shell") return input.shellPlaceholder
   return "Ask anything, / for commands, @ for context..."
 }

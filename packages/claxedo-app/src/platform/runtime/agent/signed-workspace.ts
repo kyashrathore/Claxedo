@@ -1,19 +1,36 @@
-import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
+import {
+  isRelayHostKind,
+  rowHostKind,
+  type RelayHostKind,
+  type WorkspaceHost,
+} from "@/platform/runtime/placement-wire"
 import { isFilesystemDirectory, sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
-import { asRecord } from "@/lib/record"
-export type { SignedWorkspaceKind }
 
 export type SignedWorkspaceInfo = {
   workspaceId: string
   directory?: string
   workspaceName?: string
-  kind: SignedWorkspaceKind
+  kind: RelayHostKind
+  /**
+   * The host, as a CONTROL-PLANE row states it. Absent when the row that
+   * matched states no placement — a shell or bootstrap project row — which is
+   * "not stated", never "no host".
+   */
+  host?: WorkspaceHost
 }
 
 export type WorkspaceInventoryEntry = {
   id?: string | null
   workspaceId?: string | null
+  /**
+   * Where the row's producer says the workspace runs. The two words are two
+   * producers, not a choice: the daemon's store writes `kind`, the signed
+   * bootstrap and the hosted shell write `backing`. Read either through
+   * `rowHostKind`, never here.
+   */
   kind?: string | null
+  backing?: string | null
+  placement?: { host_enrollment_id?: string | null } | null
   /**
    * Wire field: the serving process's own declaration of how the runtime
    * behind this workspace composed session access. Read it through
@@ -67,7 +84,7 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
   if (!ref) return false
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      if (workspace.kind !== "local") continue
+      if (rowHostKind(workspace) !== "self") continue
       if (
         !sameWorkspaceId(key, ref) &&
         !sameWorkspaceId(workspace.id, ref) &&
@@ -78,7 +95,7 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
       return true
     }
     // Desktop local projects use the project UUID as the workspace route id.
-    // That UUID is not relay-backed unless a signed cloud/user-hosted row also
+    // That UUID is not relay-backed unless a signed relay-placed row also
     // claims it — routing it at the control plane mints 403 `workspace_authorization_denied`.
     if (
       isFilesystemDirectory(project.worktree ?? undefined) &&
@@ -92,27 +109,28 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
 }
 
 /**
- * The signed hosting kind recorded on a raw inventory/session row — checking
- * `access` (the live, control-plane-confirmed field) before `backing` (how the
- * workspace was originally provisioned), since a workspace's access can be
- * re-hosted after creation while `backing` keeps naming its origin. The one
- * owner for this derivation, shared by the global sync inventory reducer and
- * the session inventory query.
+ * The host a raw inventory/session row places its workspace on, when that host
+ * is not the attached server itself.
+ *
+ * `undefined` covers both "this server serves it" and "the row says nothing" —
+ * every caller treats both as "no relay to reach".
  */
-export function workspaceHostingKind(input: unknown): SignedWorkspaceKind | undefined {
-  const row = asRecord(input)
-  const access = workspaceKind(row?.access)
-  if (access && isRelayBackedWorkspaceKind(access)) return access
-  const backing = workspaceKind(row?.backing)
-  if (backing && isRelayBackedWorkspaceKind(backing)) return backing
-  return undefined
+export function workspaceHostingKind(input: unknown): RelayHostKind | undefined {
+  const kind = rowHostKind(input)
+  return isRelayHostKind(kind) ? kind : undefined
+}
+
+function statedHost(kind: RelayHostKind, placement: { host_enrollment_id?: string | null }): WorkspaceHost {
+  if (kind === "provisioner") return { kind }
+  const enrollmentId = placement.host_enrollment_id
+  return { kind, ...(enrollmentId ? { enrollmentId } : {}) }
 }
 
 function findSignedWorkspaceFromProjects(projects: readonly WorkspaceInventoryProject[], directory: string) {
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      const kind = workspaceKind(workspace.kind)
-      if (!isRelayBackedWorkspaceKind(kind)) continue
+      const kind = rowHostKind(workspace)
+      if (!isRelayHostKind(kind)) continue
       const workspaceId = workspace.workspaceId ?? workspace.id ?? key
       if (!workspaceId) continue
       if (
@@ -129,6 +147,7 @@ function findSignedWorkspaceFromProjects(projects: readonly WorkspaceInventoryPr
           ? { workspaceName: workspace.workspace_name ?? workspace.workspaceName ?? undefined }
           : {}),
         kind,
+        ...(workspace.placement ? { host: statedHost(kind, workspace.placement) } : {}),
       } satisfies SignedWorkspaceInfo
     }
   }

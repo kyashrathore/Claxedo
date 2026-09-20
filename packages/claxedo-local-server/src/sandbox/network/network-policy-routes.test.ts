@@ -50,7 +50,6 @@ function services(role = "admin"): ControlPlaneServicesContract {
         workspace: {
           workspace_id: "ws_1",
           backing: "cloud-vm" as const,
-          access: "cloud" as const,
         },
       })),
     } as unknown as ControlPlaneServicesContract["authority"],

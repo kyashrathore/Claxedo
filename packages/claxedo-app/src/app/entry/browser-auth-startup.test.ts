@@ -24,36 +24,45 @@ describe("startBrowserAuth", () => {
     // entry that awaited this held a blank page with an empty `#root` forever.
     const { calls, adapter } = recordingAdapter(() => new Promise<void>(() => {}))
 
-    const result = startBrowserAuth({ authEnabled: true, adapter, ...HOSTED })
+    const result = startBrowserAuth({ issuesSessions: true, adapter, ...HOSTED })
 
     // A returned Promise would allow an entrypoint to await a stalled adapter.
     // Checking only `calls` also passed for an async implementation.
     expect(result).toBeUndefined()
-    expect(calls).toEqual([{ ...HOSTED, centralTransport: "signed-web" }])
+    expect(calls).toEqual([{ ...HOSTED, issuesSessions: true }])
   })
 
-  test("starts nothing when the build has no auth", () => {
+  test("tells the adapter a server that issues no sessions has none to offer", () => {
+    // The adapter still starts: `initialize` settles without a request and
+    // without a session client for such a deployment, and it is also where the
+    // e2e harness's injected principal is read.
     const { calls, adapter } = recordingAdapter()
 
-    startBrowserAuth({ authEnabled: false, adapter, ...HOSTED })
+    startBrowserAuth({ issuesSessions: false, adapter, ...HOSTED })
 
-    expect(calls).toEqual([])
+    expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }])
+  })
+
+  test("a server that declared no posture is not one that issues sessions", () => {
+    const { calls, adapter } = recordingAdapter()
+
+    startBrowserAuth({ issuesSessions: undefined, adapter, ...HOSTED })
+
+    expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }])
   })
 
   test.each([
     ["the e2e and dev composition", "http://127.0.0.1:3001"],
     ["a loopback self-host over TLS", "https://localhost:3001"],
-  ])("reports a signed central plane for an auth-enabled build even on a loopback server (%s)", (_, apiOrigin) => {
-    // A build with auth enabled talks to a server that issues sessions — the
-    // self-hosted server with its embedded issuer runs on localhost too — so
-    // it is signed web wherever the server lives. Decided from the same
-    // `centralTransportForDeployment` reading `CloudAuthGate` uses to decide
-    // whether a signed session is required, so the two cannot disagree — the
-    // adapter is told, it does not go and find out.
+  ])("starts against a session-issuing server on a loopback origin (%s)", (_, apiOrigin) => {
+    // A self-hosted node runs its embedded issuer on localhost, so the origin
+    // says nothing about the posture. The declaration is passed down from the
+    // same reading `CloudAuthGate` uses, so the adapter and the gate cannot
+    // disagree — the adapter is told, it does not go and find out.
     const { calls, adapter } = recordingAdapter()
 
-    startBrowserAuth({ authEnabled: true, adapter, apiOrigin, appOrigin: "http://localhost:4455" })
+    startBrowserAuth({ issuesSessions: true, adapter, apiOrigin, appOrigin: "http://localhost:4455" })
 
-    expect(calls).toEqual([{ apiOrigin, appOrigin: "http://localhost:4455", centralTransport: "signed-web" }])
+    expect(calls).toEqual([{ apiOrigin, appOrigin: "http://localhost:4455", issuesSessions: true }])
   })
 })

@@ -23,7 +23,6 @@ describe("workspace checkpoint routes", () => {
         workspace_id: "ws_1",
         host_id: "host_1",
         role: "viewer",
-        access: "cloud",
         backing: "cloud-vm",
         exp: now + 60,
         iat: now,

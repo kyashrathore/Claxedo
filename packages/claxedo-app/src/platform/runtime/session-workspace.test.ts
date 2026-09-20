@@ -19,12 +19,12 @@ describe("session workspace key", () => {
       sessionId: "ses_1",
       host: "workspace" as const,
       cwd: "/repo/local",
-      toolSandbox: { kind: "workspace" as const, workspaceId: "ws_cloud_1", hosting: "cloud" as const },
+      toolSandbox: { kind: "workspace" as const, workspaceId: "ws_cloud_1", hosting: "provisioner" as const },
     }
 
     expect(sessionWorkspaceRuntimeRef({ directory: "/repo/local", sessionRef: ref })).toEqual({
       workspaceId: "ws_cloud_1",
-      kind: "cloud",
+      kind: "provisioner",
     })
     expect(sessionPaneWorkspaceKey({ directory: "/repo/local", sessionRef: ref })).toBe("ws_cloud_1")
   })
@@ -47,8 +47,8 @@ describe("session workspace key", () => {
       projects,
     }
 
-    expect(sessionWorkspaceRuntimeRef(input)).toEqual({ workspaceId: "ws_cloud_route", kind: "cloud" })
-    expect(sessionPaneWorkspaceConnection(input)).toEqual({ workspaceId: "ws_cloud_route", kind: "cloud" })
+    expect(sessionWorkspaceRuntimeRef(input)).toEqual({ workspaceId: "ws_cloud_route", kind: "provisioner" })
+    expect(sessionPaneWorkspaceConnection(input)).toEqual({ workspaceId: "ws_cloud_route", kind: "provisioner" })
     expect(sessionPaneWorkspaceKey(input)).toBe("ws_cloud_route")
   })
 
@@ -65,18 +65,17 @@ describe("session workspace key", () => {
   })
 
   test("keeps bounded workspace selector compatibility behind the shell workspace key", () => {
-    // When the kind cannot be resolved from the signed inventory, the directory
-    // path does not default to "cloud" (which would run the provisioning
-    // resolve and fail for a user-hosted workspace whose mint returns 200). Both
-    // kinds route through the relay; "user-hosted" drives readiness off the
-    // mint+health path, which is the source of truth.
+    // A host kind the signed inventory cannot resolve falls to `machine`, never
+    // `provisioner`: the provisioner path runs the workspace resolve endpoint,
+    // which fails for a workspace on an enrolled machine whose connection mint
+    // returns 200.
     expect(sessionWorkspaceRuntimeRef({ directory: "ws_raw" })).toEqual({
       workspaceId: "ws_raw",
-      kind: "user-hosted",
+      kind: "machine",
     })
     expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_prefixed" })).toEqual({
       workspaceId: "ws_prefixed",
-      kind: "user-hosted",
+      kind: "machine",
     })
     expect(sessionWorkspaceRuntimeRef({ directory: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toBeUndefined()
     expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toBeUndefined()
@@ -105,7 +104,7 @@ describe("session workspace key", () => {
         sessionId: "ses_local",
         host: "workspace",
         workspaceId,
-        toolSandbox: { kind: "workspace", workspaceId, hosting: "user-hosted" },
+        toolSandbox: { kind: "workspace", workspaceId, hosting: "machine" },
       },
       projects: [{
         workspaces: {
@@ -124,18 +123,18 @@ describe("session workspace key", () => {
         },
       },
     ]
-    // user-hosted resolved by id-ref form
+    // a machine placement resolved by id-ref form
     expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_cleantest1", projects })).toEqual({
       workspaceId: "ws_cleantest1",
-      kind: "user-hosted",
+      kind: "machine",
     })
-    // cloud resolved from the inventory (NOT defaulted to user-hosted)
+    // the provisioner resolved from the inventory (NOT defaulted to a machine)
     expect(sessionWorkspaceRuntimeRef({ directory: "ws_cloud_1", projects })).toEqual({
       workspaceId: "ws_cloud_1",
-      kind: "cloud",
+      kind: "provisioner",
     })
     // Bare UUIDs are ambiguous with local project/workspace ids. They only become
-    // runtime-backed when the signed inventory confirms a cloud/user-hosted match.
+    // runtime-backed when the signed inventory confirms a relay-backed match.
     expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e", projects: [
       {
         workspaces: {
@@ -147,7 +146,7 @@ describe("session workspace key", () => {
       },
     ] })).toEqual({
       workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
-      kind: "cloud",
+      kind: "provisioner",
     })
   })
 
@@ -186,12 +185,12 @@ describe("session workspace key", () => {
     // connection and isWorkspaceReady stays false for every gated query.
     expect(sessionWorkspaceRuntimeRef({ directory: "/tmp/claxedo-portability/ws_cleantest1-dir", projects })).toEqual({
       workspaceId: "ws_cleantest1",
-      kind: "user-hosted",
+      kind: "machine",
     })
     // macOS /private alias of the same worktree resolves too
     expect(sessionWorkspaceRuntimeRef({ directory: "/private/tmp/claxedo-portability/ws_cleantest1-dir", projects })).toEqual({
       workspaceId: "ws_cleantest1",
-      kind: "user-hosted",
+      kind: "machine",
     })
     // An unknown filesystem directory still resolves to local (undefined)
     expect(sessionWorkspaceRuntimeRef({ directory: "/repo/unknown", projects })).toBeUndefined()
@@ -213,8 +212,8 @@ describe("session workspace key", () => {
     ]
     const fromWorktree = sessionWorkspaceRuntimeRef({ directory: "/tmp/e2e-cloud-dir", projects })
     const fromWorkspaceId = sessionWorkspaceRuntimeRef({ directory: "ws_cloud_1", projects })
-    expect(fromWorktree).toEqual({ workspaceId: "ws_cloud_1", kind: "cloud" })
-    expect(fromWorkspaceId).toEqual({ workspaceId: "ws_cloud_1", kind: "cloud" })
+    expect(fromWorktree).toEqual({ workspaceId: "ws_cloud_1", kind: "provisioner" })
+    expect(fromWorkspaceId).toEqual({ workspaceId: "ws_cloud_1", kind: "provisioner" })
     expect(sessionPaneWorkspaceKey({ directory: "/tmp/e2e-cloud-dir", projects })).toBe(
       sessionPaneWorkspaceKey({ directory: "ws_cloud_1", projects }),
     )
@@ -225,7 +224,7 @@ describe("session workspace key", () => {
     expect(sessionWorkspaceRuntimeRef({ directory: "local-ses_cloud_1", projects })).toBeUndefined()
   })
 
-  test("does not mint a local project UUID as a user-hosted relay workspace", () => {
+  test("does not mint a local project UUID as a machine-placed relay workspace", () => {
     const projectId = "c4955849-a3c1-4f3e-8481-1fd1bdec3962"
     const directory = "/private/tmp/claxedo-agent-plugins-real-app/plugins-e2e"
     const projects = [{
@@ -245,9 +244,9 @@ describe("session workspace key", () => {
       directory,
       workspaceId: projectId,
       projects,
-    })).toEqual({ workspaceId: undefined, kind: "local" })
+    })).toEqual({ workspaceId: undefined, kind: "self" })
 
-    // A stale session row claiming user-hosted hosting for the local UUID must not win.
+    // A stale session row placing the local UUID on a machine must not win.
     expect(sessionWorkspaceRuntimeRef({
       directory,
       workspaceId: projectId,
@@ -256,7 +255,7 @@ describe("session workspace key", () => {
         sessionId: "new",
         host: "workspace",
         workspaceId: projectId,
-        toolSandbox: { kind: "workspace", workspaceId: projectId, hosting: "user-hosted" },
+        toolSandbox: { kind: "workspace", workspaceId: projectId, hosting: "machine" },
       },
     })).toBeUndefined()
 
@@ -268,7 +267,7 @@ describe("session workspace key", () => {
         sessionId: "new",
         host: "workspace",
         workspaceId: projectId,
-        toolSandbox: { kind: "workspace", workspaceId: projectId, hosting: "user-hosted" },
+        toolSandbox: { kind: "workspace", workspaceId: projectId, hosting: "machine" },
       },
     })).toBeUndefined()
   })
@@ -277,6 +276,6 @@ describe("session workspace key", () => {
     expect(sessionWorkspaceRuntimeRef({
       directory: "/local/project",
       workspaceId: "ws_cloud_route",
-    })).toEqual({ workspaceId: "ws_cloud_route", kind: "user-hosted" })
+    })).toEqual({ workspaceId: "ws_cloud_route", kind: "machine" })
   })
 })

@@ -115,13 +115,13 @@ export type ResolveSubmitDirectoryContext = {
   fallbackDirectory?: SubmitDirectory
   defaultDirectory: SubmitDirectory
   worktreeSelection: string
-  workspaceKind: string
+  hostKind: string
   showMissingWorkspace: VoidFunction
   resolveCloudSessionDirectory: (
     worktreeSelection: string,
     projectDirectory: SubmitDirectory | undefined,
     fallbackDirectory: SubmitDirectory | undefined,
-    workspaceKind: string,
+    hostKind: string,
   ) => Promise<SubmitDirectory | undefined>
   prepareCloudSessionDirectory: (directory: SubmitDirectory) => Promise<boolean | SubmitDirectory | undefined>
   createLocalWorktree: (directory: SubmitDirectory | undefined) => Promise<SubmitDirectory | undefined>

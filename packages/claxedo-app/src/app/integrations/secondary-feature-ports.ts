@@ -63,7 +63,7 @@ configureTerminalAppPorts({
   NavigationStatusDot: Navigation.NavigationStatusDot,
   NavigationRowStatusGutter: Navigation.NavigationRowStatusGutter,
   NavigationRowGlyph: Navigation.NavigationRowGlyph,
-  workspacePlacement: WorkspaceConnection.workspacePlacement,
+  workspacePlacement: WorkspaceConnection.workspaceRelayPlacement,
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
   TerminalNewView: TerminalNew.TerminalNewView,
 })

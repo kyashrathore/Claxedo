@@ -5,6 +5,9 @@ import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { sha256Hex } from "@claxedo/helpers/crypto"
+import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases, openAuthorityDb } from "./workspace-authority-store"
 
@@ -155,6 +158,40 @@ describe("SQLite host-connect upgrade", () => {
     expect(reopened.prepare(`SELECT * FROM host_enrollments ORDER BY enrollment_id`).all()).toEqual(before)
   })
 
+  test("a pre-connect enrollment has no sealing key and no pushed configuration, exactly as a fresh one", async () => {
+    const file = preConnectDatabase()
+    const db = openAuthorityDb({ path: file })()
+    const columns = `sealing_public_key_json, provider_config_sealed, provider_config_revision, provider_config_acked_revision, provider_config_updated_at`
+    const upgraded = db.prepare(`SELECT ${columns} FROM host_enrollments WHERE enrollment_id = 'enr_live'`).get()
+    expect(upgraded).toEqual({
+      sealing_public_key_json: null,
+      provider_config_sealed: null,
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      provider_config_updated_at: null,
+    })
+
+    const freshFile = path.join(path.dirname(file), "fresh.db")
+    const fresh = createSqliteWorkspaceAuthority({ path: freshFile })
+    const request = await fresh.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
+    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    await fresh.enrollHost(ownerAuth, {
+      hostId: "host_live",
+      publicKey: LIVE_PUBLIC_KEY,
+      requestId: request.request_id,
+      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+    })
+    expect(openAuthorityDb({ path: freshFile })().prepare(`SELECT ${columns} FROM host_enrollments WHERE host_id = 'host_live'`).get())
+      .toEqual(upgraded)
+
+    const api = createSqliteWorkspaceAuthority({ path: file })
+    expect(await api.listHostEnrollments!(ownerAuth)).toMatchObject([
+      { enrollment_id: "enr_live", provider_config_revision: 0, provider_config_acked_revision: 0, sealing_key_declared: false },
+    ])
+    expect(await api.hostProviderConfigTarget!(ownerAuth, { enrollmentId: "enr_live" }))
+      .toEqual({ enrollment_id: "enr_live", host_id: "host_live", display_name: "Laptop", sealing_public_key: null, next_revision: 1 })
+  })
+
   test("the revision counter starts at the revision a connect-era database already issued", async () => {
     // A database from before the counter existed but after assignments carried
     // revisions: its live assignment is at 4, so the next re-point must be 5.
@@ -223,7 +260,7 @@ describe("SQLite host-connect upgrade", () => {
     expect(repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_b'`).get()).toEqual({ revision: 6 })
   })
 
-  test("a legacy user-hosted directory is stored normalized after the open; cloud rows are untouched", () => {
+  test("a legacy machine-placed directory is stored normalized after the open; cloud rows are untouched", () => {
     const file = preConnectDatabase()
     const legacy = new Database(file)
     legacy.exec(`
@@ -241,7 +278,7 @@ describe("SQLite host-connect upgrade", () => {
     ])
   })
 
-  test("a pre-connect acked set no longer routes on its own; the next account beat re-establishes readiness", async () => {
+  test("a pre-connect acked set no longer routes on its own; the next machine beat re-establishes readiness", async () => {
     // The acked-set column was the routing fact before readiness rows
     // existed. An upgraded row keeps the column but has no readiness row, so
     // the workspace reads offline until the machine beats again — the same
@@ -258,17 +295,38 @@ describe("SQLite host-connect upgrade", () => {
       { enrollment_id: "enr_live", host_id: "host_live", key_version: 1, enrolled_via: "account", serving_generation: 0, acked: [], scope: undefined },
     ])
 
-    const payload = [
-      "claxedo.host-enrollment.heartbeat.v2",
-      "host_id=host_live",
-      "ttl_ms=",
-      "workspaces=ws_served",
-    ].join("\n")
-    const beat = await api.heartbeatHostEnrollment(ownerAuth, {
+    // Through the verifier, not around it: the upgraded row has to admit a
+    // machine caller off the public key and key version the upgrade defaulted.
+    const body = {
+      enrollmentId: "enr_live",
       hostId: "host_live",
-      workspaceIds: ["ws_served"],
-      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
-    })
+      generation: 0,
+      acks: [{ workspaceId: "ws_served", revision: 1 }],
+    }
+    const bodyText = JSON.stringify(body)
+    const ts = Date.now()
+    const nonce = `nonce_${"0".repeat(12)}`
+    const headers = new Map<string, string>([
+      [MACHINE_REQUEST_HEADERS.enrollmentId, body.enrollmentId],
+      [MACHINE_REQUEST_HEADERS.ts, String(ts)],
+      [MACHINE_REQUEST_HEADERS.nonce, nonce],
+      [MACHINE_REQUEST_HEADERS.signature, signData("sha256", Buffer.from(machineRequestPayload({
+        method: "POST",
+        pathname: "/api/claxedo/host/enrollments/heartbeat",
+        bodySha256Hex: await sha256Hex(bodyText),
+        ts,
+        nonce,
+        enrollmentId: body.enrollmentId,
+      })), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url")],
+    ])
+    const verified = await verifyMachineRequest({
+      method: "POST",
+      pathname: "/api/claxedo/host/enrollments/heartbeat",
+      headers: { get: (name: string) => headers.get(name) ?? null },
+      bodyText,
+    }, { ...api.machineAuth!, now: Date.now })
+    if (!verified.ok) throw new Error(`verifier refused the upgraded enrollment: ${verified.code}`)
+    const beat = await api.heartbeatHostEnrollmentByMachine!(verified.machine, body)
     expect(beat.assigned_workspace_ids).toEqual(["ws_idle", "ws_served"])
     expect(await api.activeWorkspaceHost(ownerAuth, { workspaceId: "ws_served" })).toMatchObject({ active: true, host_id: "host_live" })
     expect(await online()).toEqual({ ws_idle: false, ws_served: true })

@@ -1,13 +1,13 @@
 /**
  * Settings dialog, account/auth, providers/connections/sandbox, and the
- * signed-auth system routes (`/login`, `/cli-login`, `CloudAuthGate`, the
- * top-level error page).
+ * signed-auth system routes (`/login`, `/cli-login`, the top-level error
+ * page). Whether a signed session is required at all is the server's
+ * declaration and is covered by `core-deployment-posture.spec.ts`, which owns
+ * `CloudAuthGate`'s decision.
  *
  * Harness constraints — several gates in this feature are decided by
  * `import.meta.env.VITE_*` flags baked into the bundle when the shared dev
  * server started, so a spec cannot flip them at runtime:
- *   - `VITE_AUTH_ENABLED=true`, so `authEnabled === false` — and with it
- *     `principal.kind === "local"` — is unreachable from a spec here.
  *   - `VITE_SANDBOX_ENABLED` in `.env.local` is dead config: no source file
  *     reads it and the Sandbox ("compute") tab is ungated, so there is no
  *     flag-off branch to cover.
@@ -15,13 +15,11 @@
  *     object, so every update-check affordance is permanently disabled on this
  *     web build and the error page's "Check for updates" button never renders.
  *   - `getClaxedoServerUrl()` is baked to `VITE_CLAXEDO_SERVER_URL`
- *     (`http://127.0.0.1:3001`), always a loopback host, so `CloudAuthGate`
- *     never redirects by default. Two dev/e2e-only runtime overrides move that
- *     instead: `window.__CLAXEDO_E2E_SERVER_URL__` (read by
- *     `resolveDefaultUrl()`) moves `ServerProvider`'s resolved default, hence
- *     `CloudAuthGate`'s `server.url`; `window.__CLAXEDO__.serverUrl` (read by
- *     `getDefaultBaseUrl()`) moves only the Sandbox tab's mutation gate and
- *     leaves `CloudAuthGate`'s resolution path alone.
+ *     (`http://127.0.0.1:3001`). Two dev/e2e-only runtime overrides move the
+ *     server the shell resolves: `window.__CLAXEDO_E2E_SERVER_URL__` (read by
+ *     `resolveDefaultUrl()`) moves `ServerProvider`'s resolved default;
+ *     `window.__CLAXEDO__.serverUrl` (read by `getDefaultBaseUrl()`) moves only
+ *     the Sandbox tab's mutation gate.
  *   - `/__e2e/error-page?variant=` (`src/app/routes/error-page-harness.tsx`,
  *     dev/e2e-only) mounts the real `ErrorPage` for a chosen `InitError`, so
  *     the top-level `ErrorBoundary` fallback is reachable without a real
@@ -96,6 +94,21 @@ async function seedProject(page: Page, dir: string, opts?: { serverUrl?: string 
       )
     },
     { d: dir, serverUrl: opts?.serverUrl },
+  )
+}
+
+/**
+ * Declare a session-issuing server to a test that mounts a system route
+ * directly and installs no runtime mock.
+ *
+ * The app starts its identity provider only where the server declared it
+ * issues sessions, and the webdriver test bypass lives inside that provider —
+ * so without this declaration a `stampTestAuth` visitor stays anonymous and
+ * the signed branch under test is never reached.
+ */
+async function routeDeploymentDeclaration(page: Page) {
+  await page.route("**/api/claxedo/bootstrap**", (route) =>
+    json(route, { healthy: true, version: "1.0.0-test", events: { hostAggregate: false }, deployment: { issuesSessions: true } }),
   )
 }
 
@@ -601,7 +614,7 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
 
       const mode = process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user"
-      const expectedLabel = mode === "local-unsigned" ? "Local workspace" : "Test User"
+      const expectedLabel = mode === "local-unsigned" ? "Not signed in" : "Test User"
       const trigger = page.getByTestId("rail-account-trigger")
       await expect(trigger).toHaveAttribute("aria-label", expectedLabel)
       await trigger.click()
@@ -626,15 +639,19 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible()
     })
 
-    test("account section still renders for an anonymous principal, without an identity row", async ({ page }) => {
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    // Settings still opens and the rest of General renders; only the account
+    // surface is gone. The signed case above is the control: the same dialog,
+    // the same tab, the heading present.
+    test("a server that issues no sessions has no account surface in Settings", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, issuesSessions: false })
       await seedProject(page, DIR)
       await disableTestAuthBypass(page)
       await openWorkbench(page, DIR)
-      await openSettings(page)
+      const dialog = await openSettings(page)
 
-      await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
-      await expect(page.getByRole("button", { name: "Log out" })).toBeVisible()
+      await expect(dialog.getByRole("heading", { name: "Appearance", exact: true })).toBeVisible()
+      await expect(page.getByRole("heading", { name: "Account", exact: true })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Log out" })).toHaveCount(0)
       await expect(page.getByText("test@claxedo.test")).toHaveCount(0)
     })
 
@@ -1430,6 +1447,7 @@ test.describe("core settings + auth @core", () => {
         json(route, {
           healthy: true,
           events: { hostAggregate: true },
+          deployment: { issuesSessions: true },
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
           project: [],
@@ -1523,6 +1541,7 @@ test.describe("core settings + auth @core", () => {
 
     test("signed visitor with valid params exchanges a CLI token and auto-submits the callback form", async ({ page }) => {
       await stampTestAuth(page.context())
+      await routeDeploymentDeclaration(page)
       let exchangeCalls = 0
       let exchangeAuth: string | null = null
       await page.route(
@@ -1559,6 +1578,7 @@ test.describe("core settings + auth @core", () => {
 
     test("an exchange failure surfaces the server's error message and never submits a form", async ({ page }) => {
       await stampTestAuth(page.context())
+      await routeDeploymentDeclaration(page)
       let formSubmitted = false
       await page.route(
         "**/api/auth/cli/exchange",
@@ -1583,40 +1603,6 @@ test.describe("core settings + auth @core", () => {
       expect(formSubmitted).toBe(false)
     })
 
-  })
-
-  test.describe("signed gate (CloudAuthGate)", () => {
-    test("a loopback-transport session never redirects to /login, even for an anonymous principal", async ({ page }) => {
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-      await seedProject(page, DIR)
-      await disableTestAuthBypass(page)
-      await openWorkbench(page, DIR)
-
-      await expect(page).not.toHaveURL(/\/login$/)
-      await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
-    })
-
-    // `resolveDefaultUrl()` reads `window.__CLAXEDO_E2E_SERVER_URL__` in dev/e2e builds
-    // (baked out of production), which is what lets this spec push `CloudAuthGate`'s
-    // `server.url` off loopback.
-    test("an anonymous principal on a non-loopback transport is force-redirected to /login", async ({ page }) => {
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-      await seedProject(page, DIR)
-      await disableTestAuthBypass(page)
-      // A non-loopback default server makes `needsSignedAuth()` true.
-      await page.addInitScript(() => {
-        ;(window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__ =
-          "https://cloud.example.test"
-      })
-
-      await page.goto(`/${slug(DIR)}/session`)
-      await page.waitForLoadState("domcontentloaded")
-
-      // Anonymous + non-loopback ⇒ the signed gate redirects to /login (a brief
-      // "Loading..." placeholder shows while the session status resolves first).
-      await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 })
-      await expect(page.getByRole("button", { name: "Continue" })).toBeVisible({ timeout: 10_000 })
-    })
   })
 
   test.describe("error page (top-level ErrorBoundary fallback)", () => {

@@ -61,16 +61,16 @@ export type BrowserAuthState = {
 /**
  * The deployment an adapter is being started against.
  *
- * `centralTransport` is not re-derived here from `apiOrigin`: the composition
- * root reads it from `centralTransportForServer`, the same call `CloudAuthGate`
- * makes to decide whether a signed session is required at all, and hands the
- * answer down. One reading, one owner, and the gate and the adapter cannot
- * disagree about which deployment this is.
+ * `issuesSessions` is the server's own declaration, passed down rather than
+ * re-derived from `apiOrigin`: the composition root reads it once and hands it
+ * to both this adapter and `CloudAuthGate`, so the gate and the adapter cannot
+ * disagree about which deployment this is. The URL could not answer it anyway
+ * — a signed node runs its issuer on localhost.
  */
 export type BrowserAuthDeployment = {
   apiOrigin: string
   appOrigin: string
-  centralTransport: "loopback" | "signed-web"
+  issuesSessions: boolean
 }
 
 export type BrowserAuthAdapter = {
@@ -120,8 +120,9 @@ export function assertBrowserAuthDescriptorBinding(expected: BrowserAuthDescript
  * Why this deployment has no browser sign-in flow at all, or null when it has
  * one. Two answers, both of them normal deployments rather than failures:
  *
- *  - A loopback central plane authenticates by loopback. It has no accounts,
- *    so there is nothing to ask it — no descriptor request, no provider SDK.
+ *  - A server that declares it issues no sessions: a desktop daemon, or an
+ *    unsigned self-hosted node on a LAN address. It has no accounts, so there
+ *    is nothing to ask it — no descriptor request, no provider SDK.
  *  - Any non-HTTPS origin: a self-host on `http://host.lan:3001`, the dev
  *    server, an e2e preview. `loadBrowserAuthDescriptor` below is HTTPS-only,
  *    so the flow cannot start.
@@ -139,8 +140,8 @@ export function assertBrowserAuthDescriptorBinding(expected: BrowserAuthDescript
  * no sign-in flow" has nothing to say about it.
  */
 export function browserAuthUnavailable(deployment: BrowserAuthDeployment): string | null {
-  if (deployment.centralTransport === "loopback") {
-    return "Sign-in is unavailable: this app talks to a loopback Claxedo server, which has no accounts."
+  if (!deployment.issuesSessions) {
+    return "Sign-in is unavailable: this Claxedo server issues no sessions, so it has no accounts."
   }
   if (!exactOrigin(deployment.apiOrigin) || !exactOrigin(deployment.appOrigin)) {
     return "Sign-in is unavailable: it requires the app and the Claxedo server on exact HTTPS origins."

@@ -8,11 +8,13 @@ import {
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
+  sessionAccessWriteClass,
+  sessionRequestProvenance,
   type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
 } from "./session-access-policy"
+import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
 
-/** Every managed composition supplies the whole authority bundle. */
 function allowAll(): ManagedSessionAuthority {
   return {
     authorizeSessionRead: () => true,
@@ -88,30 +90,48 @@ describe("SessionAccessPolicy", () => {
     })).resolves.toEqual(["ses_1", "ses_2"])
   })
 
-  test("denies a workspace viewer a session write with session_write_forbidden", async () => {
-    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
+  test("lets the session authority answer for a workspace viewer and keeps workspace writes on the role", async () => {
+    const asked: string[] = []
+    const policy = managedWorkspaceSessionAccessPolicy({
+      authority: {
+        ...allowAll(),
+        authorizeSessionWrite: (input) => {
+          asked.push(`write:${input.operation}`)
+          return true
+        },
+      },
+    })
     const viewer = { ...authority, role: "viewer" as const }
     const actor = { actorId: "actor_1", actorKind: "human" as const }
 
-    // A viewer + a write operation is refused on role rank, before any
-    // creator/participant check — a viewer must not be able to mutate a session.
     await expect(policy.authorize({
       authority: viewer,
       actor,
       operation: "prompt",
       sessionId: "ses_1",
-    })).resolves.toMatchObject({ allowed: false, code: "session_write_forbidden", status: 403 })
+    })).resolves.toEqual({ allowed: true })
+    expect(asked).toEqual(["write:prompt"])
 
-    // The same viewer may still READ (the gate is write-only).
     await expect(policy.authorize({
       authority: viewer,
       actor,
       operation: "session_meta_read",
       sessionId: "ses_1",
     })).resolves.toEqual({ allowed: true })
+
+    await expect(policy.authorize({
+      authority: viewer,
+      actor,
+      operation: "checkpoint_write",
+    })).resolves.toMatchObject({ allowed: false, code: "workspace_write_forbidden", status: 403 })
+    await expect(policy.authorize({
+      authority,
+      actor,
+      operation: "checkpoint_write",
+    })).resolves.toEqual({ allowed: true })
   })
 
-  test("denies a workspace viewer every goal mutation and routes editors to the write authority", async () => {
+  test("puts every goal mutation on the write authority as session control, whatever the rank", async () => {
     const seen: string[] = []
     const policy = managedWorkspaceSessionAccessPolicy({
       authority: {
@@ -121,7 +141,7 @@ describe("SessionAccessPolicy", () => {
           return true
         },
         authorizeSessionWrite: (input) => {
-          seen.push(`write:${input.operation}`)
+          seen.push(`${sessionAccessWriteClass(input)}:${input.operation}`)
           return true
         },
       },
@@ -129,20 +149,15 @@ describe("SessionAccessPolicy", () => {
     const actor = { actorId: "actor_1", actorKind: "human" as const }
     const goalMutations = ["goal_start", "goal_pause", "goal_resume", "goal_stop", "goal_delete"] as const
 
-    // Starting, pausing, resuming, stopping, or deleting a Goal changes session
-    // state, so the role-rank gate must refuse a viewer before any
-    // creator/participant check runs.
     for (const operation of goalMutations) {
       await expect(policy.authorize({
         authority: { ...authority, role: "viewer" },
         actor,
         operation,
         sessionId: "ses_1",
-      })).resolves.toMatchObject({ allowed: false, code: "session_write_forbidden", status: 403 })
+      })).resolves.toEqual({ allowed: true })
     }
 
-    // An editor is allowed, and reaches the WRITE authority predicate — which is
-    // what makes the control plane see scope "write" for these operations.
     for (const operation of goalMutations) {
       await expect(policy.authorize({
         authority,
@@ -152,7 +167,10 @@ describe("SessionAccessPolicy", () => {
       })).resolves.toEqual({ allowed: true })
     }
 
-    expect(seen).toEqual(goalMutations.map((operation) => `write:${operation}`))
+    expect(seen).toEqual([
+      ...goalMutations.map((operation) => `session_control:${operation}`),
+      ...goalMutations.map((operation) => `session_control:${operation}`),
+    ])
   })
 
   test("keeps goal reads on the read authority for a workspace viewer", async () => {
@@ -270,6 +288,59 @@ describe("SessionAccessPolicy", () => {
     })
   })
 
+  test("reads a request's provenance off the same stamp, through the real embedded exposure", async () => {
+    const app = new Hono()
+    app.use("*", createWorkspaceRuntimeExposureMiddleware(embeddedWorkspaceRuntimeExposure({
+      owner: "session-access-test",
+      guard: () => true,
+    })))
+    app.get("/provenance", (c) => c.text(sessionRequestProvenance(c as never)))
+
+    const stamped = await app.request("http://runtime.test/provenance", {
+      headers: {
+        [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({
+          principal_kind: "user",
+          actor_id: "actor_alice",
+          actor_kind: "human",
+          actor_public_id: "usr_alice",
+          actor_name: "Alice",
+          workspace_id: "ws_1",
+          org_id: "org_1",
+          role: "editor",
+        }),
+      },
+    })
+    // A bearer alone is not provenance: the ingress is what verifies one, and
+    // an unstamped request reached this runtime as the machine's own user.
+    const bearerOnly = await app.request("http://runtime.test/provenance", {
+      headers: { authorization: "Bearer looks-official" },
+    })
+
+    await expect(stamped.text()).resolves.toBe("relay-replayed")
+    await expect(bearerOnly.text()).resolves.toBe("loopback-direct")
+  })
+
+  test("the control plane's own injected token is a remote caller, not the machine's user", async () => {
+    const app = new Hono()
+    app.use("*", createRelayHostAuthMiddleware({
+      // The direct-token branch answers before any signature is checked.
+      key: new Uint8Array(32),
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      trustedDirectToken: "control-plane-direct-token",
+    }))
+    app.get("/provenance", (c) => c.text(sessionRequestProvenance(c)))
+
+    const direct = await app.request("http://runtime.test/provenance", {
+      headers: { authorization: "Bearer control-plane-direct-token" },
+    })
+
+    // It names no actor, so nothing can be attributed to it — but a cloud VM
+    // has no keyboard, and the one thing holding this token is the control
+    // plane reaching in from outside.
+    await expect(direct.text()).resolves.toBe("relay-replayed")
+  })
+
   test("bounds concurrent authority calls while filtering large session collections", async () => {
     let active = 0
     let peak = 0
@@ -337,16 +408,26 @@ describe("SessionAccessPolicy", () => {
     })).resolves.toEqual({ released: true })
   })
 
-  test("denies turn admission on the same role rank as any other session write", async () => {
-    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
+  test("puts turn admission on the session authority, not on the workspace role", async () => {
+    const refusing = managedWorkspaceSessionAccessPolicy({
+      authority: {
+        ...allowAll(),
+        acquireTurn: () => ({ allowed: false, status: 403, code: "session_private", message: "no grant" }),
+      },
+    })
+    const admitting = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
     const viewer = { ...authority, role: "viewer" as const }
-
-    await expect(policy.acquireTurn!({
-      actor: { actorId: "actor_1", actorKind: "human" },
+    const turn = {
+      actor: { actorId: "actor_1", actorKind: "human" as const },
       authority: viewer,
-      operation: "prompt",
+      operation: "prompt" as const,
       sessionId: "ses_1",
       turnId: "turn_1",
-    })).resolves.toMatchObject({ allowed: false, code: "session_write_forbidden", status: 403 })
+    }
+
+    await expect(refusing.acquireTurn!(turn))
+      .resolves.toMatchObject({ allowed: false, code: "session_private", status: 403 })
+    await expect(admitting.acquireTurn!(turn))
+      .resolves.toMatchObject({ allowed: true, turnId: "turn_1", leaseId: "turn_lease_1" })
   })
 })

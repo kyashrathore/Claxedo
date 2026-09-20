@@ -14,9 +14,10 @@ import {
 import type { HarnessType, OptionsResponse } from "./profile"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { inventoryHostKind, InventoryKindWord, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type WorkspaceBoot = {
-  kind?: "local" | "cloud" | "user-hosted" | null
+  kind?: WorkspaceHostKind | null
   status?: string | null
 }
 
@@ -26,7 +27,7 @@ export type ProjectInventoryItem = {
   workspaces?: Record<string, {
     id?: string
     workspaceId?: string
-    kind?: "local" | "cloud" | "user-hosted"
+    kind?: InventoryKindWord
     directory?: string
     workspace_name?: string
     workspaceName?: string
@@ -41,7 +42,7 @@ type ResolveWorkspaceRuntime = (input: {
   baseUrl?: string
   request?: typeof fetch
 } & WorkspaceRuntimeLookup) => Promise<{
-  kind?: "local" | "cloud" | "user-hosted" | null
+  kind?: WorkspaceHostKind | null
   workspaceId?: string | null
   status?: string | null
 } | null | undefined>
@@ -65,7 +66,7 @@ export function createHarnessConfigRuntime(input: {
     return shouldUseLocalHarnessConfigApi({
       baseUrl: input.base,
       directory: params?.directory,
-      workspaceKind: workspaceKind(params),
+      hostKind: hostKind(params),
     })
   }
 
@@ -130,7 +131,7 @@ export function createHarnessConfigRuntime(input: {
     return {
       request: localHarnessConfigFetch(params),
       ...(params?.sessionRef ? { sessionRef: params.sessionRef } : {}),
-      ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
+      ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, hostKind: runtimeRef.kind } : {}),
     }
   }
 
@@ -193,15 +194,15 @@ export function createHarnessConfigRuntime(input: {
     return workspaceHarnessTransport(params).fetch(`${url.pathname}${url.search}`)
   }
 
-  function workspaceKind(params?: HarnessScopeInput) {
+  function hostKind(params?: HarnessScopeInput) {
     if (!params?.directory) return undefined
     const signedWorkspace = signedWorkspaceFromProjects(input.projects(), params.directory)
     if (signedWorkspace) return signedWorkspace.kind
-    return input.projects().find((item) =>
+    return inventoryHostKind(input.projects().find((item) =>
       item.worktree === params.directory ||
       item.sandboxes?.includes(params.directory!) ||
       params.directory! in (item.workspaces ?? {}),
-    )?.workspaces?.[params.directory]?.kind
+    )?.workspaces?.[params.directory]?.kind)
   }
 
   return {
@@ -212,7 +213,7 @@ export function createHarnessConfigRuntime(input: {
     localHarnessConfigFetch,
     useLocalHarnessConfig,
     workspace,
-    workspaceKind,
+    hostKind,
     workspaceRef,
     workspaceHarnessTransport,
     workspaceRuntimeConfigFetch,

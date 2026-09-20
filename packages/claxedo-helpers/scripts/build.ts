@@ -27,6 +27,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "path", target: "node" },
   { entry: "process", target: "node" },
   { entry: "net", target: "node" },
+  { entry: "machine-name", target: "node" },
 ]
 
 if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })

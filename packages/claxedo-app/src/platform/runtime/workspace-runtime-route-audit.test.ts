@@ -226,9 +226,7 @@ describe("workspace runtime route audit", () => {
           .split(",")
           .map((item) => item.trim().replace(/\s+as\s+\w+$/, ""))
           .filter(
-            (item) =>
-              item !== "isUserHostedWorkspaceDirectory" &&
-              (item !== "workspaceIdFromDirectoryRef" || !workspaceRuntimeIdentityBoundary.has(file)),
+            (item) => item !== "workspaceIdFromDirectoryRef" || !workspaceRuntimeIdentityBoundary.has(file),
           )
         if (unsafe.length > 0)
           offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
@@ -274,10 +272,9 @@ describe("workspace runtime route audit", () => {
       ) {
         offenders.push(`${file}: reintroduced a legacy RuntimeGateway predicate`)
       }
-      if (
-        file !== "platform/runtime/agent/workspace-relay-connection.ts" &&
-        /\bfunction\s+runtimeKind\s*\(/.test(text)
-      ) {
+      // No exemption: the mint body states `backing` and nothing else, so no
+      // module has a producer word of its own left to narrow privately.
+      if (/\bfunction\s+runtimeKind\s*\(/.test(text)) {
         offenders.push(`${file}: reintroduced a private runtimeKind decision`)
       }
     }
@@ -321,7 +318,6 @@ describe("workspace runtime route audit", () => {
     // acquiring the name from anywhere other than the resolver owner.
     const rawNames = [
       "isFilesystemDirectory",
-      "isUserHostedWorkspaceDirectory",
       "workspaceIdFromDirectoryRef",
       "isWorkspaceIdRef",
       "workspaceIdFromRef",
@@ -331,7 +327,7 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (file === "platform/identity/legacy-resolver.ts") continue
       if (file.startsWith("architecture/")) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text: string = await Bun.file(path.join(root, file)).text()
       const usedNames = new Set(text.match(rawNamePattern) ?? [])
       if (usedNames.size === 0) continue
 
@@ -2198,10 +2194,10 @@ describe("workspace runtime route audit", () => {
     ).text()
     const sidebarDataPlane = `${text}\n${headerSurfaces}\n${projectSessionInfo}`
 
-    // Each section reads its own SOURCE, chosen from the catalog row's kind:
-    // the central server for a local/cloud workspace and for Global Chat, the
-    // workspace's own runtime over the relay for a user-hosted one. The rail
-    // never names a list route itself.
+    // Each section reads its own SOURCE, chosen from the catalog row's host
+    // kind: the attached server for a workspace it or the provisioner holds and
+    // for Global Chat, the workspace's own runtime over the relay for one
+    // another machine serves. The rail never names a list route itself.
     const sectionList = await Bun.file(
       path.join(root, "app/workbench/rail/rail-section-session-list.ts"),
     ).text()
@@ -2466,7 +2462,7 @@ describe("workspace runtime route audit", () => {
     expect(cacheProjection).not.toMatch(/\buseSync\b/)
     expect(cacheProjection).not.toMatch(/sync\.data/)
     expect(controller).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
-    expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*workspaceKind: input\.workspaceKind\?\.\(\)/)
+    expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*hostKind: input\.hostKind\?\.\(\)/)
     expect(controller).toMatch(/directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
     expect(text).not.toMatch(/sync\.data\.todo\[id\]/)
     expect(text).not.toMatch(/globalSync\.data\.session_todo\[id\]/)

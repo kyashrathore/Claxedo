@@ -46,7 +46,7 @@ describe("createTransport", () => {
     expect(calls).toEqual(["GET http://127.0.0.1:3001/mcp?directory=%2Frepo%2Fmain"])
   })
 
-  test("keeps loopback workspace placements on the local workspace proxy", async () => {
+  test("keeps loopback workspace placements on this machine's workspace proxy", async () => {
     const calls: string[] = []
     const transport = createTransport({
       placement: { hosting: "workspace", transport: "loopback", workspaceId: "ws_local_proxy" },
@@ -74,8 +74,8 @@ describe("createTransport", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_relay/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_relay",
           role: "owner",
           relayUrl: "https://relay.test",
@@ -123,45 +123,6 @@ describe("createTransport", () => {
     })).then((response) => response.json())).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
       "POST http://127.0.0.1:3001/workspaces/ws_sdk/session/ses_1/prompt_async hello",
-    ])
-  })
-
-  test("uses direct runtime URLs exposed by the workspace connection", async () => {
-    const calls: string[] = []
-    const request = (async (input: string | URL | Request, init?: RequestInit) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
-      const url = new URL(req.url)
-      if (url.pathname === "/api/workspace/ws_direct/connection") {
-        return Response.json({
-          access: "user-hosted",
-          backing: "local-worktree",
-          workspaceId: "ws_direct",
-          role: "owner",
-          relayUrl: "https://relay.direct.test",
-          directRuntimeUrl: "https://runtime.direct.test",
-          runtimeAccessToken: "rat_direct",
-          tokenExpiresAt: Date.now() + 120_000,
-        })
-      }
-      if (url.toString() === "https://runtime.direct.test/api/wr/process") {
-        return Response.json({ ok: true })
-      }
-      throw new Error(`unexpected request: ${req.method} ${req.url}`)
-    }) as typeof fetch
-    const transport = createTransport({
-      placement: { hosting: "workspace", transport: "direct-runtime", workspaceId: "ws_direct" },
-      serverUrl: "https://control.test",
-      request,
-      relayRequest: request,
-    })
-
-    await expect(transport.json("/api/wr/process?workspaceId=ws_direct", {
-      headers: { Authorization: "Bearer signed-browser-token" },
-    })).resolves.toEqual({ ok: true })
-    expect(calls).toEqual([
-      "GET https://control.test/api/workspace/ws_direct/connection Bearer signed-browser-token",
-      "GET https://runtime.direct.test/api/wr/process",
     ])
   })
 })

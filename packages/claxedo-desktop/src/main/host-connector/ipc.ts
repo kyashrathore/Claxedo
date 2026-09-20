@@ -1,13 +1,13 @@
 /**
- * The Host Connector's IPC surface: four named operations, and nothing else.
+ * The Host Connector's IPC surface: a closed set of named operations, and
+ * nothing else.
  *
- * The renderer's Remote Access panel needs to DO something — the desktop's
- * sidecar stopped serving `/api/claxedo/remote-access/*` when machine
- * publication moved here, so "Enable remote access" has no route to call and
- * must reach the connector instead. `status-channel.ts` is the other half of
- * that conversation and stays push-only; this is the half that comes IN.
+ * The desktop's sidecar serves no `/api/claxedo/remote-access/*` route, so the
+ * renderer's Remote Access panel reaches the connector through this surface.
+ * `status-channel.ts` is the other half of that conversation and stays
+ * push-only; this is the half that comes IN.
  *
- * ## Why this is four named operations and not one request
+ * ## Why this is named operations and not one request
  *
  * Main holds two things the renderer must never be able to spend: the account
  * bearer, and a machine signing key that does not expire. A channel shaped
@@ -18,10 +18,12 @@
  * here for the same reason and more sharply, and `ipc.test.ts` asserts the
  * shape rather than trusting this paragraph.
  *
- * Stronger than the account's version, in fact: every operation below takes NO
- * ARGUMENTS AT ALL. There is no id to substitute, no body to fill and no label
- * to choose, so there is nothing in an incoming message for a handler to act
- * on. A message can pick which of four things happens; it cannot describe one.
+ * Stronger than the account's version, in fact: no operation below names a
+ * machine. `share`, `unshare` and `rename` carry DATA — a workspace id the
+ * user picked, a name the user typed — and nothing else: there is no route to
+ * substitute into, no body to fill and no machine to choose. A message picks
+ * which fixed thing happens and, at most, to which of this machine's own
+ * workspaces.
  *
  * ## What each operation means
  *
@@ -35,6 +37,12 @@
  *     when its TTL runs out, and a later `start` re-enrolls the same machine.
  *   - `revoke` — stop, and destroy the key. Nothing can heartbeat as this
  *     machine again; a later `start` enrolls an honest new one.
+ *   - `share` / `unshare` — publish or withdraw one of this machine's own
+ *     workspaces: the owner's assignment with the account, then the machine's
+ *     ack on a beat.
+ *   - `rename` — the owner's name for THIS machine. The enrollment it renames
+ *     is the connector's own, read from its state here; the message carries a
+ *     name and nothing that names a machine.
  *
  * These register through the same `ipcMain` the caller guard has already
  * wrapped, so every one of them is sender-checked. That ordering is enforced in
@@ -46,13 +54,13 @@ import type { IpcMainInvokeEvent } from "electron"
 import { readString, readUnknown } from "../../shared/json-read"
 import type { HostConnectorSharedWorkspace } from "./child-protocol"
 import type { HostConnectorStatus } from "./child-supervisor"
-import { toStatusEvent, type HostConnectorStatusEvent } from "./status-channel"
+import { toStatusEvent, type HostConnectorContext, type HostConnectorStatusEvent } from "./status-channel"
 
 /**
  * The closed set. Declared as data so the registration is generated from it and
  * a test can assert the whole surface without re-listing it by hand.
  */
-export const HOST_CONNECTOR_OPERATIONS = ["status", "start", "pause", "revoke", "share", "unshare"] as const
+export const HOST_CONNECTOR_OPERATIONS = ["status", "start", "pause", "revoke", "share", "unshare", "rename"] as const
 
 export type HostConnectorOperation = (typeof HOST_CONNECTOR_OPERATIONS)[number]
 
@@ -72,8 +80,9 @@ export type HostConnectorIpcTarget = {
 
 /**
  * One listener shape for every channel. Declared here so the registration
- * below can pick its ARITY per operation without an assertion: only `share`
- * and `unshare` declare a second parameter, and `ipc.test.ts` asserts that.
+ * below can pick its ARITY per operation without an assertion: only the
+ * data-carrying operations declare a second parameter, and `ipc.test.ts`
+ * asserts that.
  */
 export type HostConnectorIpcListener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
@@ -95,6 +104,8 @@ export type MachinePublication = {
   stop: () => void
   /** Stop beating, destroy the identity. */
   revoke: () => void
+  /** Rename this machine on the account, and remember the name. */
+  renameMachine: (displayName: string) => Promise<{ displayName: string }>
 }
 
 export function registerHostConnectorIpc(input: {
@@ -106,24 +117,29 @@ export function registerHostConnectorIpc(input: {
    * says so. An unregistered channel would leave `window.api.hostConnector`
    * half-built, the renderer would treat the bridge as missing, and a desktop
    * would silently fall back to the browser implementation — a `fetch` to a
-   * route its sidecar does not serve, which is the bug this replaces.
+   * route its sidecar does not serve.
    */
   connector?: MachinePublication
-  /** Whether an account is signed in. Enrollment needs the owner's bearer. */
-  signedIn: () => boolean
+  /**
+   * The facts the connector's own state cannot carry: whether an account is
+   * signed in (enrollment needs the owner's bearer) and the machine's name.
+   * Read per call, because both change without this surface being told.
+   */
+  context: () => HostConnectorContext
   onError?: (stage: string, error: unknown) => void
 }) {
-  const { ipcMain, connector, signedIn } = input
+  const { ipcMain, connector } = input
+  const signedIn = () => input.context().signedIn
   const channels: string[] = []
 
   const snapshot = (override?: HostConnectorStatus): HostConnectorStatusEvent =>
     toStatusEvent(override ?? connector?.status() ?? { status: "not-started" }, {
+      ...input.context(),
       available: connector !== undefined,
-      signedIn: signedIn(),
     })
 
-  // `share` is the one operation that carries data, and deliberately only
-  // data: a workspace id and a label. It still cannot DESCRIBE a request —
+  // `share` carries data, and deliberately only data: a workspace id and a
+  // label. It still cannot DESCRIBE a request —
   // the route, the challenge flow, and the signature all live in main and the
   // child, so the confused-deputy rule above holds: a renderer picks which
   // fixed operation happens and, here, which workspace it happens to.
@@ -185,6 +201,19 @@ export function registerHostConnectorIpc(input: {
       return snapshot()
     },
 
+    rename: async (payload) => {
+      if (!connector) {
+        throw new Error("This build cannot publish a machine")
+      }
+      if (!signedIn()) {
+        throw new Error("Sign in to rename this machine")
+      }
+      const displayName = readString(payload, "displayName")
+      if (!displayName) throw new Error("rename requires a displayName")
+      await connector.renameMachine(displayName)
+      return snapshot()
+    },
+
     unshare: async (payload) => {
       if (!connector) {
         throw new Error("This build cannot publish a machine")
@@ -202,12 +231,12 @@ export function registerHostConnectorIpc(input: {
   for (const operation of HOST_CONNECTOR_OPERATIONS) {
     const channel = hostConnectorChannel(operation)
     channels.push(channel)
-    // The operation is bound HERE, at registration, and — except for `share`,
-    // which alone declares a place to receive its data-only payload — the
-    // listener takes no arguments: a renderer chooses which channel to call,
-    // not what that channel does.
+    // The operation is bound HERE, at registration, and — except for the three
+    // that declare a place to receive their data-only payload — the listener
+    // takes no arguments: a renderer chooses which channel to call, not what
+    // that channel does.
     const listener: HostConnectorIpcListener =
-      operation === "share" || operation === "unshare"
+      operation === "share" || operation === "unshare" || operation === "rename"
         ? (_event, payload) => handlers[operation](payload)
         : () => handlers[operation]()
     ipcMain.handle(channel, listener)

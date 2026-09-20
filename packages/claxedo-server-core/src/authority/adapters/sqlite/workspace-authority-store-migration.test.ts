@@ -15,7 +15,7 @@ describe("SQLite workspace authority tenancy migration", () => {
     expect(required(database, "projects", "owner_token_identifier")).toBe(true)
     expect(required(database, "workspaces", "org_id")).toBe(true)
     expect(required(database, "workspaces", "project_id")).toBe(true)
-    expect(required(database, "workspace_share_grants", "target_key")).toBe(true)
+    expect(tableExists(database, "workspace_share_grants")).toBe(false)
     expect(database.pragma("user_version", { simple: true })).toBe(5)
     database.prepare(`
       INSERT INTO users (token_identifier, public_id, kind, created_at, updated_at)
@@ -23,14 +23,15 @@ describe("SQLite workspace authority tenancy migration", () => {
     `).run()
     expect(() => database.prepare(`
       INSERT INTO workspaces
-        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, created_at, updated_at)
-      VALUES ('ws_mismatch', 'org_one', 'prj_missing', 'owner', 'cloud-vm', 'cloud', 1, 1)
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, created_at, updated_at)
+      VALUES ('ws_mismatch', 'org_one', 'prj_missing', 'owner', 'cloud-vm', 1, 1)
     `).run()).toThrow("workspace_project_tenant_conflict")
   })
 
-  test("canonicalizes duplicate active share grants before enforcing uniqueness", () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-migrate-")), "authority.db")
+  test("a populated workspace share table is dropped on open and stays dropped", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-drop-")), "authority.db")
     const legacy = new Database(file)
+    createLegacyAuthorityTables(legacy)
     legacy.exec(`
       CREATE TABLE workspace_share_grants (
         grant_id TEXT PRIMARY KEY,
@@ -44,96 +45,105 @@ describe("SQLite workspace authority tenancy migration", () => {
         revoked_at INTEGER
       );
       INSERT INTO workspace_share_grants
-        (grant_id, workspace_id, granted_to_subject, role, created_by_token_identifier, created_at)
+        (grant_id, workspace_id, granted_to_subject, granted_to_org_id, role, created_by_token_identifier, created_at)
       VALUES
-        ('grant_old', 'ws_1', 'bob', 'admin', 'owner', 1),
-        ('grant_new', 'ws_1', 'bob', 'viewer', 'owner', 2);
+        ('grant_user', 'ws_1', 'bob', NULL, 'editor', 'owner', 1),
+        ('grant_org', 'ws_1', NULL, 'org_one', 'viewer', 'owner', 2);
     `)
     legacy.close()
 
     const database = openAuthorityDb({ path: file })()
-    expect(database.prepare(`
-      SELECT grant_id, target_key, role, revoked_at
-      FROM workspace_share_grants ORDER BY created_at
-    `).all()).toEqual([
-      { grant_id: "grant_old", target_key: "subject:bob", role: "admin", revoked_at: 1 },
-      { grant_id: "grant_new", target_key: "subject:bob", role: "viewer", revoked_at: null },
-    ])
-    expect(() => database.prepare(`
-      INSERT INTO workspace_share_grants
-        (grant_id, workspace_id, target_key, granted_to_subject, role, created_by_token_identifier, created_at)
-      VALUES ('grant_duplicate', 'ws_1', 'subject:bob', 'editor', 'owner', 3)
-    `).run()).toThrow()
+    expect(tableExists(database, "workspace_share_grants")).toBe(false)
     database.close()
+
+    const reopened = openAuthorityDb({ path: file })()
+    expect(tableExists(reopened, "workspace_share_grants")).toBe(false)
+    reopened.close()
   })
 
-  test("collapses legacy subject and token grants for one known user", () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-user-migrate-")), "authority.db")
+  test("a legacy database upgrades without the access mode, keeping every row and its normalized directory", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-access-drop-")), "authority.db")
     const legacy = new Database(file)
     createLegacyAuthorityTables(legacy)
     legacy.exec(`
-      CREATE TABLE workspace_share_grants (
-        grant_id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        granted_to_token_identifier TEXT,
-        granted_to_subject TEXT,
-        granted_to_org_id TEXT,
-        role TEXT NOT NULL,
-        created_by_token_identifier TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        revoked_at INTEGER
-      );
       INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
-      VALUES ('issuer|bob', 'bob', 'issuer', 'human', 1, 1);
-      INSERT INTO workspace_share_grants
-        (grant_id, workspace_id, granted_to_token_identifier, role, created_by_token_identifier, created_at)
-      VALUES ('grant_token', 'ws_1', 'issuer|bob', 'admin', 'owner', 1);
-      INSERT INTO workspace_share_grants
-        (grant_id, workspace_id, granted_to_subject, role, created_by_token_identifier, created_at)
-      VALUES ('grant_subject', 'ws_1', 'bob', 'editor', 'owner', 2);
+      VALUES ('owner', 'owner', 'issuer', 'human', 1, 1);
+      INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
+      VALUES ('org_one', 'One', 'personal', 'owner', 1, 1);
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES ('org_one', 'owner', 'owner', 1, 1);
+      INSERT INTO projects (project_id, org_id, owner_token_identifier, created_at, updated_at)
+      VALUES ('prj_one', 'org_one', 'owner', 1, 1);
+      INSERT INTO workspaces
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+         second_device_open_at, remote_directory, created_at, updated_at)
+      VALUES
+        ('ws_machine', 'org_one', 'prj_one', 'owner', 'local-worktree', 'user-hosted', 'Machine', NULL, '/srv/app/../code/', 1, 1),
+        ('ws_vm', 'org_one', 'prj_one', 'owner', 'cloud-vm', 'cloud', 'VM', NULL, NULL, 2, 2);
     `)
     legacy.close()
 
     const database = openAuthorityDb({ path: file })()
-    expect(database.prepare(`
-      SELECT grant_id, target_key, revoked_at FROM workspace_share_grants ORDER BY created_at
-    `).all()).toEqual([
-      { grant_id: "grant_token", target_key: "token:issuer|bob", revoked_at: 1 },
-      { grant_id: "grant_subject", target_key: "token:issuer|bob", revoked_at: null },
-    ])
+    expect((database.prepare("PRAGMA table_info(workspaces)").all() as Array<{ name: string }>)
+      .map((column) => column.name)).not.toContain("access")
+    expect(database.prepare("SELECT workspace_id, backing, remote_directory FROM workspaces ORDER BY workspace_id").all())
+      .toEqual([
+        { workspace_id: "ws_machine", backing: "local-worktree", remote_directory: "/srv/code" },
+        { workspace_id: "ws_vm", backing: "cloud-vm", remote_directory: null },
+      ])
     database.close()
+
+    const reopened = openAuthorityDb({ path: file })()
+    expect(reopened.prepare("SELECT count(*) AS count FROM workspaces").get()).toEqual({ count: 2 })
+    reopened.close()
   })
 
-  test("remaps share grants keyed by the retired identity-provider org alias", () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-org-migrate-")), "authority.db")
+  // The tenancy rebuild drops the column as a side effect of rewriting the
+  // table, and it runs only for a database whose tenancy columns are still
+  // nullable. Every deployed database is already past that point, so this is
+  // the shape the drop actually has to handle.
+  test("a database already on the current tenancy shape loses the access mode on open", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-access-drop-current-")), "authority.db")
     const legacy = new Database(file)
     createLegacyAuthorityTables(legacy)
     legacy.exec(`
-      CREATE TABLE workspace_share_grants (
-        grant_id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        granted_to_token_identifier TEXT,
-        granted_to_subject TEXT,
-        granted_to_org_id TEXT,
-        role TEXT NOT NULL,
-        created_by_token_identifier TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        revoked_at INTEGER
-      );
-      INSERT INTO orgs (
-        org_id, name, kind, owner_token_identifier, clerk_org_id, created_at, updated_at
-      ) VALUES ('org_team', 'Team', 'team', 'owner', 'org_provider_team', 1, 1);
-      INSERT INTO workspace_share_grants (
-        grant_id, workspace_id, granted_to_org_id, role, created_by_token_identifier, created_at
-      ) VALUES ('grant_org', 'ws_1', 'org_provider_team', 'editor', 'owner', 1);
+      INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
+      VALUES ('owner', 'owner', 'issuer', 'human', 1, 1);
+      INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
+      VALUES ('org_one', 'One', 'personal', 'owner', 1, 1);
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES ('org_one', 'owner', 'owner', 1, 1);
+      INSERT INTO projects (project_id, org_id, owner_token_identifier, created_at, updated_at)
+      VALUES ('prj_one', 'org_one', 'owner', 1, 1);
     `)
     legacy.close()
 
-    const database = openAuthorityDb({ path: file })()
-    expect(database.prepare(`
-      SELECT target_key, granted_to_org_id FROM workspace_share_grants WHERE grant_id = 'grant_org'
-    `).get()).toEqual({ target_key: "org:org_team", granted_to_org_id: "org_team" })
-    database.close()
+    const current = openAuthorityDb({ path: file })()
+    expect(required(current, "workspaces", "org_id")).toBe(true)
+    current.exec(`
+      ALTER TABLE workspaces ADD COLUMN access TEXT NOT NULL DEFAULT 'cloud';
+      INSERT INTO workspaces
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name,
+         remote_directory, created_at, updated_at)
+      VALUES
+        ('ws_machine', 'org_one', 'prj_one', 'owner', 'local-worktree', 'user-hosted', 'Machine', '/srv/app/../code/', 1, 1),
+        ('ws_vm', 'org_one', 'prj_one', 'owner', 'cloud-vm', 'cloud', 'VM', NULL, 2, 2);
+    `)
+    current.close()
+
+    const upgraded = openAuthorityDb({ path: file })()
+    expect((upgraded.prepare("PRAGMA table_info(workspaces)").all() as Array<{ name: string }>)
+      .map((column) => column.name)).not.toContain("access")
+    expect(upgraded.prepare("SELECT workspace_id, backing, remote_directory FROM workspaces ORDER BY workspace_id").all())
+      .toEqual([
+        { workspace_id: "ws_machine", backing: "local-worktree", remote_directory: "/srv/code" },
+        { workspace_id: "ws_vm", backing: "cloud-vm", remote_directory: null },
+      ])
+    upgraded.prepare(`
+      INSERT INTO workspaces (workspace_id, org_id, project_id, owner_token_identifier, backing, created_at, updated_at)
+      VALUES ('ws_new', 'org_one', 'prj_one', 'owner', 'local-worktree', 3, 3)
+    `).run()
+    upgraded.close()
   })
 
   test("upgrades legacy nullable rows, rebuilds constraints, and is idempotent", () => {
@@ -261,6 +271,39 @@ describe("SQLite workspace authority tenancy migration", () => {
     ])
   })
 
+  test("a session share written before levels existed reads as follow and rejects nothing else", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-level-migrate-")), "authority.db")
+    const legacy = new Database(file)
+    legacy.exec(`
+      CREATE TABLE session_share_grants (
+        grant_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        granted_to_user_token_identifier TEXT,
+        granted_to_org_id TEXT,
+        granted_to_team_id TEXT,
+        created_by_token_identifier TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      INSERT INTO session_share_grants
+        (grant_id, session_id, workspace_id, granted_to_user_token_identifier,
+         created_by_token_identifier, created_at)
+      VALUES ('ssg_before', 'ses_1', 'ws_1', 'bob', 'owner', 1);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })()
+
+    expect(database.prepare("SELECT grant_id, level FROM session_share_grants").all())
+      .toEqual([{ grant_id: "ssg_before", level: "follow" }])
+    // SQLite cannot add a CHECK to an existing table, so an upgraded database
+    // holds the column without the constraint a clean install carries. The
+    // authority is the gate on the way in; a reopen must not add one here.
+    expect(() => openAuthorityDb({ path: file })()).not.toThrow()
+    database.close()
+  })
+
   test("ambiguous legacy tenancy aborts without partially rewriting rows", () => {
     const database = new Database(":memory:")
     createLegacyAuthorityTables(database)
@@ -285,6 +328,10 @@ describe("SQLite workspace authority tenancy migration", () => {
       .some((column) => column.name === "public_id")).toBe(false)
   })
 })
+
+function tableExists(database: InstanceType<typeof Database>, table: string) {
+  return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").all(table).length === 1
+}
 
 function required(database: InstanceType<typeof Database>, table: string, column: string) {
   return (database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; notnull: number }>)

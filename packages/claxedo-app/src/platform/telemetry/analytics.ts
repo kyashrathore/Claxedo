@@ -137,16 +137,17 @@ export function initPostHog() {
 
 /**
  * Resolve the deployment plane from the two signals the app already has.
- * `authEnabled` (VITE_AUTH_ENABLED) is the cloud discriminator — Claxedo Cloud
- * runs hosted identity and storage, a self-hosted build does not. Independent of the
- * onboarding `surface` derivation, which conflates desktop with hosted.
+ * `issuesSessions` is the server's own declaration and the cloud
+ * discriminator — Claxedo Cloud runs hosted identity and storage, a self-hosted
+ * deployment does not. Independent of the onboarding `surface` derivation,
+ * which conflates desktop with hosted.
  */
 export function resolveDeploymentMode(input: {
   platform: "web" | "desktop"
-  authEnabled: boolean
+  issuesSessions: boolean
 }): DeploymentMode {
   if (input.platform === "desktop") return "desktop-local"
-  return input.authEnabled ? "cloud" : "self-host"
+  return input.issuesSessions ? "cloud" : "self-host"
 }
 
 export function setDeploymentMode(mode: DeploymentMode) {

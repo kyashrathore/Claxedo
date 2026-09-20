@@ -73,7 +73,7 @@ function makeProps() {
     activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
     workspaceRouteId: () => "p1",
-    workspaceKindForRoute: () => undefined,
+    hostKindForRoute: () => undefined,
     projects: () => [{ id: "p1", worktree: "/workspace/main" }],
     navigate: () => undefined,
     dialog: {},
@@ -291,7 +291,7 @@ describe("createSessionActions", () => {
     ])
   })
 
-  test("session selection passes explicit cloud workspace session refs", () => {
+  test("session selection passes explicit provisioner-placed workspace session refs", () => {
     const { props, sessions, nav } = makeProps()
     props.projects = () => [{
       id: "p1",
@@ -320,7 +320,7 @@ describe("createSessionActions", () => {
           toolSandbox: {
             kind: "workspace",
             workspaceId: "ws_cloud",
-            hosting: "cloud",
+            hosting: "provisioner",
           },
         },
       },

@@ -108,7 +108,7 @@ export type WorkspaceRouteOptions = {
    * unreadable — both fail-closed) or undefined when entitled. Absent hook = no
    * billing gate (route tests, self-host / local compositions never supply it);
    * the hosted app always supplies it. Only ever consulted for HOSTED cloud
-   * workspaces (the wake choke point guards on backing=cloud-vm/access=cloud).
+   * workspaces (the wake choke point guards on backing=cloud-vm).
    */
   requireCloudWorkspaceEntitlement?: (
     auth: SignedControlPlaneAuth,

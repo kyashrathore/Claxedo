@@ -22,7 +22,7 @@ export class SessionListAuthorityError extends ClaxedoError {
   constructor(workspaceId: string) {
     super({
       code: "workspace_runtime_session_authority",
-      message: `Sessions of user-hosted workspace ${workspaceId} are listed by its runtime`,
+      message: `Sessions of workspace ${workspaceId} are listed by the machine that serves it`,
       status: 409,
     })
   }
@@ -47,10 +47,10 @@ export function sessionInventoryResponse(sessions: unknown) {
  * Only the signed branch. The loopback/projection-store branch belongs to the
  * local product and stays with the canonical route.
  *
- * The registry is the authority for cloud sessions and for nothing else. A
- * user-hosted workspace's sessions live on its host and are read by the client
- * over the relay in one hop, so this route names the runtime as their authority
- * rather than pulling them through here.
+ * The registry is the authority for cloud sessions and for nothing else. The
+ * sessions of a workspace placed on a machine live on that machine and are read
+ * by the client over the relay in one hop, so this route names the runtime as
+ * their authority rather than pulling them through here.
  */
 export async function signedSessionList(
   services: ControlPlaneServices,
@@ -99,7 +99,7 @@ export async function signedSessionList(
 }
 
 /**
- * The runtime, not this registry, answers for a user-hosted workspace.
+ * The runtime, not this registry, answers for a workspace placed on a machine.
  *
  * Refused rather than answered empty: an empty list is indistinguishable from
  * "this workspace holds no sessions", and a client reading it that way renders
@@ -111,7 +111,7 @@ async function assertRegistryIsSessionAuthority(
   workspaceId: string,
 ) {
   const opened = await requireAuthority(services).openWorkspace(auth, { workspaceId })
-  if (workspaceRow(workspaceRow(opened)?.workspace)?.access !== "user-hosted") return
+  if (workspaceRow(workspaceRow(opened)?.workspace)?.backing !== "local-worktree") return
   throw new SessionListAuthorityError(workspaceId)
 }
 
@@ -178,10 +178,11 @@ async function registryWorkspaceIdsForProject(
     if (!row) return []
     const workspaceId = rowText(row.workspace_id) ?? rowText(row.workspaceId)
     if (!workspaceId) return []
-    // A user-hosted workspace's sessions are the runtime's, not the registry's:
-    // its rows here would be only those created through the control plane, a
-    // subset of what its host holds. The client reads each one over the relay.
-    if (rowText(row.access) === "user-hosted") return []
+    // A machine-placed workspace's sessions are the runtime's, not the
+    // registry's: its rows here would be only those created through the control
+    // plane, a subset of what its host holds. The client reads each one over
+    // the relay.
+    if (rowText(row.backing) === "local-worktree") return []
     const rowProjectId = rowText(row.project_id) ?? rowText(row.projectID) ?? rowText(row.projectId)
     return rowProjectId === projectId ? [workspaceId] : []
   })

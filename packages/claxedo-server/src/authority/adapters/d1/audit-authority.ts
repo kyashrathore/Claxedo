@@ -27,6 +27,7 @@ type WorkspaceRow = { workspace_id: string; org_id: string; project_id: string }
 const AUDIT_METADATA_KEYS = new Set([
   "activeLeases",
   "actor",
+  "backing",
   "callerSessionId",
   "cap",
   "client",
@@ -39,7 +40,6 @@ const AUDIT_METADATA_KEYS = new Set([
   "hostLeaseExpiresAt",
   "orgId",
   "retryAfterMs",
-  "runtimeKind",
   "sessionId",
   "tool",
   "workspaceId",
@@ -213,15 +213,13 @@ function workspaceReadAccessCte() {
     join projects project
       on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
     join orgs organization on organization.org_id = workspace.org_id and organization.deleted_at is null
-    left join workspace_memberships direct
-      on direct.workspace_id = workspace.workspace_id and direct.user_id = current_actor.user_id and direct.revoked_at is null
     left join project_memberships project_member
       on project_member.project_id = workspace.project_id and project_member.user_id = current_actor.user_id
       and project_member.revoked_at is null
     left join org_memberships org_member
       on org_member.org_id = workspace.org_id and org_member.user_id = current_actor.user_id and org_member.revoked_at is null
     where organization.owner_user_id = current_actor.user_id or org_member.user_id is not null
-      or direct.user_id is not null or project_member.user_id is not null
+      or project_member.user_id is not null
   )`
 }
 

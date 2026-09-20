@@ -221,13 +221,13 @@ export const HOSTED_OPERATIONS = {
   // other row here validates without transforming and one decoder that quietly
   // reshapes its answer is a decoder nobody can read the registry to predict.
   //
-  // Two rows, one per access kind, answering the same envelope: the hosted list
-  // route returns rows only for `cloud` or `user-hosted`, and the caller that
-  // needs the whole picture asks for both and merges them. Two names rather
-  // than one operation taking an access argument, so the set of calls stays
-  // enumerable by name — the property the closed set rests on.
-  "workspace.list.cloud": { safe: true, decode: withArrays("workspaces") },
-  "workspace.list.userHosted": { safe: true, decode: withArrays("workspaces") },
+  // Two rows answering the same envelope, one per host the hosted route names
+  // on the wire (`provisioner`, `machine`); a caller that needs every placement
+  // asks for both and merges them. Two names rather than one operation taking a
+  // host argument, so the set of calls stays enumerable by name — the property
+  // the closed set rests on.
+  "workspace.list.provisioner": { safe: true, decode: withArrays("workspaces") },
+  "workspace.list.machine": { safe: true, decode: withArrays("workspaces") },
   // Nullable: the hosted control plane answers `null` on purpose.
   "workspace.resolve": { safe: true, decode: nullable(object) },
   // Provisions a cloud VM. Without a key, an uncertain response creates a
@@ -263,16 +263,15 @@ export const HOSTED_OPERATIONS = {
   // Unsafe: each call mints a nonce, so a retry burns one. The nonce itself is
   // public and worthless without the machine's private key.
   "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
-  // Safe: the server extends an existing enrollment rather than creating
-  // anything, and a heartbeat that arrives twice is a heartbeat. A rejected one
-  // is not retried at all — the connector stops, because re-enrolling would be
-  // it overruling a revocation.
-  "host.enrollmentHeartbeat": { safe: true, decode: object },
-  // Workspace shares under machine-wide enrollment: the owner assigns a
-  // workspace to an enrolled host (pure data — the machine's consent is the
-  // Host Connector's signed heartbeat set). Main-only like the enrollment
-  // trio; the renderer's route to sharing is the data-only
-  // hostConnector.share IPC.
+  // Main-only like the enrollment pair: the route renames any enrollment the
+  // owner holds, and the renderer's route is the connector's own `rename` IPC,
+  // which carries a name and no id. Declared here because this registry and
+  // main's table are held equal by `account-port.guard.test.ts`.
+  "host.renameCurrentMachine": { safe: false, decode: withStrings("enrollment_id", "display_name") },
+  // Workspace placement under machine-wide enrollment: the owner names the
+  // host a workspace runs on (pure data — the machine's consent is the Host
+  // Connector's signed heartbeat set). Main-only like the enrollment trio;
+  // the renderer reaches it through the data-only hostConnector IPC.
   "workspace.assignHost": { safe: false, decode: object },
   "workspace.unassignHost": { safe: false, decode: object },
   // Control-plane session rows for a workspace (`{ sessions: [...] }`).

@@ -29,13 +29,16 @@ export type PtyInfo = {
 
 type SessionShareChangedEvent = {
   type: "session.share.changed"
-  phase: "granted" | "revoked"
   ownerUserId: string
   sessionId: string
   workspaceId: string
   orgId?: string
   ts: number
-}
+} & (
+  /** A downgrade rings `granted` at the narrower level: the share still exists. */
+  | { phase: "granted"; level: "follow" | "send" }
+  | { phase: "revoked" }
+)
 
 /** A workspace's inventory gained or lost a session in the control plane's projection; the reader re-reads it. */
 type SessionInventoryChangedEvent = {
@@ -96,7 +99,7 @@ export type ClaxedoEvent =
    * live position are gone. Raised for a rolled replay ring and for frames
    * shed under a slow consumer alike. A `wr` gap names the workspace whose
    * sessions have to be re-read, or no workspace when the hole is the host
-   * aggregate's and every local workspace is behind it; a `cp` gap means
+   * aggregate's and every runtime the daemon embeds is behind it; a `cp` gap means
    * every notice the control plane could have sent — a worktree landing, a
    * share, a document save — has to be re-read from its source.
    */

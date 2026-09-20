@@ -50,8 +50,8 @@ const OFFLINE_COPY: Record<WorkspaceOfflineReason, { title: string; detail: stri
   },
   // `forbidden` is rendered by WorkspaceAccessDeniedView, never here.
   forbidden: {
-    title: "You don't have access to this workspace",
-    detail: "This workspace belongs to another account, or your access was removed.",
+    title: "This workspace is not one of yours",
+    detail: "It is a folder on someone else's machine, or it stopped being visible to your account.",
   },
 }
 
@@ -118,7 +118,7 @@ export function WorkspaceOfflineView(props: {
  *  - a DRAFT (no sessionId, or the `"new"` route sentinel): it has no stored
  *    history and its first send needs a live runtime, so the offline panel with
  *    its Retry is the honest surface.
- *  - user-hosted: the owner's machine is the only store.
+ *  - a workspace on a machine: that machine is the only store.
  *  - `forbidden`: no access means no read, for any kind.
  */
 function hasCentralHistory(input: {
@@ -128,7 +128,7 @@ function hasCentralHistory(input: {
 }) {
   if (input.reason === "forbidden") return false
   if (!input.sessionId || input.sessionId === "new") return false
-  return input.kind === "cloud"
+  return input.kind === "provisioner"
 }
 
 export function WorkspaceGate(
@@ -199,12 +199,13 @@ export function WorkspaceGate(
         <Match when={offline() === "forbidden"}>
           <WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />
         </Match>
-        {/* An EXISTING cloud session's history lives in the control plane, so a
-            dead sandbox renders the surface instead of the offline panel: the
-            session reads resolve centrally and the transcript loads. Anything
-            needing the live runtime (sending a turn, the terminal) stays gated
-            by its own readiness checks, which still see this workspace as not
-            ready. Drafts and user-hosted keep the offline panel. */}
+        {/* An EXISTING provisioned session's history lives in the control
+            plane, so a dead sandbox renders the surface instead of the offline
+            panel: the session reads resolve centrally and the transcript loads.
+            Anything needing the live runtime (sending a turn, the terminal)
+            stays gated by its own readiness checks, which still see this
+            workspace as not ready. Drafts, and a workspace another machine
+            serves, keep the offline panel. */}
         <Match when={offline() && hasCentralHistory({ kind: props.kind, reason: offline()!, sessionId: props.sessionId })}>
           {props.children}
         </Match>
@@ -222,7 +223,7 @@ export function WorkspaceGate(
           {/* connecting | reconnecting */}
           {props.connectingFallback ?? (
             <CloudStartupView
-              variant={props.kind === "user-hosted" ? "user-hosted" : "cloud"}
+              variant={props.kind === "machine" ? "machine" : "provisioner"}
               status={conn()?.phase ?? "connecting_workspace"}
               err={conn()?.err}
               logs={conn()?.logs ?? []}

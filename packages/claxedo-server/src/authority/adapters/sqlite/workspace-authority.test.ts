@@ -182,18 +182,19 @@ describe("sqlite workspace authority", () => {
     })).toEqual({ revoked: false })
   })
 
-  test("creator owns the workspace; others are denied until a share grant flips it", async () => {
-    const authority = memoryAuthority()
+  test("creator owns the workspace; others are denied until a direct membership admits them", async () => {
+    const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_1", displayName: "One" })
+    await authority.usersMe(other)
 
-    const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; project_id: string; role: string; access: string }>
+    const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; project_id: string; role: string; backing: string }>
     expect(listed).toHaveLength(1)
-    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: expect.stringMatching(/^prj_/), role: "owner", access: "cloud" })
+    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: expect.stringMatching(/^prj_/), role: "owner", backing: "cloud-vm" })
 
     const opened = await authority.openWorkspace(owner, { workspaceId: "ws_1" })
     expect(opened.allowed).toBe(true)
     expect(opened.role).toBe("owner")
-    expect(opened.workspace).toMatchObject({ workspace_id: "ws_1", backing: "cloud-vm", access: "cloud" })
+    expect(opened.workspace).toMatchObject({ workspace_id: "ws_1", backing: "cloud-vm", placement: {} })
 
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({
       status: 403,
@@ -201,207 +202,22 @@ describe("sqlite workspace authority", () => {
     })
     expect(await authority.listWorkspaces(other)).toEqual([])
 
-    await authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_1",
-      role: "editor",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })
-    const shared = await authority.openWorkspace(other, { workspaceId: "ws_1" })
-    expect(shared.role).toBe("editor")
+    const now = Date.now()
+    const project = database().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_1'`)
+      .get() as { project_id: string }
+    database().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'editor', ?, ?)
+    `).run(project.project_id, other.user.tokenIdentifier, now, now)
+    const admitted = await authority.openWorkspace(other, { workspaceId: "ws_1" })
+    expect(admitted.role).toBe("editor")
     expect((await authority.listWorkspaces(other) as unknown[])).toHaveLength(1)
 
-    const revoked = await authority.revokeWorkspaceShare(owner, {
-      workspaceId: "ws_1",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })
-    expect(revoked).toMatchObject({ revoked: true })
+    database().prepare(`DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
+      .run(project.project_id, other.user.tokenIdentifier)
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
-  })
-
-  test("canonical actor shares remain unambiguous when provider subjects collide", async () => {
-    const { authority, database } = fileAuthority()
-    await authority.createCloudWorkspace(owner, { workspaceId: "ws_ambiguous_subject", displayName: "Ambiguous" })
-    await authority.usersMe(other)
-    const now = Date.now()
-    database().prepare(`
-      INSERT INTO users (
-        token_identifier, public_id, subject, issuer, kind, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'human', ?, ?)
-    `).run(
-      "https://second-idp.example.test|user_other",
-      "usr_ambiguous_subject",
-      other.user.subject,
-      "https://second-idp.example.test",
-      now,
-      now,
-    )
-    database().prepare(`
-      INSERT INTO workspace_share_grants (
-        grant_id, workspace_id, target_key, granted_to_subject, role,
-        created_by_token_identifier, created_at
-      ) VALUES ('legacy-ambiguous-share', ?, ?, ?, 'editor', ?, ?)
-    `).run(
-      "ws_ambiguous_subject",
-      `subject:${other.user.subject}`,
-      other.user.subject,
-      owner.user.tokenIdentifier,
-      now,
-    )
-
-    await expect(authority.openWorkspace(other, { workspaceId: "ws_ambiguous_subject" }))
-      .rejects.toMatchObject({ status: 403 })
-
-    await expect(authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_ambiguous_subject",
-      role: "editor",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })).resolves.toBeTruthy()
-    expect(database().prepare(`
-      SELECT COUNT(*) AS count FROM workspace_share_grants WHERE workspace_id = ?
-    `).get("ws_ambiguous_subject")).toEqual({ count: 2 })
     authority.close()
     database.close()
-  })
-
-  test("keeps canonical actor grants idempotent and revocable", async () => {
-    const { authority, database } = fileAuthority()
-    await authority.createCloudWorkspace(owner, { workspaceId: "ws_canonical_share", displayName: "Canonical share" })
-    await authority.usersMe(other)
-
-    const subjectGrant = await authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_canonical_share",
-      role: "editor",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })
-    const tokenGrant = await authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_canonical_share",
-      role: "editor",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })
-    expect(tokenGrant).toBe(subjectGrant)
-    expect(database().prepare(`
-      SELECT target_key, COUNT(*) AS count FROM workspace_share_grants
-      WHERE workspace_id = ? AND revoked_at IS NULL GROUP BY target_key
-    `).all("ws_canonical_share")).toEqual([{
-      target_key: `token:${other.user.tokenIdentifier}`,
-      count: 1,
-    }])
-
-    await authority.recordRuntimeAccessToken(other, {
-      jti: "jti_canonical_share",
-      workspaceId: "ws_canonical_share",
-      hostId: "host_canonical_share",
-      actorId: other.user.tokenIdentifier,
-      actorKind: "human",
-      role: "editor",
-      expiresAt: Date.now() + 60_000,
-    })
-    await expect(authority.revokeWorkspaceShare(owner, {
-      workspaceId: "ws_canonical_share",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
-    await expect(authority.openWorkspace(other, { workspaceId: "ws_canonical_share" }))
-      .rejects.toMatchObject({ status: 403 })
-    await expect(authority.runtimeAccessTokenActive({
-      jti: "jti_canonical_share",
-      workspaceId: "ws_canonical_share",
-      hostId: "host_canonical_share",
-    })).resolves.toMatchObject({ active: false, code: "runtime_access_token_revoked" })
-    authority.close()
-    database.close()
-  })
-
-  test("revokes a legacy subject grant after that subject becomes a canonical user", async () => {
-    const { authority, database } = fileAuthority()
-    await authority.createCloudWorkspace(owner, { workspaceId: "ws_late_subject", displayName: "Late subject" })
-    const now = Date.now()
-    database().prepare(`
-      INSERT INTO workspace_share_grants (
-        grant_id, workspace_id, target_key, granted_to_subject, role,
-        created_by_token_identifier, created_at
-      ) VALUES ('legacy-late-subject', ?, ?, ?, 'editor', ?, ?)
-    `).run(
-      "ws_late_subject",
-      `subject:${other.user.subject}`,
-      other.user.subject,
-      owner.user.tokenIdentifier,
-      now,
-    )
-
-    await authority.usersMe(other)
-    await expect(authority.openWorkspace(other, { workspaceId: "ws_late_subject" }))
-      .resolves.toMatchObject({ role: "editor" })
-    await authority.recordRuntimeAccessToken(other, {
-      jti: "jti_late_subject",
-      workspaceId: "ws_late_subject",
-      hostId: "host_late_subject",
-      actorId: other.user.tokenIdentifier,
-      actorKind: "human",
-      role: "editor",
-      expiresAt: Date.now() + 60_000,
-    })
-
-    await expect(authority.revokeWorkspaceShare(owner, {
-      workspaceId: "ws_late_subject",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
-    await expect(authority.openWorkspace(other, { workspaceId: "ws_late_subject" }))
-      .rejects.toMatchObject({ status: 403 })
-    authority.close()
-    database.close()
-  })
-
-  test("resolves organization share selectors to the canonical local organization", async () => {
-    const { authority, database } = fileAuthority()
-    await authority.createCloudWorkspace(owner, { workspaceId: "ws_org_share", displayName: "Org share" })
-    await authority.usersMe(other)
-    const now = Date.now()
-    database().prepare(`
-      INSERT INTO orgs (
-        org_id, name, kind, owner_token_identifier, created_at, updated_at
-      ) VALUES ('org_team', 'Team', 'team', ?, ?, ?)
-    `).run(owner.user.tokenIdentifier, now, now)
-    database().prepare(`
-      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
-      VALUES ('org_team', ?, 'member', ?, ?)
-    `).run(other.user.tokenIdentifier, now, now)
-
-    await authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_org_share",
-      role: "editor",
-      target: { kind: "org", orgId: "org_team" },
-    })
-    expect(database().prepare(`
-      SELECT target_key, granted_to_org_id FROM workspace_share_grants
-      WHERE workspace_id = ? AND revoked_at IS NULL
-    `).get("ws_org_share")).toEqual({ target_key: "org:org_team", granted_to_org_id: "org_team" })
-    await expect(authority.openWorkspace(other, { workspaceId: "ws_org_share" }))
-      .resolves.toMatchObject({ role: "editor" })
-
-    await expect(authority.revokeWorkspaceShare(owner, {
-      workspaceId: "ws_org_share",
-      target: { kind: "org", orgId: "org_team" },
-    })).resolves.toMatchObject({ revoked: true })
-    await expect(authority.openWorkspace(other, { workspaceId: "ws_org_share" }))
-      .rejects.toMatchObject({ status: 403 })
-    authority.close()
-    database.close()
-  })
-
-  test("rejects user and organization share grants without an authoritative target", async () => {
-    const authority = memoryAuthority()
-    await authority.createCloudWorkspace(owner, { workspaceId: "ws_unknown_share", displayName: "Unknown share" })
-
-    await expect(authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_unknown_share",
-      role: "viewer",
-      target: { kind: "actor", actorId: "unknown-token" },
-    })).rejects.toThrow("Share target not found")
-    await expect(authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_unknown_share",
-      role: "viewer",
-      target: { kind: "org", orgId: "unknown-org" },
-    })).rejects.toThrow("Share target not found")
   })
 
   test("usersMe/resolveOrgId mint a stable personal org", async () => {
@@ -512,11 +328,13 @@ describe("sqlite workspace authority", () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_role_downgrade", displayName: "Role downgrade" })
     await authority.usersMe(other)
-    await authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_role_downgrade",
-      role: "editor",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })
+    const now = Date.now()
+    const project = database().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_role_downgrade'`)
+      .get() as { project_id: string }
+    database().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'editor', ?, ?)
+    `).run(project.project_id, other.user.tokenIdentifier, now, now)
     await authority.recordRuntimeAccessToken(other, {
       jti: "jti_stale_editor",
       workspaceId: "ws_role_downgrade",
@@ -527,12 +345,8 @@ describe("sqlite workspace authority", () => {
       expiresAt: Date.now() + 60_000,
     })
 
-    await authority.grantWorkspaceShare(owner, {
-      workspaceId: "ws_role_downgrade",
-      role: "viewer",
-      target: { kind: "actor", actorId: other.user.tokenIdentifier },
-    })
-    database().prepare("UPDATE runtime_access_tokens SET revoked_at = NULL WHERE jti = ?").run("jti_stale_editor")
+    database().prepare(`UPDATE project_memberships SET role = 'viewer' WHERE project_id = ? AND token_identifier = ?`)
+      .run(project.project_id, other.user.tokenIdentifier)
 
     await expect(authority.runtimeAccessTokenActive({
       jti: "jti_stale_editor",
@@ -796,6 +610,49 @@ describe("sqlite workspace authority", () => {
   })
 })
 
+describe("a workspace's row carries its placement", () => {
+  test("names the enrolled machine the owner assigned and the directory on it, on open and in the list", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.registerLocalForSharing(owner, {
+      workspaceId: "ws_machine",
+      displayName: "Machine",
+      remoteDirectory: "/srv/machine",
+    })
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_vm", displayName: "VM" })
+
+    const now = Date.now()
+    const db = database()
+    db.prepare(`
+      INSERT INTO host_enrollments
+        (enrollment_id, owner_token_identifier, host_id, public_key, display_name, last_seen_at, expires_at, created_at, updated_at)
+      VALUES ('enr_a', ?, 'host-a', '{}', 'MacBook', ?, ?, ?, ?)
+    `).run(owner.user.tokenIdentifier, now, now + 60_000, now, now)
+    db.prepare(`
+      INSERT INTO host_workspace_assignments
+        (workspace_id, host_id, owner_token_identifier, revision, assigned_at, updated_at)
+      VALUES ('ws_machine', 'host-a', ?, 1, ?, ?)
+    `).run(owner.user.tokenIdentifier, now, now)
+
+    const opened = await authority.openWorkspace(owner, { workspaceId: "ws_machine" })
+    expect(opened.workspace).toMatchObject({
+      backing: "local-worktree",
+      placement: { host_enrollment_id: "enr_a", directory: "/srv/machine" },
+    })
+    expect(opened.workspace).not.toHaveProperty("access")
+
+    const listed = new Map(
+      (await authority.listWorkspaces(owner) as Array<{ workspace_id: string; placement?: unknown }>)
+        .map((row) => [row.workspace_id, row]),
+    )
+    expect(listed.get("ws_machine")).toMatchObject({
+      placement: { host_enrollment_id: "enr_a", directory: "/srv/machine" },
+      host_online: false,
+    })
+    expect(listed.get("ws_vm")).toMatchObject({ placement: {} })
+    expect(listed.get("ws_vm")).not.toHaveProperty("host_online")
+  })
+})
+
 describe("a folder project registered for sharing", () => {
   test("keeps the local project id and reports the served directory", async () => {
     const authority = memoryAuthority()
@@ -820,7 +677,7 @@ describe("a folder project registered for sharing", () => {
       workspace_id: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
       project_id: "6f1c2b8e-1111-4a2b-9c3d-0f0f0f0f0f0f",
       backing: "local-worktree",
-      access: "user-hosted",
+      placement: { directory: "/srv/checkouts/live-check" },
       remote_directory: "/srv/checkouts/live-check",
     })
   })

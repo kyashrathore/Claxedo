@@ -32,6 +32,7 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
+  issuesSessions,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
@@ -93,7 +94,8 @@ export type HostedShellRouteOptions = {
   /** Authenticated, data-only first-party installation catalog. */
   serviceCatalog?: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
   /**
-   * Ask a signed user-hosted workspace's runtime for harness health/identity,
+   * Ask the runtime of a workspace placed on a machine for harness health and
+   * identity,
    * through the relay. Backs `GET /api/claxedo/agent-config/harness` — the
    * probe the app shell's harness store polls unconditionally
    * (`features/session/harness/{harness-config-store,harness-switcher,
@@ -134,6 +136,7 @@ function txt(input: unknown) {
 function version(options: HostedShellRouteOptions) {
   return options.version || "1.0.0"
 }
+
 
 // Shape mirror of `bootPath()` in routes/client-presentation.ts — the hosted
 // central has no home/state/config directories, so those stay empty (the app
@@ -202,11 +205,11 @@ function projectDisplayName(row: Record<string, unknown> | undefined, projectId:
     projectId
 }
 
-// Copied from routes/bootstrap.ts `signedBootstrapProjects` (that module is
-// local-only: it imports fs-backed agent-config/workspace-store and cannot
-// enter the Worker bundle). Keep the two in sync — this is what teaches the
-// app shell which directories are signed cloud/user-hosted workspaces, which
-// in turn routes runtime-owned reads (provider, files, PTY) through the relay.
+// The local server projects the same inventory, and the two must stay in step.
+// They cannot be one function: the local one reaches the fs-backed agent config
+// and workspace store, which the Worker bundle cannot carry. The inventory
+// tells the app shell which directories a signed workspace occupies, and so
+// which runtime-owned reads (provider, files, PTY) take the relay.
 export function signedShellProjects(workspaces: unknown[], now: number) {
   const groups = new Map<string, {
     id: string
@@ -245,7 +248,11 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: asString(row?.access) ?? asString(row?.backing) ?? "cloud",
+      // The row's own placement, passed through rather than restated: the app
+      // narrows this word once, in `placement-wire.ts`. A row naming no backing
+      // is the provisioner's, never the reader's own machine — defaulting the
+      // other way would put somebody else's workspace on this one.
+      backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
@@ -270,8 +277,8 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
 
 /**
  * The scope a hosted request names. A workspace id is the identity; `directory`
- * is what a client shows for it (a `workspace:` ref, or the machine's path for
- * a user-hosted workspace) and only stands in when no id was sent.
+ * is what a client shows for it (a `workspace:` ref, or the machine's own path)
+ * and only stands in when no id was sent.
  */
 function directoryInput(c: Context) {
   return c.req.query("workspaceId") ?? c.req.query("directory") ?? c.req.header("x-claxedo-directory") ?? ""
@@ -404,9 +411,9 @@ async function harnessRelayFetch(
 }
 
 /**
- * The parsed body, as `unknown`. Every caller either wants a record (and reaches
- * it through `asRecord`) or passes the value straight to a schema, so the
- * caller-chosen `<T>` this used to carry only asserted a shape nobody checked.
+ * The parsed body, as `unknown`. A caller-chosen type parameter here would only
+ * assert a shape nothing checks: every caller either narrows with `asRecord` or
+ * hands the value to a schema.
  */
 async function harnessRuntimeJson(
   services: ControlPlaneServices,
@@ -700,6 +707,20 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
       }))
+    // Public, and deliberately not the node's bootstrap body: a hosted central
+    // has no filesystem, no embedded runtime and no machine behind it, so the
+    // only fact it has to state here is the posture the browser must satisfy.
+    // The app reads it before its first render, while nobody is signed in yet,
+    // which is why it passes no auth gate.
+    .get("/api/claxedo/bootstrap", (c) => {
+      c.header("Cache-Control", "no-store")
+      return c.json({
+        healthy: true,
+        version: version(options),
+        events: { hostAggregate: false },
+        deployment: { issuesSessions: issuesSessions(options.authConfig) },
+      })
+    })
     .get("/project", async (c) => {
       try {
         return c.json(await signedProjects(c, options))
@@ -775,9 +796,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         return authErrorResponse(c, err)
       }
     })
-    // Harness health/status probe — see `HostedShellRouteOptions.harnessStatus`
-    // above for what this asks and why. Every session's harness store polls
-    // this unconditionally; before this route existed it 404'd and was
-    // swallowed, so readiness never moved off its initial state.
+    // Every session's harness store polls this unconditionally and swallows a
+    // 404, so an absent route leaves readiness on its initial state forever.
     .get("/api/claxedo/agent-config/harness", (c) => harnessStatusResponse(c, options))
 }

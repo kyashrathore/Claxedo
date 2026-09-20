@@ -1,7 +1,7 @@
 /**
  * Server-sent-event plumbing shared by the Playwright route mocks.
  *
- * `core-cloud-provisioning.spec.ts` and `core-user-hosted-workspace.spec.ts`
+ * `core-cloud-provisioning.spec.ts` and `core-host-tunnel-workspace.spec.ts`
  * each carried a byte-identical copy of both helpers. They describe the wire
  * format of one endpoint family, so they live once.
  */

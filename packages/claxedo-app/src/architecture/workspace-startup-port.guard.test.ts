@@ -32,7 +32,7 @@ const reachesHosted = (entry: string) =>
     isForbidden: ({ module }) => !!module && module.startsWith(HOSTED_ROOT),
   })
 
-describe("cloud workspace startup stays behind the port", () => {
+describe("provisioner-placed workspace startup stays behind the port", () => {
   test("only the hosted entry and connection authority import the implementation", () => {
     expect([...hostedImporters()].toSorted()).toEqual([...ALLOWED_IMPORTERS])
   })

@@ -8,6 +8,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "./mode"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
+import type { RelayHostKind, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export type PromptRetryAction = (prompt?: Prompt) => unknown
 
@@ -17,12 +18,12 @@ export interface PromptInputProps {
   variant?: "dock" | "new-session"
   ref?: (el: HTMLDivElement) => void
   newSessionWorktree?: string
-  /** Git revision used when the draft provisions a new worktree or cloud workspace. */
+  /** Git revision the draft's new worktree or provisioned workspace starts from. */
   newSessionBaseRef?: string
   /** Source branch name used by cloud provisioning; distinct from a local remote-tracking ref. */
   newSessionSourceBranch?: string
   onNewSessionWorktreeChange?: (worktree: string) => void
-  newSessionWorkspaceKind?: "local" | "cloud" | "user-hosted"
+  newSessionHostKind?: WorkspaceHostKind
   onNewSessionWorktreeReset?: () => void
   onCloudStartup?: (state?: {
     open: boolean
@@ -81,9 +82,15 @@ export interface PromptInputProps {
   stopGoal?: () => void | Promise<unknown>
   /** Registers the mounted composer's retry action for an in-timeline recovery surface. */
   registerRetry?: (retry?: PromptRetryAction) => void
+  /**
+   * Whether the session authority admits this reader's prompt, as the session's
+   * own transport capabilities report it. A draft names no session and has
+   * none, so the composer asks the workspace role instead.
+   */
+  sessionPromptAdmitted?: () => boolean | undefined
   /** Signed workspace runtime identity for relay-backed session sends. */
   workspaceId?: () => string | undefined
-  workspaceKind?: () => "cloud" | "user-hosted" | undefined
+  hostKind?: () => RelayHostKind | undefined
   harnessSubmitController?: HarnessSubmitController
   harnessSelectionController?: HarnessSelectionController
   /** Optimistic timeout stage supplied by the status dispatcher owner. */

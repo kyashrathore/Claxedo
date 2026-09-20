@@ -1,6 +1,7 @@
 import type { Placement } from "@/platform/runtime/placement"
 import { queryClient } from "@/platform/query/query-client"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 /**
  * Shared caching + transport plumbing for the two terminal-scoped fetchers
@@ -95,19 +96,20 @@ export const loadCachedEntry = <T>(input: {
 }
 
 export type ResolvedWorkspaceRuntime = {
-  kind?: "cloud" | "local" | "user-hosted" | null
+  kind?: WorkspaceHostKind | null
   workspaceId?: string | null
 } | null | undefined
 
 /**
- * Transport placement for a terminal-scoped fetch: route non-local workspaces
- * that carry a workspaceId through the relay (loopback when the server itself
- * is loopback); everything else uses the server's default central transport.
+ * Transport placement for a terminal-scoped fetch: route a workspace the
+ * attached server does not serve itself, and that carries a workspaceId,
+ * through the relay (loopback when the server itself is loopback); everything
+ * else uses the server's default central transport.
  *
  * `workspace` is the caller's liveness read (`resolveWorkspaceRuntime`), which
- * hits the control plane's `/api/workspace/resolve` and — for a user-hosted
- * workspace addressed by its filesystem-path directory — never confirms a
- * kind there. `signedWorkspace` is that same directory's match in the signed
+ * hits the control plane's `/api/workspace/resolve` and — for a workspace on
+ * another machine addressed by its filesystem-path directory — never confirms a
+ * placement there. `signedWorkspace` is that same directory's match in the signed
  * workspace inventory (the canonical resolver in
  * `platform/runtime/agent/signed-workspace.ts`, e.g.
  * `signedWorkspaceFromProjects`), passed by the caller when it has one. It is
@@ -120,10 +122,10 @@ export const terminalScopedPlacement = (
   signedWorkspace?: ResolvedWorkspaceRuntime,
 ): Placement => {
   const central = centralTransportForServer(site)
-  const resolved = signedWorkspace?.kind && signedWorkspace.kind !== "local" && signedWorkspace.workspaceId
+  const resolved = signedWorkspace?.kind && signedWorkspace.kind !== "self" && signedWorkspace.workspaceId
     ? signedWorkspace
     : workspace
-  if (resolved?.kind && resolved.kind !== "local" && resolved.workspaceId) {
+  if (resolved?.kind && resolved.kind !== "self" && resolved.workspaceId) {
     return {
       workspaceId: resolved.workspaceId,
       hosting: "workspace",

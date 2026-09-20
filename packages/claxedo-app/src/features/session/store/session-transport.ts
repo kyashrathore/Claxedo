@@ -6,6 +6,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionBackend, SessionMessagePageRequest } from "@/platform/runtime/session"
 import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"
 import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runtime-goal-client"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 export type { SessionTransportCapabilities }
 export { DEFAULT_SESSION_TRANSPORT_CAPABILITIES }
@@ -68,14 +69,14 @@ export async function fetchSessionByTransport(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   }).getSession(input)
 }
@@ -91,7 +92,7 @@ export function createSessionInfoHydrationGetter(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }) {
   return async (session: Parameters<SessionBackend["getSession"]>[0]) =>
@@ -104,7 +105,7 @@ export async function fetchSessionMessagesByTransport(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   /**
    * Whether the workspace runtime can currently answer. A dead CLOUD workspace
    * reads its transcript from the control plane instead of the relay — the
@@ -118,7 +119,7 @@ export async function fetchSessionMessagesByTransport(input: {
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     workspaceReachable: input.workspaceReachable,
     sessionRef: input.sessionRef,
   }).listMessages(input)
@@ -130,14 +131,14 @@ export async function fetchSessionTodoByTransport(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   }).listTodos(input)
 }
@@ -157,14 +158,14 @@ export async function fetchSessionPermissionModesByTransport(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   }).getPermissionModes(input)
 }
@@ -176,14 +177,14 @@ export async function setSessionPermissionModeByTransport(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   }).setPermissionMode(input)
 }
@@ -195,7 +196,7 @@ export async function fetchSessionCapabilitiesByTransport(input: {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
   signal?: AbortSignal
 }) {
@@ -203,7 +204,7 @@ export async function fetchSessionCapabilitiesByTransport(input: {
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   }).getCapabilities(input)
 }
@@ -215,7 +216,7 @@ export type SessionGoalTransportScope = {
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
   signal?: AbortSignal
 }
@@ -226,7 +227,7 @@ function sessionGoalBackend(input: SessionGoalTransportScope) {
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     sessionRef: input.sessionRef,
   })
 }

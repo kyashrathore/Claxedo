@@ -5,12 +5,15 @@ import { numberColumn, textColumn } from "../../../platform/db"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type {
-  PrivateSessionAuthority,
-  PrivateSessionRegistrationResult,
-  PrivateSessionRuntimePrincipal,
-  ReservePrivateSessionInput,
-  TransitionPrivateSessionRegistrationInput,
+import {
+  sessionAccessQuestion,
+  sessionAdoptionOperationId,
+  type PrivateSessionAuthority,
+  type SessionAccessQuestion,
+  type PrivateSessionRegistrationResult,
+  type PrivateSessionRuntimePrincipal,
+  type ReservePrivateSessionInput,
+  type TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SessionTurnConflictError,
@@ -20,6 +23,7 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
+import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import {
   authorizeWorkspaceForUser,
   workspaceByPublicId,
@@ -27,7 +31,6 @@ import {
   type SessionShareTargetRow,
   type SqliteAuthorityDb,
   type WorkspaceAction,
-  type WorkspaceRow,
 } from "./workspace-authority-store"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
@@ -122,35 +125,60 @@ export function createSqlitePrivateSessionAuthority(input: {
     SELECT * FROM session_history WHERE session_id = ?
   `).get(sessionId)
 
-  const isOrgAdmin = (db: SqliteAuthorityDb, actorId: string, workspace: WorkspaceRow) => {
-    if (!workspace.org_id) return false
-    const row = db.prepare<unknown[], { owner_token_identifier: string | null; role: string | null }>(`
-      SELECT o.owner_token_identifier, m.role
-      FROM orgs o
-      LEFT JOIN org_memberships m ON m.org_id = o.org_id AND m.token_identifier = ?
-      WHERE o.org_id = ? AND o.deleted_at IS NULL
-    `).get(actorId, workspace.org_id)
-    if (!row) return false
-    // A durable owner id covers legacy/recovery cases where the membership row
-    // is absent. Once a current membership exists, its role is authoritative;
-    // a demoted owner must not retain private-session administration through
-    // the historical ownership column.
-    if (row.role !== null) return row.role === "owner" || row.role === "admin"
-    return row.owner_token_identifier === actorId
+  /**
+   * Leaving the organization ends every grant inside it, creator standing
+   * included. Membership is necessary for a session decision and never
+   * sufficient: the project, the workspace and an administrator's rank still
+   * decide nothing here.
+   *
+   * An agent actor is exempt because this store gives it no organization to
+   * belong to — a runtime mints it as a bare `users` row of kind `agent` with
+   * no membership and no human behind it, so asking would refuse every turn an
+   * agent drives unprompted. Its participant or creator row is still the only
+   * thing that admits it.
+   */
+  const organizationStandingHolds = (db: SqliteAuthorityDb, actorId: string, orgId: string) => {
+    const actor = db.prepare<unknown[], { kind: string }>(`SELECT kind FROM users WHERE token_identifier = ?`)
+      .get(actorId)
+    if (actor?.kind === "agent") return true
+    const org = db.prepare<unknown[], { owner_token_identifier: string | null; deleted_at: number | null }>(`
+      SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?
+    `).get(orgId)
+    if (!org || org.deleted_at) return false
+    if (org.owner_token_identifier === actorId) return true
+    return !!db.prepare(`SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+      .get(orgId, actorId)
   }
 
-  const hasPrivateAccess = (db: SqliteAuthorityDb, actorId: string, row: SessionRow, workspace: WorkspaceRow) => {
-    if (row.creator_actor_id === actorId || isOrgAdmin(db, actorId, workspace)) return true
+  /**
+   * Creator, participant and share grantee are the whole admission inside the
+   * organization that owns the session. The three questions differ only in
+   * what they let a SHARE answer: a `follow` grant reads and streams, a `send`
+   * grant also drives the agent's turn, and neither carries a
+   * `session_control` write, which stays with the creator and the
+   * participants however the workspace ranks anyone.
+   */
+  const hasPrivateAccess = (
+    db: SqliteAuthorityDb,
+    actorId: string,
+    row: SessionRow,
+    access: SessionAccessQuestion,
+    orgId: string,
+  ) => {
+    if (!organizationStandingHolds(db, actorId, orgId)) return false
+    if (row.creator_actor_id === actorId) return true
     const participant = db.prepare(`
       SELECT 1 FROM session_participants
       WHERE session_id = ? AND workspace_id = ? AND participant_actor_id = ? AND revoked_at IS NULL
     `).get(row.session_id, row.workspace_id, actorId)
     if (participant) return true
-    const grants = db.prepare<unknown[], SessionShareTargetRow>(`
-      SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+    if (access === "session_control") return false
+    const grants = db.prepare<unknown[], SessionShareTargetRow & { level: string }>(`
+      SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id, level
       FROM session_share_grants WHERE session_id = ? AND workspace_id = ? AND revoked_at IS NULL
     `).all(row.session_id, row.workspace_id)
     return grants.some((grant) => {
+      if (access === "agent_turn" && storedSessionShareLevel(grant.level) !== "send") return false
       if (grant.granted_to_user_token_identifier === actorId) return true
       if (grant.granted_to_org_id && db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
@@ -166,11 +194,18 @@ export function createSqlitePrivateSessionAuthority(input: {
     actor: AuthorityUser,
     sessionId: string,
     workspaceId: string,
-    action: "read" | "write",
+    access: SessionAccessQuestion,
   ) => {
-    const workspace = workspaceAccess(db, actor, workspaceId, action)
+    const workspace = workspaceByPublicId(db, workspaceId)
     const row = session(db, required(sessionId, "sessionId"))
-    if (!row || row.workspace_id !== workspaceId || row.deleted_at || !hasPrivateAccess(db, actor.token_identifier, row, workspace)) denied()
+    if (
+      !workspace
+      || workspace.deleted_at
+      || !row
+      || row.workspace_id !== workspaceId
+      || row.deleted_at
+      || !hasPrivateAccess(db, actor.token_identifier, row, access, workspace.org_id)
+    ) denied()
     return { row, workspace }
   }
 
@@ -181,7 +216,7 @@ export function createSqlitePrivateSessionAuthority(input: {
     workspaceId: string,
   ) => {
     const current = requireSessionAccess(db, actor, sessionId, workspaceId, "read")
-    if (current.row.creator_actor_id !== actor.token_identifier && !isOrgAdmin(db, actor.token_identifier, current.workspace)) {
+    if (current.row.creator_actor_id !== actor.token_identifier) {
       throw new SqlitePrivateSessionAuthorityError("actor_authorization_denied", "Session participant administration was denied")
     }
     return current
@@ -274,7 +309,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const turnId = required(value.turnId, "turnId")
       const at = now()
       return db.transaction(() => {
-        requireSessionAccess(db, actor, sessionId, workspaceId, "write")
+        requireSessionAccess(db, actor, sessionId, workspaceId, "agent_turn")
         const current = turnLease(db, sessionId)
         if (current && current.released_at === null && current.expires_at > at) {
           if (current.turn_id === turnId && current.actor_id === actor.token_identifier) return publicTurnLease(current)
@@ -317,7 +352,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       const owned = ownedTurn(value)
       const at = now()
       return db.transaction(() => {
-        requireSessionAccess(db, actor, owned.sessionId, owned.workspaceId, "write")
+        requireSessionAccess(db, actor, owned.sessionId, owned.workspaceId, "agent_turn")
         const current = turnLease(db, owned.sessionId)
         if (!ownsTurn(current, owned, actor.token_identifier) || current.expires_at <= at) {
           throw new SessionTurnLeaseLostError(owned.sessionId)
@@ -363,22 +398,54 @@ export function createSqlitePrivateSessionAuthority(input: {
         }
         workspaceAccess(db, actor, workspaceId, "write")
         const at = now()
-        db.prepare(`
-          INSERT INTO session_history (
-            session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(sessionId, workspaceId, actor.token_identifier, operationId, title ?? null, at, at)
-        db.prepare(`
-          INSERT INTO session_participants (
-            session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at
-          ) VALUES (?, ?, ?, ?, ?)
-        `).run(sessionId, workspaceId, actor.token_identifier, actor.token_identifier, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
         db.prepare(`
           UPDATE session_registration_operations
           SET state = 'registered', state_reason = NULL, updated_at = ?
           WHERE operation_id = ? AND creator_actor_id = ? AND state IN ('reserved', 'reconciliation_required')
         `).run(at, operationId, actor.token_identifier)
         return result(registration(db, operationId)!, true)
+      })()
+    },
+    async adoptRuntimeSession(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const sessionId = required(value.sessionId, "sessionId")
+      const workspaceId = required(value.workspaceId, "workspaceId")
+      const hostId = required(value.hostId, "hostId")
+      const title = trimToUndefined(value.title)
+      const operationId = sessionAdoptionOperationId(sessionId)
+      return db.transaction(() => {
+        const assignment = db.prepare<unknown[], { owner_token_identifier: string }>(`
+          SELECT owner_token_identifier FROM host_workspace_assignments WHERE workspace_id = ? AND host_id = ?
+        `).get(workspaceId, hostId)
+        if (!assignment || assignment.owner_token_identifier !== actor.token_identifier) denied()
+        workspaceAccess(db, actor, workspaceId, "write")
+        const existing = session(db, sessionId)
+        if (existing) {
+          if (
+            existing.workspace_id !== workspaceId
+            || existing.deleted_at
+            || existing.creator_actor_id !== actor.token_identifier
+          ) {
+            denied()
+          }
+          return { adopted: false }
+        }
+        const held = db.prepare<unknown[], Pick<RegistrationRow, "state">>(`
+          SELECT state FROM session_registration_operations WHERE session_id = ?
+        `).get(sessionId)
+        if (held && held.state !== "compensated") denied()
+        const at = now()
+        db.prepare(`DELETE FROM session_registration_operations WHERE session_id = ? AND state = 'compensated'`).run(sessionId)
+        db.prepare(`
+          INSERT INTO session_registration_operations (
+            operation_id, session_id, workspace_id, creator_actor_id, operation_kind,
+            parent_session_id, requested_title, state, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'create', NULL, ?, 'registered', ?, ?)
+        `).run(operationId, sessionId, workspaceId, actor.token_identifier, title ?? null, at, at)
+        projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
+        return { adopted: true }
       })()
     },
     async markSessionRegistrationAmbiguous(value) {
@@ -394,12 +461,12 @@ export function createSqlitePrivateSessionAuthority(input: {
       requireSessionAccess(input.database(), actorForAuth(auth), value.sessionId, value.workspaceId, "read")
     },
     async authorizeSessionWrite(auth, value) {
-      requireSessionAccess(input.database(), actorForAuth(auth), value.sessionId, value.workspaceId, "write")
+      requireSessionAccess(input.database(), actorForAuth(auth), value.sessionId, value.workspaceId, "agent_turn")
     },
     async authorizeRuntimeSession(value) {
       const db = input.database()
       const actor = runtimeActor(db, value)
-      requireSessionAccess(db, actor, value.sessionId, value.workspaceId, value.action)
+      requireSessionAccess(db, actor, value.sessionId, value.workspaceId, sessionAccessQuestion(value))
     },
     async grantSessionParticipant(auth, value) {
       const db = input.database()
@@ -446,12 +513,13 @@ export function createSqlitePrivateSessionAuthority(input: {
     async listSessions(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
-      const workspace = workspaceAccess(db, actor, value.workspaceId, "read")
+      const workspace = workspaceByPublicId(db, value.workspaceId)
+      if (!workspace || workspace.deleted_at) return []
       const rows = db.prepare<unknown[], SessionRow>(`
         SELECT * FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC
       `).all(value.workspaceId)
       return rows
-        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, workspace))
+        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, "read", workspace.org_id))
         .map((row) => publicSession(db, row, actor.token_identifier))
     },
     async resolveSession(auth, value) {
@@ -538,7 +606,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       }
       const snapshotHash = createHash("sha256").update(JSON.stringify(messages.map((message) => message.value))).digest("hex")
       return db.transaction(() => {
-        const current = requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "write")
+        const current = requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "agent_turn")
         if (fencingToken !== undefined) {
           const lease = turnLease(db, value.sessionId)
           if (!lease || lease.workspace_id !== value.workspaceId || lease.fencing_token !== fencingToken) {
@@ -608,7 +676,7 @@ export function createSqlitePrivateSessionAuthority(input: {
     async deleteSessionVisibility(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
-      requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "write")
+      requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "agent_turn")
       const at = now()
       db.transaction(() => {
         db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ? AND workspace_id = ?`)
@@ -631,7 +699,7 @@ export function createSqlitePrivateSessionAuthority(input: {
     db.transaction(() => {
       const incoming = new Set<string>()
       for (const value of rows) {
-        const current = requireSessionAccess(db, actor, value.sessionId, workspaceId, "write")
+        const current = requireSessionAccess(db, actor, value.sessionId, workspaceId, "agent_turn")
         if (value.createdAt !== undefined && value.createdAt !== current.row.created_at) {
           throw new SqlitePrivateSessionAuthorityError("resource_conflict", "Session creation time is owned by registration")
         }
@@ -877,6 +945,24 @@ function json(value: unknown) {
   } catch {
     throw new SqlitePrivateSessionAuthorityError("invalid_input", "Session message must be JSON serializable")
   }
+}
+
+function projectRegisteredSession(
+  db: SqliteAuthorityDb,
+  actor: AuthorityUser,
+  row: { operationId: string; sessionId: string; workspaceId: string; title?: string },
+  at: number,
+) {
+  db.prepare(`
+    INSERT INTO session_history (
+      session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(row.sessionId, row.workspaceId, actor.token_identifier, row.operationId, row.title ?? null, at, at)
+  db.prepare(`
+    INSERT INTO session_participants (
+      session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(row.sessionId, row.workspaceId, actor.token_identifier, actor.token_identifier, at)
 }
 
 function denied(): never {

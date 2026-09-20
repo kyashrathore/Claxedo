@@ -10,50 +10,35 @@ import { controlPlaneRateLimitError } from "./runtime-token-guards"
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const workspace = asRecord(asRecord(result)?.workspace)
   const resolvedWorkspaceId = txt(workspace?.workspace_id) ?? txt(workspace?.workspaceId) ?? workspaceId
-  const access = txt(workspace?.access)
   const backing = txt(workspace?.backing)
   const branch = txt(workspace?.git_branch) ?? txt(workspace?.gitBranch)
   const repoUrl = txt(workspace?.repo_url) ?? txt(workspace?.repoUrl)
   const repoName = txt(workspace?.repo_name) ?? txt(workspace?.repoName)
-  const normalizedAccess = access === "user-hosted"
-    ? "user-hosted"
-    : access === "cloud" || backing === "cloud-vm"
-      ? "cloud"
-      : "local"
+  const workspaceName = txt(workspace?.display_name)
+    ?? txt(workspace?.workspace_name)
+    ?? txt(workspace?.workspaceName)
   return {
     workspaceId: resolvedWorkspaceId,
     orgId: txt(workspace?.org_id) ?? txt(workspace?.orgId),
     projectId: txt(workspace?.project_id) ?? txt(workspace?.projectId) ?? resolvedWorkspaceId,
     directory: txt(workspace?.remote_directory) ?? txt(workspace?.remoteDirectory) ?? WORKSPACE_DIR,
-    workspaceName: txt(workspace?.display_name)
-      ?? txt(workspace?.workspace_name)
-      ?? txt(workspace?.workspaceName),
-    access: normalizedAccess,
-    backing: normalizedAccess === "cloud"
+    workspaceName,
+    // A record carrying no backing is one the authority holds for a machine it
+    // does not provision, which is the same placement a `local-worktree` row
+    // states; only a provisioned sandbox names its repo and project here.
+    backing: backing === "cloud-vm"
       ? {
           kind: "cloud-vm" as const,
+          workspaceName,
+          projectName: txt(workspace?.project_name) ?? txt(workspace?.projectName),
           repoUrl,
           repoName,
           branch,
         }
-      : normalizedAccess === "user-hosted"
-        ? {
-            kind: "user-hosted" as const,
-            workspaceName: txt(workspace?.display_name)
-              ?? txt(workspace?.workspace_name)
-              ?? txt(workspace?.workspaceName),
-            projectName: txt(workspace?.project_name) ?? txt(workspace?.projectName),
-            branch,
-          }
-        : {
-            kind: "local-worktree" as const,
-            branch,
-          },
-    kind: access === "user-hosted"
-      ? "user-hosted"
-      : access === "cloud" || backing === "cloud-vm"
-        ? "cloud"
-        : "local",
+      : {
+          kind: "local-worktree" as const,
+          branch,
+        },
     driver: null,
     status: "ready",
     git: {

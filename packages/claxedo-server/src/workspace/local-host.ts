@@ -73,24 +73,6 @@ export function hostEnrollmentPayload(input: { hostId: string; requestId: string
   ].join("\n")
 }
 
-/**
- * Heartbeat v2: the machine's ONE signature per interval also covers the
- * workspaces it currently serves (sorted, comma-joined). The literal mirrors
- * the authority adapters' `hostEnrollmentHeartbeatPayloadV2` byte for byte.
- */
-export function hostEnrollmentHeartbeatPayloadV2(input: {
-  hostId: string
-  ttlMs?: number
-  workspaceIds: readonly string[]
-}) {
-  return [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
-  ].join("\n")
-}
-
 export function signHostPayload(identity: LocalHostIdentity, payload: string) {
   return signData("sha256", Buffer.from(payload), {
     key: createPrivateKey({ key: identity.privateKey, format: "jwk" }),

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
-  authEnabled: true,
+  issuesSessions: true,
   accountSignInEnabled: false,
   hostedCapable: false,
   sandboxEnabled: false,
@@ -44,11 +44,14 @@ vi.mock("@/platform/account/account-provider", () => ({
 
 vi.mock("@/app/providers/config", () => ({
   useConfigOptional: () => ({
-    authEnabled: state.authEnabled,
     accountSignInEnabled: state.accountSignInEnabled,
     sandboxEnabled: state.sandboxEnabled,
     ...(state.hostedCapable ? { loadHostedContributions: async () => ({ contents: [] }) } : {}),
   }),
+}))
+
+vi.mock("@/app/connection/deployment-posture", () => ({
+  useDeploymentPosture: () => ({ issuesSessions: () => state.issuesSessions }),
 }))
 
 vi.mock("@/platform/runtime/platform-provider", () => ({
@@ -69,7 +72,7 @@ vi.mock("@/platform/i18n/provider", () => ({
 import { RailAccountMenu } from "./rail-account-menu"
 
 beforeEach(() => {
-  state.authEnabled = true
+  state.issuesSessions = true
   state.accountSignInEnabled = false
   state.hostedCapable = false
   state.sandboxEnabled = false
@@ -151,16 +154,16 @@ describe("RailAccountMenu", () => {
     expect(trigger).toHaveAttribute("title", label)
   })
 
-  test("keeps signed identity when auth is disabled", async () => {
-    state.authEnabled = false
+  test("keeps signed identity on a deployment that issues no sessions", async () => {
+    state.issuesSessions = false
     renderMenu()
 
     await openMenu()
     expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument()
-    expect(screen.queryByText("Local workspace")).toBeNull()
+    expect(screen.queryByText("Not signed in")).toBeNull()
   })
 
-  test("shows Sign in only for auth-enabled anonymous mode", async () => {
+  test("shows Sign in only for an anonymous visitor to a session-issuing deployment", async () => {
     state.status = "anonymous"
     state.accountStatus = "unsigned"
     state.accountSignInEnabled = true
@@ -174,14 +177,14 @@ describe("RailAccountMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
   })
 
-  test("shows Local workspace without auth commands when auth is disabled", async () => {
+  test("shows Not signed in without auth commands on a deployment that issues no sessions", async () => {
     state.status = "anonymous"
     state.accountStatus = "unsigned"
-    state.authEnabled = false
+    state.issuesSessions = false
     state.user = {}
     renderMenu()
 
-    await openMenu("Local workspace")
+    await openMenu("Not signed in")
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
   })
@@ -189,7 +192,7 @@ describe("RailAccountMenu", () => {
   test("offers Electron account sign-in when the local renderer has a hosted contribution", async () => {
     state.status = "anonymous"
     state.accountStatus = "unsigned"
-    state.authEnabled = false
+    state.issuesSessions = false
     state.hostedCapable = true
     state.accountSignInEnabled = true
     state.platform = "desktop"
@@ -208,7 +211,7 @@ describe("RailAccountMenu", () => {
     state.user = {}
     renderMenu()
 
-    await openMenu("Local workspace")
+    await openMenu("Not signed in")
 
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
   })

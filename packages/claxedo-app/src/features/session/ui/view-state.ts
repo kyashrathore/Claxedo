@@ -7,6 +7,7 @@ import {
   type ClaxedoSession,
   type SessionTurnOutcome,
 } from "../data/session-types"
+import type { RelayHostKind, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 type Snapshot<T> = {
   sessionKey: string
@@ -110,32 +111,29 @@ export function shouldRenderNewSessionComposer(input: {
   return input.workspaceReady
 }
 
-// A fresh draft nav to `/w/:workspaceId/session` resolves its workspace kind in
-// two steps: the signed-inventory lookup (`resolvedKind`, real cloud vs
-// user-hosted) and, when that hasn't landed yet (inventory/projects still
+// A fresh draft nav to `/w/:workspaceId/session` resolves the workspace's host
+// in two steps: the signed-inventory lookup (`resolvedKind`, the placement the
+// catalog states) and, when that hasn't landed yet (inventory/projects still
 // loading), a directory-ref fallback that only proves a `ws_`-shaped ref
-// exists — it does not by itself distinguish cloud from user-hosted.
-// Collapsing that fallback into "cloud" would route a user-hosted
-// (relay-backed, self-hosted) workspace into the cloud sandbox-provisioning
-// draft picker instead of the user-hosted gate, so the fallback carries its
-// own kind through instead of being discarded.
-export function resolveDraftWorkspaceKind(input: {
-  resolvedKind: "cloud" | "user-hosted" | undefined
-  fallbackRefKind: "cloud" | "user-hosted" | undefined
+// exists — it names no host of its own.
+// Collapsing that fallback into the provisioner would route a workspace on an
+// enrolled machine into the sandbox-provisioning draft picker instead of its
+// own gate, so the fallback carries its own host kind through instead of being
+// discarded.
+export function resolveDraftHostKind(input: {
+  resolvedKind: RelayHostKind | undefined
+  fallbackRefKind: RelayHostKind | undefined
   /**
    * Hosted web composition (web platform + signed, non-loopback control plane).
-   * There is no local machine behind the renderer, so "local" is not a
-   * reachable default — falling back to it opened every fresh draft in an
-   * environment the web build can never run. Desktop and loopback keep the
-   * local default.
+   * There is no machine behind the renderer, so `self` is not a reachable
+   * default: a draft that falls back to it names an environment the web build
+   * can never run. Desktop and loopback keep the `self` default.
    */
   webOnlyCloud?: boolean
-}): "local" | "cloud" | "user-hosted" {
-  if (input.resolvedKind === "user-hosted") return "user-hosted"
-  if (input.resolvedKind === "cloud") return "cloud"
-  if (input.fallbackRefKind === "user-hosted") return "user-hosted"
-  if (input.fallbackRefKind === "cloud") return "cloud"
-  return input.webOnlyCloud ? "cloud" : "local"
+}): WorkspaceHostKind {
+  if (input.resolvedKind) return input.resolvedKind
+  if (input.fallbackRefKind) return input.fallbackRefKind
+  return input.webOnlyCloud ? "provisioner" : "self"
 }
 
 export function timelineInteractionPlan(input: {

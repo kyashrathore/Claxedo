@@ -4,7 +4,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { useClaxedoEventsOptional } from "@/app/integrations/claxedo-events"
 import { can } from "@/platform/auth/role"
-import { workspacePlacement } from "@/features/workspaces/data/workspace-connection"
+import { workspaceRelayPlacement } from "@/features/workspaces/data/workspace-connection"
 import { useClaxedoState } from "@/app/workbench/state"
 import type { ProcessPaneSubscriptions } from "@/features/processes/providers"
 import {
@@ -74,7 +74,7 @@ export function ProcessPaneProvider(props: ParentProps<{ directory?: string; isO
       close: state.workspacePanel.close,
       canMutate: () => {
         const id = workspaceId()
-        return !id || can("mutate.workspace", workspacePlacement(id))
+        return !id || can("mutate.workspace", workspaceRelayPlacement(id))
       },
       processPane: state.processPane,
       ownership: createProcessOwnership(ownershipState),

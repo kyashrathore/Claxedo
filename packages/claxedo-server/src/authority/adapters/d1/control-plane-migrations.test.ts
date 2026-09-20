@@ -1,47 +1,17 @@
+import { readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
-// Every control-plane migration, in order. 0017 rebuilds the two tables that
-// carried the retired identity-provider adapter value, so the rebuild has to be
-// exercised against a database that already holds rows written under it.
-const CONTROL_PLANE_MIGRATIONS = [
-  "0001_service_installations.sql",
-  "0002_workspace_authority.sql",
-  "0003_private_sessions.sql",
-  "0004_host_access_and_sharing.sql",
-  "0005_agent_extensions_and_audit.sql",
-  "0006_channel_identity_and_canonical_runtime.sql",
-  "0007_paired_recovery_epoch.sql",
-  "0008_user_deployed_owner_bootstrap.sql",
-  "0009_optional_service_deployment.sql",
-  "0010_session_turn_leases.sql",
-  "0011_session_turn_producers.sql",
-  "0012_cold_local_host_challenges.sql",
-  "0013_org_team_session_sharing.sql",
-  "0014_host_workspace_assignments.sql",
-  "0015_drop_local_host_links.sql",
-  "0016_host_session_authority.sql",
-  "0017_adapter_custom.sql",
-  "0018_drop_agent_extensions.sql",
-  "0019_agent_plugin_activations.sql",
-  "0020_hosted_connections.sql",
-  "0021_mcp_oauth_clients.sql",
-  "0022_sandbox_leases.sql",
-  "0023_agent_plugin_sources.sql",
-  "0024_session_last_human_turn.sql",
-  "0025_claxedo_tasks.sql",
-  "0026_agent_cross_machine_writes.sql",
-  "0027_sandbox_pass_revocations.sql",
-  "0028_workspace_org_member_visible.sql",
-  "0029_host_connect.sql",
-  "0030_workspace_host_assignment_revision.sql",
-  "0031_normalize_user_hosted_directories.sql",
-  "0032_task_attachments.sql",
-  "0033_task_child_number.sql",
-]
+// Read from the directory rather than listed: a migration added and not
+// listed is simply never applied here, and the drift is green. 0017 rebuilds
+// the two tables that carried the retired identity-provider adapter value, so
+// the rebuild has to be exercised against a database that already holds rows
+// written under it.
+const MIGRATIONS_DIR = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
+const CONTROL_PLANE_MIGRATIONS = readdirSync(MIGRATIONS_DIR).filter((name) => name.endsWith(".sql")).sort()
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(
   0,
@@ -81,7 +51,7 @@ async function database(): Promise<D1Database> {
 }
 
 async function statements(name: string) {
-  const path = fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url))
+  const path = `${MIGRATIONS_DIR}${name}`
   const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
   return migration
     .split(/;\s*\n\s*\n/)
@@ -307,8 +277,86 @@ describe("workspace assignment revision counter", () => {
   })
 })
 
-describe("user-hosted directory normalization", () => {
-  test("rewrites every absolute POSIX directory of a user-hosted row to its normalized form and nothing else", async () => {
+describe("dropping the workspace access mode", () => {
+  test("removes the column and leaves every row and its backing untouched", async () => {
+    const target = await database()
+    const before = CONTROL_PLANE_MIGRATIONS.slice(
+      0,
+      CONTROL_PLANE_MIGRATIONS.indexOf("0034_drop_workspace_access.sql"),
+    )
+    await apply(target, before)
+    await seedOwnerAndProject(target)
+    await seedWorkspace(target, "ws-machine", "user-hosted", "/srv/app")
+    await seedWorkspace(target, "ws-vm", "cloud", null)
+
+    await apply(target, ["0034_drop_workspace_access.sql"])
+
+    const columns = await target.prepare("select name from pragma_table_info('workspaces')").all<{ name: string }>()
+    expect(columns.results.map((row) => row.name)).not.toContain("access")
+    const rows = await target
+      .prepare("select workspace_id, backing, remote_directory from workspaces order by workspace_id")
+      .all<{ workspace_id: string; backing: string; remote_directory: string | null }>()
+    expect(rows.results).toEqual([
+      { workspace_id: "ws-machine", backing: "local-worktree", remote_directory: "/srv/app" },
+      { workspace_id: "ws-vm", backing: "cloud-vm", remote_directory: null },
+    ])
+  })
+})
+
+describe("session share levels", () => {
+  test("narrows every grant written before the column to follow and refuses any other value", async () => {
+    const target = await database()
+    await apply(target, CONTROL_PLANE_MIGRATIONS.slice(
+      0,
+      CONTROL_PLANE_MIGRATIONS.indexOf("0035_session_share_level.sql"),
+    ))
+    await seedOwnerAndProject(target)
+    await target.prepare(
+      "insert into users values ('user-b', 'active', 1, 1, null, null)",
+    ).run()
+    await target.prepare(
+      "insert into org_memberships (org_id, user_id, role, created_at, updated_at) values ('org-a', 'user-b', 'member', 1, 1)",
+    ).run()
+    await target.prepare(
+      `insert into workspaces (workspace_id, org_id, project_id, owner_user_id, backing, display_name, remote_directory, created_at, updated_at)
+       values ('ws-a', 'org-a', 'prj-a', 'user-a', 'local-worktree', 'ws-a', '/srv/app', 1, 1)`,
+    ).run()
+    await target.prepare(
+      `insert into session_registration_operations
+         (operation_id, session_id, workspace_id, org_id, project_id, creator_actor_id,
+          operation_kind, parent_session_id, requested_title, state, state_reason, created_at, updated_at)
+       values ('op-a', 'ses-a', 'ws-a', 'org-a', 'prj-a', 'actor-a', 'create', null, null, 'registered', null, 1, 1)`,
+    ).run()
+    await target.prepare(
+      `insert into sessions (session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
+         lifecycle_generation, title, created_at, updated_at)
+       values ('ses-a', 'op-a', 'ws-a', 'org-a', 'prj-a', 'actor-a', 1, null, 1, 1)`,
+    ).run()
+    await target.prepare(
+      `insert into session_share_grants
+         (grant_id, session_id, workspace_id, org_id, project_id, target_user_id, target_org_id,
+          target_team_id, granted_by_actor_id, granted_at, revoked_at)
+       values ('share-a', 'ses-a', 'ws-a', 'org-a', 'prj-a', 'user-b', null, null, 'actor-a', 1, null)`,
+    ).run()
+
+    await apply(target, ["0035_session_share_level.sql"])
+
+    const rows = await target
+      .prepare("select grant_id, level from session_share_grants order by grant_id")
+      .all<{ grant_id: string; level: string }>()
+    expect(rows.results).toEqual([{ grant_id: "share-a", level: "follow" }])
+
+    await target.prepare("update session_share_grants set level = 'send' where grant_id = 'share-a'").run()
+    expect((await target.prepare("select level from session_share_grants where grant_id = 'share-a'").first<{ level: string }>())?.level)
+      .toBe("send")
+    await expect(
+      target.prepare("update session_share_grants set level = 'broadcast' where grant_id = 'share-a'").run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+})
+
+describe("machine-placed directory normalization", () => {
+  test("rewrites every absolute POSIX directory of a machine-placed row to its normalized form and nothing else", async () => {
     const target = await database()
     await apply(target, CONTROL_PLANE_MIGRATIONS.slice(
       0,

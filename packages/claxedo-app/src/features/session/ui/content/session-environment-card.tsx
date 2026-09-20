@@ -12,7 +12,7 @@ import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { isProjectWorktreeDirectory, projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
@@ -47,8 +47,8 @@ export type EnvironmentChanges = {
 
 /**
  * How the session's working directory is isolated from the user's main
- * checkout: a dedicated git worktree, a plain local directory, or a remote
- * (cloud / user-hosted) workspace sandbox.
+ * checkout: a dedicated git worktree, a plain directory on the attached
+ * server, or a workspace sandbox on another machine.
  */
 export type EnvironmentIsolation = "worktree" | "local" | "cloud"
 
@@ -551,8 +551,8 @@ export function SessionEnvironmentCardMount(props: {
   onCleanup(() => props.onOccupancy?.(undefined))
 
   // Isolation, from typed sources only:
-  //  - cloud: a signed workspace kind (cloud/user-hosted — never local) or a
-  //    scoped relay workspace id means a remote tool sandbox;
+  //  - cloud: a placement the attached server does not serve itself, or a
+  //    scoped relay workspace id, means a remote tool sandbox;
   //  - worktree: the Project record carries secondary workspace ids/directories
   //    in `sandboxes`; the canonical owner resolver follows an id into the
   //    corresponding local `workspaces` record before comparing its directory;
@@ -610,7 +610,7 @@ export function SessionEnvironmentCardMount(props: {
         client: sdk.client,
         workspaceId: workspace?.workspaceId,
         workspace,
-        signedControlPlane: isRelayBackedWorkspaceKind(workspace?.kind),
+        signedControlPlane: isRelayHostKind(workspace?.kind),
       }),
       enabled: visible(),
     }

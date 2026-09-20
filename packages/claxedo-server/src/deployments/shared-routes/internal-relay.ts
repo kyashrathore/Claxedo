@@ -35,7 +35,7 @@ export type RuntimeAccessRevocationLookup = (args: {
  * `found:false` carries a stable error code so the resolver can distinguish
  * "workspace unknown" (404) from "host known but not reachable yet" (409).
  *
- * For user-hosted workspaces the host dials *out* to the relay, so `baseUrl`
+ * A machine dials *out* to the relay, so for a workspace it serves `baseUrl`
  * may be empty — the relay routes by `hostId` over the established tunnel.
  */
 export type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
@@ -140,7 +140,6 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
       workspaceId,
       hostId,
       baseUrl: target.baseUrl.replace(/\/+$/, ""),
-      access: target.access,
       backing: target.backing,
       ...(target.upstreamHeaders ? { upstreamHeaders: target.upstreamHeaders } : {}),
     })

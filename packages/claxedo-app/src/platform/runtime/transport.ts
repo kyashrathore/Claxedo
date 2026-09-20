@@ -7,15 +7,14 @@ import {
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/agent/workspace-runtime-request"
 import {
-  centralTransportForDeployment,
   centralTransportForServer,
   isLocalPersonalScope,
 } from "@/platform/runtime/server-transport"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
+import type { WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
 export {
-  centralTransportForDeployment,
   centralTransportForServer,
   isLocalPersonalScope,
   unsignedLocalFetch,
@@ -48,7 +47,7 @@ export function submitTransportForPlacement(input: {
    */
   sessionAuthority?: WorkspaceSessionAuthority
   workspaceId?: string
-  workspaceKind?: "local" | "cloud" | "user-hosted" | null
+  hostKind?: WorkspaceHostKind | null
 }) {
   const loopbackWorkspaceBridge = isLocalPersonalScope(input)
   const directoryWorkspaceId = workspaceIdFromRef(input.directory)
@@ -68,11 +67,9 @@ export function submitTransportForPlacement(input: {
     //
     // So the answer comes from the server, never from this build: the
     // catalog's `session_authority` is the serving process's own declaration
-    // of the policy it mounted. Two client-side derivations were tried and
-    // each was wrong for one deployment — the wire (loopback vs relay) missed
-    // the signed self-hosted server, and `VITE_AUTH_ENABLED` turned the
-    // test-user e2e build into a reserving client against a local backend
-    // that has no issuer to reserve at.
+    // of the policy it mounted. The wire cannot stand in for it — loopback
+    // reaches a signed self-hosted server's reserving runtime as readily as a
+    // daemon's unbound one.
     managedSessionRegistration: controlPlaneSession || input.sessionAuthority === "managed-private",
   }
 }
@@ -95,8 +92,7 @@ export function createTransport(input: {
     request: input.request,
     relayRequest: input.relayRequest,
     resolveWorkspaceRuntime: input.resolveWorkspaceRuntime,
-    preferRelayOnLoopback: input.placement.transport === "workspace-relay" ||
-      input.placement.transport === "direct-runtime",
+    preferRelayOnLoopback: input.placement.transport === "workspace-relay",
   })
   const runtimeFetch = input.placement.transport === "signed-web"
     ? (path: string, init?: RequestInit) => (input.request ?? authFetch)(`${serverUrl}${path}`, init)
@@ -135,5 +131,5 @@ function workspaceRuntimeId(placement: Placement) {
 
 function workspaceRuntimeSnapshot(placement: Placement) {
   if (placement.hosting !== "workspace" || placement.transport === "signed-web" || !placement.workspaceId) return undefined
-  return { kind: "cloud" as const, workspaceId: placement.workspaceId }
+  return { kind: "provisioner" as const, workspaceId: placement.workspaceId }
 }

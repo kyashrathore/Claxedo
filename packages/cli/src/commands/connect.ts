@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import os from "node:os"
+import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
 import { newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
@@ -32,7 +33,7 @@ export function defaultConnectDeps(): ConnectDeps {
     store: connectStateStore(),
     paths,
     controlPlaneUrl: config().controlPlaneUrl,
-    displayName: os.hostname(),
+    displayName: machineDisplayName(process.platform),
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
     desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles(process.env, os.homedir()) }),
   }
@@ -42,7 +43,7 @@ export const connectHelp = `${connectUsage}
 
   --token-file F        redeem an invitation from F (minted by \`claxedo host invite\`); the file is removed once the enrollment is on disk
   --root DIR            serve only under DIR (repeatable); the effective roots are the owner's scope ∩ these
-  --name N              this machine's display name at first enrollment (default: the hostname)
+  --name N              this machine's display name at first enrollment (default: the name this computer answers to)
   --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
   --uninstall-service   stop and remove that service
   --foreground          serve in this process (the default when no service flag is given)

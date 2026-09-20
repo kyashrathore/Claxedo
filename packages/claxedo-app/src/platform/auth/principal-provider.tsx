@@ -8,7 +8,12 @@ export type SignedAccountSource = () => { userId: string } | undefined
 
 export function PrincipalProvider(
   props: ParentProps<{
-    authEnabled: boolean
+    /**
+     * Whether this deployment issues sessions, as its server declared. An
+     * unsigned visitor to one that does is `anonymous`; on one that does not,
+     * they are the machine's own user.
+     */
+    issuesSessions: boolean
     /**
      * A second signed source beside the auth session, injected by the entry
      * composition (the auth layer must not import the account layer). Desktop
@@ -48,7 +53,7 @@ export function PrincipalProvider(
         userId: signedAccount.userId,
       }
     }
-    if (!props.authEnabled) return { kind: "local", deviceId: "local" }
+    if (!props.issuesSessions) return { kind: "local", deviceId: "local" }
     return { kind: "anonymous" }
   }
 

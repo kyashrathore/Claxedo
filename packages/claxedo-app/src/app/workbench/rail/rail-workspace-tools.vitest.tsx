@@ -107,7 +107,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
   isWorkspaceReady: () => true,
   workspaceOffline: () => undefined,
-  workspacePlacement: () => undefined,
+  workspaceRelayPlacement: () => undefined,
 }))
 
 vi.mock("@/features/terminal/core/terminal-commands", () => ({
@@ -225,7 +225,7 @@ describe("RailLayout workspace tool gates", () => {
           sessionId: "ses_workspace",
           host: "workspace",
           workspaceId: "ws_backed",
-          toolSandbox: { kind: "workspace", workspaceId: "ws_backed", hosting: "cloud" },
+          toolSandbox: { kind: "workspace", workspaceId: "ws_backed", hosting: "provisioner" },
         },
       },
     })

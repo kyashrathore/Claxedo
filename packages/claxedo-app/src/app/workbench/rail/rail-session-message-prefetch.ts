@@ -13,11 +13,12 @@ import {
 } from "@/platform/sync/session-prefetch"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
+import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 
 type RailSessionPrefetchOptions = {
   bypassQuiet?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   sessionRef?: SessionRef
 }
 
@@ -69,10 +70,10 @@ export function createRailSessionMessagePrefetch(input: {
             sessionRef: options.sessionRef,
             signal: controller.signal,
             workspaceReachable: options.workspaceId ? input.workspaceReachable(options.workspaceId) : undefined,
-            ...(options.workspaceKind
+            ...(options.hostKind
               ? {
                   signedControlPlane: true,
-                  workspaceKind: options.workspaceKind,
+                  hostKind: options.hostKind,
                   ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
                 }
               : {}),

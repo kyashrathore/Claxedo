@@ -1,5 +1,4 @@
 import type { BrowserAuthAdapter } from "@/platform/auth/browser-auth"
-import { centralTransportForDeployment } from "@/platform/runtime/transport"
 
 /**
  * Start the identity provider a build selected, without letting it gate the
@@ -19,27 +18,31 @@ import { centralTransportForDeployment } from "@/platform/runtime/transport"
  * session signals, and this function only has to start it and get out of the
  * way.
  *
- * It reads `centralTransportForDeployment` once here and hands the answer down.
- * That is the same call `CloudAuthGate` makes to decide whether a signed
- * session is required at all, so the gate and the adapter cannot disagree
- * about which deployment this is; a loopback central is then anonymous by
- * contract, with no descriptor request and no provider SDK, decided by that
- * reading rather than by anything the adapter goes and finds out.
+ * `issuesSessions` is the server's own declaration, resolved by the caller
+ * before this runs and handed to `CloudAuthGate` as well, so the gate and the
+ * adapter cannot disagree about which deployment this is. A server that
+ * declared nothing is treated as one that issues no sessions.
  *
- * Called at module scope, before `render()`, so a hosted build's first render
- * already reads `loading` and a signed user never sees the anonymous state
- * flash into a `/login` redirect.
+ * The adapter is started in every case rather than only where a session can
+ * exist: `initialize` settles a deployment with no sign-in flow without a
+ * request and without a session client (`browserAuthUnavailable`), so a
+ * loopback daemon still loads no provider SDK, and refusing to start it here
+ * as well would only skip the adapter's own test bypass — the seam the e2e
+ * harness injects a principal through.
+ *
+ * Called before `render()`, so a signed deployment's first render already
+ * reads `loading` and a signed user never sees the anonymous state flash into
+ * a `/login` redirect.
  */
 export function startBrowserAuth(input: {
-  authEnabled: boolean
+  issuesSessions: boolean | undefined
   adapter: Pick<BrowserAuthAdapter, "initialize">
   apiOrigin: string
   appOrigin: string
 }): void {
-  if (!input.authEnabled) return
   void input.adapter.initialize({
     apiOrigin: input.apiOrigin,
     appOrigin: input.appOrigin,
-    centralTransport: centralTransportForDeployment({ serverUrl: input.apiOrigin, authEnabled: input.authEnabled }),
+    issuesSessions: input.issuesSessions === true,
   })
 }

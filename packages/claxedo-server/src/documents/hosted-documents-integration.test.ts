@@ -125,8 +125,8 @@ describe("hosted remote documents genuine integration", () => {
       relayHostAlgorithm: "EdDSA",
       isRuntimeAccessTokenActive: async () => ({ active: true }),
       resolveTarget: async (claims) => claims.workspace_id === "local_ws"
-        ? { workspaceId: "local_ws", hostId: "local_host", baseUrl: "http://local.runtime", access: "user-hosted", backing: "local-worktree" }
-        : { workspaceId: "cloud_ws", hostId: "cloud_host", baseUrl: "http://cloud.runtime", access: "cloud", backing: "cloud-vm" },
+        ? { workspaceId: "local_ws", hostId: "local_host", baseUrl: "http://local.runtime", backing: "local-worktree" }
+        : { workspaceId: "cloud_ws", hostId: "cloud_host", baseUrl: "http://cloud.runtime", backing: "cloud-vm" },
       directory,
       fetch: (async (request: RequestInfo | URL, init?: RequestInit) => {
         const source = request instanceof Request ? request : new Request(request, init)
@@ -345,13 +345,10 @@ function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAut
       resolveSession: async (_auth: SignedControlPlaneAuth, input: { sessionId: string }) => ({ workspace_id: "cloud_ws", session_id: input.sessionId }),
       authorizeSessionRead: async () => undefined,
       openWorkspace: async (_auth: SignedControlPlaneAuth, input: { workspaceId: string }) => input.workspaceId === "local_ws"
-        ? { allowed: true, role: "editor", workspace: { workspace_id: "local_ws", org_id: "org_1", project_id: "project_1", access: "user-hosted", backing: "local-worktree" } }
-        : { allowed: true, role: "editor", workspace: { workspace_id: "cloud_ws", org_id: "org_1", project_id: "project_1", access: "cloud", backing: "cloud-vm" } },
-      // Renamed from `activeLocalHostLink` when host assignment went
-      // machine-wide (`feat(authority): machine-wide host assignments`);
-      // `local-relay.ts` reads the routable host through this name now.
+        ? { allowed: true, role: "editor", workspace: { workspace_id: "local_ws", org_id: "org_1", project_id: "project_1", backing: "local-worktree" } }
+        : { allowed: true, role: "editor", workspace: { workspace_id: "cloud_ws", org_id: "org_1", project_id: "project_1", backing: "cloud-vm" } },
       activeWorkspaceHost: async () => ({ active: true, host_id: "local_host", workspace_id: "local_ws", expires_at: Date.now() + 60_000, last_seen_at: Date.now() }),
-      listWorkspaces: async () => [{ workspace_id: "local_ws", project_id: "project_1", access: "user-hosted", backing: "local-worktree" }],
+      listWorkspaces: async () => [{ workspace_id: "local_ws", project_id: "project_1", backing: "local-worktree" }],
     },
     sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "cloud_host", homeRegion: "us-east" }) } },
     relay: { provider },

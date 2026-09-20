@@ -49,10 +49,11 @@ describe("global sync inventory source helpers", () => {
     expect(local.sessions.map((item) => item.id)).toEqual(["ses_local"])
   })
 
-  test("workspaceHostingKind accepts control-plane access and backing vocabulary", () => {
-    expect(workspaceHostingKind({ access: "cloud" })).toBe("cloud")
-    expect(workspaceHostingKind({ backing: "user-hosted" })).toBe("user-hosted")
-    expect(workspaceHostingKind({ access: "local" })).toBeUndefined()
+  test("workspaceHostingKind reads a resolved kind or a control-plane placement", () => {
+    expect(workspaceHostingKind({ kind: "cloud" })).toBe("provisioner")
+    expect(workspaceHostingKind({ backing: "cloud-vm" })).toBe("provisioner")
+    expect(workspaceHostingKind({ backing: "local-worktree" })).toBe("machine")
+    expect(workspaceHostingKind({ kind: "local" })).toBeUndefined()
     expect(workspaceHostingKind(undefined)).toBeUndefined()
   })
 
@@ -75,11 +76,6 @@ describe("global sync inventory source helpers", () => {
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,
       baseUrl: "http://127.0.0.1:4096",
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-    })).toBe(true)
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:4096",
       directory: "/repo/local",
       workspaceId: "ws_authoritative",
     })).toBe(true)
@@ -97,8 +93,9 @@ describe("global sync inventory source helpers", () => {
       workspace: {
         workspace_name: "Cloud Workspace",
         project_id: "proj_123",
-        access: "cloud",
-        backing: "cloudflare",
+        kind: "cloud",
+        backing: "cloud-vm",
+        driver: "cloudflare",
       },
       session: {
         session_id: "ses_123",
@@ -121,7 +118,7 @@ describe("global sync inventory source helpers", () => {
       tags: [],
       attachments: [],
       environment: {
-        kind: "cloud",
+        kind: "provisioner",
         driver: "cloudflare",
       },
       lastTurn: {
@@ -140,7 +137,7 @@ describe("global sync inventory source helpers", () => {
       workspace: {
         workspaceName: "User Workspace",
         projectID: "proj_456",
-        backing: "user-hosted",
+        backing: "local-worktree",
       },
       session: {
         sessionID: "ses_456",
@@ -155,11 +152,17 @@ describe("global sync inventory source helpers", () => {
       workspaceName: "User Workspace",
       projectID: "proj_456",
       environment: {
-        kind: "user-hosted",
-        driver: "user-hosted",
+        kind: "machine",
       },
       time: { created: 30, updated: 40 },
     })
+    // `toMatchObject` admits extra keys, and "no driver" is the assertion.
+    expect(controlPlaneSessionToItem({
+      directory: "workspace:ws_456",
+      workspaceId: "ws_456",
+      workspace: { backing: "local-worktree" },
+      session: { sessionID: "ses_456" },
+    })?.environment).toEqual({ kind: "machine" })
   })
 
   test("toSessionInventoryRow maps SDK sessions with project fallback and filtered details", () => {
@@ -177,7 +180,7 @@ describe("global sync inventory source helpers", () => {
         { kind: "url", target_id: "https://example.test" },
         { kind: "missing-target" },
       ],
-      environment: { kind: "cloud", provider: "cloudflare" },
+      environment: { kind: "provisioner", provider: "cloudflare" },
       git: { repo: "repo", branch: "dev" },
       lastTurn: {
         status: "failed",
@@ -197,7 +200,7 @@ describe("global sync inventory source helpers", () => {
         { kind: "file", targetID: "src/app.tsx" },
         { kind: "url", targetID: "https://example.test" },
       ],
-      environment: { kind: "cloud", driver: "cloudflare" },
+      environment: { kind: "provisioner", driver: "cloudflare" },
       git: { repo: "repo", branch: "dev" },
       archived: true,
       lastTurn: {
@@ -249,7 +252,7 @@ describe("global sync inventory source helpers", () => {
     })
   })
 
-  test("signed inventory source keeps user-hosted visibility authority-filtered", async () => {
+  test("signed inventory source keeps machine-placed visibility authority-filtered", async () => {
     const requested: string[] = []
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
@@ -258,26 +261,24 @@ describe("global sync inventory source helpers", () => {
       authFetch: async (resource) => {
         const url = new URL(requestUrl(resource))
         requested.push(`${url.pathname}?${url.searchParams.toString()}`)
-        if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
+        if (url.pathname === "/api/workspace" && url.searchParams.get("host") === "provisioner") {
           return jsonResponse({
             workspaces: [{
               workspace_id: "ws_cloud",
               workspace_name: "Cloud",
               project_id: "project_cloud",
-              access: "cloud",
-              backing: "cloudflare",
+              backing: "cloud-vm",
               remote_directory: "workspace:ws_cloud",
             }],
           })
         }
-        if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "user-hosted") {
+        if (url.pathname === "/api/workspace" && url.searchParams.get("host") === "machine") {
           return jsonResponse({
             workspaces: [{
               workspace_id: "ws_user",
               workspace_name: "User Hosted",
               project_id: "project_user",
-              access: "user-hosted",
-              backing: "user-hosted",
+              backing: "local-worktree",
               remote_directory: "workspace:ws_user",
             }],
           })
@@ -302,37 +303,37 @@ describe("global sync inventory source helpers", () => {
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
-    // The registry only ever holds the user-hosted sessions that were created
-    // THROUGH it, so this boot read asked a question it could not answer and
-    // paid a round trip per shared machine for the empty answer. Its list is
-    // the runtime's, over the relay (`session-source.ts`).
+    // The registry only ever holds the machine-placed sessions that were
+    // created THROUGH it, so this boot read asked a question it could not
+    // answer and paid a round trip per shared machine for the empty answer.
+    // Its list is the runtime's, over the relay (`session-source.ts`).
     expect(requested).not.toContain("/api/control/sessions?workspaceId=ws_user")
     expect(requested).toContain("/api/control/sessions?workspaceId=ws_cloud")
   })
 
-  // Falsifier for the boot request graph's serial cloud→user-hosted pair: the
-  // two lists are independent reads (neither's result feeds the other), so a
-  // serial `await` chain here is pure round-trip latency. If the snapshot
-  // reverted to sequencing them, "user-hosted" would never start until
-  // "cloud" first awaits this test's gate, and the test would time out.
-  test("fetchSignedWorkspaceSnapshot requests cloud and user-hosted workspaces concurrently", async () => {
+  // Falsifier for a serial provisioner→machine pair: the two lists are
+  // independent reads (neither's result feeds the other), so a serial `await`
+  // chain here is pure round-trip latency. If the snapshot sequenced them,
+  // `machine` would never start until `provisioner` first awaits this test's
+  // gate, and the test would time out.
+  test("fetchSignedWorkspaceSnapshot requests the `provisioner` and `machine` lists concurrently", async () => {
     const started: string[] = []
     let openCloudGate: () => void = () => {}
-    let openUserHostedGate: () => void = () => {}
+    let openMachineGate: () => void = () => {}
     const cloudGate = new Promise<void>((resolve) => { openCloudGate = resolve })
-    const userHostedGate = new Promise<void>((resolve) => { openUserHostedGate = resolve })
+    const machineGate = new Promise<void>((resolve) => { openMachineGate = resolve })
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
       authFetch: async (resource) => {
-        const access = new URL(requestUrl(resource)).searchParams.get("access")
-        started.push(access!)
-        if (access === "cloud") {
+        const host = new URL(requestUrl(resource)).searchParams.get("host")
+        started.push(host!)
+        if (host === "provisioner") {
           openCloudGate()
-          await userHostedGate
+          await machineGate
         } else {
-          openUserHostedGate()
+          openMachineGate()
           await cloudGate
         }
         return jsonResponse({ workspaces: [] })
@@ -343,7 +344,7 @@ describe("global sync inventory source helpers", () => {
 
     await source.fetchSignedWorkspaceSnapshot()
 
-    expect(started.sort()).toEqual(["cloud", "user-hosted"])
+    expect(started.sort()).toEqual(["machine", "provisioner"])
   })
 
   test("signed directory fetch uses known workspace metadata before resolving runtime", async () => {
@@ -358,12 +359,12 @@ describe("global sync inventory source helpers", () => {
             workspaceId: "ws_known",
             directory: "workspace:ws_known",
             workspaceName: "Known",
-            kind: "cloud",
+            kind: "provisioner",
           }
         : undefined,
       resolveWorkspace: async () => {
         resolveCalls++
-        return { workspaceId: "ws_resolved", directory: "workspace:ws_resolved", kind: "cloud" }
+        return { workspaceId: "ws_resolved", directory: "workspace:ws_resolved", kind: "provisioner" }
       },
     })
 
@@ -386,7 +387,7 @@ describe("global sync inventory source helpers", () => {
     expect(await source.fetchSignedWorkspaceSessions({
       workspaceId: "ws_cloud",
       directory: "workspace:ws_cloud",
-      kind: "cloud",
+      kind: "provisioner",
     })).toEqual([])
   })
 
@@ -402,8 +403,8 @@ describe("global sync inventory source helpers", () => {
 
     await expect(source.fetchControlPlaneSessions("ws_down"))
       .rejects.toThrow("Control-plane session list failed with 503")
-    await expect(source.fetchControlPlaneWorkspaces("cloud"))
-      .rejects.toThrow("Control-plane cloud workspace list failed with 503")
+    await expect(source.fetchControlPlaneWorkspaces("provisioner"))
+      .rejects.toThrow("Control-plane provisioner workspace list failed with 503")
   })
 
   test("effective-access checks bypass cached session inventory and surface authority failures", async () => {
@@ -466,7 +467,7 @@ describe("global sync inventory source helpers", () => {
     // both resolve to the same workspace id and must land on one fetch.
     const [viaSessions, viaWorkspace] = await Promise.all([
       source.fetchControlPlaneSessions("ws_1"),
-      source.fetchSignedWorkspaceSessions({ workspaceId: "ws_1", directory: "workspace:ws_1", kind: "cloud" }),
+      source.fetchSignedWorkspaceSessions({ workspaceId: "ws_1", directory: "workspace:ws_1", kind: "provisioner" }),
     ])
 
     expect(requests).toBe(1)
@@ -555,7 +556,7 @@ describe("global sync inventory source helpers", () => {
     })
   })
 
-  test("loopback grouping keeps a local workspace's filesystem transport directory", async () => {
+  test("loopback grouping keeps the filesystem transport directory of a workspace this machine serves", async () => {
     const source = createInventoryPageSource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "http://127.0.0.1:4096",

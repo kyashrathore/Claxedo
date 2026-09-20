@@ -289,7 +289,7 @@ export const dict = {
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kan ikke bruke dette vedlegget",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} har ingen prompt-inndata for {{mime}}, og denne økten har ikke et lokalt arbeidsområde å lagre filen i.",
+    "{{harness}} har ingen prompt-inndata for {{mime}}, og denne økten har ingen arbeidsområdemappe å lagre filen i.",
   "prompt.toast.attachmentUnreadable.title": "Vedlegget kunne ikke leses",
   "prompt.toast.attachmentUnreadable.description":
     "{{filename}} kunne ikke leses fra denne enheten.",
@@ -442,7 +442,7 @@ export const dict = {
 
   "home.recentProjects": "Nylige prosjekter",
   "home.empty.title": "Ingen nylige prosjekter",
-  "home.empty.description": "Kom i gang ved å åpne et lokalt prosjekt",
+  "home.empty.description": "Kom i gang ved å åpne en mappe fra denne datamaskinen",
 
   "home.title": "Hjem",
   "session.timeline.scrollToBottom": "Rull til siste melding",
@@ -506,12 +506,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "Prosjekter og sesjoner",
   "sidebar.settings": "Innstillinger",
   "sidebar.help": "Hjelp",
-  "sidebar.workspace.role.viewer": "Leser",
-  "sidebar.workspace.role.editor": "Redaktør",
-  "sidebar.workspace.role.admin": "Administrator",
-  "sidebar.workspace.hostOffline": "Vert frakoblet",
-  "sidebar.workspace.sharedWithYou": "Delt med deg",
-  "sidebar.workspace.publishedByThisMachine": "Publisert fra denne maskinen",
 
 
   "settings.section.desktop": "Skrivebord",
@@ -689,8 +683,6 @@ export const dict = {
   "session.delete.button": "Slett sesjon",
 
   "workspace.new": "Nytt arbeidsområde",
-  "workspace.type.local": "lokal",
-  "workspace.type.sandbox": "sandkasse",
   "workspace.error.stillPreparing": "Arbeidsområdet klargjøres fortsatt",
   "workspace.status.checking": "Sjekker for ikke-sammenslåtte endringer...",
   "workspace.status.error": "Kunne ikke bekrefte git-status.",

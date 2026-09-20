@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { terminalScopedPlacement } from "./terminal-scoped-cache"
 
 describe("terminalScopedPlacement", () => {
-  test("routes a resolved non-local workspace through the relay", () => {
-    expect(terminalScopedPlacement("https://claxedo.example.test", { kind: "cloud", workspaceId: "ws_1" })).toEqual({
+  test("routes a resolved workspace this machine does not serve through the relay", () => {
+    expect(terminalScopedPlacement("https://claxedo.example.test", { kind: "provisioner", workspaceId: "ws_1" })).toEqual({
       workspaceId: "ws_1",
       hosting: "workspace",
       transport: "workspace-relay",
@@ -17,8 +17,9 @@ describe("terminalScopedPlacement", () => {
     })
   })
 
-  // A signed user-hosted workspace addressed by its filesystem-path directory
-  // has no `/api/workspace/resolve` entry on the hosted control plane — the
+  // A signed workspace placed on another machine, addressed by its
+  // filesystem-path directory, has no `/api/workspace/resolve` entry on the
+  // hosted control plane — the
   // caller's liveness read (`workspace`) comes back empty for it — so the
   // signed inventory match passed as `signedWorkspace` must still win the
   // relay placement instead of falling through to the central transport.
@@ -27,10 +28,10 @@ describe("terminalScopedPlacement", () => {
       terminalScopedPlacement(
         "https://claxedo.example.test",
         null,
-        { kind: "user-hosted", workspaceId: "ws_uh1" },
+        { kind: "machine", workspaceId: "ws_machine1" },
       ),
     ).toEqual({
-      workspaceId: "ws_uh1",
+      workspaceId: "ws_machine1",
       hosting: "workspace",
       transport: "workspace-relay",
     })
@@ -43,8 +44,8 @@ describe("terminalScopedPlacement", () => {
     expect(
       terminalScopedPlacement(
         "https://claxedo.example.test",
-        { kind: "cloud", workspaceId: "ws_live" },
-        { kind: "user-hosted", workspaceId: "ws_signed" },
+        { kind: "provisioner", workspaceId: "ws_live" },
+        { kind: "machine", workspaceId: "ws_signed" },
       ),
     ).toEqual({
       workspaceId: "ws_signed",

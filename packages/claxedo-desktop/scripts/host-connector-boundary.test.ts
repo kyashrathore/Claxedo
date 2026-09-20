@@ -64,7 +64,11 @@ function walk(entry: string): Closure {
         // Asset imports carry a bundler query (`...template.sh?raw`); the file
         // on disk is the specifier without it.
         const base = path.resolve(path.dirname(file), specifier.replace(/[?#].*$/, ""))
-        const candidate = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}.js`].find(
+        // A NodeNext package spells its own siblings `./broker.js` and ships
+        // `broker.ts`; without the swap the walk reports the whole package
+        // unresolved and every negative assertion below becomes vacuous.
+        const swapped = base.replace(/\.jsx?$/, (extension) => (extension === ".jsx" ? ".tsx" : ".ts"))
+        const candidate = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}.js`, swapped].find(
           (option) => fs.existsSync(option) && fs.statSync(option).isFile(),
         )
         if (candidate) pending.push(candidate)
@@ -124,7 +128,12 @@ test("the separately built child entry imports the connector while its main asse
     specifiers(fs.readFileSync(childEntry, "utf8")).filter(
       (specifier) => specifier === CONNECTOR || specifier.startsWith(`${CONNECTOR}/`),
     ),
-  ).toEqual(["@claxedo/host-connector/connector", "@claxedo/host-connector/host-identity"])
+  ).toEqual([
+    "@claxedo/host-connector/connector",
+    "@claxedo/host-connector/host-identity",
+    "@claxedo/host-connector/machine-seal",
+    "@claxedo/host-connector/machine-transport",
+  ])
 
   const mainAssembly = walk(path.join(PACKAGE_DIR, "src/main/host-connector/electron-child.ts"))
   expect([...mainAssembly.packages].filter((name) => name === CONNECTOR || name.startsWith(`${CONNECTOR}/`))).toEqual([])

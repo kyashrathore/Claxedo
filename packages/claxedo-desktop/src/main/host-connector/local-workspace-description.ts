@@ -1,12 +1,17 @@
 /**
  * What this machine knows about one of its own workspaces, as the control
  * plane's host assignment records it: the directory the runtime mounts, the
- * repository, the branch, and a name. The daemon is the owner of that truth
- * (`/api/claxedo/workspace`); the renderer only names WHICH workspace to
- * share, so the description is read here, in main, at share time.
+ * repository, the branch, and a name. The daemon is the owner of that truth;
+ * the renderer only names WHICH workspace to share, so the description is read
+ * here, in main, at share time.
+ *
+ * Read from the RESOLVE route, which answers one workspace by id and is the
+ * only projection that carries the repository fields below. The daemon's list
+ * verb answers the control-plane list contract, whose `backing` is a bare word
+ * with no repository in it.
  */
 
-import { readArray, readRecord, readString } from "../../shared/json-read"
+import { readRecord, readString } from "../../shared/json-read"
 
 export type LocalWorkspaceDescription = {
   displayName: string
@@ -21,10 +26,14 @@ export async function describeLocalWorkspace(
   workspaceId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LocalWorkspaceDescription | undefined> {
-  const response = await fetchImpl(new URL("/api/claxedo/workspace", daemonUrl))
-  if (!response.ok) throw new Error(`workspace list answered ${response.status}`)
-  const body: unknown = await response.json()
-  const row = readArray(body, "workspaces")?.find((item) => readString(item, "workspaceId") === workspaceId)
+  const url = new URL("/api/claxedo/workspace/resolve", daemonUrl)
+  url.searchParams.set("workspaceId", workspaceId)
+  const response = await fetchImpl(url)
+  // A workspace this machine does not hold is not an error to share against —
+  // the caller decides what an undescribed workspace means.
+  if (response.status === 404) return undefined
+  if (!response.ok) throw new Error(`workspace resolve answered ${response.status}`)
+  const row: unknown = await response.json()
   const directory = readString(row, "directory")
   if (!directory) return undefined
   const trimmed = (value: string | undefined) => (value?.trim() ? value.trim() : undefined)

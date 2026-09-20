@@ -3,18 +3,41 @@ import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { useLanguage } from "@/platform/i18n/provider"
 import {
   grantSessionShare,
   listSessionShares,
   revokeSessionShare,
+  type SessionShareLevel,
 } from "@/features/session/data/session-share-api"
+
+/**
+ * What the grantee may do, and the whole of it: a share level is the only
+ * cross-person grant in the product, so nothing a person is a member of adds
+ * to or subtracts from what these two words promise.
+ */
+const LEVEL_KEY: Record<SessionShareLevel, "session.share.level.follow" | "session.share.level.send"> = {
+  follow: "session.share.level.follow",
+  send: "session.share.level.send",
+}
+
+/** A `send` grant the granter has asked for and not yet acknowledged. */
+type PendingSend = {
+  description: string
+  send: () => Promise<void>
+}
 
 export const SessionPeopleControl: Component<{
   sessionId: string
   workspaceId: string
 }> = (props) => {
+  const language = useLanguage()
+  const levelLabel = (level: SessionShareLevel) => language.t(LEVEL_KEY[level])
   const [open, setOpen] = createSignal(false)
   const [personToken, setPersonToken] = createSignal("")
+  const [newLevel, setNewLevel] = createSignal<SessionShareLevel>("follow")
+  const [pending, setPending] = createSignal<PendingSend | undefined>()
+  const [acknowledged, setAcknowledged] = createSignal(false)
   const peopleKey = () => `${props.sessionId}:${props.workspaceId}`
   const [people, { refetch }] = createResource(
     peopleKey,
@@ -26,6 +49,67 @@ export const SessionPeopleControl: Component<{
   const manageable = () => {
     const data = people.state === "ready" || people.state === "refreshing" ? people.latest : undefined
     return data?.key === peopleKey() && data.context.can_manage_shares ? data.context : undefined
+  }
+
+  const closeDisclosure = () => {
+    setPending(undefined)
+    setAcknowledged(false)
+  }
+
+  const report = (title: string, error: unknown) => {
+    showToast({ title, description: error instanceof Error ? error.message : String(error) })
+  }
+
+  /**
+   * Every grant goes through here, so raising an existing share to `send` is
+   * gated exactly as a new one is. The control plane keeps one active grant
+   * per recipient, so a repeat grant at another level moves that grant rather
+   * than adding a second.
+   */
+  const share = async (input: {
+    level: SessionShareLevel
+    description: string
+    target:
+      | { grantedToTokenIdentifier: string }
+      | { grantedToUserId: string }
+      | { grantedToOrgId: string }
+      | { grantedToTeamPublicId: string }
+    onGranted?: () => void
+  }) => {
+    const send = async () => {
+      try {
+        await grantSessionShare({
+          sessionId: props.sessionId,
+          workspaceId: props.workspaceId,
+          level: input.level,
+          ...input.target,
+        })
+        input.onGranted?.()
+        closeDisclosure()
+        await refetch()
+        showToast({ title: `${input.description} — ${levelLabel(input.level).toLowerCase()}` })
+      } catch (error) {
+        report("Could not share this session", error)
+      }
+    }
+    if (input.level !== "send") {
+      await send()
+      return
+    }
+    setAcknowledged(false)
+    setPending({ description: input.description, send })
+  }
+
+  const remove = async (
+    target: { grantId: string } | { grantedToTeamPublicId: string },
+  ) => {
+    try {
+      await revokeSessionShare({ sessionId: props.sessionId, workspaceId: props.workspaceId, ...target })
+      closeDisclosure()
+      await refetch()
+    } catch (error) {
+      report("Could not revoke share", error)
+    }
   }
 
   return (
@@ -46,6 +130,7 @@ export const SessionPeopleControl: Component<{
             open={open()}
             onOpenChange={(next) => {
               setOpen(next)
+              closeDisclosure()
               if (next) void refetch()
             }}
           >
@@ -62,8 +147,41 @@ export const SessionPeopleControl: Component<{
             <DropdownMenu.Content class="z-[220] w-80 p-3 flex flex-col gap-3">
               <div class="text-12-medium text-text-strong">Share this private session</div>
               <p class="text-12-regular text-text-weak">
-                Workspace access alone is not enough. Add a person or a team.
+                A session share is the only thing that lets a teammate reach this session.
               </p>
+              <Show when={pending()}>
+                {(request) => (
+                  <div
+                    role="alertdialog"
+                    aria-label="Sending messages shares this machine"
+                    class="flex flex-col gap-2 rounded-md border border-border-weak-base p-2"
+                  >
+                    <div class="text-12-medium text-text-strong">Before you allow sending</div>
+                    <p class="text-12-regular text-text-weak">{language.t("session.share.disclosure.send")}</p>
+                    <label class="flex items-start gap-2 text-12-regular text-text-strong">
+                      <input
+                        type="checkbox"
+                        checked={acknowledged()}
+                        onChange={(event) => setAcknowledged(event.currentTarget.checked)}
+                      />
+                      I understand what a teammate who can send messages can reach.
+                    </label>
+                    <div class="flex items-center gap-2">
+                      <Button
+                        size="small"
+                        disabled={!acknowledged()}
+                        aria-label={`Allow sending: ${request().description}`}
+                        onClick={() => void request().send()}
+                      >
+                        Allow sending
+                      </Button>
+                      <Button size="small" variant="ghost" onClick={closeDisclosure}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </Show>
               <div class="flex flex-col gap-2">
                 <input
                   class="w-full rounded-md border border-border-weak-base bg-transparent px-2 py-1.5 text-12-regular"
@@ -71,26 +189,29 @@ export const SessionPeopleControl: Component<{
                   value={personToken()}
                   onInput={(event) => setPersonToken(event.currentTarget.value)}
                 />
+                <label class="flex items-center gap-2 text-12-regular text-text-weak">
+                  Share level
+                  <select
+                    class="rounded-md border border-border-weak-base bg-transparent px-1 py-1 text-12-regular"
+                    aria-label="Share level"
+                    value={newLevel()}
+                    onChange={(event) => setNewLevel(event.currentTarget.value === "send" ? "send" : "follow")}
+                  >
+                    <option value="follow">{levelLabel("follow")}</option>
+                    <option value="send">{levelLabel("send")}</option>
+                  </select>
+                </label>
                 <Button
                   size="small"
-                  onClick={async () => {
-                    try {
-                      const token = personToken().trim()
-                      if (!token) return
-                      await grantSessionShare({
-                        sessionId: props.sessionId,
-                        workspaceId: props.workspaceId,
-                        grantedToTokenIdentifier: token,
-                      })
-                      setPersonToken("")
-                      await refetch()
-                      showToast({ title: "Person added to session" })
-                    } catch (error) {
-                      showToast({
-                        title: "Could not add person",
-                        description: error instanceof Error ? error.message : String(error),
-                      })
-                    }
+                  onClick={() => {
+                    const token = personToken().trim()
+                    if (!token) return
+                    void share({
+                      level: newLevel(),
+                      description: "Person added to session",
+                      target: { grantedToTokenIdentifier: token },
+                      onGranted: () => setPersonToken(""),
+                    })
                   }}
                 >
                   Add person
@@ -100,69 +221,64 @@ export const SessionPeopleControl: Component<{
                 <div class="text-12-medium text-text-strong">Teams</div>
                 <Show
                   when={data().teams.length > 0}
-                  fallback={<p class="text-12-regular text-text-weak">No teams are available for this workspace.</p>}
+                  fallback={<p class="text-12-regular text-text-weak">No teams are available to share with.</p>}
                 >
                   <div class="flex flex-col gap-1">
                     <For each={data().teams}>
-                      {(team) => (
-                        <div class="flex items-center justify-between gap-2 rounded-md border border-border-weak-base px-2 py-1.5">
-                          <span class="min-w-0 truncate text-12-regular text-text-strong">{team.name}</span>
-                          <Show
-                            when={!team.is_shared}
-                            fallback={(
-                              <div class="flex items-center gap-1">
-                                <span class="text-12-regular text-text-weak">Shared</span>
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  aria-label={`Remove ${team.name} from session`}
-                                  onClick={async () => {
-                                    try {
-                                      await revokeSessionShare({
-                                        sessionId: props.sessionId,
-                                        workspaceId: props.workspaceId,
-                                        grantedToTeamPublicId: team.team_id,
-                                      })
-                                      await refetch()
-                                    } catch (error) {
-                                      showToast({
-                                        title: "Could not revoke share",
-                                        description: error instanceof Error ? error.message : String(error),
-                                      })
-                                    }
-                                  }}
-                                >
-                                  Remove
-                                </Button>
-                              </div>
-                            )}
-                          >
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              aria-label={`Share with ${team.name}`}
-                              onClick={async () => {
-                                try {
-                                  await grantSessionShare({
-                                    sessionId: props.sessionId,
-                                    workspaceId: props.workspaceId,
-                                    grantedToTeamPublicId: team.team_id,
-                                  })
-                                  await refetch()
-                                  showToast({ title: "Team shared on session" })
-                                } catch (error) {
-                                  showToast({
-                                    title: "Could not share with team",
-                                    description: error instanceof Error ? error.message : String(error),
-                                  })
-                                }
-                              }}
+                      {(team) => {
+                        const level = () =>
+                          data().grants.find((grant) => grant.granted_to_team_id === team.team_id)?.level
+                        return (
+                          <div class="flex items-center justify-between gap-2 rounded-md border border-border-weak-base px-2 py-1.5">
+                            <span class="min-w-0 truncate text-12-regular text-text-strong">{team.name}</span>
+                            <Show
+                              when={!team.is_shared}
+                              fallback={(
+                                <div class="flex items-center gap-1">
+                                  <span class="text-12-regular text-text-weak">
+                                    {levelLabel(level() ?? "follow")}
+                                  </span>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    aria-label={level() === "send"
+                                      ? `Limit ${team.name} to following`
+                                      : `Let ${team.name} send messages`}
+                                    onClick={() => void share({
+                                      level: level() === "send" ? "follow" : "send",
+                                      description: `${team.name} on this session`,
+                                      target: { grantedToTeamPublicId: team.team_id },
+                                    })}
+                                  >
+                                    {level() === "send" ? "Limit to following" : "Let them send"}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    aria-label={`Remove ${team.name} from session`}
+                                    onClick={() => void remove({ grantedToTeamPublicId: team.team_id })}
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
+                              )}
                             >
-                              Share
-                            </Button>
-                          </Show>
-                        </div>
-                      )}
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                aria-label={`Share with ${team.name}`}
+                                onClick={() => void share({
+                                  level: newLevel(),
+                                  description: `${team.name} on this session`,
+                                  target: { grantedToTeamPublicId: team.team_id },
+                                })}
+                              >
+                                Share
+                              </Button>
+                            </Show>
+                          </div>
+                        )
+                      }}
                     </For>
                   </div>
                 </Show>
@@ -178,36 +294,42 @@ export const SessionPeopleControl: Component<{
                     )}
                   </For>
                   <For each={data().grants.filter((grant) => !grant.granted_to_team_id)}>
-                    {(grant) => (
-                      <div class="flex items-center justify-between gap-2 text-12-regular">
-                        <span class="truncate">
-                          {grant.granted_to_org_id
-                            ? `Org ${grant.granted_to_org_id}`
-                            : `User ${grant.granted_to_user_id}`}
-                        </span>
-                        <Button
-                          size="small"
-                          variant="ghost"
-                          onClick={async () => {
-                            try {
-                              await revokeSessionShare({
-                                sessionId: props.sessionId,
-                                workspaceId: props.workspaceId,
-                                grantId: grant.grant_id,
-                              })
-                              await refetch()
-                            } catch (error) {
-                              showToast({
-                                title: "Could not revoke share",
-                                description: error instanceof Error ? error.message : String(error),
-                              })
-                            }
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    )}
+                    {(grant) => {
+                      const name = () => grant.granted_to_org_id
+                        ? `Org ${grant.granted_to_org_id}`
+                        : `User ${grant.granted_to_user_id}`
+                      const target = () => grant.granted_to_org_id
+                        ? { grantedToOrgId: grant.granted_to_org_id }
+                        : { grantedToUserId: grant.granted_to_user_id ?? "" }
+                      return (
+                        <div class="flex items-center justify-between gap-2 text-12-regular">
+                          <span class="truncate">{name()}</span>
+                          <span class="shrink-0 text-text-weak">{levelLabel(grant.level)}</span>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            aria-label={grant.level === "send"
+                              ? `Limit ${name()} to following`
+                              : `Let ${name()} send messages`}
+                            onClick={() => void share({
+                              level: grant.level === "send" ? "follow" : "send",
+                              description: `${name()} on this session`,
+                              target: target(),
+                            })}
+                          >
+                            {grant.level === "send" ? "Limit to following" : "Let them send"}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            aria-label={`Remove ${name()} from session`}
+                            onClick={() => void remove({ grantId: grant.grant_id })}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      )
+                    }}
                   </For>
                 </Show>
               </div>

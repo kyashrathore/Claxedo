@@ -241,10 +241,10 @@ export function SessionMetaRoutes(options: Options = {}) {
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
         if (authResult.auth && query.scope === "project" && query.projectId) {
-          // Project membership is not workspace membership. Workspace shares
-          // are granted independently, so authorize from the principal's real
-          // workspace inventory and list each workspace through authority so
-          // private sessions stay participant-scoped.
+          // Two narrowings, not one: a rank on the project is not a rank on
+          // each of its workspaces, and a rank on a workspace is not access
+          // to the sessions inside it, which the authority answers per row
+          // from creator, participant or share.
           const authorized = await authorizedProjectWorkspaceIds(authResult.auth, options, query.projectId)
           const authority = requireAuthority(options.services)
           const projectId = query.projectId

@@ -5,7 +5,7 @@ import { submitBlockedByRole } from "../../features/session/composer/role-gate"
 import {
   __workspaceConnectionInternals as internals,
   acquireWorkspaceConnection,
-  workspacePlacement,
+  workspaceRelayPlacement,
 } from "@/features/workspaces/data/workspace-connection"
 import type { WorkspaceConnectionInfo } from "@/platform/runtime/agent/workspace-relay-connection"
 import { Can } from "./role"
@@ -17,8 +17,7 @@ afterEach(() => {
 
 describe("viewer read-only role gates", () => {
   const relayInfo = (role: WorkspaceConnectionInfo["role"]): WorkspaceConnectionInfo => ({
-    access: "cloud",
-    backing: "cloud-vm",
+    host: "provisioner",
     workspaceId: "ws_readonly",
     role,
     relayUrl: "https://relay.example.test",
@@ -30,7 +29,7 @@ describe("viewer read-only role gates", () => {
     let mounts = 0
     acquireWorkspaceConnection({
       workspaceId: "ws_readonly",
-      kind: "user-hosted",
+      kind: "machine",
       request: async () => new Response("{}", { headers: { "content-type": "application/json" } }),
     })
     internals.applyWorkspaceConnectionInfo(relayInfo("viewer"))
@@ -39,11 +38,11 @@ describe("viewer read-only role gates", () => {
       onMount(() => {
         mounts += 1
       })
-      const submitBlocked = createMemo(() => submitBlockedByRole(workspacePlacement("ws_readonly")))
+      const submitBlocked = createMemo(() => submitBlockedByRole(workspaceRelayPlacement("ws_readonly")))
       return (
         <section>
           <button data-testid="submit" disabled={submitBlocked()}>Send</button>
-          <Can do="mutate.workspace" on={workspacePlacement("ws_readonly")}>
+          <Can do="mutate.workspace" on={workspaceRelayPlacement("ws_readonly")}>
             <button data-testid="delete">Delete workspace</button>
           </Can>
         </section>

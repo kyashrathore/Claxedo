@@ -98,7 +98,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
   isWorkspaceReady: () => true,
-  workspacePlacement: () => undefined,
+  workspaceRelayPlacement: () => undefined,
 }))
 
 vi.mock("@/features/terminal/core/terminal-commands", () => ({
@@ -232,7 +232,7 @@ function renderSidebar(input?: {
 }
 
 describe("RailSidebar disclosure controls", () => {
-  test("cloud workspace metadata supplies the mounted section icon and label", async () => {
+  test("provisioner-placed workspace metadata supplies the mounted section icon and label", async () => {
     const cloud = {
       ...project,
       workspaces: {
@@ -463,10 +463,11 @@ describe("RailSidebar disclosure controls", () => {
   })
 
   test("a local association groups the row while polling its filesystem directory", async () => {
-    // `railWorkspaceSessionBacking`: environment labels can still say `local`
-    // for a user-hosted workspace (its owner executes it locally, browsers
-    // reach it through the relay), so an explicit workspace row stays
-    // relay-backed until signed inventory hydrates.
+    // `railWorkspaceSessionBacking`: `environment.kind: "self"` is the
+    // executing machine's view of itself, which a browser reading a
+    // machine-placed workspace through the relay sees as well, so it never
+    // clears the relay guess; an explicit workspace row stays relay-backed
+    // until signed inventory hydrates.
     sessionListMocks.items = [{
       type: "session",
       sessionRef: "workspace:local-association:session:local-session",
@@ -479,7 +480,7 @@ describe("RailSidebar disclosure controls", () => {
       updatedAt: 2,
       tags: [],
       attachments: [],
-      environment: { kind: "local" },
+      environment: { kind: "self" },
     }]
     railRuntimeMocks.statusByDirectory = {
       "/repo/main": { "local-session": { type: "busy" } },

@@ -87,8 +87,8 @@ describe("terminal log summary", () => {
 
       if (req.url === "http://server.test/api/workspace/ws_logs/connection") {
         return Response.json({
-          access: "cloud",
           backing: "cloud-vm",
+          sessionAuthority: "managed-private",
           workspaceId: "ws_logs",
           relayUrl: "https://relay.test",
           runtimeAccessToken: "rat_logs",
@@ -107,7 +107,7 @@ describe("terminal log summary", () => {
     const summary = await loadTerminalLogSummary("http://server.test", "pty_cloud", "/workspace", {
       request,
       resolveWorkspaceRuntime: async () => ({
-        kind: "cloud",
+        kind: "provisioner",
         workspaceId: "ws_logs",
       }),
     })

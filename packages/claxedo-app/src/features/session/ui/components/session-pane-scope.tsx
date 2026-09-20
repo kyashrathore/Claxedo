@@ -55,11 +55,11 @@ export function SessionPaneScope(props: ParentProps<{
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
-  // The signed project inventory carries each relay-backed workspace's REAL kind
-  // (cloud vs user-hosted). Threaded into the connection resolver so the gate
-  // drives the CORRECT readiness signal — mint+health for user-hosted, not the
-  // cloud `resolveWorkspaceRuntime` path that throws "Workspace runtime is
-  // unavailable" for a user-hosted workspace whose mint actually returns 200.
+  // The signed project inventory carries each workspace's REAL placement.
+  // Threaded into the connection resolver so the gate drives the CORRECT
+  // readiness signal — mint+health for a workspace on another machine, not the
+  // provisioner's `resolveWorkspaceRuntime` path, which throws "Workspace
+  // runtime is unavailable" for one whose mint actually returns 200.
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projects = createMemo(() => projectsQuery.data ?? [])
@@ -85,7 +85,7 @@ export function SessionPaneScope(props: ParentProps<{
   })
   const refreshDirectory: Parameters<typeof DirectoryScope>[0]["refreshDirectory"] = (directory, harnessType, options) => {
     const current = connection()
-    const workspace = current.workspaceId && current.kind !== "local"
+    const workspace = current.workspaceId && current.kind !== "self"
       ? { workspaceId: current.workspaceId, kind: current.kind }
       : undefined
     if (!workspace) {
@@ -125,7 +125,7 @@ export function SessionPaneScope(props: ParentProps<{
       harnessType={harnessType}
       harnessSelection={harnessSelection}
       workspaceId={() => connection().workspaceId}
-      workspaceKind={() => connection().kind}
+      hostKind={() => connection().kind}
       active={props.active}
       sessionId={sessionId}
       surfaceId={props.surfaceId}
@@ -172,7 +172,7 @@ export function SessionPaneScope(props: ParentProps<{
               serverUrl={globalSDK.url}
               request={platform.fetch ?? authFetch}
               relayRequest={platform.fetch ?? authFetch}
-              connectingFallback={connection().kind === "user-hosted" ? undefined : props.connectionFallback}
+              connectingFallback={connection().kind === "machine" ? undefined : props.connectionFallback}
             >
               {scopedContent()}
             </WorkspaceGate>

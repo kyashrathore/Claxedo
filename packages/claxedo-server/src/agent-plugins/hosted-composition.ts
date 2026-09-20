@@ -320,15 +320,15 @@ export function createHostedAgentPluginsComposition(input: {
 
   // The hosted prepare/provision rail is a CLOUD VM rail: it pushes the
   // retained trees into a sandbox the control plane can reach through the
-  // sandbox manager. A user-hosted workspace runs on the owner's machine, and
-  // that machine pulls the signed world itself (`GET /runtime/self`), so the
+  // sandbox manager. A workspace placed on the owner's machine is pulled by
+  // that machine itself (`GET /runtime/self`), so the
   // connection mint for it must not fail closed on a rail that does not apply.
   const cloudWorkspace = async (workspaceId: string) => {
     const row = await input.database
-      .prepare("select backing, access from workspaces where workspace_id = ? and deleted_at is null")
+      .prepare("select backing from workspaces where workspace_id = ? and deleted_at is null")
       .bind(workspaceId)
-      .first<{ backing: string; access: string }>()
-    return row?.backing === "cloud-vm" && row.access === "cloud"
+      .first<{ backing: string }>()
+    return row?.backing === "cloud-vm"
   }
   const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant })
   const tasksGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP)

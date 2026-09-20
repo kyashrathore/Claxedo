@@ -54,13 +54,13 @@ describe("spans across a hop", () => {
     const span = createTracer({ sink }).startSpan("relay.tunnel")
     span.setAttributes({ "http.status_code": 503, "claxedo.workspace_id": "ws_1" })
     span.addEvent("host_offline", { reason: "no_socket" })
-    span.setStatus("error", "user_hosted_app_offline")
+    span.setStatus("error", "host_tunnel_offline")
     span.end()
 
     expect(spans[0]).toMatchObject({
       attributes: { "http.status_code": 503, "claxedo.workspace_id": "ws_1" },
       status: "error",
-      statusMessage: "user_hosted_app_offline",
+      statusMessage: "host_tunnel_offline",
     })
     expect(spans[0]!.events[0]).toMatchObject({ name: "host_offline", attributes: { reason: "no_socket" } })
   })

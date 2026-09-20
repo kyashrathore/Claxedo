@@ -81,6 +81,13 @@
       "import": "./dist/process.mjs",
       "default": "./dist/process.mjs"
     },
+      "./machine-name": {
+      "development": "./src/machine-name.ts",
+      "bun": "./src/machine-name.ts",
+      "types": "./dist/machine-name.d.ts",
+      "import": "./dist/machine-name.mjs",
+      "default": "./dist/machine-name.mjs"
+    },
     "./net": {
       "development": "./src/net.ts",
       "bun": "./src/net.ts",

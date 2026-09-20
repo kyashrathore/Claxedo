@@ -5,7 +5,7 @@ import {
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef, type SessionWorkspaceRuntimeInput } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, type WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 import { normalizedAgentRuntimeServerUrl } from "@/platform/runtime/agent/agent-runtime-urls"
 import {
   sessionResourceAuthorityKey,
@@ -29,8 +29,6 @@ export type HarnessScopeInput = {
 
 export const harnessScope = panePreferenceScope
 export const isDraftScope = isDraftPaneScope
-
-
 
 /**
  * The harness-store scope for a pane, from the pane's own identity.
@@ -88,20 +86,20 @@ export function shouldRefreshDirectoryAfterHarnessStatus(input?: HarnessScopeInp
 
 /**
  * Whether a new-session draft takes its harness from the workspace's status
- * probe. A workspace served by a machine — this one (`local`) or one reached
- * through the relay (`user-hosted`) — carries that machine's harness
- * configuration, and a draft starts from it exactly as the desktop does. Cloud
- * sandboxes keep the draft-default policy.
+ * probe. A workspace on a machine — this one, or one reached through the relay
+ * — carries that machine's harness configuration, and a draft starts from it
+ * exactly as the desktop does. A provisioned sandbox keeps the draft-default
+ * policy.
  */
 export function shouldHydrateDraftFromHarnessStatus(input: {
   useLocalHarnessConfig: boolean
   workspaceRuntime?: boolean
-  workspaceKind?: WorkspaceKind | null
+  hostKind?: WorkspaceHostKind | null
 }) {
-  if (input.workspaceKind === "user-hosted") return true
+  if (input.hostKind === "machine") return true
   if (!input.useLocalHarnessConfig) return false
   if (!input.workspaceRuntime) return true
-  return input.workspaceKind === "local"
+  return input.hostKind === "self"
 }
 
 /**
@@ -109,8 +107,8 @@ export function shouldHydrateDraftFromHarnessStatus(input: {
  * `signedWorkspaceFromProjects` matches against). It is optional and defaults
  * to none so existing callers that only know the directory keep their prior
  * behavior; a caller that has the inventory in hand (the harness config
- * runtime, which threads its own `input.projects()`) passes it so a
- * user-hosted workspace addressed by its filesystem-path directory still
+ * runtime, which threads its own `input.projects()`) passes it so a workspace
+ * on another machine, addressed by its filesystem-path directory, still
  * resolves to its `workspaceId` instead of falling through unresolved.
  */
 export function harnessWorkspaceRuntimeRef(
@@ -140,19 +138,19 @@ export function refreshHarnessTypeForScope(input: {
 export type HarnessConfigAuthority = HarnessScopeInput & {
   serverUrl?: string
   workspaceId?: string
-  workspaceKind?: WorkspaceKind | null
+  hostKind?: WorkspaceHostKind | null
 }
 
 export function harnessConfigAuthorityKey(authority: HarnessConfigAuthority) {
-  const kind = authority.workspaceKind
-  const relayBacked = isRelayBackedWorkspaceKind(kind)
+  const kind = authority.hostKind
+  const relayBacked = isRelayHostKind(kind)
   return sessionResourceAuthorityKey(sessionResourceAuthorityScope({
     sessionID: authority.sessionId ?? "",
     directory: authority.directory ?? "",
     serverUrl: authority.serverUrl,
     signedControlPlane: relayBacked,
     ...(authority.workspaceId ? { workspaceId: authority.workspaceId } : {}),
-    ...(relayBacked ? { workspaceKind: kind } : {}),
+    ...(relayBacked ? { hostKind: kind } : {}),
     ...(authority.sessionRef ? { sessionRef: authority.sessionRef } : {}),
   }))
 }
@@ -232,8 +230,8 @@ export function sessionModelSyncRequestKey(key: string, model: string) {
 export function shouldUseLocalHarnessConfigApi(input: {
   baseUrl?: string
   directory?: string
-  workspaceKind?: WorkspaceKind | null
+  hostKind?: WorkspaceHostKind | null
 }) {
-  if (isRelayBackedWorkspaceKind(input.workspaceKind)) return false
+  if (isRelayHostKind(input.hostKind)) return false
   return centralTransportForServer(input.baseUrl) === "loopback" && isFilesystemDirectory(input.directory)
 }

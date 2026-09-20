@@ -57,8 +57,8 @@ const assignBody = z
   })
   .strict()
 
-// the authority throws typed-message errors; `workspace_backing_conflict` means the
-// caller tried to register a cloud workspace as user-hosted local → 409.
+// the authority throws typed-message errors; `workspace_backing_conflict` means
+// the caller tried to place a cloud workspace on a machine → 409.
 function isWorkspaceBackingConflict(err: unknown) {
   return err instanceof Error && err.message.includes("workspace_backing_conflict")
 }
@@ -67,7 +67,7 @@ function workspaceBackingConflictBody() {
   return {
     error: apiError(
       "workspace_backing_conflict",
-      "Workspace is cloud-backed and cannot be registered as a user-hosted local workspace",
+      "Workspace is provisioned in the cloud and cannot be placed on a machine",
     ),
   }
 }

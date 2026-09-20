@@ -8,7 +8,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { workspaceDiffSummaryQueryOptions } from "@/platform/files/workspace-diff-summary-query"
 import { workspaceGitLogQueryOptions, workspaceGitStatusQueryOptions } from "@/platform/files/workspace-git-status-query"
 import { isWorkspaceGitError, type GitCommitSummary, type GitWorktreeStatus } from "@/platform/runtime/workspace-git-client"
@@ -79,7 +79,7 @@ export function SourceControlView(props: {
         client: sdk.client,
         workspaceId: workspace?.workspaceId,
         workspace,
-        signedControlPlane: isRelayBackedWorkspaceKind(workspace?.kind),
+        signedControlPlane: isRelayHostKind(workspace?.kind),
       }),
       enabled: props.active,
     }

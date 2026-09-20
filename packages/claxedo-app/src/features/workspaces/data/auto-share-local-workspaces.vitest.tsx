@@ -14,7 +14,7 @@ import {
  * The port is the only thing stubbed.
  *
  * Everything between the hook and it is the real path: the real
- * `registerUserHostedWorkspace` (which routes through `port.shareWorkspace`
+ * `publishWorkspacePlacement` (which routes through `port.shareWorkspace`
  * when a connector is bound), the real `localWorkspaceShareTarget` kind
  * filter, and the real `useSharedWorkspaceIds` query. Stubbing the share
  * helper instead would have tested the test's idea of the boundary.
@@ -123,11 +123,11 @@ describe("localWorkspaceShareCandidates", () => {
       project("/code/api", {
         "/code/api": { directory: "/code/api", id: "ws_api" },
         "/code/api/feature": { directory: "/code/api/feature", id: "ws_feature" },
-        // The control plane's echo of this machine's own registration, and a
-        // cloud workspace: both are remote representations, neither is a
-        // directory this machine can publish.
-        "/code/api/hosted": { directory: "/code/api/hosted", id: "ws_hosted", kind: "user-hosted" },
-        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "cloud" },
+        // The control plane's echo of this machine's own registration and a
+        // provisioner-owned workspace are both remote representations; neither
+        // is a directory this machine can publish.
+        "/code/api/hosted": { directory: "/code/api/hosted", id: "ws_hosted", kind: "machine" },
+        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "provisioner" },
       }),
     ])
 
@@ -137,7 +137,7 @@ describe("localWorkspaceShareCandidates", () => {
 })
 
 describe("machine-level auto-share", () => {
-  test("turning remote access on publishes every local workspace, with no tick from anyone", async () => {
+  test("turning remote access on publishes every workspace this machine serves, with no tick from anyone", async () => {
     connector.enabled = false
     const projects = () => [
       project("/code/api", {
@@ -199,13 +199,13 @@ describe("machine-level auto-share", () => {
     expect(connector.shareCalls).toHaveLength(1)
 
     // Nor when the inventory RECOMPUTES without actually changing what is
-    // missing — here a cloud workspace appears, which this machine can never
-    // publish. The derived list is a fresh array every time, so only comparing
-    // its CONTENT keeps the pass from firing again.
+    // missing — here a provisioner-owned workspace appears, which this machine
+    // can never publish. The derived list is a fresh array every time, so only
+    // comparing its CONTENT keeps the pass from firing again.
     setProjects([
       project("/code/api", {
         "/code/api": { directory: "/code/api", id: "ws_api" },
-        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "cloud" },
+        "/code/api/cloud": { directory: "/code/api/cloud", id: "ws_cloud", kind: "provisioner" },
       }),
     ])
     for (let tick = 0; tick < 5; tick += 1) await Promise.resolve()

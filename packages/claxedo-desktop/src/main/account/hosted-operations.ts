@@ -6,7 +6,7 @@
  * The renderer supplies an operation NAME and parameters; it never supplies a
  * url, a method, or a header, because if it could, a renderer compromise would
  * be able to spend main's credential on any route the server exposes rather
- * than the sixteen the product actually uses.
+ * than the ones written down here.
  *
  * Parameters are substituted into the path by name and encoded. They cannot
  * introduce a new segment: `:id` is replaced by one `encodeURIComponent`d
@@ -14,7 +14,7 @@
  * traversal.
  *
  * A path may carry a QUERY, and where it does the query is written out here in
- * full — `?access=cloud`, never `?access=:access`. The substitution above would
+ * full — `?host=provisioner`, never `?host=:host`. The substitution above would
  * happily fill a `:name` inside a query string, which is exactly why the table
  * must not contain one: a caller-selected query is a caller-selected request,
  * and then the set of calls main can make is no longer the set written down
@@ -35,7 +35,7 @@ export type HostedOperation = {
    *
    * Distinct from putting `:name` in the path's query string: those keys are
    * fixed here, so the set of requests stays enumerable. A free-form
-   * `?access=:access` is still forbidden.
+   * `?host=:host` is still forbidden.
    *
    * Keys in `query` are required. Keys in `optionalQuery` are omitted when
    * absent (e.g. resolve-by-id OR resolve-by-directory).
@@ -54,10 +54,8 @@ export type HostedOperation = {
 export const HOSTED_OPERATIONS = {
   "account.mode": { method: "GET", path: "/api/claxedo/mode" },
   "account.compatibility": { method: "GET", path: "/api/claxedo/compatibility" },
-  // No idempotency key. The app registry says "the idempotency key for that
-  // lives in main"; it does not — nothing in this process, for any operation,
-  // has ever had one, and this table has no way to express one. The route
-  // dedupes nothing either: `POST /api/auth/cli/exchange`
+  // No idempotency key: this table has no way to express one, and the route
+  // dedupes nothing either — `POST /api/auth/cli/exchange`
   // (`routes/hosted/device-auth.ts`) mints from the BEARER and never reads the
   // body at all, so `code` is declared here and ignored there, and every call
   // is a fresh, separately-revocable session pair. Harmless only because the
@@ -126,29 +124,28 @@ export const HOSTED_OPERATIONS = {
   // gateway bearer credentials, so it is withheld from the renderer
   // (`RENDERER_WITHHELD_OPERATIONS`) and handed only to the daemon.
   "agentPlugins.runtimeSelf": { method: "GET", path: "/api/claxedo/plugins/runtime/self", response: "http" },
-  // TWO operations, one per access kind, each with the access FIXED in the path.
+  // TWO operations, one per host kind, each with the host FIXED in the path.
   //
-  // `GET /api/workspace` with no `?access=` is not a broader list — it is
-  // `{ workspaces: [] }`, always. The hosted handler (`routes/hosted/workspace.ts`)
-  // only requires a signed caller, only asks the authority, and only answers
-  // rows when `access` is `cloud` or `user-hosted`; every other value falls
-  // through to the empty envelope. The single access-less row this replaces
-  // could therefore never return a workspace, and never did.
+  // `GET /api/workspace` with no `?host=` is not a broader list — it is
+  // `{ workspaces: [] }`, always: the hosted handler
+  // (`routes/hosted/workspace.ts`) only requires a signed caller and only asks
+  // the authority when a host is named. A host it does not serve is a 400, so
+  // a host-less row could never return a workspace.
   //
-  // Not one row with an `access` PARAMETER, which this table could express
-  // today — `?access=:access` would substitute like any other `:name`. Two
-  // reasons it must not:
-  //   - Nothing chooses a kind at runtime. The caller wants BOTH and merges
+  // Not one row with a `host` PARAMETER, which this table could express today —
+  // `?host=:host` would substitute like any other `:name`. Two reasons it must
+  // not:
+  //   - Nothing chooses a host at runtime. The caller wants BOTH and merges
   //     them (`claxedo-app/.../features/session/data/sync/inventory-source.ts`,
-  //     `fetchSignedWorkspaceSnapshotUncached`), so the kind is a constant at
+  //     `fetchSignedWorkspaceSnapshotUncached`), so the host is a constant at
   //     each call site. A parameter would buy no caller flexibility and would
   //     cost the closed set its enumerability: what main can request would stop
   //     being readable here and start depending on what the renderer passes.
   //   - Withholding is per NAME (`RENDERER_WITHHELD_OPERATIONS`). One
-  //     parameterized row cannot be withheld for one access kind and allowed
-  //     for the other; two rows can.
-  "workspace.list.cloud": { method: "GET", path: "/api/workspace?access=cloud" },
-  "workspace.list.userHosted": { method: "GET", path: "/api/workspace?access=user-hosted" },
+  //     parameterized row cannot be withheld for one host and allowed for the
+  //     other; two rows can.
+  "workspace.list.provisioner": { method: "GET", path: "/api/workspace?host=provisioner" },
+  "workspace.list.machine": { method: "GET", path: "/api/workspace?host=machine" },
   // Optional query: callers pass workspaceId and/or directory and/or create.
   "workspace.resolve": {
     method: "GET",
@@ -157,26 +154,23 @@ export const HOSTED_OPERATIONS = {
   },
   // `projectName`/`workspaceName`, not `displayName`. The create body is a
   // strict schema, so an undeclared field is a 400 for the whole request rather
-  // than a field the server ignores — `displayName` made this operation
-  // unusable from the day it was written.
+  // than a field the server ignores.
   //
   // Connected-repository create needs `connectionId` + `repo: { fullName }`.
   // Parameters here stay scalars (`repoFullName`); `resolveHostedOperation`
   // nests that into the `repo` object the hosted schema requires.
   //
-  // NO IDEMPOTENCY KEY, and one cannot be added from this side. The matrix once
-  // classified this row `idempotency-key`; there is no key anywhere. This table
+  // NO IDEMPOTENCY KEY, and one cannot be added from this side: this table
   // expresses a request as method + path + declared body — there is no header
   // seam — and the route's body schema is `.strict()` with no idempotency field
   // (`createCloudBody`, `routes/hosted/workspace.ts`), so a key declared here
-  // would 400 every create rather than dedupe a retry. That is the same failure
-  // `displayName` caused above. Until the route accepts one, this operation is
-  // genuinely `unsafe`: an uncertain response must be surfaced, never retried,
-  // because a retry provisions a second billable sandbox. Nothing retries it
-  // today — `account-service.run` performs exactly one fetch, and the composer
-  // surfaces an uncertain response rather than provisioning again.
-  // `isSafeOperation` in the app registry already answers false for it, and
-  // that is the property a retry loop must consult.
+  // would 400 every create rather than dedupe a retry. Until the route accepts
+  // one, this operation is `unsafe`: an uncertain response must be surfaced,
+  // never retried, because a retry provisions a second billable sandbox.
+  // `account-service.run` performs exactly one fetch and the composer surfaces
+  // an uncertain response rather than provisioning again; `isSafeOperation` in
+  // the app registry answers false for it, and that is the property a retry
+  // loop must consult.
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
@@ -259,32 +253,38 @@ export const HOSTED_OPERATIONS = {
   // legitimate caller is the Host Connector child. Electron brokers this
   // fixed named operation and the child fills these from the key bootstrapped
   // by `host-connector/identity-store.ts`; the renderer reaches the same
-  // feature through the connector's own zero-argument IPC. That refusal is
-  // enforced by `RENDERER_WITHHELD_OPERATIONS` in `account-ipc.ts`, which is
-  // where the whole argument is written down.
+  // feature through the connector's own IPC, which carries no key material.
+  // That refusal is enforced by `RENDERER_WITHHELD_OPERATIONS` in
+  // `account-ipc.ts`, which is where the whole argument is written down.
   //
   // Retry IS idempotent, and by the machine identity rather than a key the
-  // caller invents: `enrollForUser` patches the existing row for the same
-  // `host_id` instead of inserting a second one.
+  // caller invents: `enrollHost` upserts on (owner, `host_id`) instead of
+  // inserting a second row.
   "host.enrollCurrentMachine": {
     method: "POST",
     path: "/api/claxedo/host/enrollments",
     body: ["hostId", "publicKey", "requestId", "signature", "displayName"],
   },
-  // `enrollmentNonce`, not `enrollmentRequest`: an operation name ending in
-  // "Request" trips the generic-passthrough guard, which is watching for
-  // exactly the `proxyRequest`/`hostedFetch` shape this whole table exists to
-  // prevent. The guard was right and "nonce" is the more accurate word.
+  // `enrollmentNonce`, not `enrollmentRequest`: `hosted-operations.test.ts`
+  // refuses any name matching `/fetch|proxy|request$/i`, the shape of the
+  // generic passthrough this table exists to prevent.
   //
-  // The nonce the machine signs, and the presence beat. Both are signed-only
-  // routes, so the connector reaches them through the account rather than
-  // holding a bearer of its own — the machine key proves the MACHINE, the
-  // account bearer proves the owner, and enrollment needs both.
+  // The nonce the machine signs. Signed-only, so the connector reaches it
+  // through the account rather than holding a bearer of its own — the machine
+  // key proves the MACHINE, the account bearer proves the owner, and
+  // enrollment needs both. Nothing after enrollment does: the machine signs
+  // its own beats with its key and never spends this credential again.
   "host.enrollmentNonce": { method: "POST", path: "/api/claxedo/host/enrollments/requests", body: ["hostId"] },
-  "host.enrollmentHeartbeat": {
-    method: "POST",
-    path: "/api/claxedo/host/enrollments/heartbeat",
-    body: ["hostId", "signature", "ttlMs", "workspaceIds", "sessionAuthority"],
+  // MAIN-ONLY, and for a narrower reason than the two above: the route renames
+  // ANY enrollment the owner holds, so a renderer that could name one could
+  // rename a machine the user is not sitting at. The only caller is the Host
+  // Connector supervisor, which fills `enrollmentId` from its own state; the
+  // renderer's route is `claxedo.hostConnector.rename`, which carries a name
+  // and no id. `RENDERER_WITHHELD_OPERATIONS` holds that.
+  "host.renameCurrentMachine": {
+    method: "PATCH",
+    path: "/api/claxedo/host/enrollments/:enrollmentId/display-name",
+    body: ["displayName"],
   },
   // Session people (private share grants + participants). Hosted control plane
   // only — the desktop local sidecar deliberately does not mount these routes.
@@ -298,7 +298,9 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/sessions/:sessionId/shares",
     body: [
       "workspaceId",
+      "level",
       "grantedToTokenIdentifier",
+      "grantedToUserId",
       "grantedToTeamPublicId",
       "grantedToOrgId",
     ],
@@ -527,9 +529,9 @@ export class MissingOperationParameter extends Error {}
 
 /**
  * Every operation parameter ends up in a URL path segment, a query value or a
- * header, so it has to be a scalar. Passing an object used to stringify to the
- * literal `[object Object]` and travel to the control plane as if that were
- * the caller's intent; it is a caller bug and is refused as one.
+ * header, so it has to be a scalar. An object would stringify to the literal
+ * `[object Object]` and travel to the control plane as if that were the
+ * caller's intent; it is a caller bug and is refused as one.
  */
 function operationParameter(name: string, key: string, value: unknown): string {
   if (typeof value === "string") return value
@@ -630,7 +632,6 @@ export function resolveHostedOperation(
   return { method, path, body, ...extra }
 }
 
-/** The IPC channel a named operation travels on. One per operation, by name. */
 /** Whether a channel-supplied string names one of the reviewed operations. */
 export function isHostedOperationName(value: string): value is HostedOperationName {
   return Object.hasOwn(HOSTED_OPERATIONS, value)
@@ -642,6 +643,7 @@ export function isHostedOperationName(value: string): value is HostedOperationNa
  */
 export const HOSTED_OPERATION_NAMES: HostedOperationName[] = Object.keys(HOSTED_OPERATIONS).filter(isHostedOperationName)
 
+/** The IPC channel a named operation travels on. One per operation, by name. */
 export function hostedOperationChannel(name: HostedOperationName) {
   return `claxedo.account.operation:${name}`
 }

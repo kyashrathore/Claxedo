@@ -43,7 +43,7 @@ describe("workspace scope registry", () => {
     })
     const input = {
       workspaceId: "ws_1",
-      kind: "cloud" as const,
+      kind: "provisioner" as const,
       directory: "/workspace",
     }
 
@@ -52,7 +52,7 @@ describe("workspace scope registry", () => {
     leases.retain(input)
     leases.retain({ ...input })
 
-    expect(inputs).toEqual(["ws_1:cloud:/workspace"])
+    expect(inputs).toEqual(["ws_1:provisioner:/workspace"])
     expect(leases.size()).toBe(1)
     expect(releases).toHaveLength(1)
 
@@ -72,12 +72,12 @@ describe("workspace scope registry", () => {
       return { release: () => events.push(`release:${handle}`) }
     })
 
-    leases.retain({ workspaceId: "ws_1", kind: "user-hosted" })
-    leases.retain({ workspaceId: "ws_1", kind: "cloud", directory: "/workspace" })
+    leases.retain({ workspaceId: "ws_1", kind: "machine" })
+    leases.retain({ workspaceId: "ws_1", kind: "provisioner", directory: "/workspace" })
 
     expect(events).toEqual([
-      "acquire:1:user-hosted",
-      "acquire:2:cloud",
+      "acquire:1:machine",
+      "acquire:2:provisioner",
       "release:1",
     ])
     expect(leases.size()).toBe(1)

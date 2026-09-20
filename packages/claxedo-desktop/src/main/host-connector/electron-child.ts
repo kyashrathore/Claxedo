@@ -13,6 +13,8 @@ import {
   loadHostConnectorIdentity,
   machineIdentityFile,
   storeHostConnectorIdentity,
+  storeHostConnectorSealingKey,
+  storeHostProviderConfig,
 } from "./identity-store"
 
 export type HostConnectorUtilityFork = (
@@ -57,16 +59,36 @@ function sharedWorkspacesFile(userDataDir: string) {
   }
 }
 
-export function machineDisplayName(platform: NodeJS.Platform): string {
-  if (platform === "darwin") return "macOS"
-  if (platform === "win32") return "Windows"
-  if (platform === "linux") return "Linux"
-  return "This machine"
+/**
+ * The name the OWNER gave this machine, which outranks the derived one.
+ *
+ * Plain JSON beside the shares, and for the same reason: a display name is
+ * neither a secret nor a proof. It is stored at all because every enable
+ * re-enrolls and the enroll route overwrites `display_name`, so a rename the
+ * machine did not remember would be undone by the next enable.
+ */
+function machineNameFile(userDataDir: string) {
+  const file = join(userDataDir, "host-machine-name.json")
+  return {
+    load(): string | undefined {
+      try {
+        return readString(JSON.parse(readFileSync(file, "utf8")) as unknown, "displayName")
+      } catch {
+        return undefined
+      }
+    },
+    store(displayName: string) {
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, `${JSON.stringify({ displayName }, null, 2)}\n`)
+    },
+  }
 }
 
 /** Production adapter from Electron primitives to the dependency-light supervisor. */
 export function setupElectronHostConnector(input: {
   runAccountOperation: AccountOperationRunner
+  /** The account's control-plane origin; the child beats there itself once enrolled. */
+  controlPlaneUrl?: string
   describeWorkspace?: Parameters<typeof setupHostConnectorChild>[0]["describeWorkspace"]
   safeStorage: SafeStorageApi
   userDataDir: string
@@ -75,11 +97,13 @@ export function setupElectronHostConnector(input: {
   mainDir: string
   resourcesPath: string
   platform?: NodeJS.Platform
-  displayName?: string
+  /** What this computer calls itself. The owner's stored rename wins over it. */
+  derivedDisplayName?: string
   heartbeatIntervalMs?: number
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: Parameters<typeof setupHostConnectorChild>[0]["onStatusChange"]
   onServing?: Parameters<typeof setupHostConnectorChild>[0]["onServing"]
+  onProviderConfig?: Parameters<typeof setupHostConnectorChild>[0]["onProviderConfig"]
   sessionAuthority?: Parameters<typeof setupHostConnectorChild>[0]["sessionAuthority"]
 }) {
   const file = machineIdentityFile(input.userDataDir)
@@ -91,9 +115,11 @@ export function setupElectronHostConnector(input: {
   })
 
   const shares = sharedWorkspacesFile(input.userDataDir)
+  const names = machineNameFile(input.userDataDir)
 
   return setupHostConnectorChild({
     runAccountOperation: input.runAccountOperation,
+    ...(input.controlPlaneUrl ? { controlPlaneUrl: input.controlPlaneUrl } : {}),
     ...(input.describeWorkspace ? { describeWorkspace: input.describeWorkspace } : {}),
     loadSharedWorkspaces: () => shares.load(),
     storeSharedWorkspaces: (next) => shares.store(next),
@@ -117,12 +143,22 @@ export function setupElectronHostConnector(input: {
       })
       return result.ok ? result : { ok: false as const, detail: result.detail }
     },
+    storeSealingKey: async (sealingPrivateKeyJwk) => {
+      const result = storeHostConnectorSealingKey({ safeStorage: input.safeStorage, file, platform, sealingPrivateKeyJwk })
+      return result.ok ? result : { ok: false as const, detail: result.detail }
+    },
+    storeProviderConfig: async (providerConfig) => {
+      const result = storeHostProviderConfig({ safeStorage: input.safeStorage, file, platform, providerConfig })
+      return result.ok ? result : { ok: false as const, detail: result.detail }
+    },
     clearIdentity: () => file.clear(),
-    ...(input.displayName ? { displayName: input.displayName } : {}),
+    displayName: () => names.load() ?? input.derivedDisplayName,
+    storeDisplayName: (displayName) => names.store(displayName),
     ...(input.heartbeatIntervalMs ? { heartbeatIntervalMs: input.heartbeatIntervalMs } : {}),
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStatusChange ? { onStatusChange: input.onStatusChange } : {}),
     ...(input.onServing ? { onServing: input.onServing } : {}),
+    ...(input.onProviderConfig ? { onProviderConfig: input.onProviderConfig } : {}),
     ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
   })
 }

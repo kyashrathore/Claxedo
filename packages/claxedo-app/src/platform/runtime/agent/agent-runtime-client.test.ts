@@ -157,8 +157,8 @@ describe("AgentRuntimeClient", () => {
         seen.push(requestUrl(input))
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://control.example",
             runtimeAccessToken: "runtime-token",
@@ -448,7 +448,7 @@ describe("AgentRuntimeClient", () => {
         toolSandbox: {
           kind: "workspace",
           workspaceId: "ws_explicit",
-          hosting: "cloud",
+          hosting: "provisioner",
         },
       },
       request: async (input, init) => {
@@ -482,8 +482,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -543,8 +543,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -582,8 +582,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -619,8 +619,8 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         if (requestUrl(input).includes("/api/workspace/ws_1/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_1",
             relayUrl: "https://relay.example",
             runtimeAccessToken: "runtime-token",
@@ -647,21 +647,20 @@ describe("AgentRuntimeClient", () => {
   // A signed USER-HOSTED workspace whose `directory` is the runtime filesystem
   // path (the registration-stored remote_directory) must divert session reads
   // to the relay runtime: this shape (workspaceId set, kind unresolved, non-ws_
-  // directory) is exactly the case `workspaceKind` threading exists to steer
+  // directory) is exactly the case `hostKind` threading exists to steer
   // away from the signed-cloud contract, which 404s on
   // `/api/control/sessions/:id/messages` for it.
-  it("diverts signed user-hosted message reads with a filesystem directory to the relay runtime", async () => {
+  it("diverts signed machine-placed message reads with a filesystem directory to the relay runtime", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -685,18 +684,17 @@ describe("AgentRuntimeClient", () => {
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session/runtime-session-1/message")
   })
 
-  it("surfaces offline user-hosted history as an error instead of an empty transcript", async () => {
+  it("surfaces offline machine-placed history as an error instead of an empty transcript", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input) => {
         calls.push(requestUrl(input))
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -719,18 +717,17 @@ describe("AgentRuntimeClient", () => {
     expect(calls.some((call) => call.includes("/api/control/sessions/"))).toBe(false)
   })
 
-  it("signed user-hosted getSession falls through to the relay runtime instead of the control sessions list", async () => {
+  it("signed machine-placed getSession falls through to the relay runtime instead of the control sessions list", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -753,13 +750,13 @@ describe("AgentRuntimeClient", () => {
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session/runtime-session-1")
   })
 
-  it("lets explicit signed workspace identity override local-looking refs for old user-hosted sends", async () => {
+  it("lets explicit signed workspace identity override local-looking refs for machine-placed sends", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       sessionRef: {
         sessionId: "runtime-session-1",
         host: "workspace",
@@ -770,7 +767,6 @@ describe("AgentRuntimeClient", () => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -799,18 +795,17 @@ describe("AgentRuntimeClient", () => {
     ])
   })
 
-  it("signed user-hosted session lists come from the relay runtime instead of empty control inventory", async () => {
+  it("signed machine-placed session lists come from the relay runtime instead of empty control inventory", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
       workspaceId: "ws_cleantest1",
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -836,17 +831,18 @@ describe("AgentRuntimeClient", () => {
 
   // When the client is not told the workspace id up front, `listSessions`
   // resolves it live via `/api/workspace/resolve` — but that read confirms only a
-  // `workspaceId` for a user-hosted workspace addressed by its filesystem-path
-  // directory, never a `kind` (the hosted control plane does not track kind for a
-  // directory it does not own). The caller-confirmed `workspaceKind` (threaded down
-  // from the signed inventory) must still steer `listSessions` to the relay runtime
-  // instead of the central sessions list, which holds nothing for user-hosted.
-  it("signed user-hosted session lists use the caller-confirmed kind when the live resolve confirms only an id", async () => {
+  // `workspaceId` for a machine-placed workspace addressed by its filesystem-path
+  // directory, never a `kind` (the control plane does not track the kind of a
+  // directory it does not own). The caller-confirmed `hostKind` (threaded down
+  // from the signed inventory) must still steer `listSessions` to the relay
+  // runtime instead of the central sessions list, which holds nothing for a
+  // machine's workspaces.
+  it("signed machine-placed session lists use the caller-confirmed host kind when the live resolve confirms only an id", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "https://control.example/",
       signedControlPlane: true,
-      workspaceKind: "user-hosted",
+      hostKind: "machine",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${requestUrl(input)}`)
         if (requestUrl(input).includes("/api/workspace/resolve")) {
@@ -854,7 +850,6 @@ describe("AgentRuntimeClient", () => {
         }
         if (requestUrl(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_cleantest1",
             relayUrl: "https://relay.example",
@@ -888,8 +883,8 @@ describe("AgentRuntimeClient", () => {
         if (requestUrl(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "cloud" })
         if (requestUrl(input).includes("/api/workspace/ws_real/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_real",
             relayUrl: "https://control.example",
             runtimeAccessToken: "runtime-token",
@@ -931,7 +926,7 @@ describe("AgentRuntimeClient", () => {
       directory: "/repo/real",
     }))).toMatchObject({
       workspaceId: "ws_real",
-      workspace: { workspaceId: "ws_real", kind: "cloud" },
+      workspace: { workspaceId: "ws_real", kind: "provisioner" },
     })
   })
 
@@ -952,7 +947,6 @@ describe("AgentRuntimeClient", () => {
         if (requestUrl(input).includes("/api/workspace/resolve")) return ok({ workspaceId: "ws_real", kind: "user-hosted" })
         if (requestUrl(input).includes("/api/workspace/ws_real/connection")) {
           return ok({
-            access: "user-hosted",
             backing: "local-worktree",
             workspaceId: "ws_real",
             relayUrl: "https://relay.example",
@@ -1001,12 +995,12 @@ describe("AgentRuntimeClient", () => {
       request: async (input, init) => {
         if (requestUrl(input).includes("/api/workspace/resolve")) {
           seen.push(new Headers(init?.headers).get("Authorization"))
-          return ok({ workspaceId: "ws_bearer", kind: "cloud" })
+          return ok({ workspaceId: "ws_bearer", kind: "provisioner" })
         }
         if (requestUrl(input).includes("/api/workspace/ws_bearer/connection")) {
           return ok({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_bearer",
             relayUrl: "https://control.example",
             runtimeAccessToken: "runtime-token",

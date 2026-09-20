@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
-import { createHash } from "node:crypto"
 import { Hono } from "hono"
 import { exportJWK, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { createServer } from "node:http"
 import {
   createRelayHostAuthMiddleware,
+  createRelayHostTokenVerifier,
   loadRelayHostVerificationKeyOrJwks,
   type RelayHostAuthAuditEvent,
   type RelayHostAuthContext,
@@ -50,7 +51,6 @@ describe("workspace host service relay auth", () => {
     const harness = await app()
     const token = await mintRelayHostToken({
       ...tokenInput,
-      access: "cloud",
       backing: "cloud-vm",
     }, harness.key.privateKey, "EdDSA")
 
@@ -157,7 +157,6 @@ describe("workspace host service relay auth", () => {
     const wrongWorkspace = await mintRelayHostToken({
       ...tokenInput,
       workspaceId: "ws_2",
-      access: "cloud",
       backing: "cloud-vm",
     }, harness.key.privateKey, "EdDSA")
     const res = await harness.app.request("http://localhost/api/wr/health", {
@@ -189,7 +188,6 @@ describe("workspace host service relay auth", () => {
     const harness = await app()
     const token = await mintRelayHostToken({
       ...tokenInput,
-      access: "cloud",
       backing: "cloud-vm",
     }, harness.key.privateKey, "EdDSA")
 
@@ -338,7 +336,6 @@ describe("createRelayHostAuthMiddleware with a JWKS resolver", () => {
       hostId: "host_1",
       role: "editor",
       parentJti: "rat_jti_current",
-      access: "cloud",
       backing: "cloud-vm",
       kid: "kid-current",
     }, key.privateKey, "EdDSA")
@@ -386,7 +383,6 @@ describe("createRelayHostAuthMiddleware with a JWKS resolver", () => {
       hostId: "host_1",
       role: "editor",
       parentJti: "rat_jti_other",
-      access: "cloud",
       backing: "cloud-vm",
       kid: "kid-other",
     }, otherKey.privateKey, "EdDSA")
@@ -407,7 +403,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const harness = await app()
     const token = await mintRelayHostToken({
       ...tokenInput,
-      access: "cloud",
       backing: "cloud-vm",
     }, harness.key.privateKey, "EdDSA")
 
@@ -434,7 +429,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const harness = await app()
     const token = await mintRelayHostToken({
       ...tokenInput,
-      access: "cloud",
       backing: "cloud-vm",
     }, harness.key.privateKey, "EdDSA")
 
@@ -467,7 +461,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const harness = await app()
     const token = await mintRelayHostToken({
       ...tokenInput,
-      access: "cloud",
       backing: "cloud-vm",
     }, harness.key.privateKey, "EdDSA")
 
@@ -497,11 +490,10 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     })
   })
 
-  test("user-hosted RHT requires x-forwarded-by marker too", async () => {
+  test("a machine-placed RHT requires the x-forwarded-by marker too", async () => {
     const harness = await app()
     const tokenWith = await mintRelayHostToken({
       ...tokenInput,
-      access: "user-hosted",
       backing: "local-worktree",
     }, harness.key.privateKey, "EdDSA")
 
@@ -517,7 +509,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const tokenWithout = await mintRelayHostToken({
       ...tokenInput,
       jti: "jti_2",
-      access: "user-hosted",
       backing: "local-worktree",
     }, harness.key.privateKey, "EdDSA")
     const bad = await harness.app.request("http://localhost/api/wr/health", {
@@ -556,7 +547,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     })
   })
 
-  // P-shared.5: integration test for the TokenVerifier override.
   test("uses the injected TokenVerifier when set, bypassing the JWT key path", async () => {
     const { createStaticTokenVerifier } = await import("@claxedo/workspace-relay-protocol")
     const staticVerifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
@@ -573,7 +563,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_static",
             role: "editor",
-            access: "cloud",
             backing: "cloud-vm",
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
@@ -627,7 +616,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_static",
             role: "editor",
-            access: "cloud",
             backing: "cloud-vm",
             actor_avatar_url: "https://images.example.test/actor.png",
             iat: now,
@@ -673,7 +661,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
       org_id: "org_static",
       workspace_id: "ws_static",
       host_id: "host_static",
-      access: "cloud",
       backing: "cloud-vm",
       iat: now,
       exp: now + 60,
@@ -739,7 +726,6 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_other",
             role: "editor",
-            access: "cloud",
             backing: "cloud-vm",
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
@@ -775,32 +761,34 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     })
   })
 
-  test("rejects injected TokenVerifier claims with inconsistent relay access/backing", async () => {
+  test("rejects injected TokenVerifier claims whose backing names no placement", async () => {
     const { createStaticTokenVerifier } = await import("@claxedo/workspace-relay-protocol")
+    const base = {
+      iss: "workspace-relay",
+      aud: "workspace-host-service",
+      principal_kind: "user",
+      actor_id: "u-static",
+      actor_kind: "human",
+      org_id: "org_static",
+      workspace_id: "ws_static",
+      host_id: "host_static",
+      role: "editor",
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 60,
+      jti: "jti-static",
+      parent_jti: "rat-jti-static",
+    }
     const staticVerifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
       tokens: {
-        "static-rht-bad-pair": {
+        // The placement word a control plane on the other side of this change
+        // minted, and the same fact spelled twice by one that carried both.
+        "static-rht-retired-backing": {
           scopes: [],
-          claims: {
-            iss: "workspace-relay",
-            aud: "workspace-host-service",
-            principal_kind: "user",
-            actor_id: "u-static",
-            actor_kind: "human",
-            org_id: "org_static",
-            workspace_id: "ws_static",
-            host_id: "host_static",
-            role: "editor",
-            // Deliberately mismatched: the contract pairs `cloud` with
-            // `cloud-vm` and `user-hosted` with `local-worktree`. This token is
-            // named "bad-pair" because the middleware must reject exactly this.
-            access: "cloud",
-            backing: "local-worktree",
-            iat: Math.floor(Date.now() / 1000),
-            exp: Math.floor(Date.now() / 1000) + 60,
-            jti: "jti-static",
-            parent_jti: "rat-jti-static",
-          } as unknown as RelayHostVerifierClaims,
+          claims: { ...base, backing: "user-hosted" } as unknown as RelayHostVerifierClaims,
+        },
+        "static-rht-carries-access": {
+          scopes: [],
+          claims: { ...base, access: "cloud", backing: "cloud-vm" } as unknown as RelayHostVerifierClaims,
         },
       },
     })
@@ -813,23 +801,97 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     }))
     app2.get("/api/wr/health", (c) => c.json({ ok: true }))
 
-    const res = await app2.request("http://localhost/api/wr/health", {
-      headers: {
-        authorization: "Bearer static-rht-bad-pair",
-        "x-workspace-id": "ws_static",
-        "x-forwarded-by": "workspace-relay",
-      },
-    })
+    for (const token of ["static-rht-retired-backing", "static-rht-carries-access"]) {
+      const res = await app2.request("http://localhost/api/wr/health", {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-workspace-id": "ws_static",
+          "x-forwarded-by": "workspace-relay",
+        },
+      })
 
-    expect(res.status).toBe(401)
-    await expect(res.json()).resolves.toEqual({
-      error: {
-        code: "relay_token_claims_invalid",
-        message: "Relay Host Token is invalid",
-      },
-    })
+      expect(res.status, token).toBe(401)
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "relay_token_claims_invalid",
+          message: "Relay Host Token is invalid",
+        },
+      })
+    }
   })
 })
 
-// Reference createHash for test sanity
-void createHash
+describe("relay host token verifier outside a middleware", () => {
+  const KID = "relay-host-current"
+
+  /** The relay's published key set, served the way a host reaches it. */
+  async function relayKeys() {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const jwk = { ...(await exportJWK(key.publicKey)), kid: KID, alg: "EdDSA", use: "sig" }
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ keys: [jwk] }))
+    })
+    const url = await new Promise<string>((resolve) => {
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address()
+        if (!address || typeof address === "string") throw new Error("no port")
+        resolve(`http://127.0.0.1:${address.port}/.well-known/jwks.json`)
+      })
+    })
+    const mint = (overrides: Partial<typeof tokenInput> = {}) => mintRelayHostToken({
+      ...tokenInput,
+      ...overrides,
+      backing: "local-worktree",
+      kid: KID,
+    }, key.privateKey, "EdDSA")
+    return { server, url, mint }
+  }
+
+  test("answers the claims for a token this host and workspace were issued, and nothing for every other one", async () => {
+    const relay = await relayKeys()
+    try {
+      const verify = createRelayHostTokenVerifier(() => relay.url)
+      const token = await relay.mint()
+      const otherHost = await relay.mint({ hostId: "host_other" })
+      const otherKey = await generateKeyPair("EdDSA", { extractable: true })
+      const forged = await mintRelayHostToken({
+        ...tokenInput,
+        backing: "local-worktree",
+        kid: KID,
+      }, otherKey.privateKey, "EdDSA")
+
+      const mine = await verify({ token, workspaceId: "ws_1", hostId: "host_1" })
+      const wrongWorkspace = await verify({ token, workspaceId: "ws_2", hostId: "host_1" })
+      const wrongHost = await verify({ token: otherHost, workspaceId: "ws_1", hostId: "host_1" })
+      const unsignedByRelay = await verify({ token: forged, workspaceId: "ws_1", hostId: "host_1" })
+      const garbage = await verify({ token: "not-a-token", workspaceId: "ws_1", hostId: "host_1" })
+
+      expect(mine).toMatchObject({ actor_id: "actor_1", org_id: "org_1", role: "editor", workspace_id: "ws_1" })
+      expect(wrongWorkspace).toBeUndefined()
+      expect(wrongHost).toBeUndefined()
+      expect(unsignedByRelay).toBeUndefined()
+      expect(garbage).toBeUndefined()
+    } finally {
+      await new Promise<void>((resolve) => relay.server.close(() => resolve()))
+    }
+  })
+
+  test("verifies nothing until the key set address is known, then verifies without a restart", async () => {
+    const relay = await relayKeys()
+    try {
+      let url: string | undefined
+      const verify = createRelayHostTokenVerifier(() => url)
+      const token = await relay.mint()
+
+      const beforeEndpoints = await verify({ token, workspaceId: "ws_1", hostId: "host_1" })
+      url = relay.url
+      const afterEndpoints = await verify({ token, workspaceId: "ws_1", hostId: "host_1" })
+
+      expect(beforeEndpoints).toBeUndefined()
+      expect(afterEndpoints).toMatchObject({ actor_id: "actor_1" })
+    } finally {
+      await new Promise<void>((resolve) => relay.server.close(() => resolve()))
+    }
+  })
+})

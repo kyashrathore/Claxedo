@@ -24,7 +24,7 @@ function sessionCapabilitiesTransportRequestScope(input: SessionCapabilitiesTran
       serverUrl: input.claxedoServerUrl,
       signedControlPlane: input.signedControlPlane,
       workspaceId: input.workspaceId,
-      workspaceKind: input.workspaceKind,
+      hostKind: input.hostKind,
       sessionRef: input.sessionRef,
     }),
   ] as const
@@ -72,7 +72,7 @@ export async function syncSessionCapabilitiesData(input: {
         serverUrl: input.request.claxedoServerUrl,
         signedControlPlane: input.request.signedControlPlane,
         workspaceId: input.request.workspaceId,
-        workspaceKind: input.request.workspaceKind,
+        hostKind: input.request.hostKind,
         sessionRef: input.request.sessionRef,
       }),
       capabilities,

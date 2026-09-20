@@ -6,11 +6,11 @@ export type WorkspaceRouteProject = {
     workspaceId?: string | null
     /**
      * The workspace's ADDRESSING directory, as its catalog row states it: a
-     * filesystem path for a local workspace, `workspace:<id>` for a
-     * relay-backed one. The serving host's own path lives on the row as
-     * `remote_directory` and is deliberately absent here — it names a
-     * directory on another machine, so it can never be what a route resolves
-     * to.
+     * filesystem path when the attached server serves the workspace itself,
+     * `workspace:<id>` when another machine does. The serving host's own path
+     * lives on the row as `remote_directory` and is deliberately absent here —
+     * it names a directory on another machine, so it can never be what a
+     * route resolves to.
      */
     directory?: string | null
   }>
@@ -26,7 +26,7 @@ export function opaqueWorkspaceRouteId(value: string | null | undefined) {
  * and the directory every request under that route is scoped by.
  *
  * The catalog row is the authority for both: `/w/<workspace id>` answers with
- * the row's own addressing directory, which for a cloud or user-hosted
+ * the row's own addressing directory, which for a relay-placed
  * workspace is `workspace:<id>` and never the serving host's path.
  */
 export function workspaceRouteIdentity(projects: readonly WorkspaceRouteProject[], routeKey: string | undefined) {

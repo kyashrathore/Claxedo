@@ -98,7 +98,6 @@ const relay = createWorkspaceRelayBun({
     workspaceId: "local_ws",
     hostId: "host_live_relay",
     baseUrl: String(runtimeServer.url).replace(/\/$/, ""),
-    access: "cloud",
     backing: "cloud-vm",
   }),
 })

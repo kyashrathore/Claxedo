@@ -5,8 +5,8 @@
  * and control frames). Every frame enters one emitter; consumers subscribe by
  * type or listen to all.
  *
- * On loopback the daemon hosts every local runtime, so one `wr/events` — the
- * host aggregate, named by no workspace — carries all of them, and a local
+ * On loopback the daemon embeds every runtime of its own, so one `wr/events` —
+ * the host aggregate, named by no workspace — carries all of them, and a
  * workspace that is not on screen stays live. A relay-backed workspace is
  * another machine's runtime and still gets its own stream when it is routed.
  * On signed web every `wr` stream is a routed workspace's.
@@ -62,7 +62,7 @@ import {
   setSessionEventStreamLaneExpected,
 } from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
-import { hostAggregateDeclaration, readProjectCatalog } from "@/platform/query/control-plane"
+import { hostAggregateDeclaration, readProjectCatalog, selfHostDeclaration } from "@/platform/query/control-plane"
 import { queryKeys } from "@/platform/query/keys"
 import {
   HEARTBEAT_TIMEOUT_MS,
@@ -224,7 +224,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // read again, and the stream stays open.
       if (isStreamReplayGap(frame)) {
         if (target.kind === "wr") {
-          // The aggregate's hole is every local workspace's: a resync naming
+          // The aggregate's hole is every embedded runtime's: a resync naming
           // no directory is answered by every mounted controller.
           if (target.scope === "host") {
             requestSessionHistoryResync({ reason: "sse-gap" })
@@ -289,8 +289,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
 
     // Keyed by workspaceId so `SessionConnectionLine` can read the stream that
-    // carries that session's events; the aggregate is every local workspace's,
-    // so it has one lane of its own.
+    // carries that session's events; the aggregate carries every runtime the
+    // daemon embeds, so it has one lane of its own.
     const lane: SessionEventStreamLane | undefined = target.kind !== "wr"
       ? undefined
       : target.scope === "host" ? HOST_AGGREGATE_LANE : `wr:${target.workspaceId}`
@@ -497,7 +497,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // the authority had flipped to reconnecting). Readiness is owned by the
         // authority; this stream does not infer it. The aggregate speaks for
         // nobody: a connection entry exists only for a workspace a
-        // `WorkspaceGate` mounted, and a local workspace never gets one.
+        // `WorkspaceGate` mounted, and a workspace served over loopback never gets one.
         if (target.kind === "wr" && target.scope !== "host") markWorkspaceReconnected(target.workspaceId)
         resetHeartbeat()
         const reader = res.body.getReader()
@@ -648,6 +648,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // self-hosted node that issues sessions runs on localhost too and serves
     // no aggregate there.
     const hostAggregate = hostAggregateDeclaration(props.serverUrl())
+    // Which machine this client is attached to, from the same boot: a
+    // control-plane row placed on it is read over loopback, not over the relay.
+    const self = selfHostDeclaration(props.serverUrl())
     // A bare `/s/<id>` route names no workspace; the pane that opened the
     // session says which, and until it has, the session's inventory row does.
     const directory = routedDirectory
@@ -661,6 +664,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       sessionID: sessionEventScopeId(),
       projects,
       hostAggregate,
+      ...(self ? { self } : {}),
       accountSigned,
       accountStream: accountStreamAvailable(accountState),
     })
@@ -670,7 +674,13 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // whichever stream it turns out to need.
     setSessionEventStreamLaneExpected(
       routedDirectory !== undefined
-      && routeAwaitsWorkspaceStream({ serverUrl: props.serverUrl(), directory, projects, hostAggregate }),
+      && routeAwaitsWorkspaceStream({
+        serverUrl: props.serverUrl(),
+        directory,
+        projects,
+        hostAggregate,
+        ...(self ? { self } : {}),
+      }),
     )
     const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
     for (const [key, connection] of connections) {
@@ -715,6 +725,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       queryKeys.controlPlane.projects(props.serverUrl()),
       queryKeys.shell.sessionInventory(props.serverUrl()),
       queryKeys.deployment.hostAggregateDeclaration(props.serverUrl()),
+      queryKeys.deployment.selfHost(props.serverUrl()),
     ]
     if (!watched.some((expected) => key.length === expected.length && expected.every((part, index) => key[index] === part))) return
     reconcileTargets()

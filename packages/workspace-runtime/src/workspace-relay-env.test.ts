@@ -82,7 +82,7 @@ describe("workspace relay runtime env", () => {
     })
   })
 
-  test("uses the trusted supervisor direct token for user-hosted runtime config pushes", async () => {
+  test("uses the trusted supervisor direct token when one is configured", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const env = {
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
@@ -187,7 +187,6 @@ describe("workspace relay runtime env", () => {
       hostId: "host_1",
       role: "editor",
       parentJti: "rat_jti_good",
-      access: "cloud",
       backing: "cloud-vm",
       kid: "kid-rotated",
     }, key.privateKey, "EdDSA")
@@ -211,7 +210,6 @@ describe("workspace relay runtime env", () => {
       hostId: "host_1",
       role: "editor",
       parentJti: "rat_jti_bad",
-      access: "cloud",
       backing: "cloud-vm",
       kid: "kid-not-in-jwks",
     }, otherKey.privateKey, "EdDSA")

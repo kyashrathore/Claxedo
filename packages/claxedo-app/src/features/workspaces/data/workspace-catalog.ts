@@ -7,7 +7,12 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { readArray } from "@/lib/record"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
-import type { SignedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import {
+  backingHostKind,
+  controlPlaneRowPlacement,
+  inventoryKindWord,
+  type RelayHostKind,
+} from "@/platform/runtime/placement-wire"
 import { workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 
@@ -19,15 +24,14 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
  * - the central's own `/project`, when that central answers for its own
  *   workspaces (the loopback daemon, and demo mode's in-page mock server) —
  *   the workspaces read directly rather than over a relay;
- * - the control plane's workspace list (`/api/workspace?access=cloud` and
- *   `?access=user-hosted`, or the desktop account bridge's
- *   `workspace.list.cloud` / `workspace.list.userHosted`), when a principal is
- *   signed in — the cloud sandboxes and the machines reachable over the relay.
+ * - the control plane's workspace list, one call per host kind (the
+ *   provisioner's and the enrolled machines'), when a principal is signed in —
+ *   the cloud sandboxes and the machines reachable over the relay.
  *
  * `mergeWorkspaceCatalog` folds them into one row per workspace, preferring the
- * direct read: a workspace this machine both serves and publishes as
- * user-hosted is ONE `local` row, because reading it through its own tunnel is
- * a round trip to itself.
+ * direct read: a workspace this machine both serves and publishes is ONE row
+ * placed on this machine, because reading it through its own tunnel is a round
+ * trip to itself.
  */
 
 /** A workspace row inside a catalog project, keyed by its project ref. */
@@ -35,18 +39,20 @@ export type WorkspaceCatalogEntry = {
   id: string
   workspaceId: string
   /**
-   * The same three access kinds `ClaxedoWorkspaceInventoryEntry` declares.
+   * The same three placement words `ClaxedoWorkspaceInventoryEntry` declares.
    * Widening this to `string` made a catalog row something an inventory row
    * could never be, which is what forced the assertions this file used to
-   * carry — the control plane sends exactly these values on `access`.
+   * carry.
    */
   kind: NonNullable<ClaxedoWorkspaceInventoryEntry["kind"]>
+  /** The placement the control plane states; see `ClaxedoWorkspaceInventoryEntry`. */
+  placement?: { host_enrollment_id?: string }
   /** What this principal may do here, as the control plane reports it. */
   role?: string
   /** The serving host's state, as the control plane reports it. */
   status?: string
   /**
-   * Whether a live host is currently serving this user-hosted workspace, as the
+   * Whether a live host is currently serving this workspace, as the
    * control plane reports it (an active enrollment with an unexpired lease that
    * acked this workspace). Absent for every other kind — reachability is only a
    * question about a machine someone owns. The rail says "host offline" from
@@ -94,9 +100,9 @@ function centralOwnsProjects(serverUrl: string | undefined) {
 /**
  * The address a control-plane workspace is read, routed and keyed by.
  *
- * Every row this grouping sees is relay-backed — the control plane answers
- * `access=cloud` and `access=user-hosted`, and both are served by ANOTHER
- * machine. The path such a row reports (`remote_directory`) names a directory
+ * Every row this grouping sees is relay-backed — the control plane answers for
+ * the provisioner's machines and for enrolled ones, and both are served by
+ * ANOTHER machine. The path such a row reports (`remote_directory`) names a directory
  * on that machine's filesystem, so scoping a request by it asks a server about
  * a path it cannot resolve. The signed workspace id is the one identity both
  * sides agree on, in the same `workspace:<id>` form `sessionRowDirectory`
@@ -108,6 +114,12 @@ function centralOwnsProjects(serverUrl: string | undefined) {
  */
 function workspaceRowDirectory(workspaceId: string) {
   return `workspace:${workspaceId}`
+}
+
+function rowPlacement(row: Record<string, unknown>): { host_enrollment_id?: string } {
+  const placement = controlPlaneRowPlacement(row)
+  const enrollmentId = placement?.host.kind === "machine" ? placement.host.enrollmentId : undefined
+  return enrollmentId ? { host_enrollment_id: enrollmentId } : {}
 }
 
 function workspaceRowHostDirectory(row: Record<string, unknown>) {
@@ -196,6 +208,7 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
       id: workspaceId,
       workspaceId,
       kind: controlPlaneRowKind(row),
+      placement: rowPlacement(row),
       ...(txt(row.role) ? { role: txt(row.role) } : {}),
       ...(txt(row.status) ? { status: txt(row.status) } : {}),
       ...(typeof row.host_online === "boolean" ? { hostOnline: row.host_online } : {}),
@@ -313,39 +326,39 @@ export function mergeWorkspaceCatalog(direct: Project[], remote: WorkspaceCatalo
 }
 
 async function listControlPlaneWorkspaces(input: {
-  access: SignedWorkspaceKind
+  host: RelayHostKind
   serverUrl?: string
   request: typeof fetch
 }) {
   const run = await signedAccountRun()
   if (run) {
-    const operation = input.access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
+    const operation = input.host === "provisioner" ? "workspace.list.provisioner" : "workspace.list.machine"
     const workspaces = readArray(decodeHostedResult(operation, await run(operation, {})), "workspaces")
     if (!workspaces) throw new Error(`${operation} returned an invalid workspaces payload`)
     return workspaces
   }
-  const res = await input.request(workspaceListUrl({ baseUrl: input.serverUrl, access: input.access }), {
+  const res = await input.request(workspaceListUrl({ baseUrl: input.serverUrl, host: input.host }), {
     headers: { Accept: "application/json" },
   })
-  if (!res.ok) throw new Error(`Control-plane ${input.access} workspace list failed with ${res.status}`)
+  if (!res.ok) throw new Error(`Control-plane ${input.host} workspace list failed with ${res.status}`)
   const workspaces = readArray(await res.json(), "workspaces")
   if (!workspaces) {
-    throw new Error(`Control-plane ${input.access} workspace list returned an invalid workspaces payload`)
+    throw new Error(`Control-plane ${input.host} workspace list returned an invalid workspaces payload`)
   }
   return workspaces
 }
 
 /**
- * Cloud and user-hosted are independent access lists on independent
- * routes/operations — nothing here reads one to form the other — so they run
- * concurrently instead of paying two serial round trips.
+ * The provisioner's workspaces and the enrolled machines' are independent
+ * lists on independent routes/operations — nothing here reads one to form the
+ * other — so they run concurrently instead of paying two serial round trips.
  */
 async function controlPlaneCatalog(input: { serverUrl?: string; request: typeof fetch }) {
-  const [cloud, userHosted] = await Promise.all([
-    listControlPlaneWorkspaces({ access: "cloud", ...input }),
-    listControlPlaneWorkspaces({ access: "user-hosted", ...input }),
+  const [provisioner, machines] = await Promise.all([
+    listControlPlaneWorkspaces({ host: "provisioner", ...input }),
+    listControlPlaneWorkspaces({ host: "machine", ...input }),
   ])
-  return controlPlaneCatalogProjects({ workspaces: [...cloud, ...userHosted] })
+  return controlPlaneCatalogProjects({ workspaces: [...provisioner, ...machines] })
 }
 
 export type WorkspaceCatalogQueryInput = {
@@ -407,21 +420,15 @@ export async function refreshWorkspaceCatalog(input: WorkspaceCatalogQueryInput)
   return await queryClient.fetchQuery(options)
 }
 
-/** The kind a control-plane row states for itself; a row that states none is not a catalog row. */
-/** The access kinds a catalog row may declare, as one list rather than a chain. */
-const accessKinds: readonly WorkspaceCatalogEntry["kind"][] = ["cloud", "local", "user-hosted"]
-
-function isAccessKind(value: unknown): value is WorkspaceCatalogEntry["kind"] {
-  return accessKinds.some((entry) => entry === value)
-}
-
 function controlPlaneRowKind(row: Record<string, unknown>): WorkspaceCatalogEntry["kind"] {
-  const kind = txt(row.access)
-  if (!isAccessKind(kind)) {
-    // Unchanged for a missing kind; an UNKNOWN one is now refused for the same
-    // reason — a row whose access this build cannot interpret must not be
-    // rendered as though it could be opened.
-    throw new Error(`Control-plane workspace row states no access kind${kind ? `: ${kind}` : ""}`)
+  const kind = backingHostKind(row.backing)
+  if (!kind) {
+    // A row whose placement this build cannot interpret must not be rendered as
+    // though it could be opened.
+    const backing = txt(row.backing)
+    throw new Error(`Control-plane workspace row states no placement${backing ? `: ${backing}` : ""}`)
   }
-  return kind
+  // A catalog row sits in the same inventory map as the central's own rows, so
+  // it carries the same wire word; readers narrow both with `inventoryHostKind`.
+  return inventoryKindWord(kind)
 }

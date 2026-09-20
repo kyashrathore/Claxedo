@@ -7,7 +7,10 @@ import { assertDataDirUntouched } from "./build-compile-cache"
 test("the daemon entry proves it was launched before it opens any store", () => {
   const source = fs.readFileSync(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), "utf8")
   const gate = source.indexOf("claxedoServerStartup(process.env)")
-  const firstStore = source.indexOf("createLocalAgentPluginsComposition")
+  // The CALL, parentheses included. The bare identifier matches the import
+  // first, which sits above every gate by definition and made this pass or
+  // fail on where the import happened to be written.
+  const firstStore = source.indexOf("createLocalAgentPluginsComposition()")
   expect(gate).toBeGreaterThan(-1)
   expect(firstStore).toBeGreaterThan(gate)
 })

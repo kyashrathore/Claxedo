@@ -6,7 +6,7 @@ in-process helpers (`assert-helpers`, `guards`,
 
 Other test-only artifacts that CANNOT live here because their paths are
 hardcoded as spawn strings elsewhere (repo-root script/, claxedo-app e2e):
-`src/user-hosted-relay-fixture.mjs`, `src/signed-browser-relay-fixture.mjs`,
+`src/host-tunnel-relay-fixture.mjs`, `src/signed-browser-relay-fixture.mjs`,
 `src/text-imports{,-loader}.mjs`. Per-module fixtures colocate with their
 suite (`workspace/supervisor/test-helper.ts`,
 `hosts/workspace-runtime/` fixtures).

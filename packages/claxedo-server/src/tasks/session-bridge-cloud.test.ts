@@ -33,6 +33,7 @@ import {
 } from "@claxedo/tasks"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
+import { composeProviderNeutralHostedControlPlane } from "../authority/provider-neutral-hosted-services"
 import type { TasksRootIdentity } from "./root-capability"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -138,7 +139,10 @@ function runtime() {
   return { sessions }
 }
 
-function services(sandboxManager: SandboxManager | undefined) {
+function services(
+  sandboxManager: SandboxManager | undefined,
+  sandbox: ControlPlaneServices["sandbox"] = { defaultDriver: "daytona" },
+) {
   const created = new Map<string, { projectId?: string; displayName: string }>()
   const authority = {
     reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string }) => ({
@@ -183,7 +187,7 @@ function services(sandboxManager: SandboxManager | undefined) {
     value: {
       authority,
       projectionStore,
-      sandbox: { ...(sandboxManager ? { sandboxManager } : {}), defaultDriver: "daytona" },
+      sandbox: { ...(sandboxManager ? { sandboxManager } : {}), ...sandbox },
       relay: { relayUrls: { "us-east": "https://relay.claxedo.test" } },
       defaultHomeRegion: "us-east",
     } as unknown as ControlPlaneServices,
@@ -323,11 +327,56 @@ beforeEach(async () => {
     workspace_name: "importer",
     directory: "/workspace",
     kind: "cloud",
+    driver: "daytona",
     repo_url: REPO,
     git_branch: "main",
     remote_directory: "/workspace",
   })
 })
+
+/**
+ * The keys the hosted composition demands before it will build any services.
+ * Ed25519, so they are short enough to inline and real enough for the signer
+ * the composition constructs at boot.
+ */
+const HOSTED_TOKEN_KEYS = {
+  CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: [
+    "-----BEGIN PRIVATE KEY-----",
+    "MC4CAQAwBQYDK2VwBCIEIO9Cnka2wu8+h1a1Rd+bDejAsq2oUxO6BnDKjrHrpw54",
+    "-----END PRIVATE KEY-----",
+  ].join("\n"),
+  CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: [
+    "-----BEGIN PUBLIC KEY-----",
+    "MCowBQYDK2VwAyEAvy35aYUPAjG/Zac6ER0AiB0BZteRmYnpMZ5b1U0SJGs=",
+    "-----END PUBLIC KEY-----",
+  ].join("\n"),
+}
+
+/**
+ * The hosted control plane a Worker entry composes, with this file's fake
+ * driver injected where the entry injects the selected one.
+ *
+ * Built here rather than hand-writing a `sandbox` object because the field the
+ * allocator reads is one the composition DERIVES from the injected driver: a
+ * services object assembled by a test cannot tell whether the composition
+ * still derives it, which is how a deployment shipped with none.
+ */
+function composedHostedServices(driver: SandboxDriver) {
+  return composeProviderNeutralHostedControlPlane(
+    {
+      ...HOSTED_TOKEN_KEYS,
+      CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.claxedo.test",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "relay-resolver-secret",
+      CLAXEDO_SANDBOX_DRIVER: driver.id,
+    },
+    {
+      auth: { config: { enabled: true, mode: "signed" } } as never,
+      authority: {} as never,
+      hostTunnelResolver: (async () => undefined) as never,
+      sandbox: { driver, leaseStore: createMemoryLeaseStore() },
+    },
+  ).services
+}
 
 describe("hosted tasks cloud roots", () => {
   test("keeps every row it writes inside this file's own data directory", async () => {
@@ -453,7 +502,7 @@ describe("hosted tasks cloud roots", () => {
     expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
   })
 
-  test("refuses cloud placement on a deployment with no sandbox driver, and allocates nothing", async () => {
+  test("refuses cloud placement on a deployment that provisions no sandboxes, and allocates nothing", async () => {
     runtime()
     const composition = services(undefined)
 
@@ -462,10 +511,60 @@ describe("hosted tasks cloud roots", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([
-      { code: "placement_unsupported", detail: expect.stringContaining("No cloud sandbox driver is configured") },
+      { code: "placement_unsupported", detail: "This control plane provisions no cloud sandboxes" },
     ])
     expect(await rootOf("tsk_one")).toBeUndefined()
     expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a manager whose driver the placement cannot name refuses the start, and says so distinctly", async () => {
+    runtime()
+    const composition = services(
+      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
+      {},
+    )
+
+    const { started } = await start(bridge(composition), "tsk_one")
+    expect(started).toMatchObject({
+      ok: false,
+      error: {
+        message: "This control plane's sandbox provisioner is not one a workspace placement can name",
+      },
+    })
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a root allocated over the real hosted composition is placed on the provisioner that composition declared", async () => {
+    runtime()
+    const { driver } = fakeDriver({ id: "cloudflare" })
+    const sandbox = composedHostedServices(driver)
+    expect(sandbox.sandbox.defaultDriver).toBe("cloudflare")
+    const composition = services(undefined, sandbox.sandbox)
+
+    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
+    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "cloudflare" })
+  })
+
+  test("the fetch bridge is a provisioner a root can be placed on, not a refusal", async () => {
+    runtime()
+    const { driver } = fakeDriver({ id: "fetch" })
+    const sandbox = composedHostedServices(driver)
+    expect(sandbox.sandbox.defaultDriver).toBe("fetch")
+    const composition = services(undefined, sandbox.sandbox)
+
+    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
+    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "fetch" })
+  })
+
+  test("stores the deployment's declared driver as the root's placement", async () => {
+    runtime()
+    const composition = services(
+      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
+    )
+    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
+
+    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "daytona" })
   })
 
   test("keeps a root out of its project's workspace list, so an ordinary start still resolves one workspace", async () => {

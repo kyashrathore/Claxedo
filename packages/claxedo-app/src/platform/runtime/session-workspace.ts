@@ -4,10 +4,11 @@ import { resolveWorkspaceRef } from "@/platform/identity/resolve-workspace-ref"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { isWorkspaceIdRef, localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import type { RelayHostKind, WorkspaceHost, WorkspaceHostKind } from "@/platform/runtime/placement-wire"
 
-// The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
-// every relay-backed workspace). Shape matches `signedWorkspaceFromProjects`'s
-// first arg.
+// The signed project inventory (carries the real host kind for every
+// relay-backed workspace). Shape matches `signedWorkspaceFromProjects`'s first
+// arg.
 type WorkspaceInventory = Parameters<typeof signedWorkspaceFromProjects>[0]
 
 export type SessionWorkspaceRuntimeInput = {
@@ -28,7 +29,18 @@ export type SessionWorkspaceRuntimeInput = {
   projects?: WorkspaceInventory
 }
 
-function optimisticRelayRef(workspaceId: string, kind: "cloud" | "user-hosted" = "user-hosted") {
+/**
+ * The catalog's answer, with the placement it states.
+ *
+ * `host` rides along only when the matched row came from a control-plane list;
+ * every caller that decides a wire needs to tell "this machine holds it" from
+ * "this row's producer states no host at all".
+ */
+function signedRuntimeRef(signed: { workspaceId: string; kind: RelayHostKind; host?: WorkspaceHost }) {
+  return { workspaceId: signed.workspaceId, kind: signed.kind, ...(signed.host ? { host: signed.host } : {}) }
+}
+
+function optimisticRelayRef(workspaceId: string, kind: RelayHostKind = "machine") {
   // ws_ ids can exist before signed inventory loads. Bare project UUIDs cannot:
   // they are the desktop local route id, and minting them 403s at the control plane.
   if (isWorkspaceIdRef(workspaceId) || workspaceIdFromRef(workspaceId)) {
@@ -41,12 +53,12 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   const projects = input.projects ?? readProjectCatalog(getClaxedoServerUrl())
   if (input.sessionRef) {
     const backing = resolveWorkspaceRef(input.sessionRef)
-    if (backing.kind === "cloud" || backing.kind === "user-hosted") {
-      // The inventory's answer wins when it has one: it carries the real
-      // cloud-vs-user-hosted kind, which the ref alone cannot.
+    if (backing.kind === "provisioner" || backing.kind === "machine") {
+      // The inventory's answer wins when it has one: it carries the real host
+      // kind, which the ref alone cannot.
       const signed = signedWorkspaceFromProjects(projects, backing.workspaceId)
         ?? signedWorkspaceFromProjects(projects, input.directory)
-      if (signed) return { workspaceId: signed.workspaceId, kind: signed.kind }
+      if (signed) return signedRuntimeRef(signed)
       // Route activation can briefly carry a stale/legacy workspace-backed ref.
       // A loaded project catalog that positively identifies either the backing
       // id or its directory as local is the canonical owner and must win before
@@ -65,7 +77,7 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     // filesystem cwd (remote_directory), so refs built from them resolve
     // `local` even for relay-backed workspaces. Fall through to the
     // directory/inventory resolution below instead of concluding local here.
-    if (backing.kind !== "local") return undefined
+    if (backing.kind !== "self") return undefined
   }
   // Draft panes begin with a local SessionRef because no runtime session exists
   // yet. Once the user opens/selects a workspace route, that route is the
@@ -74,7 +86,7 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   // the pane SDK, model catalog, composer and WorkspaceGate share one relay.
   if (input.workspaceId) {
     const workspace = signedWorkspaceFromProjects(projects, input.workspaceId)
-    if (workspace) return { workspaceId: workspace.workspaceId, kind: workspace.kind }
+    if (workspace) return signedRuntimeRef(workspace)
     if (
       localWorkspaceInProjects(projects, input.workspaceId) ||
       localWorkspaceInProjects(projects, input.directory)
@@ -95,7 +107,7 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     // though the workspace is connected.
     const byDirectory = signedWorkspaceFromProjects(projects, input.directory)
     if (!byDirectory) return undefined
-    return { workspaceId: byDirectory.workspaceId, kind: byDirectory.kind }
+    return signedRuntimeRef(byDirectory)
   }
   // UUID-shaped workspace route ids are shared by local and relay-backed
   // workspaces. The project inventory is the authority for that distinction:
@@ -108,25 +120,27 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   // Read the REAL kind from the signed inventory. Match by directory AND by the
   // workspace id (`signedWorkspaceFromProjects` matches both forms), so a
   // `workspace:<id>` directory-ref or a raw filesystem path both resolve.
-  const signedKind =
-    signedWorkspaceFromProjects(projects, input.directory)?.kind ??
-    signedWorkspaceFromProjects(projects, workspaceId)?.kind
+  const signed =
+    signedWorkspaceFromProjects(projects, input.directory) ??
+    signedWorkspaceFromProjects(projects, workspaceId)
+  const signedKind = signed?.kind
   // `workspace:<uuid>` is also the canonical shape emitted by the local
   // sidecar. A prefix does not turn that local association id into a relay
   // workspace. Only typed SessionRef backing (handled above) or the signed
-  // inventory may do that. Guessing user-hosted here created a connection mint
-  // for a local workspace on every session mount; the local control plane
-  // correctly answered 404 "Workspace not found", and the gate then flashed
-  // that false failure over an already-loaded local session.
+  // inventory may do that. Guessing `machine` here mints a connection for a
+  // workspace this server serves itself, on every session mount; the local
+  // control plane answers 404 "Workspace not found" and the gate flashes that
+  // false failure over an already-loaded session.
   if (!signedKind && localWorkspaceAssociationId(workspaceId)) return undefined
-  // When the inventory can't resolve the kind, do NOT default to "cloud": the
-  // cloud path runs `prepareWorkspaceRuntime` → `resolveWorkspaceRuntime` →
-  // the workspace resolve endpoint, which returns null/HTML for a user-hosted
-  // workspace and throws "Workspace runtime is unavailable", concluding OFFLINE
-  // for a workspace whose connection mint actually returns 200. Both cloud and
-  // user-hosted route through the relay; "user-hosted" uses the mint+health
-  // path (no provisioning resolve), which is the source of truth for readiness.
-  return { workspaceId, kind: signedKind ?? ("user-hosted" as const) }
+  // When the inventory can't resolve the host, do NOT default to the
+  // provisioner: that path runs `prepareWorkspaceRuntime` →
+  // `resolveWorkspaceRuntime` → the workspace resolve endpoint, which returns
+  // null/HTML for a workspace on an enrolled machine and throws "Workspace
+  // runtime is unavailable", concluding OFFLINE for a workspace whose
+  // connection mint actually returns 200. Both hosts route through the relay;
+  // `machine` uses the mint+health path (no provisioning resolve), which is the
+  // source of truth for readiness.
+  return { workspaceId, kind: signedKind ?? ("machine" as const), ...(signed?.host ? { host: signed.host } : {}) }
 }
 
 export function sessionPaneWorkspaceKey(input: SessionWorkspaceRuntimeInput) {
@@ -134,15 +148,15 @@ export function sessionPaneWorkspaceKey(input: SessionWorkspaceRuntimeInput) {
 }
 
 // Resolve the WorkspaceConnection authority inputs (workspaceId + kind) for a
-// pane. A relay-backed workspace (cloud / user-hosted) returns its real kind;
-// everything else is `local` — no relay backing, so the authority synthesizes
+// pane. A relay-backed workspace returns its real host kind; everything else is
+// `self` — no relay backing, so the authority synthesizes
 // it ready immediately (the gate is a no-op for loopback). This is the single
 // place panes derive the connection kind, so split panes for the same workspace
 // agree by construction instead of each re-deriving a (possibly wrong) kind.
 export function sessionPaneWorkspaceConnection(
   input: SessionWorkspaceRuntimeInput,
-): { workspaceId: string | undefined; kind: "cloud" | "user-hosted" | "local" } {
+): { workspaceId: string | undefined; kind: WorkspaceHostKind } {
   const ref = sessionWorkspaceRuntimeRef(input)
   if (ref) return { workspaceId: ref.workspaceId, kind: ref.kind }
-  return { workspaceId: undefined, kind: "local" }
+  return { workspaceId: undefined, kind: "self" }
 }

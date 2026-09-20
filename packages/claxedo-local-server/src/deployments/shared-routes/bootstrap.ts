@@ -13,7 +13,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig, issuesSessions } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { asRecord, asString } from "@claxedo/helpers/guards"
@@ -33,6 +33,15 @@ type Options = {
    * proxy's mount, so the declaration cannot disagree with what is served.
    */
   hostAggregateEvents: boolean
+  /**
+   * This machine's enrollment id at the control plane, when it has one.
+   *
+   * A client reads it to answer "is the machine that serves this workspace
+   * me": a control-plane row names its host by enrollment id, and nothing else
+   * on the wire ties that row to the server the client is already talking to.
+   * Absent means unenrolled, which still serves this machine's own directories.
+   */
+  hostEnrollmentId?: () => string | undefined
 }
 
 
@@ -56,12 +65,31 @@ function events(options: Options) {
   return { hostAggregate: options.hostAggregateEvents }
 }
 
+/**
+ * Read from the composition's own auth config rather than declared beside it,
+ * so the body cannot say "sign in" about a server that authenticates by
+ * loopback.
+ */
+function declaresSessions(options: Options) {
+  return issuesSessions(options.authConfig ?? controlPlaneAuthConfig())
+}
+
+function deployment(options: Options) {
+  return { issuesSessions: declaresSessions(options) }
+}
+
+function bootstrapHostIdentity(options: Options) {
+  return { enrollment: options.hostEnrollmentId?.() ?? null }
+}
+
 async function localBootstrapBody(options: Options) {
   return {
     healthy: true,
     version: version(options),
     path: bootPath(),
     events: events(options),
+    deployment: deployment(options),
+    host: bootstrapHostIdentity(options),
     project: await listProjects(),
     provider_auth: providerAuthMethods(),
   }
@@ -73,6 +101,8 @@ async function localShellBootstrapBody(options: Options) {
     version: version(options),
     path: bootPath(),
     events: events(options),
+    deployment: deployment(options),
+    host: bootstrapHostIdentity(options),
     project: await listProjects(),
   }
 }
@@ -83,13 +113,15 @@ function localBootstrap(url: string, options: Options) {
 }
 
 /**
- * The project inventory a SIGNED bootstrap answers with — the self-hosted twin
- * of the hosted control plane's `signedShellProjects` (claxedo-server
- * routes/hosted/shell.ts). Exported for the same reason that one is: this
- * grouping decides which directories the app shell treats as relay-backed, and
- * that decision is worth pinning directly rather than through a whole route.
+ * The `project` array a SIGNED bootstrap body carries: the authority's
+ * workspace rows grouped by project.
+ *
+ * The hosted control plane answers the same shape from its own copy,
+ * `signedShellProjects`. This module cannot be shared into the Worker bundle
+ * — it reaches the fs-backed workspace store and agent config — so the two
+ * are changed together or one client meets two shapes.
  */
-export function signedBootstrapProjects(workspaces: unknown[]) {
+function signedBootstrapProjects(workspaces: unknown[]) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -100,15 +132,13 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     const row = asRecord(workspace)
     const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
     if (!workspaceId) continue
-    // A workspace served elsewhere is ADDRESSED by its id; the host's own path
-    // is location metadata. Every row here comes from the signed control plane,
-    // so every one of them is relay-backed — a local workspace never reaches
-    // this body. Stating the host's path as `directory` made the client resolve
-    // a `/w/<id>` route to a path on ANOTHER machine
-    // (`workspaceRouteIdentity`), so its panes registered that path as their
-    // scope while both event lanes publish under `workspace:<id>` and every
-    // live frame of an attached turn was dropped for the mismatch. Same shape
-    // the hosted control plane already serves (`signedShellProjects`).
+    // A control-plane row is ADDRESSED by its id; the serving host's path is
+    // placement metadata. The client resolves a `/w/<id>` route through
+    // `workspaceRouteIdentity` and registers its panes under what this says,
+    // while both event lanes publish under `workspace:<id>`: a filesystem path
+    // here would put every live frame of an attached turn on a scope nothing
+    // publishes to. Same shape the hosted control plane serves
+    // (`signedShellProjects`).
     const directory = `workspace:${workspaceId}`
     const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
     const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
@@ -122,7 +152,11 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
-      kind: asString(row?.access) ?? asString(row?.backing) ?? "cloud",
+      // The row's own placement, passed through rather than restated: the app
+      // narrows this word once, in `placement-wire.ts`. A row naming no backing
+      // is the provisioner's, never the reader's own machine — defaulting the
+      // other way would put somebody else's workspace on this one.
+      backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
       workspace_name: workspaceName,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
@@ -146,8 +180,27 @@ async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Option
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
     events: events(options),
+    deployment: deployment(options),
+    host: bootstrapHostIdentity(options),
     project: await Promise.all(projects.map(async (project) => ({ ...project, ...await getProjectMetadata(project.id) }))),
     provider_auth: providerAuthMethods(),
+  }
+}
+
+/**
+ * What a caller holding no credential learns from a server that issues
+ * sessions: the posture it has to satisfy, and nothing of the machine behind
+ * it. The client reads this before its first render to decide whether a signed
+ * session is required at all, so refusing the request would leave it guessing
+ * from the URL — and answering `localBootstrap` would hand an anonymous caller
+ * this node's project list and home directory.
+ */
+function unauthenticatedDeclarationBody(options: Options) {
+  return {
+    healthy: true,
+    version: version(options),
+    events: events(options),
+    deployment: deployment(options),
   }
 }
 
@@ -200,12 +253,7 @@ export function BootstrapRoutes(options: Options) {
             throw err
           }
         }
-        // On a signed deployment an anonymous remote caller must not learn the
-        // machine's directories and project inventory; loopback stays open
-        // because the operator's own tools bootstrap without a token.
-        if (authConfig.enabled && !isLoopbackLocalRequest(c.req.raw)) {
-          return c.json(controlPlaneAuthErrorBody(new ControlPlaneAuthError(401, "invalid_bearer_token", "Authentication required")), 401)
-        }
+        if (declaresSessions(options)) return c.json(unauthenticatedDeclarationBody(options))
         return c.json(await localBootstrap(c.req.url, options))
       } catch (err) {
         return c.json({

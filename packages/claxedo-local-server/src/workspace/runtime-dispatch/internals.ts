@@ -7,12 +7,9 @@ import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/gove
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import {
-  EMBEDDED_RELAY_HOST_AUTH_HEADER,
-  embeddedRelayHostAuthFromActor,
-} from "./embedded-relay-host-auth"
+import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
+import { resolveIngressProvenance } from "./ingress-provenance"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 
@@ -38,10 +35,12 @@ export type RuntimeProxyOptions = {
   }) | undefined>
   /** Signed deployments must never fall back to the synthetic local owner. */
   requireRelayActor?: boolean
+  /** See `ingress-provenance.ts`: refuse a relayed request this host cannot place. */
+  verifyRelayIngress?: boolean
   /**
    * Answers the host aggregate `wr/events`. Only the desktop-local
-   * composition supplies one; without it a workspace-less request keeps
-   * falling through as before.
+   * composition supplies one; without it a workspace-less request falls
+   * through to the next handler like any other unresolvable workspace.
    */
   hostEventStream?: (c: Context) => Response | Promise<Response>
 }
@@ -74,28 +73,43 @@ export function requestWorkspace(c: Context) {
  * serve them all on one connection. Returns `undefined` for anything else —
  * a workspace-scoped stream, another runtime-owned path, or a composition
  * that mounts no aggregate — leaving the request on the dispatch path it had
- * before.
+ * before, and synchronously, so nothing else on that path pays a turn of the
+ * microtask queue for a question that was not about it.
  *
  * The aggregate asks no admission question and serves every workspace's
- * frames, which only a loopback-direct reader may have: this is the module
- * that grants that access, so it is the one that decides it, rather than
- * inferring it from a guard composed elsewhere. Three refusals, unauthorized
- * first: a peer that is not loopback by `isLoopbackLocalRequest`'s own
- * measure, a request carrying the in-process relay host-auth stamp or landing
- * on a deployment that requires a verified relay actor (the relay path always
- * names a workspace, `/workspaces/:id/…`), and then `?sessionID=`, which has
- * no meaning on a stream that spans workspaces — the reader opens that
- * workspace's own stream for it.
+ * frames, which only a loopback-direct reader may have. Where a request came
+ * from is `resolveIngressProvenance`'s question, asked here with no actor
+ * resolver: a relay-minted token is bound to one workspace and this stream
+ * spans them all, so there is nobody for it to promote and its refusals are
+ * the whole answer. The workspace id it takes is never read without that
+ * resolver, which is why this one is empty, and the refusals are asked for
+ * whatever the composition declares, because a stream that spans every
+ * workspace is exactly the thing a host serving two kinds of caller on one
+ * listener must not hand to the wrong one.
+ *
+ * Two refusals remain this function's own: the in-process relay host-auth
+ * stamp, which is the dispatch hop's output rather than anything a boundary
+ * verified, so a request already placed as a relayed member is not this
+ * stream's reader; and `?sessionID=`, which has no meaning on a stream that
+ * spans workspaces — the reader opens that workspace's own stream for it.
  */
 export function hostAggregateEvents(c: Context, pathname: string, options: RuntimeProxyOptions) {
   if (pathname !== WR_EVENTS || !options.hostEventStream) return undefined
   const named = requestWorkspace(c)
   if (named.workspaceId || named.directory) return undefined
-  if (
-    !isLoopbackLocalRequest(c.req.raw) ||
-    options.requireRelayActor === true ||
-    c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER)
-  ) {
+  return decideHostAggregate(c, options, options.hostEventStream)
+}
+
+async function decideHostAggregate(
+  c: Context,
+  options: RuntimeProxyOptions,
+  serve: NonNullable<RuntimeProxyOptions["hostEventStream"]>,
+) {
+  const provenance = await resolveIngressProvenance(c.req.raw, "", {
+    ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+    verifyRelayIngress: true,
+  })
+  if (provenance.kind !== "loopback-direct" || c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER)) {
     return c.json(errorBody(
       "host_event_stream_denied",
       "The host event stream is served to loopback-direct readers only",
@@ -107,7 +121,7 @@ export function hostAggregateEvents(c: Context, pathname: string, options: Runti
       "The host event stream spans every workspace; open a workspace's own stream for a session",
     ), 400)
   }
-  return options.hostEventStream(c)
+  return serve(c)
 }
 
 export async function resolveWorkspaceRuntimeHit(c: Context, options: RuntimeProxyOptions = {}): Promise<Hit | undefined> {
@@ -239,19 +253,14 @@ export async function proxy(c: Context, hit: Hit, options?: {
   // causing Z_DATA_ERROR (incorrect header check) during decompression.
   // Requesting identity encoding avoids the mismatch entirely.
   headers.set("accept-encoding", "identity")
-  // SECURITY — actor-bearing signed traffic must resolve its caller before
-  // this branch. Only explicit unsigned-local composition uses the separate
-  // control-plane service principal.
-  // `localWorkspaceRelayProxy` serves browser-originated traffic on a
-  // loopback server URL (`workspace-runtime-request.ts:223`). The thing
-  // standing between a local process and that unsigned owner-role token is
-  // `isLoopbackLocalRequest` (`local-only-projection.ts`), checked at the top of
-  // `localWorkspaceRelayProxyWithOptions` — it fails closed on forwarded
-  // headers and verifies peer address, host, and origin. That gate is
-  // load-bearing for this mint, not just for the local projections it was
-  // written for: weakening it (e.g. trusting a forwarded client claim here)
-  // hands out owner tokens. `localWorkspaceRelayProxy denies a forwarded-client
-  // request before minting` in proxy.test.ts pins the ordering.
+  // A caller with no verified actor is minted the control-plane service
+  // principal at owner role. The only thing between a local process and that
+  // token is `isLoopbackLocalRequest` (`platform/http/peer-address`), checked
+  // at the top of `localWorkspaceRelayProxyWithOptions` before this runs: it
+  // fails closed on forwarded headers and verifies peer address, host and
+  // origin. Trusting a forwarded client claim here would hand out owner
+  // tokens; a signed composition sets `requireRelayActor` so no request
+  // reaches the fallback at all.
   if (hit.relay && options?.relayProvider) {
     const actor = requireRuntimeProxyActor(
       await options.resolveRelayActor?.(c.req.raw, hit.workspaceId),
@@ -409,27 +418,19 @@ export function embeddedConfigModeForPath(
 }
 
 /**
- * The URL the embedded runtime sees for a dispatched request.
+ * The URL the embedded runtime sees for a dispatched request: the CALLER's
+ * origin, never a synthetic one.
  *
- * This hop reuses the CALLER's origin rather than a synthetic one. The runtime
- * derives real behaviour from this URL — PTY creation reads its port via
- * `requestPort` and injects it as `CLAXEDO_PORT` / `CLAXEDO_SERVER_PORT`, which
- * is where terminal agent hooks post their lifecycle events. Dispatching from a
- * synthetic `http://embedded-workspace-runtime.local` (no port) made
- * `requestPort` fall through to the http default, so every terminal was told
- * the server lived on port 80: `notify.sh` posted to
- * `http://127.0.0.1:80/api/wr/hook/agent-lifecycle`, got nothing, and — because
- * it backgrounds its curl and discards the response — failed silently. The
- * symptom was a coding agent in a terminal that never showed working/permission
- * status, with no error anywhere. Verified by spawning a PTY that printed its
- * own env: `CLAXEDO_PORT=[80]` against a server on 3001.
- *
- * The synthetic host only ever bought a recognisable marker in traces, and
- * nothing routes on it. Fabricating an origin for a request that HAS one just
- * invents values the runtime then trusts, so the in-process hop is identified
- * by the `x-workspace-id` / `x-claxedo-directory` headers set below instead.
- * (The other synthetic-base call sites construct requests with no caller at
- * all, so they legitimately need one.)
+ * The runtime reads this URL's port (`requestPort`) into `CLAXEDO_PORT` /
+ * `CLAXEDO_SERVER_PORT` for every PTY it creates, and that is where a
+ * terminal agent's hooks post their lifecycle events. A synthetic origin with
+ * no port falls through to http's default, so `notify.sh` posts to
+ * `127.0.0.1:80`, and because it backgrounds its curl and discards the
+ * response the loss is silent: a terminal agent that never shows working or
+ * permission status, with no error anywhere. The in-process hop is identified
+ * by the `x-workspace-id` / `x-claxedo-directory` headers instead. Call sites
+ * that construct a request with no caller at all are the ones that need a
+ * synthetic base.
  */
 export function embeddedRuntimeTargetUrl(requestUrl: URL, targetPath: string): URL {
   return new URL(targetPath + requestUrl.search, requestUrl)
@@ -439,8 +440,11 @@ export async function embedded(
   c: Context,
   ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
   pathname?: string,
-  options?: Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor">,
+  options?: Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor" | "verifyRelayIngress">,
 ) {
+  // Ahead of the runtime: a refused request must not start a workspace.
+  const provenance = await resolveIngressProvenance(c.req.raw, ws.id, options)
+  if (provenance.kind === "rejected") return provenance.response
   const url = new URL(c.req.url)
   const targetPath = pathname ?? url.pathname
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath, c.req.method) })
@@ -451,12 +455,12 @@ export async function embedded(
   headers.set("x-claxedo-directory", ws.directory)
   headers.delete("host")
   headers.delete("connection")
-  // Never trust a client-supplied stamp; only this in-process hop may set it.
+  // Never trust a client-supplied stamp; only this in-process hop may set it,
+  // and only for the provenance it just verified. The runtime reads its
+  // absence as the machine's own user.
   headers.delete(EMBEDDED_RELAY_HOST_AUTH_HEADER)
-  const stamped = await resolveEmbeddedRelayHostAuth(c.req.raw, ws.id, options)
-  if (stamped) headers.set(EMBEDDED_RELAY_HOST_AUTH_HEADER, JSON.stringify(stamped))
-  else if (options?.requireRelayActor) {
-    requireRuntimeProxyActor(undefined, true)
+  if (provenance.kind === "relay-replayed") {
+    headers.set(EMBEDDED_RELAY_HOST_AUTH_HEADER, JSON.stringify(provenance.stamp))
   }
   const res = await runtime.app.fetch(new Request(target.toString(), {
     method: c.req.method,
@@ -472,16 +476,3 @@ export async function embedded(
   })
 }
 
-async function resolveEmbeddedRelayHostAuth(
-  request: Request,
-  workspaceId: string,
-  options?: Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor">,
-) {
-  // Attribution stamps must come from a verified control-plane/relay actor.
-  // Never decode an unsigned Bearer payload here — that skipped requireRelayActor
-  // and allowed author misattribution on any caller that can reach embedded().
-  if (!options?.resolveRelayActor) return undefined
-  const actor = await options.resolveRelayActor(request, workspaceId)
-  if (!actor) return undefined
-  return embeddedRelayHostAuthFromActor(actor, workspaceId)
-}

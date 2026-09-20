@@ -48,8 +48,6 @@ export type CreateCloudWorkspaceInput = {
 }
 
 /**
- * Provision a cloud workspace on the control plane.
- *
  * Desktop signed mode: renderer has no bearer. Named `workspace.create` reaches
  * the hosted control plane through Electron main. Browser / unsigned keeps
  * `api.post` against the configured control-plane base URL.

@@ -405,6 +405,7 @@ Entry point status:
   `@claxedo/agent-sdk-runtime/message-page`
   `@claxedo/agent-sdk-runtime/runtime-event-hub`,
   `@claxedo/agent-sdk-runtime/sse`,
+  `@claxedo/agent-sdk-runtime/provider-projection`,
   `@claxedo/agent-sdk-runtime/mcp-resolver`
 - Compatibility: `@claxedo/agent-sdk-runtime/compat-events`,
   `@claxedo/agent-sdk-runtime/status`

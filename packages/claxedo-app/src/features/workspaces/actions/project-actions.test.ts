@@ -328,7 +328,7 @@ describe("createProjectActions", () => {
   // handleNewLocalWorkspace/handleNewCloudWorkspace below, exercised by the
   // session composer's environment selector (see core-cloud-provisioning.spec.ts
   // and core-workspace-lifecycle.spec.ts).
-  test("direct local workspace creation warms the directory session cache before opening a session", async () => {
+  test("creating a workspace on this machine warms the directory session cache before opening a session", async () => {
     const dir = `/workspace/feature-${Date.now().toString(36)}-direct`
     const { props, adds, navs, nav, cacheEnsures, order } = make(dir)
     const progress: string[] = []
@@ -369,7 +369,7 @@ describe("createProjectActions", () => {
     ])
   })
 
-  test("direct cloud workspace progress replays backend events emitted before create returns", async () => {
+  test("provisioner-placed workspace progress replays backend events emitted before create returns", async () => {
     const { props, adds, navs, nav } = make("/workspace/main")
     const progress: string[] = []
     let listener: ((event: Extract<ClaxedoEvent, { type: "provision" }>) => void) | undefined

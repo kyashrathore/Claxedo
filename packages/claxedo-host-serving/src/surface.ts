@@ -24,7 +24,7 @@
  * families are denied regardless of the workspace token's permissions.
  */
 
-export type UserHostedSurfaceTarget =
+export type HostServingSurfaceTarget =
   | { kind: "deny" }
   | { kind: "root"; url: URL }
   | { kind: "workspace"; url: URL }
@@ -134,9 +134,7 @@ function normalizedBase(localBaseUrl: string): string {
  * belongs to `session/routes/meta-routes.ts`, a different router — so a
  * prefixed value would resolve nothing. `/project/current` falls through to
  * its own "current.id === a stored project's id" fallback and answers the
- * right project on the bare id; verified live against the running daemon
- * (`GET /project/current?directory=<workspace-uuid>` returns that workspace's
- * project, `GET /config?directory=<workspace-uuid>` answers 200).
+ * right project on the bare id, and `/config` resolves it the same way.
  */
 function withDirectory(url: URL, workspaceId: string): URL {
   url.searchParams.set("directory", workspaceId)
@@ -149,11 +147,11 @@ function withDirectory(url: URL, workspaceId: string): URL {
  * `path` is what the tunnel hands `resolveLocalUrl` — the bare app path plus
  * its original query string, no `/workspaces/:id` prefix.
  */
-export function userHostedSurface(input: {
+export function hostServingSurface(input: {
   localBaseUrl: string
   workspaceId: string
   path: string
-}): UserHostedSurfaceTarget {
+}): HostServingSurfaceTarget {
   const { localBaseUrl, workspaceId, path } = input
   const pathname = new URL(path, "http://workspace.local").pathname
   if (denied(pathname)) return { kind: "deny" }

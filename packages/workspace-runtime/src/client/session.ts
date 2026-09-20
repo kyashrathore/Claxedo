@@ -57,6 +57,21 @@ export type SessionMessagePageInput = SessionInput & (
 )
 export type SessionGoalStartInput = SessionInput & { objective: string }
 
+/** A prompt the runtime holds behind a running turn, as the queue route reports it. */
+export type QueuedSessionPrompt = {
+  seq: number
+  messageId?: string
+  queuedAt: number
+  parts: Array<Record<string, unknown>>
+  /** Kept back from the next idle while a client edits it. */
+  held: boolean
+}
+
+export type SessionQueueControlInput = SessionInput & { seq: number } & (
+  | { action: "cancel" | "steer" | "hold" | "release" }
+  | { action: "replace"; parts: Array<Record<string, unknown>> }
+)
+
 export type WorkspaceSessionClient = {
   list(input?: SessionListInput, options?: Options): Reply<AgentPresentationSession[]>
   summaries(input?: SessionSummaryListInput, options?: Options): Reply<Record<string, unknown>[]>
@@ -88,6 +103,10 @@ export type WorkspaceSessionClient = {
   permissionMode: {
     get(input: SessionInput, options?: Options): Reply<AgentPermissionModeState>
     set(input: SessionInput & { modeId: string }, options?: Options): Reply<AgentPermissionModeState>
+  }
+  queue: {
+    list(input: SessionInput, options?: Options): Reply<QueuedSessionPrompt[]>
+    control(input: SessionQueueControlInput, options?: Options): Reply<Ok>
   }
   goal: {
     state(input: SessionInput, options?: Options): Reply<{ capabilities: GoalCapabilities; goal: RuntimeGoalSnapshot | null }>
@@ -164,6 +183,17 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     permissionMode: {
       get: (input, options) => read("session.permissionMode.get", input, "/permission-mode", options),
       set: (input, options) => write("session.permissionMode.set", "PUT", input, "/permission-mode", options, { modeId: input.modeId }),
+    },
+    queue: {
+      list: (input, options) => read<QueuedSessionPrompt[]>("session.queue.list", input, "/queue", options),
+      control: (input, options) => write<Ok>(
+        "session.queue.control",
+        "POST",
+        input,
+        `/queue/${encodeURIComponent(String(input.seq))}/${encodeURIComponent(input.action)}`,
+        options,
+        "parts" in input ? { parts: input.parts } : undefined,
+      ),
     },
     goal: {
       state: goalRead("session.goal.state", "/goal/state"),

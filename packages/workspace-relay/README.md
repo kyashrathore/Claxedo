@@ -10,12 +10,12 @@ bootstrap run on **Bun** (they use `Bun.*` APIs via the Bun adapter). Node is
 not supported for the standalone process today; the Cloudflare Worker adapter
 is the other supported runtime.
 
-Production v1 is deliberately single-instance for user-hosted traffic. The
+Production v1 is deliberately single-instance for host-tunnel traffic. The
 relay keeps host presence and host-tunnel sockets in process-local maps, and a
 `hostId` has exactly one active tunnel at a time. Deploy one active relay
-process per user-hosted relay fleet; horizontal scaling needs a future routing
+process per host-tunnel relay fleet; horizontal scaling needs a future routing
 owner for sticky host tunnels, split-brain prevention, and failover. A relay
-process, VM, or region failure drops existing user-hosted HTTP, WebSocket, SSE,
+process, VM, or region failure drops existing tunnelled HTTP, WebSocket, SSE,
 and PTY sessions until workspace runtimes reconnect.
 
 ## Quickstart
@@ -104,13 +104,13 @@ accepted traffic to the selected host with a freshly minted relay-host token.
 | Token | Default TTL | Issuer | Audience | Purpose |
 | --- | ---: | --- | --- | --- |
 | Runtime Access Token (RAT) | 30 minutes | `claxedo-control-plane` | `workspace-relay` | User/browser authorization to reach one workspace and host through the relay. |
-| Host Tunnel Token (HTT) | 5 minutes | `claxedo-control-plane` | `workspace-relay-host-tunnel` | Workspace runtime authorization to register a user-hosted tunnel. |
+| Host Tunnel Token (HTT) | 5 minutes | `claxedo-control-plane` | `workspace-relay-host-tunnel` | Workspace runtime authorization to register a host tunnel. |
 | Relay Host Token (RHT) | 60 seconds | `workspace-relay` | `workspace-host-service` | Per-request relay-to-host authorization minted after RAT validation. |
 
 Runtime access tokens and host tunnel tokens bind issuer, audience, subject,
 workspace id, host id, expiry, issue time, and JTI. Runtime access tokens also
-bind role. Relay-host tokens additionally bind the deployment pair:
-`cloud/cloud-vm` or `user-hosted/local-worktree`.
+bind role. Relay-host tokens additionally bind the placement: `cloud-vm` or
+`local-worktree`.
 
 ### Revocation And Active Checks
 
@@ -174,10 +174,10 @@ The relay strips client-supplied `x-forwarded-for`, `x-forwarded-host`,
 headers. It replaces `Authorization` with an RHT, sets `x-workspace-id`, and
 adds `x-forwarded-by: workspace-relay`.
 
-For user-hosted targets, `Cookie` is stripped before forwarding. User-hosted
-workspace processes may run near a developer's local browser cookie jar, so
-browser cookies must not be passed through to the local host service. Cloud VM
-targets may receive cookies when the caller intentionally sends them.
+For `local-worktree` targets, `Cookie` is stripped before forwarding. A host
+tunnel ends on a machine someone uses, whose browser cookie jar the host
+service may share, so browser cookies must not be passed through to it. Cloud
+VM targets may receive cookies when the caller intentionally sends them.
 
 ### CORS
 
@@ -194,9 +194,9 @@ When no metrics token is configured, the endpoint only allows callers that the
 adapter identifies as loopback; if no remote-address resolver exists, it fails
 closed.
 
-### User-Hosted Topology
+### Host-Tunnel Topology
 
-Production v1 supports one active relay instance for user-hosted traffic, or a
+Production v1 supports one active relay instance for host-tunnel traffic, or a
 load balancer with strict stickiness that keeps each `hostId` on the relay
 process that owns its tunnel socket. Non-sticky horizontal scaling needs an
 external directory and tunnel routing owner before it is safe to advertise as
@@ -220,7 +220,7 @@ Re-exported from [`src/index.ts`](src/index.ts):
 
 | Concern | Module | Notable exports |
 | --- | --- | --- |
-| Token issuance / verification | [`src/auth.ts`](src/auth.ts) | `mintRuntimeAccessToken`, `verifyRuntimeAccessToken`, `mintRelayHostToken`, `verifyRelayHostToken`, `mintHostTunnelToken`, `verifyHostTunnelToken`, types `RelayRole`, `RelayAccess`, `RelayBacking`, `RelayJwtAlgorithm`, `RuntimeAccessTokenClaims`, `RelayKey`, `RelayKeyResolver`, error class `WorkspaceRelayAuthError` |
+| Token issuance / verification | [`src/auth.ts`](src/auth.ts) | `mintRuntimeAccessToken`, `verifyRuntimeAccessToken`, `mintRelayHostToken`, `verifyRelayHostToken`, `mintHostTunnelToken`, `verifyHostTunnelToken`, types `RelayRole`, `RelayBacking`, `RelayJwtAlgorithm`, `RuntimeAccessTokenClaims`, `RelayKey`, `RelayKeyResolver`, error class `WorkspaceRelayAuthError` |
 | Hono HTTP surface | [`src/server.ts`](src/server.ts) | `createWorkspaceRelay`, `authorizeWorkspaceRelayRequest`, types `WorkspaceRelayOptions`, `WorkspaceRelayTarget`, `RuntimeAccessTokenActiveResult`, `WorkspaceRelayAuditEvent`, `WorkspaceRelayMetricsSources`, `RelayHostPublicKey` |
 | Active-host directory | [`src/directory.ts`](src/directory.ts) | `createWorkspaceRelayDirectory`, `disposeWorkspaceRelayDirectory`, types `WorkspaceRelayDirectory`, `HostTunnelPresence` |
 | Bun-specific server bootstrap | [`src/bun.ts`](src/bun.ts) | `createWorkspaceRelayBun`, type `WorkspaceRelayBunOptions`, `WorkspaceRelayBunDrainController`, metrics `getFragmentationStats`, `getSlowConsumerStats` |
@@ -340,11 +340,11 @@ semantics:
 - one active owner for a `hostId`;
 - TTL extension on heartbeat pong;
 - immediate removal on disconnect;
-- workspace membership checks before user-hosted forwarding;
+- workspace membership checks before tunnelled forwarding;
 - split-brain prevention when a replacement tunnel connects;
 - observability for active host count and stale owner cleanup.
 
-The missing piece for true multi-instance user-hosted relay is not just durable
+The missing piece for a true multi-instance host-tunnel relay is not just durable
 presence storage. HTTP/WebSocket/SSE/PTY traffic must also route to the process
 or durable object that owns the live tunnel socket for that `hostId`.
 

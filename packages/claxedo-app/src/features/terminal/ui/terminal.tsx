@@ -29,7 +29,7 @@ import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-re
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-migration"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"
 import { classifyTerminalClose } from "./close"
@@ -73,13 +73,13 @@ export const Terminal = (props: TerminalProps) => {
   let ptyClientPromise: Promise<ReturnType<typeof createTerminalPtyClient>> | undefined
 
   const terminalWorkspaceId = () => {
-    // Prefer the SDK scope's stable relay-routing identity. For a relay-backed
-    // (cloud / user-hosted) workspace `sdk.directory` is often the runtime's
-    // filesystem path, which the control-plane resolve cannot map back to a
-    // workspaceId (remote_directory is null on the hosted control plane) — so
-    // resolving by directory returns undefined and the PTY socket falls back to
-    // the central control plane and fails. Reusing `sdk.workspaceId` (the same
-    // identity the composer/provider path uses) keeps the PTY on the relay.
+    // Prefer the SDK scope's stable relay-routing identity. For a workspace
+    // the attached server does not serve itself, `sdk.directory` is often the
+    // runtime's own filesystem path, which the control-plane resolve cannot map
+    // back to a workspaceId (remote_directory is null on the hosted control
+    // plane) — so resolving by directory returns undefined and the PTY socket
+    // falls back to the central control plane and fails. Reusing
+    // `sdk.workspaceId` keeps the PTY on the relay.
     const scopeWorkspaceId = sdk.workspaceId
     if (scopeWorkspaceId) return Promise.resolve(scopeWorkspaceId)
     workspaceIdPromise ??= resolveWorkspaceRuntime({
@@ -88,7 +88,7 @@ export const Terminal = (props: TerminalProps) => {
       directory: sdk.directory,
     })
       .then((workspace) =>
-        workspace && isRelayBackedWorkspaceKind(workspace.kind) && workspace.workspaceId
+        workspace && isRelayHostKind(workspace.kind) && workspace.workspaceId
           ? workspace.workspaceId
           : undefined,
       )

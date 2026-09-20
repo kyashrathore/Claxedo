@@ -7,9 +7,10 @@ import { normalizeSessionTurnOutcome } from "../session-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
-import { workspaceHostingKind, type SignedWorkspaceKind } from "@/platform/runtime/agent/signed-workspace"
-import { isUserHostedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
-import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
+import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
+import { placementProvisioner, asHostKind, inventoryHostKind, isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
+
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
@@ -193,7 +194,7 @@ export function controlPlaneSessionToItem(input: {
     attachments: [],
     environment: {
       kind: workspaceHostingKind(workspace),
-      driver: asString(workspace?.backing) ?? asString(workspace?.access),
+      driver: placementProvisioner(workspace),
     },
     ...(lastTurn ? { lastTurn } : {}),
     time: { created, updated },
@@ -265,14 +266,14 @@ export function createSignedInventorySource(input: {
   async function fetchSignedWorkspaceSessions(sessionInput: {
     workspaceId: string
     directory: ProjectDirectory
-    kind?: SignedWorkspaceKind
+    kind?: RelayHostKind
   }) {
-    // The registry is not the authority for a user-hosted workspace's sessions
-    // — its host is, and the rail reads that workspace's list straight off the
-    // runtime over the relay (`session-source.ts`). Asking here answered a
-    // subset (only the sessions created THROUGH the control plane) and cost a
-    // round trip per shared machine on every boot.
-    if (isUserHostedWorkspaceKind(sessionInput.kind)) return []
+    // The registry is not the authority for the sessions of a workspace on
+    // another machine — that host is, and the rail reads its list straight off
+    // the runtime over the relay (`session-source.ts`). Asking here answers a
+    // subset, only the sessions created THROUGH the control plane, at a round
+    // trip per shared machine on every boot.
+    if (sessionInput.kind === "machine") return []
     // This is a display read (snapshot rows, directory session lists), so it
     // shares the deduping cache: the same workspace is asked for by both the
     // signed-workspace snapshot and each directory's own bootstrap within the
@@ -305,6 +306,10 @@ export function createSignedInventorySource(input: {
     const sessions = await requestControlPlaneSessions(target.workspaceId)
     return sessions.some((session) => inventorySessionId(session) === target.sessionId)
   }
+  const relayHostKindOf = (kind: unknown) => {
+    const host = asHostKind(kind) ?? inventoryHostKind(kind)
+    return isRelayHostKind(host) ? host : undefined
+  }
   async function fetchSignedDirectorySessions(directory: ProjectDirectory) {
     const known = input.signedWorkspaceInfo(directory)
     const workspace = known
@@ -321,7 +326,7 @@ export function createSignedInventorySource(input: {
     const sessions = await fetchSignedWorkspaceSessions({
       workspaceId,
       directory: workspace.directory ?? directory,
-      kind: workspace.kind === "cloud" || workspace.kind === "user-hosted" ? workspace.kind : undefined,
+      kind: relayHostKindOf(workspace.kind),
       ...(workspace.status === undefined || workspace.status === null ? {} : { status: workspace.status }),
     })
     return sessions.flatMap((session) => {
@@ -335,22 +340,22 @@ export function createSignedInventorySource(input: {
     })
   }
 
-  async function fetchControlPlaneWorkspaces(access: SignedWorkspaceKind) {
+  async function fetchControlPlaneWorkspaces(host: RelayHostKind) {
     const run = await signedAccountRun()
     if (run) {
-      const operation = access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
+      const operation = host === "provisioner" ? "workspace.list.provisioner" : "workspace.list.machine"
       const workspaces = readArray(decodeHostedResult(operation, await run(operation, {})), "workspaces")
       if (!workspaces) throw new Error(`${operation} returned an invalid workspaces payload`)
       return workspaces
     }
     const res = await input.authFetch(workspaceListUrl({
       baseUrl: input.baseUrl(),
-      access,
+      host,
     }), { headers: { Accept: "application/json" } })
-    if (!res.ok) throw new Error(`Control-plane ${access} workspace list failed with ${res.status}`)
+    if (!res.ok) throw new Error(`Control-plane ${host} workspace list failed with ${res.status}`)
     const workspaces = readArray(await res.json(), "workspaces")
     if (!workspaces) {
-      throw new Error(`Control-plane ${access} workspace list returned an invalid workspaces payload`)
+      throw new Error(`Control-plane ${host} workspace list returned an invalid workspaces payload`)
     }
     return workspaces
   }
@@ -363,14 +368,15 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchSignedWorkspaceSnapshotUncached() {
-    // Cloud and user-hosted are independent access lists on independent
-    // routes/operations — nothing here reads one to form the other — so they
-    // run concurrently instead of paying two serial round trips.
-    const [cloudWorkspaces, userHostedWorkspaces] = await Promise.all([
-      fetchControlPlaneWorkspaces("cloud"),
-      fetchControlPlaneWorkspaces("user-hosted"),
+    // The provisioner's workspaces and the enrolled machines' are independent
+    // lists on independent routes/operations — nothing here reads one to form
+    // the other — so they run concurrently instead of paying two serial round
+    // trips.
+    const [provisionerWorkspaces, machineWorkspaces] = await Promise.all([
+      fetchControlPlaneWorkspaces("provisioner"),
+      fetchControlPlaneWorkspaces("machine"),
     ])
-    const workspaces = [...cloudWorkspaces, ...userHostedWorkspaces]
+    const workspaces = [...provisionerWorkspaces, ...machineWorkspaces]
     const sessionsByWorkspace = Object.fromEntries(await Promise.all(workspaces.flatMap((workspace) => {
       const row = asRecord(workspace)
       const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
@@ -595,7 +601,7 @@ function cachedSignedWorkspaceDirectory(baseUrl: string | undefined, key: string
   if (!key) return false
   return cachedProjects(baseUrl).some((project) =>
     Object.entries(project.workspaces ?? {}).some(([workspaceKey, workspace]) =>
-      (workspace.kind === "cloud" || workspace.kind === "user-hosted")
+      isRelayHostKind(inventoryHostKind(workspace.kind))
       && (sameDirectory(workspaceKey, key) || sameDirectory(workspace.directory, key))
     )
   )
@@ -611,7 +617,6 @@ export function shouldUseSignedControlPlaneInventory(input: {
   if (input.workspaceId) return true
   if (cachedSignedWorkspaceDirectory(input.baseUrl, input.directory)) return true
   if (input.directory && !isFilesystemDirectory(input.directory)) return true
-  if (isUserHostedWorkspaceDirectory(input.directory)) return true
   if (!usesLocalControlTransport(input.baseUrl)) return true
   return false
 }
@@ -633,8 +638,9 @@ export function shouldUseSignedSessionInventory(input: {
  *
  * Deliberately separate from `shouldUseSignedSessionInventory`: on loopback the
  * session reads stay local (Local Personal Mode), but a hosted account still has
- * to learn which cloud/user-hosted workspaces exist — otherwise the first cloud
- * workspace can never enter the project cache and the sidebar never offers it.
+ * to learn which workspaces the provisioner and other machines hold — otherwise
+ * the first one can never enter the project cache and the sidebar never offers
+ * it.
  * Signed account presence is the whole condition; the transport decides only
  * whether the snapshot becomes the authoritative list or is merged into a local
  * one.
@@ -649,7 +655,7 @@ export function shouldUseSignedProjectSessionInventory(input: {
   project: InventorySourceProject
 }) {
   if (Object.values(input.project.workspaces ?? {}).some((workspace) =>
-    workspace.kind === "cloud" || workspace.kind === "user-hosted"
+    isRelayHostKind(inventoryHostKind(workspace.kind))
   )) return input.hasSignedAccess
   return [
     input.project.worktree,

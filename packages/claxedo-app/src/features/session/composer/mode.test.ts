@@ -12,7 +12,7 @@ describe("composer mode", () => {
       kind: "draft",
       target: {
         worktree: "main",
-        workspaceKind: "local",
+        hostKind: "self",
         signedControlPlane: false,
         harness: { kind: "connection", connectionId: "acp:codex" },
       },

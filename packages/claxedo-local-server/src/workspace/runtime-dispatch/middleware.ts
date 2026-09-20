@@ -1,9 +1,9 @@
 /**
  * The global fall-through: any request whose path the ownership registry marks
  * `SandboxRuntime` is dispatched to that workspace's runtime instead of being
- * handled here. Mounted with `app.use` (not as a route) at
- * `deployments/local/server.ts`, so it sees every request and passes on the
- * ones it does not own — no control-plane endpoint is ever dispatched.
+ * handled here. Every composition mounts it with `app.use` rather than as a
+ * route, so it sees every request and passes on the ones it does not own — no
+ * control-plane endpoint is ever dispatched.
  *
  * Two strategies, chosen by where the workspace runs:
  *   - EMBEDDED  — a local workspace, handled in-process with no network hop
@@ -64,6 +64,7 @@ async function workspaceRuntimeProxyWithOptions(
       return await embedded(c, ws, undefined, {
         ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
         ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+        ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
       })
     }
     const hit = await resolveWorkspaceHit(ws, options)

@@ -25,7 +25,7 @@
  */
 import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { bootstrapDeployment, installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-panes-split-tabs"
@@ -695,6 +695,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         body: JSON.stringify({
           healthy: true,
           events: { hostAggregate: true },
+          deployment: bootstrapDeployment(),
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: CLOUD_DIR, directory: CLOUD_DIR, home: "/tmp" },
           project: projectPayload,
@@ -738,9 +739,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          access: "cloud",
           backing: "cloud-vm",
-          runtimeKind: "cloud",
           sessionAuthority: "managed-private",
           workspaceId: WORKSPACE_ID,
           relayUrl: RELAY_ORIGIN,

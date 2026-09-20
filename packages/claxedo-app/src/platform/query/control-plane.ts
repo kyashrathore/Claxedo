@@ -5,7 +5,8 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
 import { isProviderListResponse, mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
-import { asRecord } from "@/lib/record"
+import { asRecord, readBoolean } from "@/lib/record"
+import type { SelfHost } from "@/platform/runtime/placement-wire"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 
 export type { ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
@@ -49,10 +50,9 @@ const EMPTY_CATALOG: Project[] = []
  * cache.
  *
  * The single reader of `queryKeys.controlPlane.projects`. It is what makes
- * "which workspace is this, and what kind" answerable WITHOUT every caller
- * threading an inventory down to whoever asks: a guess about a local
- * workspace's kind is not a smaller answer than the catalog's, it is a
- * different one.
+ * "which workspace is this, and where does it run" answerable WITHOUT every
+ * caller threading an inventory down to whoever asks: a guess at a row's
+ * placement is not a smaller answer than the catalog's, it is a different one.
  *
  * `baseUrl` is part of the identity, not a convenience: the key is per-server,
  * so reading it with the wrong one answers an empty catalog rather than a
@@ -82,6 +82,118 @@ export function hostAggregateDeclaration(baseUrl: string | undefined): boolean |
 /** The one writer of {@link hostAggregateDeclaration}; called by the global boot. */
 export function setHostAggregateDeclaration(baseUrl: string | undefined, declared: boolean): void {
   queryClient.setQueryData(queryKeys.deployment.hostAggregateDeclaration(baseUrl), declared)
+}
+
+/**
+ * The machine behind the server at `baseUrl`, as its bootstrap declared it
+ * (`host.enrollment`).
+ *
+ * `undefined` until that boot lands. A browser on the hosted app never gets a
+ * declaration, which is correct: no machine is behind it, so no placement can
+ * name it.
+ */
+export function selfHostDeclaration(baseUrl: string | undefined): SelfHost | undefined {
+  return queryClient.getQueryData<SelfHost>(queryKeys.deployment.selfHost(baseUrl))
+}
+
+/** The one writer of {@link selfHostDeclaration}; called by the global boot. */
+export function setSelfHostDeclaration(baseUrl: string | undefined, self: SelfHost): void {
+  queryClient.setQueryData(queryKeys.deployment.selfHost(baseUrl), self)
+}
+
+class UndeclaredDeploymentPosture extends Error {
+  constructor() {
+    super("Server declared no deployment posture")
+    this.name = "UndeclaredDeploymentPosture"
+  }
+}
+
+class RefusedDeploymentPosture extends Error {
+  constructor(readonly status: number) {
+    super(`Deployment declaration failed: ${status}`)
+    this.name = "RefusedDeploymentPosture"
+  }
+}
+
+/**
+ * Why the declaration could not be read, in a sentence the held sign-in gate
+ * shows the person looking at it.
+ *
+ * Three answers because the three are acted on differently by whoever is
+ * reading the screen: a refused request is the server's own answer and usually
+ * passes on retry, an undeclared body is a server too old or too partial to
+ * gate against and needs a deploy, and an unreachable one is the network.
+ */
+export function deploymentPostureFailure(error: unknown): string {
+  if (error instanceof UndeclaredDeploymentPosture) {
+    return "It answered without declaring whether it issues sessions."
+  }
+  if (error instanceof RefusedDeploymentPosture) return `It refused the request (HTTP ${error.status}).`
+  return "It could not be reached."
+}
+
+/**
+ * No single attempt may outlive this.
+ *
+ * A host that accepts nothing and sends no RST — an asleep laptop, a dropped
+ * route, a firewalled port — leaves `fetch` pending until the browser's own
+ * connect timeout, which is minutes. The gate below this read holds while it is
+ * pending, so an unbounded attempt is an indefinite hold with no reason on it
+ * and no way to retry; bounding it turns the same server into a stated failure
+ * the gate can offer a retry for.
+ */
+const POSTURE_ATTEMPT_TIMEOUT_MS = 8_000
+
+/**
+ * Whether the server at `baseUrl` issues the sessions a caller must hold —
+ * `deployment.issuesSessions` in its bootstrap body.
+ *
+ * Its own read rather than one field of the boot aggregate: the sign-in gate,
+ * the identity provider and the browser auth startup all need the answer
+ * before the shell's first render, while `bootstrapGlobal` runs after the
+ * shell mounts and reads no aggregate at all off loopback.
+ *
+ * The declaration is public on every producer, so this carries no credential:
+ * an unsigned browser has to learn that it must sign in, and the loopback
+ * daemon's CORS refuses a credentialed cross-origin read outright.
+ */
+export function deploymentPostureQuery(input: {
+  baseUrl: string | undefined
+  request?: typeof globalThis.fetch
+}) {
+  return {
+    queryKey: queryKeys.deployment.issuesSessions(input.baseUrl),
+    // A running server does not change posture; switching servers is a
+    // different key.
+    staleTime: Infinity,
+    // A body that parses and declares nothing will declare nothing again, and
+    // the sign-in gate holds until this settles — so only a server that could
+    // not be reached is worth asking twice.
+    retry: (failures: number, error: Error) => failures < 2 && !(error instanceof UndeclaredDeploymentPosture),
+    retryDelay: 250,
+    queryFn: async ({ signal }: { signal?: AbortSignal }) => {
+      const url = new URL("/api/claxedo/bootstrap", input.baseUrl ?? getClaxedoServerUrl())
+      const attempt = new AbortController()
+      const expire = setTimeout(() => attempt.abort(new Error("Deployment declaration timed out")), POSTURE_ATTEMPT_TIMEOUT_MS)
+      signal?.addEventListener("abort", () => attempt.abort(signal.reason), { once: true })
+      try {
+        const response = await (input.request ?? globalThis.fetch)(url, {
+          headers: { Accept: "application/json" },
+          credentials: "omit",
+          signal: attempt.signal,
+        })
+        if (!response.ok) throw new RefusedDeploymentPosture(response.status)
+        const declared = readBoolean(asRecord(await response.json())?.deployment, "issuesSessions")
+        // An error rather than a default: a server that declares nothing is one
+        // this app cannot gate correctly, and either default is a guess about
+        // whether its visitor must sign in.
+        if (declared === undefined) throw new UndeclaredDeploymentPosture()
+        return declared
+      } finally {
+        clearTimeout(expire)
+      }
+    },
+  }
 }
 
 export function normalizeProjectList(data: Project[] | undefined) {

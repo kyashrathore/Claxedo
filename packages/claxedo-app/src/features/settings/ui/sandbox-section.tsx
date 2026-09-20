@@ -74,11 +74,10 @@ function DriverLabel(props: { driver: Driver; class?: string }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-// You run cloud workspaces on ONE provider. The previous layout listed all
-// seven at once, each with its own credential row and Configure button, so the
-// screen was six repetitions of a thing you will never use next to the one you
-// will. This picks the provider first and only ever shows that provider's
-// credential form.
+// The control plane provisions on ONE driver at a time, so the picker comes
+// first and only the picked provider's credential form renders. A credential
+// row per provider would be six repetitions of a thing you will never use next
+// to the one you will.
 export const SandboxSettingsSection: Component = () => {
   const onboarding = useSandboxOnboardingFunnel()
   const baseUrl = getDefaultBaseUrl()
@@ -202,7 +201,7 @@ export const SandboxSettingsSection: Component = () => {
       <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
         <h2 class="text-18-medium text-text-strong">Sandbox Providers</h2>
         <p class="text-12-regular text-text-weak">
-          Manage sandbox providers and network access for cloud workspaces.
+          Manage sandbox providers and network access for cloud environments.
         </p>
       </div>
 
@@ -211,7 +210,7 @@ export const SandboxSettingsSection: Component = () => {
         <div class="flex flex-col gap-1">
           <h3 class="text-14-medium text-text-strong pb-2">Provider</h3>
           <div class="bg-surface-raised-base px-4 rounded-lg">
-            <SettingsRow title="Provider" description="Cloud workspaces run on one provider at a time.">
+            <SettingsRow title="Provider" description="Cloud environments run on one provider at a time.">
               <Select
                 options={drivers()}
                 current={selectedDriver()}
@@ -343,7 +342,7 @@ export const SandboxSettingsSection: Component = () => {
                   <span aria-hidden="true" class="mt-1.5 shrink-0 size-1.5 rounded-full bg-surface-warning-strong" />
                   <p class="text-12-regular text-text-weak">
                     <span class="text-text-strong">{activeDriver()!.label}</span> is active but has no
-                    credentials. Cloud workspaces will fail to create until you add them.
+                    credentials. Cloud environments will fail to create until you add them.
                   </p>
                 </div>
               </Show>

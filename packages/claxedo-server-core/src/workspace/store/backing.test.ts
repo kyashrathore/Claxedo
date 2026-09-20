@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { workspaceBacking } from "./backing"
+import { controlPlaneListRow } from "./response"
 import type { Workspace } from "./index"
 
 function ws(input: Partial<Workspace>): Workspace {
@@ -96,32 +97,57 @@ describe("workspaceBacking", () => {
     })
   })
 
-  test("returns user-hosted when a cloud workspace has no driver/sandbox attached", () => {
+  test("a cloud row stored before the driver was required stays a cloud-vm", () => {
     expect(workspaceBacking(ws({
       kind: "cloud",
       workspace_name: "selfhost",
       project_name: "acme",
       git_branch: "main",
     }))).toEqual({
-      kind: "user-hosted",
+      kind: "cloud-vm",
       workspaceName: "selfhost",
       projectName: "acme",
       branch: "main",
     })
   })
 
-  test("does not leak local host directory through user-hosted/cloud backings", () => {
+  test("a cloud backing publishes the remote directory, never the sandbox's own path field", () => {
     const cloud = workspaceBacking(ws({
       kind: "cloud",
       directory: "/workspace/cloud",
       driver: "daytona",
       sandbox_id: "sandbox-x",
     }))
-    const userHosted = workspaceBacking(ws({
-      kind: "cloud",
-      directory: "/workspace/cloud",
-    }))
     expect(cloud).not.toHaveProperty("directory")
-    expect(userHosted).not.toHaveProperty("directory")
+    expect(cloud).not.toHaveProperty("remoteDirectory")
+  })
+})
+
+/**
+ * The list row and the resolve projection are different contracts over the same
+ * row. A reader narrows a list row by comparing `backing` to a bare word, so the
+ * resolve projection's object `backing` reaching a list caller parses as "states
+ * no placement" and costs that caller its whole list, not one row.
+ */
+describe("controlPlaneListRow", () => {
+  test("states the backing as the bare word the authority stores", () => {
+    expect(controlPlaneListRow(ws({ kind: "cloud", driver: "modal", remote_directory: "/workspace" })))
+      .toEqual({ workspace_id: "ws-1", project_id: "ws-1", backing: "cloud-vm", remote_directory: "/workspace" })
+    expect(controlPlaneListRow(ws({ workspace_name: "app" })))
+      .toEqual({ workspace_id: "ws-1", project_id: "ws-1", backing: "local-worktree", display_name: "app", remote_directory: "/tmp/repo" })
+  })
+
+  test("never carries the resolve projection's object backing or its git block", () => {
+    const row: Record<string, unknown> = controlPlaneListRow(ws({ kind: "cloud", driver: "modal", git_branch: "dev" }))
+
+    expect(typeof row.backing).toBe("string")
+    expect(row).not.toHaveProperty("git")
+    expect(row).not.toHaveProperty("access")
+    expect(row).not.toHaveProperty("kind")
+  })
+
+  test("a cloud row with no remote directory falls back to the stored one", () => {
+    expect(controlPlaneListRow(ws({ kind: "cloud", driver: "modal", directory: "/fallback" })))
+      .toMatchObject({ remote_directory: "/fallback" })
   })
 })

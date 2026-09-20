@@ -51,7 +51,7 @@ Everything hosted converges on this:
 export type HostedControlPlaneAdapterBindings = {
   auth: ControlPlaneAuthAdapter
   authority: WorkspaceAuthority
-  userHostedResolver: UserHostedTargetResolver
+  hostTunnelResolver: HostTunnelTargetResolver
   cliSessionTokenRegistry?: CliSessionTokenRegistry
   sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
   deviceAuthProvider?: HostedDeviceAuthProvider

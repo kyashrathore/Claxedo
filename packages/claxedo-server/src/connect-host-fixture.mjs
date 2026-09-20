@@ -6,7 +6,7 @@ import { promisify } from "node:util"
 import { deriveRelayHostKid, mintRelayHostToken, mintRuntimeAccessToken, workspaceRelayForwardHeaders } from "@claxedo/workspace-relay"
 import { importJWK } from "jose"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
-import { userHostedSurface } from "../../claxedo-host-serving/src/surface.ts"
+import { hostServingSurface } from "../../claxedo-host-serving/src/surface.ts"
 import { createMachineSignedTransport } from "../../claxedo-host-connector/src/machine-transport.ts"
 import { hostKeyPairFromJwk } from "../../claxedo-host-connector/src/host-identity.ts"
 import { createFakeServiceManager, writeManagerShims } from "../../cli/src/connect/machine-simulator.test-support.ts"
@@ -533,7 +533,6 @@ export function connectFixtureRoutes(app, ctx) {
     const relayHostToken = await mintRelayHostToken(
       {
         ...parent,
-        access: "user-hosted",
         backing: "local-worktree",
         parentJti,
         ttlSeconds: 60,
@@ -576,10 +575,10 @@ export function connectFixtureRoutes(app, ctx) {
     const ports = await ctx.instances.listeningPorts(instance)
     const localBaseUrl = await findHostListener(ports, workspaceId)
     if (!localBaseUrl) return c.json({ error: `no host runtime listener among ports ${ports.join(", ")}` }, 409)
-    const target = userHostedSurface({ localBaseUrl, workspaceId, path: requestPath })
+    const target = hostServingSurface({ localBaseUrl, workspaceId, path: requestPath })
     if (target.kind === "deny") return c.json({ error: "the host surface denies this path" }, 403)
     const inbound = new Headers(body.headers ?? {})
-    const forwarded = workspaceRelayForwardHeaders(inbound, relayHostToken, workspaceId, { userHosted: true })
+    const forwarded = workspaceRelayForwardHeaders(inbound, relayHostToken, workspaceId, { hostTunnel: true })
     const replayed = loopbackReplayHeaders(Object.fromEntries(forwarded.entries()))
     const response = await fetch(target.url, {
       method: typeof method === "string" ? method : "GET",

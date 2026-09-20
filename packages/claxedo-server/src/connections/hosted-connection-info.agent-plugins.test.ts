@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { hostedConnectionInfo } from "./hosted-connection-info"
-import { userHostedConnectionInfo } from "./user-hosted-connection"
+import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 
 const auth = {
   mode: "signed",
@@ -18,7 +18,7 @@ function subject(order: string[]) {
   const services = {
     authority: {
       // The host declares its runtime's session authority on the heartbeat;
-      // the user-hosted mint asks for it before the plugin gate runs.
+      // the machine-placement mint asks for it before the plugin gate runs.
       activeWorkspaceHost: vi.fn(async () => ({
         active: true,
         host_id: "host_1",
@@ -37,7 +37,7 @@ function subject(order: string[]) {
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
-        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
       })),
       recordRuntimeAccessToken: vi.fn(async () => undefined),
       auditAllow: vi.fn(async () => undefined),
@@ -163,7 +163,7 @@ describe("Agent Plugins cloud readiness gate", () => {
   })
 })
 
-function userHostedSubject(order: string[]) {
+function machinePlacedSubject(order: string[]) {
   const signer = vi.fn(async () => {
     order.push("token")
     return { runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: "jti_1" }
@@ -171,7 +171,7 @@ function userHostedSubject(order: string[]) {
   const services = {
     authority: {
       // The host declares its runtime's session authority on the heartbeat;
-      // the user-hosted mint asks for it before the plugin gate runs.
+      // the machine-placement mint asks for it before the plugin gate runs.
       activeWorkspaceHost: vi.fn(async () => ({
         active: true,
         host_id: "host_1",
@@ -194,7 +194,6 @@ function userHostedSubject(order: string[]) {
           workspace_id: "ws_local",
           org_id: "org_1",
           backing: "local-worktree",
-          access: "user-hosted",
           home_region: "us-east",
         },
       })),
@@ -213,14 +212,14 @@ function userHostedSubject(order: string[]) {
   return { services, signer }
 }
 
-describe("Agent Plugins user-hosted readiness gate", () => {
+describe("Agent Plugins machine-placement readiness gate", () => {
   test("applies the same signed snapshot before minting a local-session token", async () => {
     const order: string[] = []
-    const { services, signer } = userHostedSubject(order)
+    const { services, signer } = machinePlacedSubject(order)
     const preparation = { state: { kind: "test-plan" } }
     const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
     const provisionRuntime = vi.fn(async () => { order.push("plugins") })
-    const result = await userHostedConnectionInfo(services, {
+    const result = await hostTunnelConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
@@ -232,15 +231,15 @@ describe("Agent Plugins user-hosted readiness gate", () => {
     expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" })
     expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" }, preparation)
     expect(result).toMatchObject({
-      connection: { access: "user-hosted", backing: "local-worktree", runtimeAccessToken: "runtime-token" },
+      connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" },
     })
   })
 
   test("a preparation that throws denies the local session before any plugin apply", async () => {
     const order: string[] = []
-    const { services, signer } = userHostedSubject(order)
+    const { services, signer } = machinePlacedSubject(order)
 
-    const result = await userHostedConnectionInfo(services, {
+    const result = await hostTunnelConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
@@ -258,8 +257,8 @@ describe("Agent Plugins user-hosted readiness gate", () => {
 
   test("a failed plugin apply denies the local session and never mints a runtime token", async () => {
     const order: string[] = []
-    const { services, signer } = userHostedSubject(order)
-    const result = await userHostedConnectionInfo(services, {
+    const { services, signer } = machinePlacedSubject(order)
+    const result = await hostTunnelConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,

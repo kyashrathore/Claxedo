@@ -8,6 +8,7 @@ import { createClaxedoMcpClient } from "../client/index"
 import type { ClaxedoFetch } from "../client/contract"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential } from "../server"
 import { registerWorkspaceTools } from "./workspaces"
+import { controlPlaneWorkspaceRow, workspaceListHostRows } from "../client/control-plane-workspaces.fixture"
 
 type Call = { method: string; path: string; body?: Record<string, unknown> }
 
@@ -48,13 +49,12 @@ function controlPlane() {
     }
 
     if (url.pathname === "/api/workspace") {
-      const access = url.searchParams.get("access")
       const rows = [
-        { workspace_id: "ws_cloud", access: "cloud", display_name: "Cloud box", remote_directory: "/workspace" },
-        { workspace_id: "ws_mac", access: "user-hosted", display_name: "Mac", remote_directory: "/Users/me/app", host_online: true },
-        { workspace_id: "ws_old", access: "user-hosted", host_online: false },
+        controlPlaneWorkspaceRow({ workspace_id: "ws_cloud", backing: "cloud-vm", display_name: "Cloud box", remote_directory: "/workspace" }),
+        controlPlaneWorkspaceRow({ workspace_id: "ws_mac", backing: "local-worktree", display_name: "Mac", remote_directory: "/Users/me/app" }),
+        controlPlaneWorkspaceRow({ workspace_id: "ws_old", backing: "local-worktree", host_online: false }),
       ]
-      return Response.json({ workspaces: rows.filter((row) => row.access === access) })
+      return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
     }
     return Response.json({ error: { code: "not_found", message: url.pathname } }, { status: 404 })
   }
@@ -127,13 +127,13 @@ const json = async (client: Client, name: string, args: Record<string, unknown> 
 }
 
 describe("reading the account's workspaces", () => {
-  test("lists cloud workspaces and machines, saying which machines are reachable", async () => {
+  test("lists provisioner-placed workspaces and machines, saying which machines are reachable", async () => {
     const { url } = await listen()
     const { client } = await connect(url, "cli-jwt")
     expect((await call(client, "workspaces_list")).text.split("\n")).toEqual([
-      "ws_cloud (Cloud box) — cloud  /workspace",
-      "ws_mac (Mac) — user-hosted  online  /Users/me/app",
-      "ws_old — user-hosted  offline",
+      "ws_cloud (Cloud box) — cloud VM  /workspace",
+      "ws_mac (Mac) — machine  online  /Users/me/app",
+      "ws_old — machine  offline",
     ])
   })
 

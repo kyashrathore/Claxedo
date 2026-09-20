@@ -11,7 +11,7 @@ import type { SessionBackend } from "@/platform/runtime/session"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 import { fetchWorkspaceRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayHostKind, type RelayHostKind } from "@/platform/runtime/placement-wire"
 import { readString, recordOrEmpty } from "@/lib/record"
 
 export type WorkspaceRuntimeBackend = {
@@ -124,9 +124,9 @@ export function createHttpWorkspaceRuntimeBackend(input: {
     // resolve means "no workspace record", which falls through to the direct
     // SDK client below.
     const workspace = input.workspace ?? (workspaceId
-      ? { kind: "cloud" as const, workspaceId }
+      ? { kind: "provisioner" as const, workspaceId }
       : await workspaceRuntimeRoutingRecord({ baseUrl, request, directory }).catch(() => null))
-    if (!workspace || !isRelayBackedWorkspaceKind(workspace.kind)) {
+    if (!workspace || !isRelayHostKind(workspace.kind)) {
       if (strictSignedRuntime) throw new Error(failure)
       return undefined
     }
@@ -155,7 +155,7 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       // that opening it produced. Both reads have to be the live record.
       const scope = { baseUrl, request, directory: params.directory, workspaceId: params.workspaceId }
       const workspace = await readWorkspaceRecord(scope)
-      if (!isRelayBackedWorkspaceKind(workspace.kind)) return workspace
+      if (!isRelayHostKind(workspace.kind)) return workspace
       await openWorkspaceConnection(workspace.workspaceId, { serverUrl: baseUrl, request })
       return await readWorkspaceRecord(scope)
     },
@@ -182,7 +182,7 @@ export function createHttpSessionBackend(input: {
   sessionRef?: SessionRef
   signedControlPlane?: boolean
   workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
+  hostKind?: RelayHostKind
   /** See `createAgentRuntimeClient`'s `workspaceReachable`. */
   workspaceReachable?: boolean
 }): SessionBackend {
@@ -193,7 +193,7 @@ export function createHttpSessionBackend(input: {
     signedControlPlane: input.signedControlPlane === true,
     sessionRef: sessionRef ?? input.sessionRef,
     workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
+    hostKind: input.hostKind,
     workspaceReachable: input.workspaceReachable,
   })
   const runtime = runtimeFor()

@@ -13,6 +13,7 @@ import {
   verifyGreenfieldDeploymentManifest,
   verifyGreenfieldTargetAbsence,
 } from "./prove-greenfield-target-absence"
+import { controlPlaneMigrations } from "../../src/test-support/control-plane-migrations"
 
 const active: Miniflare[] = []
 afterAll(async () => Promise.all(active.map((instance) => instance.dispose())))
@@ -142,25 +143,7 @@ describe("greenfield target-absence proof", () => {
     ]) {
       await applyMigration(auth, new URL(`../../migrations/auth/${name}`, import.meta.url))
     }
-    for (const name of [
-      "0001_service_installations.sql",
-      "0002_workspace_authority.sql",
-      "0003_private_sessions.sql",
-      "0004_host_access_and_sharing.sql",
-      "0005_agent_extensions_and_audit.sql",
-      "0006_channel_identity_and_canonical_runtime.sql",
-      "0007_paired_recovery_epoch.sql",
-      "0008_user_deployed_owner_bootstrap.sql",
-      "0009_optional_service_deployment.sql",
-      "0010_session_turn_leases.sql",
-      "0011_session_turn_producers.sql",
-      "0012_cold_local_host_challenges.sql",
-      "0013_org_team_session_sharing.sql",
-      "0014_host_workspace_assignments.sql",
-      "0015_drop_local_host_links.sql",
-      "0016_host_session_authority.sql",
-      "0018_drop_agent_extensions.sql",
-    ]) {
+    for (const name of controlPlaneMigrations()) {
       await applyMigration(control, new URL(`../../migrations/control-plane/${name}`, import.meta.url))
     }
     for (const statement of [

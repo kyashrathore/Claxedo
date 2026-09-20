@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
+  requestWorkspaceRecord,
   resolveWorkspaceRuntime,
   cachedWorkspaceRuntimeRecord,
   workspaceResolveQuery,
@@ -27,14 +28,44 @@ afterEach(() => {
   }
 })
 
+describe("requestWorkspaceRecord", () => {
+  const answering = (body: () => Response): typeof fetch => async () => body()
+
+  const record = (request: typeof fetch, directory = "/repo/relay") =>
+    requestWorkspaceRecord({ baseUrl: "https://control.example", directory, request })
+
+  test("narrows the control plane's wire word to the host kind every runtime target is named by", async () => {
+    expect(await record(answering(() =>
+      Response.json({ workspaceId: "ws_c", kind: "cloud", directory: "/repo/relay", status: "ready" }))))
+      .toMatchObject({ workspaceId: "ws_c", kind: "provisioner" })
+  })
+
+  test("a row the attached server serves itself reads as this server's directory", async () => {
+    expect(await record(
+      answering(() => Response.json({ workspaceId: "ws_l", kind: "local", directory: "/repo/main" })),
+      "/repo/main",
+    )).toMatchObject({ workspaceId: "ws_l", kind: "self" })
+  })
+
+  test("a body that is not a record, and a 404, are both no workspace for this scope", async () => {
+    expect(await record(answering(() => Response.json({ kind: "cloud" })))).toBeNull()
+    expect(await record(answering(() => new Response("", { status: 404 })))).toBeNull()
+  })
+
+  test("a failed read throws rather than reading as no workspace", async () => {
+    await expect(record(answering(() => new Response("resolve exploded", { status: 500 }))))
+      .rejects.toThrow("resolve exploded")
+  })
+})
+
 describe("workspace runtime record", () => {
-  test("workspaceRuntimeBlocksBootstrap only while cloud runtime is still pending", () => {
+  test("workspaceRuntimeBlocksBootstrap only while a provisioned runtime is still coming up", () => {
     expect(workspaceRuntimeBlocksBootstrap()).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "local" })).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "ready" })).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "failed" })).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "starting_runtime" })).toBe(true)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "stopped" })).toBe(true)
+    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "self" })).toBe(false)
+    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "provisioner", status: "ready" })).toBe(false)
+    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "provisioner", status: "failed" })).toBe(false)
+    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "provisioner", status: "starting_runtime" })).toBe(true)
+    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "provisioner", status: "stopped" })).toBe(true)
   })
 
   test("builds a directory-scoped resolve query", async () => {
@@ -58,7 +89,7 @@ describe("workspace runtime record", () => {
     expect(query.queryKey).toEqual(["runtime", "http://runtime.test", "workspace", "", "/tmp/ws", "read"])
     expect(await query.queryFn()).toMatchObject({
       workspaceId: "ws_1",
-      kind: "cloud",
+      kind: "provisioner",
       status: "stopped",
     })
   })
@@ -270,13 +301,13 @@ describe("workspace runtime record", () => {
       () => fetchWorkspaceRecord({ baseUrl: "http://runtime.test", directory: "/Users/me/repo" }),
     )
 
-    expect(result).toMatchObject({ workspaceId: "ws_local", kind: "local" })
+    expect(result).toMatchObject({ workspaceId: "ws_local", kind: "self" })
     expect(run).not.toHaveBeenCalled()
   })
 
   test("a directory the server disowns is no workspace, even on a signed desktop", async () => {
     const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
-    const run = mock(async () => ({ workspaceId: "ws_remote", kind: "user-hosted" }))
+    const run = mock(async () => ({ workspaceId: "ws_remote", kind: "machine" }))
     signedAccountPort(run)
 
     const result = await withServerFetch(
@@ -293,7 +324,7 @@ describe("workspace runtime record", () => {
     const run = mock(async (operation: string, input?: Record<string, unknown>) => {
       expect(operation).toBe("workspace.resolve")
       expect(input).toEqual({ workspaceId: "ws_1" })
-      return { workspaceId: "ws_1", kind: "cloud", status: "ready" }
+      return { workspaceId: "ws_1", kind: "provisioner", status: "ready" }
     })
     signedAccountPort(run)
 
@@ -311,7 +342,7 @@ describe("workspace runtime record", () => {
 
   test("a workspace id the server hosts stays local on a signed desktop", async () => {
     const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
-    const run = mock(async () => ({ workspaceId: "ws_1", kind: "user-hosted" }))
+    const run = mock(async () => ({ workspaceId: "ws_1", kind: "machine" }))
     signedAccountPort(run)
 
     const result = await withServerFetch(
@@ -319,7 +350,7 @@ describe("workspace runtime record", () => {
       () => fetchWorkspaceRecord({ baseUrl: "http://runtime.test", workspaceId: "ws_1" }),
     )
 
-    expect(result).toMatchObject({ workspaceId: "ws_1", kind: "local" })
+    expect(result).toMatchObject({ workspaceId: "ws_1", kind: "self" })
     expect(run).not.toHaveBeenCalled()
   })
 
@@ -343,7 +374,7 @@ describe("workspace runtime record", () => {
       workspaceId: "ws_http",
       request: async () => new Response(JSON.stringify({
         workspaceId: "ws_http",
-        kind: "cloud",
+        kind: "provisioner",
         status: "ready",
       }), { status: 200 }),
     })

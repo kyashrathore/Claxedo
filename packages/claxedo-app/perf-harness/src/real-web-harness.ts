@@ -231,7 +231,6 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
       {
         ...process.env,
         VITE_CLAXEDO_SERVER_URL: backendUrl,
-        VITE_AUTH_ENABLED: "false",
       },
     )
     const rendererBuildSha256 = await hashDirectory(buildDirectory)

@@ -16,6 +16,7 @@ import {
   type SessionShareChangedSink,
   type SessionShareFanoutTarget,
 } from "../session-people-contract"
+import { requestedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 
 type Options = {
   authentication?: RequestAuthenticationAdapter
@@ -171,12 +172,14 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         const result = await grant(auth, {
           sessionId: c.req.param("sessionId"),
           workspaceId,
+          level: requestedSessionShareLevel(body.level),
           ...target,
         })
         await notifySessionShareChanged({
           auth,
           authority,
           phase: "granted",
+          level: result.level,
           sessionId: c.req.param("sessionId"),
           workspaceId,
           target,

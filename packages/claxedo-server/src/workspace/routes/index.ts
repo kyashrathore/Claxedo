@@ -37,9 +37,9 @@ import { repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/sandbox-driver-routes"
-import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
+import { controlPlaneListRow } from "@claxedo/server-core/workspace/store/response"
 import { hostAssignmentHandlers } from "../host-assignment-handlers"
 
 const createBody = z
@@ -127,24 +127,15 @@ function startCloudWorkspaceProvisioning(input: {
 }
 
 /**
- * The access-scoped list for a node with no signed identity: its own store,
- * projected into the rows the signed authority branch answers with, so a
- * caller cannot tell which branch served it. Local-only workspaces are absent
- * by construction — they carry `access: "local"`, which this query never asks
- * for.
+ * The cloud list for a node with no signed identity: its own store, projected
+ * into the rows the signed authority branch answers with, so a caller cannot
+ * tell which branch served it. This node's own worktrees are absent because
+ * their placement is this machine, not a provisioner.
  */
-async function unsignedWorkspaceList(access: "cloud" | "user-hosted") {
+async function unsignedWorkspaceList() {
   return (await listWorkspaces()).flatMap((workspace) => {
-    const row = workspaceResponse(workspace)
-    if (!row || row.access !== access) return []
-    return [{
-      workspace_id: row.workspaceId,
-      project_id: row.projectId,
-      access: row.access,
-      backing: row.backing.kind,
-      ...(row.workspaceName ? { display_name: row.workspaceName } : {}),
-      ...(row.directory ? { remote_directory: row.directory } : {}),
-    }]
+    const row = controlPlaneListRow(workspace)
+    return row.backing === "cloud-vm" ? [row] : []
   })
 }
 
@@ -240,7 +231,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         return c.json(workspaceResponse(ws))
       })
       .get("/", async (c) => {
-        const access = c.req.query("access")
+        const host = c.req.query("host")
+        if (host !== undefined && host !== "machine" && host !== "provisioner") {
+          return c.json({ error: apiError("workspace_host_invalid", "workspace host is invalid") }, 400)
+        }
         const authResult = await signedOrError(
           c.req.raw,
           {
@@ -249,26 +243,25 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             // loopback keeps the local inventory.
             requireSigned:
               (options.authConfig?.enabled === true && !isLoopbackLocalRequest(c.req.raw))
-              || access === "cloud"
-              || access === "user-hosted",
+              || host !== undefined,
           },
           services,
         )
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        if (authResult.auth && (access === "cloud" || access === "user-hosted")) {
+        if (authResult.auth && host) {
           try {
             const authority = requireAuthority(services)
             await authority.usersMe(authResult.auth)
             const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, authResult.auth, {
-              key: `workspaces.list:${access}`,
+              key: `workspaces.list:${host}`,
               action: "workspaces.list.denied",
             })
             if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
             const workspaces = await authority.listWorkspaces(authResult.auth)
             return c.json({
               workspaces:
-                Array.isArray(workspaces) && access === "user-hosted"
-                  ? workspaces.filter((item) => asRecord(item)?.access === "user-hosted")
+                Array.isArray(workspaces) && host === "machine"
+                  ? workspaces.filter((item) => asRecord(item)?.backing === "local-worktree")
                   : workspaces,
             })
           } catch (err) {
@@ -276,9 +269,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             throw err
           }
         }
-        if (access === "cloud" || access === "user-hosted") {
-          return c.json({ workspaces: await unsignedWorkspaceList(access) })
-        }
+        if (host === "provisioner") return c.json({ workspaces: await unsignedWorkspaceList() })
+        // A workspace on somebody else's machine is the authority's record, and
+        // a node with no signed identity has no authority to ask.
+        if (host === "machine") return c.json({ workspaces: [] })
         return c.json(await listProjects())
       })
       .route("/", workspaceConnectionRoutes(services, options))
@@ -316,7 +310,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
         if (ws.kind !== "local") {
           return c.json({
-            error: apiError("host_assignment_local_workspace_required", "Only local workspaces can be assigned for user-hosted sharing"),
+            error: apiError("host_assignment_local_workspace_required", "Only a workspace this machine serves can be assigned to a machine"),
           }, 400)
         }
         const parsed = parsedBody(hostAssignmentBody, rawBody)
@@ -399,21 +393,15 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           throw err
         }
       })
-      .route("/", workspaceShareRoutes(services, options))
       .delete("/:id", async (c) => {
         const id = c.req.param("id")
-        // Deletion must never be reachable by an anonymous remote caller in
-        // signed mode — previously only cloud workspaces were gated, so any
-        // anonymous remote caller could delete local/user-hosted workspaces.
-        // Tokenless loopback clients pass straight through as before.
+        // Signed mode admits no anonymous remote deletion, whatever the
+        // workspace's placement; a tokenless loopback request still passes.
         const accessResult = await signedOrError(c.req.raw, signedAccessOptions(c.req.raw, options), services)
         if ("error" in accessResult) return c.json(accessResult.error, accessResult.status)
         const ws = await resolveWorkspace({ workspaceId: id })
         if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
-        if (
-          ws.kind === "cloud" &&
-          (c.req.query("access") === "cloud" || bearerToken(c.req.raw.headers.get("authorization")))
-        ) {
+        if (ws.kind === "cloud" && bearerToken(c.req.raw.headers.get("authorization"))) {
           const authResult = await signedOrError(
             c.req.raw,
             {
@@ -440,7 +428,6 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
               event: "workspace.delete",
               workspaceId: id,
               properties: {
-                access: "cloud",
                 backing: "cloud-vm",
               },
             })
@@ -519,10 +506,27 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             400,
           )
         }
-        const id =
-          requestedId ??
-          services?.sandbox.defaultDriver ??
-          defaultSandboxDriverID(driverConfig)
+        // Which provisioner owns a cloud row is the deployment's to declare,
+        // never this route's to guess: a hosted deployment declares it at
+        // composition, a node declares it in its own sandbox configuration,
+        // and `supervisorSandboxDriverId` reads that same configuration again
+        // when it dispatches. This node provisions through the driver catalog,
+        // so a declared provisioner it cannot drive is refused rather than
+        // stored as a placement on a machine nothing here owns.
+        const declaredDriver = services?.sandbox.defaultDriver ?? defaultSandboxDriverID(driverConfig)
+        const id = requestedId ?? (isSandboxDriverID(declaredDriver) ? declaredDriver : undefined)
+        if (!id) {
+          return c.json(
+            {
+              error: apiError(
+                "placement_unsupported",
+                "This control plane's sandbox provisioner is not one this node can provision",
+                { driver: declaredDriver },
+              ),
+            },
+            400,
+          )
+        }
         const credential = await sandboxDriverCredentials(options, services)
           // Kind-scoped: unscoped, a model-provider API key under the same id
           // (`vercel` is both) satisfied this gate with no sandbox credential
@@ -551,9 +555,9 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         }
 
         // Same generator as the hosted Worker route (`newWorkspaceId` is
-        // Web-Crypto-only, so one module serves both runtimes). Timestamp
-        // prefix + 80 bits of randomness: the old bare-timestamp id was
-        // guessable inside any plausible creation window.
+        // Web-Crypto-only, so one module serves both runtimes): a timestamp
+        // prefix plus 80 bits of randomness, so an id is not guessable from
+        // its creation window.
         const workspaceId = newWorkspaceId()
         const projectId = body.projectId?.trim() || workspaceId
         const rawWorkspaceName = body.workspaceName?.trim()

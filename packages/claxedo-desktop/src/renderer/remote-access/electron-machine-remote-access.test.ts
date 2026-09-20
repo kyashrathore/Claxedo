@@ -8,19 +8,17 @@ import {
 } from "./electron-machine-remote-access"
 
 /**
- * The desktop-owned half of the port: the regression, and the constraints on
- * the fix.
+ * The desktop-owned half of the port.
  *
- * The regression is that "Enable remote access" performed an HTTP POST to
- * `/api/claxedo/remote-access/enable`, a path the desktop's sidecar
- * (`@claxedo/local-server`) does not serve. So every test that matters here
- * watches the TRANSPORT, not the return value.
+ * The desktop's sidecar (`@claxedo/local-server`) serves no
+ * `/api/claxedo/remote-access/*` path, so every test that matters here watches
+ * the TRANSPORT, not the return value.
  */
 
 function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnectorSnapshot>> = {}) {
   const calls: string[] = []
   const listeners: Array<(snapshot: HostConnectorSnapshot) => void> = []
-  const answer = (name: "status" | "start" | "pause" | "revoke" | "share" | "unshare") => async () => {
+  const answer = (name: "status" | "start" | "pause" | "revoke" | "share" | "unshare" | "rename") => async () => {
     calls.push(name)
     return snapshots[name] ?? { status: "not-started", available: true, signedIn: true }
   }
@@ -34,6 +32,7 @@ function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnect
       revoke: answer("revoke"),
       share: answer("share"),
       unshare: answer("unshare"),
+      rename: answer("rename"),
       onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => {
         listeners.push(listener)
         return () => listeners.splice(listeners.indexOf(listener), 1)
@@ -55,10 +54,9 @@ type LeakySnapshot = HostConnectorSnapshot & Record<string, unknown>
 
 describe("enabling remote access on the desktop", () => {
   test("reaches the connector by name and issues no request at all", async () => {
-    // THE regression. Before the port, this call was
-    // `fetch("/api/claxedo/remote-access/enable")` against a sidecar that
-    // serves no such route. `fetch` is replaced for the duration so that a
-    // reintroduced HTTP call fails loudly instead of 404-ing quietly.
+    // `fetch` is replaced for the duration so that an HTTP call to
+    // `/api/claxedo/remote-access/enable` — a route the sidecar does not
+    // serve — fails loudly instead of 404-ing quietly.
     const connector = bridge({ start: enrolled })
     const requests: string[] = []
     const original = globalThis.fetch
@@ -68,7 +66,7 @@ describe("enabling remote access on the desktop", () => {
     }) as typeof fetch
 
     try {
-      await electronMachineRemoteAccess(connector.handle).enable({ displayName: "Mac", startAtLogin: true })
+      await electronMachineRemoteAccess(connector.handle).enable({ startAtLogin: true })
     } finally {
       globalThis.fetch = original
     }
@@ -84,7 +82,7 @@ describe("enabling remote access on the desktop", () => {
       start: { status: "stopped", available: true, signedIn: true, reason: "error", detail: "control plane unreachable" },
     })
 
-    await expect(electronMachineRemoteAccess(connector.handle).enable({ displayName: "Mac", startAtLogin: false }))
+    await expect(electronMachineRemoteAccess(connector.handle).enable({ startAtLogin: false }))
       .rejects.toThrow("control plane unreachable")
   })
 
@@ -104,23 +102,25 @@ describe("enabling remote access on the desktop", () => {
       },
     }
 
-    await electronMachineRemoteAccess(spy).enable({ displayName: "Yash's Mac", startAtLogin: true })
+    await electronMachineRemoteAccess(spy).enable({ startAtLogin: true })
 
     expect(seen).toEqual([[]])
   })
 })
 
 describe("the closed operation set", () => {
-  test("the bridge names exactly the six operations and a subscription", () => {
+  test("the bridge names exactly the closed set and a subscription", () => {
     // A member shaped `run(url, method, body)` is the confused deputy this
     // whole arrangement exists to prevent: main holds the account bearer and
-    // a machine key that never expires. `share` is a named operation carrying
-    // data only — a workspace id and a label — never a request description.
+    // a machine key that never expires. `share` and `rename` are named
+    // operations carrying data only — a workspace id, a label, a name — never
+    // a request description.
     const connector = bridge()
 
     expect(Object.keys(connector.handle).toSorted()).toEqual([
       "onStatus",
       "pause",
+      "rename",
       "revoke",
       "share",
       "start",
@@ -131,7 +131,7 @@ describe("the closed operation set", () => {
 
   test("refuses a bridge carrying a generic passthrough member", () => {
     // The detector, not just the absence: a preload that gained `run` would
-    // still satisfy a shape check that only looks for the five it knows.
+    // still satisfy a shape check that only looks for the members it knows.
     const generic = {
       ...bridge().handle,
       run: async () => ({}),
@@ -173,7 +173,7 @@ describe("no credential crosses the bridge", () => {
 
     const results = [
       await port.status(),
-      await port.enable({ displayName: "Mac", startAtLogin: false }),
+      await port.enable({ startAtLogin: false }),
       await port.pause?.(),
       await port.revoke("host_secret"),
     ]
@@ -286,5 +286,51 @@ describe("pushed transitions", () => {
     connector.push(enrolled)
 
     expect(seen).toEqual([true, false])
+  })
+})
+
+describe("the one machine this product can name", () => {
+  test("the derived name reaches the panel before the first enrollment, and again as online", () => {
+    const idle = machineRemoteAccessStatus({
+      status: "idle",
+      available: true,
+      signedIn: true,
+      displayName: "Yashvardhan's MacBook Pro",
+    })
+    expect(idle.machine).toEqual({ displayName: "Yashvardhan's MacBook Pro", online: false })
+
+    const live = machineRemoteAccessStatus({
+      status: "enrolled",
+      available: true,
+      signedIn: true,
+      displayName: "Yashvardhan's MacBook Pro",
+      sharedWorkspaceIds: ["ws_1"],
+    })
+    expect(live.machine).toEqual({ displayName: "Yashvardhan's MacBook Pro", online: true })
+  })
+
+  test("a build that cannot name its machine reports no row rather than a placeholder", () => {
+    expect(machineRemoteAccessStatus({ status: "idle", available: false, signedIn: false }).machine).toBeUndefined()
+  })
+
+  test("renaming carries the name and no machine, and answers with what main stored", async () => {
+    const connector = bridge({
+      rename: { status: "enrolled", available: true, signedIn: true, displayName: "Studio Mac" },
+    })
+
+    await expect(
+      electronMachineRemoteAccess(connector.handle).rename?.({ hostId: "host_someone_else", displayName: "Studio Mac" }),
+    ).resolves.toEqual({ displayName: "Studio Mac" })
+    expect(connector.calls).toEqual(["rename"])
+  })
+
+  test("renaming a machine that is not published fails instead of reporting success", async () => {
+    const connector = bridge({
+      rename: { status: "stopped", available: true, signedIn: true, reason: "closed", detail: "connector closed" },
+    })
+
+    await expect(
+      electronMachineRemoteAccess(connector.handle).rename?.({ hostId: "host_1", displayName: "Studio Mac" }),
+    ).rejects.toThrow("connector closed")
   })
 })

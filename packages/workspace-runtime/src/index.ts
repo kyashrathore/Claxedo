@@ -83,6 +83,7 @@ export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 export {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
+  sessionAccessWriteClass,
   SESSION_CORE_ROUTE_ACCESS,
 } from "./session-access-policy"
 export {
@@ -90,6 +91,7 @@ export {
   remoteWorkspaceSessionAccessPolicy,
   remoteWorkspaceSessionAccessPolicyFromEnv,
 } from "./remote-session-authority"
+export type { AdoptRefusedSession } from "./remote-session-authority"
 export type {
   SessionAccessActor,
   SessionAccessAuthor,
@@ -100,6 +102,7 @@ export type {
   SessionAccessPolicyInput,
   SessionAuthorityInput,
   SessionAuthorityPredicate,
+  SessionWriteClass,
   ManagedWorkspaceSessionAccessPolicyOptions,
   SessionWorkspaceAuthority,
 } from "./session-access-policy"

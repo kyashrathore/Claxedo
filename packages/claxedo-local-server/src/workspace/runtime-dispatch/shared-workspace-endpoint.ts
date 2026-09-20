@@ -40,6 +40,7 @@ async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeP
       return await embedded(c, ws, pathname, {
         ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
         ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+        ...(options.verifyRelayIngress ? { verifyRelayIngress: true } : {}),
       })
     }
 

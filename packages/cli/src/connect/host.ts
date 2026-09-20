@@ -4,6 +4,7 @@ import { createHostConnector, type AssignmentDescription, type HostEndpoints } f
 import { DECISION_EXIT_CODE, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
 import { pathWithinRoots, resolveRoots, type HostScope, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { createMachineSealingKeyPair, hostMachineSealAad, openMachineSeal, sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
 import {
   createMachineSignedTransport,
   decisionCode,
@@ -12,12 +13,18 @@ import {
   MACHINE_REQUEST_TIMEOUT_MS,
   type FetchLike,
 } from "@claxedo/host-connector/machine-transport"
-import { createHostRuntimeListener, type HostRuntimeListener, type HostWorkspaceRuntimeOptions } from "@claxedo/host-serving/runtime"
 import {
-  setUserHostedServing,
-  stopUserHostedServing,
-  userHostedServingState,
-  type UserHostedServingCredential,
+  createHostRuntimeListener,
+  installHostProviderConfigAuthority,
+  setHostProviderConfig,
+  type HostRuntimeListener,
+  type HostWorkspaceRuntimeOptions,
+} from "@claxedo/host-serving/runtime"
+import {
+  setHostServing,
+  stopHostServing,
+  hostServingState,
+  type HostServingCredential,
 } from "@claxedo/host-serving/serving"
 import { createWorkspaceOpenCodeRuntime } from "@claxedo/workspace-runtime"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -32,9 +39,9 @@ export type HostDeps = {
   fetch: FetchLike
   createListener: () => Promise<HostRuntimeListener>
   openCodeRuntime: (directory: string) => OwnedOpenCodeRuntime | undefined
-  setServing: typeof setUserHostedServing
-  servingState: typeof userHostedServingState
-  stopServing: typeof stopUserHostedServing
+  setServing: typeof setHostServing
+  servingState: typeof hostServingState
+  stopServing: typeof stopHostServing
   resolvePath: (target: string) => Promise<string>
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
   setTimeout: (fn: () => void, ms: number) => { cancel: () => void }
@@ -54,9 +61,9 @@ export function defaultHostDeps(): HostDeps {
     fetch: (input, init) => fetch(input, init),
     createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
     openCodeRuntime: (directory) => createWorkspaceOpenCodeRuntime(directory),
-    setServing: setUserHostedServing,
-    servingState: userHostedServingState,
-    stopServing: stopUserHostedServing,
+    setServing: setHostServing,
+    servingState: hostServingState,
+    stopServing: stopHostServing,
     resolvePath: (target) => fs.realpath(target),
     setInterval: (fn, ms) => {
       const handle = setInterval(fn, ms)
@@ -155,20 +162,21 @@ async function drainWithin(drain: Promise<void>, deps: Pick<HostDeps, "setTimeou
 }
 
 /** The heartbeat ack's `hostTunnel` verbatim from the control plane, or nothing serveable. */
-export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | undefined): UserHostedServingCredential | null {
+export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | undefined): HostServingCredential | null {
   const row = asRecordOrEmpty(tunnel)
   const hostId = trimToUndefined(row.hostId)
+  const enrollmentId = trimToUndefined(row.enrollmentId)
   const token = trimToUndefined(row.hostTunnelToken)
   const expiresAt = asFiniteNumber(row.tokenExpiresAt)
   const relayUrl = trimToUndefined(row.relayUrl) ?? fallbackRelayUrl
   const workspaceIds = Array.isArray(row.workspaceIds)
     ? row.workspaceIds.filter((id): id is string => typeof id === "string" && id.length > 0)
     : []
-  if (!hostId || !token || !expiresAt || !relayUrl || workspaceIds.length === 0) return null
-  return { hostId, relayUrl, token, workspaceIds, expiresAt }
+  if (!hostId || !enrollmentId || !token || !expiresAt || !relayUrl || workspaceIds.length === 0) return null
+  return { hostId, enrollmentId, relayUrl, token, workspaceIds, expiresAt }
 }
 
-function credentialWithout(credential: UserHostedServingCredential | null, workspaceId: string) {
+function credentialWithout(credential: HostServingCredential | null, workspaceId: string) {
   if (!credential) return null
   const workspaceIds = credential.workspaceIds.filter((id) => id !== workspaceId)
   return workspaceIds.length ? { ...credential, workspaceIds } : null
@@ -203,14 +211,52 @@ export async function runHost(input: HostRunInput): Promise<number> {
   })
 
   // Saves are chained so two beats cannot race their renames; the last
-  // state written is the last state computed.
+  // state written is the last state computed. The chain outlives a failed
+  // write; only the caller that asked for that write hears of it.
   let saving: Promise<void> = Promise.resolve()
-  const persist = (next: HostState) => {
+  const persistOrThrow = (next: HostState) => {
     state = next
-    saving = saving.then(() => input.store.save(next)).catch((error: unknown) => {
+    const write = saving.then(() => input.store.save(next))
+    saving = write.catch(() => undefined)
+    return write
+  }
+  const persist = (next: HostState) =>
+    persistOrThrow(next).catch((error: unknown) => {
       deps.log(`could not write host state: ${errorMessage(error)}`)
     })
-    return saving
+
+  installHostProviderConfigAuthority()
+  // The public half is derived from the stored private JWK on every boot, so
+  // the key the control plane seals for can only be the key on disk; it is
+  // on disk before the first beat declares it.
+  const sealingPrivateKeyJwk = state.sealing_private_key_jwk ?? (await createMachineSealingKeyPair()).privateKeyJwk
+  if (sealingPrivateKeyJwk !== state.sealing_private_key_jwk) {
+    await persistOrThrow({ ...state, sealing_private_key_jwk: sealingPrivateKeyJwk })
+  }
+  const sealingPublicKey = JSON.stringify(sealingPublicKeyJwk(sealingPrivateKeyJwk))
+
+  const installProviderConfig = async (config: { revision: number; sealed: string | null }) => {
+    const plaintext = config.sealed === null
+      ? null
+      : await openMachineSeal(sealingPrivateKeyJwk, config.sealed, hostMachineSealAad({ enrollmentId: enrollment.enrollment_id, revision: config.revision }))
+    const { providerIds } = setHostProviderConfig(plaintext)
+    deps.log(
+      config.sealed === null
+        ? `provider configuration revision ${config.revision}: withdrawn; harnesses run on this machine's own logins`
+        : `provider configuration revision ${config.revision}: ${providerIds.join(", ") || "no providers"}`,
+    )
+  }
+  // A stored revision is declared only once it is open again: a blob on disk
+  // this key cannot open would otherwise be acked forever, and the owner would
+  // read "applied" for a configuration no harness here has.
+  let declaredProviderConfigRevision: number | undefined
+  if (state.provider_config) {
+    try {
+      await installProviderConfig(state.provider_config)
+      declaredProviderConfigRevision = state.provider_config.revision
+    } catch (error) {
+      deps.log(`stored provider configuration revision ${state.provider_config.revision} could not be applied: ${errorMessage(error)}`)
+    }
   }
 
   // A SIGKILLed instance leaves its `run` record behind; this process's own
@@ -219,9 +265,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const listener = await deps.createListener()
   const composition = { localBaseUrl: listener.url, sessionAuthority: () => "managed-private" as const }
   const owned = new Map<string, { directory: string; runtime: OwnedOpenCodeRuntime | undefined }>()
-  let credential: UserHostedServingCredential | null = null
+  let credential: HostServingCredential | null = null
 
-  const serve = async (next: UserHostedServingCredential | null) => {
+  const serve = async (next: HostServingCredential | null) => {
     credential = next
     try {
       await deps.setServing(next, composition)
@@ -298,11 +344,12 @@ export async function runHost(input: HostRunInput): Promise<number> {
   const connector = createHostConnector({
     mode: "machine",
     hostId: state.host_id,
-    keys,
     transport,
     enrollmentId: enrollment.enrollment_id,
     heartbeatIntervalMs: BEAT_INTERVAL_MS,
     sessionAuthority: "managed-private",
+    sealingPublicKey,
+    ...(declaredProviderConfigRevision === undefined ? {} : { providerConfigRevision: declaredProviderConfigRevision }),
     roots: canonicalRoots,
     resolvePath: deps.resolvePath,
     setInterval: deps.setInterval,
@@ -320,6 +367,14 @@ export async function runHost(input: HostRunInput): Promise<number> {
         ...(endpoints.relay ? { relay: endpoints.relay } : {}),
         ...(endpoints.authority ? { authority: endpoints.authority } : {}),
       }),
+    // Stored, then opened, then applied. The connector acks a revision only
+    // when this resolves, so a write that fails throws here and the control
+    // plane delivers the same revision on the next beat.
+    onProviderConfig: async (config) => {
+      await persistOrThrow({ ...state, provider_config: config })
+      await installProviderConfig(config)
+      await listener.applyRuntimeConfig()
+    },
     onAssignments: async (descriptions) => {
       const wanted = new Set(descriptions.map((description) => description.workspaceId))
       for (const workspaceId of listener.workspaceIds()) {

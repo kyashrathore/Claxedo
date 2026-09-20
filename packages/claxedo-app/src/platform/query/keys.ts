@@ -56,6 +56,8 @@ export const queryKeys = {
    */
   deployment: {
     hostAggregateDeclaration: (baseUrl?: string) => ["deployment", normalized(baseUrl), "hostAggregateDeclaration"] as const,
+    selfHost: (baseUrl?: string) => ["deployment", normalized(baseUrl), "selfHost"] as const,
+    issuesSessions: (baseUrl?: string) => ["deployment", normalized(baseUrl), "issuesSessions"] as const,
   },
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,
@@ -106,10 +108,11 @@ export const queryKeys = {
   },
   runtime: {
     /**
-     * A user-hosted workspace's own session list, as its RUNTIME answers it
-     * over the relay. Keyed by workspace rather than by list query: one relay
-     * hop answers every rail section and every page of that workspace, and the
-     * per-query `shell.sessionList` entries are shaped from this one read.
+     * A workspace's own session list, as the RUNTIME on the machine serving it
+     * answers over the relay. Keyed by workspace rather than by list query: one
+     * relay hop answers every rail section and every page of that workspace,
+     * and the per-query `shell.sessionList` entries are shaped from this one
+     * read.
      */
     workspaceSessions: (baseUrl: string | undefined, workspaceId: string) =>
       ["runtime", runtimeServer(baseUrl), "workspaceSessions", workspaceId] as const,

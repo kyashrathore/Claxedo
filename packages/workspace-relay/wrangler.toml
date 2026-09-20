@@ -42,7 +42,7 @@ main = "src/worker.ts"
 #   webSocketMessage (hibernation)  2026-03-16 -> ArrayBuffer  2026-03-17+ -> ArrayBuffer
 # The hibernatable DO socket does NOT flip — the old comment said it did. So the
 # real exposure was the CLOUD client/upstream sockets, which use listeners, not
-# the hibernating user-hosted channels.
+# the hibernating host-tunnel channels.
 #
 # The date is still held: the fix removes the blocker, but bumping is a separate
 # change that deserves its own verification. relay-config-drift.test.ts asserts
@@ -58,7 +58,7 @@ enabled = true
 # fallback is invisible until a user hits it. `relay-config-drift.test.ts`
 # fails if either key disappears from this block.
 [vars]
-# Concurrent WebSocket channels per user-hosted workspace tunnel. The code
+# Concurrent WebSocket channels per host tunnel. The code
 # default (TUNNEL_CHANNEL_CAP_DEFAULT = 16, src/cloudflare.ts) is below what one
 # real workspace opens — terminal tabs plus agent event streams plus documents —
 # and the 17th is rejected with a 503 `too_many_channels`. 256 clears realistic

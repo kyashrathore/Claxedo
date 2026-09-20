@@ -225,7 +225,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
   const selectedRemoteWorkspace = () => selectedNewSessionWorkspace({
     newSession: isNewSessionVariant(),
-    kind: props.newSessionWorkspaceKind,
+    kind: props.newSessionHostKind,
     worktree: props.newSessionWorktree,
   })
   const submitSessionDirectory = () => {
@@ -256,7 +256,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     isNewSession: newSession, harness: () => currentHarnessType(scope()), harnessPending,
     directory: submitSessionDirectory,
     serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
-    workspaceId: () => props.workspaceId?.(), workspaceKind: () => props.workspaceKind?.(),
+    workspaceId: () => props.workspaceId?.(), hostKind: () => props.hostKind?.(),
     sessionRef: () => props.sessionRef?.(),
     sessionCapabilities: () => props.goalCapabilities?.(), refreshGoal: props.refreshGoal,
     armed: prompt.goal.armed,
@@ -466,11 +466,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     addPart: engine.addPart,
     readClipboardImage: platform.readClipboardImage,
-    // A hosted workspace has no path the runtime can write an attachment to,
-    // so only the harness's own prompt inputs are left there.
+    // A workspace reached through the relay has no path this runtime can write
+    // an attachment into, so only the harness's own prompt inputs remain there.
     target: () => ({
       ...(currentHarnessType(scope()) ? { harness: currentHarnessType(scope())! } : {}),
-      workspace: !props.workspaceKind?.(),
+      workspace: !props.hostKind?.(),
     }),
   })
   const setScopedVariant = (value: string | undefined) => {
@@ -534,7 +534,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     signedControlPlane,
     workspace: () => {
       const workspaceId = props.workspaceId?.()
-      const kind = props.workspaceKind?.()
+      const kind = props.hostKind?.()
       return workspaceId && kind ? { workspaceId, kind } : undefined
     },
     sessionRef: () => props.sessionRef?.(),
@@ -542,10 +542,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     permission,
   })
 
-  const { roleSubmitBlocked, submitBlock, submitInertBlocked, openModelPicker } =
+  const { authorityBlock, submitBlock, submitInertBlocked, openModelPicker } =
     createComposerSubmitBlockWiring({
       statusReady: props.statusReady,
       workspaceId: props.workspaceId,
+      sessionPromptAdmitted: props.sessionPromptAdmitted,
       scope,
       isHarnessMode,
       harnessReadiness,
@@ -587,7 +588,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     newSessionWorktree: () => props.newSessionWorktree,
     newSessionBaseRef: () => props.newSessionBaseRef,
     newSessionSourceBranch: () => props.newSessionSourceBranch,
-    newSessionWorkspaceKind: () => props.newSessionWorkspaceKind,
+    newSessionHostKind: () => props.newSessionHostKind,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     onCloudStartup: props.onCloudStartup,
     draftId: resolvedDraftId,
@@ -601,7 +602,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     bootScope: composerBootScope,
     signedControlPlane,
     workspaceId: props.workspaceId,
-    workspaceKind: props.workspaceKind,
+    hostKind: props.hostKind,
     harnessController,
     ...goalController.submitInput(props.goal, props.stopGoal),
   })
@@ -609,10 +610,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const submitRetry = createPromptInputSubmitRetry({
     resetKey: composerBootScope,
     rawHandleSubmit,
-    roleSubmitBlocked,
-    // Clickability must never become submittability. Viewer-role hard-blocks
-    // unconditionally (via roleSubmitBlocked); every other block reason also
-    // guards the handler. Enter routes missing-model to the picker (see
+    authorityBlocked: () => !!authorityBlock(),
+    // Clickability must never become submittability. An authority refusal
+    // hard-blocks unconditionally; every other block reason also guards the
+    // handler. Enter routes missing-model to the picker (see
     // createPromptInputSubmitRetry) instead of the submit toast guard.
     submitBlocked: () => submitHardBlocked({ stoppable: stoppable(), block: submitBlock() }),
     submitBlock,
@@ -630,7 +631,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const onRetry = submitRetry.onRetry
   const designPlaceholder = () => goalArmed()
     ? language.t("prompt.goal.placeholder")
-    : promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
+    : promptDesignPlaceholder({ authorityBlock: authorityBlock(), mode: engine.mode(), shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
       rootRef={(el) => (rootEl = el)}
@@ -750,7 +751,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       submitExcludeFromTab={submitInertBlocked}
       submitBlock={submitBlock}
       onChooseModel={openModelPicker}
-      roleSubmitBlocked={roleSubmitBlocked}
+      workspaceRoleBlocked={() => authorityBlock() === "workspace-role"}
       t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       showDialog={(content) => dialog.show(content)}
     />

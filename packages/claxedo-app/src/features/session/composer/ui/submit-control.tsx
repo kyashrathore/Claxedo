@@ -124,12 +124,13 @@ export function PromptSubmitControl(props: {
                 ? props.stopLabel
                 : props.booting()
                   ? props.bootText()
-                  // readOnlyBlocked is checked before the generic block copy: viewer-role
-                  // always wins submitBlockReason's priority ordering (see
-                  // submit-block-reason.ts), so without this the dedicated shorter
-                  // `readOnlyLabel` ("Read-only workspace") would never be reachable —
-                  // block()!.copy's "Read-only workspace (viewer)" (the composer
-                  // placeholder's wording) would always shadow it.
+                  // readOnlyBlocked names the workspace-role refusal alone, and it is
+                  // read before the generic block copy: an authority refusal always
+                  // wins submitBlockReason's priority ordering, so the dedicated
+                  // shorter `readOnlyLabel` ("Read-only workspace") would otherwise be
+                  // shadowed by block()!.copy's "Read-only workspace (viewer)". A
+                  // session-share refusal has no short label and falls through to its
+                  // own sentence.
                   : props.readOnlyBlocked()
                     ? props.readOnlyLabel
                     : props.block()

@@ -85,6 +85,7 @@ import { errorBody } from "./error-body"
 import {
   sessionAccessContext,
   sessionAccessDenied,
+  sessionRequestProvenance,
   type SessionAccessDecision,
   type SessionAccessOperation,
   type SessionAccessPolicy,
@@ -99,12 +100,9 @@ import { asRecord } from "@claxedo/helpers/guards"
 
 
 /**
- * Extract a human-safe headline from a turn/stream failure without discarding the cause.
- * The outermost message catch and the two prompt-turn helpers previously flattened every
- * failure to the literal "Stream error", throwing away the underlying message and any
- * classification it carried. Preserve the real message so `sessionError` →
- * `firstTurnErrorData` can classify it (unmatched → "unknown") and the client's raw-detail
- * disclosure can surface it.
+ * A headline for a turn/stream failure that keeps the cause: the real message
+ * is what `sessionError` → `firstTurnErrorData` classifies (unmatched →
+ * "unknown") and what the client's raw-detail disclosure shows.
  */
 export function streamTurnErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
@@ -364,8 +362,8 @@ function messagePageResponse(c: Ctx, page: AgentMessagePage) {
  *
  * A status that reaches these routes is a plain `number` — read off a delegate's
  * `Response` or off a thrown `AgentMessagePageError` — while `ContentfulStatusCode`
- * is a literal union. Recognising the number against this list produces one
- * honestly; the call sites used to assert it.
+ * is a literal union; recognising the number against this list produces one
+ * without a cast.
  */
 const CONTENTFUL_STATUS_CODES: readonly ContentfulStatusCode[] = [
   100, 102, 103,
@@ -543,11 +541,9 @@ export function parseDraftId(raw: string | null | undefined): string | undefined
  * The one JSON request-body read in these routes.
  *
  * Hono types `c.req.json()` as `any` and rejects on an absent or malformed
- * body, so every route repeated `(await c.req.json().catch(() => ({}))) as
- * Shape` — an assertion promising a shape nobody had checked. Reading it here
- * hands back an inspectable record; handlers pick fields through the
- * `json-value` narrowers, so `{"command": 42}` no longer reaches an adapter
- * that believes it holds a string.
+ * body. Reading it here hands back an inspectable record; handlers pick
+ * fields through the `json-value` narrowers, so `{"command": 42}` never
+ * reaches an adapter as a string.
  */
 async function requestBody(c: Ctx): Promise<Record<string, unknown>> {
   const parsed: unknown = await c.req.json().catch(() => undefined)
@@ -657,9 +653,9 @@ function goalRoute(
 
 /**
  * A runtime with no default harness, or a connection it cannot run, is a
- * configuration state and not a fault. Left to escape it became a 500, which
- * every caller reads as "the runtime broke" and the MCP tools surfaced as a
- * bare `http_500`.
+ * configuration state and not a fault. Left to escape it is a 500, which
+ * every caller reads as "the runtime broke" and the MCP tools show as a bare
+ * `http_500`.
  */
 function harnessUnavailableResponse(c: Ctx, error: unknown) {
   if (!(error instanceof WorkspaceHarnessUnavailableError)) return undefined
@@ -817,12 +813,19 @@ function turnAdmissionConflict(c: Ctx) {
   }, 409)
 }
 
-function managedRegistration(opts: Opts) {
+/**
+ * Whether THIS request's session lifecycle is the private one: a reservation
+ * before the create, a registered creator, and a durable turn lease.
+ *
+ * A managed-private policy is the composition's half of the answer and the
+ * request's provenance is the other. One desktop daemon serves both: the
+ * machine's own user reaches it loopback-direct and creates sessions with no
+ * control-plane round trip, while the same runtime answers a relay-replayed
+ * member only through the authority that knows who created what.
+ */
+function managedSessionLifecycle(opts: Opts, c: Ctx) {
   return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
-}
-
-function managedTurnAdmission(opts: Opts) {
-  return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
+    && sessionRequestProvenance(c) === "relay-replayed"
 }
 
 async function acquireManagedPromptLease(input: {
@@ -832,7 +835,7 @@ async function acquireManagedPromptLease(input: {
   turnId?: string
   onLost: () => Promise<void> | void
 }): Promise<{ lease?: ActiveSessionTurnLease; rejected?: Response }> {
-  if (!managedTurnAdmission(input.opts)) return {}
+  if (!managedSessionLifecycle(input.opts, input.c)) return {}
   if (!input.turnId) {
     return {
       rejected: Response.json(errorBody(
@@ -1006,6 +1009,25 @@ async function sessionOperationGuard(
   return opts.beforeSessionOperation?.(c, { sessionId, operation })
 }
 
+/**
+ * Whether this reader may prompt the session, answered by the same policy the
+ * prompt route asks and reported alongside the harness's capabilities.
+ *
+ * A `follow` share admits the transcript and refuses the turn, so the reader
+ * reaches this route and not `POST /session/:id/message`. Without the answer
+ * here the composer has only the workspace role to go on, which says nothing
+ * about a session someone was shared, and the reader meets the refusal as a
+ * 403 after typing.
+ */
+async function sessionPromptAdmitted(opts: Opts, c: Ctx, sessionId: string) {
+  const decision = await opts.sessionAccessPolicy?.authorize({
+    ...sessionAccessContext(c),
+    sessionId,
+    operation: "prompt",
+  })
+  return decision?.allowed !== false
+}
+
 async function registerCreatedSession(
   opts: Opts,
   c: Ctx,
@@ -1017,7 +1039,7 @@ async function registerCreatedSession(
   | { kind: "ambiguous"; response: Response }
   | { kind: "denied"; response: Response }
 > {
-  if (!managedRegistration(opts)) return { kind: "registered" }
+  if (!managedSessionLifecycle(opts, c)) return { kind: "registered" }
   if (!operationId) {
     return {
       kind: "denied",
@@ -1203,13 +1225,10 @@ async function admitQuestionOperation(
 
 export function createSessionRoutes(opts: Opts) {
   const app = new Hono()
-  // This map only deduplicates prompt_async retries by message id. The
-  // per-session concurrency lease is owned by AgentRuntime and is deliberately
-  // separate. Production Claxedo-managed message routes resolve AgentRuntime;
-  // the Session V2 wildcard proxy, hosted gateway, and vendored OpenCode
-  // engine have independent admission semantics outside this lease boundary.
-  // The server's checkpoint-freeze middleware runs before these routes, so a
-  // 423 response may preempt lease acquisition entirely.
+  // Deduplicates prompt_async retries by message id and nothing more: the
+  // per-session concurrency lease is AgentRuntime's. The checkpoint-freeze
+  // middleware runs before these routes, so a 423 may preempt admission
+  // entirely.
   const promptAdmissions = new Map<string, Set<string>>()
   const releasePromptAdmission = (sessionId: string, messageId: string | undefined) => {
     if (!messageId) return
@@ -1222,7 +1241,7 @@ export function createSessionRoutes(opts: Opts) {
   // a wedged turns.start (adapter spawn that never settles admission and never
   // throws) must not hang the prompt_async response. On timeout the caller gets
   // its fire-and-forget 204 and the detached turn continues; any conflict/error
-  // then surfaces on the event stream, as it did before the admission fast-path.
+  // then surfaces on the event stream.
   const awaitAdmissionAck = async (admission: Promise<unknown>): Promise<unknown> => {
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<typeof ADMISSION_ACK_TIMED_OUT>((resolve) => {
@@ -1326,11 +1345,11 @@ export function createSessionRoutes(opts: Opts) {
         // that reserved first, so it reserves itself as the verified actor —
         // the owner grant's identity — and the control plane decides. A root
         // create keeps needing the caller's own reservation.
-        const selfReservation = managedRegistration(opts) && !operationId && body.parentID && children
+        const selfReservation = managedSessionLifecycle(opts, c) && !operationId && body.parentID && children
           ? opts.sessionAccessPolicy?.reserveSession?.bind(opts.sessionAccessPolicy)
           : undefined
         if (selfReservation && !body.id) body.id = `ses_${randomUUID()}`
-        if (managedRegistration(opts) && (!body.id || (!operationId && !selfReservation))) {
+        if (managedSessionLifecycle(opts, c) && (!body.id || (!operationId && !selfReservation))) {
           return c.json(errorBody(
             "session_reservation_required",
             "Managed session creation requires a preassigned session id and reservation operation",
@@ -1492,7 +1511,7 @@ export function createSessionRoutes(opts: Opts) {
           try {
             await after(opts.afterCreateSession?.(c, directory, session))
           } catch (error) {
-            if (managedRegistration(opts)) {
+            if (managedSessionLifecycle(opts, c)) {
               await compensateRegistration({
                 opts,
                 c,
@@ -1567,7 +1586,10 @@ export function createSessionRoutes(opts: Opts) {
       try {
         const directory = await opts.resolveDirectory(c, { sessionId })
         const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-        return noStoreJson(c, await adapter.readHarnessCapabilities(directory, { sessionId }))
+        return noStoreJson(c, {
+          ...await adapter.readHarnessCapabilities(directory, { sessionId }),
+          prompt: await sessionPromptAdmitted(opts, c, sessionId),
+        })
       } catch (error) {
         const refusal = harnessUnavailableResponse(c, error)
         if (refusal) return refusal
@@ -1943,10 +1965,10 @@ export function createSessionRoutes(opts: Opts) {
         ))
       } catch (error) {
         // A mode this harness does not offer is BAD INPUT, not a server fault.
-        // Every adapter rejects an unknown id by throwing (that rejection is
-        // deliberate — silently accepting one would store a mode the harness
-        // will never honour), and without this the throw surfaced as a 500,
-        // which reads as "the runtime broke" and sends debugging to the wrong layer.
+        // Every adapter rejects an unknown id by throwing — silently accepting
+        // one would store a mode the harness will never honour — and left to
+        // escape that throw is a 500, which reads as "the runtime broke" and
+        // sends debugging to the wrong layer.
         const message = error instanceof Error ? error.message : String(error)
         if (/does not offer|unknown permission mode/i.test(message)) {
           return c.json({ error: { code: "unknown_permission_mode", message } }, 400)
@@ -2007,7 +2029,7 @@ export function createSessionRoutes(opts: Opts) {
       const wire = await requestBody(c)
       const body = { id: str(wire.id), messageId: str(wire.messageId) }
       const operationId = registrationOperationId(c)
-      if (managedRegistration(opts) && (!body.id || !operationId)) {
+      if (managedSessionLifecycle(opts, c) && (!body.id || !operationId)) {
         return c.json(errorBody(
           "session_reservation_required",
           "Managed session forks require a preassigned child session id and reservation operation",
@@ -2031,7 +2053,7 @@ export function createSessionRoutes(opts: Opts) {
       try {
         await after(opts.afterCreateSession?.(c, directory, child))
       } catch (error) {
-        if (managedRegistration(opts)) {
+        if (managedSessionLifecycle(opts, c)) {
           await compensateRegistration({
             opts,
             c,
@@ -2103,7 +2125,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/queue", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
+      const guarded = await sessionOperationGuard(opts, c, id, "queue_read")
       if (guarded) return guarded
       return c.json((opts.queuedPrompts?.list(id) ?? []).map(({ seq, parts, messageId, queuedAt, held }) => ({ seq, parts, messageId, queuedAt, held })))
     })
@@ -2260,10 +2282,9 @@ export function createSessionRoutes(opts: Opts) {
           } catch (error) {
             settleAdmission?.(error)
             if (isAgentRuntimeTurnConflictError(error)) return
-            // Keep a human-safe headline but never discard the cause: route the real
-            // message through sessionError (→ firstTurnErrorData), so it classifies
-            // (unmatched → "unknown") and the original text reaches the raw-detail
-            // disclosure instead of being flattened to the literal "Stream error".
+            // The real message goes through sessionError (→ firstTurnErrorData)
+            // so it classifies (unmatched → "unknown") and the original text
+            // reaches the raw-detail disclosure.
             opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
           } finally {
             const leaseLost = turnAdmission.lease?.lost() ?? false

@@ -55,7 +55,7 @@ describe("session config selection", () => {
       sessionId: "ses_1",
       host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "provisioner" },
     } satisfies SessionRef
     const byRoute = { sessionID: "ses_1", directory: "ws_1", serverUrl: "https://one.example", sessionRef: ref }
     const byAddress = { ...byRoute, directory: "workspace:ws_1" }
@@ -66,12 +66,12 @@ describe("session config selection", () => {
     expect(sessionConfigRawQueryKey(byRoute)).not.toEqual(sessionConfigRawQueryKey({ ...byRoute, directory: "ws_2" }))
   })
 
-  test("does not merge user-hosted and cloud refs with the same visible placement", () => {
-    const userHosted = {
+  test("does not merge machine-placed and provisioner-placed refs with the same visible placement", () => {
+    const machine = {
       sessionId: "shared",
       host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "machine", hostId: "host_local" },
       harness: { kind: "native", harnessId: "opencode" },
     } satisfies SessionRef
     const workspace = {
@@ -81,7 +81,7 @@ describe("session config selection", () => {
       toolSandbox: {
         kind: "workspace",
         workspaceId: "ws_1",
-        hosting: "cloud",
+        hosting: "provisioner",
         hostId: "host_1",
       },
       harness: { kind: "native", harnessId: "opencode" },
@@ -93,10 +93,10 @@ describe("session config selection", () => {
       serverUrl: "https://one.example",
     }
 
-    expect(sessionConfigRawQueryKey({ ...scope, sessionRef: userHosted })).not.toEqual(
+    expect(sessionConfigRawQueryKey({ ...scope, sessionRef: machine })).not.toEqual(
       sessionConfigRawQueryKey({ ...scope, sessionRef: workspace }),
     )
-    expect(sessionConfigSelectionQueryKey({ ...scope, sessionRef: userHosted })).not.toEqual(
+    expect(sessionConfigSelectionQueryKey({ ...scope, sessionRef: machine })).not.toEqual(
       sessionConfigSelectionQueryKey({ ...scope, sessionRef: workspace }),
     )
   })
@@ -109,7 +109,7 @@ describe("session config selection", () => {
       toolSandbox: {
         kind: "workspace",
         workspaceId: "ws_authoritative",
-        hosting: "user-hosted",
+        hosting: "machine",
         hostId: "host_1",
       },
       harness: { kind: "connection", connectionId: "codex-team" },
@@ -124,7 +124,7 @@ describe("session config selection", () => {
     expect(sessionConfigRawQueryKey(scope)).toEqual(sessionConfigRawQueryKey({
       ...scope,
       workspaceId: "stale-redundant-value",
-      workspaceKind: "cloud",
+      hostKind: "provisioner",
     }))
   })
 

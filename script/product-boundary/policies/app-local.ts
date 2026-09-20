@@ -125,9 +125,9 @@ export const appLocal: Policy = {
   // Cloudflare-deployable flow adds the service-contribution catalog,
   // bootstrap-owner route, and canonical private-session reservation client.
   // `@claxedo/service-contract` is their dependency-neutral vocabulary owner.
-  // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + its loopback control
-  // routes — the machine's ONE relay serving connection under machine-wide
-  // enrollment (reviewed owner: local-server workspace domain).
+  // +2 `workspace/host-serving-routes.ts` and its loopback control routes —
+  // the machine's ONE relay serving connection (reviewed owner: the
+  // local-server workspace domain).
   // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`.
   // Remote access is machine level, so the published set is reconciled against
   // this machine's local workspace inventory instead of a per-workspace tick
@@ -220,8 +220,8 @@ export const appLocal: Policy = {
   // matter how many call sites migrate. Re-measured after the test-quality
   // audit merge, which retired the per-file readers those sites replaced:
   // 958 modules, 38 packages, no headroom.
-  // +1 module / 0 packages (2026-09-07): the rail's user-hosted rows now carry
-  // the session's creator, which only the control plane knows. Reviewed owner:
+  // +1 module / 0 packages: a rail row for a workspace on another machine
+  // carries the session's creator, which only the control plane knows. Reviewed owner:
   // features/session/data/sync/control-plane-sessions.ts — the one reader of
   // `GET /api/control/sessions`, extracted from `inventory-source.ts` so the
   // rail's owner join and the flat inventory share it instead of each spelling
@@ -464,8 +464,31 @@ export const appLocal: Policy = {
   // app's one stream reader (`cp/events` and each workspace's `wr/events`),
   // with its reconnect policy in `app/providers/claxedo-events-reconnect.ts`;
   // the global-sdk provider consumes its frames and opens nothing of its own.
-  // Measured 1077 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1077, packages: 58 },
+  //
+  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // — the owner's push/clear of sealed provider credentials for one enrolled
+  // machine, rendered under each row of the Machines list by
+  // `remote-access-surface.tsx`. It reaches the control plane only through
+  // `MachineRemoteAccessPort.providerConfig`, which the HTTP binding serves
+  // and the desktop leaves absent; no new package edge.
+  //
+  // +2 modules (2026-09-20): `app/boot/data/deployment-posture.ts` and
+  // `app/connection/deployment-posture.ts` — the server's
+  // `deployment.issuesSessions` declaration, read before the first render and
+  // then per active server. The local entry needs it as much as the hosted
+  // one: a loopback daemon is the deployment that declares it issues NO
+  // sessions, and that answer is what keeps this build's sign-in gate open and
+  // its identity provider unstarted. Both reach only `platform/query`, already
+  // in this closure; no new package edge.
+  //
+  // +17 modules (2026-09-20): `platform/i18n/machines/<locale>.ts`, one per
+  // locale in `platform/i18n/locales.ts`. The machine, placement and
+  // session-sharing copy split out of the base dictionaries so `en.ts` stays
+  // inside the 800-line size budget, following `source-control/` and
+  // `provider-settings/`. The i18n manifest owns them, it already imports both
+  // sibling directories, and a dictionary reaches nothing; no new package
+  // edge. Measured 1097 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1097, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

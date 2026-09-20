@@ -84,25 +84,6 @@ export function enrollmentPayload(input: { hostId: string; requestId: string; no
   ].join("\n")
 }
 
-/**
- * Heartbeat v2: the machine's one signature per interval also covers the
- * workspaces it currently serves. The authority verifies this exact literal
- * (`hostEnrollmentHeartbeatPayloadV2` in host-access-authority.ts) — both
- * sides assert the same string, so drift fails loudly at the first beat.
- */
-export function heartbeatPayloadV2(input: {
-  hostId: string
-  ttlMs?: number
-  workspaceIds: readonly string[]
-}) {
-  return [
-    "claxedo.host-enrollment.heartbeat.v2",
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
-  ].join("\n")
-}
-
 export function base64urlDecode(text: string) {
   const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (text.length % 4)) % 4)
   const binary = atob(padded)
@@ -118,7 +99,7 @@ export async function hostSha256Hex(text: string) {
 }
 
 /**
- * The bytes a machine-signed request is signed over (P1.1). Every field is a
+ * The bytes a machine-signed request is signed over. Every field is a
  * header or the body of the same request, so the verifier rebuilds this string
  * from what arrived and nothing else; a body edited in transit changes the
  * hash, a replayed header set is caught by the single-use nonce.

@@ -50,10 +50,8 @@ export type RelayHostVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   actor_avatar_url?: string
   /** Durable Runtime Access Token id; distinct from this short-lived RHT jti. */
   parent_jti: string
-} & (
-  | { access: "cloud"; backing: "cloud-vm" }
-  | { access: "user-hosted"; backing: "local-worktree" }
-)
+  backing: "cloud-vm" | "local-worktree"
+}
 
 export type TokenClaims<TClaims extends Record<string, unknown> = Record<string, unknown>> = {
   /** Provider subject for provider-backed identity verifiers. Runtime and

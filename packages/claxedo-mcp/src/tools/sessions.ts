@@ -365,7 +365,7 @@ async function reachableWorkspaces(ctx: McpToolContext, only: string | undefined
   const own = ctx.credential.kind === "runtime" ? ctx.credential.workspaceId : ctx.client.ownWorkspace?.workspaceId
   if (!ctx.client.controlPlane) {
     const id = only ?? own
-    return id ? [{ id, kind: "local" }] : []
+    return id ? [{ id }] : []
   }
   const all = await ctx.client.workspaces()
   return only ? all.filter((workspace) => workspace.id === only) : all
@@ -375,7 +375,7 @@ async function workspaceSessions(ctx: McpToolContext, workspace: WorkspaceSummar
   const row = {
     workspace: workspace.id,
     ...(workspace.name ? { name: workspace.name } : {}),
-    ...(workspace.kind ? { kind: workspace.kind } : {}),
+    ...(workspace.host ? { host: workspace.host } : {}),
   }
   if (workspace.machineOnline === false) return { ...row, unavailable: "machine offline" }
   try {

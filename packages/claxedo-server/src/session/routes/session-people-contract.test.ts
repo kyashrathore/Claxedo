@@ -69,9 +69,9 @@ describe("People route contract", () => {
     { thrown: "session_share_target_required", status: 400, code: "session_share_target_required" },
     { thrown: "session_share_target_not_found", status: 404, code: "session_share_target_not_found" },
     {
-      thrown: "session_participant_workspace_access_required",
+      thrown: "session_share_target_outside_organization",
       status: 403,
-      code: "session_participant_workspace_access_required",
+      code: "session_share_target_outside_organization",
     },
     { thrown: "session_share_team_org_mismatch", status: 400, code: "session_share_team_org_mismatch" },
     { thrown: "session_share_org_mismatch", status: 400, code: "session_share_org_mismatch" },
@@ -159,5 +159,72 @@ describe("grantId-only revoke fanout", () => {
         }))
       })
     }
+  }
+})
+
+describe("share level on the grant route", () => {
+  for (const [routeName, routeFactory] of routeFactories) {
+    test(`${routeName} passes the requested level through and rings the doorbell with it`, async () => {
+      const sink = vi.fn()
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "send" as const }))
+      const response = await routeFactory(
+        services({
+          grantSessionShare,
+          resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
+        }),
+        { ...signedOptions, sessionShareChangedSink: sink },
+      ).request("https://control.example.test/sessions/ses_1/shares", {
+        method: "POST",
+        headers: { authorization: "Bearer token", "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          level: "send",
+          grantedToTokenIdentifier: "https://auth.example.test|user_bob",
+        }),
+      })
+
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({ grant_id: "ssg_1", level: "send" })
+      expect(grantSessionShare).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ level: "send" }))
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ phase: "granted", level: "send" }))
+    })
+
+    test(`${routeName} defaults a level-less grant to follow`, async () => {
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const }))
+      const response = await routeFactory(services({ grantSessionShare }), signedOptions).request(
+        "https://control.example.test/sessions/ses_1/shares",
+        {
+          method: "POST",
+          headers: { authorization: "Bearer token", "content-type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: "ws_1",
+            grantedToTokenIdentifier: "https://auth.example.test|user_bob",
+          }),
+        },
+      )
+
+      expect(response.status).toBe(200)
+      expect(grantSessionShare).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ level: "follow" }))
+    })
+
+    test(`${routeName} refuses an unknown level before reaching the authority`, async () => {
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const }))
+      const response = await routeFactory(services({ grantSessionShare }), signedOptions).request(
+        "https://control.example.test/sessions/ses_1/shares",
+        {
+          method: "POST",
+          headers: { authorization: "Bearer token", "content-type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: "ws_1",
+            level: "broadcast",
+            grantedToTokenIdentifier: "https://auth.example.test|user_bob",
+          }),
+        },
+      )
+
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "session_share_level_invalid" } })
+      expect(grantSessionShare).not.toHaveBeenCalled()
+    })
   }
 })

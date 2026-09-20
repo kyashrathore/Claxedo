@@ -39,7 +39,7 @@ bun turbo build \
 bun run --cwd packages/claxedo-local-server build
 (
   cd packages/claxedo-desktop
-  VITE_AUTH_ENABLED=true bun run build
+  VITE_CLAXEDO_HOSTED_ACTIVATION=true bun run build
   npx electron-builder --dir --config electron-builder.config.ts
 )
 (

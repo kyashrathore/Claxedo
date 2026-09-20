@@ -22,12 +22,14 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-// These fixtures carry only the fields the routes under test read; the cast
-// keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
-import type { SessionAccessPolicy } from "../session-access-policy"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessDecision,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
 
 function adapter(input: {
   onDirectory?: (directory: RuntimeDirectory) => void
@@ -136,6 +138,8 @@ function managedRoutes(input: {
   runtime?: AgentRuntime
   publishGlobal?: (event: CompatEnvelope) => void
   afterMessageCheckpoint?: () => void
+  /** False composes the same routes and policy for a caller the exposure stamped nothing for. */
+  stamped?: boolean
 }) {
   const routes = createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -147,6 +151,7 @@ function managedRoutes(input: {
     sessionAccessPolicy: input.policy,
     publishGlobal: input.publishGlobal ?? (() => {}),
   })
+  if (input.stamped === false) return routes
   const app = new Hono()
   app.use("*", async (context, next) => {
     ;(context as any).set("relayHostAuth", {
@@ -458,6 +463,52 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(release).toBeGreaterThan(checkpoint)
     expect(release).toBeGreaterThan(finalPublish)
   })
+
+  test("the same managed policy creates with no reservation and registers nothing for an UNSTAMPED caller", async () => {
+    // A desktop daemon mounts this policy for the org members the relay
+    // replays onto it and keeps serving its own user on the same runtimes. The
+    // ingress refuses a relayed request it cannot verify, so the absence of a
+    // stamp is that user, and the lifecycle a reservation belongs to is not
+    // theirs.
+    const registrations: unknown[] = []
+    const policy = managedPolicy({
+      registerSession: async (value) => { registrations.push(value); return { allowed: true } },
+    })
+    const fixture = { ...adapter(), getSession: async () => null }
+
+    const response = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+
+    expect(response.status).toBe(201)
+    expect(registrations).toEqual([])
+  })
+
+  test("durable turn admission is the stamped caller's: a prompt with no message id is refused for them and admitted for the machine's own user", async () => {
+    const turns: string[] = []
+    const policy = managedPolicy({
+      acquireTurn: async (input) => { turns.push(input.turnId); return { allowed: false, status: 503, code: "unreachable", message: "unreachable" } },
+    })
+    const fixture = adapter()
+
+    const stamped = await managedRoutes({ policy, adapter: fixture }).request("/session/ses_1/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
+    })
+    const direct = await managedRoutes({ policy, adapter: fixture, stamped: false }).request("/session/ses_1/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "hi" }] }),
+    })
+
+    expect(stamped.status).toBe(400)
+    expect(await stamped.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
+    expect(direct.status).toBe(200)
+    expect(turns).toEqual([])
+  })
 })
 
 describe("createSessionRoutes message paging", () => {
@@ -683,7 +734,7 @@ function routes(input: {
   sessionAccessPolicy?: SessionAccessPolicy
   afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
-  return createSessionRoutes({
+  const created = createSessionRoutes({
     resolveAdapter: () => input.adapter,
     resolveExecutionBinding: fixtureExecutionBinding(),
     resolveDirectory: () => undefined,
@@ -701,6 +752,26 @@ function routes(input: {
       ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
       : undefined,
   })
+  // A managed-private policy decides the lifecycle of a RELAY-REPLAYED
+  // request, and the runtime reads that off the verified stamp the exposure
+  // sets, so a test of it has to arrive stamped. Unstamped, the same runtime
+  // answers its own machine's user and reserves nothing.
+  if (!input.sessionAccessPolicy) return created
+  const app = new Hono()
+  app.use("*", async (context, next) => {
+    ;(context as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+      principal_kind: "user",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      actor_public_id: "user_1",
+      actor_name: "Actor One",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      role: "editor",
+    })
+    await next()
+  })
+  return app.route("/", created)
 }
 
 function registrationPolicy(
@@ -1329,7 +1400,6 @@ describe("createSessionRoutes directory-less sessions", () => {
       }),
     })
 
-    // prompt_async is fire-and-forget: the route acknowledges immediately.
     expect(res.status).toBe(204)
     // Let the detached turn run its catch/finally and publish its failure.
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1339,10 +1409,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     for (const event of sessionErrors) {
       const error = (event.payload as { properties: { error: { data?: { message?: string; firstTurnErrorClass?: string } } } })
         .properties.error
-      // The real cause survives — never the literal "Stream error".
       expect(error.data?.message).not.toBe("Stream error")
       expect(error.data?.message).toContain("thread not found")
-      // And it now classifies (a lost thread → session recovery, not the old workspace fallback).
       expect(error.data?.firstTurnErrorClass).toBe("session")
     }
   })
@@ -2074,9 +2142,8 @@ describe("createSessionRoutes session instructions", () => {
     expect(creates).toEqual([])
   })
 
-  // The prompt names agent, model and variant: that combination once skipped
-  // the config read entirely, which is the door the retained block arrives
-  // through.
+  // Naming agent, model and variant is the one prompt shape that could skip
+  // the config read, and the retained block arrives through that read.
   test("a later turn carries the retained block even when the caller named agent, model and variant", async () => {
     const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)
@@ -2329,5 +2396,165 @@ describe("createSessionRoutes engine refusals", () => {
     const response = await app.request("http://localhost/permission")
     expect(response.status).toBe(500)
     expect(await response.text()).toBe("Internal Server Error")
+  })
+})
+
+describe("a share level reaches the runtime as the authority's answer to a write", () => {
+  /**
+   * The routes a `send` grant exists for. A follow grantee must be refused all
+   * three, and the refusal has to come from the same `write` question the
+   * prompt already asked — not from a fourth place that could drift from it.
+   */
+  function sharedRoutes(input: { authorizeWrite: () => Promise<SessionAccessDecision> }) {
+    const actions: Array<{ operation: string; write: boolean }> = []
+    const prompted: string[] = []
+    const responded: string[] = []
+    const replied: string[] = []
+    const item = adapter()
+    const routes = createSessionRoutes({
+      resolveAdapter: () => ({
+        ...item,
+        executeTurn: (binding, _prompt) => (async function* () {
+          prompted.push(binding.sessionId)
+        })(),
+        respondPermission: async (_binding, permId) => { responded.push(permId); return undefined },
+        replyQuestion: async (_binding, questionId) => { replied.push(questionId); return undefined },
+      }) as AgentHarnessAdapter,
+      resolveExecutionBinding: fixtureExecutionBinding(),
+      resolveDirectory: () => "/workspace",
+      getMessages: () => [],
+      listPermissions: async () => [{ id: "perm_1", sessionID: "session_shared" }] as AgentPermission[],
+      listQuestions: async () => [{ id: "question_1", sessionID: "session_shared", questions: [] }] as AgentQuestion[],
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
+        requireActor: true,
+        authority: {
+          authorizeSessionRead: async (value) => {
+            actions.push({ operation: value.operation, write: false })
+            return { allowed: true }
+          },
+          authorizeSessionWrite: async (value) => {
+            actions.push({ operation: value.operation, write: true })
+            return await input.authorizeWrite()
+          },
+          authorizeSessionStream: async () => ({ allowed: true, lease: "lease_1", expiresAt: Date.now() + 60_000 }),
+          registerSession: async () => ({ allowed: true }),
+          // The lease is rejected unless it names the turn the caller asked
+          // for, and the prompt route derives that from the message id.
+          acquireTurn: async (value) => ({
+            allowed: true,
+            turnId: value.turnId,
+            leaseId: "lease_1",
+            fencingToken: 1,
+            acquiredAt: 1,
+            expiresAt: Date.now() + 60_000,
+          }),
+          renewTurn: async (value) => ({
+            allowed: true,
+            turnId: value.turnId,
+            leaseId: "lease_1",
+            fencingToken: 1,
+            acquiredAt: 1,
+            expiresAt: Date.now() + 60_000,
+          }),
+          releaseTurn: async () => ({ released: true }),
+        },
+      }),
+      publishGlobal: () => {},
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        actor_id: "actor_grantee",
+        actor_kind: "human",
+        workspace_id: "ws_1",
+        org_id: "org_1",
+        role: "editor",
+      })
+      await next()
+    })
+    app.route("/", routes)
+    return { actions, app, prompted, replied, responded }
+  }
+
+  const post = (app: Hono, path: string, body: unknown) => app.request(`http://localhost${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  test("a follow grantee is refused the prompt, the permission answer and the question answer, and still reads", async () => {
+    const { actions, app, prompted, replied, responded } = sharedRoutes({
+      authorizeWrite: async () => ({
+        allowed: false,
+        status: 403,
+        code: "workspace_authorization_denied",
+        message: "denied",
+      }),
+    })
+
+    const prompt = await post(app, "/session/session_shared/message", {
+      messageID: "msg_1",
+      parts: [{ type: "text", text: "hi" }],
+    })
+    const permission = await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
+    const question = await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+    const read = await app.request("http://localhost/session/session_shared/message")
+
+    expect(prompt.status).toBe(403)
+    expect(permission.status).toBe(403)
+    expect(question.status).toBe(403)
+    expect(read.status).toBe(200)
+    expect(prompted).toEqual([])
+    expect(responded).toEqual([])
+    expect(replied).toEqual([])
+    expect(actions).toEqual([
+      { operation: "prompt", write: true },
+      { operation: "permission_response", write: true },
+      { operation: "question_response", write: true },
+      { operation: "message_read", write: false },
+    ])
+  })
+
+  test("a send grantee reaches the harness on all three", async () => {
+    const { app, prompted, replied, responded } = sharedRoutes({
+      authorizeWrite: async () => ({ allowed: true }),
+    })
+
+    const prompt = await post(app, "/session/session_shared/message", {
+      messageID: "msg_1",
+      parts: [{ type: "text", text: "hi" }],
+    })
+    const permission = await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
+    const question = await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+
+    expect(prompt.status).toBe(200)
+    expect(permission.status).toBe(200)
+    expect(question.status).toBe(200)
+    expect(prompted).toEqual(["session_shared"])
+    expect(responded).toEqual(["perm_1"])
+    expect(replied).toEqual(["question_1"])
+  })
+
+  test("the session's capabilities carry the same prompt answer the prompt route gets", async () => {
+    const refusing = sharedRoutes({
+      authorizeWrite: async () => ({
+        allowed: false,
+        status: 403,
+        code: "workspace_authorization_denied",
+        message: "denied",
+      }),
+    })
+    const admitting = sharedRoutes({ authorizeWrite: async () => ({ allowed: true }) })
+
+    const refused = await refusing.app.request("http://localhost/session/session_shared/capabilities")
+    const admitted = await admitting.app.request("http://localhost/session/session_shared/capabilities")
+
+    expect(refused.status).toBe(200)
+    expect(await refused.json()).toMatchObject({ prompt: false })
+    expect(await admitted.json()).toMatchObject({ prompt: true })
+    expect(refusing.actions).toEqual([
+      { operation: "session_capabilities_read", write: false },
+      { operation: "prompt", write: true },
+    ])
   })
 })

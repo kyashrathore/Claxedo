@@ -12,7 +12,7 @@ export const TURN_USAGE_STATUSES = [
   "interrupted_by_steer",
   "process_lost",
 ] as const
-export const TURN_USAGE_LOCATIONS = ["local", "cloud-workspace", "user-hosted"] as const
+export const TURN_USAGE_LOCATIONS = ["local", "cloud-workspace"] as const
 
 export type TurnUsageSettlement = (typeof TURN_USAGE_SETTLEMENTS)[number]
 

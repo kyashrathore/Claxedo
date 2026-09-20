@@ -19,14 +19,14 @@ describe("controlPlaneCatalogProjects", () => {
         {
           workspace_id: "ws_shared",
           project_id: "proj_shared",
-          access: "user-hosted",
+          backing: "local-worktree",
           role: "viewer",
           host_online: false,
         },
         {
           workspace_id: "ws_cloud",
           project_id: "proj_shared",
-          access: "cloud",
+          backing: "cloud-vm",
           role: "owner",
         },
       ],
@@ -44,7 +44,7 @@ describe("controlPlaneCatalogProjects", () => {
   })
 
   /**
-   * A cloud or user-hosted workspace is served by ANOTHER machine, so the path
+   * A relay-backed workspace is served by ANOTHER machine, so the path
    * its row reports names a directory on that machine's filesystem. Addressing
    * the workspace by it makes every later read (`?directory=`,
    * `x-claxedo-directory`, the route's own key) ask a server about a path it
@@ -59,10 +59,10 @@ describe("controlPlaneCatalogProjects", () => {
         {
           workspace_id: "ws_hosted",
           project_id: "proj_hosted",
-          access: "user-hosted",
+          backing: "local-worktree",
           remote_directory: HOST_PATH,
         },
-        { workspace_id: "ws_sandbox", project_id: "proj_hosted", access: "cloud", remote_directory: "/workspace" },
+        { workspace_id: "ws_sandbox", project_id: "proj_hosted", backing: "cloud-vm", remote_directory: "/workspace" },
       ],
     })
 
@@ -86,19 +86,19 @@ describe("controlPlaneCatalogProjects", () => {
   // the address, not a stand-in for a missing one.
   test("addresses a row with no host path by its id all the same", () => {
     const [project] = controlPlaneCatalogProjects({
-      workspaces: [{ workspace_id: "ws_bare", project_id: "proj_bare", access: "cloud" }],
+      workspaces: [{ workspace_id: "ws_bare", project_id: "proj_bare", backing: "cloud-vm" }],
     })
     expect(project?.workspaces?.["workspace:ws_bare"]).toMatchObject({ directory: "workspace:ws_bare" })
     expect(project?.workspaces?.["workspace:ws_bare"]).not.toHaveProperty("remote_directory")
   })
 
-  test("builds synthetic project refs from signed user-hosted workspaces", () => {
+  test("builds synthetic project refs from signed machine-placed workspaces", () => {
     expect(controlPlaneCatalogProjects({
       workspaces: [{
-        workspace_id: "ws_user_hosted",
+        workspace_id: "ws_machine",
         project_id: "proj_1",
         display_name: "Shared Repo",
-        access: "user-hosted",
+        backing: "local-worktree",
         repo_url: "https://github.com/claxedo/shared.git",
         created_at: 1,
         updated_at: 2,
@@ -110,15 +110,15 @@ describe("controlPlaneCatalogProjects", () => {
       // naming the project after one of them picks whichever row happened to
       // be seen first. The repo is stable across every row of the project.
       name: "claxedo/shared",
-      worktree: "workspace:ws_user_hosted",
-      sandboxes: ["workspace:ws_user_hosted"],
+      worktree: "workspace:ws_machine",
+      sandboxes: ["workspace:ws_machine"],
       workspaces: {
-        "workspace:ws_user_hosted": {
-          id: "ws_user_hosted",
+        "workspace:ws_machine": {
+          id: "ws_machine",
           kind: "user-hosted",
           repo_url: "https://github.com/claxedo/shared.git",
           workspace_name: "Shared Repo",
-          directory: "workspace:ws_user_hosted",
+          directory: "workspace:ws_machine",
         },
       },
       time: { created: 1, updated: 2 },
@@ -136,10 +136,10 @@ describe("controlPlaneCatalogProjects", () => {
       },
     ], controlPlaneCatalogProjects({
       workspaces: [{
-        workspace_id: "ws_user_hosted",
+        workspace_id: "ws_machine",
         project_id: "proj_1",
         display_name: "Shared Repo",
-        access: "user-hosted",
+        backing: "local-worktree",
         created_at: 1,
         updated_at: 10,
       }],
@@ -147,10 +147,10 @@ describe("controlPlaneCatalogProjects", () => {
       id: "proj_1",
       name: "Local Repo",
       worktree: "/Users/me/repo",
-      sandboxes: ["workspace:ws_user_hosted"],
+      sandboxes: ["workspace:ws_machine"],
       workspaces: {
-        "workspace:ws_user_hosted": {
-          id: "ws_user_hosted",
+        "workspace:ws_machine": {
+          id: "ws_machine",
           kind: "user-hosted",
         },
       },
@@ -181,7 +181,7 @@ describe("controlPlaneCatalogProjects", () => {
       workspaces: [{
         workspace_id: "15e0fa38-1992-4636-bb60-665a57cd43df",
         display_name: "opencode",
-        access: "user-hosted",
+        backing: "local-worktree",
         created_at: 1,
         updated_at: 10,
       }],
@@ -220,7 +220,7 @@ describe("controlPlaneCatalogProjects", () => {
       workspaces: [{
         workspace_id: workspaceId,
         project_id: "proj_local",
-        access: "user-hosted",
+        backing: "local-worktree",
         remote_directory: "/private/var/hosts/opencode",
       }],
     }))
@@ -232,35 +232,58 @@ describe("controlPlaneCatalogProjects", () => {
   })
 })
 
-describe("controlPlaneCatalogProjects access kind", () => {
+describe("controlPlaneCatalogProjects placement", () => {
   /**
-   * `access` decides how every later read addresses the workspace, so a row
-   * this build cannot interpret must stop the catalog rather than be rendered
-   * as something openable. A missing kind always did; an unknown one used to
-   * pass straight through the guard and reach the UI as a bad `kind`.
+   * The placement decides how every later read addresses the workspace, so a
+   * row this build cannot interpret must stop the catalog rather than be
+   * rendered as something openable.
    */
-  test("refuses a row whose access kind this build does not know", () => {
+  test("refuses a row whose backing this build does not know", () => {
     expect(() =>
       controlPlaneCatalogProjects({
-        workspaces: [{ workspace_id: "ws_new", project_id: "proj_1", access: "quantum-hosted" }],
+        workspaces: [{ workspace_id: "ws_new", project_id: "proj_1", backing: "quantum-vm" }],
       })
-    ).toThrow("Control-plane workspace row states no access kind: quantum-hosted")
+    ).toThrow("Control-plane workspace row states no placement: quantum-vm")
   })
 
-  test("refuses a row with no access kind at all, and names no kind in the message", () => {
+  test("refuses a row with no backing at all, and names none in the message", () => {
     expect(() =>
       controlPlaneCatalogProjects({
         workspaces: [{ workspace_id: "ws_bare", project_id: "proj_1" }],
       })
-    ).toThrow("Control-plane workspace row states no access kind")
+    ).toThrow("Control-plane workspace row states no placement")
   })
 
-  test.each(["cloud", "user-hosted", "local"])("%s is a kind this build can open", (access) => {
-    const [project] = controlPlaneCatalogProjects({
-      workspaces: [{ workspace_id: "ws_ok", project_id: "proj_1", access }],
-    })
-    expect(Object.values(project?.workspaces ?? {})[0]).toMatchObject({ kind: access })
+  /**
+   * `backing` is a WORD on a list row and an OBJECT on the resolve projection
+   * (`claxedo-server-core`'s `workspaceResponse`, and `signedWorkspaceJson`).
+   * A list route that answers the resolve projection whole therefore sends a
+   * shape no list reader can place, and the throw is the honest outcome: one
+   * such row loses the entire control-plane half of the catalog, because
+   * `workspaceCatalogQuery` catches that rejection where the attached server
+   * owns its own projects.
+   */
+  test("refuses a row carrying the resolve projection's object backing", () => {
+    expect(() =>
+      controlPlaneCatalogProjects({
+        workspaces: [{
+          workspaceId: "ws_cloud",
+          projectId: "proj_1",
+          backing: { kind: "cloud-vm", driver: "fly" },
+        }],
+      })
+    ).toThrow("Control-plane workspace row states no placement")
   })
+
+  test.each([["cloud-vm", "cloud"], ["local-worktree", "user-hosted"]])(
+    "%s is the %s kind this build can open",
+    (backing, kind) => {
+      const [project] = controlPlaneCatalogProjects({
+        workspaces: [{ workspace_id: "ws_ok", project_id: "proj_1", backing }],
+      })
+      expect(Object.values(project?.workspaces ?? {})[0]).toMatchObject({ kind })
+    },
+  )
 })
 
 describe("controlPlaneCatalogProjects project naming", () => {
@@ -274,7 +297,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
         workspace_id: "ws_1",
         project_id: "proj_1",
         display_name: "main",
-        access: "cloud",
+        backing: "cloud-vm",
         remote_directory: "/workspace",
         repo_url: "https://github.com/claxedo/opencode.git",
       }],
@@ -289,7 +312,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
         workspace_id: "ws_1",
         project_id: "proj_1",
         display_name: "main",
-        access: "cloud",
+        backing: "cloud-vm",
         repo_name: "opencode",
         repo_url: "https://github.com/other/thing.git",
       }],
@@ -302,7 +325,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
       workspaces: [{
         workspace_id: "ws_1",
         project_id: "proj_1",
-        access: "cloud",
+        backing: "cloud-vm",
         remote_directory: "/workspace",
         repo_url: "https://github.com/claxedo/opencode.git",
         repo_name: "opencode",
@@ -319,8 +342,8 @@ describe("controlPlaneCatalogProjects project naming", () => {
   test("a later row carrying repo identity upgrades a placeholder project name", () => {
     const [project] = controlPlaneCatalogProjects({
       workspaces: [
-        { workspace_id: "ws_bare", project_id: "proj_1", access: "cloud", remote_directory: "/workspace" },
-        { workspace_id: "ws_repo", project_id: "proj_1", access: "cloud", remote_directory: "/w2", repo_url: "git@github.com:claxedo/opencode.git" },
+        { workspace_id: "ws_bare", project_id: "proj_1", backing: "cloud-vm", remote_directory: "/workspace" },
+        { workspace_id: "ws_repo", project_id: "proj_1", backing: "cloud-vm", remote_directory: "/w2", repo_url: "git@github.com:claxedo/opencode.git" },
       ],
     })
     expect(project?.name).toBe("claxedo/opencode")
@@ -328,11 +351,11 @@ describe("controlPlaneCatalogProjects project naming", () => {
 
   // Both cloud workspaces of one project must survive grouping — this is the
   // list the composer's third select offers as "pick an existing workspace".
-  test("keeps every cloud workspace of a project selectable", () => {
+  test("keeps every provisioner-placed workspace of a project selectable", () => {
     const [project] = controlPlaneCatalogProjects({
       workspaces: [
-        { workspace_id: "ws_1", project_id: "proj_1", access: "cloud", remote_directory: "/workspace", workspace_name: "main" },
-        { workspace_id: "ws_2", project_id: "proj_1", access: "cloud", remote_directory: "/workspace-2", workspace_name: "feature" },
+        { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", remote_directory: "/workspace", workspace_name: "main" },
+        { workspace_id: "ws_2", project_id: "proj_1", backing: "cloud-vm", remote_directory: "/workspace-2", workspace_name: "feature" },
       ],
     })
     expect(Object.keys((project as { workspaces?: Record<string, unknown> }).workspaces ?? {}))
@@ -349,7 +372,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
       workspaces: [{
         workspace_id: "ws_1",
         project_id: "proj_1",
-        access: "cloud",
+        backing: "cloud-vm",
         remote_directory: "/workspace",
         repo_url: "https://github.com/claxedo/opencode.git",
       }],
@@ -361,7 +384,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
     const [project] = mergeWorkspaceCatalog([
       { id: "proj_1", name: "Local Repo", worktree: "/Users/me/repo", sandboxes: [], time: { created: 5, updated: 5 } },
     ], controlPlaneCatalogProjects({
-      workspaces: [{ workspace_id: "ws_1", project_id: "proj_1", access: "cloud", repo_url: "https://github.com/claxedo/opencode.git" }],
+      workspaces: [{ workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", repo_url: "https://github.com/claxedo/opencode.git" }],
     }))
     expect(project?.name).toBe("Local Repo")
   })
@@ -374,19 +397,19 @@ function daemonClient(projects: unknown[]) {
   return { project: { list: async () => ({ data: projects as never }) } }
 }
 
-function controlPlaneFetch(rows: Record<"cloud" | "user-hosted", unknown[]>, calls: string[] = []) {
+function controlPlaneFetch(rows: Record<"provisioner" | "machine", unknown[]>, calls: string[] = []) {
   return (async (input: URL | RequestInfo) => {
     const url = new URL(requestUrl(input))
     calls.push(url.toString())
-    const access = url.searchParams.get("access") as "cloud" | "user-hosted"
-    return Response.json({ workspaces: rows[access] ?? [] })
+    const host = url.searchParams.get("host") as "provisioner" | "machine"
+    return Response.json({ workspaces: rows[host] ?? [] })
   }) as typeof fetch
 }
 
-const userHostedRow = (workspaceId: string, input: Record<string, unknown> = {}) => ({
+const machineRow = (workspaceId: string, input: Record<string, unknown> = {}) => ({
   workspace_id: workspaceId,
   project_id: input.project_id ?? workspaceId,
-  access: "user-hosted",
+  backing: "local-worktree",
   display_name: "Shared Repo",
   ...input,
 })
@@ -399,15 +422,15 @@ describe("workspaceCatalogQuery", () => {
     const options = workspaceCatalogQuery({
       baseUrl: LOOPBACK,
       client: daemonClient([{ id: "proj_local", worktree: "/Users/me/repo", time: { created: 1, updated: 1 } }]),
-      request: controlPlaneFetch({ cloud: [userHostedRow("ws_cloud", { access: "cloud", project_id: "proj_cloud" })], "user-hosted": [] }, calls),
+      request: controlPlaneFetch({ provisioner: [machineRow("ws_cloud", { backing: "cloud-vm", project_id: "proj_cloud" })], machine: [] }, calls),
       signedAccess: true,
     })
 
     const catalog = await options.queryFn()
     expect(catalog.map((project) => project.id).toSorted((a, b) => a.localeCompare(b))).toEqual(["proj_cloud", "proj_local"])
     expect(calls.toSorted((a, b) => a.localeCompare(b))).toEqual([
-      `${LOOPBACK}/api/workspace?access=cloud`,
-      `${LOOPBACK}/api/workspace?access=user-hosted`,
+      `${LOOPBACK}/api/workspace?host=machine`,
+      `${LOOPBACK}/api/workspace?host=provisioner`,
     ])
   })
 
@@ -425,7 +448,7 @@ describe("workspaceCatalogQuery", () => {
           "/Users/me/opencode": { id: workspaceId, kind: "local", directory: "/Users/me/opencode" },
         },
       }]),
-      request: controlPlaneFetch({ cloud: [], "user-hosted": [userHostedRow(workspaceId, { project_id: "proj_local" })] }),
+      request: controlPlaneFetch({ provisioner: [], machine: [machineRow(workspaceId, { project_id: "proj_local" })] }),
       signedAccess: true,
     })
 
@@ -459,7 +482,7 @@ describe("workspaceCatalogQuery", () => {
           },
         },
       },
-      request: controlPlaneFetch({ cloud: [], "user-hosted": [userHostedRow("ws_shared", { role: "viewer", status: "offline" })] }),
+      request: controlPlaneFetch({ provisioner: [], machine: [machineRow("ws_shared", { role: "viewer", status: "offline" })] }),
       signedAccess: true,
     })
 

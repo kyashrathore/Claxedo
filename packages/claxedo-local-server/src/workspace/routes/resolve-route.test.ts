@@ -31,7 +31,6 @@ describe("local workspace resolve route", () => {
       workspaceId: expect.any(String),
       projectId: expect.any(String),
       directory,
-      access: "local",
       backing: { kind: "local-worktree", directory },
       kind: "local",
     })
@@ -63,31 +62,81 @@ describe("local workspace resolve route", () => {
     })
   })
 
-  test("reports an already-registered relay workspace without importing hosted authority", async () => {
+  test("reports a provisioner-placed workspace without importing hosted authority", async () => {
     await ensureWorkspace({
-      workspaceId: "ws_user_hosted",
-      directory: "workspace:ws_user_hosted",
+      workspaceId: "ws_provisioned",
+      directory: "workspace:ws_provisioned",
+      remote_directory: "/workspace",
       kind: "cloud",
+      driver: "daytona",
     })
 
     const response = await LocalWorkspaceRoutes().request(
-      "http://localhost/resolve?workspaceId=ws_user_hosted",
+      "http://localhost/resolve?workspaceId=ws_provisioned",
     )
     expect(response.status).toBe(200)
+    // The placement, which is the fact.
     expect(await response.json()).toMatchObject({
-      workspaceId: "ws_user_hosted",
-      access: "user-hosted",
-      backing: { kind: "user-hosted" },
-      kind: "cloud",
+      workspaceId: "ws_provisioned",
+      backing: { kind: "cloud-vm", driver: "daytona" },
+      directory: "/workspace",
     })
 
-    const listed = await LocalWorkspaceRoutes().request("http://localhost/?access=user-hosted")
+    // The LIST contract, not the resolve one: a bare `backing` word and the
+    // authority's snake-case keys. A client narrows a list row by comparing
+    // that field, so the resolve projection's object `backing` would make it
+    // drop the whole list.
+    const listed = await LocalWorkspaceRoutes().request("http://localhost/?host=provisioner")
     expect(listed.status).toBe(200)
-    await expect(listed.json()).resolves.toMatchObject({
-      workspaces: [expect.objectContaining({ workspaceId: "ws_user_hosted", access: "user-hosted" })],
+    await expect(listed.json()).resolves.toEqual({
+      workspaces: [{
+        workspace_id: "ws_provisioned",
+        project_id: "ws_provisioned",
+        backing: "cloud-vm",
+        remote_directory: "/workspace",
+      }],
     })
+  })
 
-    const cloud = await LocalWorkspaceRoutes().request("http://localhost/?access=cloud")
-    await expect(cloud.json()).resolves.toEqual({ workspaces: [] })
+  // A worktree on this machine is reached over loopback through the project
+  // inventory. Listed here it would carry no `placement.host_enrollment_id`,
+  // and a client reads a machine it cannot place as one it cannot reach.
+  test("lists no worktree of its own, under any host", async () => {
+    const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "listed-")))
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+    await LocalWorkspaceRoutes().request(
+      `http://localhost/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+    )
+
+    for (const scope of ["", "?host=machine", "?host=provisioner"]) {
+      const listed = await LocalWorkspaceRoutes().request(`http://localhost/${scope}`)
+      expect(listed.status, scope).toBe(200)
+      const body = await listed.json() as { workspaces: { remote_directory?: string }[] }
+      expect(body.workspaces.some((row) => row.remote_directory === directory), scope).toBe(false)
+    }
+  })
+
+  test("refuses a host it cannot answer rather than guessing one", async () => {
+    for (const query of ["?host=local", "?host=user-hosted", "?host=cloud"]) {
+      const response = await LocalWorkspaceRoutes().request(`http://localhost/${query}`)
+      expect(response.status, query).toBe(400)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "workspace_host_invalid" } })
+    }
+  })
+
+  // The provisioner owns the machine it provisions, so a row that names no
+  // driver names no machine; the store refuses it rather than keeping a
+  // placement nothing can resolve.
+  test("refuses to store a provisioner row that names no driver", async () => {
+    await expect(ensureWorkspace({
+      workspaceId: "ws_driverless",
+      directory: "workspace:ws_driverless",
+      kind: "cloud",
+    })).resolves.toBeUndefined()
+
+    const response = await LocalWorkspaceRoutes().request(
+      "http://localhost/resolve?workspaceId=ws_driverless",
+    )
+    expect(response.status).toBe(404)
   })
 })

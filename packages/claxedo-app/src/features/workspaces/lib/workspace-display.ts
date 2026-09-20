@@ -1,5 +1,6 @@
 import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { getFilename } from "@opencode-ai/ui/utils/path"
+import { inventoryHostKind, type InventoryKindWord } from "@/platform/runtime/placement-wire"
 
 export { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 
@@ -13,7 +14,7 @@ export type WorkspaceDisplayProject = {
     workspaceId?: string
     directory?: string
     workspace_name?: string | null
-    kind?: "local" | "cloud" | "user-hosted"
+    kind?: InventoryKindWord
     available?: boolean
   }>
 }
@@ -42,7 +43,7 @@ export function workspaceIsCloud(
   input?: { mainIsCloud?: boolean },
 ) {
   const workspace = projectWorkspace(project, directory)
-  if (workspace) return workspace.kind === "cloud"
+  if (workspace) return inventoryHostKind(workspace.kind) === "provisioner"
   if (directory === project.worktree) return !!input?.mainIsCloud
   return false
 }

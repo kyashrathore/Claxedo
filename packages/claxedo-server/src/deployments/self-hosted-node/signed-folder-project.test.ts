@@ -115,12 +115,18 @@ describe("a folder project on the signed self-hosted server", () => {
       { headers },
     )
     expect(resolved.status).toBe(200)
-    await expect(resolved.json()).resolves.toMatchObject({
+    const body = await resolved.json() as Record<string, unknown>
+    expect(body).toMatchObject({
       workspaceId: Object.keys(projects[0].workspaces)[0],
       projectId: project.id,
       directory,
-      access: "user-hosted",
+      backing: { kind: "local-worktree" },
     })
+    // The authority answers for a workspace whose machine it does not serve, so
+    // it states the placement and no inventory kind. A client that read a kind
+    // here would take it for the attached server's own word and open a loopback
+    // runtime for a directory on somebody else's filesystem.
+    expect(body).not.toHaveProperty("kind")
   })
 
   test("stays hidden from a different signed user", async () => {

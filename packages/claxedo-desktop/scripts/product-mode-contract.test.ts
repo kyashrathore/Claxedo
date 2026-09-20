@@ -1,20 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import fs, { readFileSync } from "node:fs"
 import path from "node:path"
 
 import { localServerPackageDir, resolveLocalServerEntry } from "./local-server"
+import { publishedPackageNames } from "./published-packages"
 
 /**
  * Desktop product-mode contract: where identity lives versus where compute
  * runs, and the launch wiring that composes the server the desktop boots.
  *
- * This pins the LAUNCH WIRING. Desktop used to resolve its server
- * in four independent places — the child entry module, `predev`, `prebuild`,
- * and the boot smoke — and three out of four leaves a repository where
- * development works and the packaged build boots the other composition, or
- * vice versa. Unit 11 gave that answer one owner, `scripts/local-server.ts`;
- * `local-server.test.ts` asserts the resolved values, and what remains here is
- * the composition contract those callers sit inside.
+ * The server is resolved by one owner, `scripts/local-server.ts`, for the
+ * child entry module, `predev`, `prebuild` and the boot smoke; a second
+ * resolver leaves a repository where development works and the packaged build
+ * boots the other composition, or vice versa. `local-server.test.ts` asserts
+ * the resolved values; what is here is the composition contract those callers
+ * sit inside.
  */
 
 const packageRoot = path.resolve(import.meta.dir, "..")
@@ -65,15 +65,24 @@ describe("desktop server launch wiring", () => {
     }
   })
 
-  test("both preparation paths build agent-sdk-runtime before workspace-runtime", () => {
+  test("both preparation paths build every published sibling the bundle consumes", () => {
     for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
-      const code = read(script)
-      const agentBuild = code.indexOf("bun run build`.cwd(AGENT_RUNTIME_DIR)")
-      const workspaceBuild = code.indexOf("bun run build`.cwd(WS_RUNTIME_DIR)")
-      expect(agentBuild, `${script} builds agent-sdk-runtime`).toBeGreaterThan(-1)
-      expect(workspaceBuild, `${script} builds workspace-runtime`).toBeGreaterThan(-1)
-      expect(agentBuild, `${script} dependency order`).toBeLessThan(workspaceBuild)
+      expect(read(script), script).toContain("buildPublishedPackages(")
     }
+    const published = publishedPackageNames(path.resolve(packageRoot, "../.."))
+    expect(published).toContain("@claxedo/agent-sdk-runtime")
+    expect(published).toContain("@claxedo/workspace-runtime")
+  })
+
+  // `buildPublishedPackages` hands the whole set to `turbo build`, whose
+  // `^build` edge orders them by the manifests rather than by the order a
+  // script happens to list them in. Workspace-runtime consumes the SDK
+  // runtime's dist, so that edge has to be declared to exist at all.
+  test("turbo can order the SDK runtime before workspace-runtime", () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.resolve(packageRoot, "../workspace-runtime/package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string> }
+    expect(manifest.dependencies?.["@claxedo/agent-sdk-runtime"]).toBeDefined()
   })
 
   test("the renderer boots through the app package entry, not a source-relative path", () => {
@@ -114,7 +123,6 @@ describe("desktop server launch wiring", () => {
 
     expect(Object.keys(deps)).toContain("@claxedo/local-server")
     expect(Object.keys(deps)).toContain("@claxedo/app")
-    // And the reach-through is gone from the entry.
     expect(read("scripts/claxedo-server-entry.ts")).not.toContain("../../claxedo-server/src")
   })
 })

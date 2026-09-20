@@ -14,7 +14,7 @@ describe("contribution registry gates", () => {
       sessionId: "ses_workspace",
       host: "workspace",
       workspaceId: "ws_authz",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_authz", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_authz", hosting: "provisioner" },
     }
     const registry = createContributionRegistry()
     registry.addSurface({

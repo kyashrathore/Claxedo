@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
-  prepareUserHostedRuntime,
+  prepareMachineRuntime,
   prepareWorkspaceRuntime,
   resetWorkspaceRuntimeEnsureCache,
   workspaceRuntimeEnsureQueryKey,
@@ -26,9 +26,8 @@ afterEach(() => {
 
 function connectionBody(workspaceId: string) {
   return {
-    access: "cloud",
     backing: "cloud-vm",
-    runtimeKind: "cloud",
+    sessionAuthority: "managed-private",
     workspaceId,
     role: "owner",
     relayUrl: "http://relay.test",
@@ -37,7 +36,7 @@ function connectionBody(workspaceId: string) {
   }
 }
 
-describe("cloud workspace startup", () => {
+describe("provisioner-placed workspace startup", () => {
 
   test("prepareWorkspaceRuntime reuses resolve and streams startup progress", async () => {
     const request: typeof fetch = mock(async (input, init) => {
@@ -119,7 +118,7 @@ describe("cloud workspace startup", () => {
       onLog: (log) => logs.push(log.step),
     })
 
-    expect(result).toMatchObject({ ok: true, startup: true, workspace: { workspaceId: "ws_hosted_null", kind: "cloud" } })
+    expect(result).toMatchObject({ ok: true, startup: true, workspace: { workspaceId: "ws_hosted_null", kind: "provisioner" } })
     expect(resolved).toEqual([{ workspaceId: "ws_hosted_null", status: "acquiring_sandbox" }])
     expect(logs).toEqual(["acquiring_sandbox", "ready"])
     expect(seen).toContain("http://runtime.test/api/workspace/ws_hosted_null/connection")
@@ -252,72 +251,78 @@ describe("cloud workspace startup", () => {
   })
 })
 
-function userHostedConnectionBody(workspaceId: string) {
+/**
+ * `/api/workspace/:id/connection` for a workspace another machine serves,
+ * field for field as `claxedo-server`'s `hostTunnelConnectionInfo` writes it:
+ * the control plane's wire words, the region, and the machine's own declaration
+ * of how its runtime composes session authority.
+ */
+function machineConnectionBody(workspaceId: string) {
   return {
-    access: "user-hosted",
     backing: "local-worktree",
-    runtimeKind: "user-hosted",
+    sessionAuthority: "local",
     workspaceId,
-    role: "owner",
+    homeRegion: "us-east",
     relayUrl: "https://relay.uh.test",
     runtimeAccessToken: "rat-uh-token",
     tokenExpiresAt: Date.now() + 3_600_000,
+    role: "owner",
   }
 }
 
-describe("prepareUserHostedRuntime", () => {
+describe("prepareMachineRuntime", () => {
   test("mints the relay connection, probes health through the relay, and reports ready", async () => {
     const seen: string[] = []
     const healthProbeInits: (RequestInit | undefined)[] = []
     const request: typeof fetch = mock(async (input, init) => {
       const url = requestUrl(input)
       seen.push(url)
-      if (url === "https://control.test/api/workspace/ws_uh_ready/connection") {
-        return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_ready")), { status: 200 })
+      if (url === "https://control.test/api/workspace/ws_machine_ready/connection") {
+        return new Response(JSON.stringify(machineConnectionBody("ws_machine_ready")), { status: 200 })
       }
-      if (url === "https://relay.uh.test/workspaces/ws_uh_ready/api/wr/health") {
+      if (url === "https://relay.uh.test/workspaces/ws_machine_ready/api/wr/health") {
         healthProbeInits.push(init)
         return new Response(JSON.stringify({ status: "ready" }), { status: 200 })
       }
       throw new Error(`unexpected request: ${url}`)
     })
     const logs: string[] = []
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_ready",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_ready",
       baseUrl: "https://control.test",
       request,
       onLog: (log) => logs.push(log.step),
     })
     expect(result).toMatchObject({ ok: true, status: "ready" })
     // The health probe went through the relay (NOT a central /workspaces URL).
-    expect(seen).toContain("https://relay.uh.test/workspaces/ws_uh_ready/api/wr/health")
+    expect(seen).toContain("https://relay.uh.test/workspaces/ws_machine_ready/api/wr/health")
     // The probe skips the fetch throttle via the local-only marker; the marker
     // must never travel as a wire header (the relay is cross-origin — a header
     // would force a CORS preflight the relay doesn't allow-list).
     expect(healthProbeInits.map((init) => isFetchThrottleBypassed(init))).toEqual([true])
     expect(healthProbeInits.map((init) => new Headers(init?.headers).has("x-fetch-bypass-throttle"))).toEqual([false])
-    expect(seen.some((u) => u === "https://control.test/workspaces/ws_uh_ready/api/wr/health")).toBe(false)
-    // The connecting sequence is the user-hosted set, NOT cloud sandbox steps.
+    expect(seen.some((u) => u === "https://control.test/workspaces/ws_machine_ready/api/wr/health")).toBe(false)
+    // The connecting sequence is a machine's, NOT the provisioner's sandbox steps.
     expect(logs).toEqual(["connecting_workspace", "establishing_relay", "checking_health", "ready"])
     expect(logs).not.toContain("acquiring_sandbox")
   })
 
-  test("reports offline after retrying when the relay stays 503 user_hosted_app_offline", async () => {
+  test("reports offline after retrying when the relay stays 503 host_tunnel_offline", async () => {
     let probes = 0
     const request: typeof fetch = mock(async (input) => {
       const url = requestUrl(input)
-      if (url === "https://control.test/api/workspace/ws_uh_offline/connection") {
-        return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_offline")), { status: 200 })
+      if (url === "https://control.test/api/workspace/ws_machine_offline/connection") {
+        return new Response(JSON.stringify(machineConnectionBody("ws_machine_offline")), { status: 200 })
       }
-      if (url === "https://relay.uh.test/workspaces/ws_uh_offline/api/wr/health") {
+      if (url === "https://relay.uh.test/workspaces/ws_machine_offline/api/wr/health") {
         probes += 1
-        return new Response(JSON.stringify({ error: { code: "user_hosted_app_offline" } }), { status: 503 })
+        return new Response(JSON.stringify({ error: { code: "host_tunnel_offline" } }), { status: 503 })
       }
       throw new Error(`unexpected request: ${url}`)
     })
     const logs: string[] = []
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_offline",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_offline",
       baseUrl: "https://control.test",
       request,
       maxHealthAttempts: 3,
@@ -337,10 +342,10 @@ describe("prepareUserHostedRuntime", () => {
     let probes = 0
     const request: typeof fetch = mock(async (input) => {
       const url = requestUrl(input)
-      if (url === "https://control.test/api/workspace/ws_uh_flaky/connection") {
-        return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_flaky")), { status: 200 })
+      if (url === "https://control.test/api/workspace/ws_machine_flaky/connection") {
+        return new Response(JSON.stringify(machineConnectionBody("ws_machine_flaky")), { status: 200 })
       }
-      if (url === "https://relay.uh.test/workspaces/ws_uh_flaky/api/wr/health") {
+      if (url === "https://relay.uh.test/workspaces/ws_machine_flaky/api/wr/health") {
         probes += 1
         // First two probes hit the DO presence-registration gap (409), then ready.
         if (probes < 3) {
@@ -350,8 +355,8 @@ describe("prepareUserHostedRuntime", () => {
       }
       throw new Error(`unexpected request: ${url}`)
     })
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_flaky",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_flaky",
       baseUrl: "https://control.test",
       request,
       maxHealthAttempts: 5,
@@ -365,10 +370,10 @@ describe("prepareUserHostedRuntime", () => {
     let probes = 0
     const request: typeof fetch = mock(async (input) => {
       const url = requestUrl(input)
-      if (url === "https://control.test/api/workspace/ws_uh_fast_offline/connection") {
-        return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_fast_offline")), { status: 200 })
+      if (url === "https://control.test/api/workspace/ws_machine_fast_offline/connection") {
+        return new Response(JSON.stringify(machineConnectionBody("ws_machine_fast_offline")), { status: 200 })
       }
-      if (url === "https://relay.uh.test/workspaces/ws_uh_fast_offline/api/wr/health") {
+      if (url === "https://relay.uh.test/workspaces/ws_machine_fast_offline/api/wr/health") {
         probes += 1
         if (probes === 1) {
           return new Response(JSON.stringify({ error: { code: "relay_resolver_workspace_target_unavailable" } }), { status: 409 })
@@ -378,8 +383,8 @@ describe("prepareUserHostedRuntime", () => {
       throw new Error(`unexpected request: ${url}`)
     })
     const offlineSignals: string[] = []
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_fast_offline",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_fast_offline",
       baseUrl: "https://control.test",
       request,
       maxHealthAttempts: 3,
@@ -397,10 +402,10 @@ describe("prepareUserHostedRuntime", () => {
     let probes = 0
     const request: typeof fetch = mock(async (input, init) => {
       const url = requestUrl(input)
-      if (url === "https://control.test/api/workspace/ws_uh_hang/connection") {
-        return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_hang")), { status: 200 })
+      if (url === "https://control.test/api/workspace/ws_machine_hang/connection") {
+        return new Response(JSON.stringify(machineConnectionBody("ws_machine_hang")), { status: 200 })
       }
-      if (url === "https://relay.uh.test/workspaces/ws_uh_hang/api/wr/health") {
+      if (url === "https://relay.uh.test/workspaces/ws_machine_hang/api/wr/health") {
         probes += 1
         // First probe hangs until its AbortController fires, then ready.
         if (probes < 2) {
@@ -413,8 +418,8 @@ describe("prepareUserHostedRuntime", () => {
       }
       throw new Error(`unexpected request: ${url}`)
     })
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_hang",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_hang",
       baseUrl: "https://control.test",
       request,
       maxHealthAttempts: 4,
@@ -429,17 +434,17 @@ describe("prepareUserHostedRuntime", () => {
     let probes = 0
     const request: typeof fetch = mock(async (input) => {
       const url = requestUrl(input)
-      if (url === "https://control.test/api/workspace/ws_uh_err/connection") {
-        return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_err")), { status: 200 })
+      if (url === "https://control.test/api/workspace/ws_machine_err/connection") {
+        return new Response(JSON.stringify(machineConnectionBody("ws_machine_err")), { status: 200 })
       }
-      if (url === "https://relay.uh.test/workspaces/ws_uh_err/api/wr/health") {
+      if (url === "https://relay.uh.test/workspaces/ws_machine_err/api/wr/health") {
         probes += 1
         return new Response("boom", { status: 500 })
       }
       throw new Error(`unexpected request: ${url}`)
     })
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_err",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_err",
       baseUrl: "https://control.test",
       request,
       maxHealthAttempts: 5,
@@ -454,13 +459,13 @@ describe("prepareUserHostedRuntime", () => {
   test("reports offline when the connection mint itself fails", async () => {
     const request: typeof fetch = mock(async (input) => {
       const url = requestUrl(input)
-      if (url === "https://control.test/api/workspace/ws_uh_mintfail/connection") {
+      if (url === "https://control.test/api/workspace/ws_machine_mintfail/connection") {
         return new Response("forbidden", { status: 403 })
       }
       throw new Error(`unexpected request: ${url}`)
     })
-    const result = await prepareUserHostedRuntime({
-      workspaceId: "ws_uh_mintfail",
+    const result = await prepareMachineRuntime({
+      workspaceId: "ws_machine_mintfail",
       baseUrl: "https://control.test",
       request,
       maxHealthAttempts: 1,

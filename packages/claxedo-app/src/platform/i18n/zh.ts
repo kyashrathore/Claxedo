@@ -309,7 +309,7 @@ export const dict = {
   "prompt.action.readOnlyWorkspace": "只读工作区",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 无法使用此附件",
   "prompt.toast.attachmentHarnessUnsupported.description":
-    "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的本地工作区。",
+    "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的工作区文件夹。",
   "prompt.toast.attachmentUnreadable.title": "无法读取附件",
   "prompt.toast.attachmentUnreadable.description":
     "无法从此设备读取 {{filename}}。",
@@ -445,7 +445,7 @@ export const dict = {
 
   "home.recentProjects": "最近项目",
   "home.empty.title": "没有最近项目",
-  "home.empty.description": "通过打开本地项目开始使用",
+  "home.empty.description": "通过打开这台电脑上的文件夹开始使用",
   "home.title": "主页",
   "session.timeline.scrollToBottom": "滚动到最新消息",
 
@@ -504,12 +504,6 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "项目和会话",
   "sidebar.settings": "设置",
   "sidebar.help": "帮助",
-  "sidebar.workspace.role.viewer": "查看者",
-  "sidebar.workspace.role.editor": "编辑者",
-  "sidebar.workspace.role.admin": "管理员",
-  "sidebar.workspace.hostOffline": "主机离线",
-  "sidebar.workspace.sharedWithYou": "已共享给你",
-  "sidebar.workspace.publishedByThisMachine": "由本机发布",
 
 
   "settings.section.desktop": "桌面",
@@ -684,8 +678,6 @@ export const dict = {
   "session.delete.button": "删除会话",
 
   "workspace.new": "新建工作区",
-  "workspace.type.local": "本地",
-  "workspace.type.sandbox": "沙盒",
   "workspace.error.stillPreparing": "工作区仍在准备中",
   "workspace.status.checking": "正在检查未合并的更改...",
   "workspace.status.error": "无法验证 git 状态。",

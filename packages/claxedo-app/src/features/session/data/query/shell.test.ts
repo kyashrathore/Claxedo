@@ -56,8 +56,8 @@ describe("shell query helpers", () => {
     expect(commandListQuery({
       ...base,
       harnessType: "opencode",
-      workspace: { kind: "cloud", workspaceId: "ws_1" } as Parameters<typeof commandListQuery>[0]["workspace"],
-    }).queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws", "opencode", "cloud:ws_1"])
+      workspace: { kind: "provisioner", workspaceId: "ws_1" } as Parameters<typeof commandListQuery>[0]["workspace"],
+    }).queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws", "opencode", "provisioner:ws_1"])
   })
 
   test("commandListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {
@@ -91,7 +91,7 @@ describe("shell query helpers", () => {
     expect(resolves).toBe(1)
   })
 
-  test("commandListQuery routes loopback cloud workspaces through the local workspace proxy when request is supplied", async () => {
+  test("commandListQuery routes loopback provisioner-placed workspaces through this machine's workspace proxy when request is supplied", async () => {
     const calls: string[] = []
     const query = commandListQuery({
       baseUrl: "http://127.0.0.1:3001",
@@ -110,7 +110,7 @@ describe("shell query helpers", () => {
       workspace: {
         workspaceId: "ws_1",
         directory: "/tmp/ws",
-        kind: "cloud",
+        kind: "provisioner",
       },
       client: {
         command: {
@@ -125,7 +125,7 @@ describe("shell query helpers", () => {
     expect(calls).toEqual(["GET http://127.0.0.1:3001/workspaces/ws_1/command"])
   })
 
-  test("commandListQuery routes signed cloud workspaces through the relay when request is supplied", async () => {
+  test("commandListQuery routes signed provisioner-placed workspaces through the relay when request is supplied", async () => {
     const calls: string[] = []
     const query = commandListQuery({
       baseUrl: "https://control.test",
@@ -136,8 +136,8 @@ describe("shell query helpers", () => {
         const url = new URL(req.url)
         if (url.pathname === "/api/workspace/ws_cloud/connection") {
           return new Response(JSON.stringify({
-            access: "cloud",
             backing: "cloud-vm",
+            sessionAuthority: "managed-private",
             workspaceId: "ws_cloud",
             role: "owner",
             relayUrl: "https://relay.test",
@@ -153,7 +153,7 @@ describe("shell query helpers", () => {
       workspace: {
         workspaceId: "ws_cloud",
         directory: "/tmp/ws",
-        kind: "cloud",
+        kind: "provisioner",
       },
       client: {
         command: {
@@ -168,7 +168,7 @@ describe("shell query helpers", () => {
     expect(calls.some((call) => call.includes("/api/claxedo/agent-config/commands"))).toBe(false)
   })
 
-  test("commandListQuery uses Claxedo command config API for local workspaces", async () => {
+  test("commandListQuery uses Claxedo command config API for workspaces this machine serves", async () => {
     const calls: string[] = []
     const query = commandListQuery({
       baseUrl: "http://claxedo.test/",
@@ -184,7 +184,7 @@ describe("shell query helpers", () => {
       workspace: {
         workspaceId: "ws_local",
         directory: "/tmp/ws",
-        kind: "local",
+        kind: "self",
       },
       client: {
         command: {
@@ -217,7 +217,7 @@ describe("shell query helpers", () => {
         workspace: {
           workspaceId: "ws_local",
           directory: "/tmp/ws",
-          kind: "local",
+          kind: "self",
         },
         client: {
           command: {

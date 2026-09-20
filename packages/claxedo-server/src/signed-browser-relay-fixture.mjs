@@ -30,21 +30,20 @@ import {
   shutdownWorkspaceSupervisor,
 } from "./workspace/supervisor/index.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
-import { ensureWorkspace, updateWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
-  startUserHostedWorkspaceTunnel,
-  stopAllUserHostedWorkspaceTunnels,
-  stopUserHostedWorkspaceTunnel,
-} from "./user-hosted-tunnel.ts"
+  startWorkspaceHostTunnel,
+  stopAllWorkspaceHostTunnels,
+  stopWorkspaceHostTunnel,
+} from "./host-tunnel.ts"
 import {
-  hostEnrollmentHeartbeatPayloadV2,
   hostEnrollmentPayload,
   localHostIdentity,
   signHostPayload,
 } from "./workspace/local-host.ts"
 import { createFixedWindowConnectionRateLimiter } from "./platform/auth/rate-limit.ts"
 import { hostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { createSqliteUserHostedTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/user-hosted-relay-target"
+import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/host-tunnel-relay-target"
 import {
   connectFixtureRoutes,
   createConnectInstances,
@@ -56,7 +55,7 @@ import {
 const execFileAsync = promisify(execFile)
 const workspaceId = process.env.CLAXEDO_E2E_WORKSPACE_ID?.trim() || "ws_signed_browser_relay"
 const projectId = "proj_signed_browser_relay"
-const access = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ACCESS === "cloud" ? "cloud" : "user-hosted"
+const backing = process.env.CLAXEDO_E2E_RELAY_FIXTURE_BACKING === "cloud-vm" ? "cloud-vm" : "local-worktree"
 // `embedded`: this process is the host (the desktop shape) and registers,
 // assigns and beats for one workspace in-process. `connect`: no host in this
 // process at all — the spec spawns real `claxedo connect` children through
@@ -64,7 +63,7 @@ const access = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ACCESS === "cloud" ? "cloud
 // and the relay child asks this control plane for targets, revocation and
 // serving generations exactly as a deployed relay does.
 const hostMode = process.env.CLAXEDO_E2E_RELAY_FIXTURE_HOST === "connect" ? "connect" : "embedded"
-if (hostMode === "connect" && access === "cloud") throw new Error("connect host mode is user-hosted only")
+if (hostMode === "connect" && backing === "cloud-vm") throw new Error("connect host mode serves a local-worktree placement only")
 const requestedRole = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ROLE?.trim()
 const role =
   requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner" ? requestedRole : "editor"
@@ -82,7 +81,7 @@ function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
   if (!normalized || normalized.endsWith(":0")) return
   process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] = `${normalized}/api/runtime-authority/session-authorize`
 }
-// Overridable so live-user-hosted-relay.spec.ts's token-refresh scenario can
+// Overridable so live-host-tunnel-relay.spec.ts's token-refresh scenario can
 // force `tokenExpiresAt` inside `refreshWindowMs` (default 60s, see
 // `src/utils/workspace-relay-connection.ts`'s `ensureFresh`) almost
 // immediately after mint, without waiting out a real 120s TTL.
@@ -111,16 +110,16 @@ if (scriptedModelUrl) {
 // embedded runtime with no runner, and every route that names no harness
 // (`GET /command`, `GET /agent`) fails with `workspace_harness_not_configured`.
 // This is the write `POST /api/claxedo/agent-config/harness` performs, made
-// before the user-hosted tunnel below creates the embedded runtime that reads
+// before the host tunnel below creates the embedded runtime that reads
 // it. The control plane pushes no config snapshot to the cloud runtime this
 // fixture hosts, so `startCloudRuntime` selects the same harness directly.
 await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "native", harnessId: "pi" } })
 
-// A user-hosted tunnel and the control-plane Local Host Link are two views of
-// the same machine identity. Use the product's canonical persisted identity
+// The relay host tunnel and the control plane's host enrollment are two views
+// of the same machine identity. Use the product's canonical persisted identity
 // for both; a fixture-only host id creates a live relay tunnel that
 // `GET /api/workspace/:id/connection` correctly refuses as unregistered.
-const fixtureLocalHostIdentity = access === "cloud" || hostMode === "connect" ? undefined : await localHostIdentity()
+const fixtureLocalHostIdentity = backing === "cloud-vm" || hostMode === "connect" ? undefined : await localHostIdentity()
 const hostId =
   fixtureLocalHostIdentity?.hostId ?? process.env.CLAXEDO_E2E_HOST_ID?.trim() ?? "host_signed_browser_relay"
 const resolverToken = hostMode === "connect" ? `resolver_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}` : undefined
@@ -219,8 +218,8 @@ async function startCloudRuntime(input) {
   //      separate HTTP server the browser has no URL for, so a non-zero count is
   //      positive proof the traffic genuinely crossed the relay hop rather than
   //      being served by anything the page could reach directly.
-  //   2. PAUSE — cloud mode has no host tunnel to stop (that is the user-hosted
-  //      shape), so `/__fixture/tunnel/pause` does not exist here. This gate is
+  //   2. PAUSE — cloud mode has no host tunnel to stop (that is the
+  //      machine-placed shape), so `/__fixture/tunnel/pause` does not exist here. This gate is
   //      the cloud-mode equivalent: while paused the relay's forwarded request
   //      fails at the far end, which is what makes the "relay is load-bearing"
   //      negative proof possible in this lane at all.
@@ -291,7 +290,7 @@ function relayAllowedOrigins() {
 async function startRelayFixture(input) {
   const logs = []
   const allowedOrigins = relayAllowedOrigins()
-  const child = spawn("bun", ["src/user-hosted-relay-fixture.mjs"], {
+  const child = spawn("bun", ["src/host-tunnel-relay-fixture.mjs"], {
     cwd: process.cwd(),
     env: {
       ...process.env,
@@ -538,9 +537,8 @@ const workspace = hostMode === "connect" ? undefined : await ensureWorkspace({
   workspace_name: "Signed Browser Relay",
   // Cloud mode needs this on the row for the loopback relay proxy to mint a
   // runtime access token (`runtime-dispatch/internals.ts`'s `ensureCloudRuntime`
-  // gates on `relayProvider && ws.org_id`). Set at CREATE time:
-  // `updateWorkspace`'s patch type does not include `org_id`.
-  ...(access === "cloud" ? { org_id: fixtureOrgId } : {}),
+  // gates on `relayProvider && ws.org_id`).
+  ...(backing === "cloud-vm" ? { org_id: fixtureOrgId } : {}),
 })
 if (!workspace && hostMode === "embedded") throw new Error("Signed browser relay workspace was not stored")
 
@@ -548,15 +546,21 @@ let effectiveWorkspace = workspace
 if (hostMode === "connect") {
   // Nothing to register: the host, its enrollment and its assignments are all
   // created by the spec through the real CLI against the routes below.
-} else if (access === "cloud") {
+} else if (backing === "cloud-vm") {
   cloudRuntime = await startCloudRuntime({
     relayHostPublicKey: relayHost.publicKey,
     controlPlaneUrl: backendUrl,
   })
-  const cloudWorkspace = await updateWorkspace(workspaceId, {
+  // Through `ensureWorkspace` rather than `updateWorkspace`: the store refuses
+  // a cloud row with no driver, and `updateWorkspace`'s patch carries neither
+  // `kind` nor `driver`, so the untyped `.mjs` call would have written the one
+  // shape the store exists to reject.
+  const cloudWorkspace = await ensureWorkspace({
+    workspaceId,
+    directory: workspaceDir,
     kind: "cloud",
+    driver: "cloudflare",
     status: "ready",
-    sandbox_id: hostId,
   })
   effectiveWorkspace = cloudWorkspace ?? workspace
   recordSupervisorSandboxLeaseReady({
@@ -576,21 +580,21 @@ if (hostMode === "connect") {
     ...collaborativeOrgArgs,
   })
 } else {
-  if (!fixtureLocalHostIdentity) throw new Error("User-hosted fixture identity was not initialized")
+  if (!fixtureLocalHostIdentity) throw new Error("Host-tunnel fixture identity was not initialized")
   await authority.registerLocalForSharing(browserAuth, {
     workspaceId,
     projectId,
     displayName: "Signed Browser Relay",
     // Real filesystem directory the embedded workspace-runtime actually
-    // serves — `routes/bootstrap.ts`'s `signedBootstrapProjects()` reads
-    // `remote_directory`, and the client's `sessionWorkspaceRuntimeRef`
-    // inventory match needs this to agree with the real directory. NOTE:
-    // `createCloudWorkspace` (used above for `access === "cloud"`) has NO
+    // serves. The signed bootstrap inventory projects `remote_directory`, and
+    // the client's `sessionWorkspaceRuntimeRef` match needs it to agree with
+    // the directory on disk. NOTE:
+    // `createCloudWorkspace` (used above for `backing === "cloud-vm"`) has NO
     // `remoteDirectory` parameter on the real `WorkspaceAuthority` port
     // (`platform/auth/authority.ts:158-172`) — this is a genuine gap in the
     // real port, not something this fixture can route around; cloud-mode
     // routing already gets its directory from the SEPARATE `workspace/store`
-    // row (`ensureWorkspace`/`updateWorkspace`, above), which is unaffected.
+    // row (`ensureWorkspace`, above), which is unaffected.
     remoteDirectory: workspaceDir,
     repoName: "claxedo",
     gitBranch: "main",
@@ -598,14 +602,14 @@ if (hostMode === "connect") {
   })
 
   // Starting the relay tunnel above proves transport availability, while the
-  // machine-wide enrollment + owner assignment + signed v2 heartbeat is the
+  // machine-wide enrollment + owner assignment + machine beat is the
   // authoritative control-plane presence record used to mint browser
   // connection credentials. Run it through the real SQLite authority with the
-  // same enroll/assign/beat contract as the public routes, so terminal and
-  // runtime-event clients exercise the production flow: routable = owner-
-  // assigned AND machine-acked AND live lease.
+  // same enroll/assign/acquire/beat contract as the public routes, so terminal
+  // and runtime-event clients exercise the production flow: routable = owner-
+  // assigned AND acked at the owner's current revision AND live lease.
   const enrollmentRequest = await authority.createHostEnrollmentRequest(browserAuth, { hostId })
-  await authority.enrollHost(browserAuth, {
+  const hostEnrollment = await authority.enrollHost(browserAuth, {
     hostId,
     publicKey: fixtureLocalHostIdentity.publicKey,
     requestId: enrollmentRequest.request_id,
@@ -619,21 +623,45 @@ if (hostMode === "connect") {
     ),
     displayName: "Signed Browser Relay Host",
   })
-  await authority.assignWorkspaceHost(browserAuth, { workspaceId, hostId })
-  const beatHostEnrollment = () => authority.heartbeatHostEnrollment(browserAuth, {
-    hostId,
-    ttlMs: 60_000,
-    workspaceIds: [workspaceId],
-    // Read off the policy this machine's runtimes actually mount, never a
-    // literal — the whole point of the declaration is that it comes from the
-    // composition.
-    sessionAuthority: embeddedSessionPolicy.sessionAuthority,
-    signature: signHostPayload(
-      fixtureLocalHostIdentity,
-      hostEnrollmentHeartbeatPayloadV2({ hostId, ttlMs: 60_000, workspaceIds: [workspaceId] }),
-    ),
-  })
-  // The first beat acks the served set so the assignment is routable before
+  await authority.assignWorkspaceHost(browserAuth, { workspaceId, hostId, remoteDirectory: workspaceDir })
+  // The machine caller the verifier builds for a signed request. This fixture
+  // holds the authority in its own process, so there is no wire to sign
+  // across; the row is read fresh per beat because the key version and serving
+  // generation on it are what every write re-asserts.
+  const machineCaller = async () => {
+    const row = await authority.machineAuth.lookupEnrollment(hostEnrollment.enrollment_id)
+    if (!row) throw new Error("signed-browser-relay-fixture: the host enrollment is gone")
+    return {
+      enrollmentId: row.enrollment_id,
+      hostId: row.host_id,
+      ownerUserId: row.owner_user_id,
+      ownerActorId: row.owner_actor_id,
+      scope: row.scope,
+      keyVersion: row.key_version,
+      generation: row.serving_generation,
+    }
+  }
+  const { generation } = await authority.acquireHostServingGeneration(await machineCaller())
+  const beatHostEnrollment = async () => {
+    const declared = (await authority.listHostEnrollments(browserAuth))
+      .find((row) => row.host_id === hostId)?.assignments ?? []
+    return await authority.heartbeatHostEnrollmentByMachine(await machineCaller(), {
+      enrollmentId: hostEnrollment.enrollment_id,
+      hostId,
+      generation,
+      ttlMs: 60_000,
+      // Read off the policy this machine's runtimes actually mount, never a
+      // literal — the whole point of the declaration is that it comes from the
+      // composition.
+      sessionAuthority: embeddedSessionPolicy.sessionAuthority,
+      // Only an ack at the revision the owner currently describes makes the
+      // workspace routable, so the revision is read back rather than assumed.
+      acks: declared
+        .filter((assignment) => assignment.workspace_id === workspaceId)
+        .map((assignment) => ({ workspaceId: assignment.workspace_id, revision: assignment.revision })),
+    })
+  }
+  // The first beat acks the described set so the assignment is routable before
   // any spec asks for a connection.
   await beatHostEnrollment()
 
@@ -751,12 +779,12 @@ const services = createControlPlaneServices(
       relayUrl: publicRelayUrl,
       runtimeAccessTokenSigner,
       ...(hostMode === "connect" ? { resolverToken, hostTunnelTokenSigner: hostTunnelTokenSigner(process.env) } : {}),
-      userHostedResolver: createSqliteUserHostedTargetResolver(),
+      hostTunnelResolver: createSqliteHostTunnelTargetResolver(),
       // `proxy.ts`'s `localWorkspaceRelayProxy` is the path the
       // app actually takes for a relay-backed workspace on a LOOPBACK server URL
       // (`workspace-runtime-request.ts:223` — the relay is used directly only
       // when `preferRelayOnLoopback`, i.e. signed mode). That proxy forwards to
-      // the cloud or user-hosted runtime behind relay-host auth, and it mints the
+      // the cloud-vm or machine-placed runtime behind relay-host auth, and it mints the
       // required token ONLY when a `relayProvider` is configured AND the
       // workspace row carries an `org_id` (`proxy.ts:105`). Without both, every
       // forwarded request arrives with the browser's own bearer token and the
@@ -820,7 +848,7 @@ const services = createControlPlaneServices(
     },
   },
 )
-const sessionTitle = access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session"
+const sessionTitle = backing === "cloud-vm" ? "Signed cloud relay session" : "Signed browser relay session"
 const sessionRegistration = {
   operationId: "op_signed_browser_relay",
   sessionId: "signed-browser-relay-session",
@@ -855,7 +883,7 @@ if (hostMode === "embedded") {
         sessionID: "signed-browser-relay-session",
         messageID: "msg_signed_browser_relay",
         type: "text",
-        text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
+        text: backing === "cloud-vm" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
       },
     },
   })
@@ -873,7 +901,7 @@ if (hostMode === "embedded") {
           sessionID: "signed-browser-relay-session",
           messageID: "msg_signed_browser_relay",
           type: "text",
-          text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
+          text: backing === "cloud-vm" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
         },
       ],
     },
@@ -950,11 +978,11 @@ const built = createSelfHostedApp(services, {
   // for that workload.
   connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 10_000, windowMs: 60_000 }),
 })
-if (access === "user-hosted" && hostMode === "embedded") {
+if (backing === "local-worktree" && hostMode === "embedded") {
   // Tunnel startup can create/cache the workspace runtime, and runtime policy
   // configuration is intentionally not retroactive. Start only after the
   // authority-backed factory above is ready.
-  await startUserHostedWorkspaceTunnel({
+  await startWorkspaceHostTunnel({
     workspaceId,
     hostId,
     relayUrl,
@@ -1000,13 +1028,13 @@ built.app.get("/__fixture/desktop-stats", (c) =>
   }),
 )
 
-// Debug-only surface for live-user-hosted-relay.spec.ts (Tier L). NOT part of
+// Debug-only surface for live-host-tunnel-relay.spec.ts (Tier L). NOT part of
 // the product API — these routes exist so the spec can drive real host-tunnel
 // lifecycle events (pause/resume) and mint an arbitrary-role token against
 // the SAME already-running workspace/relay/tunnel, without spinning up a
 // second full fixture process per role. Real @claxedo/workspace-relay JWT
-// minting and the real user-hosted tunnel lifecycle
-// (start/stopUserHostedWorkspaceTunnel) are exercised either way — this is
+// minting and the real host tunnel lifecycle
+// (start/stopWorkspaceHostTunnel) are exercised either way — this is
 // test orchestration, not a mocked response.
 if (hostMode === "embedded") built.app.get("/__fixture/mint", async (c) => {
   const role = c.req.query("role")
@@ -1023,7 +1051,7 @@ if (hostMode === "embedded") built.app.get("/__fixture/mint", async (c) => {
       // relay rejects this token with `relay_token_host_mismatch`. In cloud mode
       // that identity is the WORKSPACE id (see `startCloudRuntime`'s note) — the
       // same value the product's own `/api/workspace/:id/connection` mints.
-      hostId: access === "cloud" ? workspaceId : hostId,
+      hostId: backing === "cloud-vm" ? workspaceId : hostId,
       role,
       ttlSeconds: tokenTtlSeconds,
       jti: `fixture_mint_${now}`,
@@ -1036,25 +1064,22 @@ if (hostMode === "embedded") built.app.get("/__fixture/mint", async (c) => {
 })
 // A teammate identity: a second control-plane JWT from the same issuer for a
 // distinct `sub` (the sqlite authority upserts one row per `token_identifier`),
-// granted a share on this fixture's workspace through `grantWorkspaceShare`,
-// the method the product's own invite flow calls.
+// ranked on the project behind this fixture's workspace at the requested
+// role. `projectMembership=0` withholds that rank.
 built.app.get("/__fixture/authority-identity", async (c) => {
   const subject = c.req.query("subject")
   const role = c.req.query("role")
   const name = c.req.query("name")?.trim()
-  const grantWorkspaceShare = c.req.query("grantWorkspaceShare") !== "0"
+  const projectMembership = c.req.query("projectMembership") !== "0"
   const joinOrg = c.req.query("joinOrg") === "1"
-  // Connect mode has no fixed workspace, so the share names the one the
-  // owner assigned; the embedded lanes keep their single workspace.
+  // Connect mode has no fixed workspace, so the rank names the project behind
+  // the one the owner assigned; the embedded lanes keep their single workspace.
   const sharedWorkspaceId = c.req.query("workspaceId") ?? workspaceId
   if (!subject) return c.json({ error: "subject is required" }, 400)
   if (role !== "viewer" && role !== "editor" && role !== "admin") {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
   }
   const tokenIdentifier = `${jwksIssuer.issuer}|${subject}`
-  // `grantWorkspaceShare` refuses unknown targets (`requireExisting: true`).
-  // Upsert the teammate first so a fresh `sub` is a real user row, the same
-  // way the product invite flow resolves the collaborator before writing the grant.
   await authority.usersMe({
     mode: "signed",
     token: "",
@@ -1065,15 +1090,19 @@ built.app.get("/__fixture/authority-identity", async (c) => {
     },
   })
   if (joinOrg) {
-    if (!collaborativeOrgName) {
-      return c.json({ error: "joinOrg requires a collaborative fixture organization" }, 400)
-    }
+    // The organization that owns the workspace, not the fixture's own: a
+    // connect host's workspace lands in the owner's personal org, and being a
+    // member of THAT org is what makes a teammate offerable a session share.
+    const owningOrg = authorityDb()
+      .prepare(`SELECT org_id FROM workspaces WHERE workspace_id = ?`)
+      .get(sharedWorkspaceId)
+    if (!owningOrg) return c.json({ error: `joinOrg found no workspace ${sharedWorkspaceId}` }, 400)
     const now = Date.now()
     authorityDb().prepare(`
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
       VALUES (?, ?, 'member', ?, ?)
       ON CONFLICT (org_id, token_identifier) DO UPDATE SET role = 'member', updated_at = excluded.updated_at
-    `).run(fixtureOrgId, tokenIdentifier, now, now)
+    `).run(owningOrg.org_id, tokenIdentifier, now, now)
   }
   if (name) {
     upsertUser(authorityDb(), {
@@ -1084,15 +1113,20 @@ built.app.get("/__fixture/authority-identity", async (c) => {
       kind: "human",
     })
   }
-  // Org→Team proofs mint Bob without a direct workspace share so access comes
-  // from team membership + team_project_grants. Casey keeps a user workspace
-  // share (default) to prove workspace access alone does not unlock sessions.
-  if (grantWorkspaceShare) {
-    await authority.grantWorkspaceShare(browserAuth, {
-      workspaceId: sharedWorkspaceId,
-      role,
-      target: { kind: "actor", actorId: tokenIdentifier },
-    })
+  // Org→Team proofs mint Bob with no rank of his own so access comes from
+  // team membership + team_project_grants. Casey keeps the project rank
+  // (default) to prove workspace access alone does not unlock sessions.
+  if (projectMembership) {
+    const now = Date.now()
+    const project = authorityDb()
+      .prepare(`SELECT project_id FROM workspaces WHERE workspace_id = ?`)
+      .get(sharedWorkspaceId)
+    if (!project?.project_id) return c.json({ error: "fixture workspace has no project" }, 500)
+    authorityDb().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (project_id, token_identifier) DO UPDATE SET role = excluded.role, updated_at = excluded.updated_at
+    `).run(project.project_id, tokenIdentifier, role, now, now)
   }
   const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })
   return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token, ...(name ? { name } : {}) })
@@ -1114,13 +1148,13 @@ if (hostMode === "connect") {
       user: { subject, tokenIdentifier: `${jwksIssuer.issuer}|${subject}`, issuer: jwksIssuer.issuer },
     }),
   })
-} else if (access !== "cloud") {
+} else if (backing !== "cloud-vm") {
   built.app.post("/__fixture/tunnel/pause", async (c) => {
-    const stopped = stopUserHostedWorkspaceTunnel({ workspaceId, hostId })
+    const stopped = stopWorkspaceHostTunnel({ workspaceId, hostId })
     return c.json({ paused: stopped })
   })
   built.app.post("/__fixture/tunnel/resume", async (c) => {
-    const result = await startUserHostedWorkspaceTunnel({
+    const result = await startWorkspaceHostTunnel({
       workspaceId,
       hostId,
       relayUrl,
@@ -1137,11 +1171,11 @@ if (hostMode === "connect") {
     return c.json({ resumed: true, reused: result.reused })
   })
 } else {
-  // Cloud-mode peers of the user-hosted tunnel routes above. There is no host
+  // Cloud-mode peers of the host tunnel routes above. There is no host
   // tunnel to stop in this shape — the relay forwards straight to the injected
   // cloud runtime — so pausing means refusing at that runtime instead. Same
   // purpose for `real-cloud-relay.spec.ts` as pause/resume serve for the
-  // user-hosted spec: prove the relay hop is load-bearing by breaking it.
+  // machine-placed spec: prove the relay hop is load-bearing by breaking it.
   built.app.post("/__fixture/cloud-runtime/pause", (c) => {
     if (cloudRuntime) cloudRuntime.stats.paused = true
     return c.json({ paused: !!cloudRuntime })
@@ -1252,7 +1286,7 @@ else console.log(
         orgId: fixtureOrgId,
         workspaceId,
         // Same host-identity rule as `/__fixture/mint` above.
-        hostId: access === "cloud" ? workspaceId : hostId,
+        hostId: backing === "cloud-vm" ? workspaceId : hostId,
         role,
         ttlSeconds: 120,
         jti: `fixture_${Date.now()}`,
@@ -1288,7 +1322,7 @@ function shutdown() {
     await connectInstances.stopAll()
     await closeHttp(server)
     await relay.close()
-    stopAllUserHostedWorkspaceTunnels()
+    stopAllWorkspaceHostTunnels()
     await cloudRuntime?.close()
     await shutdownWorkspaceSupervisor()
     await jwksIssuer.close()

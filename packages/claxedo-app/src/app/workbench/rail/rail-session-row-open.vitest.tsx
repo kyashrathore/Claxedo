@@ -77,7 +77,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 }))
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
-  workspacePlacement: () => undefined,
+  workspaceRelayPlacement: () => undefined,
   isWorkspaceReady: () => true,
 }))
 
@@ -99,8 +99,8 @@ const WORKSPACE_REF = `workspace:${WORKSPACE_ID}`
 const SESSION_ID = "ses_host"
 const SESSION_UPDATED_AT = Date.now() - 60_000
 
-// A session read from a user-hosted workspace's own runtime: `sessionRowDirectory`
-// addresses it as `workspace:<id>`, never as the host's filesystem path.
+// A session read from another machine's runtime: `sessionRowDirectory`
+// addresses it as `workspace:<id>`, never as that machine's filesystem path.
 const HOST_SESSION_ROW = {
   type: "session",
   sessionRef: `${WORKSPACE_REF}:session:${SESSION_ID}`,
@@ -241,7 +241,7 @@ describe("rail session row activation on a relay-backed workspace", () => {
       sessionRef: sessionRefForWorkspaceSession({
         sessionId: SESSION_ID,
         directory: WORKSPACE_REF,
-        workspace: { workspaceId: WORKSPACE_ID, kind: "user-hosted" },
+        workspace: { workspaceId: WORKSPACE_ID, kind: "machine" },
       }),
       workspaceRouteId: WORKSPACE_ID,
     })

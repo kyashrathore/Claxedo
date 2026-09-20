@@ -6,26 +6,16 @@
  * one answer has to hold whichever producer stamped the row (a fetched list, or
  * a `session.lifecycle`/`session.updated` frame applied by `event-ingress`).
  *
- * - `local`: the host IS this machine, so its path is the row's directory.
- * - `cloud` and `user-hosted`: the workspace is addressed by its signed id —
- *   over the registry, or over the relay — while `hostDirectory` is a path on
- *   ANOTHER machine. Carrying it makes every later read scope itself by a
- *   directory this app cannot reach and 404, so the row carries
- *   `workspace:<workspaceId>` instead.
+ * - The host is the server this app is attached to: `hostDirectory` is a path
+ *   this app can resolve, so it is the address.
+ * - The host is another machine or the provisioner: `hostDirectory` is a path
+ *   on THAT machine, so every later read scoped by it would 404. The row
+ *   carries `workspace:<workspaceId>` instead, reached over the registry or
+ *   the relay.
  *
  * The signed `ws_*` id is what separates the two: a row that has one is
  * addressed by workspace, a row without one names a path on this machine.
  */
-/**
- * The workspace half of a model document's key: a signed (cloud or
- * user-hosted) workspace is its id, a local one is its host directory. A pane
- * and the Settings Models page must derive it the same way or they edit two
- * documents while believing they share one.
- */
-export function modelStoreWorkspaceKey(input: { kind?: string; workspaceId?: string; hostDirectory: string }) {
-  return input.kind && input.kind !== "local" && input.workspaceId ? input.workspaceId : input.hostDirectory
-}
-
 export function sessionRowDirectory(input: {
   workspaceId: string | undefined
   /** The path the producing runtime reported — its OWN machine's, always. */

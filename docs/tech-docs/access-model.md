@@ -31,35 +31,65 @@ org; workspace transfer is an explicit future billing operation.
 ## Roles and authority
 
 Org roles are `member`, `admin`, and `owner`. Team roles are `member`, `admin`,
-and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. Org
-owner/admin authority projects to workspace admin; an org member projects to
-workspace viewer unless narrowed by team project grants. Direct workspace,
-project, team-project, and share grants combine additively, with the highest
-effective role winning.
+and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. A
+workspace role is computed from membership, never handed to one person by
+another: the workspace's owner is `owner`, and everyone else holds the highest
+of their `project_memberships` row, their org role (an org member's `viewer`
+is withheld when the workspace's `org_member_visible` is 0), and the best
+`team_project_grants` row of a team they are on in that org
+(`workspaceRoleForUser` in
+`packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority-store.ts`,
+`workspaceAccessSql` in
+`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`).
 
-Session authority is conjunctive:
+What that role is FOR: seeing that the workspace's placement exists (which
+machine it runs on, its directory there), the workspace-scoped surfaces
+the Relay Host Token has always gated (files, terminals, processes, git),
+and being offerable a session share. An organization is a grouping of
+people. It is not an execution environment and it grants nothing on any
+machine, runtime or workspace folder: there is no concept of adding a
+member to a machine or a folder, no membership row on a workspace, and no
+rank on an organization or a workspace that admits a person to a session.
+
+The workspace role stops at the session. A session share, at level `follow` or
+`send`, is the only grant one person makes to another, and it is the whole
+admission:
 
 ```text
-may access a private session
-  = has the required workspace authority
-  AND is the session creator, an active participant,
-      a user- or team-targeted session share grant (evaluate-time),
-      or an org admin
+may read a private session
+  = is the session creator, an active participant,
+    or the holder of a user-, org- or team-targeted session share (evaluate-time)
+
+may drive its agent (prompt, answer a permission or a question, abort)
+  = is the session creator, an active participant,
+    or the holder of a `send` share
+
+may control the session (shell, permission mode, delete, fork, revert,
+  unrevert, command, summarize, title and config edits, goal transitions,
+  worktree writes)
+  = is the session creator or an active participant
 ```
 
-The creator is enrolled when the session is created. The creator, an org admin,
-or a team admin for an in-scope project may add and remove participants and
-session share grants; a participant cannot enroll others. Read and write checks
-live in both the managed route policy and the storage authority so alternate
-clients cannot bypass the rule. Private sessions are not hidden from org
-admins (support/compliance).
+Org admin standing and workspace role rank admit no one to a session, for read
+or for write; `follow` carries reading and the live stream and stops there, and
+a `send` share carries the agent's turn and never control of the session.
+The runtime names which of the two a write is (`sessionAccessWriteClass` in
+`packages/workspace-runtime/src/session-access-policy.ts`) and the authority
+answers it. The
+creator is enrolled when the session is created, and only the creator may add
+or remove participants and session shares (`session_share_admin_required`
+otherwise); a share may be offered only to a member of the session's
+organization (`session_share_target_outside_organization`). Read and write
+checks live in both the managed route policy and the storage authority so
+alternate clients cannot bypass the rule.
 
 Session privacy protects transcript-derived content: metadata, messages,
 prompts, tool activity, questions, permissions, checkpoints, and live or
-replayed session events. Files and working-tree edits remain governed by
-workspace access and are visible to workspace members. Sharing a user-hosted
-workspace is a distinct consent action because it exposes the working tree and
-execution surface.
+replayed session events. Files and working-tree edits remain governed by the
+workspace role; a `send` share on a session whose workspace is placed on a
+machine is the consent that exposes that machine's execution surface to the
+grantee (the agent runs with that machine's files), which is why the People
+control asks the granter to acknowledge it before a `send` grant.
 
 ## Actor identity and attribution
 
@@ -103,10 +133,23 @@ derives actor and workspace only from signed claims. An expired proof terminates
 the stream before its next session-derived event. The client reconnects with a
 fresh RAT/RHT and resumes through `Last-Event-ID`.
 
-Self-hosted caller-owned embedded runtimes are the explicit local policy scope:
-they preserve unsigned single-user behavior and do not become a managed
-multiplayer boundary. Relay- and private-network-exposed runtimes require the
-authority-backed policy and fail closed when the oracle is unavailable.
+A runtime's `sessionAuthority` marker (`local` or `managed-private`,
+`packages/workspace-runtime/src/session-access-policy.ts`) is a declaration
+of how it was composed, carried on the host's heartbeat and read by clients
+to know whether a session must be reserved first. It decides nothing about a
+request. What decides registration, turn admission and event privacy is the
+request's provenance, `sessionRequestProvenance`: `loopback-direct` is the
+machine's own user and gets the local-owner lifecycle; `relay-replayed` is a
+caller the relay verified and gets the private-session lifecycle through the
+control plane's authority, which fails closed when that authority is
+unavailable. A desktop daemon that publishes its workspaces mounts one policy
+for both (`localHostSessionAccessPolicy`,
+`packages/claxedo-local-server/src/deployments/local/host-session-authority.ts`)
+and stamps provenance at ingress
+(`workspace/runtime-dispatch/ingress-provenance.ts`): a request that claims
+to have come through the relay but cannot be verified is refused, never
+treated as local. A cloud sandbox's runtime admits nobody without a verified
+actor.
 
 ## Client authority continuity
 
@@ -115,8 +158,9 @@ placement returned by the managed boundary:
 
 - a central session carries an explicit `central:<session-id>` reference plus
   its authoritative workspace id;
-- workspace-runtime sessions keep their signed workspace backing, while local
-  sessions keep their filesystem transport directory;
+- a session on a workspace another host serves keeps its signed workspace
+  backing (`workspace:<id>`), while a session on a directory the attached
+  server serves itself keeps that filesystem directory;
 - direct-route resolution opens an explicit central session through the central
   transport instead of reclassifying it from a tool-sandbox directory;
 - session resource and hydration keys include transport authority so cached
@@ -170,12 +214,40 @@ notices only (provision, worktree readiness, document and session-share
 doorbells, a workspace's inventory change), never a session's content; hosted, `eventVisibleTo` filters each
 notice per subscriber by the authority-internal org id and, for share
 doorbells, the recipient. A workspace runtime's `GET /api/wr/events` carries
-that runtime's session frames: a principal the workspace authority admits reads
-it unscoped and the session authority decides per session what reaches it (the
-workspace's owner is not special); a principal it refuses is answered 403 and
-reopens one session under a lease. On a loopback local daemon the workspace
-stream is unmanaged and follows the explicit local policy described above;
-that local boundary is not presented as private multiplayer isolation.
+that runtime's session frames, and the arm is decided per request
+(`authorizeSessionEventScope`,
+`packages/workspace-runtime/src/routes/session-event-privacy.ts`): a
+`loopback-direct` request reads the whole stream, because it is the
+machine's own user; a `relay-replayed` principal the workspace authority
+admits reads it unscoped and the session authority decides per session what
+reaches it (the workspace's owner is not special); one it refuses is
+answered 403 `workspace_event_stream_denied` and reopens one session under a
+lease. The daemon's host aggregate (`wr/events` with no workspace named,
+declared in its bootstrap body as `events.hostAggregate`) refuses any reader
+that is not loopback-direct.
+
+Whether a client must hold a signed session at all is the server's
+declaration too, in the same body: `deployment.issuesSessions`, derived from
+the composition's own control-plane auth config
+(`packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts`
+for a daemon or a self-hosted node, `packages/claxedo-server/src/routes/hosted/shell.ts`
+for the hosted central). A desktop daemon and an unsigned self-hosted node
+say `false`; a signed node and the hosted central say `true`, and so does a
+composition whose signed auth is misconfigured, because a client that read it
+as a personal machine would enter a shell where every route then refuses it.
+Only an explicitly local-only composition says `false`.
+
+The client cannot derive this. A signed node runs its embedded issuer on
+localhost, so the URL is the one a daemon has, and a build flag describes the
+bundle rather than the server it reached. The app resolves the declaration
+before its first render
+(`packages/claxedo-app/src/app/boot/data/deployment-posture.ts`) and three
+surfaces read it: the sign-in gate (`CloudAuthGate`), the browser identity
+provider's startup (`startBrowserAuth`, which loads no provider SDK against a
+server that issues no sessions), and the first-project canvas. The request
+carries no credential, because the caller that most needs the answer is the
+one who has not signed in; a signed node answers an anonymous caller the
+declaration and nothing of the machine behind it.
 
 Invite and accept UI, org and team switching, personal-to-org workspace transfer,
 participant and session-share management UI, and presence UI are tracked product

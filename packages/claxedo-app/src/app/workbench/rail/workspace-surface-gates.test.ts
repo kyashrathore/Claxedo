@@ -39,7 +39,7 @@ const workspaceBackedSession = {
       sessionId: "ses_cloud",
       host: "workspace",
       workspaceId: "ws_cloud",
-      toolSandbox: { kind: "workspace", workspaceId: "ws_cloud", hosting: "cloud" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_cloud", hosting: "provisioner" },
     },
   },
 } satisfies ContentMeta
