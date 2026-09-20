@@ -80,7 +80,29 @@ function bootstrapProducers(): { file: string; declares: boolean }[] {
   )
 }
 
+/**
+ * A spec that fakes the whole backend itself — a catch-all `page.route("**\/*")`
+ * with no `installMockRuntime` — answers the bootstrap route from its own
+ * handler or from its fallback. A fallback body declares nothing, and the
+ * scans above cannot see it because no line names the route or the anchor.
+ */
+function catchAllSpecs(): { file: string; declares: boolean }[] {
+  return readdirSync(specDir)
+    .filter((name) => name.endsWith(".spec.ts"))
+    .flatMap((name) => {
+      const source = readFileSync(path.join(specDir, name), "utf8")
+      if (!source.includes('page.route("**/*"') || source.includes("installMockRuntime(")) return []
+      return [{ file: name, declares: source.includes("bootstrapDeployment(") || source.includes("issuesSessions") }]
+    })
+}
+
 describe("mocked bootstrap bodies", () => {
+  test("every spec that fakes the whole backend itself declares a posture", () => {
+    const specs = catchAllSpecs()
+    expect(specs.length).toBeGreaterThan(2)
+    expect(specs.filter((spec) => !spec.declares).map((spec) => spec.file)).toEqual([])
+  })
+
   test("the scan finds the bodies it is meant to guard", () => {
     // A guard over zero files passes for the wrong reason.
     const bodies = bootstrapBodies()

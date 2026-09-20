@@ -32,6 +32,7 @@
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
+import { bootstrapDeployment } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, expectTurnCounts } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-dead-workspace"
@@ -145,6 +146,27 @@ type DeadWorkspaceState = {
   runtimeSessionProbes: string[]
   /** `/api/control/sessions/:id/messages` reads, by session id. */
   transcriptReads: string[]
+}
+
+function projectRow() {
+  return {
+    id: PROJECT_ID,
+    worktree: WORKSPACE_ID,
+    name: PROJECT_NAME,
+    sandboxes: [WORKSPACE_ID],
+    workspaces: {
+      [WORKSPACE_ID]: {
+        id: WORKSPACE_ID,
+        workspaceId: WORKSPACE_ID,
+        kind: "cloud",
+        workspace_name: "main",
+        directory: WORKSPACE_ID,
+        available: false,
+        status: DEAD_STATUS,
+      },
+    },
+    time: { created: BASE_TIME, updated: BASE_TIME },
+}
 }
 
 /**
@@ -280,26 +302,23 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     }
 
     // ---- Boot surface (kept minimal and non-crashing) ----
-    if (path === "/project" || path === "/experimental/project") {
-      return json(route, [{
-        id: PROJECT_ID,
-        worktree: WORKSPACE_ID,
-        name: PROJECT_NAME,
-        sandboxes: [WORKSPACE_ID],
-        workspaces: {
-          [WORKSPACE_ID]: {
-            id: WORKSPACE_ID,
-            workspaceId: WORKSPACE_ID,
-            kind: "cloud",
-            workspace_name: "main",
-            directory: WORKSPACE_ID,
-            available: false,
-            status: DEAD_STATUS,
-          },
-        },
-        time: { created: BASE_TIME, updated: BASE_TIME },
-      }])
+    if (path === "/api/claxedo/bootstrap") {
+      return json(route, {
+        healthy: true,
+        version: "1.0.0-test",
+        path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
+        // A hosted control plane runs no runtime in-process, and this one's
+        // single workspace is dead: no host aggregate, and the posture the
+        // sign-in gate reads is the harness's auth mode.
+        events: { hostAggregate: false },
+        deployment: bootstrapDeployment(),
+        project: [projectRow()],
+        provider: { all: [], connected: [], default: {} },
+        provider_auth: {},
+        config: { provider: { id: "opencode", model: "big-pickle" }, agent: { id: "build" } },
+      })
     }
+    if (path === "/project" || path === "/experimental/project") return json(route, [projectRow()])
     if (path === "/path") return json(route, { worktree: DIR })
     if (path === "/session" || path === "/experimental/session") return json(route, [])
     if (path === "/provider" || path === "/provider/auth") {
