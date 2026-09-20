@@ -42,7 +42,7 @@ type Data = {
     [sessionID: string]: AgentSnapshotFileDiff[]
   }
   session_diff_preload?: {
-    [sessionID: string]: PreloadMultiFileDiffResult<any>[]
+    [sessionID: string]: PreloadMultiFileDiffResult<any, undefined>[]
   }
   message: {
     [sessionID: string]: AgentPresentationMessage[]

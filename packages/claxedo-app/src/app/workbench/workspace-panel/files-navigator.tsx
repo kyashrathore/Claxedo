@@ -232,6 +232,7 @@ export function WorkspaceFilesNavigator(props: {
   return (
     <div
       data-testid="workspace-files-navigator"
+      data-mode="files"
       data-file-prefetch-path={filePrefetch()?.path}
       data-file-prefetch-state={filePrefetch()?.state}
       data-file-tree-shell-ready={fileTreeShellReady() ? "true" : undefined}

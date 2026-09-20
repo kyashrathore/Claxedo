@@ -1,7 +1,13 @@
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 
-import type { SessionReviewCommentActions } from "./review-session"
+/** The labels this menu shows. */
+export type SessionReviewCommentActions = {
+  moreLabel: string
+  editLabel: string
+  deleteLabel: string
+  saveLabel: string
+}
 
 /**
  * The per-comment action menu rendered inside an expanded diff's annotation.

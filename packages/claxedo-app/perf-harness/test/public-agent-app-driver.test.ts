@@ -152,6 +152,15 @@ async function prepare(
 }
 
 describe("Claxedo public driver", () => {
+  test("advertises exactly the scenarios registered by the pinned framework", async () => {
+    const app: { scenarios: string[]; materializationModes: string[] } = JSON.parse(
+      await readFile(new URL("registry/apps/claxedo.json", frameworkRoot), "utf8"),
+    )
+    const advertised: string[] = [...PUBLIC_SCENARIO_IDS]
+    expect(advertised.sort()).toEqual([...app.scenarios].sort())
+    expect(app.materializationModes).toContain("native-opencode")
+  })
+
   test("attests to the native OpenCode path and sealed P0/P1 states", async () => {
     const { driver } = harness()
     const result = await prepare(driver)

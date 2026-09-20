@@ -101,6 +101,11 @@ afterEach(() => {
 })
 
 describe("WorkspaceFilesNavigator", () => {
+  test("reports the files navigator mode like the panel's loading placeholder", () => {
+    const view = renderNavigator(() => <WorkspaceFilesNavigator active onFileClick={() => {}} />)
+    expect(view.getByTestId("workspace-files-navigator")).toHaveAttribute("data-mode", "files")
+  })
+
   test("clicking a tree file requests it by path", async () => {
     const onFileClick = vi.fn()
     const view = renderNavigator(() => <WorkspaceFilesNavigator active onFileClick={onFileClick} />)

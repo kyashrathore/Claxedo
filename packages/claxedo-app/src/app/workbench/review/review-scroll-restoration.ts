@@ -40,6 +40,18 @@ export function createReviewScrollRestoration(input: {
   let observer: MutationObserver | undefined
   let element: HTMLElement | undefined
   let restoring = false
+  /**
+   * Where the review surface's own document places a file, in the scroll
+   * element's coordinates, whether or not its row is rendered.
+   *
+   * The retained pixel top describes the document as it was when the position
+   * was captured. A surface whose rows change height as their content arrives —
+   * a summary row reserving one header, then becoming a full diff — has a
+   * different document by the time the restore runs, and the retained top can
+   * clamp past the end of the shorter one. When the surface can answer this,
+   * its answer is the anchor's real position and is used instead.
+   */
+  let anchorTop: ((path: string) => number | undefined) | undefined
   let position: ReviewScrollPosition = input.initial ?? { top: 0 }
   let action = "created"
   let lastAttempt = 0
@@ -127,13 +139,17 @@ export function createReviewScrollRestoration(input: {
         action = "anchor-missing-settled"
         return
       }
-      // The anchor row may not exist yet: the windowed file list materializes
-      // rows around the scroll position, so land on the recorded pixel top
-      // first -- that scroll is what makes the anchor's neighborhood (and the
-      // anchor row itself, which the window treats as required) mount. The
-      // observer then re-runs this for the precise anchor-offset correction.
-      if (Math.abs(element.scrollTop - position.top) > 0.5) element.scrollTop = position.top
-      action = "waiting-for-anchor"
+      // The anchor row may not exist yet: the surface renders rows around the
+      // scroll position, so land where the anchor is and let that scroll mount
+      // it. The surface's own document is asked first, because the retained
+      // pixel top describes the document as it was at capture. The observer
+      // then re-runs this for the precise anchor-offset correction.
+      const documentTop = anchorTop?.(position.anchorPath)
+      const landing = documentTop !== undefined
+        ? documentTop - (position.anchorOffset ?? 0)
+        : position.top
+      if (Math.abs(element.scrollTop - landing) > 0.5) element.scrollTop = landing
+      action = documentTop !== undefined ? "waiting-for-anchor-row" : "waiting-for-anchor"
       if (!observer && typeof MutationObserver !== "undefined") {
         observer = new MutationObserver(() => apply())
         observer.observe(element, { childList: true, subtree: true })
@@ -253,14 +269,24 @@ export function createReviewScrollRestoration(input: {
     if (element) Reflect.deleteProperty(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
     if (diagnosticHost) Reflect.deleteProperty(diagnosticHost, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
     // Release the viewport: a deactivated tab's detached subtree must not stay
-    // pinned by this closure between dispose and the next bind.
+    // pinned by this closure between dispose and the next bind. The surface's
+    // geometry reader holds its whole engine, so it goes with it.
     element = undefined
+    anchorTop = undefined
     frame = undefined
   }
 
   return {
     bind,
     bindDiagnosticHost,
+    /**
+     * Bind the review surface's document geometry, or clear it when that
+     * surface goes away. A surface that owns no document of its own never
+     * calls this, and restoration keeps using the retained pixel top.
+     */
+    bindAnchorTop: (resolve?: (path: string) => number | undefined) => {
+      anchorTop = resolve
+    },
     capture,
     dispose,
     remember,

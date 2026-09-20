@@ -1,6 +1,5 @@
 import {
-  HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS,
-  HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK,
+  HEAVY_WORKSPACE_MAX_RENDERED_REVIEW_ROWS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
 } from "../scenarios/heavy-workspace-reopen-contract"
 import type { fixtureFor } from "../fixtures"
@@ -295,7 +294,7 @@ export async function waitForReviewStable(page: Page) {
 
 export async function waitForHeavyReviewCorpus(page: Page, fixture: ReturnType<typeof fixtureFor>) {
   const expected = fixture.changedFiles.length
-  const cap = HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK
+  const cap = HEAVY_WORKSPACE_MAX_RENDERED_REVIEW_ROWS
   // The file list is windowed: the MODEL must hold every changed file while
   // the DOM holds only a window's worth of rows -- and the two counters must
   // agree with the actual mounted rows.

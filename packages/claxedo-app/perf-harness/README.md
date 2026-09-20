@@ -176,9 +176,33 @@ All three materializers use the same Git fixture preparation and runtime registr
 SDK transcript import is verified by durable readback; session titles, timestamps and
 workspace kinds come from those canonical records. Each run uses disposable isolated state.
 
-After building and packaging the app, run the public framework as documented by its
-installed CLI and `compare/README.md`. Unit conformance does not prove a live packaged
-run or framework resource scoring.
+With Bun and Node.js available on PATH, build and package the app, then run the public framework through
+`bun run public-benchmark -- <framework arguments>`. That entrypoint verifies the
+installed framework is the commit `package.json` pins and then executes the framework's
+own CLI unchanged; every argument, registry decision, case order and result belongs to
+the framework. A tree installed from another commit registers different scenarios and
+generates different cases, which otherwise surfaces as `Claxedo is not registered for
+<scenario>` or a rejected case rather than as dependency drift.
+
+The framework sanitizes the driver environment, so the packaged bundle is named with
+`--driver-env`, and `--framework-revision` is stated explicitly because revision
+autodetection under `node_modules` reports this repository's HEAD rather than the
+framework's:
+
+```sh
+bun run public-benchmark -- run \
+  --driver "$(which bun)" \
+  --driver-arg "$PWD/src/public-agent-app-driver.ts" \
+  --driver-env "CLAXEDO_BENCHMARK_EXECUTABLE=$PWD/../../claxedo-desktop/dist/mac-arm64/Claxedo Dev.app/Contents/MacOS/Claxedo Dev" \
+  --app claxedo --scenario workspace-panel-v1 --run-profile smoke --repetitions 1 \
+  --framework-revision f8cc01d828928c75054f272fea48696c938781d4 \
+  --corpus-directory <verified corpus directory> --output <run directory>
+```
+
+Without `--driver-env` the driver falls back to `packages/claxedo-desktop/dist/`. A
+measured comparison requires the driver and the packaged bundle to come from the same
+checkout; a bundle built elsewhere exercises the harness only. Unit conformance does not
+prove a live packaged run or framework resource scoring.
 
 For previous performance findings and rejected approaches, read
 [the performance overview](../../../docs/perf/README.md) and

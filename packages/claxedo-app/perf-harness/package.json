@@ -9,6 +9,7 @@
     "run:headed": "bun src/cli.ts run --all --headed",
     "agent-driver": "bun src/agent-claxedo-driver.ts",
     "public-agent-driver": "bun src/public-agent-app-driver.ts",
+    "public-benchmark": "bun src/public-benchmark.ts",
     "report": "bun src/cli.ts report",
     "list": "bun src/cli.ts list",
     "typecheck": "tsc -p tsconfig.json --noEmit",

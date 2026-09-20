@@ -662,6 +662,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           focusedDiffMode={reviewFocus()?.mode}
           onOpenFile={openFileTab}
           scrollRef={reviewScroll.bind}
+          anchorTopRef={reviewScroll.bindAnchorTop}
           onScroll={reviewScroll.remember}
         />
       </div>

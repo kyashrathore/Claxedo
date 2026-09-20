@@ -110,6 +110,76 @@ describe("review scroll restoration", () => {
     restoration.dispose()
   })
 
+  test("targets the anchor where the surface's document puts it now, not where it was captured", async () => {
+    const { anchor, viewport } = fixture()
+    const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
+
+    restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await flushFrames()
+    viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
+    restoration.capture()
+
+    // Remount: rows above the anchor arrived as summaries reserving one header
+    // row each, so the same file now sits much higher in a much shorter
+    // document. The retained pixel top would land past the anchor, and against
+    // a shorter document it would clamp.
+    anchor.remove()
+    restoration.bindAnchorTop((path) => (path === "src/generated/file-350.ts" ? 240 : undefined))
+    viewport.scrollTop = 0
+    restoration.restore()
+    await flushFrames(1)
+    expect(viewport.scrollTop).toBe(240)
+
+    // The row is now in range. A remount renders it as a new node, at the
+    // position the surface reported, and the precise offset correction takes
+    // over from there.
+    const remounted = document.createElement("div")
+    remounted.dataset.reviewFile = "src/generated/file-350.ts"
+    Object.defineProperty(remounted, "getBoundingClientRect", { value: () => rect(240 - viewport.scrollTop) })
+    viewport.append(remounted)
+    await flushFrames()
+    expect(viewport.scrollTop).toBe(240)
+    restoration.dispose()
+  })
+
+  test("falls back to the retained pixel top for a surface that reports no geometry", async () => {
+    const { anchor, viewport } = fixture()
+    const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
+
+    restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await flushFrames()
+    viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
+    restoration.capture()
+
+    anchor.remove()
+    restoration.bindAnchorTop((path) => (path === "somewhere/else.ts" ? 240 : undefined))
+    viewport.scrollTop = 0
+    restoration.restore()
+    await flushFrames(1)
+    expect(viewport.scrollTop).toBe(1_000)
+    restoration.dispose()
+  })
+
+  test("drops the surface geometry reader on dispose", async () => {
+    const { viewport } = fixture()
+    const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
+    const resolve = vi.fn(() => 240)
+
+    restoration.bind(viewport)
+    restoration.bindAnchorTop(resolve)
+    await flushFrames()
+    restoration.dispose()
+    // The reader holds the surface's whole engine; a disposed restoration must
+    // not keep calling into it.
+    restoration.restore()
+    await flushFrames()
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
   test("flushes a pending anchor capture synchronously on dispose", async () => {
     const { viewport } = fixture()
     const changes: ReviewScrollPosition[] = []

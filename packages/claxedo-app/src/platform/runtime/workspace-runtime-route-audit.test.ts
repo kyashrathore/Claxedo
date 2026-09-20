@@ -2115,6 +2115,7 @@ describe("workspace runtime route audit", () => {
     const fileTree = await Bun.file(path.join(root, "app/workbench/controls/file-tree.tsx")).text()
 
     expect(navigator).toMatch(/data-testid="workspace-files-navigator"/)
+    expect(navigator).toMatch(/data-mode="files"/)
     expect(navigator).toMatch(/data-file-tree-shell-ready=\{fileTreeShellReady\(\) \? "true" : undefined\}/)
     expect(navigator).toMatch(/data-file-tree-data-ready=\{fileTreeDataReady\(\) \? "true" : undefined\}/)
     expect(navigator).not.toMatch(/"changes"/)

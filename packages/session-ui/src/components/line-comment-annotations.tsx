@@ -48,6 +48,15 @@ export type LineCommentStateProps<T> = {
   setCommenting: (range: SelectedLineRange | null) => void
   syncSelected?: (range: SelectedLineRange | null) => void
   hoverSelected?: (range: SelectedLineRange) => void
+  /** Retain draft text and edit identity while a virtualized row releases its UI. */
+  editor?: LineCommentEditorState<T>
+}
+
+export type LineCommentEditorState<T> = {
+  draft: Accessor<string>
+  setDraft: (value: string) => void
+  editing: Accessor<T | null>
+  setEditing: (value: T | null) => void
 }
 
 export type LineCommentShape = {
@@ -223,15 +232,21 @@ function lineCommentDraftElement(view: Accessor<DraftProps>) {
   )
 }
 
-export function createLineCommentState<T>(props: LineCommentStateProps<T>) {
+export function createLineCommentEditorState<T>(): LineCommentEditorState<T> {
   const [state, setState] = createStore({
     draft: "",
     editing: null as T | null,
   })
-  const draft = () => state.draft
-  const setDraft = (value: string) => setState("draft", value)
-  const editing = () => state.editing
-  const setEditing = (value: T | null) => setState("editing", typeof value === "function" ? () => value : value)
+  return {
+    draft: () => state.draft,
+    setDraft: (value) => setState("draft", value),
+    editing: () => state.editing,
+    setEditing: (value) => setState("editing", typeof value === "function" ? () => value : value),
+  }
+}
+
+export function createLineCommentState<T>(props: LineCommentStateProps<T>) {
+  const { draft, setDraft, editing, setEditing } = props.editor ?? createLineCommentEditorState<T>()
 
   const toRange = (range: SelectedLineRange | null) => (range ? cloneSelectedLineRange(range) : null)
   const setSelected = (range: SelectedLineRange | null) => {

@@ -1,12 +1,3 @@
-@keyframes session-review-row-controls-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 [data-component="session-review"] {
   display: flex;
   flex-direction: column;
@@ -195,12 +186,8 @@
     transition: opacity 0.12s ease;
   }
 
-  /* A caller that owns hover state mounts this cluster only for the row that
-     can show it, so the fade IN cannot come from the transition: the cluster is
-     inserted already matching the hovered rule, and a transition needs a
-     previous value to animate from. The keyframe supplies that entry; the
-     transition still owns the fade OUT. Taken out of flow so mounting and
-     unmounting it never moves the rest of the row. */
+  /* Keep controls out of flow. A mount animation would override opacity: 0
+     and flash controls on unhovered rows as virtualization materializes them. */
   .ui-session-review-row-controls {
     position: absolute;
     right: 0;
@@ -211,14 +198,14 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.12s ease;
-    animation: session-review-row-controls-in 0.12s ease;
   }
 
-  [data-slot="accordion-trigger"]:is(:hover, :focus-within) .ui-session-review-row-summary {
+  /* Explicit hover clears on scroll; focus keeps keyboard controls available. */
+  [data-slot="accordion-trigger"]:is([data-hovered], :focus-within) .ui-session-review-row-summary {
     opacity: 0;
   }
 
-  [data-slot="accordion-trigger"]:is(:hover, :focus-within) .ui-session-review-row-controls {
+  [data-slot="accordion-trigger"]:is([data-hovered], :focus-within) .ui-session-review-row-controls {
     opacity: 1;
     pointer-events: auto;
   }

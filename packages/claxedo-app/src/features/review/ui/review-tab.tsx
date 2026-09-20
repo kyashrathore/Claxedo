@@ -24,16 +24,18 @@ import {
   type ReviewSurfaceState,
 } from "@/features/review/review-surface-state"
 import { useComments } from "@/platform/comments/provider"
+import { ReviewCodeView, mediaKindFromPath, type ReviewCodeViewRevealTarget } from "@/ui/session-kit"
 import {
-  ClaxedoSessionReview,
-  type SessionReviewCommentActions,
+  createReviewCodeViewComments,
   type SessionReviewCommentDelete,
   type SessionReviewCommentUpdate,
   type SessionReviewLineComment,
-} from "./review-session"
-import { ReviewCodeView } from "@/ui/session-kit"
-import { ReviewCodeViewFileHeader } from "./review-file-header"
-import { diffTriggerTestId } from "./review-session-logic"
+} from "./review-code-view-comments"
+import type { SessionReviewCommentActions } from "./review-comment-menu"
+import { reviewCommentFocusAction } from "./review-comment-focus"
+import { isReviewMediaFile, reviewContentRequestPlan, reviewMediaLoad } from "./review-content-requests"
+import { ReviewCodeViewFileHeader, ReviewRowBody } from "./review-file-row"
+import { diffTriggerTestId, exceedsDiffLimit } from "./review-session-logic"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
 import type {
@@ -53,7 +55,10 @@ import {
   cachedReviewVcsTargets,
   invalidateReviewVcsDirectory,
   updateCachedReviewVcsDiff,
+  reviewVcsFileQueryKey,
+  type ReviewVcsDiffInput,
 } from "./review-vcs-cache"
+import { createReviewContentQueue } from "./review-content-queue"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { afterVisibleWork } from "./review-deferred-work"
 import { warmDiffHighlightWorkerPool } from "@/ui/session-kit-loaders"
@@ -74,6 +79,13 @@ export type ReviewTabProps = {
   onRetainedChange?: (state: ReviewSurfaceState) => void
   /** Semantic scroll anchor the workspace's restoration will target. */
   scrollAnchorPath?: string
+  /**
+   * Receives a reader for where a file sits in the review document. The
+   * restoration owner uses it to target a semantic anchor whose row is not
+   * rendered, instead of replaying a pixel top captured against an older
+   * document. Absent while the surface owns no document of its own.
+   */
+  anchorTopRef?: (resolve: ((file: string) => number | undefined) | undefined) => void
   focusedDiffPath?: string
   focusedDiffVersion?: number
   /** Applied with the focus: the mode whose diff the focused file is revealed in. */
@@ -96,13 +108,10 @@ function initialDiffStyle(): "unified" | "split" {
   return "unified"
 }
 
-// Stage-1 spike (build-time flag): render the review corpus through Pierre's
-// CodeView document engine instead of the accordion list. Measurement gate:
-// the heavy-workspace benchmark ladder. Comments/gutter/custom headers are
-// out of scope until the spike's numbers justify stage 2.
-const REVIEW_CODEVIEW_SPIKE = import.meta.env.VITE_REVIEW_CODEVIEW === "1"
-
 export function ReviewTab(props: ReviewTabProps) {
+  // Reactive, not plain refs: a focus request can arrive before the surface
+  // mounts, and the request is applied when these appear rather than retried.
+  const [revealCodeViewFile, setRevealCodeViewFile] = createSignal<((file: string) => void) | undefined>()
   const comments = useComments()
   const file = useFile()
   const language = useLanguage()
@@ -221,18 +230,20 @@ export function ReviewTab(props: ReviewTabProps) {
   const currentDiffState = () => untrack(() => ({
     target: diffTarget(),
     key: diffKey(),
-    diffs: remoteDiffs(),
   }))
 
-  const fetchVcsFileDiff = async (file: string, mode: string, from?: string, to?: string) => {
+  const fetchVcsFileDiff = async (
+    file: string,
+    target: ReviewVcsDiffInput,
+    client: ReturnType<typeof createReviewDiffClient>,
+    force = false,
+  ) => {
     return cachedReviewVcsFile({
-      directory: props.directory,
-      mode,
+      ...target,
       file,
-      fromRef: from,
-      toRef: to,
-      load: () => diffClient()
-        .vcsFile({ directory: props.directory, mode, file, fromRef: from, toRef: to })
+      force,
+      load: () => client
+        .vcsFile({ ...target, file })
         .then((data) => {
           if (!data) return undefined
           return { ...data, status: normalizeVcsStatus(data.status) } as Partial<VcsFileDiff> & { file: string }
@@ -258,17 +269,71 @@ export function ReviewTab(props: ReviewTabProps) {
     })
   }
 
-  const loadRequiredVcsDiffContent = (files: string[]) => {
-    if (diffQuery.isPending) return
-    const { target, key, diffs: corpus } = currentDiffState()
-
-    for (const file of files) {
-      const diff = corpus.find((item) => item.file === file)
-      if (!diff || hasDiffContent(diff as RawVcsFileDiff)) continue
-      void fetchVcsFileDiff(file, target.mode, target.fromRef, target.toRef)
-        .then((next) => mergeVcsFileDiff(key, file, next))
+  // Pierre reports the complete current range. Replacing queued work on each
+  // range change prioritizes a direction reversal without cancelling in-flight
+  // cache reads. Capture both target and client before a request enters the queue.
+  const [requiredContent, setRequiredContent] = createSignal({ targetKey: "", files: [] as string[] })
+  const [contentErrors, setContentErrors] = createStore<Record<string, string | undefined>>({})
+  const retryContent = new Set<string>()
+  const contentKey = (target: ReviewVcsDiffInput, file: string) => JSON.stringify(reviewVcsFileQueryKey({ ...target, file }))
+  const contentQueue = createReviewContentQueue({
+    onError: (request, error) => setContentErrors(request.key, error instanceof Error ? error.message : String(error)),
+  })
+  onCleanup(() => contentQueue.dispose())
+  const requireCodeViewContent = (files: string[]) => {
+    const targetKey = diffKey()
+    const previous = requiredContent()
+    if (previous.targetKey !== targetKey) {
+      retryContent.clear()
+      for (const key of Object.keys(contentErrors)) setContentErrors(key, undefined)
+    } else if (previous.files.length === files.length && previous.files.every((file, index) => file === files[index])) {
+      return
     }
+    setRequiredContent({ targetKey, files })
   }
+  createEffect(() => {
+    const target = diffTarget()
+    const targetKey = diffKey()
+    const required = requiredContent()
+    if (required.targetKey !== targetKey) {
+      contentQueue.replace([])
+      return
+    }
+    const client = diffClient()
+    const corpus = new Map(remoteDiffs().map((diff) => [diff.file, diff]))
+    const plans = reviewContentRequestPlan({
+      files: required.files,
+      isMedia: isReviewMediaFile,
+      isDeleted: (path) => corpus.get(path)?.status === "deleted",
+      isKnown: (path) => corpus.has(path),
+      hasDiff: (path) => hasDiffContent(corpus.get(path) as RawVcsFileDiff),
+      hasMedia: (path) => mediaContent(path) !== undefined,
+      hasError: (path) => !!contentErrors[contentKey(target, path)],
+    })
+    const requests = plans.map(({ file: path, kind }) => {
+      const key = contentKey(target, path)
+      if (kind === "media") {
+        return {
+          key,
+          load: reviewMediaLoad({
+            reader: file,
+            path,
+            key,
+            targetKey,
+            currentTargetKey: diffKey,
+            retries: retryContent,
+          }),
+        }
+      }
+      return { key, load: async () => {
+        const force = retryContent.delete(key)
+        const next = await fetchVcsFileDiff(path, target, client, force)
+        if (!next || !hasDiffContent(next as RawVcsFileDiff)) throw new Error("Diff content is unavailable")
+        mergeVcsFileDiff(targetKey, path, next)
+      } }
+    })
+    contentQueue.replace(requests)
+  })
 
   // A branch move the runtime never announced: the diff cache is keyed by mode
   // and refs, not by the commit those refs point at, so every mode's entry for
@@ -286,6 +351,29 @@ export function ReviewTab(props: ReviewTabProps) {
   )
 
   const diffs = remoteDiffs
+  // Classify before normalization, including collapsed files, so opening a
+  // review cannot parse oversized content before the user permits rendering.
+  const guardedCodeViewFiles = createMemo(() => {
+    const forced = new Set(store.forcedDiffPaths)
+    return new Set(diffs().filter((diff) => exceedsDiffLimit({
+      changedLines: diff.additions + diff.deletions,
+      expanded: true,
+      forced: forced.has(diff.file),
+      media: !!mediaKindFromPath(diff.file),
+    })).map((diff) => diff.file))
+  })
+  // An image or an audio file has no text diff worth showing. CodeView still
+  // owns where the row sits and how tall it is; the preview itself is a custom
+  // body this surface mounts only while the engine renders that item.
+  const mediaCodeViewFiles = createMemo(() =>
+    new Set(diffs().filter((diff) => isReviewMediaFile(diff.file)).map((diff) => diff.file)),
+  )
+  const customCodeViewFiles = createMemo(() => new Set([...guardedCodeViewFiles(), ...mediaCodeViewFiles()]))
+  const diffForFile = (file: string) => diffs().find((diff) => diff.file === file)
+  const changedLinesForFile = (file: string) => {
+    const diff = diffs().find((diff) => diff.file === file)
+    return (diff?.additions ?? 0) + (diff?.deletions ?? 0)
+  }
   // A corpus on screen is a promise that some row will be expanded. Build the
   // highlighter's workers now, while the surface is idle, instead of inside
   // the expand click — see `warmDiffHighlightWorkerPool`.
@@ -355,6 +443,8 @@ export function ReviewTab(props: ReviewTabProps) {
     await file.load(path)
     return file.get(path)?.content
   }
+  /** A media row's bytes, once the review's own scheduler has fetched them. */
+  const mediaContent = (path: string) => file.get(path)?.content
 
   const handleLineComment = (comment: SessionReviewLineComment) => {
     const saved = comments.add({
@@ -395,12 +485,113 @@ export function ReviewTab(props: ReviewTabProps) {
     saveLabel: language.t("common.save"),
   }))
 
-  const scrollToFile = (path: string) => {
-    const escaped = globalThis.CSS && CSS.escape ? CSS.escape(path) : path.replaceAll('"', '\\"')
-    const node = document.querySelector(`[data-component="session-review"] [data-file="${escaped}"]`)
-    if (!(node instanceof HTMLElement)) return
-    node.scrollIntoView({ behavior: "auto", block: "start" })
+  // A comment state machine per file Pierre renders, plus the draft and
+  // selection state those rows share.
+  const codeViewComments = createReviewCodeViewComments({
+    comments: () => comments.all(),
+    diffs: () => diffs(),
+    actions: reviewCommentActions,
+    onLineComment: handleLineComment,
+    onLineCommentUpdate: handleLineCommentUpdate,
+    onLineCommentDelete: handleLineCommentDelete,
+  })
+
+  // What the user asked to see, held until the surface can actually show it.
+  // A file's row may not be committed yet and a comment's row may still be a
+  // summary Pierre has no line geometry for; both resolve by themselves, so
+  // nothing here retries on a timer or drops the request on the floor.
+  const [fileRevealPath, setFileRevealPath] = createSignal<string | undefined>()
+  /**
+   * One target object per request, so the surface can tell "still the same
+   * request" from "ask again": a new focus is a new object even for the file
+   * the reader just scrolled away from.
+   */
+  const fileTarget = createMemo<ReviewCodeViewRevealTarget | null>(() => {
+    const focus = comments.focus()
+    if (focus) return { file: focus.file }
+    const path = fileRevealPath()
+    return path ? { file: path } : null
+  })
+  /** The comment the caller asked for, while that request is still open. */
+  const focusedComment = createMemo(() => {
+    const focus = comments.focus()
+    if (!focus) return undefined
+    return comments.all().find((item) => item.file === focus.file && item.id === focus.id)
+  })
+  /**
+   * A focused comment's file counts as open while the request is live, so the
+   * engine can expand the row and resolve the line. `onRevealed` is what makes
+   * that expansion the user's own state.
+   */
+  const openDiffs = createMemo(() => {
+    const focus = comments.focus()
+    if (!focus || store.openDiffs.includes(focus.file)) return store.openDiffs
+    return [...store.openDiffs, focus.file]
+  })
+  const focusedFile = createMemo(() => comments.focus()?.file ?? store.focusedFile)
+
+  /**
+   * Derived, never applied here: only the surface knows when CodeView has
+   * committed the item, and it reports back through `onRevealed`.
+   *
+   * A file whose content has not arrived is revealed by item identity first, so
+   * the bounded queue asks for exactly that file; the line follows once the row
+   * is a real expanded diff.
+   */
+  const revealTarget = createMemo<ReviewCodeViewRevealTarget | null>(() => {
+    if (!revealCodeViewFile()) return null
+    const focus = comments.focus()
+    if (!focus) return fileTarget()
+    const comment = focusedComment()
+    const diff = diffs().find((item) => item.file === focus.file)
+    const action = reviewCommentFocusAction({
+      mounted: true,
+      commentExists: !!comment,
+      renderable: !!diff
+        && hasDiffContent(diff as RawVcsFileDiff)
+        && !guardedCodeViewFiles().has(focus.file)
+        && openDiffs().includes(focus.file),
+    })
+    if (action === "apply-line" && comment) {
+      return {
+        file: focus.file,
+        lineNumber: Math.max(comment.selection.start, comment.selection.end),
+        side: comment.selection.endSide ?? comment.selection.side ?? "additions",
+      }
+    }
+    if (action === "reveal-file") return fileTarget()
+    return null
+  })
+
+  /**
+   * The surface applied a target. A file-level nudge is a step, not the answer:
+   * only the line jump ends a comment request, and it is what commits the
+   * transient expansion the reveal needed into the user's own review state.
+   */
+  const onRevealApplied = (target: ReviewCodeViewRevealTarget) => {
+    const focus = comments.focus()
+    if (!focus) {
+      setFileRevealPath(undefined)
+      return
+    }
+    // A target for some other file belongs to a request this one replaced.
+    if (target.file !== focus.file) return
+    // The file-level step is a step; only the line jump ends the request and
+    // commits the expansion it needed into the reader's own review state.
+    if (target.lineNumber === undefined) return
+    codeViewComments.openComment(focus)
+    batch(() => {
+      setStore("focusedFile", focus.file)
+      if (!store.openDiffs.includes(focus.file)) setStore("openDiffs", [...store.openDiffs, focus.file])
+      comments.setFocus(null)
+    })
   }
+
+  const scrollToFile = (path: string) => batch(() => {
+    // A stale focus would otherwise keep answering for this request.
+    if (comments.focus()) comments.setFocus(null)
+    setFileRevealPath(path)
+  })
 
   // The focus this mount resumed on. Review now unmounts while another
   // workspace tab is active, so this effect runs again on every remount with
@@ -420,7 +611,7 @@ export function ReviewTab(props: ReviewTabProps) {
         setStore("focusedFile", path)
         if (!store.openDiffs.includes(path)) setStore("openDiffs", [...store.openDiffs, path])
       })
-      requestAnimationFrame(() => scrollToFile(path))
+      scrollToFile(path)
     },
   ))
 
@@ -501,16 +692,20 @@ export function ReviewTab(props: ReviewTabProps) {
               data-review-loaded-diff-count={diffFiles().length}
               data-review-loaded-diff-identity={loadedDiffIdentity()}
             >
-              {REVIEW_CODEVIEW_SPIKE ? (
-                <ReviewCodeView
+              <ReviewCodeView
                   class="claxedo-workspace-review h-full"
                   diffs={diffs()}
                   diffStyle={store.diffStyle}
-                  open={store.openDiffs}
-                  focusedFile={store.focusedFile}
+                  open={openDiffs()}
+                  focusedFile={focusedFile()}
                   headerTestId={diffTriggerTestId}
-                  renderHeader={(file) => (
-                    <ReviewCodeViewFileHeader diffs={diffs()} file={file} onViewFile={props.onOpenFile} />
+                  renderHeader={(file, active) => (
+                    <ReviewCodeViewFileHeader
+                      diffs={diffs()}
+                      file={file}
+                      onViewFile={props.onOpenFile}
+                      showControls={active}
+                    />
                   )}
                   onToggleOpen={(file) =>
                     setStore(
@@ -520,42 +715,35 @@ export function ReviewTab(props: ReviewTabProps) {
                         : [...store.openDiffs, file],
                     )
                   }
+                  comments={codeViewComments}
+                  selectedLines={codeViewComments?.selectedLines() ?? null}
                   scrollRef={props.scrollRef}
+                  revealRef={(reveal) => setRevealCodeViewFile(() => reveal)}
+                  anchorTopRef={props.anchorTopRef}
+                  revealTarget={revealTarget()}
+                  onRevealed={onRevealApplied}
                   onScrollEvent={(event) => callEventHandler(props.onScroll, event)}
                   onDiffRendered={() => setRenderedHunks((count) => count + 1)}
-                />
-              ) : (
-              <ClaxedoSessionReview
-                diffs={diffs()}
-                diffStyle={store.diffStyle}
-                onDiffStyleChange={(style) => setStore("diffStyle", style)}
-                comments={comments.all()}
-                focusedComment={comments.focus()}
-                onFocusedCommentChange={comments.setFocus}
-                open={store.openDiffs}
-                onOpenChange={(open) => setStore("openDiffs", open)}
-                forcedFiles={store.forcedDiffPaths}
-                onForcedFilesChange={(files) => setStore("forcedDiffPaths", files)}
-                anchorFile={props.scrollAnchorPath}
-                onDiffContentRequired={loadRequiredVcsDiffContent}
-                onDiffRendered={() => setRenderedHunks((count) => count + 1)}
-                readFile={readFile}
-                onLineComment={handleLineComment}
-                onLineCommentUpdate={handleLineCommentUpdate}
-                onLineCommentDelete={handleLineCommentDelete}
-                lineCommentActions={reviewCommentActions()}
-                onViewFile={props.onOpenFile}
-                scrollRef={props.scrollRef}
-                onScroll={props.onScroll}
-                focusedFile={store.focusedFile}
-                title=""
-                classes={{
-                  root: "claxedo-workspace-review pb-6",
-                  header: "px-3 !hidden",
-                  container: "",
-                }}
+                  onDiffContentRequired={requireCodeViewContent}
+                  customFiles={customCodeViewFiles()}
+                  renderCustomBody={(file) => (
+                    <ReviewRowBody
+                      file={file}
+                      media={mediaCodeViewFiles().has(file)}
+                      guarded={guardedCodeViewFiles().has(file)}
+                      deleted={diffForFile(file)?.status === "deleted"}
+                      content={mediaContent(file)}
+                      changedLines={changedLinesForFile(file)}
+                      onRenderAnyway={(path) => setStore("forcedDiffPaths", (files) => [...files, path])}
+                      error={contentErrors[contentKey(diffTarget(), file)]}
+                      onRetry={(path) => {
+                        const key = contentKey(diffTarget(), path)
+                        retryContent.add(key)
+                        setContentErrors(key, undefined)
+                      }}
+                    />
+                  )}
               />
-              )}
             </div>
           </Show>
         </Match>

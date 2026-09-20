@@ -101,7 +101,9 @@ export function normalize(diff: ReviewDiff): ViewDiff {
   }
 }
 
-export function text(diff: ViewDiff, side: "deletions" | "additions") {
+/** A diff's text for one side. Parsed content is all this needs, so a caller
+ *  holding only the resolved metadata does not have to invent the counts. */
+export function text(diff: Pick<ViewDiff, "fileDiff">, side: "deletions" | "additions") {
   if (side === "deletions") return diff.fileDiff.deletionLines.join("")
   return diff.fileDiff.additionLines.join("")
 }

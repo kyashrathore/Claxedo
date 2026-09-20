@@ -1,5 +1,3 @@
-import { reviewWindowRowBudget } from "../../../../src/features/review/ui/review-window"
-
 export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
   "src/generated/file-7.ts",
   "src/generated/file-113.ts",
@@ -31,35 +29,14 @@ export const HEAVY_WORKSPACE_CLOSE_DWELL_MS = 300
 // full 960px is a sound upper bound on what the app may materialize.
 export const HEAVY_WORKSPACE_VIEWPORT_HEIGHT = 960
 
-// Mirrors REVIEW_MOUNT_MARGIN in review-session.tsx -- the overscan the app
-// passes into the window.
-export const HEAVY_WORKSPACE_REVIEW_OVERSCAN = 80
+// Independent acceptance ceiling for this 960px benchmark viewport. Keep the
+// DOM budget stable across renderer replacements; do not derive it from the
+// implementation under test or reproduce its document geometry here.
+export const HEAVY_WORKSPACE_MAX_RENDERED_REVIEW_ROWS = 44
 
-// Benchmark review rows render at compact density: ~30px measured, under the
-// app's REVIEW_ESTIMATED_ROW_HEIGHT (40px) used for unmeasured rows. The
-// window materializes every row intersecting the overscanned span at its
-// MEASURED height (that is the no-gap guarantee), so the cap must derive
-// from the measured height -- deriving from the 40px estimate under-counts
-// what the app legitimately materializes.
-export const HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX = 30
-
-// The Review file list is windowed: at most this many viewport rows own DOM
-// at once (required rows -- the scroll anchor, a focused file -- ride on
-// top). The budget RULE is owned by the app's reviewWindowRowBudget
-// (review-window.ts); the harness only supplies its benchmark geometry.
-export const HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS = reviewWindowRowBudget({
-  viewportHeight: HEAVY_WORKSPACE_VIEWPORT_HEIGHT,
-  overscan: HEAVY_WORKSPACE_REVIEW_OVERSCAN,
-  estimatedRowHeight: HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX,
-})
-
-// Required rows the window can add beyond the viewport cap (anchor + focus).
-export const HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK = 4
-
-// ScrollView applies consumer attributes to its outer root; the element that
-// owns scrollTop is the nested viewport marked data-scrollable.
+// Pierre owns the review scroll element directly.
 export const HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR =
-  "[data-slot='session-review-scroll'] [data-scrollable]"
+  "[data-component='session-review'][data-scrollable]"
 
 export type HeavyWorkspaceSurfaceIdentity = {
   openTabIds: string[]
@@ -180,7 +157,7 @@ export function heavyWorkspaceWindowedCorpusFailures(input: {
   if (input.reviewFileCount === 0) {
     failures.push("review window materialized no file rows")
   }
-  const cap = HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK
+  const cap = HEAVY_WORKSPACE_MAX_RENDERED_REVIEW_ROWS
   if (input.reviewFileCount > cap) {
     failures.push(
       `review window materialized ${input.reviewFileCount} file rows; expected at most ${cap}`,

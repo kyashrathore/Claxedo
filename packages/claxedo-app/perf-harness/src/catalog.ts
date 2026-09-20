@@ -19,6 +19,7 @@ export const PERFORMANCE_CATALOG: CatalogEntry[] = [
   { id: "browser/memory", owner: "claxedo-app/perf-harness", kind: "measurement", entrypoint: "bun src/cli.ts memory --iterations 5", purpose: "Forced-GC retention and visit slope; source stability, settlement and cleanup required" },
   { id: "desktop/internal", owner: "claxedo-app/perf-harness", kind: "framework", entrypoint: "src/agent-app-benchmark.ts", purpose: "Packaged agent-app profiles; independent typed samples, clocks and validity" },
   { id: "desktop/public", owner: "claxedo-app/perf-harness", kind: "framework", entrypoint: "src/public-agent-app-driver.ts", purpose: "Pinned public framework adapter; framework owns order, resources and scoring" },
+  { id: "desktop/public-cli", owner: "claxedo-app/perf-harness", kind: "framework", entrypoint: "bun run public-benchmark -- <framework arguments>", purpose: "Runs the installed framework CLI after verifying it is the pinned commit" },
   { id: "desktop/startup", owner: "claxedo-desktop", kind: "measurement", entrypoint: "bun run perf:startup", purpose: "Packaged Electron startup clock" },
   { id: "desktop/account-port", owner: "claxedo-desktop", kind: "measurement", entrypoint: "bun run perf:account-port", purpose: "Account boundary latency microbenchmark" },
   { id: "desktop/diagnostics", owner: "claxedo-desktop", kind: "regression", entrypoint: "bun run test:diagnostics-release", purpose: "Production process collection, transport, privacy and dependency tests" },
