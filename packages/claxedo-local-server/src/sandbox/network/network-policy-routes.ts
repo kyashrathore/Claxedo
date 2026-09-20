@@ -186,7 +186,15 @@ export function NetworkPolicyRoutes(options: Options = {}) {
       if (!body.success) return c.json(invalidBody(body.error), 400)
       const authResult = await signedOrError(c.req.raw, options)
       if (authResult.error) return c.json(authResult.error, authResult.status)
-      await authorizeWorkspace(authResult.auth, options, body.data.workspace_id ?? getPolicy(c.req.param("id"))?.workspace_id ?? undefined, true)
+      const policy = getPolicy(c.req.param("id"))
+      if (!policy) return c.json(notFound(), 404)
+      // The policy's recorded workspace decides authorization; a
+      // caller-supplied workspace_id must not stand in for it, and rebinding
+      // to another workspace is authorized on that workspace separately.
+      await authorizeWorkspace(authResult.auth, options, policy.workspace_id ?? undefined, true)
+      if (body.data.workspace_id && body.data.workspace_id !== policy.workspace_id) {
+        await authorizeWorkspace(authResult.auth, options, body.data.workspace_id, true)
+      }
       const result = updatePolicy(c.req.param("id"), {
         ...body.data,
         harness: body.data.harness ?? body.data.runner,

@@ -10,6 +10,7 @@ import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { observeAgentProcess } from "../../process-observer"
 import { createEvaluatedGoalResource } from "../shared/evaluated-goal-resource"
+import { harnessSpawnEnv } from "../shared/spawn-env"
 import { GOAL_PROMPT_TEXT, goalEvaluatorRequest, parseGoalEvaluation } from "../shared/goal-protocol"
 import path from "node:path"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
@@ -230,7 +231,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
 
   private environment(): NodeJS.ProcessEnv {
     return {
-      ...piSpawnEnv(process.env, this.auth),
+      ...piSpawnEnv(harnessSpawnEnv(process.env), this.auth),
       PI_CODING_AGENT_DIR: this.agentDir,
     }
   }

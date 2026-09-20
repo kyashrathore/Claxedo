@@ -362,6 +362,12 @@ export function CredentialRoutes(
       }
     })
     .post("/discover", async (c) => {
+      // Discovery reads this machine's env and agent config; on signed
+      // deployments a remote caller would otherwise import the operator's
+      // keys into their own org. Same gate as /machine-logins.
+      if (!isLoopbackLocalRequest(c.req.raw)) {
+        return c.json(errorBody("loopback_required", "Credential discovery reads this computer's material and is readable from this computer only"), 403)
+      }
       if (!credentials.discoverLocalCredentials) {
         return c.json(errorBody("credential_discovery_unavailable", "Credential discovery is unavailable"), 501)
       }
@@ -374,6 +380,9 @@ export function CredentialRoutes(
       }
     })
     .post("/save-discovered", async (c) => {
+      if (!isLoopbackLocalRequest(c.req.raw)) {
+        return c.json(errorBody("loopback_required", "Credential discovery reads this computer's material and is readable from this computer only"), 403)
+      }
       const body = saveDiscoveredBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       if (!credentials.saveDiscoveredCredentials) {
@@ -391,6 +400,9 @@ export function CredentialRoutes(
       }
     })
     .post("/sync-local", async (c) => {
+      if (!isLoopbackLocalRequest(c.req.raw)) {
+        return c.json(errorBody("loopback_required", "Credential sync reads this computer's material and is readable from this computer only"), 403)
+      }
       const body = syncBody.safeParse(await c.req.json().catch(() => ({})))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       try {

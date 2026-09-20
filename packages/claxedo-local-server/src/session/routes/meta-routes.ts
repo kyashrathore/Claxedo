@@ -318,7 +318,13 @@ export function SessionMetaRoutes(options: Options = {}) {
       const next = parseSessionMeta(body)
       const ws = await workspace(c).catch(() => undefined)
       const previous = await sessionMeta(c.req.param("id"))
-      await authorizeWrite(authResult.auth, options, ws?.id ?? previous?.workspaceID)
+      // The session's recorded workspace decides authorization; a
+      // caller-selected workspace must not stand in for it, and rebinding to
+      // another workspace is authorized on that workspace separately.
+      await authorizeWrite(authResult.auth, options, previous?.workspaceID ?? ws?.id)
+      if (ws && previous?.workspaceID && ws.id !== previous.workspaceID) {
+        await authorizeWrite(authResult.auth, options, ws.id)
+      }
       if (!Object.keys(next).length && !ws) {
         throw new HTTPException(400, { message: "session metadata update is empty" })
       }

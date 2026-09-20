@@ -50,6 +50,10 @@ const ALLOWED_VARS = new Set([
   // Git
   "GIT_SSH_COMMAND", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
   "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+  // Askpass helpers are how non-interactive credential supply reaches git/ssh
+  // (e.g. a credential manager for https remotes); they name programs, not
+  // secrets. `GIT_CONFIG_*` injection vars stay denied.
+  "GIT_ASKPASS", "SSH_ASKPASS",
 
   // Cloud tools
   "AWS_PROFILE", "AWS_DEFAULT_REGION", "AWS_CONFIG_FILE",

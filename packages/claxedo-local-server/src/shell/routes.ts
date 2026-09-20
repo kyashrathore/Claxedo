@@ -12,7 +12,9 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
-import { controlPlaneRouteAuth } from "../platform/http/control-plane-route-auth"
+import { controlPlaneRouteAuth, signedRouteAuth } from "../platform/http/control-plane-route-auth"
+import { roleAtLeast, type WorkspaceRole } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import type { MiddlewareHandler } from "hono"
 import { createControlPlaneEventsHandler, signedControlPlaneEventVisibleTo } from "./events"
 import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./file-browser"
 import { bootPath, workspaceInput } from "./request-context"
@@ -33,8 +35,65 @@ export function ShellRoutes(options: ShellRouteOptions = {}) {
   const routes = shellRoutes(options)
   for (const routePath of new Set(routes.routes.map((route) => route.path))) {
     app.use(routePath, controlPlaneRouteAuth(options))
+    if (WORKSPACE_SCOPED_PATHS.has(routePath)) app.use(routePath, shellWorkspaceGate(options))
   }
   return app.route("/", routes)
+}
+
+/**
+ * Workspace-scoped shell paths. `/global/health`, `/api/cp/events` (which
+ * resolves its own per-principal subscription), `/command`, and the
+ * `/project*` family (which authorizes per-project) are deliberately absent.
+ */
+const WORKSPACE_SCOPED_PATHS = new Set([
+  "/path",
+  "/find",
+  "/find/file",
+  "/file",
+  "/file/content",
+  "/file/status",
+  "/file/all",
+  "/agent",
+  "/experimental/worktree",
+  "/experimental/worktree/reset",
+])
+
+/**
+ * The authorization half `controlPlaneRouteAuth` cannot supply: a verified
+ * signature proves WHO the caller is, not WHICH workspace they may touch.
+ * In signed mode every workspace-scoped path must resolve to a registered
+ * workspace the caller can open — a bare `?directory=` is never the read
+ * root — and worktree mutations (which delete files or run `startCommand`
+ * through `bash -lc`) require admin.
+ *
+ * Unsigned-local requests pass untouched: there is no caller identity to
+ * check against and the loopback guard is the gate.
+ */
+function shellWorkspaceGate(options: ShellRouteOptions): MiddlewareHandler {
+  return async (c, next) => {
+    const auth = signedRouteAuth(c.req.raw)
+    if (!auth) {
+      await next()
+      return undefined
+    }
+    const input = workspaceInput(c)
+    const ws = await resolveWorkspace({
+      workspaceId: input.workspaceId,
+      directory: input.directory,
+    }).catch(() => undefined)
+    const opened = ws && options.services?.authority
+      ? await options.services.authority.openWorkspace(auth, { workspaceId: ws.id }).catch(() => undefined)
+      : undefined
+    if (!opened?.allowed || typeof opened.role !== "string") {
+      return c.json({ error: { code: "workspace_forbidden", message: "Workspace access denied" } }, 403)
+    }
+    const method = c.req.method.toUpperCase()
+    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && !roleAtLeast(opened.role as WorkspaceRole, "admin")) {
+      return c.json({ error: { code: "workspace_forbidden", message: "Workspace mutations require an admin role" } }, 403)
+    }
+    await next()
+    return undefined
+  }
 }
 
 function shellRoutes(options: ShellRouteOptions) {

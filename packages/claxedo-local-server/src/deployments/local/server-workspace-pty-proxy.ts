@@ -214,6 +214,15 @@ export function mountWorkspaceRuntimePtyWebSocketProxy(
       !!c.req.header("x-workspace-id") ||
       !!c.req.header("x-claxedo-directory")
     if (!hasWorkspaceTarget) return next()
+    // Same gate as the scoped variant below: attaching to a workspace
+    // terminal is loopback-only in this composition — an unauthenticated
+    // remote caller must not reach a live shell.
+    if (!isLoopbackLocalRequest(c.req.raw)) {
+      return c.json(
+        errorBody("workspace_relay_local_loopback_required", "Local workspace relay proxy requires loopback access"),
+        401,
+      )
+    }
 
     const workspace = await requestWorkspace(c).catch(() => undefined)
     if (workspace && workspace.kind !== "cloud") {

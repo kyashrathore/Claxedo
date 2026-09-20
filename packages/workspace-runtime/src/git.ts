@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { runtimeEnvText } from "./env"
+import { buildSafeEnv } from "./pty/env"
 import { rec } from "./json-value"
 
 export const GIT_TIMEOUT_MS = 10_000
@@ -35,8 +36,15 @@ export class GitTimeoutError extends Error {
  * Nobody is at the runtime's terminal to answer a credential prompt: a push to
  * a remote that wants a username would otherwise hang until the network
  * timeout. With prompts disabled git fails at once with a readable stderr.
+ *
+ * Git runs hook-executing commands (`commit`, `push`, `worktree add`) inside
+ * the workspace checkout, and a planted `.git/hooks/*` inherits whatever env
+ * git was launched with — in embedded mode that is the control plane's own
+ * env, including relay keys and management tokens. `buildSafeEnv` applies the
+ * same deny-by-default `CLAXEDO_`/`WORKSPACE_RUNTIME_*` boundary managed
+ * processes and PTYs already get.
  */
-const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+const GIT_ENV = { ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }), GIT_TERMINAL_PROMPT: "0" }
 
 function defaultGit(args: string[], cwd: string, options: GitOptions) {
   return new Promise<{ stdout: string; stderr?: string }>((resolve, reject) => {

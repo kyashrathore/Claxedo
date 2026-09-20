@@ -200,6 +200,12 @@ export function BootstrapRoutes(options: Options) {
             throw err
           }
         }
+        // On a signed deployment an anonymous remote caller must not learn the
+        // machine's directories and project inventory; loopback stays open
+        // because the operator's own tools bootstrap without a token.
+        if (authConfig.enabled && !isLoopbackLocalRequest(c.req.raw)) {
+          return c.json(controlPlaneAuthErrorBody(new ControlPlaneAuthError(401, "invalid_bearer_token", "Authentication required")), 401)
+        }
         return c.json(await localBootstrap(c.req.url, options))
       } catch (err) {
         return c.json({
