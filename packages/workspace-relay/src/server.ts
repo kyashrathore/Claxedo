@@ -690,6 +690,18 @@ const DANGEROUS_INBOUND_HEADER_PATTERNS: ReadonlyArray<RegExp> = [
   /^x-supervisor-/i,
 ]
 
+/**
+ * Headers a target resolver may add to the forwarded request: provider-
+ * specific upstream configuration only, exact names. Anything else the
+ * resolver supplies is dropped — it must never inject cookies, hop-by-hop
+ * headers, or the relay-owned authentication/identity headers stamped after
+ * it. The only producer today is the Daytona sandbox's preview token
+ * (`sandbox-relay-target.ts`).
+ */
+const UPSTREAM_HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
+  "x-daytona-preview-token",
+])
+
 function isDangerousInboundHeader(name: string) {
   const lower = name.toLowerCase()
   if ((DANGEROUS_INBOUND_HEADERS as ReadonlyArray<string>).includes(lower)) return true
@@ -739,16 +751,19 @@ function forwardHeaders(
   // responses that fail Zlib decompression). Force identity encoding so the
   // body streams through verbatim and the browser handles decompression.
   headers.set("accept-encoding", "identity")
+  // Resolver-supplied headers apply through an exact allowlist and BEFORE the
+  // relay-owned stamps below, so a resolver can set the provider headers it
+  // owns but can never overwrite authentication or identity headers.
+  for (const [name, value] of Object.entries(options.upstreamHeaders ?? {})) {
+    const trimmed = value.trim()
+    if (trimmed && UPSTREAM_HEADER_ALLOWLIST.has(name.toLowerCase())) headers.set(name, trimmed)
+  }
   headers.delete("authorization")
   headers.delete("Authorization")
   headers.set("Authorization", `Bearer ${relayHostToken}`)
   headers.set("x-workspace-id", workspaceId)
   headers.set("X-Daytona-Skip-Preview-Warning", "true")
   headers.set("X-Daytona-Skip-Last-Activity-Update", "true")
-  for (const [name, value] of Object.entries(options.upstreamHeaders ?? {})) {
-    const trimmed = value.trim()
-    if (trimmed) headers.set(name, trimmed)
-  }
   // Single relay-controlled marker that lets the host service distinguish
   // traffic coming through the relay from any other inbound source. We do not
   // attempt to preserve a client IP here because the relay is not behind a

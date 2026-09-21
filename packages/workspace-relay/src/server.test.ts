@@ -1028,7 +1028,7 @@ describe("workspace relay server", () => {
       expect(out.get("content-type")).toBe("application/json")
     })
 
-    test("applies trusted upstream headers after client and relay headers", () => {
+    test("applies allowlisted resolver headers without overwriting relay-owned ones", () => {
       const input = new Headers({
         "x-daytona-preview-token": "client-supplied",
         "x-workspace-id": "client-supplied",
@@ -1043,6 +1043,36 @@ describe("workspace relay server", () => {
       expect(out.get("x-daytona-preview-token")).toBe("resolver-supplied")
       expect(out.get("x-workspace-id")).toBe("ws_1")
       expect(out.get("x-empty-provider-header")).toBeNull()
+    })
+
+    test("resolver headers cannot overwrite relay-owned authentication or identity headers", () => {
+      const out = workspaceRelayForwardHeaders(new Headers(), "tok", "ws_1", {
+        upstreamHeaders: {
+          authorization: "Bearer resolver-supplied",
+          "x-workspace-id": "ws_other",
+          "x-forwarded-by": "resolver-proxy",
+          "X-Daytona-Preview-Token": "preview-ok",
+        },
+      })
+
+      expect(out.get("authorization")).toBe("Bearer tok")
+      expect(out.get("x-workspace-id")).toBe("ws_1")
+      expect(out.get("x-forwarded-by")).toBe("workspace-relay")
+      expect(out.get("x-daytona-preview-token")).toBe("preview-ok")
+    })
+
+    test("drops resolver-supplied headers outside the provider allowlist", () => {
+      const out = workspaceRelayForwardHeaders(new Headers(), "tok", "ws_1", {
+        upstreamHeaders: {
+          "x-acme-api-key": "injected",
+          cookie: "session=evil",
+          "x-claxedo-internal-actor": "spoofed",
+        },
+      })
+
+      expect(out.get("x-acme-api-key")).toBeNull()
+      expect(out.get("cookie")).toBeNull()
+      expect(out.get("x-claxedo-internal-actor")).toBeNull()
     })
 
     test("strips x-forwarded-for from inbound headers", () => {
@@ -1468,6 +1498,136 @@ describe("workspace relay server", () => {
           },
         },
       })
+
+      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: "Bearer custom" },
+      })
+
+      expect(res.status).toBe(401)
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "relay_token_claims_invalid",
+          message: "Workspace relay request was denied",
+        },
+      })
+    })
+
+    /**
+     * Verifier-claims harness for the post-verification clock checks: the
+     * verifier succeeds and returns the claims it is given, so only the
+     * relay's own time validation can refuse the request.
+     */
+    async function verifierAppForClaims(claims: Record<string, unknown>) {
+      const runtime = await generateKeyPair("EdDSA", { extractable: true })
+      const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+      return createWorkspaceRelay({
+        runtimeAccessKey: runtime.publicKey,
+        relayHostSigningKey: relayHost.privateKey,
+        relayHostAlgorithm: "EdDSA",
+        resolveTarget: (resolved) => ({
+          workspaceId: resolved.workspace_id,
+          hostId: resolved.host_id,
+          baseUrl: "https://host.example.test",
+          backing: "cloud-vm",
+        }),
+        tokenVerifier: {
+          async verify() {
+            return {
+              subject: "u-from-verifier",
+              scopes: ["workspace:write"],
+              claims: claims as RuntimeAccessVerifierClaims,
+            }
+          },
+        },
+      })
+    }
+
+    function verifierClaims(overrides: Record<string, unknown> = {}) {
+      return {
+        iss: "claxedo-control-plane",
+        aud: "workspace-relay",
+        principal_kind: "user",
+        actor_id: "u-from-verifier",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000),
+        jti: "jti_custom",
+        ...overrides,
+      }
+    }
+
+    test("rejects expired claims returned by an otherwise-successful verifier", async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const app = await verifierAppForClaims(verifierClaims({ iat: now - 600, exp: now - 300 }))
+
+      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: "Bearer custom" },
+      })
+
+      expect(res.status).toBe(401)
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "relay_token_claims_invalid",
+          message: "Workspace relay request was denied",
+        },
+      })
+    })
+
+    test("admits verifier claims expired inside the clock-skew tolerance", async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const app = await verifierAppForClaims(verifierClaims({ iat: now - 300, exp: now - 30 }))
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
+      try {
+        const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+          headers: { authorization: "Bearer custom" },
+        })
+        expect(res.status).toBe(200)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("rejects verifier claims with nbf beyond the clock-skew tolerance", async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const app = await verifierAppForClaims(verifierClaims({ nbf: now + 120 }))
+
+      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: "Bearer custom" },
+      })
+
+      expect(res.status).toBe(401)
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "relay_token_claims_invalid",
+          message: "Workspace relay request was denied",
+        },
+      })
+    })
+
+    test("rejects verifier claims with an nbf that is not a finite number", async () => {
+      const app = await verifierAppForClaims(verifierClaims({ nbf: "tomorrow" }))
+
+      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: "Bearer custom" },
+      })
+
+      expect(res.status).toBe(401)
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "relay_token_claims_invalid",
+          message: "Workspace relay request was denied",
+        },
+      })
+    })
+
+    test("rejects verifier claims with an absurdly distant exp", async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const app = await verifierAppForClaims(verifierClaims({ exp: now + 48 * 60 * 60 }))
 
       const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },

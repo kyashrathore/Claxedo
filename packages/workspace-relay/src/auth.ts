@@ -345,6 +345,34 @@ export async function verifyRuntimeAccessToken(token: string, key: RelayKey, exp
   return claims
 }
 
+/**
+ * Clock bounds applied to claims a custom `tokenVerifier` returns. The
+ * built-in JWT path gets the same floor from jose inside `verifyJwt`; a
+ * verifier result crosses this boundary instead, so the floor is re-stated
+ * here where no verifier implementation can skip it: expired past a small
+ * skew, `nbf` beyond that skew, or an exp so far out the token is
+ * effectively immortal are all refused.
+ */
+const RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS = 60
+const RUNTIME_ACCESS_TOKEN_MAX_LIFETIME_SECONDS = 24 * 60 * 60
+
+function checkRuntimeAccessTokenTimeClaims(payload: JWTPayload, claims: RuntimeAccessTokenClaims) {
+  const now = seconds()
+  if (claims.exp <= now - RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token is expired")
+  }
+  const nbf = numberClaim(payload, "nbf")
+  if (payload.nbf !== undefined && nbf === undefined) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token nbf claim is not a finite number")
+  }
+  if (nbf !== undefined && nbf > now + RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token is not yet valid")
+  }
+  if (claims.exp > now + RUNTIME_ACCESS_TOKEN_MAX_LIFETIME_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token lifetime exceeds the relay maximum")
+  }
+}
+
 export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>, expected: ExpectedTarget) {
   const payload = input as JWTPayload
   if (stringClaim(payload, "iss") !== runtimeAccessTokenIssuer || stringClaim(payload, "aud") !== runtimeAccessTokenAudience) {
@@ -355,6 +383,7 @@ export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>,
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token claims are incomplete")
   }
+  checkRuntimeAccessTokenTimeClaims(payload, claims)
   return claims
 }
 
