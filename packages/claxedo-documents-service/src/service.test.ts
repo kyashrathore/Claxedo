@@ -14,6 +14,21 @@ const deployment = {
   bindingProvenance: "cloudflare-service:documents-staging",
 }
 
+function enabledJobRequest(installationRevision: number): DocumentsJobRequest {
+  return {
+    environmentId: deployment.environmentId,
+    deploymentId: deployment.deploymentId,
+    installationRevision,
+    protocolVersion: SERVICE_PROTOCOL_VERSION,
+    operationId: "operation-1",
+    operationGrant: "opaque-core-grant",
+    organizationId: "organization-1",
+    actorId: "actor-1",
+    job: "persist_document_revision",
+    payload: {},
+  }
+}
+
 describe("Documents private service entrypoint", () => {
   test("probes as installed-disabled and refuses enqueue before reading the operation", async () => {
     const service = createDocumentsServiceRpc({
@@ -39,6 +54,18 @@ describe("Documents private service entrypoint", () => {
     })
 
     const unreadableRequest: DocumentsJobRequest = {
+      get environmentId(): string {
+        throw new Error("operation was read")
+      },
+      get deploymentId(): string {
+        throw new Error("operation was read")
+      },
+      get installationRevision(): number {
+        throw new Error("operation was read")
+      },
+      get protocolVersion(): typeof SERVICE_PROTOCOL_VERSION {
+        throw new Error("operation was read")
+      },
       get operationId(): string {
         throw new Error("operation was read")
       },
@@ -71,16 +98,7 @@ describe("Documents private service entrypoint", () => {
       },
     })
 
-    await expect(
-      service.enqueue({
-        operationId: "operation-1",
-        operationGrant: "opaque-core-grant",
-        organizationId: "organization-1",
-        actorId: "actor-1",
-        job: "persist_document_revision",
-        payload: {},
-      }),
-    ).rejects.toMatchObject({
+    await expect(service.enqueue(enabledJobRequest(2))).rejects.toMatchObject({
       code: "runtime_unavailable",
       message: expect.stringMatching(/grant verifier.*D1 job.*R2 revision/i),
     })
@@ -148,15 +166,74 @@ describe("Documents private service entrypoint", () => {
     const healthy = createDocumentsServiceRpc({ ...deployment, lifecycle, runtime })
     await expect(healthy.probe(request)).resolves.toMatchObject({ state: "enabled" })
     expect(runtime.probe).toHaveBeenCalledTimes(1)
+    await expect(healthy.enqueue(enabledJobRequest(2))).resolves.toEqual({
+      operationId: "operation-1",
+      accepted: true,
+      jobId: "job-1",
+    })
+  })
+
+  test("rejects malformed job shape and grant at the entrypoint without reaching the runtime", async () => {
+    const runtime = { probe: vi.fn(async () => undefined), enqueue: vi.fn() }
+    const service = createDocumentsServiceRpc({
+      ...deployment,
+      lifecycle: {
+        read: async () => ({ ...deployment, state: "enabled" as const, revision: 2 }),
+      },
+      runtime,
+    })
+
+    await expect(service.enqueue(null as unknown as DocumentsJobRequest)).rejects.toMatchObject({
+      code: "invalid_request",
+    })
+    await expect(service.enqueue({ ...enabledJobRequest(2), job: "uninstall" as never })).rejects.toMatchObject({
+      code: "invalid_request",
+    })
+    await expect(service.enqueue({ ...enabledJobRequest(2), payload: [] as never })).rejects.toMatchObject({
+      code: "invalid_request",
+    })
+    await expect(service.enqueue({ ...enabledJobRequest(2), operationGrant: "  " })).rejects.toMatchObject({
+      code: "invalid_request",
+    })
+    await expect(service.enqueue({ ...enabledJobRequest(2), operationId: "" })).rejects.toMatchObject({
+      code: "invalid_request",
+    })
+    expect(runtime.enqueue).not.toHaveBeenCalled()
+  })
+
+  test("rejects a job addressed to another installation before reaching the runtime", async () => {
+    const runtime = { probe: vi.fn(async () => undefined), enqueue: vi.fn() }
+    const service = createDocumentsServiceRpc({
+      ...deployment,
+      lifecycle: {
+        read: async () => ({ ...deployment, state: "enabled" as const, revision: 2 }),
+      },
+      runtime,
+    })
+
     await expect(
-      healthy.enqueue({
-        operationId: "operation-1",
-        operationGrant: "opaque-core-grant",
-        organizationId: "organization-1",
-        actorId: "actor-1",
-        job: "persist_document_revision",
-        payload: {},
-      }),
-    ).resolves.toEqual({ operationId: "operation-1", accepted: true, jobId: "job-1" })
+      service.enqueue({ ...enabledJobRequest(2), environmentId: "environment-other" }),
+    ).rejects.toMatchObject({ code: "installation_mismatch" })
+    await expect(
+      service.enqueue({ ...enabledJobRequest(2), deploymentId: "deployment-other" }),
+    ).rejects.toMatchObject({ code: "installation_mismatch" })
+    await expect(
+      service.enqueue({ ...enabledJobRequest(2), protocolVersion: "claxedo.service.v0" as never }),
+    ).rejects.toMatchObject({ code: "protocol_mismatch" })
+    expect(runtime.enqueue).not.toHaveBeenCalled()
+  })
+
+  test("rejects a job minted for a stale lifecycle revision", async () => {
+    const runtime = { probe: vi.fn(async () => undefined), enqueue: vi.fn() }
+    const service = createDocumentsServiceRpc({
+      ...deployment,
+      lifecycle: {
+        read: async () => ({ ...deployment, state: "enabled" as const, revision: 2 }),
+      },
+      runtime,
+    })
+
+    await expect(service.enqueue(enabledJobRequest(1))).rejects.toMatchObject({ code: "lifecycle_mismatch" })
+    expect(runtime.enqueue).not.toHaveBeenCalled()
   })
 })

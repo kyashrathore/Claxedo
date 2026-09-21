@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import {
   SERVICE_BINDINGS,
   SERVICE_PROTOCOL_VERSION,
@@ -116,6 +117,52 @@ async function requireLifecycle(input: DocumentsServiceLifecycleInput) {
   return lifecycle
 }
 
+function requireJobText(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() !== value || !value) {
+    throw new DocumentsServiceLifecycleError("invalid_request", `${field} must be a non-empty, trimmed string`)
+  }
+  return value
+}
+
+/**
+ * Shape gate for the untrusted RPC argument, mirroring requireProbeRequest:
+ * installation identity is refused before the job fields are read, and the
+ * operationGrant shape is checked here — verifying it stays with the runtime.
+ */
+function requireDocumentsJobRequest(rawRequest: unknown, input: DocumentsServiceRpcInput): DocumentsJobRequest {
+  if (!isRecord(rawRequest)) {
+    throw new DocumentsServiceLifecycleError("invalid_request", "Documents job request must be an object")
+  }
+  if (rawRequest.protocolVersion !== SERVICE_PROTOCOL_VERSION) {
+    throw new DocumentsServiceLifecycleError("protocol_mismatch", "Documents service protocol does not match")
+  }
+  const installationRevision = Number(rawRequest.installationRevision)
+  if (!Number.isSafeInteger(installationRevision) || installationRevision <= 0) {
+    throw new DocumentsServiceLifecycleError("invalid_request", "installationRevision must be a positive safe integer")
+  }
+  if (rawRequest.environmentId !== input.environmentId || rawRequest.deploymentId !== input.deploymentId) {
+    throw new DocumentsServiceLifecycleError("installation_mismatch", "Documents job targets another installation")
+  }
+  if (rawRequest.job !== "persist_document_revision") {
+    throw new DocumentsServiceLifecycleError("invalid_request", "Unknown documents job")
+  }
+  if (!isRecord(rawRequest.payload)) {
+    throw new DocumentsServiceLifecycleError("invalid_request", "payload must be an object")
+  }
+  return Object.freeze({
+    environmentId: input.environmentId,
+    deploymentId: input.deploymentId,
+    installationRevision,
+    protocolVersion: SERVICE_PROTOCOL_VERSION,
+    operationId: requireJobText(rawRequest.operationId, "operationId"),
+    operationGrant: requireJobText(rawRequest.operationGrant, "operationGrant"),
+    organizationId: requireJobText(rawRequest.organizationId, "organizationId"),
+    actorId: requireJobText(rawRequest.actorId, "actorId"),
+    job: "persist_document_revision",
+    payload: rawRequest.payload,
+  })
+}
+
 function requireRuntime(input: DocumentsServiceRpcInput) {
   if (!input.runtime) {
     throw new DocumentsServiceLifecycleError(
@@ -181,10 +228,17 @@ export function createDocumentsServiceRpc(
         serviceBuildId: lifecycle.serviceBuildId,
       }
     },
-    async enqueue(request) {
+    async enqueue(rawRequest) {
       const lifecycle = await requireLifecycle(input)
       if (lifecycle.state !== "enabled") {
         throw new DocumentsServiceLifecycleError("service_disabled", "Documents service is installed but disabled")
+      }
+      const request = requireDocumentsJobRequest(rawRequest, input)
+      if (request.installationRevision !== lifecycle.revision) {
+        throw new DocumentsServiceLifecycleError(
+          "lifecycle_mismatch",
+          "Documents job revision does not match service lifecycle",
+        )
       }
       return requireRuntime(input).enqueue(request)
     },
