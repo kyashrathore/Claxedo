@@ -3,6 +3,7 @@ import { isRecoveryOutcome, turnStopped, type RecoveryOutcome, type RecoveryRequ
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
 import {
+  cancellationRequestId,
   dispatchSessionRequestsEvent,
   failSessionRecoveryCommand,
   settleSessionRecoveryCommand,
@@ -56,25 +57,6 @@ export class RecoveryCommandFailure extends Error {
   }
 }
 
-/**
- * The cancellation in flight for a turn, so a user clicking Stop twice joins it
- * instead of opening a second operation against the same turn. A click after it
- * settles mints a new id: reusing the old one would read the finished attempt
- * back rather than retry.
- *
- * The intent is kept alongside the id because joining is only correct when the
- * command is the same one. An owner compares the whole intent behind a repeated
- * request id, so a plain Stop that reused a retry's id — a different attempt,
- * linked to a different operation — would be refused as an intent conflict.
- */
-type CancellationInFlight = { requestId: string; attempt: number; linkedOperationId?: string }
-
-const cancellingTurns = new Map<string, CancellationInFlight>()
-
-function sameCancellationIntent(current: CancellationInFlight, next: Omit<CancellationInFlight, "requestId">) {
-  return current.attempt === next.attempt && current.linkedOperationId === next.linkedOperationId
-}
-
 export type StopRunningTurnResult =
   | { cancelled: false }
   | { cancelled: true; outcome: RecoveryOutcome }
@@ -118,19 +100,27 @@ export async function stopRunningTurn(input: {
   const target = inspected.data.target
   if (!target) return { cancelled: false }
   if (input.expectedTurnId && target.turnId !== input.expectedTurnId) return { cancelled: false }
-  const key = `${target.sessionId}:${target.turnId}:${target.ownerGeneration}`
   const retry = input.retryOf
-  const intent = {
-    attempt: retry ? retry.attempt + 1 : 1,
-    ...(retry ? { linkedOperationId: retry.operationId } : {}),
-  }
-  const joined = cancellingTurns.get(key)
-  const inFlight: CancellationInFlight = joined && sameCancellationIntent(joined, intent)
-    ? joined
-    : { requestId: `composer-stop:${crypto.randomUUID()}`, ...intent }
-  const { requestId, attempt } = inFlight
-  cancellingTurns.set(key, inFlight)
-  startSessionRecoveryCommand({ sessionID: input.sessionID, requestId, action: "cancel_turn", attempt })
+  const attempt = retry ? retry.attempt + 1 : 1
+  const linked = retry ? { linkedOperationId: retry.operationId } : {}
+  // A second Stop for the same turn joins the one in flight; a retry, being a
+  // different intent, mints its own id rather than reusing one the owner would
+  // refuse as a conflict.
+  const requestId = cancellationRequestId({
+    sessionID: input.sessionID,
+    turnId: target.turnId,
+    attempt,
+    ...linked,
+    mint: () => `composer-stop:${crypto.randomUUID()}`,
+  })
+  startSessionRecoveryCommand({
+    sessionID: input.sessionID,
+    requestId,
+    action: "cancel_turn",
+    attempt,
+    turnId: target.turnId,
+    ...linked,
+  })
   try {
     const submitted = await input.client.session.recovery.submit({
       sessionID: input.sessionID,
@@ -141,7 +131,7 @@ export async function stopRunningTurn(input: {
         target,
         scopeRevision: target.ownerGeneration,
         attempt,
-        ...(inFlight.linkedOperationId ? { linkedOperationId: inFlight.linkedOperationId } : {}),
+        ...linked,
       },
     })
     settleSessionRecoveryCommand({ sessionID: input.sessionID, requestId, outcome: submitted.data })
@@ -152,8 +142,6 @@ export async function stopRunningTurn(input: {
     // retryable instead of leaving the user with a toast and no operation.
     failSessionRecoveryCommand({ sessionID: input.sessionID, requestId, message: stopReachMessage(error) })
     throw error
-  } finally {
-    if (cancellingTurns.get(key) === inFlight) cancellingTurns.delete(key)
   }
 }
 

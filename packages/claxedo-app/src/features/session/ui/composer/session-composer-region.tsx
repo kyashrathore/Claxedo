@@ -2,6 +2,7 @@ import { isRecoveryOutcome, type AgentSessionStartBinding } from "@claxedo/agent
 import { stopSessionInteraction } from "../../composer/ui/submit-abort"
 import { SessionRecoveryPanel, type SessionRecoveryClient } from "../session-recovery"
 import { recoveryPanelReachable, unresolvedRecoveryOperations } from "../recovery-outcome-copy"
+import type { ConversationDirectory } from "../../conversation/conversation-chat-client"
 import { sessionRecoveryCommand, subscribeSessionRecoveryCommand } from "../../store/session-status-dispatcher"
 import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -112,7 +113,7 @@ export function SessionComposerRegion(props: {
    * Reaches the session's recovery owner. Absent on surfaces with no owner to
    * ask, which simply get no panel rather than a page that cannot act.
    */
-  recoveryClient?: (directory: string) => SessionRecoveryClient
+  recoveryClient?: (directory: ConversationDirectory) => SessionRecoveryClient
   parentID?: string
   /**
    * A surface that embeds someone else's session. The reader gets no prompt

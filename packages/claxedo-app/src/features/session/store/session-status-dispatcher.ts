@@ -82,6 +82,10 @@ export type SessionRecoveryCommand = {
   action: RecoveryAction
   attempt: number
   startedAt: number
+  /** The turn this command names, when it names one. */
+  turnId?: string
+  /** The attempt this one follows, for a retry. */
+  linkedOperationId?: string
   /** Absent while the owner has not answered. */
   outcome?: RecoveryOutcome
   /** Set when the request never reached an owner, so there is no outcome to read. */
@@ -386,6 +390,8 @@ export function startSessionRecoveryCommand(input: {
   requestId: string
   action: RecoveryAction
   attempt: number
+  turnId?: string
+  linkedOperationId?: string
   now?: number
 }) {
   const current = sessionRecoveryCommand(input.sessionID)
@@ -395,9 +401,38 @@ export function startSessionRecoveryCommand(input: {
     requestId: input.requestId,
     action: input.action,
     attempt: input.attempt,
+    ...(input.turnId !== undefined ? { turnId: input.turnId } : {}),
+    ...(input.linkedOperationId !== undefined ? { linkedOperationId: input.linkedOperationId } : {}),
     startedAt: input.now ?? Date.now(),
   })
   return true
+}
+
+/**
+ * The request id a Stop should submit under: the one already in flight when
+ * this is the same command against the same turn, or a new one.
+ *
+ * Joining is only correct for an identical intent. An owner compares the whole
+ * intent behind a repeated request id, so a plain Stop reusing a retry's id — a
+ * different attempt, linked to a different operation — is refused as an intent
+ * conflict. The command row is the record of what is in flight, so there is no
+ * second index of it to fall out of step.
+ */
+export function cancellationRequestId(input: {
+  sessionID: string
+  turnId: string
+  attempt: number
+  linkedOperationId?: string
+  mint: () => string
+}) {
+  const current = sessionRecoveryCommand(input.sessionID)
+  const inFlight = current !== undefined && current.outcome === undefined && current.unreachable === undefined
+  const sameIntent = inFlight
+    && current.action === "cancel_turn"
+    && current.turnId === input.turnId
+    && current.attempt === input.attempt
+    && current.linkedOperationId === input.linkedOperationId
+  return sameIntent ? current.requestId : input.mint()
 }
 
 /**
