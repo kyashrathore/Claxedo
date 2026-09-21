@@ -73,6 +73,26 @@ describe("diagnostics child transport", () => {
     ).toBeFalse()
   })
 
+  test("carries an unresolved retirement and refuses one it cannot read", () => {
+    const answered = {
+      type: "owner-operation-result",
+      binding,
+      requestId: "request-1",
+      result: "unresolved",
+      retirement: { leader: "alive", descendants: "owned" },
+    }
+    expect(parseDiagnosticsTransportMessage(answered)).toEqual({ success: true, data: answered })
+
+    for (const retirement of [
+      { leader: "gone", descendants: "owned" },
+      { leader: "alive", descendants: "cleared" },
+      { leader: "alive" },
+      { leader: "alive", descendants: "owned", signals: [] },
+    ]) {
+      expect(parseDiagnosticsTransportMessage({ ...answered, retirement }).success, JSON.stringify(retirement)).toBeFalse()
+    }
+  })
+
   test("rejects contradictory owner kind and role", () => {
     expect(
       parseDiagnosticsTransportMessage({

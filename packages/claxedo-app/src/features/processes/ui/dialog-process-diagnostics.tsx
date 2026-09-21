@@ -27,6 +27,7 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
   // — declaring plain `boolean` made the `!!` below look redundant when it is not.
   const [expanded, setExpanded] = createSignal<Record<string, boolean | undefined>>({})
   const [busy, setBusy] = createSignal<string>()
+  const [unresolved, setUnresolved] = createSignal<Record<string, LocalDiagnostics.UnresolvedAction | undefined>>({})
   const [sessionScan, setSessionScan] = createSignal<LocalDiagnostics.SessionMemoryScanResult>()
   const [sessionScanBusy, setSessionScanBusy] = createSignal(false)
   const [sessionScanError, setSessionScanError] = createSignal<string>()
@@ -201,10 +202,17 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
         action === "stop"
           ? await capability.stop({ action: "stop", token: grant.token })
           : await capability.kill({ action: "kill", token: grant.token })
+      const stillHeld = !result.ok && result.code === "unresolved" ? result : undefined
+      setUnresolved((current) => ({
+        ...current,
+        [ownerId]: stillHeld ? { action, retirement: stillHeld.retirement } : undefined,
+      }))
       setAnnouncement(
-        result.ok
-          ? `${action === "stop" ? "Stopped" : "Killed"} the selected local owner.`
-          : `${action === "stop" ? "Stop" : "Kill"} was not completed: ${result.code}.`,
+        stillHeld
+          ? unresolvedReading(action, stillHeld.retirement)
+          : result.ok
+            ? `${action === "stop" ? "Stopped" : "Killed"} the selected local owner.`
+            : `${action === "stop" ? "Stop" : "Kill"} was not completed: ${result.code}.`,
       )
       accept(await capability.getSnapshot())
     } catch (cause) {
@@ -617,6 +625,13 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
                                       onAction={act}
                                     />
                                   </div>
+                                  <UnresolvedNotice
+                                    ownerId={contributor.owner.id}
+                                    eligibility={contributor.actionEligibility}
+                                    unresolved={unresolved()[contributor.owner.id]}
+                                    busy={busy()}
+                                    onRetry={act}
+                                  />
                                   <ul class="mt-2 grid gap-1" aria-label={`${contributor.owner.label} process tree`}>
                                     <For each={contributor.processes}>
                                       {(process) => (
@@ -705,6 +720,72 @@ function ActionControls(props: {
       )}
     </Show>
   )
+}
+
+/**
+ * A stop the owner could not prove. It keeps the owner's own controls in place
+ * and adds a retry, because the resources are still held: a second attempt has
+ * something left to reach, unlike a retry after a clean exit.
+ */
+function UnresolvedNotice(props: {
+  ownerId: string
+  eligibility: LocalDiagnostics.ActionEligibility
+  unresolved: LocalDiagnostics.UnresolvedAction | undefined
+  busy?: string
+  onRetry(ownerId: string, action: LocalDiagnostics.ActionKind, grant: LocalDiagnostics.ActionGrant): Promise<void>
+}) {
+  const grant = () => {
+    const unresolved = props.unresolved
+    if (!unresolved || props.eligibility.state !== "eligible") return undefined
+    return props.eligibility.actions.find((offer) => offer.action === unresolved.action)
+  }
+  return (
+    <Show when={props.unresolved}>
+      {(unresolved) => (
+        <div
+          role="status"
+          class="mt-2 rounded border border-border-weak-base px-2 py-1.5 text-xs text-text-base"
+        >
+          <p>{unresolvedReading(unresolved().action, unresolved().retirement)}</p>
+          <Show
+            when={grant()}
+            fallback={<p class="mt-1 text-text-weak">This owner no longer offers that action.</p>}
+          >
+            {(offer) => (
+              <Button
+                class="mt-1"
+                variant="ghost"
+                size="small"
+                disabled={props.busy === `${props.ownerId}:${unresolved().action}`}
+                onClick={() => void props.onRetry(props.ownerId, unresolved().action, offer())}
+              >
+                Retry
+              </Button>
+            )}
+          </Show>
+        </div>
+      )}
+    </Show>
+  )
+}
+
+/** Names the half that is unproven, so a person knows what a retry would reach. */
+function unresolvedReading(action: LocalDiagnostics.ActionKind, retirement: LocalDiagnostics.Retirement) {
+  const unproven = [
+    retirement.leader === "alive"
+      ? "the process is still running"
+      : retirement.leader === "unknown"
+        ? "whether the process exited is unknown"
+        : undefined,
+    retirement.descendants === "owned"
+      ? "it still owns processes it started"
+      : retirement.descendants === "unknown"
+        ? "whether the processes it started are gone is unknown"
+        : undefined,
+  ].filter((clause) => clause !== undefined)
+  return `${action === "stop" ? "Stop" : "Kill"} was accepted but could not be verified: ${
+    unproven.length > 0 ? unproven.join(", and ") : "nothing confirmed it is gone"
+  }. The owner kept it, so its port and terminal are still held. Retry to try again.`
 }
 
 function sourceTransition(

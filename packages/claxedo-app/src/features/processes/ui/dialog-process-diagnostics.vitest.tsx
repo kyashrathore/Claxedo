@@ -233,6 +233,55 @@ describe("local performance diagnostics dialog", () => {
     expect(state.getSnapshot).toHaveBeenCalledTimes(2)
   })
 
+  test("an unresolved stop says what is unproven, keeps ownership and offers Retry", async () => {
+    state.stop.mockResolvedValueOnce({
+      ok: false,
+      action: "stop",
+      code: "unresolved",
+      retirement: { leader: "alive", descendants: "unknown" },
+    })
+    render(() => <DialogProcessDiagnostics />)
+    await screen.findByText("CPU and memory history")
+    showTab("Processes")
+    fireEvent.click(screen.getByRole("button", { name: /Codex harness/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Stop gracefully" }))
+
+    // The same reading twice: the live region announces it and the notice beside
+    // the owner's own controls keeps it on screen.
+    expect(await screen.findAllByText(
+      "Stop was accepted but could not be verified: the process is still running, and whether the processes it started are gone is unknown."
+      + " The owner kept it, so its port and terminal are still held. Retry to try again.",
+    )).toHaveLength(2)
+
+    state.stop.mockResolvedValueOnce({ ok: true, action: "stop", completedAt: 5_000, markerId: "marker-retry" })
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+
+    await waitFor(() => expect(state.stop).toHaveBeenCalledTimes(2))
+    expect(state.stop.mock.calls[1]?.[0]).toEqual({ action: "stop", token: "opaque-diagnostics-token-0001" })
+    expect(await screen.findByText("Stopped the selected local owner.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument()
+  })
+
+  test("an unresolved kill names the descendants the owner still holds", async () => {
+    state.kill.mockResolvedValueOnce({
+      ok: false,
+      action: "kill",
+      code: "unresolved",
+      retirement: { leader: "exited", descendants: "owned" },
+    })
+    render(() => <DialogProcessDiagnostics />)
+    await screen.findByText("CPU and memory history")
+    showTab("Processes")
+    fireEvent.click(screen.getByRole("button", { name: /Codex harness/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Kill owned tree" }))
+
+    expect(await screen.findAllByText(
+      "Kill was accepted but could not be verified: it still owns processes it started."
+      + " The owner kept it, so its port and terminal are still held. Retry to try again.",
+    )).toHaveLength(2)
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument()
+  })
+
   test("labels both value axes with whole-number ticks", async () => {
     render(() => <DialogProcessDiagnostics />)
     const chart = await screen.findByRole("img")

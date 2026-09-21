@@ -153,6 +153,32 @@ describe("diagnostics owner actions", () => {
     })).toEqual({ state: "ineligible", reason: "protected-process" })
   })
 
+  test("an unresolved owner answer keeps its evidence, and an owner that proved nothing says so", async () => {
+    for (const [answer, retirement] of [
+      [{ result: "unresolved" as const, retirement: { leader: "alive" as const, descendants: "owned" as const } }, { leader: "alive", descendants: "owned" }],
+      [{ result: "unresolved" as const }, { leader: "unknown", descendants: "unknown" }],
+    ] as const) {
+      const actions = createDiagnosticsActions({
+        generation: "profiler-generation-1",
+        token: (() => {
+          let sequence = 0
+          return () => `opaque-diagnostics-token-unresolved-${retirement.leader}-${String(++sequence)}`
+        })(),
+      })
+      actions.register(descriptor, async () => answer)
+      const eligibility = actions.eligibility(processRecord, owner)
+      if (eligibility.state !== "eligible") throw new Error("expected eligible action")
+      const claimed = actions.claim({ action: "stop", token: eligibility.actions[0].token })
+      if (!claimed.ok) throw new Error("expected action claim")
+
+      expect(await actions.execute({
+        claim: claimed.claim,
+        resolveProcess: () => processRecord,
+        revalidate: async () => true,
+      })).toEqual({ ok: false, code: "unresolved", retirement })
+    }
+  })
+
   test("never grants an action without exact platform identity and a live owner callback", () => {
     const actions = createDiagnosticsActions({ generation: "profiler-generation-1" })
     actions.register(descriptor)

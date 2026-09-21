@@ -611,34 +611,73 @@ export namespace LocalDiagnostics {
   export const ActionRequest = z.discriminatedUnion("action", [StopRequest, KillRequest])
   export type ActionRequest = z.infer<typeof ActionRequest>
 
-  export const ActionResult = z.discriminatedUnion("ok", [
-    z
-      .object({
-        ok: z.literal(true),
-        action: ActionKind,
-        completedAt: Timestamp,
-        markerId: Identifier,
-      })
-      .strict(),
-    z
-      .object({
-        ok: z.literal(false),
-        action: ActionKind,
-        code: z.enum([
-          "invalid-token",
-          "expired-token",
-          "stale-generation",
-          "identity-mismatch",
-          "owner-unavailable",
-          "not-eligible",
-          "user-cancelled",
-          "operation-failed",
-          "already-exited",
-        ]),
-      })
-      .strict(),
-  ])
+  /**
+   * What a retirement established about the process and about anything it
+   * started. `verified_clear` descendants are only reachable when the launch
+   * protocol proves no payload ever ran; an emptied process group does not earn
+   * it, because a descendant that called `setsid` has left the group and
+   * neither macOS nor Linux offers an enumeration that would find it again.
+   */
+  export const Retirement = z
+    .object({
+      leader: z.enum(["exited", "alive", "unknown"]),
+      descendants: z.enum(["verified_clear", "owned", "unknown"]),
+    })
+    .strict()
+  export type Retirement = z.infer<typeof Retirement>
+
+  const ActionPerformed = z
+    .object({
+      ok: z.literal(true),
+      action: ActionKind,
+      completedAt: Timestamp,
+      markerId: Identifier,
+    })
+    .strict()
+
+  const ActionRefused = z
+    .object({
+      ok: z.literal(false),
+      action: ActionKind,
+      code: z.enum([
+        "invalid-token",
+        "expired-token",
+        "stale-generation",
+        "identity-mismatch",
+        "owner-unavailable",
+        "not-eligible",
+        "user-cancelled",
+        "operation-failed",
+        "already-exited",
+      ]),
+    })
+    .strict()
+
+  /**
+   * The owner asked and could not prove the process gone, so it kept the
+   * process, its port and its pty id rather than reporting a stop. The
+   * retirement names which half is unproven, which is what tells a person
+   * whether retrying can reach anything.
+   */
+  const ActionUnresolved = z
+    .object({
+      ok: z.literal(false),
+      action: ActionKind,
+      code: z.literal("unresolved"),
+      retirement: Retirement,
+    })
+    .strict()
+
+  /**
+   * A plain union, not a discriminated one: two members share `ok: false` and
+   * zod refuses a repeated discriminator value. Every member is strict, so a
+   * payload that belongs to none of them is still refused.
+   */
+  export const ActionResult = z.union([ActionPerformed, ActionRefused, ActionUnresolved])
   export type ActionResult = z.infer<typeof ActionResult>
+
+  /** The action a person can retry, and what the owner failed to prove about it. */
+  export type UnresolvedAction = { action: ActionKind; retirement: Retirement }
 
   export const SetContextRequest = Context
   export type SetContextRequest = z.infer<typeof SetContextRequest>
