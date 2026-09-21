@@ -277,7 +277,7 @@ export function hostedOrgCredentials(
       const record = await read(id)
       if (!record) return
       record.meta.health = health
-      record.meta.status = statusAfterVerification(
+      record.meta.status = revocationPreservingStatus(
         record.meta.status,
         health === "ok" ? "available" : health === "expired" ? "expired" : "error",
       )
@@ -297,7 +297,7 @@ export function hostedOrgCredentials(
       record.meta.health = null
       record.meta.last_validated_at = null
       record.meta.last_error = null
-      record.meta.status = statusAfterVerification(record.meta.status, "available")
+      record.meta.status = revocationPreservingStatus(record.meta.status, "available")
       record.meta.revision = record.meta.revision + 1
       record.meta.updated_at = now()
       await write(record)
@@ -309,7 +309,7 @@ export function hostedOrgCredentials(
 }
 
 /** Provider health and token rotation cannot undo the operator's revocation. */
-function statusAfterVerification(stored: CredentialStatus, verdict: CredentialStatus): CredentialStatus {
+function revocationPreservingStatus(stored: CredentialStatus, verdict: CredentialStatus): CredentialStatus {
   return stored === "revoked" ? "revoked" : verdict
 }
 
