@@ -9,10 +9,13 @@ import {
   parseRecoveryOutcome,
   parseRecoveryRequest,
   parseRecoveryTarget,
+  RECOVERY_ACTION_SCOPES,
   RECOVERY_ACTIONS,
+  RECOVERY_TARGET_SCOPES,
   RecoveryContractError,
   recoveryIntentEquals,
   recoveryPostconditionHolds,
+  recoveryTargetsMatch,
   serializeRecoveryOutcome,
   type CleanupFact,
   type ExecutionFact,
@@ -23,17 +26,44 @@ import {
   type RecoveryOperation,
   type RecoveryOutcome,
   type RecoveryRefusal,
+  type RecoveryHarnessTarget,
+  type RecoveryMachineTarget,
   type RecoveryRequest,
+  type RecoverySessionTarget,
   type RecoveryTarget,
+  type RecoveryTargetScope,
+  type RecoveryTurnTarget,
 } from "./recovery"
 
-const target: RecoveryTarget = {
+const target: RecoveryTurnTarget = {
+  scope: "turn",
   machineId: "machine-1",
   workspaceId: "workspace-1",
   sessionId: "session-1",
   turnId: "turn-7",
   ownerGeneration: "gen-3",
   writeAuthority: "lease-42",
+}
+
+const sessionTarget: RecoverySessionTarget = {
+  scope: "session",
+  machineId: "machine-1",
+  workspaceId: "workspace-1",
+  sessionId: "session-1",
+  ownerGeneration: "gen-3",
+}
+
+const harnessTarget: RecoveryHarnessTarget = {
+  scope: "harness",
+  workspaceId: "workspace-1",
+  harnessKey: "codex@gen-3",
+  ownerGeneration: "gen-3",
+}
+
+const machineTarget: RecoveryMachineTarget = {
+  scope: "machine",
+  machineId: "machine-1",
+  ownerGeneration: "gen-3",
 }
 
 const request: RecoveryRequest = {
@@ -109,19 +139,91 @@ describe("recovery request validation", () => {
     ["missing session", { ...request, target: { ...target, sessionId: "" } }, "invalid_target"],
     ["missing workspace", { ...request, target: { ...target, workspaceId: undefined } }, "invalid_target"],
     ["target not an object", { ...request, target: "turn-7" }, "invalid_target"],
+    ["target without a scope", { ...request, target: { ...target, scope: undefined } }, "invalid_target_scope"],
+    ["target with an unknown scope", { ...request, target: { ...target, scope: "cluster" } }, "invalid_target_scope"],
+    ["machine target without a machine", { ...request, action: "drain_daemon", target: { scope: "machine", ownerGeneration: "gen-3" } }, "invalid_target"],
+    ["harness target without a key", { ...request, action: "retire_harness", target: { ...harnessTarget, harnessKey: "" } }, "invalid_target"],
     ["request not an object", "cancel", "invalid_payload"],
     ["empty linked operation", { ...request, linkedOperationId: "" }, "invalid_operation"],
   ])("rejects %s", (_label, input, code) => {
     expect(codeOf(() => parseRecoveryRequest(input))).toBe(code)
   })
 
-  test("a target keeps only the identity fields it was given", () => {
+  test("a target keeps only the identity fields its scope defines", () => {
     expect(parseRecoveryTarget({ ...target, machineId: undefined, writeAuthority: undefined, pid: 4242 })).toEqual({
+      scope: "turn",
       workspaceId: "workspace-1",
       sessionId: "session-1",
       turnId: "turn-7",
       ownerGeneration: "gen-3",
     })
+    expect(parseRecoveryTarget({ ...machineTarget, workspaceId: "workspace-1", turnId: "turn-7" })).toEqual(machineTarget)
+    expect(parseRecoveryTarget({ ...harnessTarget, sessionId: "session-1" })).toEqual(harnessTarget)
+  })
+})
+
+describe("action and target scope", () => {
+  test.each([
+    ["cancel_turn", sessionTarget],
+    ["cancel_turn", machineTarget],
+    ["reconcile_session", harnessTarget],
+    ["retire_harness", target],
+    ["drain_daemon", target],
+    ["stop_daemon", sessionTarget],
+  ] as Array<[RecoveryAction, RecoveryTarget]>)("%s refuses a %o target", (action, value) => {
+    expect(codeOf(() => parseRecoveryRequest({ ...request, action, target: value }))).toBe("scope_mismatch")
+  })
+
+  test.each([
+    ["cancel_turn", target],
+    ["reconcile_session", sessionTarget],
+    ["reconcile_session", target],
+    ["retire_harness", harnessTarget],
+    ["drain_daemon", machineTarget],
+    ["stop_daemon", machineTarget],
+  ] as Array<[RecoveryAction, RecoveryTarget]>)("%s accepts its own owner", (action, value) => {
+    expect(parseRecoveryRequest({ ...request, action, target: value }).target).toEqual(value)
+  })
+
+  test("inspect reaches every owner", () => {
+    for (const value of [target, sessionTarget, harnessTarget, machineTarget]) {
+      expect(parseRecoveryRequest({ ...request, action: "inspect", target: value }).target).toEqual(value)
+    }
+    expect(RECOVERY_ACTION_SCOPES.inspect).toEqual(RECOVERY_TARGET_SCOPES)
+  })
+
+  test("every action names at least one scope it can target", () => {
+    for (const action of RECOVERY_ACTIONS) expect(RECOVERY_ACTION_SCOPES[action].length).toBeGreaterThan(0)
+  })
+})
+
+describe("target identity comparison", () => {
+  test("a renewed write authority is still the same target", () => {
+    expect(recoveryTargetsMatch(target, { ...target, writeAuthority: "lease-43" })).toBe(true)
+    expect(recoveryTargetsMatch(target, { ...target, writeAuthority: undefined })).toBe(true)
+  })
+
+  test.each([
+    ["owner generation", { ...target, ownerGeneration: "gen-4" }],
+    ["turn", { ...target, turnId: "turn-8" }],
+    ["session", { ...target, sessionId: "session-2" }],
+    ["workspace", { ...target, workspaceId: "workspace-2" }],
+    ["machine", { ...target, machineId: "machine-2" }],
+    ["absent machine", { ...target, machineId: undefined }],
+  ] as Array<[string, RecoveryTarget]>)("a different %s is a different target", (_label, other) => {
+    expect(recoveryTargetsMatch(target, other)).toBe(false)
+  })
+
+  test("targets of different scopes never match", () => {
+    expect(recoveryTargetsMatch(target, sessionTarget)).toBe(false)
+    expect(recoveryTargetsMatch(sessionTarget, machineTarget)).toBe(false)
+    expect(recoveryTargetsMatch(harnessTarget, machineTarget)).toBe(false)
+  })
+
+  test("each scope matches itself", () => {
+    for (const value of [target, sessionTarget, harnessTarget, machineTarget] as RecoveryTarget[]) {
+      expect(recoveryTargetsMatch(value, JSON.parse(JSON.stringify(value)))).toBe(true)
+    }
   })
 })
 
@@ -134,6 +236,7 @@ describe("repeated request identity", () => {
     ["action", { action: "reconcile_session" as RecoveryAction }],
     ["owner generation", { target: { ...target, ownerGeneration: "gen-4" } }],
     ["turn", { target: { ...target, turnId: "turn-8" } }],
+    ["target scope", { action: "reconcile_session" as RecoveryAction, target: sessionTarget }],
     ["scope revision", { scopeRevision: "scope-10" }],
     ["linked operation", { linkedOperationId: "op-9" }],
   ])("the same request id with a different %s is a different command", (_label, change) => {
@@ -238,6 +341,7 @@ describe("outcome wire form", () => {
     { kind: "intent_conflict", message: "request id reused with a different target", requestId: "req-1" },
     { kind: "receipt_expired", message: "the receipt for req-1 is no longer retained", requestId: "req-1" },
     { kind: "scope_changed", message: "two more sessions now share this harness", scopeRevision: "scope-10", preview: { sessions: ["session-1", "session-2"], resources: ["harness:codex@gen-3"], summary: "2 sessions, 1 harness" } },
+    { kind: "generation_conflict", message: "the daemon was replaced", current: machineTarget },
     { kind: "unauthorized", message: "session access does not authorize retiring a shared harness" },
     { kind: "unavailable", message: "this instance does not own turn-7 and cannot reach the owner" },
     { kind: "version_update_required", message: "this client predates the recovery contract", contractVersion: 2 },
@@ -247,6 +351,21 @@ describe("outcome wire form", () => {
     ["operation", { kind: "operation", operation } as RecoveryOutcome],
     ...refusals.map((refusal) => [refusal.kind, { kind: "refused", refusal } as RecoveryOutcome] as const),
   ])("round trips a %s outcome through JSON", (_label, outcome) => {
+    const once = serializeRecoveryOutcome(parseRecoveryOutcome(serializeRecoveryOutcome(outcome)))
+    expect(parseRecoveryOutcome(once)).toEqual(outcome)
+    expect(serializeRecoveryOutcome(parseRecoveryOutcome(once))).toBe(once)
+  })
+
+  test.each([
+    ["turn", "cancel_turn", target],
+    ["session", "reconcile_session", sessionTarget],
+    ["harness", "retire_harness", harnessTarget],
+    ["machine", "drain_daemon", machineTarget],
+  ] as Array<[RecoveryTargetScope, RecoveryAction, RecoveryTarget]>)("round trips a %s-scoped operation", (_scope, action, value) => {
+    const outcome: RecoveryOutcome = {
+      kind: "operation",
+      operation: { ...operation, action, target: value, initiatingError: { ...cleanupError, target: value }, cleanupErrors: [{ ...cleanupError, target: value }] },
+    }
     const once = serializeRecoveryOutcome(parseRecoveryOutcome(serializeRecoveryOutcome(outcome)))
     expect(parseRecoveryOutcome(once)).toEqual(outcome)
     expect(serializeRecoveryOutcome(parseRecoveryOutcome(once))).toBe(once)
