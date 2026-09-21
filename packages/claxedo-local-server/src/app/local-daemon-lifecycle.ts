@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import {
   DEFAULT_RECOVERY_BUDGETS,
+  capChildBudget,
   finalizeRecoveryOperation,
   recoveryIntentEquals,
   recoveryTargetsMatch,
@@ -16,7 +17,7 @@ import {
   type RecoveryScopePreview,
   type RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
-import { reconcileLaunch, verifyCreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { reconcileLaunch, verifyCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 import { Pty } from "@claxedo/workspace-runtime"
 import {
   embeddedWorkspaceRuntimeActivity,
@@ -150,13 +151,21 @@ export function localDaemonScopePreview(
   // turn ids that name which of each session's work would be interrupted.
   const sessions = [...new Set(work.owners.flatMap((owner) =>
     owner.kind === "turn" ? [owner.id.split(":")[2]!] : []))].sort()
-  return {
-    sessions,
-    resources,
-    summary: unreadable.size > 0
-      ? `${work.owners.length} named owners, and additional impact in ${unreadable.size} workspace(s) is unknown because their launch records could not be read`
-      : `${work.owners.length} named owners`,
-  }
+  // Writes and checkpoint transitions own nothing and appear in no owner list,
+  // but either one blocks a drain, so a summary counting only owners would
+  // describe a machine as emptier than it is.
+  const blocking = [
+    ...(work.runtime.activeWrites > 0 ? [`${work.runtime.activeWrites} workspace write(s)`] : []),
+    ...(work.runtime.checkpointing > 0 ? [`${work.runtime.checkpointing} checkpoint transition(s)`] : []),
+  ]
+  const summary = [
+    `${work.owners.length} named owners`,
+    ...(blocking.length > 0 ? [`${blocking.join(" and ")} that own nothing but block a drain`] : []),
+    ...(unreadable.size > 0
+      ? [`additional impact in ${unreadable.size} workspace(s) is unknown because their launch records could not be read`]
+      : []),
+  ]
+  return { sessions, resources, summary: summary.join("; ") }
 }
 
 export type LocalDaemonLease = Readonly<{
@@ -180,7 +189,7 @@ export type MachineRecoveryGate = { operationId: string; scopeRevision: string; 
  */
 export type MachineIngressHold =
   | ({ kind: "operation" } & MachineRecoveryGate)
-  | { kind: "launch_reconciliation"; overdueAfterMs?: number }
+  | { kind: "launch_reconciliation"; overdueAfterMs?: number; pending?: string[] }
 
 /** What a survivor of the previous owner turned out to be. */
 export type ReconciledLaunch = {
@@ -218,8 +227,18 @@ type MachineOperationRun = {
 
 export function createLocalDaemonLifecycle(options: {
   activity?: () => LocalDaemonWorkActivity
-  /** Requests that this process stop: reached by idle grace and by `stop_daemon`. */
-  onStop: () => void | Promise<void>
+  /**
+   * Releases everything this process owns. Reached by idle grace and by
+   * `stop_daemon`; it must resolve only once the owners are actually released,
+   * because the receipt is written from what it reached.
+   */
+  onStop: () => void | Promise<unknown>
+  /**
+   * Ends the process. Called after `onStop` has settled AND any receipt that
+   * asked for it has been committed, so a stop's own receipt is never lost to
+   * the exit it requested.
+   */
+  onStopped?: () => void
   machine: {
     machineId: string
     generation: string
@@ -265,6 +284,9 @@ export function createLocalDaemonLifecycle(options: {
   let reconcilingLaunches: Promise<ReconciledLaunch[]> | undefined
   let launchesReconciled = false
   let launchesOverdueAfterMs: number | undefined
+  /** Launch ids read but not yet answered for, so an overdue refusal names them. */
+  let launchesPending: string[] = []
+  let ended = false
   /** Workspaces whose launch records could not be read, by the reason each gave. */
   const unreadableLaunches = new Map<string, string>()
 
@@ -281,6 +303,13 @@ export function createLocalDaemonLifecycle(options: {
   let timer: ReturnType<typeof setTimeout> | undefined
   let idleSince: number | undefined
   let state: "created" | "running" | "idle" | "stopping" | "stopped" = "created"
+
+  /** Ends the process once, whichever path released the owners. */
+  function stopped() {
+    if (ended) return
+    ended = true
+    options.onStopped?.()
+  }
 
   function clearTimer() {
     if (!timer) return
@@ -333,6 +362,7 @@ export function createLocalDaemonLifecycle(options: {
       state = "stopping"
       void Promise.resolve(options.onStop()).finally(() => {
         state = "stopped"
+        stopped()
       })
       return
     }
@@ -368,7 +398,7 @@ export function createLocalDaemonLifecycle(options: {
         generation,
       },
       persistence: {
-        value: options.machine.operations ? "committed" : "unavailable",
+        value: options.machine.operations && !storeUnavailable ? "committed" : "unavailable",
         source: "local-daemon",
         observedAt: at,
         generation,
@@ -437,6 +467,10 @@ export function createLocalDaemonLifecycle(options: {
   async function reconcileLaunches(): Promise<ReconciledLaunch[]> {
     const read = options.machine.ownership ?? embeddedWorkspaceRuntimeOwnership
     const reconciled: ReconciledLaunch[] = []
+    // One deadline for the whole reconciliation, not one per step: a per-step
+    // budget multiplied by the number of launches is a deadline the caller was
+    // never promised.
+    const deadlineAt = now() + budgets.reconcileMs
     try {
       let owned: EmbeddedWorkspaceRuntimeOwnership[]
       try {
@@ -445,7 +479,7 @@ export function createLocalDaemonLifecycle(options: {
         // but a restart. The read is detached rather than abandoned: when it
         // settles late its records are still reconciled, and until then the
         // refusal says the reconciliation is overdue instead of going quiet.
-        owned = await settleWithin(read(), budgets.reconcileMs, () => {
+        owned = await settleWithin(read(), deadlineAt - now(), () => {
           launchesOverdueAfterMs = budgets.reconcileMs
           options.machine.onLaunchesUnreadable?.(
             undefined,
@@ -468,24 +502,36 @@ export function createLocalDaemonLifecycle(options: {
           continue
         }
         unreadableLaunches.delete(owner.workspaceId)
-        for (const record of owner.launches ?? []) {
-          const execution = reconcileLaunch(record)
-          const row: ReconciledLaunch = {
-            workspaceId: owner.workspaceId,
-            launchId: record.launchId,
-            ownerGeneration: record.ownerGeneration,
-            role: record.role,
-            execution: execution.execution,
-            because: execution.because,
-            ...(record.identity ? { identity: (await verifyCreationIdentity(record.identity)).state } : {}),
+        const records = owner.launches ?? []
+        launchesPending = [...launchesPending, ...records.map((record) => record.launchId)]
+        // Bounded concurrency: each verdict costs a subprocess, and a workspace
+        // with hundreds of unsettled launches would otherwise fork all of them
+        // at once on a machine that is already in trouble.
+        for (let index = 0; index < records.length; index += IDENTITY_PROBE_CONCURRENCY) {
+          const batch = records.slice(index, index + IDENTITY_PROBE_CONCURRENCY)
+          const rows = await Promise.all(batch.map(async (record): Promise<ReconciledLaunch> => {
+            const execution = reconcileLaunch(record)
+            return {
+              workspaceId: owner.workspaceId,
+              launchId: record.launchId,
+              ownerGeneration: record.ownerGeneration,
+              role: record.role,
+              execution: execution.execution,
+              because: execution.because,
+              ...(record.identity ? { identity: await identityVerdict(record.identity, deadlineAt) } : {}),
+            }
+          }))
+          for (const row of rows) {
+            reconciled.push(row)
+            launchesPending = launchesPending.filter((id) => id !== row.launchId)
+            options.machine.onLaunchReconciled?.(row)
           }
-          reconciled.push(row)
-          options.machine.onLaunchReconciled?.(row)
         }
       }
     } finally {
       launchesReconciled = true
       launchesOverdueAfterMs = undefined
+      launchesPending = []
       changed()
     }
     return reconciled
@@ -549,9 +595,11 @@ export function createLocalDaemonLifecycle(options: {
   }
 
   /**
-   * Reopens one drain's gates. It never reopens "the fence": two operations can
-   * hold gates over the same owners, so releasing whatever happens to be closed
-   * would un-gate a scope this caller never authorized reopening.
+   * Stops this process and records what stopping it reached. `onStop` resolves
+   * only once the server has actually released its owners, so the facts below
+   * are read after the work is gone rather than on the acknowledgement — a
+   * receipt written while everything was still running says `needs_action`, and
+   * that receipt then fences the next generation from boot.
    */
   async function runStop(operationId: string) {
     const run = runs.get(operationId)
@@ -565,8 +613,17 @@ export function createLocalDaemonLifecycle(options: {
     const at = now()
     const work = activity()
     run.operation = commit(finalizeRecoveryOperation({ ...run.operation, updatedAt: at }, facts(work, at)))
+    // Only now: a process that exited before this line would leave a receipt
+    // saying the machine still had work, and that receipt fences the next
+    // generation from boot.
+    stopped()
   }
 
+  /**
+   * Reopens one drain's gates. It never reopens "the fence": two operations can
+   * hold gates over the same owners, so releasing whatever happens to be closed
+   * would un-gate a scope this caller never authorized reopening.
+   */
   function release(
     request: RecoveryRequest,
     caller: MachineRecoveryCaller,
@@ -595,6 +652,14 @@ export function createLocalDaemonLifecycle(options: {
           kind: "unavailable",
           message: `operation ${drainId} is a ${drainRun.operation.action}, and only a drain's gates may be reopened`,
         },
+      }
+    }
+    // Its gates are already gone. Releasing again would rewrite the receipt of
+    // a drain that is over, against a fence some later operation may hold.
+    if (drainRun.released) {
+      return {
+        kind: "refused",
+        refusal: { kind: "unavailable", message: `drain ${drainId} was already released; its gates are reopened` },
       }
     }
     // A stop already under way has begun removing the owners this gate covers.
@@ -859,6 +924,16 @@ export function createLocalDaemonLifecycle(options: {
       const gates = store.gates(operation.operationId)
       const run: MachineOperationRun = { operation, callers: new Set(), settled: Promise.resolve() }
       runs.set(operation.operationId, run)
+      // An operation a PREVIOUS generation left behind can never fence this
+      // one. That owner is provably gone — this process holds the port and the
+      // data directory it held — and its gates covered owners that lived inside
+      // it. What that generation may have left on the machine is a launch
+      // record, which the startup launch reconciliation is what answers for.
+      if (operation.target.ownerGeneration !== options.machine.generation) {
+        run.operation = commit(settlePreviousGeneration(operation, gates.length, at))
+        store.releaseGates(operation.operationId)
+        continue
+      }
       gate ??= {
         operationId: operation.operationId,
         scopeRevision: operation.scopeRevision,
@@ -889,6 +964,46 @@ export function createLocalDaemonLifecycle(options: {
           { action: operation.action, scopePreviewRequired: true, reason: "authorize the operation against the current scope" },
         ],
       })
+    }
+  }
+
+  /**
+   * What an earlier generation's unsettled operation turns out to be, read from
+   * the one thing this process establishes by running: the owner that recorded
+   * it is gone.
+   *
+   * A stop asked for exactly that and got it, however its own receipt ended —
+   * a daemon cannot commit "I exited" after exiting. A drain asked for
+   * something else and never reached it, so it stays a failure rather than
+   * being rewritten into a success by the death of its owner.
+   */
+  function settlePreviousGeneration(operation: RecoveryOperation, gates: number, at: number): RecoveryOperation {
+    const generation = operation.target.ownerGeneration
+    const evidence: RecoveryFacts = {
+      execution: { value: "terminal", source: "local-daemon", observedAt: at, generation },
+      // Only the daemon process is established gone. What it launched is the
+      // launch reconciliation's answer, not this one's.
+      cleanup: { value: "unknown", source: "local-daemon", observedAt: at, generation },
+      persistence: { value: "committed", source: "local-daemon", observedAt: at, generation },
+    }
+    if (operation.action === "stop_daemon") {
+      return { ...operation, state: "succeeded", updatedAt: at, facts: evidence }
+    }
+    return {
+      ...operation,
+      state: "failed",
+      updatedAt: at,
+      facts: evidence,
+      initiatingError: {
+        code: "generation_retired",
+        origin: "local-daemon",
+        target: operation.target,
+        stage: operation.phase,
+        executionMayContinue: false,
+        message: `the daemon generation that authorized this operation is gone; its ${String(gates)} gates covered owners that went with it`,
+        at,
+      },
+      nextActions: [{ action: operation.action, scopePreviewRequired: true, reason: "authorize it against this generation" }],
     }
   }
 
@@ -946,7 +1061,9 @@ export function createLocalDaemonLifecycle(options: {
         if (!reconcilingLaunches || launchesReconciled) return undefined
         return {
           kind: "launch_reconciliation",
-          ...(launchesOverdueAfterMs === undefined ? {} : { overdueAfterMs: launchesOverdueAfterMs }),
+          ...(launchesOverdueAfterMs === undefined
+            ? {}
+            : { overdueAfterMs: launchesOverdueAfterMs, pending: [...launchesPending] }),
         }
       },
       /** Joins the startup reconciliation; the entry does not have to wait on it. */
@@ -1026,4 +1143,20 @@ async function settleWithin<T>(pending: Promise<T>, budgetMs: number, onOverdue:
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+/** How many creation identities are probed at once; each costs a subprocess. */
+const IDENTITY_PROBE_CONCURRENCY = 4
+
+/**
+ * One launch's identity verdict, capped by the reconciliation's own deadline.
+ * A probe with no time left is not run: `unknown` is what this owner can say,
+ * and it is the same answer the probe would be believed for anyway.
+ */
+async function identityVerdict(identity: CreationIdentity, deadlineAt: number) {
+  const at = Date.now()
+  const budget = capChildBudget(deadlineAt, deadlineAt - at, at) - at
+  if (budget <= 0) return "unknown" as const
+  return (await settleWithin(verifyCreationIdentity(identity), budget, () => {})
+    .catch(() => ({ state: "unknown" as const }))).state
 }

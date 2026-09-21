@@ -406,6 +406,116 @@ describe("machine recovery operations", () => {
     replacement.stop()
   })
 
+  test("a stop runs to completion and its receipt says the machine stopped", async () => {
+    const store = operations()
+    let pins = 2
+    const released: string[] = []
+    let ended = 0
+    let committedAtExit: string | undefined
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => machineWork(pins > 0 ? [owner("workspace:ws_a", "serving#0")] : [], pins)(),
+      // The real entry releases its owners here and resolves only once they are
+      // gone; a receipt written on the acknowledgement would say needs_action.
+      onStop: async () => {
+        await Promise.resolve()
+        released.push("owners")
+        pins = 0
+      },
+      // Read at the instant the process would exit: a receipt committed after
+      // this point is a receipt the exit loses.
+      onStopped: () => {
+        ended += 1
+        committedAtExit = store.list(10).find((found) => found.action === "stop_daemon")?.state
+      },
+      machine: { ...machine, operations: () => store },
+    })
+    lifecycle.start()
+
+    const submitted = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision, { requestId: "stop-1", action: "stop_daemon" }),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (submitted.kind !== "operation") throw new Error("the stop was refused")
+    await lifecycle.recovery.settled()
+
+    expect(released).toEqual(["owners"])
+    const read = lifecycle.recovery.read(submitted.operation.operationId)
+    if (read.kind !== "operation") throw new Error("the stop was not retained")
+    expect(read.operation.state).toBe("succeeded")
+    expect(read.operation.facts.execution.value).toBe("terminal")
+    // The process ends only after the receipt is committed, or the receipt is
+    // lost to the exit it asked for.
+    expect(ended).toBe(1)
+    expect(committedAtExit, "the stop was durable before the exit it asked for").toBe("succeeded")
+    expect(store.read(submitted.operation.operationId)?.state).toBe("succeeded")
+  })
+
+  test("an earlier generation's stop never fences the generation that replaced it", () => {
+    const store = operations()
+    const previous = createLocalDaemonLifecycle({
+      activity: machineWork([owner("workspace:ws_a", "serving#0")], 1),
+      onStop() {},
+      machine: { ...machine, operations: () => store },
+    })
+    previous.start()
+    const submitted = previous.recovery.submit(
+      drain(previous.recovery.inspect().scopeRevision, { requestId: "stop-1", action: "stop_daemon" }),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (submitted.kind !== "operation") throw new Error("the stop was refused")
+    previous.stop()
+    // It never settled: the process exited over its own receipt.
+    expect(store.outstanding().map((found) => found.operationId)).toEqual([submitted.operation.operationId])
+
+    const replacement = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: { machineId: "local", generation: "gen-2", operations: () => store },
+    })
+    replacement.start()
+
+    // This process holds the port and the data directory that generation held,
+    // which is the evidence that it is gone — and that it stopped, which is
+    // what the stop asked for.
+    const settled = replacement.recovery.read(submitted.operation.operationId)
+    if (settled.kind !== "operation") throw new Error("the stop was not reconstructed")
+    expect(settled.operation.state).toBe("succeeded")
+    expect(replacement.recovery.ingressClosed()?.kind).not.toBe("operation")
+    expect(store.gates(submitted.operation.operationId)).toEqual([])
+    replacement.stop()
+  })
+
+  test("an earlier generation's drain is a failure, not a success its owner's death earned", () => {
+    const store = operations()
+    const previous = createLocalDaemonLifecycle({
+      activity: machineWork([owner("workspace:ws_a", "retiring#1", "retiring")], 1),
+      onStop() {},
+      machine: { ...machine, operations: () => store, budgets: { drainMs: 10_000 } },
+      pollIntervalMs: 10_000,
+    })
+    previous.start()
+    const submitted = previous.recovery.submit(
+      drain(previous.recovery.inspect().scopeRevision),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (submitted.kind !== "operation") throw new Error("the drain was refused")
+    previous.stop()
+
+    const replacement = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: { machineId: "local", generation: "gen-2", operations: () => store },
+    })
+    replacement.start()
+
+    const settled = replacement.recovery.read(submitted.operation.operationId)
+    if (settled.kind !== "operation") throw new Error("the drain was not reconstructed")
+    expect(settled.operation.state).toBe("failed")
+    expect(settled.operation.initiatingError?.code).toBe("generation_retired")
+    expect(replacement.recovery.ingressClosed()?.kind).not.toBe("operation")
+    replacement.stop()
+  })
+
   test("a receipt this daemon never held is not an expired one", () => {
     const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
     lifecycle.start()
@@ -475,6 +585,8 @@ describe("machine recovery operations", () => {
     if (outcome.kind !== "operation") throw new Error("the drain was refused")
     expect(outcome.operation.receipt).toBe("volatile")
     expect(outcome.operation.cleanupErrors[0]?.code).toBe("persistence_unavailable")
+    // A volatile receipt cannot also claim the observation was committed.
+    expect(outcome.operation.facts.persistence.value).toBe("unavailable")
   })
 })
 
@@ -616,6 +728,25 @@ describe("releasing a drain", () => {
     expect(released.refusal.message).toContain(stopped.operation.operationId)
     const fenced = lifecycle.recovery.ingressClosed()
     expect(fenced?.kind === "operation" && fenced.operationId).toBe(stopped.operation.operationId)
+    lifecycle.stop()
+  })
+
+  test("a drain cannot be released twice", async () => {
+    const { lifecycle, drainId } = held()
+    const first = releaseOf(lifecycle, drainId)
+    if (first.kind !== "operation") throw new Error("the release was refused")
+
+    const again = releaseOf(lifecycle, drainId)
+
+    expect(again.kind).toBe("refused")
+    if (again.kind === "refused") {
+      expect(again.refusal.kind).toBe("unavailable")
+      expect(again.refusal.message).toContain("already released")
+    }
+    // The first receipt is untouched by the second attempt.
+    const receipt = lifecycle.recovery.read(first.operation.operationId)
+    expect(receipt.kind === "operation" && receipt.operation.operationId).toBe(first.operation.operationId)
+    await lifecycle.recovery.launchesReconciled()
     lifecycle.stop()
   })
 
@@ -824,7 +955,8 @@ describe("startup launch reconciliation", () => {
 
       // Admission must not reopen on a deadline: nothing has established what
       // the previous owner left, and a timeout is not an answer.
-      expect(lifecycle.recovery.ingressClosed()).toEqual({ kind: "launch_reconciliation", overdueAfterMs: 1_000 })
+      expect(lifecycle.recovery.ingressClosed())
+        .toEqual({ kind: "launch_reconciliation", overdueAfterMs: 1_000, pending: [] })
       expect(unreadable).toEqual([[undefined, "the launch reconciliation did not answer within 1000ms; machine admission stays closed"]])
 
       // The read was detached from the deadline, not abandoned.

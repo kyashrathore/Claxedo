@@ -52,9 +52,13 @@ const transport = binding && parent
   : undefined
 parent?.listen((message) => void transport?.onMessage(message))
 
-let requestIdleStop = () => {}
+let requestStop: () => void | Promise<unknown> = () => {}
+let requestExit = () => {}
 const lifecycle = createLocalDaemonLifecycle({
-  onStop: () => requestIdleStop(),
+  // Resolves only when the server has actually released its owners, so the
+  // receipt this stop earns is written against what stopping reached.
+  onStop: () => requestStop(),
+  onStopped: () => requestExit(),
   machine: {
     machineId: "local",
     generation: startup.daemonGeneration,
@@ -127,51 +131,76 @@ const clearDiscovery = () => {
 }
 process.once("exit", clearDiscovery)
 
-let stopping = false
+let stopping: Promise<number> | undefined
+/**
+ * Releases everything this process owns and answers with the exit code that
+ * outcome earns. It does NOT exit: a `stop_daemon` receipt is written after
+ * this resolves, and a process that exits here would leave that receipt saying
+ * the machine still had work — which then fences the next generation from boot.
+ * Exiting is `exit()` below, once whoever asked has its answer.
+ */
 const stop = () => {
-  if (stopping) return
-  stopping = true
-  // The exit code is the outcome, not a formality: an owner this process could
-  // not retire is still holding resources, and exiting 0 over it tells the
-  // launcher a replacement is safe to start.
-  void server.stop().then(
+  stopping ??= server.stop().then(
     (outcome) => {
       ownership.stop()
       for (const result of outcome.results) {
         if (result.state === "retired") continue
         console.error(`workspace ${result.workspaceId} was not retired (${result.state}): ${result.error ?? "no reason recorded"}`)
       }
-      clearDiscovery()
-      process.exit(outcome.ok ? 0 : 75)
+      // The exit code is the outcome, not a formality: an owner this process
+      // could not retire is still holding resources, and exiting 0 over it
+      // tells the launcher a replacement is safe to start.
+      return outcome.ok ? 0 : 75
     },
     (error: unknown) => {
       ownership.stop()
       console.error("the local server refused to stop", error)
-      clearDiscovery()
-      process.exit(75)
+      return 75
     },
   )
+  return stopping
 }
-requestIdleStop = stop
-process.once("SIGTERM", stop)
-process.once("SIGINT", stop)
 
-void server.ready.then(async () => {
-  // Read before the record is published: a discovery file without it would be
-  // adopted by a launcher that then has nothing to verify before signalling.
+const exit = () => {
+  void stop().then((code) => {
+    clearDiscovery()
+    process.exit(code)
+  })
+}
+requestStop = stop
+requestExit = exit
+process.once("SIGTERM", exit)
+process.once("SIGINT", exit)
+
+void server.ready.then(() => {
+  // FIRST, before this port is announced to anyone: start() is what closes
+  // machine admission for the launch reconciliation, and a listener that is
+  // reachable before that hold exists admits work over launches nothing has
+  // accounted for yet.
+  lifecycle.start()
+  // The IPC send goes next and unconditionally: the probe below is a
+  // diagnostic, and a diagnostic that can delay the message main waits on to
+  // publish the server URL would be measuring a cost it created.
+  parent?.send(claxedoServerReadyMessage(startup.port))
+  recordStartupClock("server-listening", { port: startup.port })
+  ownership.start()
+  void publishIdentity()
+})
+
+/**
+ * Publishes the discovery record once this process can say what it is.
+ *
+ * The creation identity is read here rather than before the announcement
+ * because it costs a subprocess, and a record without it is worse than a late
+ * one: a launcher that adopts it has nothing to verify before signalling.
+ */
+async function publishIdentity() {
   creation = await readCreationIdentity(process.pid)
   writeClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, {
     ...discovery,
     ...(creation ? { identity: creation } : {}),
   })
-  // The IPC send goes FIRST and unconditionally: the probe below is a
-  // diagnostic, and a diagnostic that can delay the message main waits on to
-  // publish the server URL would be measuring a cost it created.
-  parent?.send(claxedoServerReadyMessage(startup.port))
-  recordStartupClock("server-listening", { port: startup.port })
-  lifecycle.start()
-  ownership.start()
-})
+}
 
 // Bundle evaluation creates a large temporary object graph. The long-lived
 // server does not need it, so release it promptly instead of waiting for
