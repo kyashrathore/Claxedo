@@ -29,6 +29,7 @@ import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposu
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
 import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/exposure"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
@@ -67,6 +68,12 @@ export type EmbeddedWorkspaceRuntimePhase = "mounted" | "retired" | "disposed"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
+  /**
+   * Minted when this runtime mounted. Random rather than derived from its
+   * state, so a workspace re-mounted after a retirement can never present the
+   * generation the previous owner was authorized under.
+   */
+  generation: string
   observed: MountedEmbeddedWorkspaceRuntime
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
@@ -86,6 +93,8 @@ export type EmbeddedWorkspaceRuntimeConfigMode = "skip" | "sync"
  */
 type EmbeddedRetirement = {
   workspaceId: string
+  /** The mounted generation being retired, not a new one. */
+  generation: string
   runtime: EmbeddedRuntime
   attempt: number
   /** Host teardown finished; a retry does not run it again. */
@@ -104,9 +113,28 @@ export type EmbeddedRetirementResult = {
 
 export type EmbeddedWorkspaceRuntimeOwner = {
   workspaceId: string
+  /** The mount this owner is; never repeated by a later mount of the same id. */
+  generation: string
   state: "serving" | "retiring" | "retire_failed"
   attempt: number
   error?: string
+  /** The admitted turns a drain would interrupt, named individually. */
+  turns: Array<{ sessionId: string; turnId: string; ownerGeneration: string }>
+}
+
+/**
+ * An owner plus what only its durable store can say. Separate from the owner
+ * itself because that read is asynchronous and the residency snapshot which
+ * consumes owners cannot wait for it.
+ */
+export type EmbeddedWorkspaceRuntimeOwnership = EmbeddedWorkspaceRuntimeOwner & {
+  /**
+   * Launches this owner's store has no settled retirement for. Absent when the
+   * store could not be read — an empty list would say there is nothing left to
+   * reconcile, which is a different claim.
+   */
+  launches?: LaunchOwnershipRecord[]
+  launchesUnreadable?: string
 }
 
 export class EmbeddedWorkspaceRuntimeRetirementUnresolvedError extends Error {
@@ -474,6 +502,7 @@ function disposeRuntime(runtime: EmbeddedRuntime): Promise<EmbeddedRetirementRes
   }
   const record: EmbeddedRetirement = {
     workspaceId: runtime.workspace.id,
+    generation: runtime.generation,
     runtime,
     attempt: 1,
     disposed: false,
@@ -569,6 +598,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   const runtime: EmbeddedRuntime = {
     ...created,
     workspace: ws,
+    generation: crypto.randomUUID(),
     observed: { workspace: ws, frames: created.host.frames },
     ...(configuredProcessObserver
       ? {
@@ -751,17 +781,65 @@ export function embeddedWorkspaceRuntimeActivity() {
   return { hosts: hosts.size, activeTurns, activeWrites, checkpointing, owners: embeddedWorkspaceRuntimeOwners() }
 }
 
-/** Every workspace this process still owns, whether it is still serving one. */
+/**
+ * Every workspace this process still owns, serving or not, with what a
+ * replacement would have to reconcile: the turns it admitted and the launches
+ * its store has no retirement for.
+ */
+export async function embeddedWorkspaceRuntimeOwnership(): Promise<EmbeddedWorkspaceRuntimeOwnership[]> {
+  const owned = await Promise.all(ownedRuntimes().map(async ({ runtime, owner }) => ({
+    ...owner,
+    ...(await unresolvedLaunchesOf(runtime)),
+  })))
+  return owned.sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
+}
+
+/** Every workspace this process still owns, serving or not. */
 export function embeddedWorkspaceRuntimeOwners(): EmbeddedWorkspaceRuntimeOwner[] {
+  return ownedRuntimes()
+    .map(({ owner }) => owner)
+    .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
+}
+
+function ownedRuntimes(): Array<{ runtime: EmbeddedRuntime; owner: EmbeddedWorkspaceRuntimeOwner }> {
+  const turnsOf = (runtime: EmbeddedRuntime) => runtime.host.activeTurns().map((target) => ({
+    sessionId: target.sessionId,
+    turnId: target.turnId,
+    ownerGeneration: target.ownerGeneration,
+  }))
   return [
-    ...[...hosts.keys()].map((workspaceId) => ({ workspaceId, state: "serving" as const, attempt: 0 })),
-    ...[...retiring.values()].map((record) => ({
-      workspaceId: record.workspaceId,
-      state: record.state,
-      attempt: record.attempt,
-      ...(record.error ? { error: record.error } : {}),
+    ...[...hosts.values()].map((runtime) => ({
+      runtime,
+      owner: {
+        workspaceId: runtime.workspace.id,
+        generation: runtime.generation,
+        state: "serving" as const,
+        attempt: 0,
+        turns: turnsOf(runtime),
+      },
     })),
-  ].sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
+    ...[...retiring.values()].map((record) => ({
+      runtime: record.runtime,
+      owner: {
+        workspaceId: record.workspaceId,
+        generation: record.generation,
+        state: record.state,
+        attempt: record.attempt,
+        ...(record.error ? { error: record.error } : {}),
+        turns: turnsOf(record.runtime),
+      },
+    })),
+  ]
+}
+
+async function unresolvedLaunchesOf(runtime: EmbeddedRuntime) {
+  try {
+    return { launches: await runtime.host.unresolvedLaunches() }
+  } catch (error) {
+    // A retired owner's store is closed; its records are still on disk for the
+    // replacement to read, and this process saying "none" would hide them.
+    return { launchesUnreadable: String(error) }
+  }
 }
 
 /**

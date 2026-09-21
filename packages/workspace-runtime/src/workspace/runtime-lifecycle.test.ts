@@ -665,6 +665,78 @@ describe("workspace runtime public lifecycle", () => {
       await prompt
     }
   })
+  test("the host names each admitted turn, and refuses to report launches once it is closing", async () => {
+    const f = await fixture({ runtimeConfig: true, configurable: true, hold: true })
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "local" })
+    expect(f.host.activeTurns(), "no turn is admitted yet").toEqual([])
+    const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
+    try {
+      await f.startedTurn
+
+      const turns = f.host.activeTurns()
+      expect(turns).toHaveLength(1)
+      expect(turns[0]).toMatchObject({ scope: "turn", sessionId: "local" })
+      expect(turns[0]?.turnId).toEqual(expect.any(String))
+      expect(turns[0]?.ownerGeneration).toEqual(expect.any(String))
+      // The same identity the session's own recovery inspection reports.
+      const inspected = await (await f.request("/session/local/recovery")).json() as { target?: unknown }
+      expect(JSON.parse(JSON.stringify(turns[0]))).toEqual(inspected.target)
+
+      // Nothing prepared a launch, and that is a different answer from being
+      // unable to say.
+      expect(await f.host.unresolvedLaunches()).toEqual([])
+    } finally {
+      f.release()
+      await prompt
+    }
+    await f.host.dispose()
+    expect(f.host.activeTurns()).toEqual([])
+    await expect(f.host.unresolvedLaunches()).rejects.toThrow()
+  })
+  test("a launch a previous owner never settled keeps writes out until an operator resolves it", async () => {
+    const f = await fixture({ runtimeConfig: true, configurable: true })
+    // What a crash leaves: a direct launch whose spawn was never witnessed and
+    // for which no creation identity was recorded, so nothing the replacement
+    // can check establishes whether that process is still running.
+    const seeded = new RuntimeStore(f.storeRoot)
+    const prepared = await seeded.launchOwnership().prepare({
+      role: "terminal",
+      protocol: "direct",
+      scope: { workspaceId: f.target.workspaceId },
+    })
+    seeded.close()
+
+    const replacement = f.open()
+    // The ingress reads the settled answer rather than waiting for it, so a
+    // caller that needs it waits here — a replacement deciding whether it may
+    // admit writes is exactly that caller.
+    await replacement.host.launchReconciliation()
+    const refused = await replacement.request("/session", "POST", { id: "after-crash" })
+    expect(refused.status, await refused.clone().text()).toBe(503)
+    const body = await refused.json() as { error?: string }
+    expect(body.error).toContain("workspace_launch_unreconciled")
+    expect(body.error).toContain(prepared.launchId)
+    // A read is not a write: inspecting the workspace is how an operator finds
+    // out what is holding it.
+    expect((await replacement.request("/session")).status).toBe(200)
+    expect(replacement.host.activity().launches).toMatchObject({ examined: 1, retired: 0, unresolved: 1 })
+
+    const resolving = new RuntimeStore(f.storeRoot)
+    await resolving.launchOwnership().recordRetirement(prepared.launchId, {
+      leader: "exited",
+      descendants: "verified_clear",
+      signals: [],
+    })
+    resolving.close()
+
+    const resolved = f.open()
+    await resolved.host.launchReconciliation()
+    await resolved.host.apply(f.snapshot())
+    expect((await resolved.request("/session", "POST", { id: "after-resolution" })).status).toBe(201)
+    expect(resolved.host.activity().launches).toMatchObject({ examined: 0, retired: 0, unresolved: 0 })
+  })
+
 })
 
 /** A store left behind by a process that died holding a queued prompt. */

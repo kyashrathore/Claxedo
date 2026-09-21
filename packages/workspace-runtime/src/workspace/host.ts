@@ -9,7 +9,9 @@ import type { WorkspaceEventFramesTap } from "../routes/events"
 import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
-import type { ConnectionRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import type { LaunchOwnershipRecord } from "@claxedo/agent-sdk-runtime/launch"
+import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -90,6 +92,25 @@ export type WorkspaceCheckpointControl = {
 
 export type WorkspaceHost = {
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
+  /**
+   * Every turn this runtime has admitted, by the identity its owner minted.
+   * Read without waiting on anything: a drain preview naming the turns it
+   * would interrupt must be answerable while one of them is wedged.
+   */
+  activeTurns: () => RecoveryTurnTarget[]
+  /**
+   * Settles when the startup reconciliation of this workspace's launches has
+   * finished. A caller that must see the settled answer — a drain preview, a
+   * replacement deciding whether it may admit writes — awaits this first;
+   * request ingress deliberately does not.
+   */
+  launchReconciliation: () => Promise<LaunchOwnershipReconciliation | undefined>
+  /**
+   * Launches this workspace's store has no settled retirement for. Throws once
+   * the runtime is closing: the records outlive this process, and answering
+   * with none would report an owner as having nothing left to reconcile.
+   */
+  unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
   hasSession: (sessionId: string) => boolean
   /**
    * Every frame this host's `wr/events` serves, verbatim, for a process

@@ -55,6 +55,7 @@ import {
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
 import { isSessionRecoveryPath } from "../routes/session-core"
+import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import type { SessionDeliveryStore } from "../session/delivery-owner"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import {
@@ -751,6 +752,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     options.connectionProviders ?? [createAcpConnectionProvider()],
   )
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
+  let launchReconciliation: Promise<LaunchOwnershipReconciliation> | undefined
+  let launchOwnershipSummary: LaunchOwnershipReconciliation | undefined
   let disposeDeliveries: (() => Promise<void>) | undefined
   let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
@@ -1178,9 +1181,38 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (!sessionConfigStore) {
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       sessionConfigStore = storeFactory({ storeRoot: options.storeRoot })
+      const ownership = sessionConfigStore.launchOwnership?.()
+      // Started before anything else this store does, because until it has
+      // run the processes of a previous owner still hold this workspace's
+      // ports, working directories and agent session storage, and nothing
+      // else in the system is looking for them.
+      if (ownership) {
+        launchReconciliation = reconcileLaunchOwnership(ownership, {
+          scope: { workspaceId: options.target?.workspaceId ?? workspaceId() },
+          budgets: DEFAULT_RECOVERY_BUDGETS,
+        }).then((summary) => {
+          launchOwnershipSummary = summary
+          return summary
+        })
+      }
       sessionConfigStore.recoverBusySessions?.()
     }
     return sessionConfigStore
+  }
+
+  /**
+   * A launch this workspace could not account for keeps its writes out.
+   *
+   * The row says a previous owner's process may still be running and its
+   * identity could not be verified; admitting a writer beside it is what the
+   * reconciliation exists to prevent, and there is nothing this process can
+   * check that would change the answer — an operator is the resolution.
+   */
+  function launchAdmissionRefusal() {
+    if (!launchOwnershipSummary?.unresolved.length) return undefined
+    return `workspace_launch_unreconciled: ${launchOwnershipSummary.unresolved
+      .map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`)
+      .join("; ")}`
   }
 
   /**
@@ -1713,6 +1745,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return undefined
         }
         if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
+        if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+          // Read, never awaited: the ingress must not open this workspace's
+          // store or wait on a process probe to answer a request that has not
+          // reached a handler yet. A caller that needs the settled answer
+          // first awaits `host.launchReconciliation()`.
+          const refusal = launchAdmissionRefusal()
+          if (refusal) return c.json({ error: refusal }, 503)
+        }
         let finish!: () => void
         const request = new Promise<void>((resolve) => { finish = resolve })
         pendingRequests.add(request)
@@ -2119,11 +2159,48 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     capabilities() {
       return workspaceCapabilities(enabled)
     },
+    activeTurns() {
+      const turns: RecoveryTurnTarget[] = []
+      for (const [sessionId, owner] of activeSessionOwners) {
+        // The owner that admitted the turn is the one that can name it; a
+        // session with no runtime recorded never reached admission here.
+        const target = owner.runtime?.recovery.inspect(sessionId, owner.directory).target
+        if (target) turns.push(target)
+      }
+      return turns
+    },
+    /** Settles when startup reconciliation has finished, or immediately when there is none. */
+    async launchReconciliation() {
+      return await launchReconciliation
+    },
+    async unresolvedLaunches() {
+      // Refused rather than answered empty while closing: the records are
+      // durable and the replacement owner will read them from the same store
+      // root, and "none" here would read as "nothing left to reconcile".
+      if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+      const ownership = store().launchOwnership?.()
+      if (!ownership) return []
+      // After reconciliation, so the list is what it could not settle rather
+      // than what it had not looked at yet.
+      await launchReconciliation
+      return await ownership.listUnresolved({ workspaceId: options.target?.workspaceId ?? workspaceId() })
+    },
     activity() {
       return {
         activeTurns: activeTurnCount(),
         activeWrites: activeCheckpointWrites,
         checkpointState,
+        // Absent until reconciliation settles: "nothing unresolved" and "not
+        // looked yet" are different answers.
+        ...(launchOwnershipSummary
+          ? {
+            launches: {
+              examined: launchOwnershipSummary.examined,
+              retired: launchOwnershipSummary.retired,
+              unresolved: launchOwnershipSummary.unresolved.length,
+            },
+          }
+          : {}),
       }
     },
     async registerSessionTools(input) {

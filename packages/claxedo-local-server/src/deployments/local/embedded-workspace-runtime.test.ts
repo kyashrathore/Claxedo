@@ -8,6 +8,8 @@ import {
   configureEmbeddedWorkspaceRuntime,
   cursorTranscriptRoot,
   embeddedWorkspaceRuntimeActivity,
+  embeddedWorkspaceRuntimeOwners,
+  embeddedWorkspaceRuntimeOwnership,
   embeddedWorkspaceRuntimeSessionAuthority,
   EmbeddedWorkspaceRuntimeRetirementUnresolvedError,
   ensureEmbeddedWorkspaceRuntime,
@@ -765,6 +767,74 @@ describe("embedded workspace runtime", () => {
       ))
       expect(cursorTranscriptRoot(project)).not.toContain(path.join(project, path.sep))
     } finally {
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("each mount is its own generation, and an owner names the turns and launches a replacement would inherit", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-generation-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const ws = workspace("ws_generation", project)
+      const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      const mounted = embeddedWorkspaceRuntimeOwners()
+      expect(mounted).toHaveLength(1)
+      expect(mounted[0]).toMatchObject({ workspaceId: ws.id, state: "serving", attempt: 0, turns: [] })
+      expect(mounted[0]?.generation).toEqual(expect.any(String))
+
+      // The durable read names the store's unresolved launches; nothing
+      // prepared one, which is not the same as being unable to say.
+      const ownership = await embeddedWorkspaceRuntimeOwnership()
+      expect(ownership[0]?.launches).toEqual([])
+      expect(ownership[0]?.launchesUnreadable).toBeUndefined()
+
+      await releaseEmbeddedWorkspaceRuntime(ws.id)
+      const remounted = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      expect(remounted).not.toBe(first)
+      const next = embeddedWorkspaceRuntimeOwners()
+      // A re-mount of the same id is a different owner, so a gate acknowledged
+      // for the previous generation cannot carry to it.
+      expect(next[0]?.generation).not.toBe(mounted[0]?.generation)
+      expect(next[0]?.workspaceId).toBe(ws.id)
+    } finally {
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("an owner whose store is gone says its launches are unreadable, not that there are none", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-launches-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const ws = workspace("ws_launch_unreadable", project)
+      const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      // Teardown runs — so the store really is closed — and the step after it
+      // refuses, which is the only way an owner is still listed with no store
+      // left to ask.
+      const teardown = runtime.host.dispose.bind(runtime.host)
+      let refusals = 1
+      ;(runtime.host as unknown as { dispose: () => Promise<void> }).dispose = async () => {
+        await teardown()
+        if (refusals-- > 0) throw new Error("post-teardown step refused")
+      }
+
+      try {
+        expect(await releaseEmbeddedWorkspaceRuntime(ws.id)).toMatchObject({ state: "retire_failed" })
+        const ownership = await embeddedWorkspaceRuntimeOwnership()
+        expect(ownership).toHaveLength(1)
+        expect(ownership[0]).toMatchObject({ workspaceId: ws.id, state: "retire_failed" })
+        expect(ownership[0]?.launches, "an empty list would claim there is nothing to reconcile").toBeUndefined()
+        expect(ownership[0]?.launchesUnreadable).toMatch(/disposed/)
+      } finally {
+        // Leave nothing fenced behind: a retirement this process never settles
+        // is visible to every later case in this file.
+        await releaseEmbeddedWorkspaceRuntime(ws.id, { retry: true })
+      }
+      expect(embeddedWorkspaceRuntimeOwners()).toEqual([])
+    } finally {
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
