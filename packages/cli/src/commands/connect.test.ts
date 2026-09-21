@@ -216,7 +216,7 @@ describe("claxedo connect", () => {
     h.cp.assign({ hostId: enrolled!.host_id, workspaceId, remoteDirectory: directory, displayName: "api" })
     h.tick()
     await until(() => h.cp.routable(enrollmentIdOf(h)).includes(workspaceId), "the ack to become readiness")
-    expect(h.listener()?.workspaceIds()).toEqual([workspaceId])
+    expect(h.listener()?.owners().map((owner) => owner.workspaceId)).toEqual([workspaceId])
     await until(() => h.relay.sockets.some((socket) => !socket.closed), "the host tunnel to dial the relay")
     const socket = h.relay.sockets.find((entry) => !entry.closed)!
     expect(socket.workspaceIds).toEqual([workspaceId])
@@ -434,11 +434,11 @@ describe("claxedo connect", () => {
     h.tick()
     await until(() => h.lines.some((line) => line.startsWith("workspace ws_out: refused: ")), "the outside-root refusal")
     expect(h.cp.beats().every((beat) => !JSON.stringify(beat.body.acks).includes("ws_out"))).toBe(true)
-    expect(h.listener()?.workspaceIds()).toEqual(["ws_1"])
+    expect(h.listener()?.owners().map((owner) => owner.workspaceId)).toEqual(["ws_1"])
 
     h.cp.unassign("ws_1")
     h.tick()
-    await until(() => h.listener()?.workspaceIds().length === 0, "retirement to dispose the runtime")
+    await until(() => h.listener()?.owners().length === 0, "retirement to dispose the runtime")
     h.stop()
     expect(await running).toBe(0)
   })
@@ -480,7 +480,7 @@ describe("claxedo connect", () => {
     expect(h.cp.beats().every((beat) => !JSON.stringify(beat.body.acks).includes("ws_slow"))).toBe(true)
     expect(h.cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
     expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
-    expect(h.listener()?.workspaceIds()).toEqual([])
+    expect(h.listener()?.owners()).toEqual([])
     expect((await h.deps.store.load())?.run).toBeUndefined()
   })
 
@@ -526,12 +526,12 @@ describe("claxedo connect", () => {
     h.tick()
     await until(() => h.lines.some((line) => line.startsWith("workspace ws_later: refused: ")), "the first attempt to fail")
     expect(h.lines.at(-1)).toContain("cannot be resolved")
-    expect(h.listener()?.workspaceIds()).toEqual([])
+    expect(h.listener()?.owners()).toEqual([])
 
     await fs.mkdir(later)
     h.tick()
     await until(() => h.cp.routable(enrollmentIdOf(h)).includes("ws_later"), "the ack after the folder appeared")
-    expect(h.listener()?.workspaceIds()).toEqual(["ws_later"])
+    expect(h.listener()?.owners().map((owner) => owner.workspaceId)).toEqual(["ws_later"])
     expect(h.lines).toContain(`workspace ws_later: serving ${later} (revision 1)`)
     expect(h.cp.log.filter((entry) => entry.path.endsWith("/acquire"))).toHaveLength(1)
     h.stop()
@@ -704,7 +704,7 @@ describe("claxedo connect", () => {
     await until(() => h.lines.filter((line) => line.startsWith("workspace ws_app: refused: ")).length >= 2, "the second refusal")
     expect(h.lines.filter((line) => line.startsWith("workspace ws_app: refused: ")).at(-1)).toContain("outside this host's roots (none)")
     expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
-    expect(h.listener()?.workspaceIds()).toEqual([])
+    expect(h.listener()?.owners()).toEqual([])
     expect((await h.deps.store.load())?.roots_canonical, "the pin stays as first recorded").toEqual({ [projects]: projects })
     const status = await statusLines({
       load: () => h.deps.store.load(),

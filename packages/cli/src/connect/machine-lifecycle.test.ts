@@ -495,7 +495,7 @@ describe("provider configuration on a running claxedo connect host", () => {
     // A served folder, so a live runtime exists to re-apply to.
     h.cp.assign({ hostId: enrolled!.host_id, workspaceId: "ws_api", remoteDirectory: path.join(h.root, "api") })
     await h.beat()
-    await until(() => h.listener().workspaceIds().includes("ws_api"), "the runtime for ws_api")
+    await until(() => h.listener().owners().some((owner) => owner.workspaceId === "ws_api"), "the runtime for ws_api")
     const served = await h.state()
     const runtime = await h.listener().ensure({
       workspaceId: "ws_api",

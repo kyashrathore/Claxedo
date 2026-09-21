@@ -380,10 +380,16 @@ export async function runHost(input: HostRunInput): Promise<number> {
     },
     onAssignments: async (descriptions) => {
       const wanted = new Set(descriptions.map((description) => description.workspaceId))
-      for (const workspaceId of listener.workspaceIds()) {
-        if (wanted.has(workspaceId)) continue
-        deps.log(`workspace ${workspaceId}: assignment withdrawn; stopping its runtime`)
-        await retire(workspaceId)
+      for (const owner of listener.owners()) {
+        if (owner.state !== "serving") {
+          // An unresolved retirement is still this host's; it is neither
+          // assignable nor something a withdrawal may start over.
+          deps.log(`workspace ${owner.workspaceId}: retirement ${owner.state} after attempt ${owner.attempt}${owner.error ? `: ${owner.error}` : ""}`)
+          continue
+        }
+        if (wanted.has(owner.workspaceId)) continue
+        deps.log(`workspace ${owner.workspaceId}: assignment withdrawn; stopping its runtime`)
+        await retire(owner.workspaceId)
       }
       const acked = new Map(connector.acked().map((ack) => [ack.workspaceId, ack.revision]))
       for (const description of descriptions) {
