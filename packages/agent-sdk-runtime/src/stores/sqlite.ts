@@ -4,6 +4,7 @@ import { createRequire } from "module"
 import type { CompatEvent } from "../compat-events"
 import type { SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
+import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
 import type {
   AgentRuntimeAppendEventInput,
   AgentRuntimeSessionBinding,
@@ -21,7 +22,15 @@ import {
   persistedSubagentObservation,
   persistedTodoRow,
 } from "./persisted-rows"
-import { asRecord, isRecord, type AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import {
+  DEFAULT_RECOVERY_BUDGETS,
+  asRecord,
+  isRecord,
+  parseRecoveryOperation,
+  type AgentSessionStarts,
+  type RecoveryOperation,
+  type RecoveryTarget,
+} from "@claxedo/agent-runtime-contract"
 import type { SubagentObservation } from "../subagent-admission"
 import { sqliteSessionStarts } from "./session-start"
 
@@ -40,7 +49,31 @@ type SqliteDatabase = {
 
 export type SqliteRuntimeStoreOptions = { root: string }
 
-const SCHEMA_VERSION = 2
+/**
+ * How long a settled recovery operation stays listed and stored. Ten
+ * reconcile budgets: long enough that a caller which lost its connection can
+ * still read its own receipt, short enough that the list is current work.
+ */
+const RECOVERY_OPERATION_RETENTION_MS = DEFAULT_RECOVERY_BUDGETS.reconcileMs * 10
+
+/**
+ * The row a repeated recovery request is compared under. A turn and a session
+ * operation share their session's key, so a caller cannot escape its own
+ * uniqueness by naming a different turn of the same session.
+ */
+function recoveryScopeKey(target: RecoveryTarget) {
+  if (target.scope === "machine") return `machine:${target.machineId}`
+  if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
+  return `session:${target.workspaceId}:${target.sessionId}`
+}
+
+function recoveryTargetSessionId(target: RecoveryTarget) {
+  return target.scope === "turn" || target.scope === "session" ? target.sessionId : null
+}
+
+const SCHEMA_VERSION = 3
+/** The one earlier schema this build upgrades in place; anything else is refused. */
+const UPGRADABLE_SCHEMA_VERSION = 2
 const requireDatabase = createRequire(import.meta.url)
 
 export class UnsupportedRuntimeStoreSchemaError extends Error {
@@ -104,7 +137,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   readonly sessionStarts: AgentSessionStarts
   private readonly db: SqliteDatabase
   private memory = new MemoryRuntimeStore()
-  private readonly turnLeases = new Map<string, string>()
+  private readonly turnLeases = new Map<string, { leaseId: string; acquiredAt: number }>()
   private nextTurnLease = 0
 
   constructor(options: SqliteRuntimeStoreOptions) {
@@ -180,12 +213,22 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   acquireTurnLease(sessionId: string): string | undefined {
     if (this.turnLeases.has(sessionId)) return undefined
     const leaseId = `${sessionId}:${++this.nextTurnLease}`
-    this.turnLeases.set(sessionId, leaseId)
+    this.turnLeases.set(sessionId, { leaseId, acquiredAt: Date.now() })
     return leaseId
   }
   releaseTurnLease(sessionId: string, leaseId: string) {
-    if (this.turnLeases.get(sessionId) === leaseId) this.turnLeases.delete(sessionId)
+    if (this.turnLeases.get(sessionId)?.leaseId === leaseId) this.turnLeases.delete(sessionId)
   }
+  /**
+   * This store's turn leases live in the process that minted them: there is no
+   * lease table, so a restart leaves no holder and the first writer after it
+   * acquires one. Only writers inside one process are fenced against each
+   * other here.
+   */
+  readTurnAuthority(sessionId: string) {
+    return this.turnLeases.get(sessionId)
+  }
+  turnEvidence(sessionId: string, turnId: string) { return this.memory.turnEvidence(sessionId, turnId) }
 
   startTurn(input: AgentRuntimeTurnStartInput) {
     return this.write(() => {
@@ -198,6 +241,9 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     return this.write(() => {
+      if (input.leaseId !== undefined && this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
+        throw new AgentRuntimeStaleTurnError(input.sessionId)
+      }
       const result = this.memory.finishTurn(input)
       this.persistSession(input.sessionId)
       if (input.outcome.status === "failed") this.persistMessage(input.sessionId, input.assistantMessageId)
@@ -308,12 +354,106 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
         parent_session_id TEXT NOT NULL, observation_id TEXT NOT NULL, data_json TEXT NOT NULL, published INTEGER NOT NULL,
         PRIMARY KEY (parent_session_id, observation_id)
       );
+      CREATE TABLE IF NOT EXISTS runtime_recovery_operations (
+        operation_id TEXT PRIMARY KEY, scope_key TEXT NOT NULL, caller_id TEXT NOT NULL, request_id TEXT NOT NULL,
+        session_id TEXT, state TEXT NOT NULL, cleanup_fact TEXT NOT NULL, persistence_fact TEXT NOT NULL,
+        updated_at INTEGER NOT NULL, data_json TEXT NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS runtime_permissions_session ON runtime_permissions(session_id);
       CREATE INDEX IF NOT EXISTS runtime_questions_session ON runtime_questions(session_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS runtime_recovery_operations_request
+        ON runtime_recovery_operations(scope_key, caller_id, request_id);
+      CREATE INDEX IF NOT EXISTS runtime_recovery_operations_session
+        ON runtime_recovery_operations(session_id, updated_at DESC);
     `)
     const schema = this.get("SELECT version FROM runtime_schema LIMIT 1")
-    if (!schema) this.run("INSERT INTO runtime_schema(version) VALUES (?)", SCHEMA_VERSION)
-    else if (columnNumber(schema, "version") !== SCHEMA_VERSION) throw new UnsupportedRuntimeStoreSchemaError(columnNumber(schema, "version"))
+    if (!schema) {
+      this.run("INSERT INTO runtime_schema(version) VALUES (?)", SCHEMA_VERSION)
+      return
+    }
+    const found = columnNumber(schema, "version")
+    if (found === SCHEMA_VERSION) return
+    // The statements above already added what version 3 holds; recording the
+    // version is the whole upgrade. Any other version is a store this build
+    // cannot read, and guessing at its rows would invent history.
+    if (found !== UPGRADABLE_SCHEMA_VERSION) throw new UnsupportedRuntimeStoreSchemaError(found)
+    this.run("UPDATE runtime_schema SET version = ?", SCHEMA_VERSION)
+  }
+
+  /**
+   * Claim one request id for one caller. `INSERT OR IGNORE` plus a read-back
+   * lets the unique index settle the race between two writers, so a retried
+   * delivery joins the operation that won rather than issuing the effect twice.
+   */
+  recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }) {
+    this.pruneRecoveryOperations()
+    const scopeKey = recoveryScopeKey(operation.target)
+    return this.write(() => {
+      this.run(`
+        INSERT OR IGNORE INTO runtime_recovery_operations(
+          operation_id, scope_key, caller_id, request_id, session_id, state, cleanup_fact, persistence_fact, updated_at, data_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        operation.operationId, scopeKey, caller.callerId, operation.requestId, recoveryTargetSessionId(operation.target),
+        operation.state, operation.facts.cleanup.value, operation.facts.persistence.value, operation.updatedAt,
+        JSON.stringify(operation),
+      )
+      const row = this.get(
+        "SELECT operation_id, data_json FROM runtime_recovery_operations WHERE scope_key = ? AND caller_id = ? AND request_id = ?",
+        scopeKey, caller.callerId, operation.requestId,
+      )
+      if (!row) throw new Error(`Recovery operation ${operation.operationId} was not recorded`)
+      if (columnText(row, "operation_id") === operation.operationId) return { created: true as const }
+      return {
+        created: false as const,
+        existing: parseRecoveryOperation(JSON.parse(columnText(row, "data_json"))),
+      }
+    })
+  }
+
+  updateRecoveryOperation(operation: RecoveryOperation) {
+    this.write(() => {
+      if (!this.get("SELECT 1 FROM runtime_recovery_operations WHERE operation_id = ?", operation.operationId)) {
+        throw new Error(`Recovery operation ${operation.operationId} was never recorded in this store`)
+      }
+      this.run(`
+        UPDATE runtime_recovery_operations
+        SET state = ?, cleanup_fact = ?, persistence_fact = ?, updated_at = ?, data_json = ?
+        WHERE operation_id = ?
+      `,
+        operation.state, operation.facts.cleanup.value, operation.facts.persistence.value, operation.updatedAt,
+        JSON.stringify(operation), operation.operationId,
+      )
+    })
+  }
+
+  readRecoveryOperation(operationId: string) {
+    const row = this.get("SELECT data_json FROM runtime_recovery_operations WHERE operation_id = ?", operationId)
+    return row ? parseRecoveryOperation(JSON.parse(columnText(row, "data_json"))) : undefined
+  }
+
+  listRecoveryOperations(scope: { sessionId?: string } = {}) {
+    return this.rows(`
+      SELECT data_json FROM runtime_recovery_operations
+      WHERE (? IS NULL OR session_id = ?) AND (state NOT IN ('succeeded', 'failed') OR updated_at >= ?)
+      ORDER BY updated_at DESC
+    `, scope.sessionId ?? null, scope.sessionId ?? null, Date.now() - RECOVERY_OPERATION_RETENTION_MS)
+      .map((row) => parseRecoveryOperation(JSON.parse(columnText(row, "data_json"))))
+  }
+
+  /**
+   * An operation whose facts still say something is owned, unknown or
+   * unwritten is kept whatever its age: it is the only record that an
+   * obligation was never discharged.
+   */
+  private pruneRecoveryOperations() {
+    this.write(() => {
+      this.run(`
+        DELETE FROM runtime_recovery_operations
+        WHERE state IN ('succeeded', 'failed') AND updated_at < ?
+          AND cleanup_fact = 'verified_clear' AND persistence_fact <> 'pending'
+      `, Date.now() - RECOVERY_OPERATION_RETENTION_MS)
+    })
   }
 
   private hydrateMemory() {

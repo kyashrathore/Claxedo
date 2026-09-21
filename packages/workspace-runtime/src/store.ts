@@ -37,7 +37,7 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import { parseRecoveryOperation, type RecoveryOperation, type RecoveryTarget } from "@claxedo/agent-runtime-contract"
+import { DEFAULT_RECOVERY_BUDGETS, parseRecoveryOperation, type RecoveryOperation, type RecoveryTarget } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -787,11 +787,11 @@ function recoveryOperationSettled(operation: RecoveryOperation) {
 }
 
 /**
- * How long a settled recovery operation stays listed. Long enough that a
- * caller which lost its connection can still read its own receipt; short
- * enough that a workspace's operation list is the current picture.
+ * How long a settled recovery operation stays listed and stored. Ten reconcile
+ * budgets: long enough that a caller which lost its connection can still read
+ * its own receipt, short enough that the list is current work.
  */
-const RECOVERY_OPERATION_RETENTION_MS = 5 * 60 * 1000
+const RECOVERY_OPERATION_RETENTION_MS = DEFAULT_RECOVERY_BUDGETS.reconcileMs * 10
 
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts

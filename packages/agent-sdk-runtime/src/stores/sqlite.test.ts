@@ -17,7 +17,36 @@ import {
   todoUpdated,
 } from "../compat-events"
 import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
+import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
 import { RuntimeStoreCorruptionError, SqliteRuntimeStore, UnsupportedRuntimeStoreSchemaError } from "./sqlite"
+
+function recoveryFact<V extends string>(value: V) {
+  return { value, source: "test", observedAt: 10, generation: "lease-1" }
+}
+
+function recoveryOperation(overrides: { operationId?: string; requestId?: string } = {}) {
+  return {
+    operationId: overrides.operationId ?? "op-1",
+    requestId: overrides.requestId ?? "req-1",
+    target: { scope: "turn" as const, workspaceId: "w1", sessionId: "s1", turnId: "u1", ownerGeneration: "lease-1" },
+    action: "cancel_turn" as const,
+    scopeRevision: "rev-1",
+    attempt: 1,
+    state: "accepted" as const,
+    phase: "ack" as const,
+    phaseDeadlineAt: 20,
+    facts: {
+      execution: recoveryFact("running" as const),
+      cleanup: recoveryFact("owned" as const),
+      persistence: recoveryFact("pending" as const),
+    },
+    cleanupErrors: [],
+    nextActions: [],
+    receipt: "durable" as const,
+    createdAt: 10,
+    updatedAt: 10,
+  }
+}
 
 const roots: string[] = []
 
@@ -308,5 +337,81 @@ describe("SqliteRuntimeStore", () => {
 
     expect(() => new SqliteRuntimeStore({ root })).toThrow(RuntimeStoreCorruptionError)
     expect(() => new SqliteRuntimeStore({ root })).toThrow("runtime_sessions at ses_bad")
+  })
+  test("upgrades a version 2 store in place and keeps its rows", () => {
+    const root = tempRoot()
+    const first = new SqliteRuntimeStore({ root })
+    first.bindSession({ sessionId: "ses_old", directory: "/repo", agentSessionId: "native_old" })
+    first.close()
+    const db = new Database(path.join(root, "agent-runtime.db"))
+    db.exec("DROP TABLE runtime_recovery_operations")
+    db.query("UPDATE runtime_schema SET version = ?").run(2)
+    db.close()
+
+    const upgraded = new SqliteRuntimeStore({ root })
+    expect(upgraded.getSession("ses_old")?.directory).toBe("/repo")
+    expect(upgraded.readRecoveryOperation("none")).toBeUndefined()
+    upgraded.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
+    expect(upgraded.readRecoveryOperation("op-1")?.requestId).toBe("req-1")
+    upgraded.close()
+
+    const version = new Database(path.join(root, "agent-runtime.db"))
+    expect(version.query("SELECT version FROM runtime_schema").get()).toEqual({ version: 3 })
+    version.close()
+    expect(() => new SqliteRuntimeStore({ root })).not.toThrow()
+  })
+
+  test("refuses a schema version this build has no upgrade for", () => {
+    const root = tempRoot()
+    new SqliteRuntimeStore({ root }).close()
+    const db = new Database(path.join(root, "agent-runtime.db"))
+    db.query("UPDATE runtime_schema SET version = ?").run(9)
+    db.close()
+    expect(() => new SqliteRuntimeStore({ root })).toThrow(UnsupportedRuntimeStoreSchemaError)
+  })
+
+  test("one caller's repeated recovery request joins its own operation", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    expect(store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })).toEqual({ created: true })
+    const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
+    expect(again.created).toBe(false)
+    expect(again.created === false && again.existing.operationId).toBe("op-1")
+    expect(store.readRecoveryOperation("op-2")).toBeUndefined()
+    expect(store.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" })).toEqual({ created: true })
+    expect(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId).sort()).toEqual(["op-1", "op-3"])
+    expect(() => store.updateRecoveryOperation(recoveryOperation({ operationId: "absent" }))).toThrow("never recorded")
+    store.close()
+
+    const reopened = new SqliteRuntimeStore({ root })
+    expect(reopened.readRecoveryOperation("op-1")?.state).toBe("accepted")
+    reopened.close()
+  })
+
+  test("finishTurn refuses a writer whose turn lease was replaced", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    store.bindSession({ sessionId: "s1", directory: "/repo", agentSessionId: "native_1" })
+    const leaseId = store.acquireTurnLease("s1")
+    expect(leaseId).toBeDefined()
+    expect(store.readTurnAuthority("s1")?.leaseId).toBe(leaseId!)
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "native_1",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "opus" },
+      parts: [{ type: "text", text: "go" }],
+    })
+    store.releaseTurnLease("s1", leaseId!)
+    const replacement = store.acquireTurnLease("s1")
+    expect(replacement).not.toBe(leaseId)
+
+    expect(() => store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId })).toThrow(AgentRuntimeStaleTurnError)
+    expect(store.getSession("s1")?.status).toBe("busy")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId: replacement })
+    expect(store.getSession("s1")?.status).not.toBe("busy")
+    store.close()
   })
 })
