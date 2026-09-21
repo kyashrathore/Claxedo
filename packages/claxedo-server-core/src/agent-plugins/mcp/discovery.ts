@@ -1,5 +1,12 @@
 import { isJsonRecord, isNonEmptyString } from "../../platform/runtime/lib/json"
 import { isRecord } from "@claxedo/helpers/guards"
+import {
+  isLoopbackHostname,
+  isLoopbackIpAddress,
+  isPrivateIpAddress,
+  parseIpAddress,
+  type IpAddress,
+} from "@claxedo/helpers"
 
 export type McpOAuthClientRegistration =
   | { kind: "pre-registered"; clientId: string; clientSecret?: string }
@@ -64,24 +71,31 @@ export class McpOAuthDiscoveryError extends Error {
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 const MAX_METADATA_BYTES = 256 * 1024
 
+/**
+ * The DNS answers behind a hostname, as IP literals. Discovery cannot check a
+ * name it cannot see through, so a caller that has no resolver must pass one —
+ * there is no default, because skipping the check silently is the failure
+ * this port exists to prevent.
+ */
+export type McpOAuthAddressResolver = (hostname: string) => Promise<readonly string[]>
+
+function bareHost(hostname: string) {
+  return hostname.replace(/^\[|\]$/g, "").toLowerCase()
+}
+
 function isPrivateAddress(hostname: string) {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase()
-  if (host === "localhost" || host === "::1" || host.endsWith(".localhost")) return true
-  if (/^127(?:\.\d{1,3}){3}$/.test(host) || /^10(?:\.\d{1,3}){3}$/.test(host)) return true
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
-  if (v4) {
-    const octets = v4.slice(1).map(Number)
-    if (octets.some((part) => part > 255)) return true
-    if (octets[0] === 0 || octets[0] === 169 && octets[1] === 254 || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31 || octets[0] === 192 && octets[1] === 168) return true
-  }
-  return host === "::" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb")
+  const host = bareHost(hostname)
+  if (host === "localhost" || host.endsWith(".localhost")) return true
+  const ip = parseIpAddress(host)
+  return ip !== undefined && isPrivateIpAddress(ip)
 }
 
 function safeEndpoint(value: string, options: { loopback?: boolean } = {}): URL | undefined {
   let url: URL
   try { url = new URL(value) } catch { return undefined }
   if (url.username || url.password || url.hash) return undefined
-  const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)
+  const literal = parseIpAddress(bareHost(url.hostname))
+  const loopback = isLoopbackHostname(url.hostname) || (literal !== undefined && isLoopbackIpAddress(literal))
   if (url.protocol === "https:" && (!isPrivateAddress(url.hostname) || options.loopback && loopback)) return url
   if (options.loopback && url.protocol === "http:" && loopback) return url
   return undefined
@@ -113,17 +127,83 @@ async function boundedJson(response: Response) {
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown
 }
 
-async function safeFetch(fetcher: Fetch, input: URL, init?: RequestInit) {
+/**
+ * The destination policy a URL's CONNECTION must satisfy, decided on the
+ * addresses it resolves to rather than its spelling. A literal host needs no
+ * resolver; `localhost` names are loopback by definition (RFC 6761), so a
+ * public DNS answer for them could only be a lie and is never queried. Every
+ * resolved address must independently satisfy the same rule a literal would:
+ * public for https, loopback for the explicit loopback exemption.
+ *
+ * Returns the validated addresses so the caller can pin the connection to
+ * one of them — the DNS-rebinding defence: the socket goes to an address
+ * that passed policy, not to whatever the name answers a moment later.
+ */
+async function connectableAddresses(
+  url: URL,
+  options: { loopback?: boolean; resolve: McpOAuthAddressResolver },
+): Promise<readonly string[]> {
+  const host = bareHost(url.hostname)
+  const permitted = (ip: IpAddress) =>
+    url.protocol === "http:"
+      ? options.loopback === true && isLoopbackIpAddress(ip)
+      : !isPrivateIpAddress(ip) || (options.loopback === true && isLoopbackIpAddress(ip))
+  const literal = parseIpAddress(host)
+  if (literal) {
+    if (!permitted(literal)) throw new Error(`discovery destination ${host} is not a permitted address`)
+    return [host]
+  }
+  const addresses = host === "localhost" || host.endsWith(".localhost")
+    ? (["127.0.0.1"] as const)
+    : await options.resolve(host)
+  if (!addresses.length) throw new Error(`discovery destination ${host} did not resolve`)
+  for (const address of addresses) {
+    const ip = parseIpAddress(bareHost(address))
+    if (!ip || !permitted(ip)) throw new Error(`discovery destination ${host} resolves to a non-permitted address`)
+  }
+  return addresses
+}
+
+async function safeFetch(
+  fetcher: Fetch,
+  input: URL,
+  init: RequestInit | undefined,
+  options: { loopback?: boolean; resolve: McpOAuthAddressResolver },
+) {
   let url = input
+  let loopback = options.loopback === true
   for (let redirects = 0; redirects <= 3; redirects++) {
-    const response = await fetcher(url.toString(), { ...init, redirect: "manual" })
+    const addresses = await connectableAddresses(url, { loopback, resolve: options.resolve })
+    // `cf.resolveOverride` pins the connection to a validated answer while
+    // keeping the hostname's Host/SNI — honoured by workerd fetch and ignored
+    // by every other runtime's RequestInit dictionary.
+    const response = await fetcher(url.toString(), {
+      ...init,
+      redirect: "manual",
+      cf: { resolveOverride: addresses[0] },
+    } as RequestInit)
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
     const location = response.headers.get("location")
     const next = location ? safeEndpoint(new URL(location, url).toString(), { loopback: url.protocol === "http:" }) : undefined
     if (!next) throw new Error("discovery redirect is unsafe")
+    loopback = url.protocol === "http:"
     url = next
   }
   throw new Error("discovery redirected too many times")
+}
+
+/**
+ * The same destination policy as a fetch wrapper, for the OAuth token
+ * exchange that runs AFTER discovery against the endpoints it retained —
+ * `callback` and `refresh` POST the code and refresh token there, so the
+ * connection-time check and per-hop redirect policy must hold there too.
+ */
+export function createSafeEndpointFetch(fetcher: Fetch, resolve: McpOAuthAddressResolver): Fetch {
+  return async (url, init) => {
+    const endpoint = safeEndpoint(url, { loopback: true })
+    if (!endpoint) throw new Error("MCP OAuth endpoint is unsafe")
+    return safeFetch(fetcher, endpoint, init, { loopback: true, resolve })
+  }
 }
 
 function bearerChallenge(header: string | null) {
@@ -157,9 +237,10 @@ function authorizationMetadataCandidates(issuer: URL) {
 async function firstMetadata(
   fetcher: Fetch,
   candidates: URL[],
+  options: { loopback?: boolean; resolve: McpOAuthAddressResolver },
 ): Promise<{ url: string; raw: Record<string, unknown> } | undefined> {
   for (const candidate of candidates) {
-    const response = await safeFetch(fetcher, candidate, { headers: { accept: "application/json" } })
+    const response = await safeFetch(fetcher, candidate, { headers: { accept: "application/json" } }, options)
     if (response.status === 404) continue
     if (!response.ok) throw new Error(`metadata request failed with ${response.status}`)
     const raw = await boundedJson(response)
@@ -197,6 +278,7 @@ async function dynamicRegistration(input: {
   issuer: string
   metadata: Record<string, unknown>
   port: McpOAuthDynamicRegistrationPort
+  resolve: McpOAuthAddressResolver
 }): Promise<McpOAuthClientRegistration | undefined> {
   const endpoint = typeof input.metadata.registration_endpoint === "string"
     ? safeEndpoint(input.metadata.registration_endpoint)
@@ -210,7 +292,7 @@ async function dynamicRegistration(input: {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify(input.port.clientMetadata),
-  })
+  }, { resolve: input.resolve })
   // RFC 7591 §3.2.1 answers 201; a 200 is common in the wild and equally usable.
   if (!response.ok) throw new Error(`dynamic client registration failed with ${response.status}`)
   const raw = await boundedJson(response)
@@ -232,6 +314,7 @@ async function registration(input: {
   fetch: Fetch
   issuer: string
   metadata: Record<string, unknown>
+  resolve: McpOAuthAddressResolver
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
   dynamicRegistration?: McpOAuthDynamicRegistrationPort
@@ -248,6 +331,7 @@ async function registration(input: {
     issuer: input.issuer,
     metadata: input.metadata,
     port: input.dynamicRegistration,
+    resolve: input.resolve,
   })
 }
 
@@ -257,13 +341,14 @@ async function discoverAuthorizationServer(input: {
   resourceMetadataUrl: string
   issuer: string
   scopes: string[]
+  resolve: McpOAuthAddressResolver
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
   dynamicRegistration?: McpOAuthDynamicRegistrationPort
 }): Promise<McpOAuthDiscovery> {
   const issuerUrl = safeEndpoint(input.issuer)
   if (!issuerUrl) throw new Error(`Authorization server ${input.issuer} is unsafe`)
-  const authorizationMetadata = await firstMetadata(input.fetch, authorizationMetadataCandidates(issuerUrl))
+  const authorizationMetadata = await firstMetadata(input.fetch, authorizationMetadataCandidates(issuerUrl), { resolve: input.resolve })
   if (!authorizationMetadata) throw new Error(`Authorization server metadata is unavailable for ${input.issuer}`)
   if (authorizationMetadata.raw.issuer !== input.issuer) {
     throw new Error(`Authorization server metadata issuer does not exactly match ${input.issuer}`)
@@ -282,6 +367,7 @@ async function discoverAuthorizationServer(input: {
     fetch: input.fetch,
     issuer: input.issuer,
     metadata: authorizationMetadata.raw,
+    resolve: input.resolve,
     preRegistered: input.preRegistered,
     clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl,
     dynamicRegistration: input.dynamicRegistration,
@@ -316,6 +402,7 @@ async function discoverAuthorizationServer(input: {
 export async function discoverMcpOAuth(input: {
   resourceUrl: string
   fetch: Fetch
+  resolve: McpOAuthAddressResolver
   selectedIssuer?: string
   requiredScopes?: readonly string[]
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
@@ -329,13 +416,16 @@ export async function discoverMcpOAuth(input: {
       method: "POST",
       headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: "claxedo-oauth-discovery", method: "initialize", params: { protocolVersion: "2026-07-28", capabilities: {}, clientInfo: { name: "Claxedo", version: "1" } } }),
-    })
+    }, { loopback: true, resolve: input.resolve })
     if (probe.status !== 401) {
       if (probe.ok) return { status: "public" }
       throw new Error(`MCP resource probe failed with ${probe.status}`)
     }
     const challenge = bearerChallenge(probe.headers.get("www-authenticate"))
-    const resourceMetadata = await firstMetadata(input.fetch, protectedResourceCandidates(resource, challenge.metadata))
+    const resourceMetadata = await firstMetadata(input.fetch, protectedResourceCandidates(resource, challenge.metadata), {
+      loopback: resource.protocol === "http:",
+      resolve: input.resolve,
+    })
     if (!resourceMetadata) throw new Error("protected resource metadata is unavailable")
     const canonicalResource = typeof resourceMetadata.raw.resource === "string" ? safeEndpoint(resourceMetadata.raw.resource, { loopback: true }) : undefined
     if (!canonicalResource || !resourceIdentifies(canonicalResource, resource)) {
@@ -352,6 +442,7 @@ export async function discoverMcpOAuth(input: {
       resourceMetadataUrl: resourceMetadata.url,
       issuer,
       scopes: requiredScopes,
+      resolve: input.resolve,
       ...(input.preRegistered ? { preRegistered: input.preRegistered } : {}),
       ...(input.clientIdMetadataDocumentUrl
         ? { clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl }

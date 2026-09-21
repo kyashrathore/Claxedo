@@ -30,6 +30,7 @@ import { hostedAgentPluginsModule } from "./module"
 import { D1AgentPluginSourceStore } from "./sources/d1-store"
 import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cache"
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
+import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
 import { createBuiltinGroupReader, createCloudRootEnvironment, type CloudRootIdentity } from "./runtime/cloud-root-environment"
@@ -222,12 +223,18 @@ export function createHostedAgentPluginsComposition(input: {
   // client and a client-id-metadata-document client one identity rather than
   // two drifting ones.
   const { client_id: _published, ...registrationMetadata } = clientMetadata.document
+  const oauthFetch = oauthMetadataEdgeCachedFetch({ cache: edgeCache })
   const oauth = {
     callbackUrl: clientMetadata.redirectUri,
     // Discovery's well-known reads are cached at the edge across isolates
     // (see oauth-metadata-edge-cache.ts); the probe and registration POSTs
     // pass straight through.
-    fetch: oauthMetadataEdgeCachedFetch({ cache: edgeCache }),
+    fetch: oauthFetch,
+    // Every destination discovery and the token exchange connect to is
+    // resolved and checked against the private-address policy at connection
+    // time (see discovery.ts `connectableAddresses`); workerd has no
+    // `node:dns`, so answers come from DNS-over-HTTPS.
+    resolve: dohAddressResolver(oauthFetch),
     ...(preRegistered ? { preRegistered } : {}),
     clientIdMetadataDocumentUrl: clientMetadata.clientId,
     dynamicRegistration: {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { discoverMcpOAuth, McpOAuthDiscoveryError } from "./discovery"
+import { createSafeEndpointFetch, discoverMcpOAuth, McpOAuthDiscoveryError } from "./discovery"
 
 const json = (value: unknown, init: ResponseInit = {}) => {
   // `HeadersInit` also covers `string[][]`, which object-spreads to indices.
@@ -23,10 +23,13 @@ function mappedFetch(responses: Record<string, Response | (() => Response)>) {
   })
 }
 
+/** A resolver that answers every hostname with one public address. */
+const resolvePublic = async () => ["93.184.216.34"]
+
 describe("MCP OAuth discovery", () => {
   it("recognizes a public MCP endpoint without touching metadata", async () => {
     const fetch = mappedFetch({ "https://mcp.example/mcp": json({ jsonrpc: "2.0" }) })
-    await expect(discoverMcpOAuth({ resourceUrl: "https://mcp.example/mcp", fetch })).resolves.toEqual({ status: "public" })
+    await expect(discoverMcpOAuth({ resolve: resolvePublic, resourceUrl: "https://mcp.example/mcp", fetch })).resolves.toEqual({ status: "public" })
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
@@ -49,7 +52,7 @@ describe("MCP OAuth discovery", () => {
         authorization_response_iss_parameter_supported: true,
       }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       preRegistered: { "https://login.example/tenant": { clientId: "claxedo", clientSecret: "secret" } },
@@ -84,7 +87,7 @@ describe("MCP OAuth discovery", () => {
         client_id_metadata_document_supported: true,
       }),
     })
-    const result = await discoverMcpOAuth({
+    const result = await discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       clientIdMetadataDocumentUrl: "https://claxedo.example/oauth/client.json",
@@ -122,7 +125,7 @@ describe("MCP OAuth discovery", () => {
         code_challenge_methods_supported: ["S256"],
       }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       preRegistered: {
@@ -156,7 +159,7 @@ describe("MCP OAuth discovery", () => {
       }),
     })
 
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       preRegistered: { "https://ready.example": { clientId: "claxedo" } },
@@ -186,7 +189,7 @@ describe("MCP OAuth discovery", () => {
         code_challenge_methods_supported: ["S256"],
       }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.context7.test/mcp/oauth",
       fetch,
       preRegistered: { "https://clerk.context7.test": { clientId: "claxedo" } },
@@ -215,7 +218,7 @@ describe("MCP OAuth discovery", () => {
         code_challenge_methods_supported: ["S256"],
       }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       preRegistered: { "https://login.example": { clientId: "claxedo" } },
@@ -270,7 +273,7 @@ describe("MCP OAuth discovery", () => {
       }),
     }
 
-    const first = await discoverMcpOAuth({ resourceUrl: "https://mcp.example/mcp", fetch, dynamicRegistration: port })
+    const first = await discoverMcpOAuth({ resolve: resolvePublic, resourceUrl: "https://mcp.example/mcp", fetch, dynamicRegistration: port })
     expect(first).toMatchObject({
       status: "protected",
       discovery: { client: { kind: "dynamic", clientId: "dyn-client-1" } },
@@ -286,7 +289,7 @@ describe("MCP OAuth discovery", () => {
       registrationEndpoint: "https://login.example/oauth2/register",
     }))
 
-    const second = await discoverMcpOAuth({ resourceUrl: "https://mcp.example/mcp", fetch, dynamicRegistration: port })
+    const second = await discoverMcpOAuth({ resolve: resolvePublic, resourceUrl: "https://mcp.example/mcp", fetch, dynamicRegistration: port })
     expect(second).toMatchObject({ status: "protected", discovery: { client: { kind: "dynamic", clientId: "dyn-client-1" } } })
     expect(registrationBodies).toHaveLength(1)
     expect(port.register).toHaveBeenCalledTimes(1)
@@ -310,7 +313,7 @@ describe("MCP OAuth discovery", () => {
       "https://login.example/oauth2/register": () =>
         Response.json({ client_id: "dyn-2", client_secret: "issued-secret" }, { status: 201 }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       dynamicRegistration: {
@@ -346,7 +349,7 @@ describe("MCP OAuth discovery", () => {
       lookup: vi.fn(async () => undefined),
       register: vi.fn(async () => ({ clientId: "never" })),
     }
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       clientIdMetadataDocumentUrl: "https://claxedo.example/oauth/client.json",
@@ -371,7 +374,7 @@ describe("MCP OAuth discovery", () => {
         code_challenge_methods_supported: ["S256"],
       }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       dynamicRegistration: {
@@ -392,7 +395,7 @@ describe("MCP OAuth discovery", () => {
         token_endpoint: "https://login.example/token",
       }),
     })
-    await expect(discoverMcpOAuth({
+    await expect(discoverMcpOAuth({ resolve: resolvePublic,
       resourceUrl: "https://mcp.example/mcp",
       fetch,
       preRegistered: { "https://login.example": { clientId: "claxedo" } },
@@ -403,17 +406,27 @@ describe("MCP OAuth discovery", () => {
     "http://mcp.example/mcp",
     "https://10.0.0.1/mcp",
     "https://169.254.169.254/latest/meta-data",
+    // Private addresses in every alternate spelling a URL can carry.
+    "https://[::ffff:10.0.0.1]/mcp",
+    "https://[::ffff:a9fe:a9fe]/mcp",
+    "https://[64:ff9b::a9fe:a9fe]/mcp",
+    "https://[2002:a00:1::]/mcp",
+    "https://0xa000001/mcp",
+    "https://167838976/mcp",
+    "https://100.64.0.1/mcp",
+    "https://198.18.0.1/mcp",
+    "https://192.0.0.1/mcp",
     "https://user:password@mcp.example/mcp",
     "https://mcp.example/mcp#fragment",
   ])("rejects an unsafe resource before fetching: %s", async (resourceUrl) => {
     const fetch = vi.fn()
-    await expect(discoverMcpOAuth({ resourceUrl, fetch })).rejects.toMatchObject({ code: "invalid-resource" } satisfies Partial<McpOAuthDiscoveryError>)
+    await expect(discoverMcpOAuth({ resolve: resolvePublic, resourceUrl, fetch })).rejects.toMatchObject({ code: "invalid-resource" } satisfies Partial<McpOAuthDiscoveryError>)
     expect(fetch).not.toHaveBeenCalled()
   })
 
   it("permits explicit HTTP loopback for local MCP servers", async () => {
     const fetch = mappedFetch({ "http://127.0.0.1:4567/mcp": json({ jsonrpc: "2.0" }) })
-    await expect(discoverMcpOAuth({ resourceUrl: "http://127.0.0.1:4567/mcp", fetch })).resolves.toEqual({ status: "public" })
+    await expect(discoverMcpOAuth({ resolve: resolvePublic, resourceUrl: "http://127.0.0.1:4567/mcp", fetch })).resolves.toEqual({ status: "public" })
   })
 
   it("rejects oversized metadata even without a Content-Length header", async () => {
@@ -421,6 +434,59 @@ describe("MCP OAuth discovery", () => {
       "https://mcp.example/mcp": new Response(null, { status: 401 }),
       "https://mcp.example/.well-known/oauth-protected-resource/mcp": () => new Response(new Uint8Array(256 * 1024 + 1)),
     })
-    await expect(discoverMcpOAuth({ resourceUrl: "https://mcp.example/mcp", fetch })).rejects.toMatchObject({ code: "discovery-failed" } satisfies Partial<McpOAuthDiscoveryError>)
+    await expect(discoverMcpOAuth({ resolve: resolvePublic, resourceUrl: "https://mcp.example/mcp", fetch })).rejects.toMatchObject({ code: "discovery-failed" } satisfies Partial<McpOAuthDiscoveryError>)
+  })
+
+  it("connects to a validated public answer and pins the hop to it", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => json({ jsonrpc: "2.0" }))
+    const resolve = vi.fn(async () => ["93.184.216.34"])
+    await expect(discoverMcpOAuth({ resolve, resourceUrl: "https://mcp.example/mcp", fetch })).resolves.toEqual({ status: "public" })
+    expect(resolve).toHaveBeenCalledWith("mcp.example")
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual", cf: { resolveOverride: "93.184.216.34" } })
+  })
+
+  it.each([
+    ["a private answer", async () => ["10.0.0.5"]],
+    ["one private answer among public ones", async () => ["93.184.216.34", "169.254.169.254"]],
+    ["no answer at all", async () => [] as string[]],
+    ["a non-IP answer", async () => ["not-an-address"]],
+  ])("refuses a resource whose hostname resolves to %s", async (_case, resolve) => {
+    const fetch = vi.fn()
+    await expect(discoverMcpOAuth({ resolve, resourceUrl: "https://mcp.example/mcp", fetch })).rejects.toMatchObject({ code: "discovery-failed" } satisfies Partial<McpOAuthDiscoveryError>)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("refuses a redirect to a private literal destination", async () => {
+    const fetch = vi.fn(async (url: string) =>
+      url === "https://mcp.example/mcp"
+        ? new Response(null, { status: 302, headers: { location: "https://10.0.0.9/mcp" } })
+        : new Response(null, { status: 404 }))
+    await expect(discoverMcpOAuth({ resolve: resolvePublic, resourceUrl: "https://mcp.example/mcp", fetch })).rejects.toMatchObject({ code: "discovery-failed" } satisfies Partial<McpOAuthDiscoveryError>)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("refuses a redirect to a hostname that resolves privately", async () => {
+    const fetch = vi.fn(async (url: string) =>
+      url === "https://mcp.example/mcp"
+        ? new Response(null, { status: 302, headers: { location: "https://internal.example/mcp" } })
+        : new Response(null, { status: 404 }))
+    const resolve = async (host: string) => host === "internal.example" ? ["169.254.169.254"] : ["93.184.216.34"]
+    await expect(discoverMcpOAuth({ resolve, resourceUrl: "https://mcp.example/mcp", fetch })).rejects.toMatchObject({ code: "discovery-failed" } satisfies Partial<McpOAuthDiscoveryError>)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("permits an HTTP localhost resource without consulting the resolver", async () => {
+    const fetch = mappedFetch({ "http://localhost:4567/mcp": json({ jsonrpc: "2.0" }) })
+    // `localhost` is loopback by definition; it must never reach public DNS.
+    const resolve = vi.fn(async () => Promise.reject(new Error("localhost must not be resolved")))
+    await expect(discoverMcpOAuth({ resolve, resourceUrl: "http://localhost:4567/mcp", fetch })).resolves.toEqual({ status: "public" })
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it("enforces the same policy inside the token-exchange fetch wrapper", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 302, headers: { location: "https://169.254.169.254/latest" } }))
+    const checked = createSafeEndpointFetch(fetch, resolvePublic)
+    await expect(checked("https://login.example/token", { method: "POST" })).rejects.toThrow(/non-permitted|unsafe/)
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

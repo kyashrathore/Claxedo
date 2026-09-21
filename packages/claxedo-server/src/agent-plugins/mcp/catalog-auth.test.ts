@@ -2,6 +2,8 @@ import { describe, expect, test, vi } from "vitest"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import { hostedMcpCatalogAuthentication } from "./catalog-auth"
 
+const resolvePublic = async () => ["93.184.216.34"]
+
 describe("hosted MCP catalog authentication projection", () => {
   test("distinguishes public, supported OAuth, and unsupported discovery without storing state", async () => {
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
@@ -28,6 +30,7 @@ describe("hosted MCP catalog authentication projection", () => {
     const inspect = hostedMcpCatalogAuthentication({
       callbackUrl: "https://claxedo.example/api/claxedo/integrations/callback",
       fetch,
+      resolve: resolvePublic,
       preRegistered: { "https://login.example": { clientId: "claxedo" } },
     })
 
@@ -78,6 +81,7 @@ describe("hosted MCP catalog authentication projection", () => {
     const inspect = hostedMcpCatalogAuthentication({
       callbackUrl: "https://claxedo.example/api/claxedo/integrations/callback",
       fetch,
+      resolve: resolvePublic,
       preRegistered: {
         "https://one.example": { clientId: "one" },
         "https://two.example": { clientId: "two" },

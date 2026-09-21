@@ -1,4 +1,4 @@
-import type { McpOAuthDynamicRegistrationPort } from "@claxedo/server-core/agent-plugins/mcp/discovery"
+import type { McpOAuthAddressResolver, McpOAuthDynamicRegistrationPort } from "@claxedo/server-core/agent-plugins/mcp/discovery"
 import { createHash } from "node:crypto"
 import type { SandboxBrokeredSecret, SandboxDriverMetadata } from "@claxedo/sandbox-manager"
 import {
@@ -130,6 +130,8 @@ export type HostedMcpRuntimePreparerInput = {
   resolveConnection: ConnectionReadiness
   oauth: {
     fetch(url: string, init?: RequestInit): Promise<Response>
+    /** DNS answers behind each destination hostname, enforced at connection time. */
+    resolve: McpOAuthAddressResolver
     preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
     clientIdMetadataDocumentUrl?: string
     /** RFC 7591 registration port; absent means only pre-registered/CIMD clients resolve. */
@@ -199,6 +201,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
       const started = discoverMcpOAuth({
         resourceUrl,
         fetch: oauthFetch,
+        resolve: input.oauth.resolve,
         ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
         ...(input.oauth.clientIdMetadataDocumentUrl
           ? { clientIdMetadataDocumentUrl: input.oauth.clientIdMetadataDocumentUrl }
@@ -262,6 +265,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
                 auth = await discoverMcpOAuth({
                   resourceUrl: server.url,
                   fetch: oauthFetch,
+                  resolve: input.oauth.resolve,
                   selectedIssuer,
                   ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
                   ...(input.oauth.clientIdMetadataDocumentUrl

@@ -32,6 +32,7 @@ export function hostedMcpCatalogAuthentication(
       const result = await discoverMcpOAuth({
         resourceUrl: server.url,
         fetch: oauth.fetch,
+        resolve: oauth.resolve,
         ...(oauth.preRegistered ? { preRegistered: oauth.preRegistered } : {}),
         ...(oauth.clientIdMetadataDocumentUrl
           ? { clientIdMetadataDocumentUrl: oauth.clientIdMetadataDocumentUrl }

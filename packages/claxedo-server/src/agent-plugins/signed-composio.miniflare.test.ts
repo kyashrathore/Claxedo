@@ -49,6 +49,7 @@ import { fetchBodyText } from "../test-support/fetch-calls"
 const COMPOSIO_MCP = "https://connect.composio.dev/mcp"
 const COMPOSIO_RESOURCE = "https://connect.composio.dev/.well-known/oauth-protected-resource/mcp"
 const COMPOSIO_ISSUER = "https://backend.composio.dev"
+const resolvePublic = async () => ["93.184.216.34"]
 const PLUGIN_INSTANCE_ID = JSON.stringify(["claxedo-public", "composio"])
 const USER = {
   userId: "user_signed",
@@ -267,6 +268,7 @@ async function subject(connected: boolean) {
     resolveConnection,
     oauth: {
       fetch: composioOauthFetch(),
+      resolve: resolvePublic,
       preRegistered: { [COMPOSIO_ISSUER]: { clientId: "claxedo-composio" } },
     },
     gatewayUrl: "https://mcp-gateway.claxedo.test/",
@@ -723,6 +725,7 @@ describe("Composio MCP through RFC 7591 dynamic client registration", () => {
         oauth: {
           callbackUrl: "https://claxedo.test/api/claxedo/integrations/callback",
           fetch: server.fetch,
+          resolve: resolvePublic,
           dynamicRegistration: {
             clientMetadata: {
               client_name: "Claxedo",

@@ -2,6 +2,8 @@ import { describe, expect, test, vi } from "vitest"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import { hostedAgentPluginConnectionIntegrations } from "./connections"
 
+const resolvePublic = async () => ["93.184.216.34"]
+
 const auth = {
   mode: "signed",
   token: "signed-token",
@@ -63,6 +65,7 @@ describe("hosted Agent Plugin Connections adapter", () => {
       oauth: {
         callbackUrl: "https://claxedo.example/api/claxedo/integrations/callback",
         fetch,
+        resolve: resolvePublic,
         preRegistered: { "https://login.example": { clientId: "claxedo" } },
       },
     })
@@ -108,6 +111,7 @@ describe("hosted Agent Plugin Connections adapter", () => {
       oauth: {
         callbackUrl: "https://claxedo.example/api/claxedo/integrations/callback",
         fetch: async () => Response.json({ jsonrpc: "2.0", id: 1, result: {} }),
+        resolve: resolvePublic,
       },
     })
     const integrationId = await mcpOAuthIntegrationId({ pluginInstanceId: "collection:docs", serverName: "docs" })

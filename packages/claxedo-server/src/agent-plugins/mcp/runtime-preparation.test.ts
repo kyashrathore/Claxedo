@@ -7,6 +7,8 @@ import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/in
 import { verifyMcpGatewayToken } from "./runtime-token"
 import { agentPluginMcpRuntimePlan, createHostedMcpRuntimePreparation, createHostedMcpRuntimePreparer } from "./runtime-preparation"
 
+const resolvePublic = async () => ["93.184.216.34"]
+
 const digest = `sha256:${"a".repeat(64)}` as const
 
 function snapshot(): SignedAgentPluginRuntimeSnapshot {
@@ -107,6 +109,7 @@ async function subject(input: {
     resolveConnection,
     oauth: {
       fetch: oauthFetchSpy,
+      resolve: resolvePublic,
       preRegistered,
     },
     gatewayUrl: "https://mcp-gateway.example/",
@@ -169,7 +172,7 @@ describe("hosted MCP runtime preparation", () => {
         scope: "personal" as const,
         fields: { resource: "https://mcp.example/mcp" },
       }),
-      oauth: { fetch: oauthFetch(), preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+      oauth: { fetch: oauthFetch(), resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
       gatewayUrl: "https://mcp-gateway.example/",
       signingEnv: env,
       secretBrokering: "native",
@@ -221,7 +224,7 @@ describe("hosted MCP runtime preparation", () => {
         }),
       },
       resolveConnection: async () => ({ ok: false as const, status: 404, code: "connection_not_found" }),
-      oauth: { fetch, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+      oauth: { fetch, resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
       gatewayUrl: "https://mcp-gateway.example/",
       signingEnv: env,
       secretBrokering: "native",
@@ -343,7 +346,7 @@ describe("hosted MCP runtime preparation", () => {
         scope: "personal" as const,
         fields: { resource: "https://mcp.example/mcp" },
       }),
-      oauth: { fetch: oauthFetch(), preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+      oauth: { fetch: oauthFetch(), resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
       gatewayUrl: "https://mcp-gateway.example/",
       signingEnv: env,
       secretBrokering: "native",

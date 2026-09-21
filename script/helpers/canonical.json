@@ -37,6 +37,15 @@
     },
     {
       "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/ip.ts",
+      "names": [
+        "isLoopbackIpAddress",
+        "isPrivateIpAddress",
+        "parseIpAddress"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
       "owner": "packages/claxedo-helpers/src/env.ts",
       "names": [
         "envText"

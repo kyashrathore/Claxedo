@@ -1,7 +1,9 @@
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { SignedAgentPluginActivationStore } from "@claxedo/server-core/agent-plugins/activation/store"
 import {
+  createSafeEndpointFetch,
   discoverMcpOAuth,
+  type McpOAuthAddressResolver,
   type McpOAuthDiscoveryResult,
   type McpOAuthDynamicRegistrationPort,
 } from "@claxedo/server-core/agent-plugins/mcp/discovery"
@@ -21,6 +23,11 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 export type HostedMcpOAuthConfiguration = Readonly<{
   callbackUrl: string
   fetch: Fetch
+  /**
+   * DNS answers behind each destination hostname, enforced at connection
+   * time on every hop discovery and the token exchange make.
+   */
+  resolve: McpOAuthAddressResolver
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
   /**
@@ -71,6 +78,7 @@ function discovery(input: HostedMcpOAuthConfiguration, server: RetainedServer, s
   return discoverMcpOAuth({
     resourceUrl: server.server.url,
     fetch: input.fetch,
+    resolve: input.resolve,
     ...(selectedIssuer ? { selectedIssuer } : {}),
     ...(input.preRegistered ? { preRegistered: input.preRegistered } : {}),
     ...(input.clientIdMetadataDocumentUrl ? { clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl } : {}),
@@ -88,13 +96,17 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
   oauth: HostedMcpOAuthConfiguration
 }>): HostedDynamicConnectionIntegrations {
   const authentication = hostedMcpCatalogAuthentication(input.oauth)
+  // The token exchange fetches the endpoints discovery retained, later and
+  // outside discovery's own redirect walk — the same destination policy is
+  // enforced on it here, at connection time and on every hop.
+  const tokenFetch = createSafeEndpointFetch(input.oauth.fetch, input.oauth.resolve)
   return async (context) => {
     if (context.attemptContext && context.integrationId) {
       return [await createMcpOAuthIntegrationFromAttempt({
         integrationId: context.integrationId,
         serverName: "MCP",
         attemptContext: context.attemptContext,
-        fetch: input.oauth.fetch,
+        fetch: tokenFetch,
         ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
         ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
       })]
@@ -104,7 +116,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
         integrationId: context.integrationId,
         serverName: "MCP",
         attemptContext: context.connectionFields,
-        fetch: input.oauth.fetch,
+        fetch: tokenFetch,
         ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
         ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
       })]
@@ -137,7 +149,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
       serverName: selected.server.server.name,
       discovery: discovered.discovery,
       callbackUrl: input.oauth.callbackUrl,
-      fetch: input.oauth.fetch,
+      fetch: tokenFetch,
     })]
   }
 }
