@@ -305,7 +305,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 107 | Scheduled fixes | [P-46 — Small helper contracts fail on edge cases](#finding-p-46) | LOW → Low correctness/hardening | Fixed; focused helper tests | Return a typed invalid-reference error, use path-relative containment, constrain URL path inputs and private atomic writes. |
 | 108 | Scheduled fixes | [S-8 — Client-supplied analytics identity is trusted](#finding-s-8) | LOW → Low | Fixed; focused route tests | Derive identity from the app/session where available, allowlist event names and bound properties and request rate. |
 | 109 | Scheduled fixes | [P-113 — Signed node analytics route is anonymous](#finding-p-113) | LOW → Low | Fixed; focused app tests | Authenticate server-owned analytics or accept only a constrained public event schema with rate limits; derive identity server-side. |
-| 110 | Scheduled fixes | [P-24 — Bootstrap local information is intentionally local](#finding-p-24) | MED-LOW → Low locally; signed remote leak resolved | Partial | Keep anonymous signed bootstrap minimal and protect rich local bootstrap with the same app capability as S-1. |
+| 110 | Scheduled fixes | [P-24 — Bootstrap local information is intentionally local](#finding-p-24) | MED-LOW → Low locally; signed remote leak resolved | Fixed; capability-gated bootstrap | Rich local bootstrap now requires the daemon capability wherever a daemon identity exists; signed deployments still return only the declaration. |
 | 111 | Hardening / latent | [S-2 — Documents Mermaid lacks the extra SVG sanitizer](#finding-s-2) | HIGH → Low hardening; High only if XSS reproduced | Unconfirmed exploit | Route both sinks through the existing SVG sanitizer and use the shared renderer configuration. |
 | 112 | Hardening / latent | [P-68 — Some transcript anchors bypass URL filtering](#finding-p-68) | MED → Low confirmed hardening; Medium XSS unconfirmed | Partial | Filter before assigning href and prevent default on rejected schemes, including modified clicks via inert hrefs. |
 | 113 | Hardening / latent | [P-69 — Markdown renderer returns unsafe raw HTML attributes](#finding-p-69) | MED → Low in current app; Medium for unsanitized consumers | Partial | Escape attributes and allowlist link schemes at the shared builder; keep final sanitization. |
@@ -858,11 +858,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-24"></a>
 ### P-24 — Bootstrap local information is intentionally local
 
-**Original severity:** MED-LOW. **Current:** Partial. **Reassessed severity:** Low locally; signed remote leak resolved.
+**Original severity:** MED-LOW. **Current:** Fixed; capability-gated bootstrap. **Reassessed severity:** Low locally; signed remote leak resolved.
 
-**What happens and why it matters:** An unsigned local bootstrap still includes machine paths and project metadata. Signed deployments now return only a declaration to an anonymous caller. The old remote reconnaissance claim is no longer correct.
+**What changed:** `GET /api/claxedo/bootstrap` is now gated by the S-1 `daemonAdmission` middleware wherever the composition carries a daemon identity — the loopback guard admits every local page, so machine paths, project lists and provider accounts in the rich body need the capability. Daemon-less compositions (self-hosted node, dev) mint no capability and serve the rich body unchanged. Signed-box posture preserved: a capable anonymous caller still gets only the declaration.
 
-**Fix and acceptance:** Keep anonymous signed bootstrap minimal and protect rich local bootstrap with the same app capability as S-1. Test both deployment postures.
+**Acceptance:** Behaviour tests cover both postures — hostile-page 401s, forged capability and spoofed bearer refused, capable caller served; daemon-admission suite gained bootstrap coverage. NOTE: the wider S-1 mount remains incomplete in this checkout — `daemonAdmission` gates only bootstrap; 7 pre-existing daemon-admission failures document the unwired privileged routes, CORS narrowing and `markInProcessDaemonRequest`.
 
 **Current code:** [packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts](../packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts). [Concept walkthrough A](#flow-a).
 
