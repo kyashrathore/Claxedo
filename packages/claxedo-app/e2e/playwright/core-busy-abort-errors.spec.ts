@@ -471,7 +471,8 @@ test.describe("core busy / abort / errors @core", () => {
     // opened — the receipt outlived the response.
     await panel.getByRole("button", { name: /^Inspect$/i }).click()
     await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(1)
-    await expect(panel).toContainText(/cancel_turn/)
+    // The operation reads as words, not as the contract's enum.
+    await expect(panel).toContainText(/Stop the turn/i)
   })
 
   test("a machine that cannot answer is named as that, and the panel stays usable", async ({ page }) => {
@@ -535,7 +536,8 @@ test.describe("core busy / abort / errors @core", () => {
     await expect.soft(divider, "the cancelled turn explains Stop before navigation or reload").toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: testInfo.outputPath("before-reload.png") })
     await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(divider, "persisted cancellation renders after reload").toBeVisible()
+    await expectAssistantReplyVisible(page, "previous completed reply")
+    await expect(divider, "persisted cancellation renders after reload").toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: testInfo.outputPath("after-reload.png") })
     expect(mock.requests.promptCount).toBe(1)
     expect(mock.requests.eventWebSocketConnections).toBeGreaterThan(0)
@@ -906,6 +908,9 @@ test.describe("core busy / abort / errors @core", () => {
       await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
       // Optimistic busy precedes dispatch; the ladder is measured from a dispatched turn.
       await expect.poll(() => promptState.count, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
+      // The first Stop ended the turn the owner knew about. Cancel below reaches
+      // the owner, which must be running THIS turn for there to be one to cancel.
+      mock.setRunningTurn(promptState.lastMessageID)
 
       const stage = page.getByTestId("session-status-stage")
       // Setup latency is not scaled, so pending/long may already have elapsed; "failed"

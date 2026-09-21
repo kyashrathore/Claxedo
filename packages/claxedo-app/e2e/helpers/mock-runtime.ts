@@ -309,6 +309,8 @@ export type MockRuntimeRequests = {
   recoveryRequests: Array<{ requestId: string; action: string; turnId?: string; attempt: number; linkedOperationId?: string }>
   /** Operation ids read back through `GET /session/:id/recovery/operations/:id`. */
   recoveryOperationReads: string[]
+  /** Each turn asked for through `GET /session/:id/message?turn=&coverage=1`. */
+  coverageReads: string[]
   /** Validated `POST /session/:id/permissions/:permId` decisions, in order. */
   permissionResponses: PermissionResponseValue[]
   /**
@@ -1047,6 +1049,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     recoveryInspectCount: 0,
     recoveryRequests: [],
     recoveryOperationReads: [],
+    coverageReads: [],
     permissionResponses: [],
     permissionModeWrites: [],
     questionReplies: [],
@@ -3160,11 +3163,34 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/session/*/message**", async (r) => {
     if (!api(r)) return r.continue()
-    const sessionId = decodeURIComponent(new URL(r.request().url()).pathname.split("/").at(-2) ?? "")
+    const url = new URL(r.request().url())
+    const sessionId = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
     const child = readOnlySessions.find((row) => row.id === sessionId)
     const snapshot = child ? readOnlyMessages(child) : messages
     if (options.messageRefreshOnly && requests.promptCount > 0 && !child) {
       await wait(options.messageRefreshOnly.responseDelayMs)
+    }
+    // CONTRACT (workspace-runtime/src/routes/session-core.ts): `?turn=&coverage=1`
+    // is a third, exclusive read shape answering one named turn rather than a
+    // page. Its envelope names the turn that was ASKED for, so a client can tell
+    // an answer about its turn from an answer about the one that replaced it.
+    const askedTurn = url.searchParams.get("turn")
+    if (askedTurn && url.searchParams.get("coverage") === "1") {
+      requests.coverageReads.push(askedTurn)
+      const assistantMessageId = assistantIdForUserMessage(askedTurn)
+      const turnRows = snapshot.filter((row) => row.info.id === askedTurn || row.info.id === assistantMessageId)
+      const finished = turnRows.some((row) =>
+        row.info.role === "assistant" && typeof row.info.time?.completed === "number")
+      // Only a journal that records the turn ended may call the page complete,
+      // and only then does it carry a terminal.
+      return json(r, {
+        turnId: askedTurn,
+        coverage: turnRows.length === 0 ? "unavailable" : finished ? "complete" : "partial",
+        ...(turnRows.length === 0 ? { reason: `no journalled turn ${askedTurn}` } : {}),
+        ...(finished && lastTurn ? { terminal: lastTurn } : {}),
+        committedSequence: requests.promptCount,
+        messages: turnRows,
+      })
     }
     return json(r, { messages: snapshot, maxEventOrdinal: 0 })
   })
