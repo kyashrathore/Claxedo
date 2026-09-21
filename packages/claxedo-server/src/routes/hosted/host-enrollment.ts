@@ -36,6 +36,7 @@
  */
 
 import { Hono, type Context } from "hono"
+import { routeParam } from "@claxedo/helpers/route-param"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import {
@@ -573,7 +574,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       handle(scopeBody, async ({ body, auth, authority, c }) => {
         if (!authority.updateHostEnrollmentScope) throw unsupportedError("Enrollment scope")
         return await authority.updateHostEnrollmentScope(auth, {
-          enrollmentId: c.req.param("id"),
+          enrollmentId: routeParam(c, "id"),
           scope: { allowed_roots: body.allowed_roots, visibility: body.visibility },
         })
       }, "PATCH", {
@@ -587,7 +588,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       handle(renameBody, async ({ body, auth, authority, c }) => {
         if (!authority.renameHostEnrollment) throw unsupportedError("Enrollment rename")
         return await authority.renameHostEnrollment(auth, {
-          enrollmentId: c.req.param("id"),
+          enrollmentId: routeParam(c, "id"),
           displayName: body.displayName,
         })
       }, "PATCH", {
@@ -612,7 +613,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         }
         const providers = body.providers
         const providerIds = Object.keys(providers).sort()
-        const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: c.req.param("id") })
+        const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: routeParam(c, "id") })
         if (target.sealing_public_key === null) {
           throw new HostProviderConfigError({
             code: "host_sealing_key_undeclared",
@@ -750,7 +751,7 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
       "/:id",
       handle(noBody, async ({ auth, authority, c }) => {
         if (!authority.revokeHostInvitation) throw unsupportedError("Host invitations")
-        const invitationId = c.req.param("id")
+        const invitationId = routeParam(c, "id")
         const result = await authority.revokeHostInvitation(auth, { invitationId })
         if (result.revoked) {
           await authority.auditAllow(auth, { action: "host_invitation.revoked", metadata: { invitationId } })

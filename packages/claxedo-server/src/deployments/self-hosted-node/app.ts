@@ -12,7 +12,6 @@ import { serveStatic } from "@hono/node-server/serve-static"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { importJWK, importSPKI } from "jose"
 import { verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
-import { z } from "zod"
 import {
   optionalGit,
   setupAgentHooks,
@@ -185,15 +184,7 @@ import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
-
-const TrackBody = z.object({
-  event: z.string().min(1),
-  properties: z.record(z.string(), z.unknown()).optional(),
-})
-
-function trackErrorBody(code: string, message: string) {
-  return { error: { code, message } }
-}
+import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 
 // Exported (not just used internally) so the embedded per-workspace
 // `onSessionMetaEvent` tap wired through `configureEmbeddedWorkspaceRuntime`
@@ -984,27 +975,7 @@ export function createSelfHostedApp(
     app.all(BROKER_ROUTE_PATTERN, (c) => bindings(c.req.raw))
   }
 
-  app.post("/api/claxedo/track", async (c) => {
-    // distinctId is derived, never read from the body: a signed deployment
-    // attributes the event to the verified subject, and every other caller
-    // has already been bounded to loopback by the unsigned-local gate above —
-    // the machine's own telemetry bucket.
-    let distinctId: string
-    try {
-      const identity = await controlPlaneAuthContext(c.req.raw, {
-        config: services.auth.config,
-        ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-      })
-      distinctId = identity.mode === "signed" ? identity.user.subject : "local"
-    } catch (error) {
-      if (!(error instanceof ControlPlaneAuthError)) throw error
-      return c.json(trackErrorBody(error.code, error.message), error.status)
-    }
-    const parsed = TrackBody.safeParse(await c.req.json().catch(() => null))
-    if (!parsed.success) return c.json(trackErrorBody("telemetry_invalid_body", "Invalid telemetry request body"), 400)
-    services.telemetry.capture(distinctId, parsed.data.event, parsed.data.properties)
-    return c.json({ ok: true })
-  })
+  app.route("/", TelemetryTrackRoutes({ auth: services.auth, telemetry: services.telemetry }))
 
   app.get("/api/claxedo/health", (c) =>
     c.json({

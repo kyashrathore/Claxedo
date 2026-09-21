@@ -66,7 +66,7 @@ export type { EventDeliveryDecision, EventDeliveryPolicy, EventDeliveryPrincipal
  * from eviction, and this writer is the one that turns an opened source into
  * a `wr/events` response.
  */
-export { isRetainedWorkspaceEventFrame, streamWorkspaceEventFrames }
+export { isRetainedWorkspaceEventFrame, malformedEventStreamCursor, streamWorkspaceEventFrames }
   from "./routes/events"
 export type { WorkspaceEventFramesTap, WorkspaceEventStreamFrame }
   from "./routes/events"

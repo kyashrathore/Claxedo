@@ -53,7 +53,7 @@
     "@zip.js/zip.js": "2.7.62",
     "better-sqlite3": "13.0.1",
     "drizzle-orm": "catalog:",
-    "hono": "4.10.7",
+    "hono": "4.12.34",
     "jose": "6.2.4",
     "tokentracker-cli": "0.91.0",
     "yaml": "2.9.0",

@@ -41,7 +41,7 @@
     "@claxedo/server-core": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@hono/node-server": "1.19.11",
-    "hono": "4.10.7"
+    "hono": "4.12.34"
   },
   "devDependencies": {
     "@claxedo/workspace-relay": "workspace:*",

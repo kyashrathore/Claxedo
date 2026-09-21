@@ -1,4 +1,5 @@
 import type { Context } from "hono"
+import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import {
   ControlPlaneAuthError,
@@ -106,7 +107,7 @@ export function hostAssignmentHandlers(
   const authOptions = { ...options, requireSigned: true as const }
   return {
     assign: async (c) => {
-      const workspaceId = c.req.param("id")
+      const workspaceId = routeParam(c, "id")
       const authResult = await signedOrError(c.req.raw, authOptions, services)
       if ("error" in authResult) return c.json(authResult.error, authResult.status)
       const auth = authResult.auth
@@ -166,7 +167,7 @@ export function hostAssignmentHandlers(
       }
     },
     unassign: async (c) => {
-      const workspaceId = c.req.param("id")
+      const workspaceId = routeParam(c, "id")
       const authResult = await signedOrError(c.req.raw, authOptions, services)
       if ("error" in authResult) return c.json(authResult.error, authResult.status)
       const auth = authResult.auth

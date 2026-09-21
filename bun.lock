@@ -189,7 +189,7 @@
         "@claxedo/helpers": "workspace:*",
         "@whiskeysockets/baileys": "7.0.0-rc13",
         "chat": "4.35.0",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
@@ -203,7 +203,7 @@
       "version": "0.5.0",
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
@@ -299,7 +299,7 @@
         "@claxedo/server-core": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@hono/node-server": "1.19.11",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
       },
       "devDependencies": {
         "@claxedo/workspace-relay": "workspace:*",
@@ -328,7 +328,7 @@
         "@hono/node-ws": "1.3.1",
         "@lydell/node-pty": "catalog:",
         "better-sqlite3": "13.0.1",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
         "smol-toml": "1.7.1",
         "tokentracker-cli": "0.91.0",
         "zod": "4.4.3",
@@ -354,7 +354,7 @@
         "@modelcontextprotocol/sdk": "1.29.0",
         "ajv": "8.20.0",
         "ajv-formats": "3.0.1",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
         "zod": "4.4.3",
         "zod-to-json-schema": "3.25.2",
       },
@@ -399,7 +399,7 @@
         "better-auth": "1.7.1",
         "better-sqlite3": "13.0.1",
         "drizzle-orm": "catalog:",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
         "jose": "6.2.4",
         "kysely": "0.29.3",
         "posthog-node": "4.18.0",
@@ -440,7 +440,7 @@
         "@zip.js/zip.js": "2.7.62",
         "better-sqlite3": "13.0.1",
         "drizzle-orm": "catalog:",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
         "jose": "6.2.4",
         "tokentracker-cli": "0.91.0",
         "yaml": "2.9.0",
@@ -472,7 +472,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
@@ -720,7 +720,7 @@
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
         "@claxedo/workspace-relay-protocol": "workspace:*",
-        "hono": "4.10.7",
+        "hono": "4.12.34",
         "jose": "6.0.11",
         "posthog-node": "4.18.0",
       },
@@ -843,7 +843,7 @@
     "dompurify": "3.4.12",
     "drizzle-orm": "1.0.0-rc.2",
     "fuzzysort": "3.1.0",
-    "hono": "4.10.7",
+    "hono": "4.12.34",
     "marked": "17.0.1",
     "marked-shiki": "1.2.1",
     "remeda": "2.39.0",
@@ -3669,7 +3669,7 @@
 
     "homedir-polyfill": ["homedir-polyfill@1.0.3", "", { "dependencies": { "parse-passwd": "^1.0.0" } }, "sha512-eSmmWE5bZTK2Nou4g0AI3zZ9rswp7GRKoKXS1BLUkvPviOqs4YTN1djQIqrXy9k5gEtdLPy86JjRwsNM9tnDcA=="],
 
-    "hono": ["hono@4.10.7", "", {}, "sha512-icXIITfw/07Q88nLSkB9aiUrd8rYzSweK681Kjo/TSggaGbOX4RRyxxm71v+3PC8C/j+4rlxGeoTRxQDkaJkUw=="],
+    "hono": ["hono@4.12.34", "", {}, "sha512-GqXJqY/xJkJmuloTrnV1ZEXG3fqte+VjkUqoRNZXcrUidiUOP4fMSIHHY4tsqZBK++kVyWmt/AAfSUuy57/eSA=="],
 
     "hookified": ["hookified@1.15.1", "", {}, "sha512-MvG/clsADq1GPM2KGo2nyfaWVyn9naPiXrqIe4jYjXNZQt238kWyOGrsyc/DmRAQ+Re6yeo6yX/yoNCG5KAEVg=="],
 
@@ -5378,8 +5378,6 @@
     "@claxedo/workspace-relay/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 
     "@claxedo/workspace-relay-protocol/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
-
-    "@claxedo/workspace-runtime/hono": ["hono@4.12.34", "", {}, "sha512-GqXJqY/xJkJmuloTrnV1ZEXG3fqte+VjkUqoRNZXcrUidiUOP4fMSIHHY4tsqZBK++kVyWmt/AAfSUuy57/eSA=="],
 
     "@claxedo/workspace-runtime/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 

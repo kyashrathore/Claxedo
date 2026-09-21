@@ -51,7 +51,7 @@
     "@claxedo/helpers": "workspace:*",
     "@whiskeysockets/baileys": "7.0.0-rc13",
     "chat": "4.35.0",
-    "hono": "4.10.7"
+    "hono": "4.12.34"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

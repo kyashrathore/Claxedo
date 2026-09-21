@@ -2,6 +2,7 @@ import type { Context } from "hono"
 import {
   createIdentityAwareEventSource,
   isRetainedWorkspaceEventFrame,
+  malformedEventStreamCursor,
   streamWorkspaceEventFrames,
   type WorkspaceEventFramesTap,
   type WorkspaceEventStreamFrame,
@@ -80,6 +81,10 @@ export function createHostAggregateEventsHandler(options: HostAggregateEventsOpt
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
 
   const handler = async (c: Context) => {
+    // Judged before open(): the scope reservation open() takes is released
+    // only by subscribe(), which a refused request never reaches.
+    const rejected = malformedEventStreamCursor(c)
+    if (rejected) return rejected
     const opened = source.open({ mode: "unmanaged-local", connectionId: crypto.randomUUID() })
     await opened.ready
     return streamWorkspaceEventFrames(c, opened)

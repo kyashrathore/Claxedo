@@ -83,7 +83,8 @@ import {
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
-import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody, routeParam } from "./http"
+import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { routeParam } from "@claxedo/helpers/route-param"
 import {
   sessionAccessContext,
   sessionAccessDenied,

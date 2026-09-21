@@ -232,12 +232,32 @@ function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "
         if (event.terminalId) return ownsPty(event.terminalId)
         return true
       case "session.lifecycle":
-        if (event.workspaceId && event.workspaceId === options.workspaceId) return true
+        if (event.workspaceId && options.workspaceId) return event.workspaceId === options.workspaceId
         return !event.directory || served(event.directory)
       default:
         return served(event.directory)
     }
   }
+}
+
+/**
+ * A lifecycle frame the runtime cannot attribute to a session is the
+ * workspace's status alone — a terminal went busy or idle — and delivery has
+ * no session to scope it by. The fields a session grant is what authorizes
+ * (the provider's own ids, its transcript, prompt material and the ref
+ * derived from it) ride only on a frame that names the session.
+ */
+function unownedLifecyclePayload(event: WorkspaceRuntimeEvent): WorkspaceRuntimeEvent {
+  if (event.type !== "agent.lifecycle" || workspaceRuntimeEventSessionId(event)) return event
+  const {
+    providerSessionId: _providerSessionId,
+    transcriptPath: _transcriptPath,
+    refName: _refName,
+    prompt: _prompt,
+    lastAssistantMessage: _lastAssistantMessage,
+    ...payload
+  } = event
+  return payload
 }
 
 
@@ -252,7 +272,7 @@ type OpenedWorkspaceEventStream = {
 // into its `id:` line: one carrying CR/LF would inject fields there, so a
 // malformed cursor is refused rather than sanitized into a different resume
 // position than the caller asked for.
-function malformedEventStreamCursor(c: Context) {
+export function malformedEventStreamCursor(c: Context) {
   const cursor = c.req.header("last-event-id")
   return cursor !== undefined && !/^\d+$/.test(cursor)
     ? c.json(errorBody("event_stream_cursor_invalid", "Last-Event-ID is not a cursor this stream issues"), 400)
@@ -477,7 +497,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       })
       const unsubscribeControl = bus.subscribe((event) => {
         if (!owns(event)) return
-        emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: event })
+        emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: unownedLifecyclePayload(event) })
       })
       return () => {
         unsubscribeCompat()
@@ -493,9 +513,13 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       !isGapFrame(frame) && isControlFrame(frame) && frame.payload.type === "session.lifecycle" && !frame.payload.sessionID
         ? frame.payload.actorId
         : undefined,
+    // The fields `unownedLifecyclePayload` sheds on an unattributed frame are
+    // the same ones a session grant exists to authorize; a frame carrying any
+    // of them with no session to scope by is sensitive, not workspace-wide.
     sensitive: (frame) =>
       !isGapFrame(frame) && isControlFrame(frame) && frame.payload.type === "agent.lifecycle" &&
-      (!!frame.payload.prompt || !!frame.payload.lastAssistantMessage),
+      (!!frame.payload.prompt || !!frame.payload.lastAssistantMessage
+        || !!frame.payload.providerSessionId || !!frame.payload.transcriptPath || !!frame.payload.refName),
     isTerminal: isRetainedWorkspaceEventFrame,
     ...(options.sequenceOrigin ? { sequenceOrigin: options.sequenceOrigin } : {}),
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),

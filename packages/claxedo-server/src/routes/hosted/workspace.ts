@@ -12,6 +12,7 @@
  */
 
 import { Hono, type Context } from "hono"
+import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
 import { safeRepoUrl } from "@claxedo/sandbox-contract"
@@ -176,7 +177,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     requireSigned: true as const,
   })
   const connectionResponse = async (c: Context, previousJti?: string) => {
-    const workspaceId = c.req.param("id")
+    const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
     const auth = authResult.auth

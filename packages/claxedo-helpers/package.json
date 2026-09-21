@@ -74,6 +74,13 @@
       "import": "./dist/path.mjs",
       "default": "./dist/path.mjs"
     },
+    "./route-param": {
+      "development": "./src/route-param.ts",
+      "bun": "./src/route-param.ts",
+      "types": "./dist/route-param.d.ts",
+      "import": "./dist/route-param.mjs",
+      "default": "./dist/route-param.mjs"
+    },
     "./process": {
       "development": "./src/process.ts",
       "bun": "./src/process.ts",

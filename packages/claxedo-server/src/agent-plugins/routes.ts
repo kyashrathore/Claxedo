@@ -1,4 +1,5 @@
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { routeParam } from "@claxedo/helpers/route-param"
 import { Hono, type Context } from "hono"
 import { acquirePluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
@@ -520,8 +521,8 @@ export function HostedAgentPluginRoutes(input: {
       .find((item) => item.pluginInstanceId === c.req.param("pluginInstanceId"))
     const retainedPin = known?.pins.user ?? known?.pins.organization ?? known?.pins.claxedo
     const retained = retainedPin ? await input.artifacts.get(retainedPin.digest) : undefined
-    const candidate = await currentCandidate(input.sources, auth, c.req.param("pluginInstanceId"), { fresh: false })
-    const document = readPluginSkill({ retained, candidate, skill: c.req.param("skill") })
+    const candidate = await currentCandidate(input.sources, auth, routeParam(c, "pluginInstanceId"), { fresh: false })
+    const document = readPluginSkill({ retained, candidate, skill: routeParam(c, "skill") })
     if (!document) {
       return c.json(error("agent_plugins_skill_not_found", "No catalog or retained artifact serves this skill"), 404)
     }

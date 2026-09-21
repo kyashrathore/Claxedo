@@ -92,10 +92,10 @@ describe("POST /api/claxedo/track on a signed node", () => {
     const { app, capture } = trackedApp(signedAuth)
     const response = await track(app, {
       headers: { authorization: "Bearer valid-token" },
-      body: JSON.stringify({ distinctId: "spoofed-user", event: "session.created", properties: { surface: "session" } }),
+      body: JSON.stringify({ distinctId: "spoofed-user", event: "session_new", properties: { surface: "session" } }),
     })
     expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith(SUBJECT, "session.created", { surface: "session" })
+    expect(capture).toHaveBeenCalledWith(SUBJECT, "session_new", { surface: "session" })
   })
 
   test("rejects a schema-invalid body from an authenticated caller", async () => {
@@ -114,10 +114,10 @@ describe("POST /api/claxedo/track on an unsigned-local node", () => {
   test("loopback callers still capture into the machine bucket", async () => {
     const { app, capture } = trackedApp()
     const response = await track(app, {
-      body: JSON.stringify({ distinctId: "spoofed-user", event: "session.created" }),
+      body: JSON.stringify({ distinctId: "spoofed-user", event: "session_new" }),
     })
     expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("local", "session.created", undefined)
+    expect(capture).toHaveBeenCalledWith("local", "session_new", undefined)
   })
 
   test("non-loopback callers are denied by the unsigned-local gate before the route", async () => {
@@ -125,7 +125,7 @@ describe("POST /api/claxedo/track on an unsigned-local node", () => {
     const response = await app.request("http://remote.example.test/api/claxedo/track", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ event: "session.created" }),
+      body: JSON.stringify({ event: "session_new" }),
     })
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "unsigned_local_loopback_required" } })

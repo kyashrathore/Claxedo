@@ -79,7 +79,7 @@
     "@hono/node-ws": "1.3.1",
     "@lydell/node-pty": "catalog:",
     "better-sqlite3": "13.0.1",
-    "hono": "4.10.7",
+    "hono": "4.12.34",
     "smol-toml": "1.7.1",
     "tokentracker-cli": "0.91.0",
     "zod": "4.4.3"

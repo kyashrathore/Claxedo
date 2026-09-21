@@ -20,7 +20,6 @@ import { Hono, type Context, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { timingSafeEqual } from "node:crypto"
-import { z } from "zod"
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
   requestIsHttps,
@@ -30,6 +29,7 @@ import {
 import { unsignedLocalRequestGuard, deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 import { controlPlaneAuthContext, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { getHarnessMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
+import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import {
@@ -125,12 +125,6 @@ export type LocalAppOptions = {
   }
 }
 
-const TrackBody = z.object({
-  distinctId: z.string().min(1),
-  event: z.string().min(1),
-  properties: z.record(z.string(), z.unknown()).optional(),
-})
-
 function authRouteOptions(services: ControlPlaneServicesContract) {
   return {
     authConfig: services.auth.config,
@@ -212,16 +206,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     app.all(BROKER_ROUTE_PATTERN, (c) => routes(c.req.raw))
   }
 
-  app.post("/api/claxedo/track", async (c) => {
-    // Validated against the canonical schema, not a hand-rolled typeof check
-    // that would let any `properties` shape through.
-    const parsed = TrackBody.safeParse(await c.req.json().catch(() => null))
-    if (!parsed.success) {
-      return c.json({ error: { code: "telemetry_invalid_body", message: "Invalid telemetry request body" } }, 400)
-    }
-    services.telemetry.capture(parsed.data.distinctId, parsed.data.event, parsed.data.properties)
-    return c.json({ ok: true })
-  })
+  app.route("/", TelemetryTrackRoutes({ auth: services.auth, telemetry: services.telemetry }))
 
   // The same body the self-hosted composition returns. The shell reads these
   // fields; an `{ ok: true }` stub would be a silent regression.

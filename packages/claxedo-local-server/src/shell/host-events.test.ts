@@ -169,6 +169,26 @@ describe("the host aggregate wr/events", () => {
     expect(text).not.toContain("after-disposal")
   })
 
+  test("a cursor outside the stream's grammar is refused 400 through the host handler, and the next reader still streams", async () => {
+    const one = fakeRuntime("ws-one", "/repo/one")
+    const runtimes = registry(one.runtime)
+    const handler = createHostAggregateEventsHandler({ observe: runtimes.observe, sequenceOrigin: () => 0 })
+    const app = mount(handler)
+    const refused = await app.request("http://127.0.0.1/api/wr/events", { headers: { "Last-Event-ID": "1 data: injected" } })
+    expect(refused.status).toBe(400)
+    expect(refused.headers.get("content-type")).not.toContain("text/event-stream")
+    expect(await refused.json()).toEqual({
+      error: { code: "event_stream_cursor_invalid", message: "Last-Event-ID is not a cursor this stream issues" },
+    })
+
+    const connection = await connect(app)
+    one.publish(output("/repo/one", "after"))
+    const text = await connection.until("after")
+    connection.close()
+    handler.close()
+    expect(payloads(text)).toEqual(["after"])
+  })
+
   test("the bootstrap heartbeat carries the cursor, and a cursor-less connection is served nothing behind it", async () => {
     const one = fakeRuntime("ws-one", "/repo/one")
     const runtimes = registry(one.runtime)

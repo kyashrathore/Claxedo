@@ -11,7 +11,7 @@ export type OAuthAccessTokenClaims = Readonly<{
   clientId: string
   /** Every scope the token carries, including ones this endpoint does not read. */
   scopes: readonly string[]
-  /** The resources the token is bound to, when the server audience-binds it. */
+  /** The resources the token is bound to; a token bound to none is not a token for this endpoint. */
   audience?: readonly string[]
 }>
 
