@@ -119,7 +119,7 @@ describe("local daemon lifecycle", () => {
     }
   })
 
-  test("a pre-start state snapshot cannot consume lifecycle startup", () => {
+  test("a pre-start state snapshot cannot consume lifecycle startup", async () => {
     vi.useFakeTimers()
     try {
       const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
@@ -127,6 +127,9 @@ describe("local daemon lifecycle", () => {
       expect(vi.getTimerCount()).toBe(0)
 
       lifecycle.start()
+      // The startup reconciliation holds a deadline timer of its own until it
+      // answers; the count below is about the poll timer this file owns.
+      await lifecycle.recovery.launchesReconciled()
       expect(lifecycle.snapshot().state).toBe("idle")
       expect(vi.getTimerCount()).toBe(1)
       lifecycle.stop()
@@ -135,11 +138,12 @@ describe("local daemon lifecycle", () => {
     }
   })
 
-  test("lease changes retain exactly one lifecycle timer", () => {
+  test("lease changes retain exactly one lifecycle timer", async () => {
     vi.useFakeTimers()
     try {
       const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
       lifecycle.start()
+      await lifecycle.recovery.launchesReconciled()
       expect(vi.getTimerCount()).toBe(1)
 
       const lease = lifecycle.acquire()!
@@ -729,6 +733,7 @@ describe("what the inventory names", () => {
 describe("startup launch reconciliation", () => {
   const record = (launchId: string, over: Record<string, unknown> = {}) => ({
     launchId,
+    ownerGeneration: "mount-0",
     role: "harness" as const,
     protocol: "gate" as const,
     scope: { workspaceId: "ws_a" },
@@ -773,6 +778,7 @@ describe("startup launch reconciliation", () => {
     expect(reported).toEqual([{
       workspaceId: "ws_a",
       launchId: "launch-never",
+      ownerGeneration: "mount-0",
       role: "harness",
       execution: "none",
       because: reported[0]!.because,
@@ -794,6 +800,65 @@ describe("startup launch reconciliation", () => {
 
     lifecycle.start()
     expect(lifecycle.recovery.ingressClosed()).toEqual({ kind: "launch_reconciliation" })
+    lifecycle.stop()
+  })
+
+  test("a reconciliation that does not answer keeps the machine closed and says it is overdue", async () => {
+    vi.useFakeTimers()
+    try {
+      const unreadable: Array<[string | undefined, string]> = []
+      let answer = (_owners: never[]) => {}
+      const lifecycle = createLocalDaemonLifecycle({
+        activity: empty,
+        onStop() {},
+        machine: {
+          ...machine,
+          budgets: { reconcileMs: 1_000 },
+          ownership: () => new Promise((resolve) => { answer = resolve as typeof answer }),
+          onLaunchesUnreadable: (workspaceId, reason) => unreadable.push([workspaceId, reason]),
+        },
+      })
+      lifecycle.start()
+
+      await vi.advanceTimersByTimeAsync(1_001)
+
+      // Admission must not reopen on a deadline: nothing has established what
+      // the previous owner left, and a timeout is not an answer.
+      expect(lifecycle.recovery.ingressClosed()).toEqual({ kind: "launch_reconciliation", overdueAfterMs: 1_000 })
+      expect(unreadable).toEqual([[undefined, "the launch reconciliation did not answer within 1000ms; machine admission stays closed"]])
+
+      // The read was detached from the deadline, not abandoned.
+      answer([])
+      await lifecycle.recovery.launchesReconciled()
+      expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+      lifecycle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a workspace whose launches could not be read is unknown impact in every preview", async () => {
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: {
+        ...machine,
+        ownership: async () => [{
+          workspaceId: "ws_b",
+          generation: "mount-1",
+          state: "serving",
+          attempt: 0,
+          turns: [],
+          launchesUnreadable: "database is locked",
+        }],
+      },
+    })
+    lifecycle.start()
+    await lifecycle.recovery.launchesReconciled()
+
+    const { preview } = lifecycle.recovery.inspect()
+    expect(preview.resources).toContain("workspace:ws_b launches (unreadable: database is locked)")
+    expect(preview.summary).toContain("additional impact in 1 workspace(s) is unknown")
     lifecycle.stop()
   })
 

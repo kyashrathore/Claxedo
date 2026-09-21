@@ -427,7 +427,18 @@ describe("local composition — health and telemetry", () => {
       body: "{}",
     })
     expect(prompted.status).toBe(503)
-    expect(await prompted.json()).toMatchObject({ error: { code: "machine_recovery_pending" } })
+    // The machine's reason settles first and is the broader one; the refusal
+    // says where to read it, and where a per-workspace reason becomes readable
+    // once it has.
+    expect(await prompted.json()).toMatchObject({
+      error: {
+        code: "machine_recovery_pending",
+        details: {
+          inspect: { method: "GET", path: "/api/claxedo/daemon/recovery" },
+          operationId: drained.operation.operationId,
+        },
+      },
+    })
     lifecycle.stop()
   })
 

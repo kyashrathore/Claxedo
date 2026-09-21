@@ -66,7 +66,8 @@ const lifecycle = createLocalDaemonLifecycle({
     onLaunchReconciled: (launch) => {
       if (launch.execution === "none") return
       console.error(
-        `unsettled ${launch.role} launch ${launch.launchId} in workspace ${launch.workspaceId}: `
+        `unsettled ${launch.role} launch ${launch.launchId} from generation ${launch.ownerGeneration} `
+          + `in workspace ${launch.workspaceId}: `
           + `execution ${launch.execution} (${launch.because})`
           + (launch.identity ? `, recorded process is ${launch.identity}` : ""),
       )

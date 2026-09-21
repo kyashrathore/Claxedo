@@ -128,16 +128,35 @@ export function localDaemonScopeRevision(work: LocalDaemonWorkActivity): string 
   return createHash("sha256").update(JSON.stringify(shape)).digest("hex").slice(0, 16)
 }
 
-/** What an escalation would interrupt, every owner by name. */
-export function localDaemonScopePreview(work: LocalDaemonWorkActivity): RecoveryScopePreview {
+/**
+ * What an escalation would interrupt, every owner by name.
+ *
+ * A workspace whose launch records could not be read is listed as unknown
+ * impact rather than left out. Omitting it would make the list read as complete
+ * when the one thing established about that workspace is that nothing here
+ * knows what it still owns.
+ */
+export function localDaemonScopePreview(
+  work: LocalDaemonWorkActivity,
+  unreadable: ReadonlyMap<string, string> = new Map(),
+): RecoveryScopePreview {
   const resources = work.owners.map((owner) => `${owner.id} (${owner.state})`)
   if (work.runtime.activeWrites > 0) resources.push(`workspace writes: ${work.runtime.activeWrites}`)
   if (work.runtime.checkpointing > 0) resources.push(`checkpoint transitions: ${work.runtime.checkpointing}`)
+  for (const [workspaceId, reason] of [...unreadable].sort(([a], [b]) => a.localeCompare(b))) {
+    resources.push(`workspace:${workspaceId} launches (unreadable: ${reason})`)
+  }
   // Sessions are the scope a caller recognizes; the turn owners above carry the
   // turn ids that name which of each session's work would be interrupted.
   const sessions = [...new Set(work.owners.flatMap((owner) =>
     owner.kind === "turn" ? [owner.id.split(":")[2]!] : []))].sort()
-  return { sessions, resources, summary: `${work.owners.length} named owners` }
+  return {
+    sessions,
+    resources,
+    summary: unreadable.size > 0
+      ? `${work.owners.length} named owners, and additional impact in ${unreadable.size} workspace(s) is unknown because their launch records could not be read`
+      : `${work.owners.length} named owners`,
+  }
 }
 
 export type LocalDaemonLease = Readonly<{
@@ -161,12 +180,14 @@ export type MachineRecoveryGate = { operationId: string; scopeRevision: string; 
  */
 export type MachineIngressHold =
   | ({ kind: "operation" } & MachineRecoveryGate)
-  | { kind: "launch_reconciliation" }
+  | { kind: "launch_reconciliation"; overdueAfterMs?: number }
 
 /** What a survivor of the previous owner turned out to be. */
 export type ReconciledLaunch = {
   workspaceId: string
   launchId: string
+  /** The owner generation that prepared it; a previous one is what makes it a survivor. */
+  ownerGeneration: string
   role: string
   execution: "none" | "unknown" | "started"
   because: string
@@ -243,6 +264,9 @@ export function createLocalDaemonLifecycle(options: {
   let gate: MachineRecoveryGate | undefined
   let reconcilingLaunches: Promise<ReconciledLaunch[]> | undefined
   let launchesReconciled = false
+  let launchesOverdueAfterMs: number | undefined
+  /** Workspaces whose launch records could not be read, by the reason each gave. */
+  const unreadableLaunches = new Map<string, string>()
 
   function operations() {
     if (!options.machine.operations || storeUnavailable) return undefined
@@ -416,7 +440,18 @@ export function createLocalDaemonLifecycle(options: {
     try {
       let owned: EmbeddedWorkspaceRuntimeOwnership[]
       try {
-        owned = await read()
+        // Bounded, because admission stays closed until this answers and an
+        // unbounded await would leave the machine refusing work with no way out
+        // but a restart. The read is detached rather than abandoned: when it
+        // settles late its records are still reconciled, and until then the
+        // refusal says the reconciliation is overdue instead of going quiet.
+        owned = await settleWithin(read(), budgets.reconcileMs, () => {
+          launchesOverdueAfterMs = budgets.reconcileMs
+          options.machine.onLaunchesUnreadable?.(
+            undefined,
+            `the launch reconciliation did not answer within ${String(budgets.reconcileMs)}ms; machine admission stays closed`,
+          )
+        })
       } catch (error) {
         // Reported, not rethrown: nothing awaits this at the entrypoint, and a
         // rejection nobody holds would take the daemon down over a read that
@@ -426,14 +461,19 @@ export function createLocalDaemonLifecycle(options: {
       }
       for (const owner of owned) {
         if (owner.launchesUnreadable !== undefined) {
+          // Retained, not just reported: a preview that left this workspace out
+          // would read as a complete list of what a stop would interrupt.
+          unreadableLaunches.set(owner.workspaceId, owner.launchesUnreadable)
           options.machine.onLaunchesUnreadable?.(owner.workspaceId, owner.launchesUnreadable)
           continue
         }
+        unreadableLaunches.delete(owner.workspaceId)
         for (const record of owner.launches ?? []) {
           const execution = reconcileLaunch(record)
           const row: ReconciledLaunch = {
             workspaceId: owner.workspaceId,
             launchId: record.launchId,
+            ownerGeneration: record.ownerGeneration,
             role: record.role,
             execution: execution.execution,
             because: execution.because,
@@ -445,6 +485,7 @@ export function createLocalDaemonLifecycle(options: {
       }
     } finally {
       launchesReconciled = true
+      launchesOverdueAfterMs = undefined
       changed()
     }
     return reconciled
@@ -458,7 +499,7 @@ export function createLocalDaemonLifecycle(options: {
       target: machineTarget,
       scopeRevision: localDaemonScopeRevision(work),
       owners: work.owners,
-      preview: localDaemonScopePreview(work),
+      preview: localDaemonScopePreview(work, unreadableLaunches),
       residencyPins: work.residencyPins + leases.size,
       ...(gate ? { gate } : {}),
       operations: [...runs.values()].map((run) => run.operation),
@@ -484,7 +525,7 @@ export function createLocalDaemonLifecycle(options: {
           target: run.operation.target,
           stage: "drain",
           executionMayContinue: true,
-          message: `the drain deadline passed with ${localDaemonScopePreview(work).resources.join("; ")} still owned`,
+          message: `the drain deadline passed with ${localDaemonScopePreview(work, unreadableLaunches).resources.join("; ")} still owned`,
           at,
         }
         // Not `failed`: the drain did what it promised — it gated the machine
@@ -568,7 +609,7 @@ export function createLocalDaemonLifecycle(options: {
           kind: "scope_changed",
           message: `operation ${destructive.operation.operationId} is stopping this machine; its owners cannot be readmitted`,
           scopeRevision,
-          preview: localDaemonScopePreview(work),
+          preview: localDaemonScopePreview(work, unreadableLaunches),
         },
       }
     }
@@ -579,7 +620,7 @@ export function createLocalDaemonLifecycle(options: {
           kind: "scope_changed",
           message: `this machine is fenced by operation ${gate.operationId}, not by ${drainId}`,
           scopeRevision,
-          preview: localDaemonScopePreview(work),
+          preview: localDaemonScopePreview(work, unreadableLaunches),
         },
       }
     }
@@ -688,7 +729,7 @@ export function createLocalDaemonLifecycle(options: {
           kind: "scope_changed",
           message: "the machine's owners changed since the preview this stop was authorized against",
           scopeRevision,
-          preview: localDaemonScopePreview(work),
+          preview: localDaemonScopePreview(work, unreadableLaunches),
         },
       }
     }
@@ -722,7 +763,7 @@ export function createLocalDaemonLifecycle(options: {
             kind: "scope_changed",
             message: `machine ingress is already closed for operation ${existingRun.operation.operationId}`,
             scopeRevision,
-            preview: localDaemonScopePreview(work),
+            preview: localDaemonScopePreview(work, unreadableLaunches),
           },
         }
       }
@@ -903,7 +944,10 @@ export function createLocalDaemonLifecycle(options: {
         // listener can already be reachable, and fencing there would refuse
         // work on behalf of an owner that has not taken the machine yet.
         if (!reconcilingLaunches || launchesReconciled) return undefined
-        return { kind: "launch_reconciliation" }
+        return {
+          kind: "launch_reconciliation",
+          ...(launchesOverdueAfterMs === undefined ? {} : { overdueAfterMs: launchesOverdueAfterMs }),
+        }
       },
       /** Joins the startup reconciliation; the entry does not have to wait on it. */
       launchesReconciled() {
@@ -962,4 +1006,24 @@ function storeFailure(error: unknown, target: RecoveryTarget, stage: RecoveryPha
 
 function positive(value: number | undefined, fallback: number) {
   return Number.isFinite(value) && value! > 0 ? Math.floor(value!) : fallback
+}
+
+/**
+ * Resolves the promise, or reports that it did not within the budget and keeps
+ * waiting. The late value is still returned, so a slow read is detached from
+ * the deadline rather than dropped.
+ */
+async function settleWithin<T>(pending: Promise<T>, budgetMs: number, onOverdue: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const overdue = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, budgetMs)
+    timer.unref?.()
+  })
+  try {
+    const raced = await Promise.race([pending.then(() => "settled" as const), overdue.then(() => "overdue" as const)])
+    if (raced === "overdue") onOverdue()
+    return await pending
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }

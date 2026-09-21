@@ -87,22 +87,41 @@ export function servedDuringMachineRecovery(method: string, pathname: string): b
  * outstanding. Mounted ahead of every route family, because the fence is a
  * property of the machine rather than of whichever handler admits a turn.
  */
+export const DAEMON_RECOVERY_PATH = "/api/claxedo/daemon/recovery"
+
 export function machineRecoveryFence(
-  pending: () => { kind: "operation"; operationId: string } | { kind: "launch_reconciliation" } | undefined,
+  pending: () => MachineIngressRefusal | undefined,
 ): MiddlewareHandler {
   return async (c, next) => {
     const hold = pending()
     if (!hold || servedDuringMachineRecovery(c.req.method, new URL(c.req.raw.url).pathname)) return next()
     return c.json(
-      errorBody(
-        "machine_recovery_pending",
-        hold.kind === "operation"
-          ? `This machine is held by recovery operation ${hold.operationId}; new work is refused until it is resolved or released`
-          : "This machine is still reconciling the launches its previous owner left unsettled; new work is refused until that finishes",
-      ),
+      errorBody("machine_recovery_pending", machineRecoveryMessage(hold), {
+        // The machine's own reason is the broader one and settles first. This
+        // is where a caller reads it, and where it finds a per-workspace reason
+        // afterwards: that one is only meaningful once the machine has settled.
+        inspect: { method: "GET", path: DAEMON_RECOVERY_PATH },
+        ...(hold.kind === "operation" ? { operationId: hold.operationId } : {}),
+      }),
       503,
     )
   }
+}
+
+export type MachineIngressRefusal =
+  | { kind: "operation"; operationId: string }
+  | { kind: "launch_reconciliation"; overdueAfterMs?: number }
+
+function machineRecoveryMessage(hold: MachineIngressRefusal): string {
+  if (hold.kind === "operation") {
+    return `This machine is held by recovery operation ${hold.operationId}; new work is refused until it is resolved or released`
+  }
+  if (hold.overdueAfterMs !== undefined) {
+    return `This machine's reconciliation of the launches its previous owner left unsettled has not answered in ${
+      String(hold.overdueAfterMs)
+    }ms; new work stays refused because nothing here has established what those launches are`
+  }
+  return "This machine is still reconciling the launches its previous owner left unsettled; new work is refused until that finishes"
 }
 
 /**
