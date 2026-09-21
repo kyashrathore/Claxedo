@@ -839,6 +839,7 @@ describe("sandbox manager", () => {
     await expect(manager.target("ws_1")).resolves.toEqual({
       status: "unavailable",
       reason: "runtime_lease_not_ready",
+      leaseStatus: "acquiring",
     })
   })
 
@@ -1207,6 +1208,44 @@ describe("sandbox manager", () => {
       failed: [],
     })
     expect(driver.destroy).not.toHaveBeenCalledWith(provisioning)
+  })
+
+  test.each([
+    "WORKSPACE_RUNTIME_HOST_ID",
+    "WORKSPACE_RUNTIME_WORKSPACE_ID",
+    "WORKSPACE_RUNTIME_RELAY_WORKSPACE_IDS",
+  ])("caller env restating runtime identity key %s is refused without touching the lease", async (key) => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver()
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    const result = await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      env: { [key]: "foreign-host" },
+    })
+
+    expect(result).toMatchObject({ status: "unavailable" })
+    expect((result as { error?: string }).error).toContain(key)
+    // Refused before acquire: the driver is never asked to boot a runtime
+    // whose registered identity would differ from the lease's, and no lease
+    // epoch is burned on a composition mistake.
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+    expect(await store.get("ws_1")).toBeUndefined()
+  })
+
+  test("caller env beside the runtime identity keys proceeds to the driver", async () => {
+    const driver = fakeDriver()
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+
+    const result = await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      env: { MODEL_KEY: "sk-model" },
+    })
+
+    expect(result.status).toBe("ready")
+    expect(driver.ensureHost).toHaveBeenCalledWith(
+      expect.objectContaining({ env: { MODEL_KEY: "sk-model" } }),
+    )
   })
 
   test("brokered secrets fail closed on a driver that cannot broker (none)", async () => {

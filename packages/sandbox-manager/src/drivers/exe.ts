@@ -11,7 +11,7 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { SANDBOX_IMAGE } from "../image"
 import { record, text } from "../json"
-import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
+import { assertWorkspaceRuntimeIdentityEnv, workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
 
 type ExeVm = {
   vm_name: string
@@ -206,6 +206,7 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
   }
 
   async function boot(vm: ExeVm, input: SandboxDriverEnsureInput, hostId: string) {
+    assertWorkspaceRuntimeIdentityEnv(input.env)
     const env = {
       ...workspaceRuntimeTargetEnv({
         workspaceId: input.workspaceId,

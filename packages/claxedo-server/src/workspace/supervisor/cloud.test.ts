@@ -304,6 +304,7 @@ const mockGetRuntimeConfigSnapshot = vi.fn(
     commands: [],
   }),
 )
+const mockProjectEnv = vi.fn(async (_projectId?: string) => undefined as Record<string, string> | undefined)
 
 const leases = new Map<string, SandboxLeaseRow>()
 const holds = new Map<string, SandboxHoldRow>()
@@ -354,7 +355,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   // The supervisor composition teaches the store to read sandbox leases.
   configureWorkspaceStore: vi.fn(),
   // Sandboxes start with the project's environment; these projects have none.
-  projectEnv: vi.fn(async () => undefined),
+  projectEnv: (...args: unknown[]) => (mockProjectEnv as any)(...args),
 }))
 
 vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
@@ -782,6 +783,8 @@ describe("workspace-supervisor", () => {
     mockCreateVercelSandboxDriver.mockClear()
     mockCreateDockerSandboxDriver.mockClear()
     mockCreateBoxSandboxDriver.mockClear()
+    mockProjectEnv.mockClear()
+    mockProjectEnv.mockImplementation(async () => undefined)
     mockGetRuntimeConfigSnapshot.mockClear()
     mockGetRuntimeConfigSnapshot.mockImplementation(
       async (): Promise<any> => ({
@@ -1928,6 +1931,27 @@ describe("workspace-supervisor", () => {
       expect(env.WORKSPACE_RUNTIME_HOST_ID).not.toBe(recorded?.driver_resource_id)
       expect(env.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-ws-daytona-identity")
       expect(env.WORKSPACE_RUNTIME_EPOCH).toBe("1")
+    })
+
+    test("a project env restating the runtime identity is refused instead of diverging from the lease", async () => {
+      store.set("ws-identity-override", {
+        ...workspace("ws-identity-override"),
+        remote_directory: "/remote/app",
+      })
+      // Once: the refusal fires on the first ensure, and the implementation
+      // must not leak into the sibling describe's beforeEach, which does not
+      // reset this mock.
+      mockProjectEnv.mockImplementationOnce(async () => ({
+        WORKSPACE_RUNTIME_HOST_ID: "foreign-host",
+      }))
+
+      // The project's env is spread over the driver's boot env; were the key
+      // honored, the runtime would register with the relay under a hostId the
+      // lease never recorded.
+      await expect(supervisor.ensureSupervisorSandbox("ws-identity-override")).rejects.toThrow(
+        "WORKSPACE_RUNTIME_HOST_ID",
+      )
+      expect(leases.get("ws-identity-override")?.status).not.toBe("ready")
     })
 
     test("daytona runtime uses public PEM for local management verification", async () => {

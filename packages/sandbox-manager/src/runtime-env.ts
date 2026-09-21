@@ -7,12 +7,42 @@ export type WorkspaceRuntimeControlEnv = {
   sessionAuthorityUrl?: string
 }
 
+/**
+ * The env keys that decide who a booted runtime IS: the workspace it serves,
+ * the hostId it registers under — the same value the driver returns as
+ * `target.hostId` and the lease store persists — and the workspace set a
+ * host tunnel may claim. Each is written only from structured input below;
+ * a caller env restating one would boot a runtime bound to an identity the
+ * lease never authorized, so the composition refuses the key outright
+ * rather than let whichever spread lands last decide silently.
+ */
+const WORKSPACE_RUNTIME_IDENTITY_ENV_KEYS = [
+  "WORKSPACE_RUNTIME_WORKSPACE_ID",
+  "WORKSPACE_RUNTIME_HOST_ID",
+  "WORKSPACE_RUNTIME_RELAY_WORKSPACE_IDS",
+] as const
+
+export function workspaceRuntimeIdentityEnvConflicts(env: Record<string, string> | undefined): string[] {
+  if (!env) return []
+  return WORKSPACE_RUNTIME_IDENTITY_ENV_KEYS.filter((key) => env[key] !== undefined)
+}
+
+export function assertWorkspaceRuntimeIdentityEnv(env: Record<string, string> | undefined) {
+  const conflicts = workspaceRuntimeIdentityEnvConflicts(env)
+  if (conflicts.length === 0) return
+  throw new Error(
+    `sandbox env cannot set runtime identity ${conflicts.join(", ")}: `
+    + "the driver's placement owns the identity its target reports and the lease records",
+  )
+}
+
 export function workspaceRuntimeBootEnv(input: Parameters<typeof workspaceRuntimeTargetEnv>[0] &
   Parameters<typeof workspaceRuntimeSourceEnv>[0] & {
     env?: Record<string, string>
     runner?: string
     controlEnv?: WorkspaceRuntimeControlEnv
   }): Record<string, string> {
+  assertWorkspaceRuntimeIdentityEnv(input.env)
   const env = {
     ...workspaceRuntimeTargetEnv(input),
     ...workspaceRuntimeSourceEnv(input),

@@ -542,6 +542,21 @@ describe("DaytonaSandboxDriver", () => {
     expect(startedEnv.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-sb_provider_uuid")
   })
 
+  test("caller env that restates the runtime identity is refused rather than overriding it", async () => {
+    const created = sandbox({ id: "sb_provider_uuid" })
+    const daytona = client({ create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    // The env a caller supplies is spread over the driver's boot env, so a
+    // WORKSPACE_RUNTIME_HOST_ID here would boot a runtime that registers with
+    // the relay under an identity the lease never recorded.
+    await expect(
+      driver.ensureHost({ ...input, env: { WORKSPACE_RUNTIME_HOST_ID: "other-host" } }),
+    ).rejects.toThrow("WORKSPACE_RUNTIME_HOST_ID")
+    expect(daytona.create).not.toHaveBeenCalled()
+    expect(created.process.executeCommand).not.toHaveBeenCalled()
+  })
+
   test("restricted network policy maps to Daytona's domain allowlist, CIDR allowlist and full block", async () => {
     const daytona = client()
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })

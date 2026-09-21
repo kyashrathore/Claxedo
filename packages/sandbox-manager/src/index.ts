@@ -10,6 +10,7 @@ import {
   type SandboxCheckpointResult,
 } from "./checkpoint-manager"
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
+import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
 export * from "./checkpoint-manager"
@@ -1052,6 +1053,19 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         // either — a composition mistake must not burn a lease epoch or enter
         // retry backoff.
         return { status: "unavailable", error: egress.reason, homeRegion: input.homeRegion }
+      }
+      // Caller env restating the identity the driver's target reports — and
+      // `recordTarget` persists — is the same class of composition mistake as
+      // the egress refusal: the runtime would boot bound to a hostId the
+      // lease never authorized. Refused before a lease is touched; the driver
+      // rejects it again at compose time for callers that reach it directly.
+      const identityConflicts = workspaceRuntimeIdentityEnvConflicts(input.env)
+      if (identityConflicts.length) {
+        return {
+          status: "unavailable",
+          error: `sandbox env cannot set runtime identity: ${identityConflicts.join(", ")}`,
+          homeRegion: input.homeRegion,
+        }
       }
       const existing = await options.leaseStore.get(workspaceId)
       if (existing?.nextRetryAt && existing.nextRetryAt > now()) {

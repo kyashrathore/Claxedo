@@ -41,6 +41,33 @@ test("boot env preserves target, workspace, and operator control precedence", ()
   })
 })
 
+test.each([
+  "WORKSPACE_RUNTIME_WORKSPACE_ID",
+  "WORKSPACE_RUNTIME_HOST_ID",
+  "WORKSPACE_RUNTIME_RELAY_WORKSPACE_IDS",
+])("boot env refuses caller env that restates runtime identity key %s", (key) => {
+  expect(() => workspaceRuntimeBootEnv({
+    workspaceId: "ws-1",
+    hostId: "host-1",
+    directory: "/workspace",
+    port: 4096,
+    env: { [key]: "foreign" },
+  })).toThrow(key)
+})
+
+test("boot env keeps caller env that does not touch runtime identity", () => {
+  const env = workspaceRuntimeBootEnv({
+    workspaceId: "ws-1",
+    hostId: "host-1",
+    directory: "/workspace",
+    port: 4096,
+    env: { CUSTOM: "kept", WORKSPACE_RUNTIME_DIRECTORY: "/custom" },
+  })
+  expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("host-1")
+  expect(env.WORKSPACE_RUNTIME_WORKSPACE_ID).toBe("ws-1")
+  expect(env.CUSTOM).toBe("kept")
+})
+
 test("absent operator settings preserve supplied values without inventing optional env keys", () => {
   expect(workspaceRuntimeBootEnv({
     workspaceId: "ws-1",
