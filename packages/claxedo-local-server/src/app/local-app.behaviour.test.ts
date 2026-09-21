@@ -23,7 +23,7 @@ import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { DAEMON_PROTOCOL_HEADER } from "./local-app"
 
 const emptyActivity = () => ({
-  pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+  pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
   runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
   owners: [],
   residencyPins: 0,
@@ -289,7 +289,7 @@ describe("local composition — health and telemetry", () => {
     const onIdle = vi.fn()
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({
-        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
         runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
         owners: [],
         residencyPins: 0,
@@ -389,7 +389,7 @@ describe("local composition — health and telemetry", () => {
     // Pinned work, so the drain is still waiting for the whole test.
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({
-        pty: { running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0 },
+        pty: { running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
         runtime: { hosts: 1, activeTurns: 1, activeWrites: 0, checkpointing: 0, owners: [] },
         owners: [{ id: "terminal:t1", kind: "terminal" as const, generation: "77", state: "running", pins: true }],
         residencyPins: 2,
@@ -504,7 +504,7 @@ describe("local composition — health and telemetry", () => {
     const onStop = vi.fn()
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({
-        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
         runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
         owners: [],
         residencyPins: 0,

@@ -110,7 +110,7 @@ describe("startLocalServer", () => {
   test("delivers the shutdown acknowledgment before closing the real HTTP connection", async () => {
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({
-        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
         runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
         owners: [],
         residencyPins: 0,

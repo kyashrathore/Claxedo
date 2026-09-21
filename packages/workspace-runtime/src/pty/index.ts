@@ -602,25 +602,39 @@ export namespace Pty {
     }))
   }
 
+  /**
+   * What this module is holding the runtime open for.
+   *
+   * `unrecorded` and `unresolved` are both counted inside `running`; they are
+   * reported separately so a drain preview can name why a daemon will not
+   * exit. They are different facts: an unresolved terminal has processes
+   * nothing proved were gone, an unrecorded one has a process no durable
+   * record will ever find again.
+   */
   export function activity() {
     let running = 0
     let committed = 0
     let provisional = 0
     let managed = 0
     let subscribers = 0
+    let unrecorded = 0
+    let unresolved = 0
     for (const session of sessions.values()) {
       // An unresolved terminal still pins the runtime: its processes were never
       // proven gone, and a daemon that exits here abandons them. So does one
       // whose spawn was never recorded — nothing would ever find it again.
-      const pinned = session.cleanup === "unresolved" || (session.ownership === "unrecorded" && !session.exited)
-      if (!pinned && (session.removed || session.exited || session.info.status !== "running")) continue
+      const pinnedUnresolved = session.cleanup === "unresolved"
+      const pinnedUnrecorded = session.ownership === "unrecorded" && !session.exited
+      if (!pinnedUnresolved && !pinnedUnrecorded && (session.removed || session.exited || session.info.status !== "running")) continue
       running++
+      if (pinnedUnresolved) unresolved++
+      if (pinnedUnrecorded) unrecorded++
       subscribers += session.subscribers.size
       if (session.managed) managed++
       else if (session.committed) committed++
       else provisional++
     }
-    return { running, committed, provisional, managed, subscribers }
+    return { running, committed, provisional, managed, subscribers, unrecorded, unresolved }
   }
 
   export function commit(id: string) {

@@ -158,7 +158,7 @@ describe("Pty lifecycle cleanup", () => {
     expect(nativeKills).toContain(0)
     expect(Pty.get(info.id)).toBeDefined()
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
-    expect(Pty.activity().running).toBe(1)
+    expect(Pty.activity()).toMatchObject({ running: 1, unresolved: 1, unrecorded: 0 })
 
     expect((await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" }))?.error?.code).toBe("ownership_unverified")
     expect(Pty.get(info.id)).toBeUndefined()
@@ -183,7 +183,7 @@ describe("Pty lifecycle cleanup", () => {
   test("orphan timeout removes abandoned unmanaged sessions", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "orphan" }, ownership)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, managed: 0, subscribers: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
     await waitFor(() => Pty.get(info.id) === undefined)
@@ -206,7 +206,7 @@ describe("Pty lifecycle cleanup", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(Pty.get(info.id)).toEqual(info)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(alive(info.pid)).toBe(true)
   })
 
@@ -442,7 +442,8 @@ describe("Pty ownership persistence", () => {
     const detailed = Pty.listDetailed().find((session) => session.id === info.id)
     expect(detailed?.ownership).toBe("unrecorded")
     expect(detailed?.ownershipError).toContain("launch_ownership write failed")
-    expect(Pty.activity().running).toBe(1)
+    // Counted inside `running`, and named, so a drain preview can say why.
+    expect(Pty.activity()).toMatchObject({ running: 1, unrecorded: 1, unresolved: 0 })
     expect(events.filter((event) => event.type === "ownership")).toEqual([
       {
         type: "ownership",
