@@ -60,7 +60,7 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
 /**
  * Windows cannot execute a shebang script, so there the fake is a .cmd shim
  * delegating to node — the same launcher shape a real npm install of codex
- * puts on PATH, which the driver routes through the shell.
+ * puts on PATH, which `resolveHarnessCommand` unwraps to the script it names.
  */
 async function installFakeBinary(dir: string, script: string): Promise<string> {
   if (process.platform !== "win32") {
