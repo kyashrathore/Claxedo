@@ -212,7 +212,8 @@ export function createLocalDaemonLifecycle(options: {
     ownership?: () => Promise<EmbeddedWorkspaceRuntimeOwnership[]>
     /** Where each survivor is reported; a store that could not be read too. */
     onLaunchReconciled?: (reconciled: ReconciledLaunch) => void
-    onLaunchesUnreadable?: (workspaceId: string, reason: string) => void
+    /** `workspaceId` is absent when the ownership read itself failed. */
+    onLaunchesUnreadable?: (workspaceId: string | undefined, reason: string) => void
   }
   leaseTtlMs?: number
   idleGraceMs?: number
@@ -413,7 +414,17 @@ export function createLocalDaemonLifecycle(options: {
     const read = options.machine.ownership ?? embeddedWorkspaceRuntimeOwnership
     const reconciled: ReconciledLaunch[] = []
     try {
-      for (const owner of await read()) {
+      let owned: EmbeddedWorkspaceRuntimeOwnership[]
+      try {
+        owned = await read()
+      } catch (error) {
+        // Reported, not rethrown: nothing awaits this at the entrypoint, and a
+        // rejection nobody holds would take the daemon down over a read that
+        // only decides whether admission may reopen.
+        options.machine.onLaunchesUnreadable?.(undefined, error instanceof Error ? error.message : String(error))
+        return reconciled
+      }
+      for (const owner of owned) {
         if (owner.launchesUnreadable !== undefined) {
           options.machine.onLaunchesUnreadable?.(owner.workspaceId, owner.launchesUnreadable)
           continue

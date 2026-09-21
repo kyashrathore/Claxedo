@@ -798,7 +798,7 @@ describe("startup launch reconciliation", () => {
   })
 
   test("a store that could not be read is reported rather than treated as empty", async () => {
-    const unreadable: Array<[string, string]> = []
+    const unreadable: Array<[string | undefined, string]> = []
     const lifecycle = createLocalDaemonLifecycle({
       activity: empty,
       onStop() {},
@@ -823,8 +823,9 @@ describe("startup launch reconciliation", () => {
     lifecycle.stop()
   })
 
-  test("an ownership read that throws still reopens admission, and says nothing it did not read", async () => {
+  test("an ownership read that throws is reported, reopens admission, and never rejects", async () => {
     const reported: ReconciledLaunch[] = []
+    const unreadable: Array<[string | undefined, string]> = []
     const lifecycle = createLocalDaemonLifecycle({
       activity: empty,
       onStop() {},
@@ -832,14 +833,18 @@ describe("startup launch reconciliation", () => {
         ...machine,
         ownership: async () => { throw new Error("no workspace store") },
         onLaunchReconciled: (row) => reported.push(row),
+        onLaunchesUnreadable: (workspaceId, reason) => unreadable.push([workspaceId, reason]),
       },
     })
 
     lifecycle.start()
-    await lifecycle.recovery.launchesReconciled().catch(() => undefined)
+    // Nothing at the entrypoint awaits this, so a rejection here would take the
+    // daemon down over a read that only decides whether admission may reopen.
+    await expect(lifecycle.recovery.launchesReconciled()).resolves.toEqual([])
 
+    expect(unreadable).toEqual([[undefined, "no workspace store"]])
     expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
-    expect(reported).toEqual([])
+    expect(reported, "nothing is claimed about records that were never read").toEqual([])
     lifecycle.stop()
   })
 })

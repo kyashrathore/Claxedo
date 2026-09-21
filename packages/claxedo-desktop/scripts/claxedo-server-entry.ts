@@ -72,7 +72,9 @@ const lifecycle = createLocalDaemonLifecycle({
       )
     },
     onLaunchesUnreadable: (workspaceId, reason) => {
-      console.error(`workspace ${workspaceId} could not be read for unsettled launches: ${reason}`)
+      console.error(workspaceId === undefined
+        ? `this machine's workspace ownership could not be read for unsettled launches: ${reason}`
+        : `workspace ${workspaceId} could not be read for unsettled launches: ${reason}`)
     },
   },
   ...positiveDuration("CLAXEDO_DAEMON_LEASE_TTL_MS", "leaseTtlMs"),
