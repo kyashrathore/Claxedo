@@ -111,6 +111,7 @@ import {
 import { SessionRollbackError } from "../session-rollback-error"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { asRecord } from "@claxedo/helpers/guards"
+import { errorMessage as thrownMessage } from "../error-message"
 
 
 /**
@@ -929,7 +930,14 @@ export async function containLostTurn(input: {
   if (!target) {
     return refusedOutcome("generation_conflict", `Session ${input.sessionId} lost its turn authority before a turn was admitted`)
   }
-  return await submitCancelTurn(input.runtime, target, input.caller, `session-turn-lease-loss:${target.turnId}:${target.ownerGeneration}`)
+  try {
+    return await submitCancelTurn(input.runtime, target, input.caller, `session-turn-lease-loss:${target.turnId}:${target.ownerGeneration}`)
+  } catch (error) {
+    // An owner that cannot even record the operation leaves the obligation
+    // with this lease; a rejection here would reach the lease as a bare
+    // message instead of something the revoked caller can be handed back.
+    return refusedOutcome("unavailable", `Session ${input.sessionId} could not record its lost turn's cancellation: ${thrownMessage(error)}`)
+  }
 }
 
 /** Cancel whichever turn the owner reports as admitted, or nothing when none is. */
@@ -962,10 +970,18 @@ function refusedOutcome(kind: "unavailable" | "generation_conflict", message: st
   return { kind: "refused", refusal: { kind, message } }
 }
 
-function lostTurnResponse(sessionId: string) {
+/**
+ * The revoked caller's answer, carrying what containment reached for the turn
+ * it lost. That result is the lease's alone until this point: the caller is
+ * the one owed it, and it names an operation the runtime's own inspection
+ * then reports for as long as it stays unresolved.
+ */
+function lostTurnResponse(sessionId: string, lease?: ActiveSessionTurnLease) {
+  const loss = lease?.lossResult()
   return Response.json(errorBody(
     "session_turn_lease_lost",
     `Session ${sessionId} turn authority was lost before completion`,
+    loss ? { containment: loss } : undefined,
   ), { status: 409 })
 }
 
@@ -1162,6 +1178,16 @@ function recoveryResponse(c: Ctx, outcome: RecoveryOutcome) {
 
 function recoveryRefused(c: Ctx, refusal: RecoveryRefusal) {
   return recoveryResponse(c, { kind: "refused", refusal })
+}
+
+/**
+ * The one answer all three routes give when nothing here owns the session.
+ * It is the contract's own refusal rather than an error envelope so a caller
+ * decodes every non-200 the same way, and so "there is no owner on this host"
+ * is not told apart from a live owner's `unavailable` by its shape.
+ */
+function noRecoveryOwner(sessionId: string): RecoveryRefusal {
+  return { kind: "unavailable", message: `No runtime owns session ${sessionId} on this host` }
 }
 
 async function sessionOperationGuard(
@@ -1476,17 +1502,15 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "recovery_inspect")
       if (guarded) return guarded
       const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
-      if (!runtime) {
-        return c.json(errorBody("recovery_owner_unavailable", `No runtime owns session ${sessionId} on this host`), 503)
-      }
-      return c.json<AgentRuntimeRecoveryInspection>(runtime.inspect(sessionId))
+      if (!runtime) return recoveryRefused(c, noRecoveryOwner(sessionId))
+      return c.json<AgentRuntimeRecoveryInspection>(runtime.inspect(sessionId, await opts.resolveDirectory(c, { sessionId })))
     })
     .get("/session/:id/recovery/operations/:operationId", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "recovery_inspect")
       if (guarded) return guarded
       const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
-      if (!runtime) return recoveryRefused(c, { kind: "unavailable", message: `No runtime owns session ${sessionId} on this host` })
+      if (!runtime) return recoveryRefused(c, noRecoveryOwner(sessionId))
       const operationId = c.req.param("operationId")
       const outcome = runtime.read(operationId, recoveryCaller(c))
       // An id this owner has never held is not an expired receipt: it names no
@@ -1508,7 +1532,7 @@ export function createSessionRoutes(opts: Opts) {
       const outOfScope = recoveryOutOfSessionScope(request, sessionId)
       if (outOfScope) return recoveryRefused(c, outOfScope)
       const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
-      if (!runtime) return recoveryRefused(c, { kind: "unavailable", message: `No runtime owns session ${sessionId} on this host` })
+      if (!runtime) return recoveryRefused(c, noRecoveryOwner(sessionId))
       return recoveryResponse(c, await runtime.submit(request, recoveryCaller(c)))
     })
   // Wakes left by a previous process are re-issued on the first request, once
@@ -2162,17 +2186,17 @@ export function createSessionRoutes(opts: Opts) {
         }
         })()
         if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
-          return lostTurnResponse(id)
+          return lostTurnResponse(id, turnAdmission.lease)
         }
         await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
         if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
-          return lostTurnResponse(id)
+          return lostTurnResponse(id, turnAdmission.lease)
         }
         const output = sessionPromptReply(turn)
         if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
         return c.json(output.body)
       } catch (error) {
-        if (turnAdmission.lease?.lost()) return lostTurnResponse(id)
+        if (turnAdmission.lease?.lost()) return lostTurnResponse(id, turnAdmission.lease)
         if (isAgentRuntimeTurnConflictError(error)) return turnAdmissionConflict(c)
         const refusal = sessionTurnRefusal(error)
         if (refusal) return turnRefused(c, refusal, streamTurnErrorMessage(error))

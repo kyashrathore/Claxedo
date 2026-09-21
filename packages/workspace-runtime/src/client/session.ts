@@ -12,7 +12,7 @@ import type {
   RecoveryOutcome,
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
-import { parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type {
   AgentConfigOptions,
   AgentGoalMutationResult,
@@ -102,12 +102,14 @@ export type WorkspaceSessionClient = {
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   /**
    * What the runtime owner knows about this session, and the operations a
-   * caller submits against it. `submit` and `read` answer a `RecoveryOutcome`
-   * for every status the contract defines, including its refusals, so only a
-   * body that is not one at all is thrown.
+   * caller submits against it. All three answer a `RecoveryOutcome` for every
+   * status the contract defines, refusals included, so only a body that is not
+   * one at all is thrown. An inspection the owner could answer is the
+   * inspection itself, which carries no `kind` — `isRecoveryOutcome` is the
+   * discriminant.
    */
   recovery: {
-    inspect(input: SessionInput, options?: Options): Reply<AgentRuntimeRecoveryInspection>
+    inspect(input: SessionInput, options?: Options): Reply<AgentRuntimeRecoveryInspection | RecoveryOutcome>
     submit(input: SessionInput & { request: RecoveryRequest }, options?: Options): Reply<RecoveryOutcome>
     read(input: SessionInput & { operationId: string }, options?: Options): Reply<RecoveryOutcome>
   }
@@ -188,7 +190,13 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     todo: (input, options) => read("session.todo", input, "/todo", options),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
     recovery: {
-      inspect: (input, options) => read<AgentRuntimeRecoveryInspection>("session.recovery.inspect", input, "/recovery", options),
+      inspect: (input, options) => caller.decoded({
+        operation: "session.recovery.inspect",
+        path: sessionPath(input, "/recovery"),
+        scope: input,
+        options,
+        decode: (body) => isRecoveryOutcome(body) ? parseRecoveryOutcome(body) : (body as AgentRuntimeRecoveryInspection),
+      }),
       submit: (input, options) => caller.decoded({
         operation: "session.recovery.submit",
         method: "POST",
