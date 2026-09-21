@@ -66,6 +66,8 @@ import {
   type LoopbackFirstPartyMcpOptions,
 } from "@claxedo/mcp"
 import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
+import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
@@ -130,6 +132,15 @@ export type LocalAppOptions = {
    * handed this app's in-process fetch for the credential's workspace.
    */
   firstPartyMcp?: LoopbackFirstPartyMcpOptions
+  /**
+   * The Tasks grants this machine's own sessions present. The MCP mount
+   * issues one per session and the Tasks routes — mounted by the caller as
+   * route contributions — verify it, so the two are handed to this
+   * composition together. Absent, a session's task call is answered as the
+   * person at this machine: no project confinement, no agent-start gates,
+   * and a link recorded as a person's (security review P105).
+   */
+  tasksGrants?: TasksSessionGrants
   /** Machine-local daemon control surface. Never exposed to the renderer. */
   daemon?: {
     identity: {
@@ -410,20 +421,31 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         if (credential.kind !== "runtime") throw new Error("A local MCP client requires a runtime credential")
         const workspace = await resolveWorkspace({ workspaceId: credential.workspaceId })
         if (!workspace || workspace.kind !== "local") throw new Error("The runtime workspace is unavailable")
-        const localFetch = inProcessFetch(
-          (runtimeRequest) => app.fetch(markInProcessDaemonRequest(runtimeRequest)),
-          { "x-workspace-id": credential.workspaceId },
-        )
+        const inProcess = (runtimeRequest: Request) => app.fetch(markInProcessDaemonRequest(runtimeRequest))
+        const localFetch = inProcessFetch(inProcess, { "x-workspace-id": credential.workspaceId })
+        // A session reaches the Tasks routes as itself: the registry issues a
+        // handle for its workspace and session, and the capability branch of
+        // the Tasks door resolves it to the workspace's owner, its project and
+        // the start gates. The consent read that lists the tools is the same
+        // one that withholds the handle — a session whose Tasks group is off,
+        // or a composition with no registry, keeps the bare loopback fetch
+        // that reads as the person at this machine.
+        const enabled = await firstPartyMcp.enabledToolGroups?.(credential)
+        const grant = enabled?.includes(BUILTIN_TASKS_TOOL_GROUP)
+          ? await options.tasksGrants?.issue({
+              workspaceId: credential.workspaceId,
+              ...(credential.sessionId ? { sessionId: credential.sessionId } : {}),
+            })
+          : undefined
         return firstPartyMcp.createClient({
           deployment: "loopback",
           credential,
           request,
           documents: { fetch: localFetch },
-          // Every operation, and no capability: this server is both the
-          // runtime host and the control plane, so the grant a hosted root
-          // carries has nothing to say here — the loopback fetch already
-          // reaches the one machine whose tasks these are.
-          tasks: { fetch: localFetch, operations: TASKS_OPERATIONS },
+          tasks: {
+            fetch: grant ? inProcessFetch(inProcess, { authorization: `Bearer ${grant}` }) : localFetch,
+            operations: TASKS_OPERATIONS,
+          },
           local: {
             fetch: localFetch,
             workspace: { workspaceId: credential.workspaceId, directory: workspace.directory },
