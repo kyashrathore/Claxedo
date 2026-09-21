@@ -148,7 +148,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     sessionAccessPolicy,
     onTurnOutcome: ({ sessionId, outcome }) => turnOutcomes.push({ sessionId, status: outcome.status }),
     storeFactory: ({ storeRoot }) => {
-      const store = new RuntimeStore(storeRoot!)
+      const store = new RuntimeStore(storeRoot)
       stores.push(store)
       const finish = store.finishTurn.bind(store)
       store.finishTurn = (value) => {
@@ -185,7 +185,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
   const client = createWorkspaceRuntimeClient({
     baseUrl: "http://runtime.test",
     directory: input.directory,
-    fetch: async (url, init) => await withWorkspaceTarget(target, () => app.request(url.toString(), init)),
+    fetch: async (url, init) => await withWorkspaceTarget(target, () => app.request(requestUrl(url), init)),
   })
 
   const snapshot: RuntimeSnapshot = {
@@ -196,7 +196,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
 
   return {
     host, app, request, client, snapshot, target, cancels, turnOutcomes,
-    store: () => stores[0]!,
+    store: () => stores[0],
     turnStarted,
     releaseTurn,
     answerCancel: (answer: CancelAnswer) => {
@@ -206,6 +206,12 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     breakStore: (broken: boolean) => { finishTurnFails = broken },
     failTurn: (sessionId: string) => { failing.add(sessionId) },
   }
+}
+
+/** `fetch` takes three shapes and only one of them stringifies to a URL. */
+function requestUrl(input: string | URL | Request) {
+  if (typeof input === "string") return input
+  return input instanceof URL ? input.href : input.url
 }
 
 type Workspace = ReturnType<typeof openWorkspace>

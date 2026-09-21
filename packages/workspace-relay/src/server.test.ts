@@ -2200,7 +2200,7 @@ describe("forwarding a session recovery request", () => {
     const upstream = relay.forwarded[0]
     expect(upstream?.url).toBe("https://host.example.test/session/ses_1/recovery?directory=%2Fwork")
     expect(upstream?.request.method).toBe("POST")
-    await expect(upstream!.request.text()).resolves.toBe(submission)
+    await expect(upstream.request.text()).resolves.toBe(submission)
   })
 
   test("returns the same operation receipt for a read, without touching its body", async () => {

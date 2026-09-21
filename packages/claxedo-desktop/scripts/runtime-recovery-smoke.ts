@@ -6,7 +6,9 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { randomUUID } from "node:crypto"
 
-import type { RecoveryOperation, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import { parseRecoveryOutcome, type RecoveryMachineTarget, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
+
+import { readArray, readNumber, readRecord, readString } from "../src/shared/json-read"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { createDaemonFetch, type DaemonFetch } from "../src/main/daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL, type ClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
@@ -90,10 +92,10 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
 
     // Held first: nothing else pins the daemon yet, and the idle grace above
     // is short enough to end it before the terminal exists.
-    const lease = await json<{ id: string }>(await daemon("/api/claxedo/daemon/leases", { method: "POST" }), 201)
-    record("lease held", `daemon lease ${lease.id}`)
+    const leaseId = id(await json(await daemon("/api/claxedo/daemon/leases", { method: "POST" }), 201), "the daemon lease")
+    record("lease held", `daemon lease ${leaseId}`)
 
-    const discovery = JSON.parse(fs.readFileSync(discoveryPath, "utf8")) as ClaxedoDaemonDiscovery
+    const discovery: ClaxedoDaemonDiscovery = JSON.parse(fs.readFileSync(discoveryPath, "utf8"))
     if (discovery.generation !== generation || discovery.pid !== child.pid) {
       throw new Error(`discovery names generation ${discovery.generation} pid ${String(discovery.pid)}`)
     }
@@ -107,21 +109,21 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
     }
     record("machine inventory", `${String(empty.owners.length)} owners, ${String(empty.residencyPins)} residency pins, receipt ${empty.receipt}`)
 
-    const pty = await json<{ id: string }>(await daemon(`/api/wr/pty?directory=${directory}`, {
+    const ptyId = id(await json(await daemon(`/api/wr/pty?directory=${directory}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title: marker, initialCommand: `printf '${marker}\\n'; sleep 600` }),
-    }), 200)
-    await until(async () => (await inspectMachine(daemon)).owners.some((owner) => owner.id === `terminal:${pty.id}`),
+    }), 200), "the terminal")
+    await until(async () => (await inspectMachine(daemon)).owners.includes(`terminal:${ptyId}`),
       "the terminal to appear in the machine inventory")
-    record("terminal owned", `terminal:${pty.id}`)
+    record("terminal owned", `terminal:${ptyId}`)
 
-    await json<{ released: boolean }>(await daemon(`/api/claxedo/daemon/leases/${lease.id}`, { method: "DELETE" }), 200)
+    await json(await daemon(`/api/claxedo/daemon/leases/${leaseId}`, { method: "DELETE" }), 200)
     await Bun.sleep(IDLE_GRACE_MS * 3)
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`the daemon exited after a handoff release while a terminal was still running:\n${stderr.slice(-2000)}`)
     }
-    await expectStatus(await daemon(`/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`), 200)
+    await expectStatus(await daemon(`/api/wr/pty/${encodeURIComponent(ptyId)}?directory=${directory}`), 200)
     record("handoff release survived", `no client lease for ${String(IDLE_GRACE_MS * 3)}ms, terminal still served`)
 
     const drain = await submit(daemon, {
@@ -137,10 +139,10 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
     }, "the drain to reach its deadline", DRAIN_SETTLE_MS)
     if (blocked.state !== "needs_action") throw new Error(`drain settled as ${blocked.state}`)
     const named = blocked.initiatingError?.message ?? ""
-    if (!named.includes(pty.id)) {
-      throw new Error(`the blocked drain did not name terminal ${pty.id}: ${named}`)
+    if (!named.includes(ptyId)) {
+      throw new Error(`the blocked drain did not name terminal ${ptyId}: ${named}`)
     }
-    record("drain blocked", `${blocked.initiatingError?.code ?? "no code"} naming terminal:${pty.id}`)
+    record("drain blocked", `${blocked.initiatingError?.code ?? "no code"} naming terminal:${ptyId}`)
 
     const gated = await inspectMachine(daemon)
     if (gated.gate?.operationId !== drain.operationId) {
@@ -177,7 +179,7 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
     await expectStatus(await fetch(`${base}/api/claxedo/health`), 200)
     record("identity mismatch refused", `${refusal.code}; the daemon it did not signal is still healthy`)
 
-    await expectStatus(await daemon(`/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`, { method: "DELETE" }), 200)
+    await expectStatus(await daemon(`/api/wr/pty/${encodeURIComponent(ptyId)}?directory=${directory}`, { method: "DELETE" }), 200)
     const code = await raceExit(exited, DRAIN_SETTLE_MS)
     if (code !== 0) throw new Error(`the unpinned daemon exited with ${String(code)}:\n${stderr.slice(-2000)}`)
     if (fs.existsSync(discoveryPath)) throw new Error("the exited daemon left its discovery record behind")
@@ -202,7 +204,11 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
 }
 
 function electronExecutable() {
-  return process.env.CLAXEDO_TEST_ELECTRON_EXECUTABLE || createRequire(import.meta.url)("electron") as string
+  const named = process.env.CLAXEDO_TEST_ELECTRON_EXECUTABLE?.trim()
+  if (named) return named
+  const resolved: unknown = createRequire(import.meta.url)("electron")
+  if (typeof resolved !== "string") throw new Error("the electron package did not resolve to an executable path")
+  return resolved
 }
 
 function stringEnv() {
@@ -216,15 +222,33 @@ function strays(marker: string) {
   return new TextDecoder().decode(found.stdout).split("\n").map((line) => line.trim()).filter(Boolean)
 }
 
+/** The parts of the machine inventory this smoke makes claims about. */
 async function inspectMachine(daemon: DaemonFetch) {
-  return await json<{
-    target: { scope: "machine"; machineId: string; ownerGeneration: string }
-    scopeRevision: string
-    owners: Array<{ id: string; kind: string; state: string; pins: boolean }>
-    residencyPins: number
-    gate?: { operationId: string; scopeRevision: string; owners: string[] }
-    receipt: string
-  }>(await daemon("/api/claxedo/daemon/recovery"), 200)
+  const body = await json(await daemon("/api/claxedo/daemon/recovery"), 200)
+  const target = readRecord(body, "target")
+  const machineId = readString(target, "machineId")
+  const ownerGeneration = readString(target, "ownerGeneration")
+  const scopeRevision = readString(body, "scopeRevision")
+  const residencyPins = readNumber(body, "residencyPins")
+  if (readString(target, "scope") !== "machine" || !machineId || !ownerGeneration || !scopeRevision || residencyPins === undefined) {
+    throw new Error(`the daemon answered no machine inventory: ${JSON.stringify(body)}`)
+  }
+  const gate = readRecord(body, "gate")
+  return {
+    target: { scope: "machine", machineId, ownerGeneration } satisfies RecoveryMachineTarget,
+    scopeRevision,
+    residencyPins,
+    receipt: readString(body, "receipt") ?? "unstated",
+    owners: (readArray(body, "owners") ?? []).map((owner) => readString(owner, "id") ?? "unnamed"),
+    ...(gate
+      ? {
+          gate: {
+            operationId: readString(gate, "operationId") ?? "unnamed",
+            owners: (readArray(gate, "owners") ?? []).map(String),
+          },
+        }
+      : {}),
+  }
 }
 
 async function submit(daemon: DaemonFetch, request: unknown): Promise<RecoveryOperation> {
@@ -233,7 +257,7 @@ async function submit(daemon: DaemonFetch, request: unknown): Promise<RecoveryOp
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request),
   })
-  const outcome = await response.json() as RecoveryOutcome
+  const outcome = parseRecoveryOutcome(await response.json())
   if (outcome.kind !== "operation") {
     throw new Error(`recovery submission refused (${String(response.status)}): ${JSON.stringify(outcome)}`)
   }
@@ -241,16 +265,22 @@ async function submit(daemon: DaemonFetch, request: unknown): Promise<RecoveryOp
 }
 
 async function read(daemon: DaemonFetch, operationId: string): Promise<RecoveryOperation> {
-  const outcome = await json<RecoveryOutcome>(
-    await daemon(`/api/claxedo/daemon/recovery/operations/${encodeURIComponent(operationId)}`), 200)
+  const outcome = parseRecoveryOutcome(
+    await json(await daemon(`/api/claxedo/daemon/recovery/operations/${encodeURIComponent(operationId)}`), 200))
   if (outcome.kind !== "operation") throw new Error(`operation ${operationId} read back as ${JSON.stringify(outcome)}`)
   return outcome.operation
 }
 
-async function json<T>(response: Response, status: number): Promise<T> {
+async function json(response: Response, status: number): Promise<unknown> {
   const body = await response.text()
   if (response.status !== status) throw new Error(`expected ${String(status)}, got ${String(response.status)}: ${body}`)
-  return JSON.parse(body) as T
+  return JSON.parse(body)
+}
+
+function id(value: unknown, what: string) {
+  const read = readString(value, "id")
+  if (!read) throw new Error(`${what} answered no id: ${JSON.stringify(value)}`)
+  return read
 }
 
 async function expectStatus(response: Response, status: number) {
