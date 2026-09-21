@@ -4,6 +4,7 @@ import fs from "node:fs/promises"
 import type { FileHandle } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
   DocumentAlreadyExistsError,
@@ -863,10 +864,6 @@ async function nearestExistingPath(input: string): Promise<string> {
   const parent = path.dirname(input)
   if (parent === input) throw new DocumentPathError("Managed document path has no existing root")
   return await nearestExistingPath(parent)
-}
-
-function inside(root: string, candidate: string) {
-  return candidate === root || candidate.startsWith(`${root}${path.sep}`)
 }
 
 type LockMetadata = Readonly<{

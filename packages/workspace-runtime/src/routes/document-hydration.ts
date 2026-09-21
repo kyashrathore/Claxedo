@@ -1,6 +1,7 @@
 import { constants, watch, type FSWatcher } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import { createHash } from "node:crypto"
 import { verifyDocumentJobCapability } from "../document-job-capability"
 import { Hono } from "hono"
@@ -686,10 +687,6 @@ function slug(value: string) {
       .replaceAll(/[^a-z0-9]+/g, "-")
       .replaceAll(/^-|-$/g, "") || "document"
   )
-}
-
-function inside(root: string, candidate: string) {
-  return candidate === root || candidate.startsWith(root + path.sep)
 }
 
 async function writeContained(root: string, target: string, content: string, beforeOpen?: () => void | Promise<void>) {

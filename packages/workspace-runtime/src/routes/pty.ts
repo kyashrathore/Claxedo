@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import type { WSContext } from "hono/ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "../pty/index"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody, routeParam } from "./http"
 import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { ProcessObserver } from "../managed-processes/process-observer"
@@ -288,7 +288,7 @@ export function PtyRoutes(
           return Number.isSafeInteger(parsed) && parsed >= -1 ? parsed : undefined
         })()
         const connection = createAuthorizedPtyConnection({
-          ptyId: c.req.param("ptyID"),
+          ptyId: routeParam(c, "ptyID"),
           policy,
           access: attachAccess(c),
           admission,

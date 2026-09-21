@@ -1,4 +1,5 @@
 import path from "path"
+import { inside } from "@claxedo/helpers/path"
 import fs from "node:fs/promises"
 import { AsyncLocalStorage } from "async_hooks"
 import { runtimeEnvText } from "./env"
@@ -157,10 +158,6 @@ export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T
   }, run)
 }
 
-function inside(root: string, candidate: string) {
-  return candidate === root || candidate.startsWith(root + path.sep)
-}
-
 async function existingPath(input: string) {
   let current = input
   while (true) {
@@ -231,11 +228,12 @@ export async function resolveWorkspacePath(
   return candidate
 }
 
-// Every character a path token can sit directly behind, redirection operators
-// included — `>out`, `2>log` and `cat</etc/passwd` all name paths. The scan
-// enforces the command policy on the spellings it finds; it does not parse
-// shell syntax and is not filesystem confinement.
-const commandPathPattern = /(^|[\s"'=,;(<>{}!|&)])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&()<>{}!]+)/g
+// The boundary class is every character a path token can sit directly behind:
+// whitespace, quotes, `=`, separators, redirection and grouping operators, and
+// a backtick — `>out`, `2>log`, `cat</etc/passwd` and `` x=`/bin/x` `` all name
+// paths. The scan enforces the command policy on the spellings it finds; it
+// does not parse shell syntax and is not filesystem confinement.
+const commandPathPattern = /(^|[\s"'`=,;(<>{}!|&)])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&()<>{}!]+)/g
 
 function commandPathReferences(input: string) {
   return [...input.matchAll(commandPathPattern)].map((match) => ({

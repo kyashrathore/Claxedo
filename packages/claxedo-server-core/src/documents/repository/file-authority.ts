@@ -2,6 +2,7 @@ import { constants } from "node:fs"
 import fs from "node:fs/promises"
 import type { FileHandle } from "node:fs/promises"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import {
   DocumentInvalidEntryError,
   DocumentNotFoundError,
@@ -106,7 +107,7 @@ export function createLocalRepositoryFileAuthority(
     const normalized = normalizeRepositoryRelativePath(relativePath)
     const realRoot = await fs.realpath(root)
     const candidate = path.resolve(realRoot, normalized)
-    if (!insideRepository(realRoot, candidate))
+    if (!inside(realRoot, candidate))
       throw new DocumentPathError("Repository document path escapes its workspace root")
     const existing = await nearestExistingPath(candidate)
     const realExisting = await fs.realpath(existing).catch((error: unknown) => {
@@ -115,10 +116,10 @@ export function createLocalRepositoryFileAuthority(
       }
       throw error
     })
-    if (!insideRepository(realRoot, realExisting))
+    if (!inside(realRoot, realExisting))
       throw new DocumentPathError("Repository document symlink escapes its workspace root")
     const resolved = path.resolve(realExisting, path.relative(existing, candidate))
-    if (!insideRepository(realRoot, resolved))
+    if (!inside(realRoot, resolved))
       throw new DocumentPathError("Repository document path escapes its workspace root")
     return resolved
   }
@@ -244,7 +245,7 @@ export async function atomicRepositoryReplace(
 async function pinRepositoryTarget(root: string, target: string): Promise<RepositoryPinnedTarget> {
   const realRoot = await fs.realpath(root)
   const parent = await fs.realpath(path.dirname(target))
-  if (!insideRepository(realRoot, parent) || !insideRepository(realRoot, path.resolve(target))) {
+  if (!inside(realRoot, parent) || !inside(realRoot, path.resolve(target))) {
     throw new DocumentPathError("Repository document parent escapes its workspace root")
   }
   const parentHandle = await fs.open(parent, "r")
@@ -268,7 +269,7 @@ async function verifyRepositoryParent(pinned: RepositoryPinnedTarget) {
 
 async function repositoryParentIsPinned(pinned: RepositoryPinnedTarget) {
   const real = await fs.realpath(pinned.parent).catch(() => undefined)
-  if (!real || !insideRepository(pinned.root, real)) return false
+  if (!real || !inside(pinned.root, real)) return false
   const stat = await fs.stat(real).catch(() => undefined)
   return !!stat && stat.dev === pinned.parentIdentity.dev && stat.ino === pinned.parentIdentity.ino
 }
@@ -446,10 +447,6 @@ function validateMarkdown(markdown: string, maxBytes: number) {
   const size = Buffer.byteLength(markdown)
   if (size > maxBytes) throw new DocumentTooLargeError(size, maxBytes)
   if (markdown.includes("\0")) throw new DocumentInvalidEntryError("Document Markdown cannot contain NUL bytes")
-}
-
-export function insideRepository(root: string, candidate: string) {
-  return candidate === root || candidate.startsWith(`${root}${path.sep}`)
 }
 
 async function nearestExistingPath(input: string): Promise<string> {

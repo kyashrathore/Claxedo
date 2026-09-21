@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
 import { runtimeEnvText, workspaceRuntimeStoreDir } from "./env"
 import { RuntimeStore, type WorkspaceWorktreeRecord } from "./store"
@@ -21,10 +22,6 @@ export function workspaceStorageRoot(workspaceId: string, env: NodeJS.ProcessEnv
 function requireSessionId(sessionId: string) {
   if (!SEGMENT.test(sessionId)) throw new WorkspaceTargetError("session id is not path-safe")
   return sessionId
-}
-
-function inside(root: string, candidate: string) {
-  return candidate.startsWith(root + path.sep)
 }
 
 export class WorkspaceWorktreeManager {
@@ -111,7 +108,9 @@ export class WorkspaceWorktreeManager {
     const branch = `claxedo/session/${input.sessionId}`
     const baseCommit = await this.resolveCommit(input.baseCommit ?? "HEAD")
     const target = path.resolve(this.worktrees, input.sessionId)
-    if (!inside(this.worktrees, target)) throw new WorkspaceTargetError("worktree path escapes workspace root")
+    if (target === this.worktrees || !inside(this.worktrees, target)) {
+      throw new WorkspaceTargetError("worktree path escapes workspace root")
+    }
     const now = Date.now()
     const record: WorkspaceWorktreeRecord = {
       workspaceId: this.options.workspaceId,

@@ -1,4 +1,4 @@
-import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import { exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -7,6 +7,7 @@ import {
   createWorkspaceRuntimeApp,
   flushRuntimeDocument,
   forgetRuntimeDocuments,
+  managedWorkspaceSessionAccessPolicy,
   relayWorkspaceRuntimeExposure,
 } from "../../../../../workspace-runtime/src/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -25,6 +26,44 @@ const entry = {
   archived_at: null, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString(),
   last_opened_at: null, last_known_file_version: "v1",
 } satisfies DocumentIndexEntry
+
+/**
+ * The runtime as the broker reaches it in production: behind the relay, on a
+ * relay host token naming the acting user. A direct token would arrive with no
+ * actor, and activate/resolve refuse an unattributed session write.
+ */
+async function relayedRuntime() {
+  const relayKeys = await generateKeyPair("EdDSA")
+  const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
+  const runtime = createWorkspaceRuntimeApp({
+    exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, workspaceId: "ws_1", hostId: "host_1" }),
+    sessionAccessPolicy: {
+      ...managedWorkspaceSessionAccessPolicy({ requireActor: true }),
+      sessionAuthority: "managed-private",
+      authorize(input) {
+        asked.push({ operation: input.operation, sessionId: input.sessionId, actorId: input.actor?.actorId })
+        return input.actor?.actorId === "actor_1"
+          ? { allowed: true }
+          : { allowed: false, status: 403 as const, code: "session_private", message: "Session access requires creator, participant, or session share authority" }
+      },
+    },
+  })
+  const token = await new SignJWT({
+    principal_kind: "user", actor_id: "actor_1", actor_kind: "human",
+    org_id: "org_1", workspace_id: "ws_1", host_id: "host_1",
+    role: "editor", backing: "cloud-vm", parent_jti: "parent_1",
+  }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
+    .setIssuedAt().setExpirationTime("1m").setJti("relay_actor_1").sign(relayKeys.privateKey)
+  return { runtime, token, asked }
+}
+
+/** The stamps the relay puts on every request it forwards to a runtime. */
+function relayed(init: RequestInit | undefined): RequestInit {
+  const headers = new Headers(init?.headers)
+  headers.set("x-workspace-id", "ws_1")
+  headers.set("x-forwarded-by", "workspace-relay")
+  return { ...init, headers }
+}
 
 describe("hosted document runtime broker", () => {
   test("relays exactly one selected object and keeps capability out of the response", async () => {
@@ -203,11 +242,7 @@ describe("hosted document runtime broker", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = root
     process.env.CLAXEDO_CONTROL_PLANE_URL = "https://control.test"
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(signing.publicKey)
-    const runtime = createWorkspaceRuntimeApp({
-      exposure: relayWorkspaceRuntimeExposure({
-        key: signing.publicKey, workspaceId: "ws_1", hostId: "host_1", trustedDirectToken: "runtime-token",
-      }),
-    })
+    const { runtime, token: runtimeToken, asked } = await relayedRuntime()
     let canonical = "before"
     let version = "v1"
     const originalFetch = globalThis.fetch
@@ -228,7 +263,7 @@ describe("hosted document runtime broker", () => {
         },
         sandbox: { sandboxManager: { target: vi.fn(async () => ({ status: "ready", hostId: "host_1", homeRegion: "us-east" })) } },
         relay: { provider: {
-          mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: Date.now() + 300_000 })),
+          mintRuntimeAccessToken: vi.fn(async () => ({ token: runtimeToken, expiresAt: Date.now() + 300_000 })),
           getRelayEndpoint: vi.fn(async () => "https://relay.test"),
         } },
       } as unknown as ControlPlaneServices
@@ -239,7 +274,7 @@ describe("hosted document runtime broker", () => {
         CLAXEDO_PUBLIC_URL: "https://control.test",
       }, async (input, init) => {
         const pathname = new URL(fetchUrl(input)).pathname
-        return await runtime.app.fetch(new Request(`http://runtime.test${pathname.slice(pathname.indexOf("/api/wr/"))}`, init))
+        return await runtime.app.fetch(new Request(`http://runtime.test${pathname.slice(pathname.indexOf("/api/wr/"))}`, relayed(init)))
       })
       const opened = await broker.open({
         entry, sessionId: "session_1", auth, origin: "https://control.test",
@@ -249,6 +284,7 @@ describe("hosted document runtime broker", () => {
       await fs.writeFile(opened.path, "agent edit")
       await flushRuntimeDocument("session_1", "document_1")
       expect({ canonical, version }).toEqual({ canonical: "agent edit", version: "v2" })
+      expect(asked).toEqual([{ operation: "document_write", sessionId: "session_1", actorId: "actor_1" }])
     } finally {
       forgetRuntimeDocuments()
       await runtime.host.dispose()
@@ -278,14 +314,7 @@ describe("hosted document runtime broker", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = root
     process.env.CLAXEDO_CONTROL_PLANE_URL = "https://control.test"
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(signing.publicKey)
-    const runtime = createWorkspaceRuntimeApp({
-      exposure: relayWorkspaceRuntimeExposure({
-        key: signing.publicKey,
-        workspaceId: "ws_1",
-        hostId: "host_1",
-        trustedDirectToken: "runtime-token",
-      }),
-    })
+    const { runtime, token: runtimeToken, asked } = await relayedRuntime()
     const order: string[] = []
     let canonical = "before"
     let version = "v1"
@@ -331,7 +360,7 @@ describe("hosted document runtime broker", () => {
         },
         relay: {
           provider: {
-            mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: Date.now() + 300_000 })),
+            mintRuntimeAccessToken: vi.fn(async () => ({ token: runtimeToken, expiresAt: Date.now() + 300_000 })),
             getRelayEndpoint: vi.fn(async () => "https://relay.test"),
           },
         },
@@ -340,7 +369,7 @@ describe("hosted document runtime broker", () => {
         const pathname = new URL(fetchUrl(input)).pathname
         const runtimePath = pathname.slice(pathname.indexOf("/api/wr/"))
         order.push(runtimePath.endsWith("/activate") ? "activate" : "hydrate")
-        return await runtime.app.fetch(new Request(`http://runtime.test${runtimePath}`, init))
+        return await runtime.app.fetch(new Request(`http://runtime.test${runtimePath}`, relayed(init)))
       }
       const broker = createHostedDocumentRuntimeBroker(services, env, relay)
       const first = await broker.open({
@@ -368,6 +397,7 @@ describe("hosted document runtime broker", () => {
       expect(reopened.path).toBe(first.path)
       expect({ canonical, version }).toEqual({ canonical: "dirty after runtime crash", version: "v2" })
       expect(order).toEqual(["hydrate", "hydrate", "register", "activate", "writeback"])
+      expect(asked).toEqual([{ operation: "document_write", sessionId: "session_1", actorId: "actor_1" }])
     } finally {
       forgetRuntimeDocuments()
       await runtime.host.dispose()

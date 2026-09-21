@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import { inside } from "@claxedo/helpers/path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { buildSafeEnv, createBoundedGit, runGit } from "@claxedo/workspace-runtime/host"
@@ -76,18 +77,11 @@ async function canon(input: string) {
  * Containment guard for every caller-named directory that reaches `gitRun`,
  * `shell`, or `fs.rm` on this surface.
  *
- * `path.resolve` collapses `..` first, so `<root>/../victim` normalizes to a
- * sibling and is rejected. The `path.sep` suffix matters: a bare `startsWith`
- * would accept `/srv/project-evil` as a child of `/srv/project`.
- *
- * Same idiom as `inside()` in documents/session-hydration.ts and
- * `insideRepository()` in documents/repository-file-authority.ts — kept here so
- * the worktree handlers and their tests share one definition.
+ * Both sides are `path.resolve`d before the shared `inside()` check, so a
+ * relative or `..`-carrying spelling is judged by where it lands.
  */
 export function contains(root: string, candidate: string) {
-  const base = path.resolve(root)
-  const target = path.resolve(candidate)
-  return target === base || target.startsWith(base + path.sep)
+  return inside(path.resolve(root), path.resolve(candidate))
 }
 
 export async function containsCanonical(root: string, candidate: string) {

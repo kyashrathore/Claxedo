@@ -83,7 +83,7 @@ import {
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
-import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody, routeParam } from "./http"
 import {
   sessionAccessContext,
   sessionAccessDenied,
@@ -641,7 +641,7 @@ function goalRoute(
   }) => Promise<Response> | Response,
 ) {
   return async (c: Ctx): Promise<Response> => {
-    const sessionId = c.req.param("id")
+    const sessionId = routeParam(c, "id")
     const guarded = await sessionOperationGuard(opts, c, sessionId, operation)
     if (guarded) return guarded
     const directory = await opts.resolveDirectory(c, { sessionId })
@@ -1236,7 +1236,7 @@ async function admitQuestionOperation(
   | { rejected: Response; id?: undefined; directory?: undefined; adapter?: undefined; sessionId?: undefined }
   | { rejected?: undefined; id: string; directory: RuntimeDirectory; adapter: AgentHarnessAdapter; sessionId: string; start?: AgentSessionStartBinding }
 > {
-  const id = c.req.param("id")
+  const id = routeParam(c, "id")
   const requested = c.req.query("sessionId") ?? ""
   const directory = await opts.resolveDirectory(c)
   const known = interactionSessionId(await opts.listQuestions?.(c, directory) ?? [], id)

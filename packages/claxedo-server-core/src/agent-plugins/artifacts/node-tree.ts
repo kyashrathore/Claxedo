@@ -1,15 +1,11 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import { AgentPluginArtifactError } from "./types"
 import { inspectPluginTree } from "./acquire"
 import { agentPluginTree, type AgentPluginTreeEntry } from "./tree"
 import type { AgentPluginTree } from "./tree"
 import type { AgentPluginCollectionSource } from "../catalog/types"
-
-function inside(root: string, target: string) {
-  const relative = path.relative(root, target)
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
-}
 
 /** Dereference one local plugin into the same bounded portable tree hosted adapters produce. */
 export async function loadAgentPluginTreeFromDirectory(pluginRoot: string) {

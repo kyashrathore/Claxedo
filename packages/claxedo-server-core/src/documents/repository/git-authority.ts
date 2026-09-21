@@ -1,6 +1,7 @@
 import { constants } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import {
   DocumentInvalidEntryError,
   DocumentPathError,
@@ -12,7 +13,6 @@ import {
 import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef, type SnapshotRequest } from "@claxedo/server-core/documents/port"
 import {
   atomicRepositoryReplace,
-  insideRepository,
   normalizeRepositoryRelativePath,
   readRepositoryFile,
   serializeRepositoryOperation,
@@ -284,7 +284,7 @@ export function createLocalRepositoryGitAuthority(
   async function inspect(root: string, relativePath: string): Promise<RepositoryGitSnapshot> {
     const repoRoot = await fs.realpath((await runGit(["rev-parse", "--show-toplevel"], root)).trim())
     const target = await fs.realpath(path.join(root, normalizeRepositoryRelativePath(relativePath)))
-    if (!insideRepository(repoRoot, target))
+    if (!inside(repoRoot, target))
       throw new DocumentPathError("Repository document path is outside the Git repository")
     const repositoryRelativePath = path.relative(repoRoot, target)
     const tree = (await runGit(["ls-tree", "HEAD", "--", repositoryRelativePath], repoRoot)).trim()

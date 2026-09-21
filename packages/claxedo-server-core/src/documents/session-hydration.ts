@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
 import { constants, watch, type FSWatcher } from "node:fs"
 import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
 import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
@@ -504,10 +505,6 @@ function slug(value: string) {
 
 function hash(value: string) {
   return contentHash(value)
-}
-
-function inside(root: string, candidate: string) {
-  return candidate === root || candidate.startsWith(root + path.sep)
 }
 
 function exists(value: string) {
