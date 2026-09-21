@@ -207,7 +207,7 @@ export type RevocationLookupArgs = { jti: string; workspaceId: string; hostId: s
 export type RevocationLookup = (args: RevocationLookupArgs) => Promise<RuntimeAccessTokenActiveResult>
 
 export type CachedRevocationOptions = {
-  /** TTL in milliseconds for cached revocation responses. Defaults to 10_000. */
+  /** TTL in milliseconds for cached revocation responses. Defaults to `REVOCATION_CACHE_TTL_MS_DEFAULT`. */
   ttlMs?: number
   /** Clock injection for tests. Defaults to `Date.now`. */
   now?: () => number
@@ -459,6 +459,13 @@ const RELAY_HOST_TOKEN_CACHE_MAX_ENTRIES = 4096
 const RUNTIME_ACCESS_TOKEN_CACHE_MAX_ENTRIES = 8192
 const RESOLVER_CACHE_MAX_ENTRIES = 8192
 const RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
+export const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
+/**
+ * Default for the adapters' `runtimeAccessTokenActiveCheckIntervalMs`: how
+ * often an established WebSocket re-runs the revocation check. Shared so the
+ * Bun and Durable Object adapters cannot drift apart on the same bound.
+ */
+export const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const relayHostTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, RelayHostTokenCacheEntry>>()
 const runtimeAccessTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, {
   claims?: RuntimeAccessTokenClaims
@@ -486,7 +493,7 @@ export function createCachedRevocationClient(
   inner: RevocationLookup,
   options: CachedRevocationOptions = {},
 ): RevocationLookup {
-  const ttlMs = options.ttlMs ?? 10_000
+  const ttlMs = options.ttlMs ?? REVOCATION_CACHE_TTL_MS_DEFAULT
   const now = options.now ?? Date.now
   const cache = new Map<string, {
     expiresAt: number
@@ -515,6 +522,35 @@ export function createCachedRevocationClient(
     cache.set(args.jti, { promise, expiresAt: at + ttlMs })
     return await promise
   }
+}
+
+/**
+ * The longest a revoked Runtime Access Token can keep working after the
+ * authority records the revocation, derived from the configured TTLs rather
+ * than measured timing.
+ *
+ * Every relayed HTTP request re-runs the active check, so a cached `active`
+ * answer delays denial by at most `revocationCacheTtlMs`. An established
+ * socket adds at most one re-check interval — its watcher can tick just
+ * before the stale entry expires — so pass the adapter's
+ * `runtimeAccessTokenActiveCheckIntervalMs` as `activeCheckIntervalMs`;
+ * omit it for the per-request path. A non-positive interval means the socket
+ * has no revocation watcher at all and the function reports no bound: the
+ * token's `exp`, enforced locally by the socket expiry timer, is then the
+ * only deadline, and it caps every path even while the revocation authority
+ * is unreachable.
+ */
+export function runtimeAccessTokenRevocationDelayMs(input: {
+  revocationCacheTtlMs?: number
+  activeCheckIntervalMs?: number
+} = {}): number {
+  const configuredTtl = input.revocationCacheTtlMs ?? REVOCATION_CACHE_TTL_MS_DEFAULT
+  const ttlMs = Number.isFinite(configuredTtl) && configuredTtl > 0 ? configuredTtl : 0
+  if (input.activeCheckIntervalMs === undefined) return ttlMs
+  if (!Number.isFinite(input.activeCheckIntervalMs) || input.activeCheckIntervalMs <= 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  return ttlMs + input.activeCheckIntervalMs
 }
 
 /**

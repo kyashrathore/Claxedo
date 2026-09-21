@@ -5,8 +5,10 @@ import { mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import {
+  createCachedRevocationClient,
   createWorkspaceRelay,
   parseWorkspaceRelayTarget,
+  runtimeAccessTokenRevocationDelayMs,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
   workspaceRelayTargetUrl,
@@ -366,6 +368,76 @@ describe("workspace relay server", () => {
       error: {
         code: "runtime_access_token_revoked",
         message: "Runtime Access Token has been revoked",
+      },
+    })
+  })
+
+  test("bounds revocation of cached HTTP requests by the revocation cache TTL", async () => {
+    const revocationCacheTtlMs = 10_000
+    let clockNow = 1_000_000
+    let active = true
+    const revocation = createCachedRevocationClient(async () =>
+      active
+        ? { active: true as const }
+        : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
+    { ttlMs: revocationCacheTtlMs, now: () => clockNow })
+    const relay = await harness({
+      // The claims and Relay Host Token caches stay warm for the whole test:
+      // the delay bound must come from the revocation cache alone.
+      runtimeAccessTokenCacheTtlMs: 60_000,
+      relayHostTokenCacheTtlMs: 60_000,
+      isRuntimeAccessTokenActive: (claims) => revocation({
+        jti: claims.jti,
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+      }),
+      fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
+    })
+    const token = await relay.token()
+    const request = () => relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect((await request()).status).toBe(200)
+    active = false
+
+    // Inside the TTL the cached positive answer still stands: this is the
+    // bounded consistency window, not unlimited access.
+    clockNow += revocationCacheTtlMs - 1
+    expect((await request()).status).toBe(200)
+
+    // Past runtimeAccessTokenRevocationDelayMs for the HTTP path, the stale
+    // positive cannot be served again.
+    clockNow += 2
+    const denied = await request()
+    expect(denied.status).toBe(401)
+    await expect(denied.json()).resolves.toEqual({
+      error: {
+        code: "runtime_access_token_revoked",
+        message: "Runtime Access Token has been revoked",
+      },
+    })
+    expect(runtimeAccessTokenRevocationDelayMs({ revocationCacheTtlMs })).toBe(revocationCacheTtlMs)
+  })
+
+  test("fails closed when the revocation authority is unreachable", async () => {
+    const relay = await harness({
+      isRuntimeAccessTokenActive: () => {
+        throw new Error("revocation resolver unreachable")
+      },
+      fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
+    })
+    const token = await relay.token()
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "relay_request_failed",
+        message: "Workspace relay request was denied",
       },
     })
   })

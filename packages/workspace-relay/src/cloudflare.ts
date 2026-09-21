@@ -21,6 +21,7 @@ import {
 } from "@claxedo/workspace-relay-protocol"
 import {
   RELAY_ALLOWED_REQUEST_HEADERS,
+  RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT,
   authorizeWorkspaceRelayRequest,
   checkHostTunnelGeneration,
   hostTunnelIncumbentOutranks,
@@ -331,6 +332,15 @@ export type WorkspaceRelayDurableObjectRoomOptions = WorkspaceRelayOptions & {
   tunnelResponseBodyMaxBytes?: number
   slowConsumerHighWaterMarkBytes?: number
   slowConsumerTimeoutMs?: number
+  /**
+   * How often established client WebSockets are re-checked for revocation.
+   * Defaults to 30s; 0 disables the re-check. Because the check may answer
+   * from the revocation lookup's cache, a revoked token closes the socket
+   * within this interval plus the lookup's cache TTL — see
+   * `runtimeAccessTokenRevocationDelayMs` in `./server`. A resolver outage
+   * gets `resolverOutageGraceAttempts` and never extends the socket past the
+   * token's `exp`, which the watcher enforces locally.
+   */
   runtimeAccessTokenActiveCheckIntervalMs?: number
   workspaceTargetActiveCheckIntervalMs?: number
   /**
@@ -454,7 +464,6 @@ const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 64
 // small frames through while still capping real memory, so the close above is
 // reserved for traffic genuinely too large to hold.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
-const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const WORKSPACE_TARGET_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 // Consecutive resolver-unreachable answers tolerated before an established
 // connection is closed. 3 × the 30 s watcher interval survives ~90 s of resolver
@@ -1396,7 +1405,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         clearInterval(timer)
         onInactive(reason)
       }
-      void Promise.resolve(options.isRuntimeAccessTokenActive(client.request.claims))
+      // `Promise.resolve().then(...)` rather than `Promise.resolve(fn())`: a
+      // resolver that throws synchronously must count as unreachable, not
+      // escape the interval callback as an uncaught timer exception.
+      void Promise.resolve()
+        .then(() => options.isRuntimeAccessTokenActive!(client.request.claims))
         .then((active) => {
           if (active.active) {
             consecutiveUnreachable = 0

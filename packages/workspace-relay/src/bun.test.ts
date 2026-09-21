@@ -12,7 +12,14 @@ import {
   type WorkspaceRelayBunOptions,
 } from "./bun"
 import { TUNNEL_PROTOCOL_VERSION, type TunnelPong } from "@claxedo/workspace-relay-protocol"
-import { createCachedHostGenerationClient, type HostGenerationLookup, type HostGenerationResult, type WorkspaceRelayAuditEvent } from "./server"
+import {
+  createCachedHostGenerationClient,
+  createCachedRevocationClient,
+  runtimeAccessTokenRevocationDelayMs,
+  type HostGenerationLookup,
+  type HostGenerationResult,
+  type WorkspaceRelayAuditEvent,
+} from "./server"
 
 type DirectoryObserver = {
   waitForPresence(): Promise<NonNullable<ReturnType<WorkspaceRelayDirectory["activeHost"]>>>
@@ -3484,6 +3491,147 @@ describe("workspace relay Bun adapter", () => {
     try {
       const closed = waitForClose(client)
       await waitForOpen(client)
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token expired" })
+    } finally {
+      client.close()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("closes an idle Bun WebSocket within the specified revocation delay", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    // A cached positive answer from admission is still fresh when the token is
+    // revoked, so the close must wait out the cache TTL plus one watcher tick.
+    const revocationCacheTtlMs = 200
+    const activeCheckIntervalMs = 5
+    let active = true
+    const revocation = createCachedRevocationClient(async () =>
+      active
+        ? { active: true as const }
+        : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
+    { ttlMs: revocationCacheTtlMs })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      isRuntimeAccessTokenActive: (claims) => revocation({
+        jti: claims.jti,
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+      }),
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, { runtimeAccessTokenActiveCheckIntervalMs: activeCheckIntervalMs })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      await waitForOpen(client)
+      const closed = waitForClose(client)
+      const revokedAt = Date.now()
+      active = false
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token has been revoked" })
+      const boundMs = runtimeAccessTokenRevocationDelayMs({ revocationCacheTtlMs, activeCheckIntervalMs })
+      // Generous slack over the specified bound for scheduler jitter; the
+      // deterministic bound itself is covered by the fake-clock cache tests.
+      expect(Date.now() - revokedAt).toBeLessThan(boundMs + 1_000)
+    } finally {
+      client.close()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("survives a revocation authority outage but still closes at token expiry", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    // The admission check answers once; every watcher tick after that throws,
+    // simulating a resolver outage on an established socket.
+    let admitted = false
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      isRuntimeAccessTokenActive: () => {
+        if (!admitted) {
+          admitted = true
+          return { active: true as const }
+        }
+        throw new Error("revocation resolver unreachable")
+      },
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, { runtimeAccessTokenActiveCheckIntervalMs: 5 })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+      ttlSeconds: 2,
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      await waitForOpen(client)
+      const closed = waitForClose(client)
+      // ~50 watcher ticks throw and are swallowed; the socket must stay open —
+      // an outage is not a revocation.
+      const state = await Promise.race([
+        closed.then(() => "closed" as const),
+        new Promise<"open">((resolve) => setTimeout(() => resolve("open"), 250)),
+      ])
+      expect(state).toBe("open")
+      // The local expiry timer is the hard bound: even with the authority
+      // unreachable the socket cannot outlive the token's exp.
       await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token expired" })
     } finally {
       client.close()

@@ -9,6 +9,7 @@ import {
 } from "@claxedo/workspace-relay-protocol"
 import {
   RELAY_ALLOWED_REQUEST_HEADERS,
+  RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT,
   authorizeWorkspaceRelayRequest,
   checkHostTunnelGeneration,
   hostTunnelIncumbentOutranks,
@@ -241,7 +242,15 @@ export type WorkspaceRelayBackpressureOptions = {
 
 export type WorkspaceRelayBunOptions = WorkspaceRelayHostTunnelOptions & WorkspaceRelayBackpressureOptions
   & {
-    /** How often established user WebSockets are re-checked for revocation. Defaults to 30s. */
+    /**
+     * How often established user WebSockets are re-checked for revocation.
+     * Defaults to 30s; 0 disables the re-check. Because the check may answer
+     * from the revocation lookup's cache, a revoked token closes the socket
+     * within this interval plus the lookup's cache TTL — see
+     * `runtimeAccessTokenRevocationDelayMs` in `./server`. A resolver outage
+     * does not extend the socket past the token's `exp`, which the watcher
+     * enforces locally.
+     */
     runtimeAccessTokenActiveCheckIntervalMs?: number
     /** Clock injection used to calculate the local token-expiry deadline. */
     now?: () => number
@@ -1520,7 +1529,6 @@ function watchHostGeneration(
   if (typeof ws.data.generationCheckTimer.unref === "function") ws.data.generationCheckTimer.unref()
 }
 
-const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 
 type RelayAccessWatchedWebSocketData = RelayClientWebSocketData | RelayHostTunnelClientWebSocketData
@@ -1566,7 +1574,11 @@ function watchClientAccess(
     ?? RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT
   if (!options.isRuntimeAccessTokenActive || intervalMs <= 0) return
   ws.data.accessCheckTimer = setInterval(() => {
-    void Promise.resolve(options.isRuntimeAccessTokenActive!(ws.data.claims))
+    // `Promise.resolve().then(...)` rather than `Promise.resolve(fn())`: a
+    // resolver that throws synchronously must not escape the interval
+    // callback as an uncaught timer exception.
+    void Promise.resolve()
+      .then(() => options.isRuntimeAccessTokenActive!(ws.data.claims))
       .then((active) => {
         if (!active.active) close(active.reason)
       })
