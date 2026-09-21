@@ -790,10 +790,6 @@ export class RuntimeStoreMigrationBlockedError extends Error {
   }
 }
 
-function recoveryOperationSettled(operation: RecoveryOperation) {
-  return operation.state === "succeeded" || operation.state === "failed"
-}
-
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   private root: string

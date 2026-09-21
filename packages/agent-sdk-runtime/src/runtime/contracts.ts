@@ -91,7 +91,7 @@ export type AgentRuntimeRecovery = {
    * triggered it gets its own error; this is where it stays visible to the
    * session's owner after that caller has gone.
    */
-  reportOwnerFailure(sessionId: string, error: unknown): void
+  reportOwnerFailure: (sessionId: string, error: unknown) => void
 }
 
 export type AgentHarnessFactoryContext = {
@@ -103,7 +103,7 @@ export type AgentHarnessFactoryContext = {
    * `recovery.inspect(sessionId).failures`, which is the only place a request
    * the provider is still waiting on stays visible after its caller has gone.
    */
-  reportOwnerFailure(sessionId: string, error: unknown): void
+  reportOwnerFailure: (sessionId: string, error: unknown) => void
 }
 
 /**

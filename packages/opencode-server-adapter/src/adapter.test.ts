@@ -420,7 +420,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
       await prompted
       await expect(adapter.getTodos!(binding())).resolves.toEqual([{ content: "Run tests", status: "pending", priority: "high" }])
       const stopping = adapter.cancelTurn!(binding(), {
-        turnId: userMessageId!,
+        turnId: userMessageId,
         assistantMessageId: "asst_1",
         signal: new AbortController().signal,
         deadlineAt: Date.now() + 5_000,

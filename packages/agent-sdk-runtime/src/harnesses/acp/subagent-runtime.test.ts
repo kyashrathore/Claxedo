@@ -77,7 +77,7 @@ test("negotiated children traverse ACP wire and isolated child transcripts", asy
       options: [{ optionId: "allow", kind: "allow_once", name: "Allow" }],
     } })
     await waitFor(() => store.listPermissions("/work").length === 1)
-    const permission = store.listPermissions("/work")[0]!
+    const permission = store.listPermissions("/work")[0]
     expect(permission.sessionID).toBe("root-local")
     await adapter.respondPermission(executionBinding("root-local", "/work"), permission.id, "allow_once")
     await waitFor(() => replies.some((reply) => JSON.stringify(reply).includes("child-permission")))

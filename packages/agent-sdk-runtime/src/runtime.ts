@@ -462,7 +462,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       recovery.retainFailure(capture, failure, finalized)
     } finally {
       router.dispose()
-      finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok === true)
+      finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok)
     }
   }
 

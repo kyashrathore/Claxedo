@@ -155,7 +155,7 @@ export function localDaemonScopePreview(
   // Sessions are the scope a caller recognizes; the turn owners above carry the
   // turn ids that name which of each session's work would be interrupted.
   const sessions = [...new Set(work.owners.flatMap((owner) =>
-    owner.kind === "turn" ? [owner.id.split(":")[2]!] : []))].sort()
+    owner.kind === "turn" ? [owner.id.split(":")[2]] : []))].sort()
   // Two terminal states that a drain cannot wait out, named apart from the
   // running count they sit inside. An unresolved retirement may still settle;
   // an unrecorded spawn never will, because no later owner can find it.

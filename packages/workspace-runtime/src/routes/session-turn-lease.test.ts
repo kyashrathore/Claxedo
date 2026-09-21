@@ -353,7 +353,7 @@ describe("durable session turn lease controller", () => {
 
       settle(contained())
       await Bun.sleep(5)
-      expect(acquisition.lease.lossResult()).toEqual(expired!)
+      expect(acquisition.lease.lossResult()).toEqual(expired)
     } finally {
       await acquisition.lease.release()
     }

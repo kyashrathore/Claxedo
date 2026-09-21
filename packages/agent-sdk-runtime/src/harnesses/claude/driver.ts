@@ -13,7 +13,6 @@ import {
 } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
 import { claudeCommandGrant, hasClaudeCommandGrant, withClaudeCommandGrant } from "./permission-state"
-import { spawn } from "child_process"
 import {
   query,
   type CanUseTool,
@@ -26,8 +25,6 @@ import {
   type SDKUserMessage,
   type SessionStore,
   type SessionStoreEntry,
-  type SpawnOptions,
-  type SpawnedProcess,
   type SdkPluginConfig,
 } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOption, AgentQuestionAnswer } from "../../index"
@@ -72,12 +69,7 @@ import {
   retirementBudgetsWithin,
 } from "../shared/cancellation-facts"
 import {
-  readCreationIdentity,
-  retire,
-  volatileLaunchOwnership,
   type LaunchOwnershipStore,
-  type RetirementBudgets,
-  type RetirementResult,
 } from "../../launch"
 import {
   CLAUDE_DENY_FLOOR,
@@ -86,9 +78,6 @@ import {
 } from "../shared/permission-modes"
 import { isClaudeSdkPermissionMode } from "./permission-mode-parity"
 import {
-  observeAgentProcess,
-  type AgentProcessObserver,
-  type AgentProcessObserverHandle,
 } from "../../process-observer"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"

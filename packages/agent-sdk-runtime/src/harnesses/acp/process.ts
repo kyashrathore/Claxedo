@@ -212,7 +212,7 @@ export class ACPProcess {
     const writer = this.transport.stream.writable.getWriter()
 
     this.connection = client({ name: "claxedo-workspace-runtime" })
-      .onRequest(methods.client.elicitation.create, async ({ params, signal, requestId }) => {
+      .onRequest(methods.client.elicitation.create, async ({ params, signal }) => {
         const scope = asRecord(params)
         const session = typeof scope?.sessionId === "string" ? scope.sessionId
           : typeof scope?.requestId === "string" || typeof scope?.requestId === "number" ? this.outboundSessionRequests.get(scope.requestId) : undefined

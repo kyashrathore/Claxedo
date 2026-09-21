@@ -8,7 +8,7 @@ import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop } from "../shared/goal-stop-order"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
 import { asRecord } from "@claxedo/helpers/guards"
-import { controlRequestDeadline, goalStopDeadline, modelRequestDeadline } from "../shared/request-deadline"
+import { controlRequestDeadline, goalStopDeadline } from "../shared/request-deadline"
 import {
   errorMessage,
   text,

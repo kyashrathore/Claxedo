@@ -164,7 +164,7 @@ describe("ACPProcess.prompt quiet countdown", () => {
     await proc.prompt("other-session", input, (u) => second.push(u.sessionUpdate), directory)
     expect(first).toEqual([])
     expect(second).toEqual(["agent_message_chunk"])
-    const permission = [...proc.pendingPermissions.keys()][0]!
+    const permission = [...proc.pendingPermissions.keys()][0]
     proc.respondPermission(permission, { outcome: { outcome: "selected", optionId: "once" } })
     await turn
     expect(first).toEqual(["agent_message_chunk"])

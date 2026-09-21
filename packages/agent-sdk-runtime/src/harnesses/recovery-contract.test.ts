@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AdapterCancelOutcome, SupportsCancel } from "../adapter-contract"
+import type {  SupportsCancel } from "../adapter-contract"
 import type { CleanupFact } from "@claxedo/agent-runtime-contract"
 import { AcpHarnessAdapter } from "./acp/index"
 import { cancelAcpTurn } from "./acp/cancellation"
@@ -444,7 +444,7 @@ describe("per-harness recovery capability matrix", () => {
     // callback belonging to a turn that is over.
     expect(decided).toBeUndefined()
     expect(failures).toHaveLength(1)
-    expect(failures[0]!.sessionId).toBe(session)
+    expect(failures[0].sessionId).toBe(session)
   })
 
   test("an interaction the store could not project reaches the session's owner, not only its caller", () => {
@@ -527,8 +527,8 @@ describe("per-harness recovery capability matrix", () => {
 
     const failures = runtime.recovery.inspect(created.id).failures
     expect(failures).toHaveLength(1)
-    expect(failures[0]!.message).toContain("the approval could not be persisted")
-    expect(failures[0]!.target).toMatchObject({ scope: "session", sessionId: created.id })
+    expect(failures[0].message).toContain("the approval could not be persisted")
+    expect(failures[0].target).toMatchObject({ scope: "session", sessionId: created.id })
     // Another session's inspection is not this one's failure log.
     expect(runtime.recovery.inspect("ses_other").failures).toEqual([])
   })

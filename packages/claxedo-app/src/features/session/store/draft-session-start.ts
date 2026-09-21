@@ -86,7 +86,7 @@ export function createDraftSessionStart(input: {
     pending: () => !!reference(),
     binding: () => status.data?.status === "starting" && status.data.binding.operationId === reference()?.operationId ? reference() : undefined,
     error: () => (failure()?.draftId === draftId() ? failure()?.message : undefined) ?? (reference() && status.error instanceof Error ? status.error.message : undefined),
-    update(updatedDraftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") {
+    update: (updatedDraftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") => {
       // The callback carries the original draft, so a late event cannot attach
       // one draft's question to the currently displayed draft.
       if (binding) liveCreations.add(updatedDraftId)

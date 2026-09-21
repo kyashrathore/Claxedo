@@ -3518,7 +3518,7 @@ void it("two store handles on one root cannot both create one caller's request",
   assert.deepEqual(first.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" }), { created: true })
   const again = second.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
   assert.equal(again.created, false)
-  assert.equal(again.created === false ? again.existing.operationId : undefined, "op-1")
+  assert.equal(!again.created ? again.existing.operationId : undefined, "op-1")
   assert.equal(second.readRecoveryOperation("op-2", { callerId: "caller-a" }), undefined)
   // A different caller reusing the same request id owns its own operation.
   assert.deepEqual(second.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" }), { created: true })
@@ -3583,7 +3583,7 @@ void it("the recovery migration snapshots an existing store before it writes the
 
   const backups = fs.readdirSync(root).filter((name) => name.endsWith(".bak"))
   assert.equal(backups.length, 1)
-  assert.ok(fs.statSync(path.join(root, backups[0]!)).size > 0)
+  assert.ok(fs.statSync(path.join(root, backups[0])).size > 0)
   // An already-migrated store takes no further snapshots.
   new RuntimeStore(root).close()
   assert.equal(fs.readdirSync(root).filter((name) => name.endsWith(".bak")).length, 1)
@@ -3649,7 +3649,7 @@ void it("an update replaces the stored operation without creating a second recei
   assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state, "running")
   // The same request id still joins the one receipt rather than reopening it.
   const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
-  assert.equal(again.created === false ? again.existing.state : undefined, "running")
+  assert.equal(!again.created ? again.existing.state : undefined, "running")
   store.close()
 })
 

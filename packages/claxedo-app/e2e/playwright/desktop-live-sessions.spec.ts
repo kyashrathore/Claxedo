@@ -219,7 +219,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
             requestId: `desktop-live-cleanup:${randomUUID()}`,
             action: "cancel_turn",
             target,
-            scopeRevision: String(target.ownerGeneration ?? ""),
+            scopeRevision: target.ownerGeneration,
             attempt: 1,
           }),
         })

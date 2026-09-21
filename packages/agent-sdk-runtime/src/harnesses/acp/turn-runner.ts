@@ -110,7 +110,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       store: this.store, bindSession: (binding) => this.store.bindSession({ ...binding, ownerKey }),
       publish: (payload) => this.options.eventHub?.publishGlobal({ directory, payload }), publishRuntime: this.options.eventHub?.publishRuntime })
     sessions.set(aid, runtime)
-    proc.listenSubagents(aid, runtime.receive, runtime.disconnect)
+    proc.listenSubagents(aid, (notification) => runtime.receive(notification), () => runtime.disconnect())
     return runtime
   }
   protected bindCommandUpdates(sessionId: string, agentSessionId: string, directory: string, proc: ACPProcess) {

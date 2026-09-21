@@ -223,7 +223,7 @@ describe("recovery over the wire", () => {
     const answered = await sent.client.session.recovery.submit({ sessionID: "ses_1", request })
 
     expect(answered.data).toEqual(outcome)
-    const call = sent.calls[0]!
+    const call = sent.calls[0]
     expect(call.method).toBe("POST")
     expect(call.url).toBe("https://runtime.example/session/ses_1/recovery?directory=%2Frepo&workspace=ws-1")
     expect(call.headers.get("content-type")).toBe("application/json")
@@ -326,8 +326,8 @@ describe("recovery over the wire", () => {
 
     const answered = await sent.client.session.recovery.read({ sessionID: "ses_1", operationId: "op/1" })
 
-    expect(sent.calls[0]!.method).toBe("GET")
-    expect(new URL(sent.calls[0]!.url).pathname).toBe("/session/ses_1/recovery/operations/op%2F1")
+    expect(sent.calls[0].method).toBe("GET")
+    expect(new URL(sent.calls[0].url).pathname).toBe("/session/ses_1/recovery/operations/op%2F1")
     expect(answered.data).toEqual(outcome)
   })
 
@@ -345,7 +345,7 @@ describe("recovery over the wire", () => {
 
     const answered = await sent.client.session.recovery.inspect({ sessionID: "ses_1" })
 
-    expect(new URL(sent.calls[0]!.url).pathname).toBe("/session/ses_1/recovery")
+    expect(new URL(sent.calls[0].url).pathname).toBe("/session/ses_1/recovery")
     expect(answered.data).toEqual(inspection)
   })
 })

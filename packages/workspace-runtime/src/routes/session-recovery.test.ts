@@ -178,8 +178,8 @@ describe("session recovery routes", () => {
     // The identity the owner fences on survived JSON, the route and the
     // parser: anything less and a stale request could not be told from a live
     // one on the other side.
-    expect(recoveryTargetsMatch(owner.submitted[0]!.request.target, TARGET)).toBe(true)
-    expect(owner.submitted[0]!.request).toEqual(submitRequest())
+    expect(recoveryTargetsMatch(owner.submitted[0].request.target, TARGET)).toBe(true)
+    expect(owner.submitted[0].request).toEqual(submitRequest())
   })
 
   test("the caller identity comes from the request's verified claims, not its body", async () => {
@@ -187,9 +187,9 @@ describe("session recovery routes", () => {
     const response = await post(routes(owner.owner), { ...submitRequest(), callerId: "someone-else" })
 
     expect(response.status).toBe(200)
-    expect(owner.submitted[0]!.callerId).toBe("provenance:loopback-direct")
-    expect(owner.submitted[0]!.authority).toBe("session")
-    expect(owner.submitted[0]!.request).not.toHaveProperty("callerId")
+    expect(owner.submitted[0].callerId).toBe("provenance:loopback-direct")
+    expect(owner.submitted[0].authority).toBe("session")
+    expect(owner.submitted[0].request).not.toHaveProperty("callerId")
   })
 
   test("a refusal keeps its kind and reaches the caller under the status that classifies it", async () => {
@@ -436,9 +436,9 @@ describe("containing a turn whose lease was revoked", () => {
     })
 
     expect(running.seen).toHaveLength(1)
-    expect(running.seen[0]!.target).toEqual(TARGET)
-    expect(running.seen[0]!.action).toBe("cancel_turn")
-    expect(running.seen[0]!.scopeRevision).toBe(TARGET.ownerGeneration)
+    expect(running.seen[0].target).toEqual(TARGET)
+    expect(running.seen[0].action).toBe("cancel_turn")
+    expect(running.seen[0].scopeRevision).toBe(TARGET.ownerGeneration)
     // The replacement is untouched: the owner refused A's request rather than
     // cancelling B under it.
     expect(outcome).toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict", current: replacement } })
@@ -560,7 +560,7 @@ describe("containing a turn whose lease was revoked", () => {
       // The lease is per-request; the runtime is what a later inspection asks.
       const inspected = admitted.owner.inspect(SESSION)
       expect(inspected.operations.map((row) => row.action)).toEqual(["cancel_turn"])
-      expect(inspected.operations[0]!.target).toEqual(TARGET)
+      expect(inspected.operations[0].target).toEqual(TARGET)
     } finally {
       await acquired.lease.release()
     }

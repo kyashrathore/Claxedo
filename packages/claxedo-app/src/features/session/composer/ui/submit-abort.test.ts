@@ -346,11 +346,11 @@ describe("which turn Stop names", () => {
     release()
     await Promise.all([first, second])
 
-    expect(double.requests[0]!.requestId).toBe(double.requests[1]!.requestId)
+    expect(double.requests[0].requestId).toBe(double.requests[1].requestId)
 
     holding = false
     await abort()
-    expect(double.requests[2]!.requestId).not.toBe(double.requests[0]!.requestId)
+    expect(double.requests[2].requestId).not.toBe(double.requests[0].requestId)
   })
 })
 

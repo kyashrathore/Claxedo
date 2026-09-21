@@ -25,7 +25,6 @@ import {
   requireAgentExecutionBinding,
   type AgentExecutionBinding,
   type AgentSessionStartBinding,
-  type RecoveryErrorCode,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type {
@@ -43,14 +42,13 @@ import type {
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
-  AgentGoalMutationResult,
   AgentGoalResource,
   AgentHarnessAdapterProcessOptions,
   AgentConfigOptions,
   AgentPermissionModeState,
   AgentSessionCreateOptions,
 } from "../../adapter-contract"
-import { goalCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
+import {  type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { acpRuntimeHealth } from "./health"
 import {
   acpConfigOptions,
@@ -64,7 +62,7 @@ import { permissionOptionPreference } from "./permission-options"
 import { AcpElicitationInteractions, hasLiveAcpElicitation } from "./elicitation"
 import { questionReplied } from "../../compat-events"
 import { answerAcpPermission } from "./permission-grants"
-import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
+import {  commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
 import { cancelAcpTurn } from "./cancellation"
 import { createAcpGoals, type AcpGoals } from "./goals"
 import { listCommands } from "../../command-discovery"
@@ -81,7 +79,6 @@ import {
 import { acpHarnessCapabilities, acpSessionConfig } from "./capabilities"
 import {
   envFromConfig,
-  errorMessage,
   mergeAcpEnv,
   probeTimeoutMs,
   sameAcpEnv,
@@ -89,8 +86,6 @@ import {
 } from "./helpers"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
-import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
 import { acceptedSessionConfig } from "../shared/accepted-session-mutation"
 
 const log = Log.create({ service: "acp-adapter" })

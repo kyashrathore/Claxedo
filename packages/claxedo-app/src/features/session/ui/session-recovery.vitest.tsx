@@ -230,10 +230,10 @@ test("every action is reachable by keyboard, and one running action locks the re
   }
 
   fireEvent.click(view.getByRole("button", { name: "session.recovery.panel.reconcile" }))
-  await waitFor(() => expect((view.getAllByRole("button") as HTMLButtonElement[]).every((button) => button.disabled)).toBe(true))
+  await waitFor(() => expect(view.getAllByRole("button").every((button) => button.disabled)).toBe(true))
 
   answer({ kind: "operation", operation: operation() })
-  await waitFor(() => expect((view.getAllByRole("button") as HTMLButtonElement[]).some((button) => !button.disabled)).toBe(true))
+  await waitFor(() => expect(view.getAllByRole("button").some((button) => !button.disabled)).toBe(true))
 })
 
 test("the panel announces the result of an action politely", async () => {

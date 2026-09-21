@@ -177,7 +177,7 @@ describe("the daemon recovery bridge, forwarding to a live daemon", () => {
     const seen: Array<{ path: string; body: unknown }> = []
     const bridge = daemonRecoveryBridge({
       daemon: () => async (path, init) => {
-        seen.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+        seen.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined })
         return answer(path, init)
       },
       unresolved: () => undefined,

@@ -8,7 +8,7 @@ import type {
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive } from "./session-store"
-import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
+import {  dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
 import { createActiveConversationSnapshot, registeredConversationSnapshot, registeredConversationUserMessages } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
@@ -48,7 +48,6 @@ import { isWorkspaceReady } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from "@/platform/runtime/agent/session-projection"
 import { directorySessionCacheOwnsSession, removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
-import { assistantMessageIdForUserMessage } from "../data/session-types"
 import { createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, latestTurnWindowNeedsTailSync, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
@@ -81,7 +80,6 @@ import {
 } from "./session-history-activation"
 import type { RelayHostKind } from "@/platform/runtime/placement-wire"
 import {
-  ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
   FIRST_FOLD_SECONDARY_HYDRATION_EARLIEST_MS,
   scheduleActivationWork,
   TURN_SETTLEMENT_CATCH_UP_EARLIEST_MS,

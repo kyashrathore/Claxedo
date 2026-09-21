@@ -77,7 +77,7 @@ test("a Goal terminal the store refuses still leaves the session admissible", ()
   expect(lifecycle.enter("s1")).not.toBeNull()
   // And the refusal is not swallowed: it belongs to the session's owner.
   expect(failures).toHaveLength(1)
-  expect(failures[0]!.sessionId).toBe("s1")
+  expect(failures[0].sessionId).toBe("s1")
 })
 
 test("a Goal projection whose turn could not start does not keep the session's lease", () => {

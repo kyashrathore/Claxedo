@@ -376,7 +376,7 @@ describe("SqliteRuntimeStore", () => {
     expect(store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })).toEqual({ created: true })
     const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
     expect(again.created).toBe(false)
-    expect(again.created === false && again.existing.operationId).toBe("op-1")
+    expect(!again.created && again.existing.operationId).toBe("op-1")
     expect(store.readRecoveryOperation("op-2", { callerId: "caller-a" })).toBeUndefined()
     expect(store.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" })).toEqual({ created: true })
     expect(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId).sort()).toEqual(["op-1", "op-3"])
@@ -419,7 +419,7 @@ describe("SqliteRuntimeStore", () => {
     expect(reopened.readTurnAuthority("s1")).toBeUndefined()
     expect(reopened.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state).toBe("running")
     const again = reopened.recordRecoveryOperation(recoveryOperation({ operationId: "op-9" }), { callerId: "caller-a" })
-    expect(again.created === false && again.existing.state).toBe("running")
+    expect(!again.created && again.existing.state).toBe("running")
     reopened.close()
   })
 
@@ -429,7 +429,7 @@ describe("SqliteRuntimeStore", () => {
     store.bindSession({ sessionId: "s1", directory: "/repo", agentSessionId: "native_1" })
     const leaseId = store.acquireTurnLease("s1")
     expect(leaseId).toBeDefined()
-    expect(store.readTurnAuthority("s1")?.leaseId).toBe(leaseId!)
+    expect(store.readTurnAuthority("s1")?.leaseId).toBe(leaseId)
     store.startTurn({
       sessionId: "s1",
       agentSessionId: "native_1",

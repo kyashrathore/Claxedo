@@ -1453,7 +1453,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       return blocker("cancel_threw", { ...(target ? { turnId: target.turnId } : {}), error: String(error) })
     }
     if (!await withinDeadline(turn.done, deadlineAt)) {
-      return blocker("turn_scope_never_closed", { ...(target ? { turnId: target.turnId } : {}) })
+      return blocker("turn_scope_never_closed", (target ? { turnId: target.turnId } : {}))
     }
     return { sessionId: turn.sessionId, drained: true, ...(target ? { turnId: target.turnId } : {}) }
   }

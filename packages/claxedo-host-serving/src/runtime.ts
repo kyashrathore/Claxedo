@@ -436,7 +436,7 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
         outcome.status === "fulfilled"
           ? outcome.value
           : {
-            workspaceId: pending[index]!.workspaceId,
+            workspaceId: pending[index].workspaceId,
             state: "retire_failed",
             attempt: 0,
             timedOut: false,

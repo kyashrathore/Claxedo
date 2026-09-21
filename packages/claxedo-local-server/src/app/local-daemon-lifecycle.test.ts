@@ -899,8 +899,8 @@ describe("what the inventory names", () => {
       owners: [{ workspaceId: "ws_a", generation: "mount-2", state: "serving", attempt: 0, turns: [] }],
     })
 
-    expect(first[0]!.generation).toBe("mount-1")
-    expect(remounted[0]!.generation).toBe("mount-2")
+    expect(first[0].generation).toBe("mount-1")
+    expect(remounted[0].generation).toBe("mount-2")
   })
 })
 
@@ -955,7 +955,7 @@ describe("startup launch reconciliation", () => {
       ownerGeneration: "mount-0",
       role: "harness",
       execution: "none",
-      because: reported[0]!.because,
+      because: reported[0].because,
     }])
     lifecycle.stop()
   })

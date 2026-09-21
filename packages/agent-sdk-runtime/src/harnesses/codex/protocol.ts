@@ -7,7 +7,6 @@ import {
   errorMessage,
   text,
   type JsonRecord,
-  type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { createTurnStop, type TurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline } from "../shared/request-deadline"

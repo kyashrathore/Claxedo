@@ -7,7 +7,7 @@
 // frame stub that carries the editor's real `data-component`/`role`, so an
 // assertion that no prompt exists is an assertion about the region's branch
 // rather than about a missing mock.
-import { createSignal, type JSX } from "solid-js"
+import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"

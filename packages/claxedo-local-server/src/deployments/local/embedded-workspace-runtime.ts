@@ -765,7 +765,7 @@ export async function shutdownEmbeddedWorkspaceRuntimes(): Promise<{ ok: boolean
   const results = settled.map((outcome, index): EmbeddedRetirementResult =>
     outcome.status === "fulfilled"
       ? outcome.value
-      : { workspaceId: pending[index]!.workspaceId, state: "retire_failed", attempt: 0, error: String(outcome.reason) })
+      : { workspaceId: pending[index].workspaceId, state: "retire_failed", attempt: 0, error: String(outcome.reason) })
   return { ok: results.every((result) => result.state === "retired"), results }
 }
 

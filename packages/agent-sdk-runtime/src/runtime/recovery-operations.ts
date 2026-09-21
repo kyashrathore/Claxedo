@@ -157,7 +157,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
     }
   }
 
-  const update = (tracked: TrackedOperation, next: Partial<RecoveryOperation>, callerId: string) => {
+  const update = (tracked: TrackedOperation, next: Partial<RecoveryOperation>, _callerId: string) => {
     tracked.operation = { ...tracked.operation, ...next, updatedAt: now() }
     try {
       store.updateRecoveryOperation(tracked.operation)

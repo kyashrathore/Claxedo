@@ -21,7 +21,7 @@ async function occupy(detached: boolean) {
   )
   children.push(child)
   const port = Number(await new Promise<string>((resolve) => {
-    child.stdout!.once("data", (chunk: Buffer) => resolve(chunk.toString().trim()))
+    child.stdout.once("data", (chunk: Buffer) => resolve(chunk.toString().trim()))
   }))
   return { child, port }
 }

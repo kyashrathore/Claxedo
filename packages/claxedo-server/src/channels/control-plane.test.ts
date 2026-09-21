@@ -169,7 +169,7 @@ describe("a channel Stop", () => {
 
     expect(result).toEqual({ kind: "outcome", outcome: { kind: "operation", operation: operation("needs_action") } })
     expect(runtime.sent.map((call) => `${call.method} ${call.resource}`)).toEqual(["GET recovery", "POST recovery"])
-    const submitted = JSON.parse(runtime.sent[1]!.body!) as Record<string, unknown>
+    const submitted = JSON.parse(runtime.sent[1].body!) as Record<string, unknown>
     expect(submitted).toMatchObject({ action: "cancel_turn", target: TARGET, scopeRevision: "lease_1", attempt: 1 })
     expect(String(submitted.requestId)).toMatch(/^channel-stop:/)
   })

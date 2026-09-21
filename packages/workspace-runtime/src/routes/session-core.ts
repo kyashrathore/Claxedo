@@ -9,7 +9,6 @@ import type {
   AgentQuestion,
   AgentRuntime,
   AgentRuntimeRecovery,
-  AgentRuntimeRecoveryInspection,
   AgentSession,
   RuntimeDirectory,
   SessionConfig,
@@ -1529,7 +1528,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
       if (!runtime) return recoveryRefused(c, noRecoveryOwner(sessionId))
-      return c.json<AgentRuntimeRecoveryInspection>(runtime.inspect(sessionId, await opts.resolveDirectory(c, { sessionId })))
+      return c.json(runtime.inspect(sessionId, await opts.resolveDirectory(c, { sessionId })))
     })
     .get("/session/:id/recovery/operations/:operationId", async (c) => {
       const sessionId = c.req.param("id")

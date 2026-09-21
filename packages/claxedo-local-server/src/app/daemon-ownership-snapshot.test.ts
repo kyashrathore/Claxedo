@@ -81,7 +81,7 @@ describe("the daemon ownership snapshot", () => {
       "generation", "machineId", "owners", "pid", "residencyPins", "revision", "writtenAt",
     ])
     const [row] = written.owners as Array<Record<string, unknown>>
-    expect(Object.keys(row!).sort()).toEqual(["generation", "id", "kind", "pins", "state"])
+    expect(Object.keys(row).sort()).toEqual(["generation", "id", "kind", "pins", "state"])
   })
 
   test("republishes on a transition and no more than once every five seconds otherwise", () => {

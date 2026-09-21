@@ -8,7 +8,7 @@ import {
   type SdkModelEntry,
 } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
-import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
+import { controlRequestDeadline } from "../shared/request-deadline"
 import { text } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"
 import { codexAppServerModel } from "./protocol"

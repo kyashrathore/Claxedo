@@ -52,7 +52,7 @@ export class SessionQuestionInteractions<T extends { sessionId: string }> {
 
   settle(id: string, answers: AgentQuestionAnswer[] | undefined, resolve: (pending: T) => void): AgentInteractionResult | undefined {
     const pending = this.pending.get(id)
-    if (!pending) return
+    if (!pending) return undefined
     const event = this.commit(pending, answers !== undefined
       ? questionReplied(pending.sessionId, id, answers)
       : questionRejected(pending.sessionId, id))

@@ -1135,7 +1135,7 @@ describe("stop without proof of exit", () => {
 
       expect(stops).toHaveLength(1)
       expect(stops[0]).toEqual({ type: "process.stopped", directory: real(directory), configId: "proc_held" })
-      expect("exitCode" in stops[0]!).toBe(false)
+      expect("exitCode" in stops[0]).toBe(false)
     } finally {
       unsubscribe()
       await (await import("./manager")).dispose(directory).catch(() => undefined)

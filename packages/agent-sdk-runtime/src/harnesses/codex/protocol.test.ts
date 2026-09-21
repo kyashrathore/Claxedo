@@ -102,8 +102,8 @@ test("every inventory read carries its own budget, so a paged stop cannot expire
       await new Promise((resolve) => setTimeout(resolve, PER_CALL_MS))
       if (method === "thread/backgroundTerminals/terminate") { terminated = true; return {} }
       if (method !== "thread/backgroundTerminals/list") return {}
-      const cursor = String((params as { cursor?: string }).cursor ?? "")
-      const page = pages[cursor]!
+      const cursor = (params as { cursor?: string }).cursor ?? ""
+      const page = pages[cursor]
       return terminated ? { data: [], nextCursor: null } : page
     },
   } as unknown as Pick<CodexAppServerProcess, "request">
@@ -118,5 +118,5 @@ test("every inventory read carries its own budget, so a paged stop cannot expire
   // Each read is budgeted from when it starts, so later ones end later. A
   // single instant captured up front would give every call the same deadline.
   expect(new Set(reads.map((read) => read.deadlineAt)).size).toBeGreaterThan(1)
-  expect(reads.at(-1)!.deadlineAt).toBeGreaterThan(reads[0]!.deadlineAt)
+  expect(reads.at(-1)!.deadlineAt).toBeGreaterThan(reads[0].deadlineAt)
 })

@@ -4,10 +4,9 @@ import {
   type AgentExecutionBinding,
   type HarnessInstructionChannel,
 } from "@claxedo/agent-runtime-contract"
-import { type RawHarnessEvent, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import { type RawHarnessEvent, type SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { createSdkRuntimeGoals, type SdkRuntimeGoals } from "./sdk-runtime-goals"
-import { createNativeGoalResource } from "./native-goal-resource"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -34,7 +33,6 @@ import type {
   AdapterCancelOutcome,
   AgentConfigOptions,
   AgentGoalResource,
-  AgentGoalMutationResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,

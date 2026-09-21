@@ -33,7 +33,6 @@ import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./tit
 import type { SessionTitleRequest } from "../../title-generation"
 import { cleanupFromRetirement, createTurnStop, createTurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
-import type { RequestDeadline } from "../../launch"
 import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
 
 export type PiDriverOptions = {
