@@ -9,7 +9,7 @@ import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlP
 import { BEAT_INTERVAL_MS, servingCredential, transientBootstrapFailure, withBootstrapRetry, type HostDeps } from "../connect/host"
 import {
   desktopDaemonDiscoveryFiles,
-  liveDesktopDaemon,
+  desktopDaemonState,
   parseDesktopDaemonDiscovery,
   verifyDesktopDaemon,
   type DesktopDaemonDiscovery,
@@ -43,24 +43,36 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
       if (request.headers.get("authorization") !== `Bearer ${identity.token}`) {
         return Response.json({ error: { code: "daemon_identity_unauthorized" } }, { status: 401 })
       }
-      return Response.json({ service: "claxedo-local-daemon", protocol: 1, generation: identity.generation, pid: identity.pid })
+      return Response.json({ service: "claxedo-local-daemon", protocol: 2, generation: identity.generation, pid: identity.pid })
     },
   })
   const port = server.port!
   return {
     port,
     requests,
-    record: (overrides: Partial<{ pid: number; port: number; token: string; generation: string }> = {}) =>
-      JSON.stringify({
+    record: (overrides: Partial<{ pid: number; port: number; token: string; generation: string }> = {}) => {
+      const pid = overrides.pid ?? identity.pid
+      return JSON.stringify({
         service: "claxedo-local-daemon",
-        protocol: 1,
+        protocol: 2,
         generation: identity.generation,
         token: identity.token,
         pid: identity.pid,
         port,
         startedAt: "now",
+        // A creation time no process on this machine can have, so the identity
+        // check answers "not the recorded launch" for whatever holds the pid.
+        identity: {
+          pid,
+          processGroupId: pid,
+          parentPid: 1,
+          startSecond: "Thu Jan  1 00:00:00 1970",
+          bootTime: "0",
+          source: "darwin-ps",
+        },
         ...overrides,
-      }),
+      })
+    },
     stop: () => server.stop(true),
   }
 }
@@ -153,7 +165,7 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
     controlPlaneUrl: cp.url,
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
-    desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles({}, home) }),
+    desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles({}, home) }),
   }
   return {
     home,
@@ -655,8 +667,9 @@ describe("claxedo connect", () => {
 
       // The desktop crashed and this test's own process now holds its pid: a
       // `kill(pid, 0)` guard would refuse for as long as the pid is taken, and
-      // with restarts prevented on 78 that is for ever. The daemon on the
-      // port answers as itself, not as the file's pid, so the file is stale.
+      // with restarts prevented on 78 that is for ever. The listener answers as
+      // itself rather than as the file's pid, and the recorded creation identity
+      // does not match whatever holds that pid now, so the file is stale.
       await fs.writeFile(discovery, daemon.record({ pid: process.pid }))
       const recycled = connect(["--token-file", file], h.deps)
       await until(() => h.cp.beats().length >= 1, "first beat")
@@ -793,9 +806,9 @@ describe("claxedo connect", () => {
 })
 
 describe("desktop daemon discovery", () => {
-  const record: DesktopDaemonDiscovery = { pid: 7, port: 8, token: "t", generation: "g", protocol: 1 }
+  const record: DesktopDaemonDiscovery = { pid: 7, port: 8, token: "t", generation: "g", protocol: 2 }
   const text = (overrides: Record<string, unknown> = {}) =>
-    JSON.stringify({ service: "claxedo-local-daemon", protocol: 1, generation: "g", token: "t", pid: 7, port: 8, startedAt: "now", ...overrides })
+    JSON.stringify({ service: "claxedo-local-daemon", protocol: 2, generation: "g", token: "t", pid: 7, port: 8, startedAt: "now", ...overrides })
 
   test("every channel's data dir is probed, CLAXEDO_DATA_DIR first", () => {
     expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "/data" }, "/home/u")).toEqual([
@@ -825,31 +838,52 @@ describe("desktop daemon discovery", () => {
     expect(parseDesktopDaemonDiscovery("{not json")).toBeUndefined()
   })
 
-  test("a missing file, an unparseable record, or a daemon that does not answer as itself is no daemon", async () => {
-    const yes = async () => true
-    const no = async () => false
-    expect(await liveDesktopDaemon({ files: ["/f"], readFile: async () => undefined, verify: yes })).toBeUndefined()
-    expect(await liveDesktopDaemon({ files: ["/f"], readFile: async () => text(), verify: no })).toBeUndefined()
-    expect(await liveDesktopDaemon({ files: ["/f"], readFile: async () => text({ token: "" }), verify: yes })).toBeUndefined()
-    expect(await liveDesktopDaemon({ files: ["/a", "/b"], readFile: async (file) => (file === "/b" ? text() : undefined), verify: yes })).toEqual({
-      pid: 7,
-      port: 8,
-      file: "/b",
+  test("only an absent record means nothing owns this machine", async () => {
+    const live = async () => "live" as const
+    const dead = async () => "unresponsive" as const
+    expect(await desktopDaemonState({ files: ["/f"], readFile: async () => undefined, verify: live }))
+      .toEqual({ state: "absent" })
+    expect(await desktopDaemonState({ files: ["/f"], readFile: async () => text({ token: "" }), verify: live }))
+      .toEqual({ state: "absent" })
+    // A daemon that does not answer still holds its data directory, so it is
+    // named rather than reported as nothing.
+    expect(await desktopDaemonState({ files: ["/f"], readFile: async () => text(), verify: dead }))
+      .toEqual({ state: "unresponsive", pid: 7, port: 8, file: "/f" })
+    expect(await desktopDaemonState({
+      files: ["/a", "/b"],
+      readFile: async (file: string) => (file === "/b" ? text() : undefined),
+      verify: live,
+    })).toEqual({ state: "live", pid: 7, port: 8, file: "/b" })
+    expect(await desktopDaemonState({ files: [path.join(os.tmpdir(), "claxedo-no-such-file", "local-daemon.json")] }))
+      .toEqual({ state: "absent" })
+  })
+
+  test("a daemon speaking another management protocol is incompatible, and is never probed", async () => {
+    let probed = 0
+    const state = await desktopDaemonState({
+      files: ["/f"],
+      readFile: async () => text({ protocol: 1 }),
+      verify: async () => {
+        probed += 1
+        return "live"
+      },
     })
-    expect(await liveDesktopDaemon({ files: [path.join(os.tmpdir(), "claxedo-no-such-file", "local-daemon.json")] })).toBeUndefined()
+
+    expect(state).toEqual({ state: "incompatible", pid: 7, port: 8, file: "/f", protocol: 1 })
+    expect(probed).toBe(0)
   })
 
   test("verification is the daemon identity route answering with the file's identity for the file's token", async () => {
     const daemon = fakeDesktopDaemon({ pid: 4242, generation: "gen-1", token: "secret" })
     try {
-      const live = { pid: 4242, port: daemon.port, token: "secret", generation: "gen-1", protocol: 1 }
-      expect(await verifyDesktopDaemon(live)).toBe(true)
-      expect(await verifyDesktopDaemon({ ...live, token: "wrong" }), "401").toBe(false)
-      expect(await verifyDesktopDaemon({ ...live, pid: process.pid }), "another process holds the pid").toBe(false)
-      expect(await verifyDesktopDaemon({ ...live, generation: "gen-0" }), "an older daemon's file").toBe(false)
-      expect(await verifyDesktopDaemon({ ...live, protocol: 2 })).toBe(false)
+      const live = { pid: 4242, port: daemon.port, token: "secret", generation: "gen-1", protocol: 2 }
+      expect(await verifyDesktopDaemon(live)).toBe("live")
+      expect(await verifyDesktopDaemon({ ...live, token: "wrong" }), "401").toBe("unresponsive")
+      expect(await verifyDesktopDaemon({ ...live, pid: process.pid }), "another process holds the pid").toBe("unresponsive")
+      expect(await verifyDesktopDaemon({ ...live, generation: "gen-0" }), "an older daemon's file").toBe("unresponsive")
+      expect(await verifyDesktopDaemon({ ...live, protocol: 3 })).toBe("unresponsive")
       await daemon.stop()
-      expect(await verifyDesktopDaemon(live), "nothing on the port").toBe(false)
+      expect(await verifyDesktopDaemon(live), "nothing on the port").toBe("unresponsive")
     } finally {
       await daemon.stop()
     }

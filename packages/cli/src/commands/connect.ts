@@ -9,7 +9,12 @@ import { config } from "../config"
 import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
 import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../connect/host"
-import { desktopDaemonDiscoveryFiles, liveDesktopDaemon, type LiveDesktopDaemon } from "../connect/desktop-daemon"
+import {
+  CLAXEDO_DAEMON_PROTOCOL,
+  desktopDaemonDiscoveryFiles,
+  desktopDaemonState,
+  type DesktopDaemonState,
+} from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { defaultServiceDeps, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 
@@ -21,8 +26,8 @@ export type ConnectDeps = {
   controlPlaneUrl: string
   displayName: string
   removeDir: (dir: string) => Promise<void>
-  /** The desktop app's local daemon on this machine, when one is alive. */
-  desktopDaemon: () => Promise<LiveDesktopDaemon | undefined>
+  /** What the desktop app's local daemon on this machine turned out to be. */
+  desktopDaemon: () => Promise<DesktopDaemonState>
 }
 
 export function defaultConnectDeps(): ConnectDeps {
@@ -35,7 +40,7 @@ export function defaultConnectDeps(): ConnectDeps {
     controlPlaneUrl: config().controlPlaneUrl,
     displayName: machineDisplayName(process.platform),
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
-    desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles(process.env, os.homedir()) }),
+    desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles(process.env, os.homedir()) }),
   }
 }
 
@@ -215,9 +220,24 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
 
     if (!args.alongsideDesktop) {
       const daemon = await deps.desktopDaemon()
-      if (daemon) {
+      // Only `absent` means nothing owns this machine. The other three each
+      // name an owner, and starting a competing one over the same data
+      // directory would make the damage worse than whatever is wrong with it.
+      if (daemon.state === "live") {
         throw new HostConnectDecisionError(
           `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}); the desktop serves this machine under its own enrollment when its remote access is on, so pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+          {},
+        )
+      }
+      if (daemon.state === "unresponsive") {
+        throw new HostConnectDecisionError(
+          `the Claxedo desktop app's daemon is published on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}) but is not answering; it still owns that data directory, so recover it from the desktop app or stop that process yourself before running \`claxedo connect\``,
+          {},
+        )
+      }
+      if (daemon.state === "incompatible") {
+        throw new HostConnectDecisionError(
+          `the Claxedo desktop app's daemon on this machine speaks management protocol ${daemon.protocol} and this CLI speaks ${CLAXEDO_DAEMON_PROTOCOL} (${daemon.file}); update both and restart the desktop app before running \`claxedo connect\``,
           {},
         )
       }

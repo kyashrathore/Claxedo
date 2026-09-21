@@ -9,7 +9,7 @@ import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/ho
 import { setHostServing, stopHostServing, hostServingState } from "@claxedo/host-serving/serving"
 import { connect, type ConnectDeps } from "../commands/connect"
 import { processAlive, statusLines } from "../commands/status"
-import { desktopDaemonDiscoveryFiles, liveDesktopDaemon } from "./desktop-daemon"
+import { desktopDaemonDiscoveryFiles, desktopDaemonState } from "./desktop-daemon"
 import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlPlane } from "./fake-control-plane.test-support"
 import { defaultHostDeps } from "./host"
 import { createFakeSystemdUserManager, provision, type FakeServiceManager } from "./machine-simulator.test-support"
@@ -121,7 +121,7 @@ async function machine(input: { linger: boolean }): Promise<Machine> {
     controlPlaneUrl: served.cp.url,
     displayName: "ip-10-0-0-12",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
-    desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles({}, home) }),
+    desktopDaemon: () => desktopDaemonState({ files: desktopDaemonDiscoveryFiles({}, home) }),
   }
   return {
     home,
@@ -410,7 +410,7 @@ async function inProcessHost() {
     controlPlaneUrl: cp.url,
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
-    desktopDaemon: async () => undefined,
+    desktopDaemon: async () => ({ state: "absent" }) as const,
   }
   let running: Promise<number> | undefined
   const stateText = () => fs.readFile(connectPaths(home).stateFile, "utf8")
