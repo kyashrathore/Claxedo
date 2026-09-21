@@ -264,7 +264,7 @@ Inbound RHT verification is configured by `relayHostAuthFromEnv()`:
 | `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` | Static PEM fallback for RHT verification when JWKS discovery is unavailable. |
 | `WORKSPACE_RUNTIME_WORKSPACE_ID` | Workspace id the runtime hosts; RHT claims and `x-workspace-id` must match it. |
 | `WORKSPACE_RUNTIME_HOST_ID` | Host id expected in the RHT. Defaults to `workspaceId()` when omitted. |
-| `WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN` | Direct host token accepted by the relay-host middleware without an RHT. This bypass is for trusted supervisor/control-plane calls only; treat it as whole-host authority and keep it off untrusted clients. |
+| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer accepted without an RHT on `GET /api/wr/health` only; every other route still needs an RHT or a management token. |
 
 Relay-issued RHT requests must include `x-forwarded-by: workspace-relay`.
 `workspace-relay` sets that marker after stripping client-supplied
@@ -524,8 +524,7 @@ contract.
 | --- | --- |
 | `WORKSPACE_RUNTIME_HOST`, *port arg* | Listening socket. Defaults to `127.0.0.1`. Non-loopback values require relay-host auth, guarded private-network exposure, or the explicit dev-unsafe opt-out below. |
 | `WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK` | Set to `1` only for self-managed runtimes behind trusted private-network controls that intentionally expose unauthenticated host routes. Reports as `private-network-dev-unsafe`. |
-| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Trusted direct token for relay-host middleware and health discovery. Not standalone config mutation auth and not whole-server auth. |
-| `WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN` | Whole-host direct token accepted by relay-host auth without an RHT. Use only for trusted supervisor/control-plane traffic. Also acts as the config token when `WORKSPACE_RUNTIME_CONFIG_TOKEN` is unset. |
+| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer for `GET /api/wr/health` discovery only. Not config mutation auth and not whole-server auth. |
 | `WORKSPACE_RUNTIME_DIRECTORY`, `WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID` | Runtime target identity. |
 | `WORKSPACE_RUNTIME_RUNNER`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |

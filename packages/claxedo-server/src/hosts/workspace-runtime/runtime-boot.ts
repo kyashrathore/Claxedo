@@ -25,7 +25,7 @@ import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
-  workspaceRuntimeDirectAuthEnv,
+  workspaceRuntimeConfigTokenEnv,
   workspaceRuntimeTargetEnv,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
 
@@ -71,8 +71,7 @@ export function claxedoWorkspaceRuntimeLaunch(input: {
         leaseId: input.leaseId,
         epoch: input.epoch,
       }),
-      ...workspaceRuntimeDirectAuthEnv({ token: input.credential.token }),
-      WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT: String(input.credential.expiresAt),
+      ...workspaceRuntimeConfigTokenEnv({ token: input.credential.token }),
     },
   }
 }

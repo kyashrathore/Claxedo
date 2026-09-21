@@ -323,11 +323,11 @@ describe("SessionAccessPolicy", () => {
   test("the control plane's own injected token is a remote caller, not the machine's user", async () => {
     const app = new Hono()
     app.use("*", createRelayHostAuthMiddleware({
-      // The direct-token branch answers before any signature is checked.
+      // The direct-grant branch answers before any signature is checked.
       key: new Uint8Array(32),
       workspaceId: "ws_1",
       hostId: "host_1",
-      trustedDirectToken: "control-plane-direct-token",
+      trustedDirectTokenForRequest: ({ token }) => token === "control-plane-direct-token",
     }))
     app.get("/provenance", (c) => c.text(sessionRequestProvenance(c)))
 

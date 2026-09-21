@@ -1858,8 +1858,8 @@ describe("workspace-supervisor", () => {
       )
       expect(call).toBeTruthy()
       expect(call[1].headers["x-workspace-runtime-management-token"]).toMatch(/^[^.]+\.[^.]+\.[^.]+$/)
-      expect(call[1].headers.Authorization).toMatch(/^Bearer [0-9a-f-]+$/)
-      expect(call[1].headers["X-Claxedo-Runtime-Config-Token"]).toMatch(/^[0-9a-f-]+$/)
+      expect(call[1].headers).not.toHaveProperty("Authorization")
+      expect(call[1].headers).not.toHaveProperty("X-Claxedo-Runtime-Config-Token")
       expect(JSON.parse(call[1].body)).toEqual({
         version: 2,
         mcp: {
@@ -1900,7 +1900,7 @@ describe("workspace-supervisor", () => {
       })
       const env = latestSandboxBootEnv("daytona")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()
-      expect(env.WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN).toBeTruthy()
+      expect(env.WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN).toBeUndefined()
       expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("lease-ws-hosted-config")
       expect(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL).toBe("https://relay.example.test/.well-known/jwks.json")
       // The signer now refuses to mint without a published public key, so the

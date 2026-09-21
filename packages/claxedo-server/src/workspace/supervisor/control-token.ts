@@ -26,12 +26,7 @@ export function verifyWorkspaceRuntimeControlToken(workspaceId: string | undefin
 }
 
 export function configTokenHeaders(token: string | undefined) {
-  return token
-    ? {
-        Authorization: `Bearer ${token}`,
-        "X-Claxedo-Runtime-Config-Token": token,
-      }
-    : undefined
+  return token ? { Authorization: `Bearer ${token}` } : undefined
 }
 
 function runtimeSupervisorHostId(state: WorkspaceRuntimeState) {

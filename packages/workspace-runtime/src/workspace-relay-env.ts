@@ -57,7 +57,6 @@ function authHeaders(env: Env) {
 
 export async function relayHostAuthFromEnv(env: Env = process.env): Promise<RelayHostAuthOptions | undefined> {
   const hostId = text(env, "WORKSPACE_RUNTIME_HOST_ID") ?? workspaceId(env)
-  const trustedDirectToken = text(env, "WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN")
   const jwksUrl = text(env, "WORKSPACE_RUNTIME_RELAY_JWKS_URL")
   const verifyPem = text(env, "WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM")
   if (jwksUrl || verifyPem) {
@@ -68,7 +67,6 @@ export async function relayHostAuthFromEnv(env: Env = process.env): Promise<Rela
       }),
       workspaceId: workspaceId(env),
       hostId,
-      trustedDirectToken,
     }
   }
   return undefined
@@ -109,7 +107,6 @@ export function hostTunnelPreOpenQueueFromEnv(env: Env = process.env) {
 
 export function configTokenFromEnv(env: Env = process.env) {
   return text(env, "WORKSPACE_RUNTIME_CONFIG_TOKEN")
-    ?? text(env, "WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN")
 }
 
 export async function managementAuthFromEnv(env: Env = process.env): Promise<WorkspaceRuntimeManagementAuth | undefined> {

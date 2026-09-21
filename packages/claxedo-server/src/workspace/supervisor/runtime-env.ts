@@ -1,6 +1,6 @@
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import {
-  workspaceRuntimeDirectAuthEnv,
+  workspaceRuntimeConfigTokenEnv,
   sandboxLeaseEnv as sandboxLeaseVariables,
   workspaceRuntimeRelayVerificationEnv,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
@@ -15,8 +15,8 @@ export function sandboxControlPlaneUrl(driverId: SandboxDriverID, serverUrl: str
   return sandboxReachableUrl(driverId, serverUrl)
 }
 
-export function runtimeDirectAuthEnv(token: string) {
-  return workspaceRuntimeDirectAuthEnv({ token })
+export function runtimeConfigTokenEnv(token: string) {
+  return workspaceRuntimeConfigTokenEnv({ token })
 }
 
 export function sandboxLeaseEnv(input: {

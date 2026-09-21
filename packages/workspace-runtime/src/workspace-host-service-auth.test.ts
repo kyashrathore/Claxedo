@@ -10,9 +10,10 @@ import {
   loadRelayHostVerificationKeyOrJwks,
   type RelayHostAuthAuditEvent,
   type RelayHostAuthContext,
+  type RelayHostAuthOptions,
 } from "./workspace-host-service-auth"
 
-async function app(input: { trustedDirectToken?: string } = {}) {
+async function app(input: { trustedDirectTokenForRequest?: RelayHostAuthOptions["trustedDirectTokenForRequest"] } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   const auditEvents: RelayHostAuthAuditEvent[] = []
@@ -20,7 +21,7 @@ async function app(input: { trustedDirectToken?: string } = {}) {
     key: key.publicKey,
     workspaceId: "ws_1",
     hostId: "host_1",
-    trustedDirectToken: input.trustedDirectToken,
+    trustedDirectTokenForRequest: input.trustedDirectTokenForRequest,
     audit: (event) => {
       auditEvents.push(event)
     },
@@ -108,8 +109,12 @@ describe("workspace host service relay auth", () => {
     })
   })
 
-  test("accepts the supervisor direct token without accepting anonymous direct calls", async () => {
-    const harness = await app({ trustedDirectToken: "direct-secret" })
+  test("a request-scoped direct grant covers only the route it names", async () => {
+    const harness = await app({
+      trustedDirectTokenForRequest: ({ token, method, path }) =>
+        token === "direct-secret" && method === "GET" && path === "/api/wr/health",
+    })
+    harness.app.post("/session", (c) => c.json({ ok: true }))
 
     const missing = await harness.app.request("http://localhost/api/wr/health", {
       headers: {
@@ -117,6 +122,30 @@ describe("workspace host service relay auth", () => {
       },
     })
     expect(missing.status).toBe(401)
+
+    const outsideGrant = await harness.app.request("http://localhost/session", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer direct-secret",
+        "x-workspace-id": "ws_1",
+      },
+    })
+    expect(outsideGrant.status).toBe(401)
+    await expect(outsideGrant.json()).resolves.toEqual({
+      error: {
+        code: "invalid_relay_token",
+        message: expect.any(String),
+      },
+    })
+    expect(harness.auditEvents).toContainEqual({
+      action: "relay_host_token.rejected",
+      result: "deny",
+      reason: "invalid_relay_token",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      path: "/session",
+      method: "POST",
+    })
 
     const res = await harness.app.request("http://localhost/api/wr/health", {
       headers: {
@@ -526,8 +555,8 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     })
   })
 
-  test("trustedDirectToken path bypasses the x-forwarded-by check", async () => {
-    const harness = await app({ trustedDirectToken: "direct-secret" })
+  test("a request-scoped direct grant bypasses the x-forwarded-by check", async () => {
+    const harness = await app({ trustedDirectTokenForRequest: ({ token }) => token === "direct-secret" })
 
     const res = await harness.app.request("http://localhost/api/wr/health", {
       headers: {

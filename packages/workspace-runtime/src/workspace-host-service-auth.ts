@@ -22,7 +22,6 @@ export type RelayHostAuthOptions = {
   key: RelayKey
   workspaceId: string
   hostId: string
-  trustedDirectToken?: string
   trustedDirectTokenForRequest?: (input: {
     token: string
     path: string
@@ -258,14 +257,11 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
     const token = bearerToken(c.req.header("authorization"))
     if (
       token
-      && (
-        (options.trustedDirectToken && token === options.trustedDirectToken)
-        || await options.trustedDirectTokenForRequest?.({
-          token,
-          path: c.req.path,
-          method: c.req.method,
-        })
-      )
+      && await options.trustedDirectTokenForRequest?.({
+        token,
+        path: c.req.path,
+        method: c.req.method,
+      })
     ) {
       await audit(options, {
         action: "direct_host_token.accepted",

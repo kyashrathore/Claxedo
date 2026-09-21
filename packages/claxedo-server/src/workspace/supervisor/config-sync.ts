@@ -34,7 +34,6 @@ export async function pushRuntimeConfig(state: WorkspaceRuntimeState, cfg?: Runt
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...configTokenHeaders(stateConfigToken(state)),
       ...await supervisorBackplaneHeaders(state),
     },
     body: JSON.stringify(cfg ?? await runtimeConfigSnapshot(state)),

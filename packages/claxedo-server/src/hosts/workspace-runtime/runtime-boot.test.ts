@@ -56,7 +56,7 @@ describe("claxedo workspace-runtime boot policy", () => {
     }
   })
   test("launches the package bin with workspace-and-epoch scoped short-lived credentials", () => {
-    expect(claxedoWorkspaceRuntimeLaunch({
+    const launch = claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",
       hostId: "host_1",
       leaseId: "lease_1",
@@ -65,7 +65,8 @@ describe("claxedo workspace-runtime boot policy", () => {
       port: 2593,
       credential: { token: "bootstrap-token", expiresAt: 20_000 },
       now: 10_000,
-    })).toEqual({
+    })
+    expect(launch).toEqual({
       command: ["workspace-runtime"],
       env: expect.objectContaining({
         WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
@@ -77,10 +78,10 @@ describe("claxedo workspace-runtime boot policy", () => {
         WORKSPACE_RUNTIME_DIRECTORY: "/workspace",
         WORKSPACE_RUNTIME_PORT: "2593",
         WORKSPACE_RUNTIME_CONFIG_TOKEN: "bootstrap-token",
-        WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "bootstrap-token",
-        WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT: "20000",
       }),
     })
+    expect(launch.env).not.toHaveProperty("WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN")
+    expect(launch.env).not.toHaveProperty("WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT")
     expect(() => claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",
       hostId: "host_1",

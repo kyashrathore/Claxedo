@@ -32,12 +32,7 @@ import { resolveWorkspaceSandboxNetworkPolicy } from "../../sandbox/network/work
 import { insertSnapshot } from "./prepared-image.sql"
 import { updateWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { projectEnv } from "@claxedo/server-core/workspace/store/index"
-import {
-  configToken,
-  configTokenHeaders,
-  stateConfigToken,
-  supervisorBackplaneHeaders,
-} from "./control-token"
+import { configToken, supervisorBackplaneHeaders } from "./control-token"
 import { pushRuntimeConfig } from "./config-sync"
 import { sandboxBrokeredSecrets } from "../../credentials/sandbox-delivery"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
@@ -55,7 +50,7 @@ import { needWorkspaceSupervisorOptions } from "./options"
 import {
   controlPlaneVerificationEnv,
   relayHostVerificationEnv,
-  runtimeDirectAuthEnv,
+  runtimeConfigTokenEnv,
   sandboxLeaseEnv,
   sandboxControlPlaneUrl,
 } from "./runtime-env"
@@ -324,7 +319,6 @@ function checkpointRuntime(state: WorkspaceRuntimeState): SandboxCheckpointRunti
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...configTokenHeaders(stateConfigToken(state)),
         ...await supervisorBackplaneHeaders(state),
       },
       body: JSON.stringify(body ?? {}),
@@ -719,7 +713,7 @@ function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriver
   return {
     ...controlPlaneVerificationEnv(controlPlaneUrl, { options }),
     ...relayHostVerificationEnv(driverId, { options }),
-    ...runtimeDirectAuthEnv(configToken(state)),
+    ...runtimeConfigTokenEnv(configToken(state)),
     WORKSPACE_RUNTIME_DISABLE_CORS: "1",
     ...(lease
       ? sandboxLeaseEnv({

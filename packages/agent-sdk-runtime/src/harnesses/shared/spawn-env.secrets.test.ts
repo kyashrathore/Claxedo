@@ -48,8 +48,7 @@ describe("harness spawn env never carries internal secrets", () => {
 
   test("the specific keys-to-the-kingdom names are denied", () => {
     for (const name of [
-      "WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN", // full runtime access on every route
-      "WORKSPACE_RUNTIME_CONFIG_TOKEN",
+      "WORKSPACE_RUNTIME_CONFIG_TOKEN", // health-route bearer for the supervisor
       "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", // mints Runtime Access Tokens
       "CLAXEDO_CLI_TOKEN_PRIVATE_KEY_PEM",
       "CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM", // mints Relay Host Tokens

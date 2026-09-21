@@ -110,11 +110,8 @@ export function workspaceRuntimeRelayVerificationEnv(input:
   }
 }
 
-export function workspaceRuntimeDirectAuthEnv(input: { token: string }): Record<string, string> {
-  return {
-    WORKSPACE_RUNTIME_CONFIG_TOKEN: input.token,
-    WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: input.token,
-  }
+export function workspaceRuntimeConfigTokenEnv(input: { token: string }): Record<string, string> {
+  return { WORKSPACE_RUNTIME_CONFIG_TOKEN: input.token }
 }
 
 export function workspaceRuntimeServiceExposureEnv(input: {

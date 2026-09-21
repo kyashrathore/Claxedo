@@ -474,6 +474,22 @@ describe("workspace runtime host route auth", () => {
       })
       expect(config.status).toBe(401)
 
+      const session = await runtime.app.request("http://localhost/session", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer cfg-secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      })
+      expect(session.status).toBe(401)
+      expect(await session.json()).toEqual({
+        error: {
+          code: "invalid_relay_token",
+          message: "Relay Host Token is invalid",
+        },
+      })
+
       const capabilities = await runtime.app.request("http://localhost/api/wr/capabilities", {
         headers: { authorization: "Bearer cfg-secret" },
       })
@@ -1223,12 +1239,12 @@ describe("workspace runtime env helpers (characterization)", () => {
     expect(workspaceRuntimeDataDir({ WORKSPACE_RUNTIME_DATA_DIR: "  " })).toContain(".workspace-runtime")
   })
 
-  test("configTokenFromEnv prefers the config token over the trusted-direct token", () => {
+  test("configTokenFromEnv reads only WORKSPACE_RUNTIME_CONFIG_TOKEN", () => {
     expect(configTokenFromEnv({
       WORKSPACE_RUNTIME_CONFIG_TOKEN: "cfg",
       WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "direct",
     })).toBe("cfg")
-    expect(configTokenFromEnv({ WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "direct" })).toBe("direct")
+    expect(configTokenFromEnv({ WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "direct" })).toBeUndefined()
     expect(configTokenFromEnv({})).toBeUndefined()
   })
 

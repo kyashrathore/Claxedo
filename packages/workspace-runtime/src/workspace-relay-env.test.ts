@@ -60,13 +60,11 @@ describe("workspace relay runtime env", () => {
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
       WORKSPACE_RUNTIME_HOST_ID: "host_1",
       WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
-      WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "direct-secret",
     } as NodeJS.ProcessEnv
 
     await expect(relayHostAuthFromEnv(env)).resolves.toMatchObject({
       workspaceId: "ws_1",
       hostId: "host_1",
-      trustedDirectToken: "direct-secret",
     })
   })
 
@@ -82,7 +80,7 @@ describe("workspace relay runtime env", () => {
     })
   })
 
-  test("uses the trusted supervisor direct token when one is configured", async () => {
+  test("a whole-host direct token in the env grants nothing", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const env = {
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
@@ -91,13 +89,19 @@ describe("workspace relay runtime env", () => {
       WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "direct-secret",
     } as NodeJS.ProcessEnv
 
-    expect(configTokenFromEnv(env)).toBe("direct-secret")
-    await expect(workspaceRelayRuntimeOptionsFromEnv(env, 3300)).resolves.toMatchObject({
-      relayHostAuth: expect.objectContaining({
-        trustedDirectToken: "direct-secret",
-      }),
-      configToken: "direct-secret",
+    expect(configTokenFromEnv(env)).toBeUndefined()
+    const options = await workspaceRelayRuntimeOptionsFromEnv(env, 3300)
+    expect(options.configToken).toBeUndefined()
+    expect(options.relayHostAuth).not.toHaveProperty("trustedDirectToken")
+    expect(options.relayHostAuth).not.toHaveProperty("trustedDirectTokenForRequest")
+
+    const app = new Hono()
+    app.use("*", createRelayHostAuthMiddleware(options.relayHostAuth!))
+    app.get("/api/wr/health", (c) => c.json({ ok: true }))
+    const res = await app.request("http://localhost/api/wr/health", {
+      headers: { authorization: "Bearer direct-secret", "x-workspace-id": "ws_1" },
     })
+    expect(res.status).toBe(401)
   })
 
   test("uses runtime host id for management auth target", async () => {
