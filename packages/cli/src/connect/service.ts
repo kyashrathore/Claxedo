@@ -78,8 +78,12 @@ export function serviceUnitPath(deps: Pick<ServiceDeps, "platform" | "homedir">)
     : path.join(deps.homedir, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
 }
 
+// systemd expands % specifiers and $ variables even inside double quotes;
+// %% and $$ are the literal forms.
+const SYSTEMD_ESCAPES: Record<string, string> = { "%": "%%", $: "$$", '"': '\\"', "\\": "\\\\" }
+
 function systemdQuote(value: string) {
-  return `"${value.replace(/["\\]/g, "\\$&")}"`
+  return `"${value.replace(/[%$"\\]/g, (c) => SYSTEMD_ESCAPES[c] ?? c)}"`
 }
 
 export type ServiceUnitOptions = { alongsideDesktop: boolean }
