@@ -330,7 +330,6 @@ describe("host workspace runtime behind the loopback listener", () => {
     // Creation must not reinterpret itself as permission to replace an owner
     // whose cleanup nothing verified.
     await expect(listener.ensure(workspace)).rejects.toThrow(HostRuntimeRetirementUnresolvedError)
-    // Asking again without retry reports the same failure; it starts nothing.
     expect(await listener.dispose(WS_E)).toMatchObject({ state: "retire_failed", attempt: 1 })
     expect(drains).toBe(1)
 

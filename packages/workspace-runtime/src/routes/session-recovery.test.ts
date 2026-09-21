@@ -7,6 +7,7 @@ import {
   type RecoveryRequest,
   type RecoveryTurnTarget,
   recoveryTargetsMatch,
+  type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeRecovery, AgentRuntimeRecoveryInspection } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
@@ -66,9 +67,9 @@ function inspection(target?: RecoveryTurnTarget): AgentRuntimeRecoveryInspection
 function adapter(): AgentHarnessAdapter {
   return {
     instructionChannel: "none",
-    getSession: async (binding) => ({ id: binding.sessionId }),
+    getSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId }),
     createSession: async () => ({ id: SESSION }),
-    updateSession: async (binding) => ({ id: binding.sessionId }),
+    updateSession: async (binding: AgentExecutionBinding) => ({ id: binding.sessionId }),
     getSessionConfig: async () => ({
       harness: { id: "codex", access: "native" },
       model: { providerID: "test", modelID: "fixture" },

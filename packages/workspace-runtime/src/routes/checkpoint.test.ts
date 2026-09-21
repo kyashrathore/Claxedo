@@ -136,7 +136,6 @@ describe("workspace checkpoint routes", () => {
       state: "blocked",
       blockers: [{ reason: "checkpoint_writes_still_active" }],
     })
-    // Admission stays gated while the freeze is unresolved.
     expect((await runtime.app.request("/api/wr/config", {
       method: "POST",
       headers: { "content-type": "application/json" },

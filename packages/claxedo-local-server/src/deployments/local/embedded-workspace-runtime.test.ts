@@ -794,7 +794,6 @@ describe("embedded workspace runtime", () => {
       // whose cleanup nothing verified.
       await expect(ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" }))
         .rejects.toThrow(EmbeddedWorkspaceRuntimeRetirementUnresolvedError)
-      // Asking again without retry reports the same failure; it starts nothing.
       expect(await releaseEmbeddedWorkspaceRuntime(ws.id)).toMatchObject({ state: "retire_failed", attempt: 1 })
       expect(teardowns).toBe(1)
 
