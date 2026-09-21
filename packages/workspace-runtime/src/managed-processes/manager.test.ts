@@ -1110,4 +1110,36 @@ describe("stop without proof of exit", () => {
       await fs.rm(directory, { recursive: true, force: true })
     }
   }, 20_000)
+
+  test("a stop nobody read an exit code for publishes the event without one", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "stop-no-code-dir-"))
+    ptyCreate = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_silent", title: input.title ?? "dev", command: "/bin/sh", args: [], cwd: input.cwd ?? directory, status: "running", pid: 1,
+    }))
+    ptyRemove = spyOn(Pty, "remove").mockImplementation(async () => ({
+      leader: "exited" as const, descendants: "unknown" as const, signals: [],
+    }))
+    ptyGet = spyOn(Pty, "get").mockImplementation(() => ({
+      id: "pty_silent", title: "dev", command: "/bin/sh", args: [], cwd: directory, status: "running", pid: 1,
+    }))
+    const stops: Array<Record<string, unknown>> = []
+    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+      if (event.type === "process.stopped") stops.push({ ...event })
+    })
+
+    try {
+      const Manager = await import("./manager")
+      await startOne(directory)
+
+      expect((await Manager.stop(directory, "proc_held")).state).toBe("stopped")
+
+      expect(stops).toHaveLength(1)
+      expect(stops[0]).toEqual({ type: "process.stopped", directory: real(directory), configId: "proc_held" })
+      expect("exitCode" in stops[0]!).toBe(false)
+    } finally {
+      unsubscribe()
+      await (await import("./manager")).dispose(directory).catch(() => undefined)
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  }, 20_000)
 })

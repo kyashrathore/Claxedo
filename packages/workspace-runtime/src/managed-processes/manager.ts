@@ -885,10 +885,15 @@ function scrub(directory: string, configId: string, nextStatus?: Process.Status)
   }
   s.processes.set(configId, next)
 
-  // An exit code nobody read is not zero. When the process never reported one,
-  // the status change is published and the exit event is not.
-  if (status === "stopped" && prev.status !== "stopped" && next.exitCode !== undefined) {
-    workspaceRuntimeBus.publish({ type: "process.stopped", directory: real(directory), configId, exitCode: next.exitCode })
+  // An exit code nobody read is not zero, so the event carries none rather
+  // than a fabricated success.
+  if (status === "stopped" && prev.status !== "stopped") {
+    workspaceRuntimeBus.publish({
+      type: "process.stopped",
+      directory: real(directory),
+      configId,
+      ...(next.exitCode === undefined ? {} : { exitCode: next.exitCode }),
+    })
   }
   if (prev.status !== status || prev.ptyId !== next.ptyId || prev.assignedPort !== next.assignedPort) {
     workspaceRuntimeBus.publish({ type: "process.status", directory: real(directory), configId, status })

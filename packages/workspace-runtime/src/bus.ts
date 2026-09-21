@@ -86,7 +86,8 @@ export type WorkspaceRuntimeEvent =
       outcome?: "done" | "error" | "cancelled"
     }
   | { type: "process.started"; directory: string; configId: string; ptyId: string }
-  | { type: "process.stopped"; directory: string; configId: string; exitCode: number }
+  /** `exitCode` is absent when the process stopped without one being read; a zero would be an invented one. */
+  | { type: "process.stopped"; directory: string; configId: string; exitCode?: number }
   | { type: "process.crashed"; directory: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
   | { type: "process.status"; directory: string; configId: string; status: string }
   | { type: "process.config.changed"; directory: string; configs: unknown[] }
