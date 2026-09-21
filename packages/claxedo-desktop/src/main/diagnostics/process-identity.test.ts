@@ -5,7 +5,7 @@ import {
   parseLinuxStartTicks,
   parseWindowsCimRow,
   probeProcessCreationIdentity,
-  sameCreationIdentity,
+  sameDiagnosticsCreationIdentity,
   windowsCpuMachinePercent,
 } from "./process-identity"
 
@@ -46,7 +46,7 @@ describe("process identity", () => {
 
   test("PID reuse and invalid decimal values fail closed", () => {
     expect(
-      sameCreationIdentity(
+      sameDiagnosticsCreationIdentity(
         { state: "available", value: "1", source: "windows-cim" },
         { state: "available", value: "2", source: "windows-cim" },
       ),

@@ -1,4 +1,5 @@
 export {
+  launchErrorText,
   readBootTime,
   readCreationIdentity,
   sameCreationIdentity,

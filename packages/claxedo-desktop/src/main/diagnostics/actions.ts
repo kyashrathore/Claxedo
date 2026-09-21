@@ -4,7 +4,7 @@ import type {
   DiagnosticsOperationResult,
   DiagnosticsOwnerDescriptor,
 } from "../../shared/diagnostics-transport"
-import { sameCreationIdentity } from "./process-identity"
+import { sameDiagnosticsCreationIdentity } from "./process-identity"
 
 /** What an owner established, and the evidence behind it when it has any. */
 export type OwnerOperationAnswer = Pick<DiagnosticsOperationResult, "result" | "retirement">
@@ -263,7 +263,7 @@ function sameIdentity(current: LocalDiagnostics.ProcessIdentity, expected: Local
     current.pid === expected.pid &&
     current.domain === expected.domain &&
     current.launchId === expected.launchId &&
-    sameCreationIdentity(current.creation, expected.creation)
+    sameDiagnosticsCreationIdentity(current.creation, expected.creation)
   )
 }
 

@@ -101,7 +101,7 @@ export function processIdentity(input: {
   }
 }
 
-export function sameCreationIdentity(
+export function sameDiagnosticsCreationIdentity(
   expected: LocalDiagnostics.CreationIdentity,
   actual: LocalDiagnostics.CreationIdentity,
 ) {

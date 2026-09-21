@@ -16,6 +16,7 @@ import {
   LaunchRefusedError,
   captureDescendants,
   captureOwnedGroup,
+  launchErrorText,
   readCreationIdentity,
   retire,
   retireDescendants,
@@ -277,7 +278,7 @@ export namespace Pty {
       session.persistenceError = undefined
     } catch (error) {
       session.persistence = "unavailable"
-      session.persistenceError = errorText(error)
+      session.persistenceError = launchErrorText(error)
       log.error("PTY retirement could not be recorded", { id, error: session.persistenceError })
       session.owner?.ownership({ state: "persistence-unavailable", message: session.persistenceError })
     }
@@ -289,10 +290,6 @@ export namespace Pty {
    */
   function retained(session: ActiveSession) {
     return session.cleanup === "unresolved" || session.persistence === "unavailable"
-  }
-
-  function errorText(error: unknown) {
-    return error instanceof Error ? error.message : String(error)
   }
 
   export const Info = z.object({
@@ -863,7 +860,7 @@ export namespace Pty {
       try {
         await ownership.recordIdentity(prepared.launchId, identity)
       } catch (error) {
-        unrecorded = errorText(error)
+        unrecorded = launchErrorText(error)
         log.error("PTY creation identity could not be recorded; this terminal is unowned", { id, pid: identity.pid, error: unrecorded })
       }
     }

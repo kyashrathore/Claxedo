@@ -48,7 +48,7 @@ export function migrateLaunchOwnership(db: SqliteDatabase) {
   // ownership carried no generation has rows no current runtime can claim, and
   // reconciliation must be free to retire them. The empty string is a
   // generation nothing will ever equal.
-  if (!tableColumns(db).includes("owner_generation")) {
+  if (!launchOwnershipColumns(db).includes("owner_generation")) {
     db.exec("ALTER TABLE launch_ownership ADD COLUMN owner_generation TEXT NOT NULL DEFAULT ''")
   }
   db.exec(`
@@ -57,7 +57,7 @@ export function migrateLaunchOwnership(db: SqliteDatabase) {
   `)
 }
 
-function tableColumns(db: SqliteDatabase) {
+function launchOwnershipColumns(db: SqliteDatabase) {
   return db.prepare<{ name: string }>("PRAGMA table_info(launch_ownership)").all().map((row) => row.name)
 }
 
@@ -195,13 +195,13 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
       ...(row.directory ? { directory: row.directory } : {}),
     },
     preparedAt: row.prepared_at,
-    ...decoded<CreationIdentity>(row.launch_id, "identity", row.identity_json, (identity) => ({ identity })),
+    ...jsonColumn<CreationIdentity>(row.launch_id, "identity", row.identity_json, (identity) => ({ identity })),
     ...(row.gate_nonce ? { gateNonce: row.gate_nonce } : {}),
     ...(row.identity_received_at ? { identityReceivedAt: row.identity_received_at } : {}),
     ...(row.activation_authorized_at ? { activationAuthorizedAt: row.activation_authorized_at } : {}),
     ...(row.activation_acknowledged_at ? { activationAcknowledgedAt: row.activation_acknowledged_at } : {}),
     ...(row.retired_at ? { retiredAt: row.retired_at } : {}),
-    ...decoded<RetirementResult>(row.launch_id, "cleanup", row.cleanup_json, (cleanup) => ({ cleanup })),
+    ...jsonColumn<RetirementResult>(row.launch_id, "cleanup", row.cleanup_json, (cleanup) => ({ cleanup })),
   }
 }
 
@@ -210,7 +210,7 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
  * nothing knows a launch happened at all, and a record missing its identity
  * reconciles as unknown, which is the honest answer.
  */
-function decoded<T>(launchId: string, field: string, raw: string | null, onto: (value: T) => object) {
+function jsonColumn<T>(launchId: string, field: string, raw: string | null, onto: (value: T) => object) {
   if (!raw) return {}
   try {
     return onto(JSON.parse(raw) as T)
