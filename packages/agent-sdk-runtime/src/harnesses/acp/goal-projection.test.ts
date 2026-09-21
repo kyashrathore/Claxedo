@@ -79,3 +79,32 @@ test("a Goal terminal the store refuses still leaves the session admissible", ()
   expect(failures).toHaveLength(1)
   expect(failures[0]!.sessionId).toBe("s1")
 })
+
+test("a Goal projection whose turn could not start does not keep the session's lease", () => {
+  const store = createMemoryRuntimeStore()
+  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "agent-1" })
+  const lifecycle = createSessionTurnLifecycle()
+  const failures: unknown[] = []
+
+  const runner = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, GoalInternals> & {
+    startGoalProjection(sessionId: string, agentSessionId: string, directory: string, proc: unknown, runtime: unknown): unknown
+  }
+  runner.store = new Proxy(store, {
+    get: (target, key, receiver) => key === "startTurn"
+      ? () => { throw new Error("journal is unavailable") }
+      : Reflect.get(target, key, receiver),
+  })
+  runner.options = { reportOwnerFailure: (_sessionId, error) => failures.push(error) }
+  runner.turnLifecycle = lifecycle
+  runner.goalProjections = new Map()
+  runner.goalRuntimes = new Map()
+
+  expect(() => runner.startGoalProjection("s1", "agent-1", "/work", { permissionPushers: new Map() }, undefined))
+    .toThrow("journal is unavailable")
+
+  // Nothing will finalize a projection that never started, so a retained lease
+  // would block the session for the life of the process.
+  expect(store.readTurnAuthority("s1")).toBeUndefined()
+  expect(lifecycle.enter("s1")).not.toBeNull()
+  expect(failures).toHaveLength(1)
+})

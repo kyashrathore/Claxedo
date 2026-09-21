@@ -11,7 +11,7 @@ import { createClaudeSdkDriver } from "./claude/driver"
 import { createCodexAppServerDriver } from "./codex/driver"
 import { createCursorSdkDriver } from "./cursor/driver"
 import { createTurnStop, createTurnStopRecord, type TurnStopRecord } from "./shared/cancellation-facts"
-import { cancelSdkRuntimeTurn } from "./shared/sdk-runtime-cancellation"
+import { cancelSdkRuntimeTurn, stoppedWaiting } from "./shared/sdk-runtime-cancellation"
 import { createSessionTurnLifecycle } from "./shared/turn-lifecycle"
 import type { ActiveTurn, SdkRuntimeDriver, SdkRuntimeDriverHost } from "./shared/sdk-runtime-driver"
 import type { ACPProcess } from "./acp/process"
@@ -19,10 +19,17 @@ import type { PermissionReplyPort } from "./acp/permission-reply"
 import type { WithInternals } from "../test-utils/class-internals"
 import { SdkRuntimeInteractions } from "./shared/sdk-runtime-interactions"
 import { createMemoryRuntimeStore } from "../stores/memory"
-import { createAgentRuntime } from "../runtime"
+import { createAgentRuntime, type AgentHarnessFactory } from "../runtime"
+import { createRuntimeEventHub } from "../runtime-event-hub"
+import { acp } from "../harness-factories/acp"
+import { claude } from "../harness-factories/claude"
+import { codex } from "../harness-factories/codex"
+import { cursor } from "../harness-factories/cursor"
+import { pi } from "../harness-factories/pi"
 import { rm } from "node:fs/promises"
 import { installFakeCodexAppServer } from "../test-utils/fake-codex-app-server"
 import { cancelAdapterTurn } from "../test-utils/cancel-turn"
+import { installFakePiRpc } from "../test-utils/fake-pi-rpc.mjs"
 import { executeTestTurn, executionBinding } from "../test-utils/execution-binding"
 import { questionAsked } from "../compat-events"
 
@@ -524,5 +531,96 @@ describe("per-harness recovery capability matrix", () => {
     expect(failures[0]!.target).toMatchObject({ scope: "session", sessionId: created.id })
     // Another session's inspection is not this one's failure log.
     expect(runtime.recovery.inspect("ses_other").failures).toEqual([])
+  })
+
+  test("the loser of a deadline race releases its timer and its listener", async () => {
+    // A listener left attached keeps this promise's closure reachable for the
+    // life of the signal; a timer left running holds the event loop open for
+    // the rest of a deadline nobody is waiting on.
+    const cleared: unknown[] = []
+    const realClear = globalThis.clearTimeout
+    globalThis.clearTimeout = ((handle: never) => { cleared.push(handle); return realClear(handle) }) as typeof clearTimeout
+    try {
+      // The abort wins: the timer it beat must be cleared.
+      const aborting = new AbortController()
+      const pending = stoppedWaiting({ signal: aborting.signal, deadlineAt: Date.now() + 60_000 })
+      aborting.abort()
+      expect(await pending).toBe(false)
+      expect(cleared).toHaveLength(1)
+
+      // The timer wins: the listener it beat must come off the signal.
+      const timing = new AbortController()
+      const removed: string[] = []
+      const realRemove = timing.signal.removeEventListener.bind(timing.signal)
+      timing.signal.removeEventListener = ((type: string, listener: never, options?: never) => {
+        removed.push(type)
+        return realRemove(type, listener, options)
+      }) as typeof timing.signal.removeEventListener
+      expect(await stoppedWaiting({ signal: timing.signal, deadlineAt: Date.now() + 5 })).toBe(false)
+      expect(removed).toEqual(["abort"])
+    } finally {
+      globalThis.clearTimeout = realClear
+    }
+  })
+
+  test("every harness factory hands its adapter the runtime's failure sink", () => {
+    // The sink stays optional on the adapter options: 34 test doubles build
+    // adapters without one. That optionality is how it came to be supplied by
+    // nothing in production, so the compositions are checked here rather than
+    // by the type.
+    const factories: Record<string, AgentHarnessFactory> = {
+      acp: acp("acp-under-test", { connection: { kind: "process", command: "test-acp" } }),
+      claude: claude(),
+      codex: codex(),
+      cursor: cursor(),
+      pi: pi({ agentDir: "/tmp/pi-agent-under-test" }),
+    }
+    const sink = () => {}
+    for (const [name, factory] of Object.entries(factories)) {
+      const adapter = factory.create({
+        store: createMemoryRuntimeStore(),
+        eventHub: createRuntimeEventHub(),
+        reportOwnerFailure: sink,
+      }) as unknown as { options?: { reportOwnerFailure?: unknown } }
+      expect(adapter.options?.reportOwnerFailure, `${name} forwards the runtime's sink`).toBe(sink)
+    }
+  })
+
+  test("Pi's real cancel path never reports cleanup above its row", async () => {
+    const fake = await installFakePiRpc()
+    const store = createMemoryRuntimeStore()
+    const adapter = new PiHarnessAdapter({ binary: fake.binary, agentDir: fake.agentDir, store })
+    try {
+      const session = await adapter.createSession(fake.directory)
+      const binding = {
+        workspaceId: "workspace",
+        directory: fake.directory,
+        sessionId: session.id,
+        upstreamSessionId: store.getAgentSessionId(session.id)!,
+        connectionId: "native:pi" as const,
+      }
+      const outcome = await cancelAdapterTurn(adapter, binding, { withinMs: 40 })
+      const pi = MATRIX.find((row) => row.harness === "pi")!
+      expect(CLEANUP_RANK[outcome.cleanup]).toBeLessThanOrEqual(CLEANUP_RANK[pi.cleanupBest])
+      // Pi enumerates nothing, so even a clean stop cannot reach clear.
+      expect(outcome.cleanup).not.toBe("verified_clear")
+    } finally {
+      await adapter.dispose()
+      await rm(fake.directory, { recursive: true, force: true })
+    }
+  })
+
+  test("Cursor and Claude own no inventory, so their real cancel paths stay below verified_clear", async () => {
+    // Driven through the shared owner every SDK-backed adapter cancels
+    // through, with each driver's own stop wiring: neither records a cleanup
+    // fact, because neither harness can enumerate what a turn started.
+    for (const harness of ["cursor", "claude"] as const) {
+      const row = MATRIX.find((item) => item.harness === harness)!
+      const session = sdkSession({ stop: async () => {} })
+      const outcome = await cancelSdkRuntimeTurn(session.lifecycle, harness, "s1", deadline())
+      expect(outcome.execution).toBe("terminal")
+      expect(CLEANUP_RANK[outcome.cleanup]).toBeLessThanOrEqual(CLEANUP_RANK[row.cleanupBest])
+      expect(outcome.cleanup).not.toBe("verified_clear")
+    }
   })
 })

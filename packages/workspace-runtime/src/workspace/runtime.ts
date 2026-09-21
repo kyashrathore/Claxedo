@@ -17,6 +17,7 @@ import {
   type HarnessConnectionDescriptor,
   type AgentProcessObserver,
   type AgentTurnOutcome,
+  type AgentRuntimeRecovery,
 } from "@claxedo/agent-sdk-runtime"
 import {
   ClaudeHarnessAdapter,
@@ -561,7 +562,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
     },
     {
       match: (runner) => runner.access === "native" && runner.id === "opencode",
-      create: ({ options }) => {
+      create: ({ options, reportOwnerFailure }) => {
         if (!options.opencodeRuntime) {
           throw new Error("Native OpenCode requires the process-owned public embedded SDK runtime")
         }
@@ -569,6 +570,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           runtime: options.opencodeRuntime,
           workspaceID: options.target?.workspaceId ?? "workspace-runtime",
           directory: options.target?.directory ?? workspaceDir(),
+          reportOwnerFailure,
         })
       },
     },
@@ -606,6 +608,9 @@ function agentProcessObserver(observer: ProcessObserver): AgentProcessObserver {
     },
   }
 }
+
+/** Bounded: an adapter reporting into a dead session must not grow without limit. */
+const UNOWNED_FAILURE_LIMIT = 20
 
 function resolveHarnessRegistry(options: WorkspaceHostOptions): WorkspaceHarnessRegistry {
   return options.harnesses ?? defaultWorkspaceHarnessRegistry()
@@ -792,6 +797,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, AdapterConfigStamp>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
   const activeSessionOwners = new Map<string, { adapter: AgentHarnessAdapter; runtime?: AgentRuntime; directory: string }>()
+  /** Adapter failures reported for sessions no runtime was serving at the time. */
+  const unownedAdapterFailures = new Map<string, Array<{ at: number; message: string }>>()
   let checkpointState: "active" | "freezing" | "frozen" = "active"
   let activeCheckpointWrites = 0
   let reconciledCheckpointEpoch: number | undefined
@@ -962,8 +969,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await configureAdapter(existing, nextRunner)
       return existing
     }
-    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), ownerGeneration, (sessionId, error) =>
-      recoveryOwner(sessionId)?.reportOwnerFailure(sessionId, error))
+    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), ownerGeneration, reportAdapterFailure)
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
     adapterRuntimeKeys.set(next, key)
@@ -1462,6 +1468,51 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
    * nothing and reads no store: a session whose store is wedged is exactly
    * the one a caller needs this for, and answering nothing is honest.
    */
+  /**
+   * An adapter's failure about one session, routed to the runtime serving it.
+   *
+   * A session with no live runtime is the case that matters: the adapter has
+   * something to say and there is nobody to say it to, which is exactly when
+   * dropping it loses the only record. It is retained here and answered by the
+   * host's own inspection instead.
+   */
+  function reportAdapterFailure(sessionId: string, error: unknown) {
+    const owner = recoveryOwner(sessionId)
+    if (owner) return owner.reportOwnerFailure(sessionId, error)
+    const held = unownedAdapterFailures.get(sessionId) ?? []
+    held.push({ at: Date.now(), message: error instanceof Error ? error.message : String(error) })
+    unownedAdapterFailures.set(sessionId, held.slice(-UNOWNED_FAILURE_LIMIT))
+  }
+
+  /**
+   * Adds the failures reported while no runtime was serving this session to
+   * what its current owner answers with. They belong to the session either
+   * way, and the owner that took over never saw them happen.
+   */
+  function withUnownedFailures(sessionId: string, owner: AgentRuntimeRecovery | undefined) {
+    const held = unownedAdapterFailures.get(sessionId) ?? []
+    if (!owner || !held.length) return owner
+    return {
+      ...owner,
+      inspect: (id: string, directory?: string) => {
+        const inspection = owner.inspect(id, directory)
+        if (id !== sessionId) return inspection
+        return {
+          ...inspection,
+          failures: [...inspection.failures, ...held.map((row) => ({
+            code: "owner_unavailable" as const,
+            origin: "WorkspaceHost",
+            target: { scope: "session" as const, workspaceId: hostOptions.target?.workspaceId ?? "", sessionId, ownerGeneration },
+            stage: "provider_query" as const,
+            executionMayContinue: true,
+            message: `A harness reported a failure for session ${sessionId} while no runtime was serving it: ${row.message}`,
+            at: row.at,
+          }))],
+        }
+      },
+    }
+  }
+
   function recoveryOwner(sessionId: string) {
     const active = activeSessionOwners.get(sessionId)?.runtime
     if (active) return active.recovery
@@ -2048,7 +2099,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
         listQuestions: (_c, directory) => listQuestions(directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
-        resolveRecoveryOwner: ({ sessionId }) => recoveryOwner(sessionId),
+        resolveRecoveryOwner: ({ sessionId }) => withUnownedFailures(sessionId, recoveryOwner(sessionId)),
         transformPromptBody: ({ sessionId, body }) => {
           const registration = sessionToolPrompts.get(sessionId)
           if (!registration) return body

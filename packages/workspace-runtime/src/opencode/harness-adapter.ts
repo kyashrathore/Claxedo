@@ -30,6 +30,8 @@ type AdapterOptions = Readonly<{
   workspaceID: string
   /** The workspace checkout every workspace-scoped SDK call is authorized against. */
   directory: string
+  /** Where a failure belonging to a session's owner is reported. */
+  reportOwnerFailure: (sessionId: string, error: unknown) => void
 }>
 
 type RuntimeDirectory = string | undefined
@@ -351,6 +353,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   private readonly streaming = new Map<string, WorkspaceScope>()
   /** The engine's own id for the assistant turn each session is producing. */
   private readonly executions = new Map<string, string>()
+  private readonly reportOwnerFailure: (sessionId: string, error: unknown) => void
 
   /**
    * The launch document `applyConfig` last accepted, and the single-flight
@@ -369,6 +372,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     this.runtime = options.runtime
     this.workspaceID = options.workspaceID
     this.directory = options.directory
+    this.reportOwnerFailure = options.reportOwnerFailure
   }
 
   /** The engine with the accepted launch document applied. Every engine operation goes through here. */

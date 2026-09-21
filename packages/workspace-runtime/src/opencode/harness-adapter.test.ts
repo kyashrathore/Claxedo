@@ -144,7 +144,7 @@ async function until(condition: () => boolean) {
 }
 
 function adapterFor(fake: ReturnType<typeof runtime>, directory: string) {
-  return new OpenCodeSdkHarnessAdapter({ runtime: fake.value, workspaceID: "ws_1", directory })
+  return new OpenCodeSdkHarnessAdapter({ runtime: fake.value, workspaceID: "ws_1", directory, reportOwnerFailure: () => {} })
 }
 
 describe("OpenCodeSdkHarnessAdapter", () => {

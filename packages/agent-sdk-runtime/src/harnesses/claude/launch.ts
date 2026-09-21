@@ -8,6 +8,7 @@ import {
   readCreationIdentity,
   retire,
   volatileLaunchOwnership,
+  type CreationIdentity,
   type LaunchOwnershipStore,
   type RetirementBudgets,
   type RetirementResult,
@@ -123,13 +124,28 @@ export type ClaudeDirectLaunch = {
  * is read after the spawn — a prepared row alone can therefore never prove the
  * process did not start, and `reconcileLaunch` says exactly that.
  */
-function ownDirectClaudeLaunch(input: {
+/**
+ * Whether an identity read after a spawn describes the process that spawn
+ * started.
+ *
+ * A pid is free for reuse the moment its previous holder exits, so this read
+ * can land on a stranger. A process that began before this launcher called
+ * spawn is one, and retiring it would signal it.
+ */
+export function identityFromSpawn(observed: CreationIdentity | undefined, spawnedAt: number) {
+  if (!observed) return undefined
+  return observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
+}
+
+export function ownDirectClaudeLaunch(input: {
   /** Only the pid is read: `SpawnedProcess` does not carry one, but every local spawn does. */
   proc: { pid?: number }
   ownership: LaunchOwnershipStore
   workspaceId: string
   sessionId?: string
   directory?: string
+  /** Injectable so the identity decision can be driven without a real process. */
+  readIdentity?: (pid: number) => Promise<CreationIdentity | undefined>
 }): ClaudeDirectLaunch {
   const spawnedAt = Date.now()
   const recorded = (async () => {
@@ -142,12 +158,8 @@ function ownDirectClaudeLaunch(input: {
         ...(input.directory ? { directory: input.directory } : {}),
       },
     })
-    // Read after the spawn, so the pid may already have been recycled. The
-    // recorded start instant is what rules that out: a process that began
-    // before this launcher called spawn is not the one it started, and
-    // retiring it would signal a stranger.
-    const observed = input.proc.pid ? await readCreationIdentity(input.proc.pid) : undefined
-    const identity = observed && observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
+    const read = input.readIdentity ?? readCreationIdentity
+    const identity = identityFromSpawn(input.proc.pid ? await read(input.proc.pid) : undefined, spawnedAt)
     if (identity) await input.ownership.recordIdentity(prepared.launchId, identity)
     return { launchId: prepared.launchId, identity }
   })()

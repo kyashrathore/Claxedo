@@ -37,6 +37,7 @@ import { executeHandoffTransaction } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
 import { createRuntimeGoalController } from "./runtime/goal-controller"
 import { createRuntimeRecovery } from "./runtime/recovery"
+import { recoveryWiring } from "./runtime/recovery-wiring"
 import type { AdmittedTurnCapture, TurnFinalization } from "./runtime/recovery"
 import { createSessionTitleOwner } from "./runtime/session-titles"
 import { createTurnAdmissions, deliverToBusySession } from "./runtime/turn-admission"
@@ -94,8 +95,9 @@ function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = input.eventHub ?? createRuntimeEventHub()
   const store = input.store
-  const reportOwnerFailure = (id: string, error: unknown) => recovery.reportSessionFailure(id, error)
-  const adapters = new Map(input.harnesses.map((factory) => [key(factory), factory.create({ store, eventHub, reportOwnerFailure })]))
+  const wiring = recoveryWiring(() => recovery)
+  const context = { store, eventHub, reportOwnerFailure: wiring.reportOwnerFailure }
+  const adapters = new Map(input.harnesses.map((factory) => [key(factory), factory.create(context)]))
   const resolvingAdapters = new Map<string, Promise<AgentHarnessAdapter>>()
   const subscribers = new Set<RuntimeSubscriber>()
   const lifecycle = createRuntimeLifecycle({ onTeardownFailure: (error) => recovery.reportOwnerFailure(error) })
@@ -707,7 +709,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
      * stay answerable while the runtime is closing, and a recovery request must
      * not be counted among the work disposal has to drain.
      */
-    recovery: { inspect: recovery.inspect, submit: recovery.submit, read: recovery.read, reportContainmentFailure: recovery.reportContainmentFailure, reportOwnerFailure } satisfies AgentRuntimeRecovery,
+    recovery: wiring.surface(),
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
