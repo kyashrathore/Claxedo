@@ -46,6 +46,18 @@ export type RecoveryFacts = {
   persistence: RecoveryFactEvidence<PersistenceFact>
 }
 
+/**
+ * The redacted ownership view a machine owner republishes beside its discovery
+ * record, and the age past which a reader must treat it as stale.
+ *
+ * Both halves live here because the writer and the reader are in different
+ * products with a boundary between them: the launcher that reads this file
+ * cannot import the daemon that writes it, and a filename agreed twice is a
+ * filename that drifts once.
+ */
+export const DAEMON_OWNERSHIP_SNAPSHOT_FILE = "local-daemon-ownership.json"
+export const DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS = 10_000
+
 export const RECOVERY_TARGET_SCOPES = ["turn", "session", "harness", "machine"] as const
 export type RecoveryTargetScope = (typeof RECOVERY_TARGET_SCOPES)[number]
 

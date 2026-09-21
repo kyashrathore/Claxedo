@@ -84,7 +84,9 @@ export function servedDuringMachineRecovery(method: string, pathname: string): b
 
 /**
  * Closes this machine to new work while a machine-scope operation is
- * outstanding. Mounted ahead of every route family, because the fence is a
+ * outstanding, or while it is still reconciling what its previous owner left.
+ * Mounted ahead of every route family — see `createLocalApp`, which registers
+ * it before the broker and the telemetry mount — because the fence is a
  * property of the machine rather than of whichever handler admits a turn.
  */
 export const DAEMON_RECOVERY_PATH = "/api/claxedo/daemon/recovery"
@@ -110,16 +112,17 @@ export function machineRecoveryFence(
 
 export type MachineIngressRefusal =
   | { kind: "operation"; operationId: string }
-  | { kind: "launch_reconciliation"; overdueAfterMs?: number }
+  | { kind: "launch_reconciliation"; overdueAfterMs?: number; pending?: string[] }
 
 function machineRecoveryMessage(hold: MachineIngressRefusal): string {
   if (hold.kind === "operation") {
     return `This machine is held by recovery operation ${hold.operationId}; new work is refused until it is resolved or released`
   }
   if (hold.overdueAfterMs !== undefined) {
+    const pending = hold.pending?.length ? ` Outstanding: ${hold.pending.join(", ")}.` : ""
     return `This machine's reconciliation of the launches its previous owner left unsettled has not answered in ${
       String(hold.overdueAfterMs)
-    }ms; new work stays refused because nothing here has established what those launches are`
+    }ms; new work stays refused because nothing here has established what those launches are.${pending}`
   }
   return "This machine is still reconciling the launches its previous owner left unsettled; new work is refused until that finishes"
 }

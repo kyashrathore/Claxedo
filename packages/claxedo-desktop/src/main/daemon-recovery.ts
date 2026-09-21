@@ -20,13 +20,19 @@ import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import {
+  DAEMON_OWNERSHIP_SNAPSHOT_FILE,
+  DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
   DEFAULT_RECOVERY_BUDGETS,
+  RecoveryContractError,
   parseRecoveryOutcome,
+  parseRecoveryRequest,
+  recoveryTargetsMatch,
   type RecoveryError,
   type RecoveryFacts,
   type RecoveryMachineTarget,
   type RecoveryOperation,
   type RecoveryOutcome,
+  type RecoveryRequest,
   type RecoveryScopePreview,
 } from "@claxedo/agent-runtime-contract"
 import {
@@ -42,8 +48,6 @@ import { nodeErrorCode } from "../shared/node-error"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 import type { DaemonFetch } from "./daemon-request"
 
-const OWNERSHIP_SNAPSHOT_STALE_MS = 10_000
-
 /** The redacted inventory the daemon republished. It is a view, never proof of exit. */
 export type DaemonOwnershipView = {
   machineId: string
@@ -53,6 +57,19 @@ export type DaemonOwnershipView = {
   writtenAt: number
   residencyPins: number
   owners: Array<{ id: string; kind: string; generation: string; state: string; pins: boolean; detail?: string }>
+}
+
+/** The shape both the daemon's route and this bridge answer an inspection with. */
+export type DaemonRecoveryInspection = {
+  machineId: string
+  generation: string
+  target: RecoveryMachineTarget
+  scopeRevision: string
+  owners: DaemonOwnershipView["owners"]
+  preview: RecoveryScopePreview
+  residencyPins: number
+  operations: RecoveryOperation[]
+  receipt: "durable" | "volatile"
 }
 
 export type DaemonRecoveryResult = {
@@ -65,7 +82,7 @@ export type DaemonRecoveryResult = {
 }
 
 export function claxedoDaemonOwnershipPath(dataRoot: string) {
-  return path.join(dataRoot, "local-daemon-ownership.json")
+  return path.join(dataRoot, DAEMON_OWNERSHIP_SNAPSHOT_FILE)
 }
 
 export function readDaemonOwnershipView(file: string): DaemonOwnershipView | undefined {
@@ -100,7 +117,7 @@ export function daemonRecoveryPreview(
     }
   }
   const ageMs = at - snapshot.writtenAt
-  const stale = ageMs > OWNERSHIP_SNAPSHOT_STALE_MS
+  const stale = ageMs > DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS
   return {
     sessions: [],
     resources: [
@@ -339,24 +356,53 @@ export function daemonRecoveryBridge(input: {
 }) {
   const protocol = { [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL) }
   return {
-    async inspect(): Promise<unknown> {
+    async inspect(): Promise<DaemonRecoveryInspection> {
       const daemon = input.daemon()
       if (daemon) {
         const response = await daemon("/api/claxedo/daemon/recovery", { headers: protocol })
-        return response.json()
+        return await response.json() as DaemonRecoveryInspection
       }
       const held = input.unresolved()
-      if (!held) return { unavailable: "no daemon is published on this machine" }
+      if (!held) {
+        return {
+          machineId: "local",
+          generation: "",
+          target: { scope: "machine", machineId: "local", ownerGeneration: "" },
+          scopeRevision: "",
+          owners: [],
+          preview: { sessions: [], resources: [], summary: "no daemon is published on this machine" },
+          residencyPins: 0,
+          operations: [],
+          receipt: "volatile",
+        }
+      }
+      const snapshot = input.ownershipView()
+      // The same shape the daemon's own route answers, so a caller reads one
+      // inspection whether or not the daemon is reachable. What differs is what
+      // is in it, and the receipt says which of the two this is.
       return {
         machineId: "local",
         generation: held.discovery.generation,
         target: { scope: "machine", machineId: "local", ownerGeneration: held.discovery.generation },
-        preview: daemonRecoveryPreview(held.discovery, input.ownershipView(), Date.now()),
+        scopeRevision: snapshot?.generation === held.discovery.generation ? snapshot.revision : "unverified",
+        owners: snapshot?.generation === held.discovery.generation ? snapshot.owners : [],
+        preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now()),
+        residencyPins: snapshot?.generation === held.discovery.generation ? snapshot.residencyPins : 0,
         operations: held.result.outcome.kind === "operation" ? [held.result.outcome.operation] : [],
         receipt: "volatile",
       }
     },
-    async submit(request: unknown): Promise<RecoveryOutcome> {
+    async submit(body: unknown): Promise<RecoveryOutcome> {
+      // Parsed here even when it is only being forwarded: a request this
+      // process cannot read is one it should not be relaying under the machine
+      // capability the renderer does not hold.
+      let request: RecoveryRequest
+      try {
+        request = parseRecoveryRequest(body)
+      } catch (error) {
+        if (!(error instanceof RecoveryContractError)) throw error
+        return { kind: "refused", refusal: { kind: "unavailable", message: error.message } }
+      }
       const daemon = input.daemon()
       if (daemon) {
         const response = await daemon("/api/claxedo/daemon/recovery", {
@@ -367,18 +413,55 @@ export function daemonRecoveryBridge(input: {
         return parseRecoveryOutcome(await response.text())
       }
       const held = input.unresolved()
-      const action = asRecord(request)?.action
-      if (!held || action !== "stop_daemon") {
+      if (!held) {
         return {
           kind: "refused",
           refusal: { kind: "unavailable", message: "no daemon on this machine is reachable for that operation" },
         }
       }
-      // The renderer asking for this IS the authorization: it reached here
-      // through the bridge-carrying document, having been shown the preview.
+      if (request.action !== "stop_daemon") {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "unavailable",
+            message: `a daemon that is not answering can only be stopped from here, not ${request.action}`,
+          },
+        }
+      }
+      const target: RecoveryMachineTarget = {
+        scope: "machine",
+        machineId: "local",
+        ownerGeneration: held.discovery.generation,
+      }
+      if (!recoveryTargetsMatch(request.target, target)) {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "generation_conflict",
+            message: "the request names a different machine or daemon generation than the one published here",
+            current: target,
+          },
+        }
+      }
+      const snapshot = input.ownershipView()
+      const scopeRevision = snapshot?.generation === held.discovery.generation ? snapshot.revision : "unverified"
+      if (request.scopeRevision !== scopeRevision) {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "scope_changed",
+            message: "this daemon's last published ownership differs from the preview this stop was authorized against",
+            scopeRevision,
+            preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now()),
+          },
+        }
+      }
+      // The caller having reached here with a matching generation and scope
+      // revision IS the authorization: it was shown that preview through the
+      // bridge-carrying document and named it back.
       const recovered = await recoverPublishedDaemon({
         discovery: held.discovery,
-        snapshot: input.ownershipView(),
+        snapshot,
         authorize: () => true,
       })
       await input.onRecovered(recovered)

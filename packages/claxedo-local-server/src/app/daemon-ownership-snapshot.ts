@@ -15,9 +15,13 @@
 
 import fs from "node:fs"
 import path from "node:path"
+import {
+  DAEMON_OWNERSHIP_SNAPSHOT_FILE,
+  DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
+} from "@claxedo/agent-runtime-contract"
 import type { LocalDaemonOwner, MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
 
-export const DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS = 10_000
+export { DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS }
 const PUBLISH_INTERVAL_MS = 5_000
 
 export type DaemonOwnershipSnapshot = {
@@ -32,7 +36,7 @@ export type DaemonOwnershipSnapshot = {
 }
 
 export function claxedoDaemonOwnershipPath(dataRoot: string) {
-  return path.join(dataRoot, "local-daemon-ownership.json")
+  return path.join(dataRoot, DAEMON_OWNERSHIP_SNAPSHOT_FILE)
 }
 
 export function daemonOwnershipSnapshot(

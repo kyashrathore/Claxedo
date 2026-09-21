@@ -149,6 +149,41 @@ describe("the machine recovery operation store", () => {
     expect(again.existing.acknowledgedAt).toBe(2_000)
   })
 
+  test("releasing one operation's gates leaves every other operation's alone", () => {
+    const operations = store()
+    const first = request({ requestId: "r-first" })
+    const second = request({ requestId: "r-second" })
+    operations.record(operation({ from: first, operationId: "op-first" }), { callerId: "a" }, first)
+    operations.record(operation({ from: second, operationId: "op-second" }), { callerId: "a" }, second)
+    // The same owner, gated by both: a release must reopen one claim on it and
+    // leave the other holding.
+    for (const operationId of ["op-first", "op-second"]) {
+      operations.acknowledgeGate({ operationId, ownerId: "workspace:ws_a", ownerGeneration: "g1", acknowledgedAt: 1 })
+    }
+    operations.acknowledgeGate({ operationId: "op-second", ownerId: "terminal:t1", ownerGeneration: "77", acknowledgedAt: 1 })
+
+    expect(operations.releaseGates("op-first")).toEqual(["workspace:ws_a"])
+
+    expect(operations.gates("op-first")).toEqual([])
+    expect(operations.gates("op-second").map((gate) => gate.ownerId)).toEqual(["terminal:t1", "workspace:ws_a"])
+  })
+
+  test("gates that survived a release are still there for the next owner to reconstruct", () => {
+    const file = new Database(":memory:")
+    const before = new DaemonOperationStore(file)
+    const first = request({ requestId: "r-first" })
+    const second = request({ requestId: "r-second" })
+    before.record(operation({ from: first, operationId: "op-first" }), { callerId: "a" }, first)
+    before.record(operation({ from: second, operationId: "op-second" }), { callerId: "a" }, second)
+    before.acknowledgeGate({ operationId: "op-first", ownerId: "workspace:ws_a", ownerGeneration: "g1", acknowledgedAt: 1 })
+    before.acknowledgeGate({ operationId: "op-second", ownerId: "workspace:ws_a", ownerGeneration: "g1", acknowledgedAt: 1 })
+    before.releaseGates("op-first")
+
+    const after = new DaemonOperationStore(file)
+    expect(after.gates("op-second").map((gate) => gate.ownerId)).toEqual(["workspace:ws_a"])
+    expect(after.gates("op-first")).toEqual([])
+  })
+
   test("pruning drops settled operations and keeps an outstanding one with its gates", () => {
     const operations = store()
     const done = request({ requestId: "r-done" })
