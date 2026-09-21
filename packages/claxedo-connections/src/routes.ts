@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import type { Context } from "hono"
+import type { BlankEnv } from "hono/types"
 import type { ConnectionsService } from "./service.js"
 import type { ConnectionScope, IntegrationCapability } from "./types.js"
 import { bool, record, stringRecord, text } from "./json.js"
@@ -8,6 +9,24 @@ import { ConnectionExistsError, ConnectionsUnavailableError, connectionScopeOf }
 
 export type RouteGate = (c: Context) => Promise<Response | null> | Response | null
 export type RouteOwnerResolver = (c: Context) => string | undefined
+
+/**
+ * What a route admits, stated at the route rather than assembled inside its
+ * handler.
+ *
+ *   - `public` — served to an unauthenticated caller. Only the OAuth
+ *     callback, which a provider's browser redirect reaches and which carries
+ *     its own single-use `state`.
+ *   - `authenticated` — `gate`.
+ *   - `turn-credential` — `gate`, then `tokenGate`: the caller proves a turn,
+ *     not a management session.
+ *   - `team-write` — `gate`, and `teamWriteGate` for a team-scoped target.
+ *     Which target that is comes out of the request body or the stored row,
+ *     so the handler decides it with the gate this policy hands it; the
+ *     declaration is what makes a handler that never calls it visible.
+ */
+export const ROUTE_POLICIES = ["public", "authenticated", "turn-credential", "team-write"] as const
+export type RoutePolicy = (typeof ROUTE_POLICIES)[number]
 
 export type IntegrationsRouteOptions = {
   /**
@@ -81,13 +100,40 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   })
   const gate = options.gate
   const tokenGate: RouteGate = options.tokenGate ?? (() => null)
+  const teamWriteGate: RouteGate = options.teamWriteGate ?? (() => null)
   const refuseOwnerless = options.ownerlessRows === "refuse"
 
-  const gated = async (c: Context, extra?: RouteGate) => {
-    const denied = await gate(c)
-    if (denied) return denied
-    if (!extra) return null
-    return extra(c)
+  /**
+   * The one way a route reaches the app. The policy is an argument because a
+   * route that forgot to state one must not register: `GET /callback` is the
+   * single public route in this kit, and the next route added next to it
+   * would otherwise inherit that silence by omission rather than by decision.
+   */
+  const declared = new Set<string>()
+  // Generic in the path so the handler keeps Hono's literal `param()` typing:
+  // a `string` parameter here would widen every `c.req.param("id")` in this
+  // file to `string | undefined`.
+  const route = <P extends string>(
+    method: "get" | "post" | "delete",
+    path: P,
+    policy: RoutePolicy,
+    handler: (c: Context<BlankEnv, P>, teamWrite: RouteGate) => Promise<Response> | Response,
+  ) => {
+    if (!(ROUTE_POLICIES as readonly string[]).includes(policy)) {
+      throw new Error(`createIntegrationsRoutes: ${method.toUpperCase()} ${path} declares no route policy`)
+    }
+    declared.add(`${method.toUpperCase()} ${path}`)
+    app[method](path, async (c) => {
+      if (policy !== "public") {
+        const denied = await gate(c)
+        if (denied) return denied
+      }
+      if (policy === "turn-credential") {
+        const denied = await tokenGate(c)
+        if (denied) return denied
+      }
+      return handler(c, policy === "team-write" ? teamWriteGate : () => null)
+    })
   }
 
   type PartitionKeys = { personal?: string; team?: string }
@@ -128,9 +174,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return { ok: true as const, owner }
   }
 
-  app.get("/", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
+  route("get", "/", "authenticated", async (c) => {
     const keys = managementKeys(c)
     // Refusing hosts without a resolved team key list personal rows only —
     // never the owner-absent partition.
@@ -155,9 +199,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     }
   })
 
-  app.post("/:id/connect", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
+  route("post", "/:id/connect", "team-write", async (c, teamWrite) => {
     const integrationId = c.req.param("id")
     const body = record(await c.req.json().catch(() => ({}))) ?? {}
     const confirmReplace = bool(body.confirmReplace)
@@ -165,7 +207,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const scope = scopeFrom(body.scope)
     if (!scope) return c.json({ ok: false, code: "invalid_connection_scope" }, 422)
     if (scope === "team") {
-      const denied = await options.teamWriteGate?.(c)
+      const denied = await teamWrite(c)
       if (denied) return denied
     }
     const owner = connectOwner(c, scope)
@@ -199,7 +241,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return c.json(result)
   })
 
-  app.get("/callback", async (c) => {
+  route("get", "/callback", "public", async (c) => {
     const state = c.req.query("state") ?? ""
     const code = c.req.query("code")
     const issuer = c.req.query("iss")
@@ -210,43 +252,35 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   // Polling this route is what ADVANCES a device grant — there is no callback
   // to settle it. For a redirect attempt the poll is a plain read, so the two
   // oauth shapes share one route and one client-side polling loop.
-  app.get("/attempts/:state", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
+  route("get", "/attempts/:state", "authenticated", async (c) => {
     const status = await service.pollAttempt(c.req.param("state"))
     if (!status) return c.json({ code: "attempt_not_found" }, 404)
     return c.json(status)
   })
 
-  app.delete("/connections/:id", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
+  route("delete", "/connections/:id", "team-write", async (c, teamWrite) => {
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     if (connectionScopeOf(row.owner, managementKeys(c).team) === "team") {
-      const denied = await options.teamWriteGate?.(c)
+      const denied = await teamWrite(c)
       if (denied) return denied
     }
     await service.remove(row.id)
     return c.json({ ok: true })
   })
 
-  app.post("/connections/:id/reverify", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
+  route("post", "/connections/:id/reverify", "team-write", async (c, teamWrite) => {
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     if (connectionScopeOf(row.owner, managementKeys(c).team) === "team") {
-      const denied = await options.teamWriteGate?.(c)
+      const denied = await teamWrite(c)
       if (denied) return denied
     }
     const result = await service.reverify(row.id)
     return c.json(result, result.ok ? 200 : 422)
   })
 
-  app.get("/connections/:id/repositories", async (c) => {
-    const denied = await gated(c)
-    if (denied) return denied
+  route("get", "/connections/:id/repositories", "authenticated", async (c) => {
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const result = await service.listRepositories(row.id)
@@ -254,9 +288,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return c.json({ repositories: result.repositories })
   })
 
-  app.post("/connections/:id/auth-failure", async (c) => {
-    const denied = await gated(c, tokenGate)
-    if (denied) return denied
+  route("post", "/connections/:id/auth-failure", "turn-credential", async (c) => {
     const row = await visibleConnection(c.req.param("id"), tokenKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const reason = text(record(await c.req.json().catch(() => ({})))?.reason)
@@ -264,9 +296,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return c.body(null, 204)
   })
 
-  app.get("/connections/:id/token", async (c) => {
-    const denied = await gated(c, tokenGate)
-    if (denied) return denied
+  route("get", "/connections/:id/token", "turn-credential", async (c) => {
     const row = await visibleConnection(c.req.param("id"), tokenKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const capabilityRaw = c.req.query("capability")
@@ -283,6 +313,16 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     }
     return c.json(result.response)
   })
+
+  // A route that reached the app any other way — an `app.get` added beside
+  // these — has no policy, and an unstated policy here reads as "open" at
+  // every deployment. It fails the composition instead, on the first build,
+  // rather than on the request that finds it.
+  for (const registered of app.routes) {
+    if (!declared.has(`${registered.method.toUpperCase()} ${registered.path}`)) {
+      throw new Error(`createIntegrationsRoutes: ${registered.method} ${registered.path} declares no route policy`)
+    }
+  }
 
   return app
 }

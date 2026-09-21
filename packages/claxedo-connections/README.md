@@ -379,24 +379,30 @@ authority, not a declaration string.
 
 ### F. Routes
 
-`createIntegrationsRoutes(service, options)` returns a Hono app. Every route is
-behind the required host `gate`; the kit decides no auth policy itself, so an
-intentionally open deployment states that with `gate: () => null`.
+`createIntegrationsRoutes(service, options)` returns a Hono app. Every route
+states a policy where it is registered, and a route that reaches the app any
+other way fails the composition — an unstated policy would read as "open" at
+every deployment. The kit decides no auth policy itself, so an intentionally
+open deployment states that with `gate: () => null`.
 
-| Route | Purpose |
-| --- | --- |
-| `GET /` | List integrations and the caller's connections |
-| `POST /:id/connect` | Key connect, or start an OAuth/device flow |
-| `GET /callback` | OAuth redirect landing; renders success/failure |
-| `GET /attempts/:state` | Poll an attempt — **and advance a device grant** |
-| `DELETE /connections/:id` | Remove a connection and purge its credentials |
-| `POST /connections/:id/reverify` | Recover an errored credential |
-| `GET /connections/:id/repositories` | `code-host` listing |
-| `POST /connections/:id/auth-failure` | Consumer-reported definitive rejection |
-| `GET /connections/:id/token` | The live token, behind `tokenGate` |
+| Route | Policy | Purpose |
+| --- | --- | --- |
+| `GET /` | `authenticated` | List integrations and the caller's connections |
+| `POST /:id/connect` | `team-write` | Key connect, or start an OAuth/device flow |
+| `GET /callback` | `public` | OAuth redirect landing; renders success/failure |
+| `GET /attempts/:state` | `authenticated` | Poll an attempt — **and advance a device grant** |
+| `DELETE /connections/:id` | `team-write` | Remove a connection and purge its credentials |
+| `POST /connections/:id/reverify` | `team-write` | Recover an errored credential |
+| `GET /connections/:id/repositories` | `authenticated` | `code-host` listing |
+| `POST /connections/:id/auth-failure` | `turn-credential` | Consumer-reported definitive rejection |
+| `GET /connections/:id/token` | `turn-credential` | The live token |
 
-Team-scoped writes go through a separate `teamWriteGate`. `ConnectionExistsError`
-is mapped to 409 by an `onError` handler rather than by each route.
+`authenticated` runs `gate`; `turn-credential` runs `gate` then `tokenGate`;
+`team-write` runs `gate` and hands the handler `teamWriteGate`, which it
+applies once it knows whether the target is a team row. `public` is the
+provider's browser redirect alone, which carries its own single-use `state`.
+`ConnectionExistsError` is mapped to 409 by an `onError` handler rather than by
+each route.
 
 ---
 
@@ -418,6 +424,12 @@ is mapped to 409 by an `onError` handler rather than by each route.
 - **Credential ids are always namespaced** `integration:{connectionId}`, so they
   cannot collide with a host's other credentials, and no route ever echoes a
   secret.
+- **A connection row is written only after its credential is durable.** The two
+  ports share no transaction, so the order is the pairing: `put`, read it back,
+  then `upsert`. Nothing is undone on the way back — an interrupted write
+  leaves at most a secret under an id no route can address, which is a far
+  smaller defect than a row whose credential is missing, and which no
+  compensating delete can be trusted to clear anyway.
 
 ### Non-goals (load-bearing)
 

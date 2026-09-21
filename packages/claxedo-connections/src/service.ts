@@ -152,29 +152,28 @@ export function createConnectionsService(deps: {
       secret: input.secret,
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
     })
-    try {
-      await deps.connections.upsert({
-        id,
-        integrationId: input.integrationId,
-        ...(input.owner !== undefined ? { owner: input.owner } : {}),
-        ...(input.accountLabel !== undefined ? { accountLabel: input.accountLabel } : {}),
-        grantedCapabilities: [...decl.capabilities],
-        fields: input.fields,
-        createdAt: existing?.createdAt ?? now(),
-        updatedAt: now(),
-      })
-    } catch (error) {
-      // The two stores are separate ports, so a refused row is compensated:
-      // nothing can ever read the secret under a fresh id, and a lost upsert
-      // race would otherwise leave durable secret residue. When the write
-      // targeted an EXISTING row the provider id is that row's own slot —
-      // its previous secret is already overwritten, and deleting would
-      // strand a live connection, so the new secret stays.
-      if (existing === undefined) {
-        await deps.credentials.deleteByProvider(providerId).catch(() => undefined)
-      }
-      throw error
+    // The two ports share no transaction, so the order carries the pairing:
+    // the secret is durable before the row that names it, and the row is
+    // refused unless the store hands the credential back. A row whose
+    // credential is absent answers every token request with
+    // `connection_not_available` and no re-verify repairs it — deleting and
+    // reconnecting is the only way out, which is worse than a connect that
+    // failed outright. Nothing is undone on the way back: an interrupted
+    // write leaves at most a secret no route can address, because a provider
+    // id is reached only through a row.
+    if ((await deps.credentials.get(providerId)) === undefined) {
+      throw new Error(`connection credential ${providerId} was not stored`)
     }
+    await deps.connections.upsert({
+      id,
+      integrationId: input.integrationId,
+      ...(input.owner !== undefined ? { owner: input.owner } : {}),
+      ...(input.accountLabel !== undefined ? { accountLabel: input.accountLabel } : {}),
+      grantedCapabilities: [...decl.capabilities],
+      fields: input.fields,
+      createdAt: existing?.createdAt ?? now(),
+      updatedAt: now(),
+    })
   }
 
   /**

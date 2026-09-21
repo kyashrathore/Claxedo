@@ -54,11 +54,16 @@ function harness(gates: {
     },
   )
   const memoryCredentials = createMemoryCredentialStore()
+  // The record seam answers until `armOutage`: `connect` reads it too, to
+  // refuse a row whose credential the store did not keep, so a store that was
+  // never healthy could not produce the connection these tests then read.
+  let recordOutage = false
   const credentials = {
     ...memoryCredentials,
     ...(gates.listUnavailable ? {
-      async get() {
-        throw new ConnectionsUnavailableError()
+      async get(providerId: string) {
+        if (recordOutage) throw new ConnectionsUnavailableError()
+        return memoryCredentials.get(providerId)
       },
     } : {}),
     ...(gates.secretUnavailable ? {
@@ -81,7 +86,14 @@ function harness(gates: {
     owner: () => gates.owner,
     tokenOwner: () => gates.tokenOwner,
   })
-  return { app, service, credentials }
+  return {
+    app,
+    service,
+    credentials,
+    armOutage: () => {
+      recordOutage = true
+    },
+  }
 }
 
 const connectBody = { fields: { site_url: "https://acme.example" }, secret: "good" }
@@ -159,6 +171,52 @@ describe("integrations routes", () => {
     }
   })
 
+  test("every registered route states a policy, and the public one is the provider callback alone", async () => {
+    // The table is the policy statement this file asserts against: a route
+    // added without one cannot reach the app (the composition throws), and a
+    // route whose policy changes has to change here too.
+    const policies = {
+      "GET /": "authenticated",
+      "POST /:id/connect": "team-write",
+      "GET /callback": "public",
+      "GET /attempts/:state": "authenticated",
+      "DELETE /connections/:id": "team-write",
+      "POST /connections/:id/reverify": "team-write",
+      "GET /connections/:id/repositories": "authenticated",
+      "POST /connections/:id/auth-failure": "turn-credential",
+      "GET /connections/:id/token": "turn-credential",
+    } as const
+    const { app } = harness({ gateDenies: true })
+    expect(new Set(app.routes.map((entry) => `${entry.method} ${entry.path}`))).toEqual(new Set(Object.keys(policies)))
+
+    // The callback carries its own single-use `state` and is reached by a
+    // provider's browser redirect, so a denying gate must not touch it while
+    // it refuses everything else.
+    const callback = await app.request("/callback?state=unknown&code=x")
+    expect(callback.status).toBe(400)
+    expect(await callback.text()).toContain("Connection failed")
+  })
+
+  test("teamWriteGate guards a team-scoped write and leaves a personal one alone", async () => {
+    const { service } = harness()
+    const app = createIntegrationsRoutes(service, {
+      gate: () => null,
+      teamWriteGate: () => new Response("not an admin", { status: 403 }),
+      owner: () => "user:me",
+    })
+    const team = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "team" }),
+    })
+    expect(team.status).toBe(403)
+
+    const personal = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "personal" }),
+    })
+    expect(personal.status).toBe(200)
+  })
+
   test("the webhook-secret surface is gone: both routes 404 and no signing credential is written", async () => {
     const { app, credentials } = harness({ codeHost: true })
     await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
@@ -222,6 +280,7 @@ describe("integrations routes", () => {
   test("list returns 503 for credential-store outages while a missing credential remains broken", async () => {
     const unavailable = harness({ listUnavailable: true })
     await unavailable.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    unavailable.armOutage()
     const outage = await unavailable.app.request("/")
     expect(outage.status).toBe(503)
     expect(await outage.json()).toEqual({ code: "connections_unavailable" })
@@ -540,6 +599,7 @@ describe("integrations routes", () => {
     // separate seams; an outage on either must surface as 503, not 401/500.
     const recordOutage = harness({ listUnavailable: true })
     await recordOutage.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    recordOutage.armOutage()
     const recordRes = await recordOutage.app.request("/connections/connection-1/token?capability=docs")
     expect(recordRes.status).toBe(503)
     const recordBody = await recordRes.text()
