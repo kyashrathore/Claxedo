@@ -20,6 +20,7 @@ export {
   LaunchRefusedError,
   reconcileLaunch,
   type ExecutionReconciliation,
+  type LaunchOwnershipOwner,
   type LaunchOwnershipRecord,
   type LaunchOwnershipStore,
   type LaunchProtocol,

@@ -3,6 +3,7 @@ import type {
   CreationIdentity,
   LaunchOwnershipRecord,
   LaunchOwnershipStore,
+  LaunchOwnershipOwner,
   LaunchScope,
   PrepareLaunchInput,
   RetirementResult,
@@ -26,6 +27,7 @@ export function migrateLaunchOwnership(db: SqliteDatabase) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS launch_ownership (
       launch_id TEXT PRIMARY KEY,
+      owner_generation TEXT NOT NULL,
       role TEXT NOT NULL,
       protocol TEXT NOT NULL,
       parent_owner_id TEXT,
@@ -41,13 +43,27 @@ export function migrateLaunchOwnership(db: SqliteDatabase) {
       retired_at INTEGER,
       cleanup_json TEXT
     );
-    CREATE INDEX IF NOT EXISTS launch_ownership_unresolved
-      ON launch_ownership (retired_at, directory, session_id);
   `)
+  // Forward-only, and before the index that reads it: a database written when
+  // ownership carried no generation has rows no current runtime can claim, and
+  // reconciliation must be free to retire them. The empty string is a
+  // generation nothing will ever equal.
+  if (!tableColumns(db).includes("owner_generation")) {
+    db.exec("ALTER TABLE launch_ownership ADD COLUMN owner_generation TEXT NOT NULL DEFAULT ''")
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS launch_ownership_unresolved
+      ON launch_ownership (retired_at, workspace_id, owner_generation);
+  `)
+}
+
+function tableColumns(db: SqliteDatabase) {
+  return db.prepare<{ name: string }>("PRAGMA table_info(launch_ownership)").all().map((row) => row.name)
 }
 
 type LaunchOwnershipRow = {
   launch_id: string
+  owner_generation: string
   role: string
   protocol: string
   parent_owner_id: string | null
@@ -73,7 +89,7 @@ type LaunchOwnershipRow = {
  * that left the leader alive, its group populated, or the outcome unknown keeps
  * `retired_at` null and stays in `listUnresolved`.
  */
-export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore {
+export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnershipOwner): LaunchOwnershipStore {
   // Both drivers report a change count; without one, a write against a launch
   // id nothing prepared would look like a success.
   const probe = db.prepare("UPDATE launch_ownership SET retired_at = retired_at WHERE launch_id = ?").run("")
@@ -85,12 +101,15 @@ export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore 
     if (changes === 0) throw new Error(`No prepared launch matched ${String(params.at(-1))}`)
   }
   return {
+    ownerGeneration: owner.ownerGeneration,
+
     async prepare(input: PrepareLaunchInput) {
       if (!input.scope.workspaceId) {
         throw new Error(`Refusing to prepare a ${input.role} launch with no workspaceId: reconciliation lists by workspace, and a row without one is never found again`)
       }
       const prepared = {
         launchId: randomUUID(),
+        ownerGeneration: owner.ownerGeneration,
         role: input.role,
         protocol: input.protocol,
         ...(input.parentOwnerId ? { parentOwnerId: input.parentOwnerId } : {}),
@@ -98,10 +117,11 @@ export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore 
         preparedAt: Date.now(),
       }
       db.prepare(`
-        INSERT INTO launch_ownership (launch_id, role, protocol, parent_owner_id, workspace_id, session_id, directory, prepared_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO launch_ownership (launch_id, owner_generation, role, protocol, parent_owner_id, workspace_id, session_id, directory, prepared_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         prepared.launchId,
+        prepared.ownerGeneration,
         prepared.role,
         prepared.protocol,
         input.parentOwnerId ?? null,
@@ -165,6 +185,7 @@ export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore 
 function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord {
   return {
     launchId: row.launch_id,
+    ownerGeneration: row.owner_generation,
     role: row.role as LaunchOwnershipRecord["role"],
     protocol: row.protocol as LaunchOwnershipRecord["protocol"],
     ...(row.parent_owner_id ? { parentOwnerId: row.parent_owner_id } : {}),

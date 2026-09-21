@@ -3,10 +3,12 @@ import { Database } from "bun:sqlite"
 import { reconcileLaunch, type CreationIdentity, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 import { migrateLaunchOwnership, sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
 
+const generation = "gen-1"
+
 function store() {
   const db = new Database(":memory:") as unknown as SqliteDatabase
   migrateLaunchOwnership(db)
-  return { db, ownership: sqliteLaunchOwnership(db) }
+  return { db, ownership: sqliteLaunchOwnership(db, { ownerGeneration: generation }) }
 }
 
 const identity: CreationIdentity = {
@@ -33,6 +35,7 @@ test("the prepared row exists before anything is spawned", async () => {
 
   expect(record).toEqual({
     launchId: prepared.launchId,
+    ownerGeneration: generation,
     role: "harness",
     protocol: "gate",
     parentOwnerId: "owner-1",

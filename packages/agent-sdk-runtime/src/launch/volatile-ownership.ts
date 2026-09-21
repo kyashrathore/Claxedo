@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import type {
   LaunchOwnershipRecord,
   LaunchOwnershipStore,
+  LaunchOwnershipOwner,
   LaunchScope,
   PrepareLaunchInput,
 } from "./ownership-store"
@@ -15,7 +16,7 @@ import { retirementSettled, type RetirementResult } from "./retirement"
  * launch it backs is an orphan waiting to happen. Host compositions inject the
  * durable store instead.
  */
-export function volatileLaunchOwnership(): LaunchOwnershipStore {
+export function volatileLaunchOwnership(owner: LaunchOwnershipOwner = { ownerGeneration: randomUUID() }): LaunchOwnershipStore {
   const records = new Map<string, LaunchOwnershipRecord>()
   const require = (launchId: string) => {
     const record = records.get(launchId)
@@ -23,9 +24,11 @@ export function volatileLaunchOwnership(): LaunchOwnershipStore {
     return record
   }
   return {
+    ownerGeneration: owner.ownerGeneration,
     async prepare(input: PrepareLaunchInput) {
       const prepared: LaunchOwnershipRecord = {
         launchId: randomUUID(),
+        ownerGeneration: owner.ownerGeneration,
         role: input.role,
         protocol: input.protocol,
         ...(input.parentOwnerId ? { parentOwnerId: input.parentOwnerId } : {}),

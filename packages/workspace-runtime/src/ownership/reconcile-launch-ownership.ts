@@ -22,6 +22,7 @@ export type LaunchReconciliation = {
   /** What the launch protocol says about whether the payload ever ran. */
   execution: "none" | "unknown" | "started"
   outcome:
+    | "live"
     | "never_executed"
     | "already_gone"
     | "retired"
@@ -33,23 +34,36 @@ export type LaunchReconciliation = {
 
 export type LaunchOwnershipReconciliation = {
   examined: number
+  /** Skipped because their owner is the runtime doing the reconciling. */
+  live: number
   retired: number
   unresolved: LaunchReconciliation[]
   results: LaunchReconciliation[]
 }
 
 /**
- * Reads the launches this workspace never finished retiring and finishes them.
+ * Reads the launches a previous owner of this workspace never finished
+ * retiring, and finishes them.
  *
  * It runs before the workspace admits work, because until it has run the
- * processes of a previous owner are still holding this workspace's ports,
+ * processes of that previous owner are still holding this workspace's ports,
  * working directories and agent session storage, and nothing else in the
  * system is looking for them. A row it cannot settle stays open and is
  * returned: an operator is the fallback, never an assumption of exit.
+ *
+ * A row from `currentOwnerGeneration` is never touched. The store can be
+ * reopened in place while its own launches are running, and every one of those
+ * rows verifies — signalling them would kill the live workspace this call is
+ * preparing.
  */
 export async function reconcileLaunchOwnership(
   store: LaunchOwnershipStore,
-  input: { scope?: LaunchScope; budgets?: Partial<RecoveryBudgets> } = {},
+  input: {
+    /** Rows from this generation belong to a runtime that is running now. */
+    currentOwnerGeneration: string
+    scope?: LaunchScope
+    budgets?: Partial<RecoveryBudgets>
+  },
 ): Promise<LaunchOwnershipReconciliation> {
   const budgets = { ...DEFAULT_RECOVERY_BUDGETS, ...input.budgets }
   const open = await store.listUnresolved(input.scope)
@@ -58,6 +72,15 @@ export async function reconcileLaunchOwnership(
   for (const record of open) {
     const reconciliation = reconcileLaunch(record)
     const common = { launchId: record.launchId, role: record.role, execution: reconciliation.execution }
+
+    if (record.ownerGeneration === input.currentOwnerGeneration) {
+      results.push({
+        ...common,
+        outcome: "live",
+        reason: `owned by the current runtime generation ${record.ownerGeneration}`,
+      })
+      continue
+    }
 
     if (reconciliation.execution === "none") {
       // The protocol proved the payload never ran, so the row closes with no
@@ -113,6 +136,7 @@ export async function reconcileLaunchOwnership(
   if (unresolved.length) log.error("launches from a previous owner remain unresolved", { unresolved })
   return {
     examined: results.length,
+    live: results.filter((item) => item.outcome === "live").length,
     retired: results.filter((item) => item.outcome === "retired").length,
     unresolved,
     results,

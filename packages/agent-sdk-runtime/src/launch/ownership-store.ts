@@ -26,6 +26,14 @@ export type LaunchOwnerScope = LaunchScope & { workspaceId: string }
 
 export type PreparedLaunch = {
   launchId: string
+  /**
+   * The runtime that owns this launch: a workspace host's mount generation, or
+   * a daemon's generation for a machine-owned one. Reconciliation is only ever
+   * entitled to signal launches from a generation that is over — a row from
+   * the generation doing the reconciling belongs to a process that is running
+   * right now.
+   */
+  ownerGeneration: string
   role: LaunchRole
   protocol: LaunchProtocol
   parentOwnerId?: string
@@ -50,12 +58,19 @@ export type PrepareLaunchInput = {
   scope: LaunchOwnerScope
 }
 
+export type LaunchOwnershipOwner = {
+  /** Identifies the owning runtime; every row this store prepares carries it. */
+  ownerGeneration: string
+}
+
 /**
  * The durable half of launch ownership. Every method may reject; a rejecting
  * `prepare` is what refuses a launch, because past that point the host would be
  * acknowledging a process it cannot recover.
  */
 export interface LaunchOwnershipStore {
+  /** The runtime this store prepares launches for. */
+  readonly ownerGeneration: string
   prepare(input: PrepareLaunchInput): Promise<PreparedLaunch>
   recordIdentity(launchId: string, identity: CreationIdentity, gateNonce?: string): Promise<void>
   authorizeActivation(launchId: string): Promise<void>
