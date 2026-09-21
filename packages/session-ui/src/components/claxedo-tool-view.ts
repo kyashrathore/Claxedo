@@ -89,10 +89,16 @@ export function claxedoToolArguments(input: Record<string, unknown> | undefined)
 /**
  * The tool's JSON answer, or nothing when the output is prose or a refusal.
  * The projection only ever hands the card a string, so the structured result
- * has to be recovered from it.
+ * has to be recovered from it — including from a tool that writes a human
+ * summary above its payload, whose content blocks arrive here joined.
  */
 export function claxedoToolResult(output: string | undefined): Record<string, unknown> | undefined {
-  return jsonRecord(output?.trim())
+  const text = output?.trim()
+  if (!text) return undefined
+  const whole = jsonRecord(text)
+  if (whole) return whole
+  const opens = text.indexOf("\n{")
+  return opens < 0 ? undefined : jsonRecord(text.slice(opens + 1))
 }
 
 export type ClaxedoLink = { kind: "task" | "session"; id: string; label: string }
@@ -324,7 +330,13 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       return {
         ...base,
         subject: nonEmptyString(args.process),
-        ...(result ? { note: i18n.t(result.stopped === false ? "ui.claxedoTool.note.notRunning" : "ui.claxedoTool.note.stopped") } : {}),
+        ...(result
+          ? {
+              note: i18n.t(
+                result.state === "unresolved" ? "ui.claxedoTool.note.stopUnverified" : "ui.claxedoTool.note.stopped",
+              ),
+            }
+          : {}),
       }
     case "create_subagent":
     case "subagent_status":
@@ -359,16 +371,25 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
 }
 
 /**
- * A cancellation is stopped only when the operation reached its postcondition.
- * Everything else — a refusal, a failure, an operation still owed an action —
- * is a turn this row cannot claim was stopped.
+ * A turn stopped when its owner reports execution terminal and the interrupted
+ * state committed. `cancel_turn` only closes as `succeeded` under `cleanup:
+ * "verified_clear"`, which no adapter can establish, so reading the state would
+ * label every healthy Stop as one that did not stop.
  */
 function cancellationNote(outcome: unknown) {
   const row = asRecord(outcome)
-  if (row?.kind === "refused") return "ui.claxedoTool.note.notRunning" as const
-  return asRecord(row?.operation)?.state === "succeeded"
+  if (row?.kind === "refused") {
+    return asRecord(row.refusal)?.kind === "generation_conflict"
+      ? ("ui.claxedoTool.note.notRunning" as const)
+      : ("ui.claxedoTool.note.notStopped" as const)
+  }
+  const facts = asRecord(asRecord(row?.operation)?.facts)
+  const stopped = asRecord(facts?.execution)?.value === "terminal"
+    && asRecord(facts?.persistence)?.value === "committed"
+  if (!stopped) return "ui.claxedoTool.note.notStopped" as const
+  return asRecord(facts?.cleanup)?.value === "verified_clear"
     ? ("ui.claxedoTool.note.stopped" as const)
-    : ("ui.claxedoTool.note.notStopped" as const)
+    : ("ui.claxedoTool.note.cleanupUnverified" as const)
 }
 
 function taskLink(id: string | undefined, key?: string, title?: string): ClaxedoLink {

@@ -223,6 +223,8 @@ export const dict: Record<string, string> = {
   "ui.claxedoTool.note.stopped": "stopped",
   "ui.claxedoTool.note.notRunning": "was not running",
   "ui.claxedoTool.note.notStopped": "did not stop",
+  "ui.claxedoTool.note.cleanupUnverified": "stopped, cleanup unverified",
+  "ui.claxedoTool.note.stopUnverified": "not verified stopped",
   "ui.claxedoTool.more": "+{{count}} more",
   "ui.claxedoTool.moreAvailable": "more available",
   "ui.claxedoTool.status.backlog": "Backlog",

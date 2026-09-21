@@ -257,8 +257,34 @@ describe("claxedoToolView", () => {
 
   test("process tools name the process and keep their prose answer for the body", () => {
     expect(view("process_start", { process: "web" }, "Process web started on port 4444")).toMatchObject({ subject: "web", text: "Process web started on port 4444" })
-    expect(view("process_stop", { process: "web" }, JSON.stringify({ process: "web", stopped: false }))).toMatchObject({ subject: "web", note: "was not running" })
+    expect(view("process_stop", { process: "web" }, JSON.stringify({ process: "web", state: "stopped", retirement: { leader: "exited", descendants: "unknown" } })))
+      .toMatchObject({ subject: "web", note: "stopped" })
+    expect(view("process_stop", { process: "web" }, JSON.stringify({ process: "web", state: "unresolved", retirement: { leader: "alive", descendants: "owned" } })))
+      .toMatchObject({ subject: "web", note: "not verified stopped" })
     expect(view("process_logs", { name: "web" }, "line 1\nline 2")).toMatchObject({ subject: "web", text: "line 1\nline 2" })
+  })
+
+  test("a healthy Stop reads as stopped even though the operation never says succeeded", () => {
+    const facts = (cleanup: string, execution = "terminal", persistence = "committed") => ({
+      execution: { value: execution, source: "codex", observedAt: 1, generation: "gen_1" },
+      cleanup: { value: cleanup, source: "codex", observedAt: 1, generation: "gen_1" },
+      persistence: { value: persistence, source: "store", observedAt: 1, generation: "gen_1" },
+    })
+    const cancelled = (cancellation: unknown) =>
+      view("session_cancel_turn", { session: "ses_x" }, `Stopped.\n${JSON.stringify({ session: "ses_x", cancellation })}`)
+
+    expect(cancelled({ kind: "operation", operation: { state: "needs_action", facts: facts("unknown") } }))
+      .toMatchObject({ note: "stopped, cleanup unverified" })
+    expect(cancelled({ kind: "operation", operation: { state: "succeeded", facts: facts("verified_clear") } }))
+      .toMatchObject({ note: "stopped" })
+    expect(cancelled({ kind: "operation", operation: { state: "failed", facts: facts("unknown", "running") } }))
+      .toMatchObject({ note: "did not stop" })
+    expect(cancelled({ kind: "operation", operation: { state: "needs_action", facts: facts("unknown", "terminal", "pending") } }))
+      .toMatchObject({ note: "did not stop" })
+    expect(cancelled({ kind: "refused", refusal: { kind: "generation_conflict", message: "already ended" } }))
+      .toMatchObject({ note: "was not running" })
+    expect(cancelled({ kind: "refused", refusal: { kind: "unavailable", message: "machine offline" } }))
+      .toMatchObject({ note: "did not stop" })
   })
 
   test("a prose-only tool shows its answer as it came", () => {
