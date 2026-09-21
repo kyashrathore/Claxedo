@@ -140,7 +140,11 @@ export async function resolveWorkspacePath(
   return candidate
 }
 
-const commandPathPattern = /(^|[\s"'=,;(])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&)]+)/g
+// Every character a path token can sit directly behind, redirection operators
+// included — `>out`, `2>log` and `cat</etc/passwd` all name paths. The scan
+// enforces the command policy on the spellings it finds; it does not parse
+// shell syntax and is not filesystem confinement.
+const commandPathPattern = /(^|[\s"'=,;(<>{}!|&)])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&()<>{}!]+)/g
 
 function commandPathReferences(input: string) {
   return [...input.matchAll(commandPathPattern)].map((match) => ({

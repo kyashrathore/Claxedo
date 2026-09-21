@@ -125,6 +125,119 @@ describe("resolveWorkspaceCommandPaths", () => {
       await fs.rm(secret, { recursive: true, force: true })
     }
   })
+
+  it("checks paths glued to redirection operators", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-redir-"))
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-redir-outside-"))
+    try {
+      const inner = path.join(tmp, "out.txt")
+      const outer = path.join(outside, "out.txt")
+      await fs.writeFile(inner, "x")
+      await fs.writeFile(outer, "x")
+
+      // Redirect targets inside the workspace pass however they are spelled.
+      for (const command of [
+        `printf hi>${JSON.stringify(inner)}`,
+        `printf hi >>${inner}`,
+        `cat<${inner}`,
+        `cat 2>${inner}`,
+        `cat&>${inner}`,
+        `cat ${inner}>${inner}`,
+        "printf hi>&2",
+        "printf hi>rel.txt",
+      ]) {
+        await resolveWorkspaceCommandPaths(tmp, { command })
+      }
+      // The same spellings aimed outside the workspace are caught, including a
+      // redirect glued onto an in-workspace path and command separators.
+      for (const command of [
+        `printf hi>${JSON.stringify(outer)}`,
+        `printf hi>>${outer}`,
+        `cat<${outer}`,
+        `cat 2>${outer}`,
+        `cat&>${outer}`,
+        `cat ${inner}>${outer}`,
+        `cat|${outer}`,
+        `cat&${outer}`,
+      ]) {
+        await expect(resolveWorkspaceCommandPaths(tmp, { command })).rejects.toThrow(
+          "workspace path escapes configured directory",
+        )
+      }
+      // Home and env-expansion forms behind a redirect stay refused.
+      for (const command of ["echo x>~/secret", "cat<$HOME/secret", "echo x>>${HOME}/secret"]) {
+        await expect(resolveWorkspaceCommandPaths(tmp, { command })).rejects.toThrow(
+          "workspace command path must be relative",
+        )
+      }
+      await expect(resolveWorkspaceCommandPaths(tmp, {
+        command: "cat",
+        args: [`>${outer}`],
+      })).rejects.toThrow("workspace path escapes configured directory")
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true })
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("registered worktree ownership", () => {
+  it("names every owner of a path however it is spelled, and the worktrees a root walk reaches", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-owners-"))
+    const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_owners" } as NodeJS.ProcessEnv
+    const outer = path.join(tmp, "outer")
+    const inner = path.join(outer, "inner")
+    try {
+      await fs.mkdir(inner, { recursive: true })
+      await fs.writeFile(path.join(inner, "file.txt"), "")
+      await fs.symlink(inner, path.join(tmp, "link"))
+      registerWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_outer", directory: outer })
+      registerWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_inner", directory: inner })
+
+      expect(registeredWorkspaceDirectoryOwners(outer, env)).toEqual(["ses_outer"])
+      expect(registeredWorkspaceDirectoryOwners(path.join(inner, "file.txt"), env).sort()).toEqual([
+        "ses_inner",
+        "ses_outer",
+      ])
+      // Same entry through a symlink and through a relative spelling.
+      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "link", "file.txt"), env).sort()).toEqual([
+        "ses_inner",
+        "ses_outer",
+      ])
+      expect(registeredWorkspaceDirectoryOwners(path.join(outer, "..", "outer", "inner"), env).sort()).toEqual([
+        "ses_inner",
+        "ses_outer",
+      ])
+      // A leaf that does not exist yet is still placed by the real directory
+      // that would hold it, link and all.
+      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "link", "not-yet.txt"), env).sort()).toEqual([
+        "ses_inner",
+        "ses_outer",
+      ])
+      expect(registeredWorkspaceDirectoryOwners(tmp, env)).toEqual([])
+      // A sibling whose name starts with a registered one is not inside it.
+      expect(registeredWorkspaceDirectoryOwners(`${outer}-sibling`, env)).toEqual([])
+      // A root that is not on disk at all answers, rather than raising: the
+      // routes ask this before they find out the directory is missing.
+      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "gone", "file.txt"), env)).toEqual([])
+      expect(registeredWorkspaceDirectoriesUnder(path.join(tmp, "gone"), env)).toEqual([])
+
+      // The other direction: what a recursive operation on a root reaches.
+      expect(registeredWorkspaceDirectoriesUnder(tmp, env).map((entry) => entry.sessionId).sort()).toEqual([
+        "ses_inner",
+        "ses_outer",
+      ])
+      expect(registeredWorkspaceDirectoriesUnder(outer, env).map((entry) => entry.sessionId)).toEqual(["ses_inner"])
+      // Through an alias of the same root, and through a root spelled with a link.
+      expect(registeredWorkspaceDirectoriesUnder(path.join(tmp, "outer", "..", "outer"), env)
+        .map((entry) => entry.sessionId)).toEqual(["ses_inner"])
+      expect(registeredWorkspaceDirectoriesUnder(inner, env)).toEqual([])
+    } finally {
+      unregisterWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_outer" })
+      unregisterWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_inner" })
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("workspaceId", () => {
