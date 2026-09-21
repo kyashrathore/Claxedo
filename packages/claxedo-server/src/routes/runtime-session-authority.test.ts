@@ -3,16 +3,29 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
+import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, SignJWT } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
-import { SessionTurnConflictError } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import {
+  childCompletionTurnIdPrefix,
+  SessionTurnConflictError,
+  SessionTurnGrantError,
+  type GrantSessionTurnInput,
+  type SessionTurnGrant,
+} from "@claxedo/server-core/platform/auth/session-turn-authority"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal, ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { createOwnerGrantProof, mintOwnerGrant } from "../session/owner-grant"
+import {
+  DEFERRED_TURN_GRANT_AUDIENCE,
+  DEFERRED_TURN_GRANT_ISSUER,
+  deferredTurnGrantClaims,
+  mintDeferredTurnGrant,
+  verifyDeferredTurnGrant,
+} from "../session/deferred-turn-grant"
 import { mintTasksCapability } from "../tasks/capability"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 
@@ -910,6 +923,7 @@ describe("reservation and adoption against a real private-session authority", ()
         ...store,
         runtimeAccessTokenActive: async () => ({ active: true }),
       },
+      turnAuthority: store,
       env: { ...env, CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
       ownerGrants: createOwnerGrantProof({
         env,
@@ -947,7 +961,10 @@ describe("reservation and adoption against a real private-session authority", ()
       actorId: who.user.tokenIdentifier,
       actorKind: "human" as const,
     })
-    return { target, store, owner, member, grant, runtime, relayToken, assignHost }
+    const turnProducer = (turnId: string) => seed().prepare<unknown[], { actor_id: string }>(
+      `SELECT actor_id FROM session_turn_producers WHERE session_id = 'ses_parent' AND turn_id = ?`,
+    ).get(turnId)?.actor_id
+    return { target, store, owner, member, grant, runtime, relayToken, assignHost, turnProducer }
   }
 
   test("reserves a child under a parent the owner can read, and the registration it answers with completes", async () => {
@@ -1031,5 +1048,346 @@ describe("reservation and adoption against a real private-session authority", ()
     expect(await refused.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
     await expect(store.authorizeRuntimeSession({ ...runtime(owner), sessionId: "ses_orphan_child", workspaceId: "ws_real", action: "read" }))
       .rejects.toThrow()
+  })
+
+  test("a grant minted over an owner grant or a Relay Host Token redeems once against the real authority, renews and releases without a bearer, and never replays", async () => {
+    const { target, store, owner, member, grant, runtime, relayToken, turnProducer } = await fixture()
+    await store.reserveSession(owner, { operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real", kind: "create" })
+    await store.registerRuntimeSession({ ...runtime(owner), operationId: "op_parent", sessionId: "ses_parent", workspaceId: "ws_real" })
+    const reserved = await request(target, await grant(owner), { action: "reserve", sessionId: "ses_child", parentSessionId: "ses_parent" })
+    const { operationId } = await reserved.json() as { operationId: string }
+    expect((await request(target, await grant(owner), { action: "register", operationId, sessionId: "ses_child" })).status).toBe(200)
+
+    const minted = await request(target, await grant(owner), {
+      action: "turn_grant", sessionId: "ses_parent", intent: "child_completion", subjectSessionId: "ses_child", registrationOperationId: operationId,
+    })
+    expect(minted.status).toBe(200)
+    const wake = await minted.json() as { allowed: true; grant: string; expiresAt: number }
+    expect(decodeJwt(wake.grant)).toMatchObject({
+      actor_id: owner.user.tokenIdentifier, session_id: "ses_parent", workspace_id: "ws_real", turn_id_prefix: "msg_wake_ses_child_",
+    })
+    expect(wake.expiresAt).toBeGreaterThan(Date.now())
+
+    const outside = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_outside_prefix", grant: wake.grant })
+    expect(outside.status).toBe(401)
+    expect(await outside.json()).toMatchObject({ error: { code: "session_turn_grant_mismatch" } })
+    expect(turnProducer("msg_outside_prefix")).toBeUndefined()
+
+    const acquired = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_wake_ses_child_1", grant: wake.grant })
+    expect(acquired.status).toBe(200)
+    const lease = await acquired.json() as { leaseId: string; fencingToken: number }
+    expect(decodeJwt(lease.leaseId)).toMatchObject({ transport: "deferred-grant", actor_id: owner.user.tokenIdentifier, turn_id: "msg_wake_ses_child_1" })
+    expect(turnProducer("msg_wake_ses_child_1")).toBe(owner.user.tokenIdentifier)
+    const retried = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_wake_ses_child_1", grant: wake.grant })
+    expect(retried.status).toBe(200)
+    expect((await retried.json() as { fencingToken: number }).fencingToken).toBe(lease.fencingToken)
+
+    const owned = { sessionId: "ses_parent", turnId: "msg_wake_ses_child_1", leaseId: lease.leaseId, fencingToken: lease.fencingToken }
+    const renewed = await request(target, undefined, { action: "turn_renew", ...owned })
+    expect(renewed.status).toBe(200)
+    const renewedLease = await renewed.json() as { leaseId: string }
+    expect(decodeJwt(renewedLease.leaseId)).toMatchObject({ transport: "deferred-grant" })
+    expect((await request(target, undefined, { action: "turn_release", ...owned, leaseId: renewedLease.leaseId })).status).toBe(200)
+
+    for (const turnId of ["msg_wake_ses_child_1", "msg_wake_ses_child_2"]) {
+      const replayed = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId, grant: wake.grant })
+      expect(replayed.status).toBe(401)
+      expect(await replayed.json()).toMatchObject({ error: { code: "session_turn_grant_redeemed" } })
+    }
+    expect(turnProducer("msg_wake_ses_child_2")).toBeUndefined()
+
+    const queued = await request(target, await relayToken(owner, "editor"), { action: "turn_grant", sessionId: "ses_parent", intent: "queued_prompt", turnId: "msg_q1" })
+    expect(queued.status).toBe(200)
+    const prompt = await queued.json() as { grant: string }
+    expect(decodeJwt(prompt.grant)).toMatchObject({ intent: "queued_prompt", turn_id: "msg_q1" })
+    const otherTurn = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_q2", grant: prompt.grant })
+    expect(otherTurn.status).toBe(401)
+    expect(await otherTurn.json()).toMatchObject({ error: { code: "session_turn_grant_mismatch" } })
+    const prompted = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_q1", grant: prompt.grant })
+    expect(prompted.status).toBe(200)
+    expect(turnProducer("msg_q1")).toBe(owner.user.tokenIdentifier)
+
+    const stranger = await request(target, await relayToken(member, "editor"), { action: "turn_grant", sessionId: "ses_parent", intent: "queued_prompt", turnId: "msg_m1" })
+    expect(stranger.status).toBe(403)
+    expect(await stranger.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+  })
+})
+
+describe("deferred turn grants over the HTTP oracle", () => {
+  const principal = { principalKind: "user" as const, actorId: "actor_1", actorKind: "human" as const }
+  const OWNER: WorkspaceOwnerIdentity = { userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_a" }
+  const ownerPrincipal = { principalKind: "user" as const, actorId: "actor_alice", actorKind: "human" as const }
+
+  function grantRow(input: Pick<GrantSessionTurnInput, "sessionId" | "workspaceId" | "actorId" | "intent" | "subjectSessionId" | "turnId">): SessionTurnGrant {
+    return {
+      grantId: `grant_${input.intent}_${input.actorId}`,
+      sessionId: input.sessionId,
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      intent: input.intent,
+      ...(input.subjectSessionId ? { subjectSessionId: input.subjectSessionId, turnIdPrefix: childCompletionTurnIdPrefix(input.subjectSessionId) } : {}),
+      ...(input.turnId ? { turnId: input.turnId } : {}),
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 24 * 60 * 60_000,
+    }
+  }
+
+  async function fixture(input: { turns?: boolean } = {}) {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const relayKey = await generateKeyPair("EdDSA", { extractable: true })
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+      CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(relayKey.publicKey),
+    }
+    const passes = memorySandboxPassRegister()
+    const resolveWorkspaceOwner = vi.fn(async (workspaceId: string) => (workspaceId === "ws_1" ? OWNER : undefined))
+    const authority = {
+      ...transitionStubs,
+      registerRuntimeSession: vi.fn(async () => ({})),
+      authorizeRuntimeSession: vi.fn(async () => {}),
+      runtimeAccessTokenActive: vi.fn(async (): Promise<{ active: boolean; code?: string; reason?: string }> => ({ active: true })),
+    }
+    const turnAuthority = {
+      acquireSessionTurn: vi.fn(async (turn: { sessionId: string; workspaceId: string; turnId: string; grantId?: string }) => ({
+        sessionId: turn.sessionId, workspaceId: turn.workspaceId, turnId: turn.turnId,
+        leaseId: "turn_lease_1", fencingToken: 3, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000,
+      })),
+      renewSessionTurn: vi.fn(async (turn: { sessionId: string; workspaceId: string; turnId: string; leaseId: string; fencingToken: number }) => ({
+        ...turn, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000,
+      })),
+      releaseSessionTurn: vi.fn(async (turn: { sessionId: string; turnId: string; fencingToken: number }) => ({ released: true, ...turn })),
+      grantSessionTurn: vi.fn(async (value: GrantSessionTurnInput) => grantRow(value)),
+      revokeSessionTurnGrants: vi.fn(async () => ({ revoked: 0 })),
+    }
+    const target = app({
+      authority,
+      ...(input.turns === false ? {} : { turnAuthority }),
+      env,
+      ownerGrants: createOwnerGrantProof({ env, passes, resolveWorkspaceOwner }),
+    })
+    const relay = () => mintRelayHostToken(relayInput, relayKey.privateKey, "EdDSA")
+    const owner = async () => (await mintOwnerGrant({ ...OWNER, workspaceId: "ws_1" }, env, { register: passes })).token
+    const wakeGrant = (overrides: { sessionId?: string; actorId?: string } = {}, minting: { now?: () => number; expiresAt?: number } = {}) => {
+      const row = { ...grantRow({ sessionId: "ses_parent", workspaceId: "ws_1", actorId: "actor_1", intent: "child_completion", subjectSessionId: "ses_child", ...overrides }), ...(minting.expiresAt ? { expiresAt: minting.expiresAt } : {}) }
+      const who = overrides.actorId ? { ...principal, actorId: overrides.actorId } : principal
+      return mintDeferredTurnGrant(deferredTurnGrantClaims(who, "org_1", row), env, minting.now ? { now: minting.now } : {}).then((minted) => ({ ...minted, row }))
+    }
+    const calls = () => ({
+      acquire: turnAuthority.acquireSessionTurn.mock.calls.length,
+      grant: turnAuthority.grantSessionTurn.mock.calls.length,
+      renew: turnAuthority.renewSessionTurn.mock.calls.length,
+      release: turnAuthority.releaseSessionTurn.mock.calls.length,
+      authorize: authority.authorizeRuntimeSession.mock.calls.length,
+      register: authority.registerRuntimeSession.mock.calls.length,
+    })
+    return { env, key, target, authority, turnAuthority, resolveWorkspaceOwner, relay, owner, wakeGrant, calls }
+  }
+
+  test("mints a child-completion grant over a Relay Host Token: the token's actor and workspace, never the body's, and only while the parent token is active", async () => {
+    const { env, target, authority, turnAuthority, relay } = await fixture()
+    const response = await request(target, await relay(), {
+      sessionId: "ses_parent", action: "turn_grant", intent: "child_completion",
+      subjectSessionId: "ses_child", registrationOperationId: "op_child",
+      actorId: "attacker_actor", workspaceId: "attacker_workspace",
+    })
+    expect(response.status).toBe(200)
+    expect(turnAuthority.grantSessionTurn).toHaveBeenCalledWith({
+      ...principal, sessionId: "ses_parent", workspaceId: "ws_1", intent: "child_completion", subjectSessionId: "ses_child", registrationOperationId: "op_child",
+    })
+    const row = await turnAuthority.grantSessionTurn.mock.results[0].value
+    const body = await response.json() as { allowed: boolean; grant: string; expiresAt: number }
+    expect(body).toEqual({ allowed: true, grant: expect.any(String), expiresAt: row.expiresAt })
+    expect(decodeJwt(body.grant)).toEqual({
+      iss: DEFERRED_TURN_GRANT_ISSUER,
+      aud: DEFERRED_TURN_GRANT_AUDIENCE,
+      jti: row.grantId,
+      principal_kind: "user",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      session_id: "ses_parent",
+      intent: "child_completion",
+      subject_session_id: "ses_child",
+      turn_id_prefix: "msg_wake_ses_child_",
+      iat: expect.any(Number),
+      exp: Math.floor(row.expiresAt / 1_000),
+    })
+    await expect(verifyDeferredTurnGrant(body.grant, env, { sessionId: "ses_parent" })).resolves.toMatchObject({ grantId: row.grantId })
+
+    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "revoked" })
+    const revoked = await request(target, await relay(), { sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "msg_q1" })
+    expect(revoked.status).toBe(401)
+    expect(await revoked.json()).toMatchObject({ error: { code: "runtime_access_token_revoked" } })
+    expect(turnAuthority.grantSessionTurn).toHaveBeenCalledTimes(1)
+  })
+
+  test("mints a queued-prompt grant over an owner grant, re-resolved against the workspace's owner at mint time", async () => {
+    const { target, turnAuthority, resolveWorkspaceOwner, owner } = await fixture()
+    const response = await request(target, await owner(), { sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "msg_q1" })
+    expect(response.status).toBe(200)
+    expect(turnAuthority.grantSessionTurn).toHaveBeenCalledWith({ ...ownerPrincipal, sessionId: "ses_parent", workspaceId: "ws_1", intent: "queued_prompt", turnId: "msg_q1" })
+    const body = await response.json() as { grant: string }
+    expect(decodeJwt(body.grant)).toMatchObject({ actor_id: "actor_alice", intent: "queued_prompt", turn_id: "msg_q1" })
+    expect(decodeJwt(body.grant)).not.toHaveProperty("turn_id_prefix")
+
+    resolveWorkspaceOwner.mockResolvedValueOnce({ ...OWNER, actorId: "actor_bob", userId: "bob" })
+    const reowned = await request(target, await owner(), { sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "msg_q2" })
+    expect(reowned.status).toBe(401)
+    expect(await reowned.json()).toMatchObject({ error: { code: "owner_grant_invalid" } })
+    expect(turnAuthority.grantSessionTurn).toHaveBeenCalledTimes(1)
+  })
+
+  test("a grant and no bearer acquires a lease bound to deferred-grant, and that lease renews and releases like any other turn lease", async () => {
+    const { target, authority, turnAuthority, resolveWorkspaceOwner, wakeGrant } = await fixture()
+    const { grant, row } = await wakeGrant()
+    const acquired = await request(target, undefined, { sessionId: "ses_parent", action: "turn_acquire", turnId: "msg_wake_ses_child_1", grant })
+    expect(acquired.status).toBe(200)
+    expect(turnAuthority.acquireSessionTurn).toHaveBeenCalledWith({
+      ...principal, sessionId: "ses_parent", workspaceId: "ws_1", turnId: "msg_wake_ses_child_1", grantId: row.grantId,
+    })
+    const lease = await acquired.json() as { leaseId: string; fencingToken: number; connectionCredential?: string }
+    expect(lease.fencingToken).toBe(3)
+    expect(decodeJwt(lease.leaseId)).toMatchObject({
+      aud: "workspace-runtime-session-turn",
+      transport: "deferred-grant",
+      grant_id: row.grantId,
+      actor_id: "actor_1",
+      session_id: "ses_parent",
+      turn_id: "msg_wake_ses_child_1",
+      authority_lease_id: "turn_lease_1",
+    })
+    expect(authority.runtimeAccessTokenActive).not.toHaveBeenCalled()
+    expect(resolveWorkspaceOwner).not.toHaveBeenCalled()
+
+    const owned = { sessionId: "ses_parent", turnId: "msg_wake_ses_child_1", leaseId: lease.leaseId, fencingToken: 3 }
+    const renewed = await request(target, undefined, { action: "turn_renew", ...owned })
+    expect(renewed.status).toBe(200)
+    expect(turnAuthority.renewSessionTurn).toHaveBeenCalledWith({
+      ...principal, sessionId: "ses_parent", workspaceId: "ws_1", turnId: "msg_wake_ses_child_1", leaseId: "turn_lease_1", fencingToken: 3,
+    })
+    const renewedLease = await renewed.json() as { leaseId: string }
+    expect(decodeJwt(renewedLease.leaseId)).toMatchObject({ transport: "deferred-grant", grant_id: row.grantId })
+    expect((await request(target, undefined, { action: "turn_release", ...owned, leaseId: renewedLease.leaseId })).status).toBe(200)
+    expect(turnAuthority.releaseSessionTurn).toHaveBeenCalledWith({
+      ...principal, sessionId: "ses_parent", workspaceId: "ws_1", turnId: "msg_wake_ses_child_1", leaseId: "turn_lease_1", fencingToken: 3,
+    })
+    expect(authority.runtimeAccessTokenActive).not.toHaveBeenCalled()
+    expect(resolveWorkspaceOwner).not.toHaveBeenCalled()
+  })
+
+  test("refuses a grant from another key, under another audience, for another session, expired, malformed, or beside a bearer, and admits nothing", async () => {
+    const { env, target, turnAuthority, relay, wakeGrant, calls } = await fixture()
+    const foreign = await fixture()
+    const acquire = (grant: string, token?: string) =>
+      request(target, token, { sessionId: "ses_parent", action: "turn_acquire", turnId: "msg_wake_ses_child_1", grant })
+    const refused = async (response: Response, status: number, code: string) => {
+      expect(response.status).toBe(status)
+      expect(await response.json()).toMatchObject({ error: { code } })
+    }
+    const signingKey = await importPKCS8(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM, "EdDSA")
+    const { iss: _iss, aud: _aud, iat, exp, ...claims } = decodeJwt((await wakeGrant()).grant)
+    const turnLeaseAudienceGrant = await new SignJWT(claims)
+      .setProtectedHeader({ alg: "EdDSA" }).setIssuer(DEFERRED_TURN_GRANT_ISSUER).setAudience("workspace-runtime-session-turn")
+      .setIssuedAt(iat).setExpirationTime(exp!).sign(signingKey)
+
+    await refused(await acquire((await foreign.wakeGrant()).grant), 401, "session_turn_grant_invalid")
+    await refused(await acquire(turnLeaseAudienceGrant), 401, "session_turn_grant_invalid")
+    await refused(await acquire((await wakeGrant({ sessionId: "ses_other" })).grant), 401, "session_turn_grant_mismatch")
+    const hourAgo = Date.now() - 60 * 60_000
+    await refused(await acquire((await wakeGrant({}, { now: () => hourAgo - 60 * 60_000, expiresAt: hourAgo })).grant), 401, "session_turn_grant_expired")
+    await refused(await acquire("not.a.grant"), 401, "session_turn_grant_invalid")
+    await refused(await acquire((await wakeGrant()).grant, await relay()), 400, "session_turn_grant_invalid")
+    expect(calls().acquire).toBe(0)
+
+    turnAuthority.acquireSessionTurn.mockRejectedValueOnce(new SessionTurnGrantError("session_turn_grant_redeemed", "already redeemed"))
+    await refused(await acquire((await wakeGrant()).grant), 401, "session_turn_grant_redeemed")
+    turnAuthority.acquireSessionTurn.mockRejectedValueOnce(new SessionTurnGrantError("session_turn_grant_mismatch", "outside the prefix"))
+    await refused(await acquire((await wakeGrant()).grant), 401, "session_turn_grant_mismatch")
+    expect(turnAuthority.renewSessionTurn).not.toHaveBeenCalled()
+  })
+
+  test("a grant proves turn_acquire and nothing else, and a deferred-grant turn lease is not a stream lease", async () => {
+    const { target, relay, wakeGrant, calls } = await fixture()
+    const { grant } = await wakeGrant()
+    const before = calls()
+    const bodies: Record<string, unknown>[] = [
+      { action: "turn_renew", turnId: "msg_wake_ses_child_1", leaseId: "x", fencingToken: 3 },
+      { action: "turn_release", turnId: "msg_wake_ses_child_1", leaseId: "x", fencingToken: 3 },
+      { action: "turn_grant", intent: "queued_prompt", turnId: "msg_q1" },
+      { action: "read" },
+      { action: "write" },
+      { action: "read", stream: true },
+      { action: "write", stream: true },
+      { action: "register", operationId: "op_1" },
+      { action: "start", operationId: "op_1" },
+      { action: "adopt" },
+    ]
+    for (const body of bodies) {
+      for (const token of [undefined, await relay()]) {
+        const response = await request(target, token, { sessionId: "ses_parent", ...body, grant })
+        expect(response.status, JSON.stringify(body)).toBe(400)
+        expect(await response.json()).toMatchObject({ error: { code: "session_authority_request_invalid" } })
+      }
+    }
+    expect(calls()).toEqual(before)
+
+    const acquired = await request(target, undefined, { sessionId: "ses_parent", action: "turn_acquire", turnId: "msg_wake_ses_child_1", grant })
+    const { leaseId } = await acquired.json() as { leaseId: string }
+    const asStream = await request(target, undefined, { sessionId: "ses_parent", action: "write", stream: true, lease: leaseId })
+    expect(asStream.status).toBe(401)
+    expect(await asStream.json()).toMatchObject({ error: { code: "session_stream_lease_invalid" } })
+
+    const stream = await request(target, await relay(), { sessionId: "ses_parent", action: "read", stream: true })
+    expect(stream.status).toBe(200)
+    const { lease } = await stream.json() as { lease: string }
+    expect(decodeJwt(lease)).toMatchObject({ aud: "workspace-runtime-session-stream", transport: "relay-host" })
+    expect(decodeJwt(lease)).not.toHaveProperty("grant_id")
+    expect((await request(target, undefined, { sessionId: "ses_parent", action: "read", stream: true, lease })).status).toBe(200)
+  })
+
+  test("turn_grant validates its body before any proof, needs a proof, and is bounded by the body limit", async () => {
+    const { target, turnAuthority, relay } = await fixture()
+    const token = await relay()
+    for (const body of [
+      { intent: "queued_prompt" },
+      { intent: "child_completion", subjectSessionId: "ses_child" },
+      { intent: "child_completion", registrationOperationId: "op_child" },
+      { intent: "anything", turnId: "msg_q1" },
+      { turnId: "msg_q1" },
+      { intent: "queued_prompt", turnId: "msg_q1", leaseId: "x", fencingToken: 3 },
+      { intent: "child_completion", subjectSessionId: " ", registrationOperationId: "op_child" },
+    ]) {
+      const response = await request(target, token, { sessionId: "ses_parent", action: "turn_grant", ...body })
+      expect(response.status, JSON.stringify(body)).toBe(400)
+    }
+    expect((await request(target, undefined, { sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "msg_q1" })).status).toBe(401)
+    const oversized = await target.request("/api/runtime-authority/session-authorize", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "content-length": String(17 * 1024) },
+      body: JSON.stringify({ sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "x".repeat(17 * 1024) }),
+    })
+    expect(oversized.status).toBe(413)
+    expect(turnAuthority.grantSessionTurn).not.toHaveBeenCalled()
+  })
+
+  test("the authority's refusal to mint, and a plane with no turn authority, reach the wire as their own answers", async () => {
+    const { target, turnAuthority, relay } = await fixture()
+    turnAuthority.grantSessionTurn.mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "not a send grantee"))
+    const denied = await request(target, await relay(), { sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "msg_q1" })
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    turnAuthority.grantSessionTurn.mockRejectedValueOnce(new SessionTurnGrantError("session_turn_grant_mismatch", "not the child's creator"))
+    const mismatch = await request(target, await relay(), {
+      sessionId: "ses_parent", action: "turn_grant", intent: "child_completion", subjectSessionId: "ses_child", registrationOperationId: "op_child",
+    })
+    expect(mismatch.status).toBe(403)
+    expect(await mismatch.json()).toMatchObject({ error: { code: "session_turn_grant_mismatch" } })
+
+    const bare = await fixture({ turns: false })
+    const unavailable = await request(bare.target, await bare.relay(), { sessionId: "ses_parent", action: "turn_grant", intent: "queued_prompt", turnId: "msg_q1" })
+    expect(unavailable.status).toBe(503)
+    expect(await unavailable.json()).toMatchObject({ error: { code: "session_turn_authority_unavailable" } })
   })
 })

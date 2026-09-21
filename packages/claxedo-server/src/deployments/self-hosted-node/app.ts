@@ -134,10 +134,12 @@ import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-r
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
+  SessionTurnGrantError,
   SessionTurnLeaseLostError,
   type SessionTurnAuthority,
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { deferredTurnGrantClaims, mintDeferredTurnGrant, verifyDeferredTurnGrant } from "../../session/deferred-turn-grant"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -366,7 +368,10 @@ export function embeddedManagedPrivateSessionPolicy(
       return denied(error)
     }
   }
-  const turnDenied = (error: unknown) => {
+  const turnDenied = (error: unknown, grantRefused: 401 | 403 = 401) => {
+    if (error instanceof SessionTurnGrantError) {
+      return { allowed: false as const, status: grantRefused, code: error.code, message: error.message }
+    }
     if (error instanceof SessionTurnConflictError) {
       return { allowed: false as const, status: 409 as const, code: error.code, message: error.message }
     }
@@ -436,7 +441,10 @@ export function embeddedManagedPrivateSessionPolicy(
       registerSession: (input) => decide(input, "register"),
       acquireTurn: async (input) => {
         try {
-          const lease = await turnAuthority.acquireSessionTurn(turnInput(input))
+          const grantId = input.grant === undefined
+            ? undefined
+            : (await verifyDeferredTurnGrant(input.grant, process.env, { sessionId: input.sessionId })).grantId
+          const lease = await turnAuthority.acquireSessionTurn({ ...turnInput(input), ...(grantId === undefined ? {} : { grantId }) })
           const connectionCredential = await mintTurnCredential(input, lease)
           return { allowed: true as const, ...lease, ...(connectionCredential ? { connectionCredential } : {}) }
         } catch (error) {
@@ -483,6 +491,28 @@ export function embeddedManagedPrivateSessionPolicy(
         : { allowed: true }
     } catch (error) {
       return denied(error)
+    }
+  }
+  policy.grantTurn = async (input) => {
+    const { actor, authority: workspace } = input
+    if (!actor || !workspace?.managed) {
+      return denied(new ControlPlaneAuthError(403, "workspace_authorization_denied", "Verified workspace actor is required"))
+    }
+    try {
+      const principal = principalOf({ ...input, actor, authority: workspace })
+      const granted = await turnAuthority.grantSessionTurn({
+        ...principal,
+        sessionId: input.sessionId,
+        workspaceId: workspace.workspaceId,
+        intent: input.intent,
+        ...(input.subjectSessionId ? { subjectSessionId: input.subjectSessionId } : {}),
+        ...(input.registrationOperationId ? { registrationOperationId: input.registrationOperationId } : {}),
+        ...(input.turnId ? { turnId: input.turnId } : {}),
+      })
+      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, workspace.orgId, granted), process.env)
+      return { allowed: true as const, grant: minted.grant, expiresAt: granted.expiresAt }
+    } catch (error) {
+      return turnDenied(error, 403)
     }
   }
   return policy

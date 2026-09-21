@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 125 modules / 40 packages, with no headroom.
+   * Measured 127 modules / 40 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -105,9 +105,20 @@ export const serverSelfHosted: Policy = {
    * second copy of the rule for this plane is how the two would drift. No
    * package edge: it reaches only `better-auth` and Web Crypto.
    *
-   * Measured 125 modules / 40 packages, with no headroom.
+   * `src/session/deferred-turn-grant.ts` is the reviewed owner of the signed
+   * proof a background turn redeems in place of the credential it no longer
+   * holds. The embedded runtime policy in `self-hosted-node/app.ts` mints and
+   * redeems it in process, over the same key the HTTP oracle signs it with,
+   * so a child-completion wake is admitted the same way on this box as on a
+   * plane its runtime reaches over HTTP. It brings
+   * `src/platform/auth/runtime-token-keys.ts`, the runtime key-pair loader it
+   * shares with the owner grant, which this entry did not reach before
+   * because it composes no owner grants. No package edge: jose and the
+   * server-core auth ports were already here.
+   *
+   * Measured 127 modules / 40 packages, with no headroom.
    */
-  ceilings: { modules: 125, packages: 40 },
+  ceilings: { modules: 127, packages: 40 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

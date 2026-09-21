@@ -103,8 +103,14 @@ const ENTRIES = [
   // on an enrolled machine, which the self-host workspace routes dispatch to
   // on a `hostId` body; hosted-shared's `hosted-remote-access-service.ts`
   // owns revoke; `platform/http/status.ts` is how the two routes answer an
-  // authority refusal with its own status. 125/40.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 125, packages: 40 },
+  // authority refusal with its own status.
+  // +2 modules: `session/deferred-turn-grant.ts`, the signed proof a
+  // background turn redeems in place of the credential it no longer holds,
+  // which the embedded runtime policy mints and redeems in process over the
+  // same key the HTTP oracle uses; and `platform/auth/runtime-token-keys.ts`,
+  // the key-pair loader it shares with the owner grant, unreached here before
+  // because this node composes no owner grants. No package edge. 127/40.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 127, packages: 40 },
 ] as const
 
 /** The remaining cloud compositions. */
