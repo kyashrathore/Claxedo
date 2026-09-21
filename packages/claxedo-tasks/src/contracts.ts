@@ -47,6 +47,15 @@ export const TASKS_BOUNDS = {
    */
   taskAttachmentMaxBytes: 1_572_864,
   taskAttachmentFilenameMax: 255,
+  /**
+   * Every identifier a request or response names — a client request id, a
+   * task, preset, session, workspace or project id, a preview digest. Each is
+   * a key a receipt row, an index or an adapter lookup is built from, so it is
+   * bounded here rather than left for the request body's byte cap to catch.
+   */
+  idMaxBytes: 256,
+  /** A page cursor renders `createdAt:id`, so it needs the id bound plus room for the stamp and separator. */
+  cursorMaxBytes: 512,
   listLimitDefault: 50,
   listLimitMax: 100,
   /**
@@ -63,6 +72,15 @@ export type TasksBounds = { readonly [Key in keyof typeof TASKS_BOUNDS]: number 
 export type TasksActor = {
   scopeId: string
   ownerId: string
+  /**
+   * The session this credential is authenticated as acting from: a grant's
+   * own session, or the calling session a root's grant named and the verifier
+   * admitted. Absent for a person. It is the only provenance a task's
+   * `createdFrom` or a link's `startedFrom` may record — a request that names
+   * another session is refused, and a session-granted caller's is recorded
+   * whether the request repeats it or not.
+   */
+  session?: SessionReference
 }
 
 export type SessionReference = {
@@ -344,7 +362,12 @@ export type TaskDraft = {
   parentTaskId: string | null
   /** Absent means To do, which is where a task that nobody parked belongs. */
   status?: TaskCreateStatus
-  /** Sent by a session creating a task from inside itself; the app sends nothing. */
+  /**
+   * Sent by a session creating a task from inside itself; the app sends
+   * nothing. A claim, not the record: the task stores the session the
+   * caller's credential was authenticated as, and a claim naming any other
+   * session is refused.
+   */
   createdFrom?: SessionReference
   /** Images stored with the task and handed to every session started on it. Absent means none. */
   attachments?: readonly TaskAttachmentDraft[]
@@ -496,7 +519,11 @@ export type StartPreviewRequest = {
   slot: ConfigurationSlot
   attempt: number
   continueFromPrevious: boolean
-  /** Sent by a session asking from inside itself; the app sends nothing. The host checks it before believing it. */
+  /**
+   * Sent by a session asking from inside itself; the app sends nothing.
+   * Recorded only when it is the session the caller's credential was
+   * authenticated as — anything else is refused rather than believed.
+   */
   startedFrom?: SessionReference
 }
 
@@ -534,7 +561,11 @@ export type StartRequest = {
   previewDigest: string
   handoffText: string | null
   continueFromPrevious: boolean
-  /** Sent by a session asking from inside itself; the app sends nothing. The host checks it before believing it. */
+  /**
+   * Sent by a session asking from inside itself; the app sends nothing.
+   * Recorded only when it is the session the caller's credential was
+   * authenticated as — anything else is refused rather than believed.
+   */
   startedFrom?: SessionReference
 }
 

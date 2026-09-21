@@ -9,6 +9,7 @@ import {
   ACTOR,
   type FakeAuthorization,
   type FakeBridge,
+  OTHER_ACTOR,
   OTHER_SCOPE,
   fakeAuthorization,
   fakeBridge,
@@ -38,7 +39,7 @@ function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
 }
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const WEBP = Uint8Array.from([0x52, 0x49, 0x46, 0x46])
+const WEBP = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])
 
 function images() {
   return [
@@ -134,14 +135,34 @@ describe("tasks service", () => {
       expect((await tasks.create(ACTOR, draft())).task.number).toBe(2)
     })
 
-    test("records the session a task was created from and reads it back", async () => {
+    test("records the session the caller's credential is, whether or not the request repeats it", async () => {
       const origin = { sessionId: "ses_author", workspaceId: "ws_author" }
-      const created = (await tasks.create(ACTOR, draft({ createdFrom: origin }))).task
+      const fromSession = { ...ACTOR, session: origin }
+      const created = (await tasks.create(fromSession, draft({ createdFrom: origin }))).task
       expect(created.createdFrom).toEqual(origin)
-      expect((await tasks.detail(ACTOR, created.id)).task.createdFrom).toEqual(origin)
+      expect((await tasks.detail(fromSession, created.id)).task.createdFrom).toEqual(origin)
+
+      const unstated = (await tasks.create(fromSession, draft())).task
+      expect(unstated.createdFrom).toEqual(origin)
 
       const listed = await tasks.list(ACTOR, { projectId: PROJECT, status: null, parent: "any", includeArchived: false, cursor: null, limit: 50 })
       expect(listed.items.find((row) => row.id === created.id)?.createdFrom).toEqual(origin)
+    })
+
+    test("a caller whose credential names no session may not claim one", async () => {
+      expect(
+        (await refusalOf(() =>
+          tasks.create(ACTOR, draft({ createdFrom: { sessionId: "ses_author", workspaceId: "ws_author" } })),
+        )).code,
+      ).toBe("forbidden")
+
+      const fromSession = { ...ACTOR, session: { sessionId: "ses_author", workspaceId: "ws_author" } }
+      expect(
+        (await refusalOf(() =>
+          tasks.create(fromSession, draft({ createdFrom: { sessionId: "ses_other", workspaceId: "ws_author" } })),
+        )).code,
+      ).toBe("forbidden")
+      expect((await tasks.list(ACTOR, { projectId: PROJECT, status: null, parent: "any", includeArchived: false, cursor: null, limit: 50 })).items).toHaveLength(0)
     })
 
     test("a task the app created is created from nobody", async () => {
@@ -149,7 +170,10 @@ describe("tasks service", () => {
     })
 
     test("refuses a creating session that names no session", async () => {
-      const refusal = await refusalOf(() => tasks.create(ACTOR, draft({ createdFrom: { sessionId: " ", workspaceId: null } })))
+      const origin = { sessionId: "ses_author", workspaceId: null }
+      const refusal = await refusalOf(() =>
+        tasks.create({ ...ACTOR, session: origin }, draft({ createdFrom: { sessionId: " ", workspaceId: null } })),
+      )
       expect(fieldReasons(refusal)).toEqual({ "createdFrom.sessionId": "required" })
     })
 
@@ -163,7 +187,7 @@ describe("tasks service", () => {
       const detail = await tasks.detail(ACTOR, created.id)
       expect(detail.attachments).toEqual([
         { id: "attachment-1", filename: "before.png", mime: "image/png", size: 8, createdAt: detail.task.createdAt },
-        { id: "attachment-2", filename: "after.webp", mime: "image/webp", size: 4, createdAt: detail.task.createdAt },
+        { id: "attachment-2", filename: "after.webp", mime: "image/webp", size: 12, createdAt: detail.task.createdAt },
       ])
       expect(await tasks.attachment(ACTOR, created.id, "attachment-2")).toMatchObject({
         filename: "after.webp",
@@ -470,6 +494,21 @@ describe("tasks service", () => {
       expect(view).toMatchObject({ presetId: preset.id, presetRevision: preset.revision, presetNameAtStart: preset.name })
       expect(JSON.stringify(view)).not.toContain(preset.instructions)
     })
+
+    test("a link whose session is gone keeps its attempt but shows another owner's preset by no name", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      await tasks.start(ACTOR, task.id, start(task))
+      bridge.setState("session-1", "deleted")
+
+      const own = (await tasks.detail(ACTOR, task.id)).links[0]
+      expect(own).toMatchObject({ attempt: 1, liveness: "deleted", presetNameAtStart: preset.name })
+
+      const other = (await tasks.detail(OTHER_ACTOR, task.id)).links[0]
+      expect(other).toMatchObject({ attempt: 1, liveness: "deleted", presetNameAtStart: "" })
+      // The attempt number survives either way — it is what the next Start has
+      // to name — and nothing else the starter owned is lent out with it.
+      expect(other?.sessionRef.sessionId).toBe("session-1")
+    })
   })
 
   describe("start", () => {
@@ -537,10 +576,11 @@ describe("tasks service", () => {
       ])
     })
 
-    test("the session a start is asked from reaches the bridge, and what the bridge says started it is what the link records", async () => {
-      const task = (await tasks.create(ACTOR, draft())).task
+    test("the session the credential is reaches the bridge, and what the bridge says started it is what the link records", async () => {
       const from = { sessionId: "ses_caller", workspaceId: "workspace-1" }
-      await tasks.startPreview(ACTOR, task.id, {
+      const fromSession = { ...ACTOR, session: from }
+      const task = (await tasks.create(fromSession, draft())).task
+      await tasks.startPreview(fromSession, task.id, {
         taskRevision: task.revision,
         presetId: preset.id,
         presetRevision: preset.revision,
@@ -550,11 +590,39 @@ describe("tasks service", () => {
         startedFrom: from,
       })
       expect(bridge.previews[0]?.startedFrom).toEqual(from)
-      await tasks.start(ACTOR, task.id, start(task, { startedFrom: from }))
+      await tasks.start(fromSession, task.id, start(task, { startedFrom: from }))
       expect(bridge.starts[0]?.startedFrom).toEqual(from)
       const link = await store.links.getCurrent(ACTOR.scopeId, task.id, "primary")
       expect(link?.startedBy).toBe("person")
       expect(link?.startedFrom).toBeNull()
+    })
+
+    test("a start naming a session the credential is not is refused before the bridge is asked", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      const from = { sessionId: "ses_caller", workspaceId: "workspace-1" }
+      expect(
+        (await refusalOf(() =>
+          tasks.startPreview(ACTOR, task.id, {
+            taskRevision: task.revision,
+            presetId: preset.id,
+            presetRevision: preset.revision,
+            slot: "primary",
+            attempt: 1,
+            continueFromPrevious: false,
+            startedFrom: from,
+          }),
+        )).code,
+      ).toBe("forbidden")
+      expect((await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { startedFrom: from })))).code).toBe(
+        "forbidden",
+      )
+      const fromSession = { ...ACTOR, session: { sessionId: "ses_caller", workspaceId: "workspace-1" } }
+      expect(
+        (await refusalOf(() =>
+          tasks.start(fromSession, task.id, start(task, { startedFrom: { sessionId: "ses_other", workspaceId: "workspace-1" } })),
+        )).code,
+      ).toBe("forbidden")
+      expect(bridge.starts).toHaveLength(0)
     })
 
     test("re-requesting the live attempt returns the same session without starting another", async () => {

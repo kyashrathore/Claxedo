@@ -1,6 +1,6 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { utf8ByteLength } from "@claxedo/helpers/string"
-import type { InvalidField, InvalidFieldReason } from "./contracts"
+import { TASKS_BOUNDS, type InvalidField, type InvalidFieldReason } from "./contracts"
 
 export type FieldCollector = {
   add(path: string, reason: InvalidFieldReason): void
@@ -35,6 +35,11 @@ export function parsedInvalid<T>(fields: readonly InvalidField[]): Parsed<T> {
   return { ok: false, fields }
 }
 
+/** Whether an identifier fits the bound every store key, receipt row and adapter lookup is held to. */
+export function idWithinBound(value: string): boolean {
+  return utf8ByteLength(value) <= TASKS_BOUNDS.idMaxBytes
+}
+
 /**
  * Readers over untrusted JSON. Each one reports the field it could not read
  * and returns undefined; none coerces, defaults or trims, so a wrong type is
@@ -44,8 +49,12 @@ export type Reader = {
   record(value: unknown, path: string): Record<string, unknown> | undefined
   string(value: unknown, path: string): string | undefined
   nonEmptyString(value: unknown, path: string): string | undefined
+  /** A non-empty identifier within `TASKS_BOUNDS.idMaxBytes` — every key a store or adapter is asked under. */
+  id(value: unknown, path: string): string | undefined
   boundedText(value: unknown, path: string, maxBytes: number): string | undefined
   nullableString(value: unknown, path: string): string | null | undefined
+  /** The same bound as `id`, with `null` meaning none. */
+  nullableId(value: unknown, path: string): string | null | undefined
   integer(value: unknown, path: string): number | undefined
   boolean(value: unknown, path: string): boolean | undefined
   array(value: unknown, path: string, maxItems?: number): readonly unknown[] | undefined
@@ -87,6 +96,12 @@ export function reader(fields: FieldCollector): Reader {
       if (typeof value !== "string") return miss(path, "type")
       return value.trim().length > 0 ? value : miss(path, "required")
     },
+    id(value, path) {
+      if (value === undefined) return miss(path, "required")
+      if (typeof value !== "string") return miss(path, "type")
+      if (!idWithinBound(value)) return miss(path, "too_long")
+      return value.trim().length > 0 ? value : miss(path, "required")
+    },
     boundedText(value, path, maxBytes) {
       if (value === undefined) return miss(path, "required")
       if (typeof value !== "string") return miss(path, "type")
@@ -96,6 +111,13 @@ export function reader(fields: FieldCollector): Reader {
       if (value === undefined) return miss(path, "required")
       if (value === null) return null
       if (typeof value !== "string") return miss(path, "type")
+      return value.trim().length > 0 ? value : miss(path, "required")
+    },
+    nullableId(value, path) {
+      if (value === undefined) return miss(path, "required")
+      if (value === null) return null
+      if (typeof value !== "string") return miss(path, "type")
+      if (!idWithinBound(value)) return miss(path, "too_long")
       return value.trim().length > 0 ? value : miss(path, "required")
     },
     integer(value, path) {

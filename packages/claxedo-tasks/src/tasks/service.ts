@@ -34,7 +34,8 @@ import type { TasksIdsPort } from "../ports/ids"
 import { sessionOriginOf, type TasksSessionBridgePort } from "../ports/session-bridge"
 import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { admissibleAttempt, startConfigurationDigest } from "../start"
-import { validateReparent, validateTaskDraft, validateTaskEdit } from "./model"
+import { idWithinBound } from "../validation"
+import { validateReparent, validateStart, validateStartPreview, validateTaskDraft, validateTaskEdit } from "./model"
 
 export type TasksServiceDeps = {
   store: TasksStorePort
@@ -67,6 +68,35 @@ export type TasksService = {
 }
 
 export function createTasksService(deps: TasksServiceDeps): TasksService {
+  /**
+   * Every id a request names is a key a store or an adapter is asked under, so
+   * an oversized one is refused before it reaches either — a person-sized id
+   * is `idMaxBytes`, and anything past it was never minted here.
+   */
+  const boundedId = (value: string, path: string): void => {
+    if (value.trim().length === 0) refuseInvalid("The request is not valid", [{ path, reason: "required" }])
+    if (!idWithinBound(value)) refuseInvalid("The request is not valid", [{ path, reason: "too_long" }])
+  }
+
+  /**
+   * The only provenance a record may carry: the session the caller's
+   * credential was authenticated as. A request that names one is a claim and
+   * is admitted only when it is that session; a request that names none still
+   * records the credential's, because a person and a session are not the same
+   * author and only the credential can say which asked.
+   */
+  const provenance = (actor: TasksActor, claimed: SessionReference | undefined, path: string): SessionReference | null => {
+    if (
+      claimed !== undefined
+      && (actor.session === undefined
+        || claimed.sessionId !== actor.session.sessionId
+        || claimed.workspaceId !== actor.session.workspaceId)
+    ) {
+      refuse("forbidden", `${path} may record only the session this caller's credential is authenticated as`)
+    }
+    return actor.session ?? null
+  }
+
   const authorize = async (actor: TasksActor, projectId: string, access: "read" | "write"): Promise<void> => {
     if (!(await deps.authorization.authorizeProject(actor, projectId, access))) {
       refuse("forbidden", `No ${access} access to project ${projectId}`)
@@ -74,6 +104,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   }
 
   const load = async (actor: TasksActor, taskId: string, access: "read" | "write"): Promise<Task> => {
+    boundedId(taskId, "taskId")
     const task = await deps.store.tasks.get(actor.scopeId, taskId)
     if (!task || task.scopeId !== actor.scopeId) refuse("not_found", `Task ${taskId} was not found`)
     await authorize(actor, task.projectId, access)
@@ -167,10 +198,33 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     const visible: TaskSessionLinkView[] = []
     for (const link of links) {
       const reading = readings.get(link.sessionRef.sessionId) ?? UNREAD
-      if (reading.state !== "deleted" && !(await deps.authorization.authorizeSessionOpen(actor, link.sessionRef))) continue
+      if (reading.state === "deleted") {
+        visible.push(await historicalView(actor, link, reading))
+        continue
+      }
+      if (!(await deps.authorization.authorizeSessionOpen(actor, link.sessionRef))) continue
       visible.push(linkView(link, reading.state, reading.handoff))
     }
     return visible
+  }
+
+  /**
+   * A link whose session is gone is history, not a door: nothing can be opened
+   * under it, so there is no session grant to ask, and the row is still owed
+   * to the reader because its attempt number is the one the next Start names.
+   * What it says about the preset is the starter's own, though — preset names
+   * are personal to their owner — so a reader who does not own it gets the
+   * attempt and its liveness without the name.
+   */
+  const historicalView = async (
+    actor: TasksActor,
+    link: TaskSessionLink,
+    reading: SlotReading,
+  ): Promise<TaskSessionLinkView> => {
+    const preset = await deps.store.presets.get(actor.scopeId, link.presetId)
+    const view = linkView(link, reading.state, reading.handoff)
+    if (preset && preset.ownerId === actor.ownerId) return view
+    return { ...view, presetNameAtStart: "" }
   }
 
   const requireSessionOpen = async (actor: TasksActor, link: TaskSessionLink): Promise<void> => {
@@ -296,6 +350,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
   return {
     async list(actor, query) {
+      boundedId(query.projectId, "projectId")
       await authorize(actor, query.projectId, "read")
       return deps.store.tasks.list(actor.scopeId, query)
     },
@@ -314,6 +369,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
     async attachment(actor, taskId, attachmentId) {
       const task = await load(actor, taskId, "read")
+      boundedId(attachmentId, "attachmentId")
       const attachment = await deps.store.attachments.get(actor.scopeId, task.id, attachmentId)
       if (!attachment) refuse("not_found", `Attachment ${attachmentId} was not found on task ${taskId}`)
       return attachment
@@ -327,6 +383,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       const checked = validateTaskDraft(input)
       if (!checked.ok) refuseInvalid("The task is not valid", checked.fields)
       const { draft, attachments } = checked.value
+      const createdFrom = provenance(actor, draft.createdFrom, "createdFrom")
       await authorize(actor, draft.projectId, "write")
       const parent = draft.parentTaskId === null ? null : await requireOpenParent(actor, draft.parentTaskId, draft.projectId)
       if (parent && draft.workspaceId !== null && draft.workspaceId !== parent.workspaceId) {
@@ -341,7 +398,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         ...(await filing(actor.scopeId, draft.projectId, parent)),
         workspaceId: parent ? parent.workspaceId : draft.workspaceId,
         parentTaskId: draft.parentTaskId,
-        createdFrom: draft.createdFrom ?? null,
+        createdFrom,
         title: draft.title,
         description: draft.description,
         status: draft.status ?? "todo",
@@ -481,6 +538,9 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     },
 
     async startPreview(actor, taskId, request) {
+      const checked = validateStartPreview(request)
+      if (!checked.ok) refuseInvalid("The preview request is not valid", checked.fields)
+      const startedFrom = provenance(actor, request.startedFrom, "startedFrom")
       const { task, preset, current } = await startSubject(actor, taskId, request)
       const previewed = await deps.bridge.preview({
         actor,
@@ -492,13 +552,16 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         currentLink: current.link,
         currentState: current.state,
         authorizeTranscript: transcriptGrant(actor, current.state === "deleted" ? null : current.link?.sessionRef ?? null),
-        ...(request.startedFrom ? { startedFrom: request.startedFrom } : {}),
+        ...(startedFrom ? { startedFrom } : {}),
       })
       if (!previewed.ok) throw new TasksError(previewed.error)
       return previewed.preview
     },
 
     async start(actor, taskId, request) {
+      const checked = validateStart(request)
+      if (!checked.ok) refuseInvalid("The start request is not valid", checked.fields)
+      const startedFrom = provenance(actor, request.startedFrom, "startedFrom")
       const { task, preset, current, configurationDigest } = await startSubject(actor, taskId, request)
 
       // Attempt `current` while the session is live is the idempotent
@@ -541,7 +604,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         clientRequestId: request.clientRequestId,
         configurationDigest,
         previousSession: continued?.sessionRef ?? null,
-        ...(request.startedFrom ? { startedFrom: request.startedFrom } : {}),
+        ...(startedFrom ? { startedFrom } : {}),
       })
       if (!started.ok) throw new TasksError(started.error)
 

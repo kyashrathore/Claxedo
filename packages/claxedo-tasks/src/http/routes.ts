@@ -207,6 +207,9 @@ export function createTasksRoutes(options: TasksRoutesOptions): Hono {
       "content-type": attachment.mime,
       "content-length": String(attachment.size),
       "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+      // The mime is the one the bytes' own signature proved at write; nosniff
+      // keeps a browser to it rather than to what it would guess.
+      "x-content-type-options": "nosniff",
       "cache-control": "private, max-age=31536000, immutable",
     })
   })

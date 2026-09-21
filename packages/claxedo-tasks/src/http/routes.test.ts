@@ -142,7 +142,7 @@ describe("tasks routes", () => {
   })
 
   test("an image attached at create is listed by detail and served by its own route with its type and name", async () => {
-    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     const created = await post("/commands", {
       clientRequestId: "with-image",
       command: {
@@ -161,13 +161,14 @@ describe("tasks routes", () => {
     const result = (await json(created)).result as { task: Task }
     const detail = await json(await app.request(`/tasks/${result.task.id}`))
     expect(detail).toMatchObject({
-      attachments: [{ id: "attachment-1", filename: "mock ü.png", mime: "image/png", size: 4 }],
+      attachments: [{ id: "attachment-1", filename: "mock ü.png", mime: "image/png", size: 8 }],
     })
 
     const served = await app.request(`/tasks/${result.task.id}/attachments/attachment-1`)
     expect(served.status).toBe(200)
     expect(served.headers.get("content-type")).toBe("image/png")
-    expect(served.headers.get("content-length")).toBe("4")
+    expect(served.headers.get("content-length")).toBe("8")
+    expect(served.headers.get("x-content-type-options")).toBe("nosniff")
     expect(served.headers.get("content-disposition")).toBe("inline; filename*=UTF-8''mock%20%C3%BC.png")
     expect(served.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(bytes)
@@ -175,6 +176,127 @@ describe("tasks routes", () => {
     expect((await app.request(`/tasks/${result.task.id}/attachments/attachment-2`)).status).toBe(404)
     authorization.denyProject(PROJECT)
     expect((await app.request(`/tasks/${result.task.id}/attachments/attachment-1`)).status).toBe(403)
+  })
+
+  test("bytes that are not the declared image are refused, task and all", async () => {
+    // PNG bytes labeled WebP, and markup labeled PNG: the signature is what
+    // the data is, so neither is stored or later served under its claim.
+    const png = encodeAttachmentData(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    const markup = encodeAttachmentData(new TextEncoder().encode("<svg onload=alert(1)></svg>"))
+    for (const [index, attachment] of [
+      { filename: "a.webp", mime: "image/webp", data: png },
+      { filename: "b.png", mime: "image/png", data: markup },
+    ].entries()) {
+      const refused = await post("/commands", {
+        clientRequestId: `mislabeled-${index}`,
+        command: {
+          type: "task.create",
+          input: {
+            projectId: PROJECT,
+            title: "Match the mock",
+            description: "",
+            workspaceId: null,
+            parentTaskId: null,
+            attachments: [attachment],
+          },
+        },
+      })
+      expect(refused.status).toBe(400)
+      expect(await json(refused)).toMatchObject({
+        error: { code: "invalid_input", fields: [{ path: "attachments[0].data", reason: "not_allowed" }] },
+      })
+    }
+    expect(await json(await app.request(`/tasks?projectId=${PROJECT}`))).toMatchObject({ items: [] })
+  })
+
+  test("an identifier past the id bound is a 400 naming the field, not a store lookup", async () => {
+    const oversized = "i".repeat(TASKS_BOUNDS.idMaxBytes + 1)
+    const command = await post("/commands", {
+      clientRequestId: oversized,
+      command: { type: "preset.create", input: presetDraft() },
+    })
+    expect(command.status).toBe(400)
+    expect(await json(command)).toMatchObject({ error: { fields: [{ path: "clientRequestId", reason: "too_long" }] } })
+
+    const { task } = await seed()
+    expect((await app.request(`/tasks/${oversized}`)).status).toBe(400)
+    expect((await app.request(`/tasks/${task.id}/attachments/${oversized}`)).status).toBe(400)
+    expect((await app.request(`/tasks?projectId=${oversized}`)).status).toBe(400)
+    const cursor = "c".repeat(TASKS_BOUNDS.cursorMaxBytes + 1)
+    expect((await app.request(`/tasks?projectId=${PROJECT}&cursor=${cursor}`)).status).toBe(400)
+
+    const started = await post(`/tasks/${task.id}/sessions`, {
+      clientRequestId: oversized,
+      taskRevision: task.revision,
+      presetId: "preset-1",
+      presetRevision: 1,
+      slot: "primary",
+      attempt: 1,
+      previewDigest: "digest-1",
+      handoffText: null,
+      continueFromPrevious: false,
+    })
+    expect(started.status).toBe(400)
+    expect(await json(started)).toMatchObject({ error: { fields: [{ path: "clientRequestId", reason: "too_long" }] } })
+  })
+
+  test("provenance is the session the credential carries, not one the request names", async () => {
+    // A person — a credential minted for no session — may not claim one.
+    const claimed = await post("/commands", {
+      clientRequestId: "person-claims-session",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: PROJECT,
+          title: "Not from a session",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          createdFrom: { sessionId: "ses_author", workspaceId: "ws_author" },
+        },
+      },
+    })
+    expect(claimed.status).toBe(403)
+
+    // A session's credential records that session even when the request says
+    // nothing, and refuses a claim that is not it.
+    const session = { sessionId: "ses_author", workspaceId: "ws_author" }
+    authenticate = () => ({ actor: { ...ACTOR, session } })
+    try {
+      const unstated = await post("/commands", {
+        clientRequestId: "session-unstated",
+        command: {
+          type: "task.create",
+          input: {
+            projectId: PROJECT,
+            title: "From a session",
+            description: "",
+            workspaceId: null,
+            parentTaskId: null,
+          },
+        },
+      })
+      expect(unstated.status).toBe(200)
+      expect(await json(unstated)).toMatchObject({ result: { task: { createdFrom: session } } })
+
+      const forged = await post("/commands", {
+        clientRequestId: "session-forged",
+        command: {
+          type: "task.create",
+          input: {
+            projectId: PROJECT,
+            title: "From a session",
+            description: "",
+            workspaceId: null,
+            parentTaskId: null,
+            createdFrom: { sessionId: "ses_someone_else", workspaceId: "ws_author" },
+          },
+        },
+      })
+      expect(forged.status).toBe(403)
+    } finally {
+      authenticate = () => ({ actor: ACTOR })
+    }
   })
 
   test("a create whose image is refused names the image and leaves no task", async () => {

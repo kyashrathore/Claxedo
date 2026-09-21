@@ -54,6 +54,8 @@ export { configurationEntries, draftHarnesses, validatePresetDraft, type Harness
 export { createPresetsService, type PresetsService, type PresetsServiceDeps } from "./presets/service"
 export {
   validateReparent,
+  validateStart,
+  validateStartPreview,
   validateTaskDraft,
   validateTaskEdit,
   type DecodedAttachmentDraft,

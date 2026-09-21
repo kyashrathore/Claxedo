@@ -349,6 +349,54 @@ describe("parseCommandRequest", () => {
     })
     expect(parsedReasons(result)).toEqual({ "command.input.revision": "out_of_range" })
   })
+
+  test("every identifier a request names is held to the id bound", () => {
+    const oversized = "i".repeat(TASKS_BOUNDS.idMaxBytes + 1)
+    expect(
+      parsedReasons(
+        parseCommandRequest({
+          clientRequestId: oversized,
+          command: { type: "preset.create", input: presetDraft() },
+        }),
+      ),
+    ).toEqual({ clientRequestId: "too_long" })
+    expect(
+      parsedReasons(
+        parseCommandRequest({
+          clientRequestId: "r",
+          command: { type: "task.edit", input: { taskId: oversized, revision: 1, title: "T", description: "", workspaceId: null } },
+        }),
+      ),
+    ).toEqual({ "command.input.taskId": "too_long" })
+    expect(
+      parsedReasons(
+        parseCommandRequest({
+          clientRequestId: "r",
+          command: {
+            type: "task.create",
+            input: {
+              projectId: oversized,
+              title: "T",
+              description: "",
+              workspaceId: null,
+              parentTaskId: null,
+              createdFrom: { sessionId: oversized, workspaceId: oversized },
+            },
+          },
+        }),
+      ),
+    ).toEqual({
+      "command.input.projectId": "too_long",
+      "command.input.createdFrom.sessionId": "too_long",
+      "command.input.createdFrom.workspaceId": "too_long",
+    })
+    expect(
+      parseCommandRequest({
+        clientRequestId: "i".repeat(TASKS_BOUNDS.idMaxBytes),
+        command: { type: "preset.create", input: presetDraft() },
+      }).ok,
+    ).toBe(true)
+  })
 })
 
 describe("parseStartRequest", () => {
@@ -384,6 +432,20 @@ describe("query parsing", () => {
     expect(parsed.ok && parsed.value).toMatchObject({ projectId: "project-alpha", status: "doing", parent: "root" })
     expect(parsedReasons(parseTaskListQuery(new URLSearchParams("projectId=p&status=blocked")))).toEqual({
       status: "unknown_value",
+    })
+  })
+
+  test("an oversized project id or cursor is refused rather than handed to the store", () => {
+    const oversized = "i".repeat(TASKS_BOUNDS.idMaxBytes + 1)
+    expect(parsedReasons(parseTaskListQuery(new URLSearchParams(`projectId=${oversized}`)))).toEqual({
+      projectId: "too_long",
+    })
+    const cursor = "c".repeat(TASKS_BOUNDS.cursorMaxBytes + 1)
+    expect(parsedReasons(parseTaskListQuery(new URLSearchParams(`projectId=p&cursor=${cursor}`)))).toEqual({
+      cursor: "too_long",
+    })
+    expect(parsedReasons(parsePresetListQuery(new URLSearchParams(`cursor=${cursor}`)))).toEqual({
+      cursor: "too_long",
     })
   })
 })

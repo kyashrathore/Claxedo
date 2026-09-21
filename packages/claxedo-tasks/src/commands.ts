@@ -5,7 +5,7 @@ import type {
   TasksCommandResponse,
   TasksCommandResult,
 } from "./contracts"
-import { TasksError, refuse } from "./errors"
+import { TasksError, refuse, refuseInvalid } from "./errors"
 import { hashRequest } from "./hash"
 import type { TasksAuthorizationPort } from "./ports/authorization"
 import type { TasksCapabilitiesPort } from "./ports/capabilities"
@@ -15,6 +15,7 @@ import type { TasksSessionBridgePort } from "./ports/session-bridge"
 import { TasksStoreConflict, joinedTransaction, type TasksStoreOperations, type TasksStorePort } from "./ports/store"
 import { createPresetsService } from "./presets/service"
 import { createTasksService } from "./tasks/service"
+import { idWithinBound } from "./validation"
 
 export type TasksCommandsDeps = {
   store: TasksStorePort
@@ -114,6 +115,14 @@ export function createTasksCommands(deps: TasksCommandsDeps): TasksCommands {
 
   return {
     async execute(actor, request) {
+      // The receipt row is keyed on this id, so the bound the route applies is
+      // repeated here for callers that never crossed it.
+      if (request.clientRequestId.trim().length === 0) {
+        refuseInvalid("The command is not valid", [{ path: "clientRequestId", reason: "required" }])
+      }
+      if (!idWithinBound(request.clientRequestId)) {
+        refuseInvalid("The command is not valid", [{ path: "clientRequestId", reason: "too_long" }])
+      }
       const requestHash = await hashRequest(request.command)
       const committedAlready = () => deps.store.receipts.get(actor.scopeId, request.clientRequestId)
 
