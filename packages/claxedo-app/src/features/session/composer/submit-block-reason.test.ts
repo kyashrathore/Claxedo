@@ -47,6 +47,20 @@ describe("submitBlockReason", () => {
     expect(submitBlockReason(input({ blank: true, stoppable: true }))).toBeNull()
   })
 
+  test("Stop does not require a selected model or a ready harness", () => {
+    for (const state of [
+      { modelBlocked: true, needsModelSelection: true },
+      { harnessMode: true, harnessReadyForSubmit: false },
+      { harnessMode: true, harnessOptionsLoading: true },
+      { harnessMode: true, harnessReadiness: "error" as const },
+    ]) {
+      expect(submitBlockReason(input({ ...state, blank: true, stoppable: true }))).toBeNull()
+      expect(submitBlockReason(input({ ...state, blank: false, stoppable: true }))).not.toBeNull()
+    }
+    expect(submitBlockReason(input({ blank: true, stoppable: true, authorityBlock: "workspace-role" }))?.reason)
+      .toBe("workspace-role")
+  })
+
   describe("priority ordering", () => {
     test("an authority refusal beats everything else", () => {
       const reason = submitBlockReason(

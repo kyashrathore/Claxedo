@@ -94,6 +94,9 @@ function block(reason: SubmitBlockReason): SubmitBlock {
  */
 export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   if (input.authorityBlock) return block(input.authorityBlock)
+  // An empty running composer means Stop. Cancelling the existing turn does
+  // not depend on the harness/model readiness required to send another prompt.
+  if (input.stoppable && input.blank) return null
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode) {

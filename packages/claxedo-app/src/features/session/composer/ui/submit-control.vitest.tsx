@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type Accessor } from "solid-js"
 import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
+import { submitBlockReason } from "@/features/session/composer/submit-block-reason"
 
 vi.mock("@opencode-ai/ui/tooltip", () => ({
   Tooltip: (props: { children: unknown }) => <>{props.children}</>,
@@ -63,6 +64,27 @@ describe("PromptSubmitControl", () => {
 
     expect(view.getByRole("button", { name: "Send" })).toBeTruthy()
     expect(view.queryByRole("button", { name: "Stop" })).toBeNull()
+  })
+
+  test("Stop submits instead of opening the model picker when model selection is missing", () => {
+    const onChooseModel = vi.fn()
+    const view = renderControl({
+      busy: true,
+      blank: true,
+      onChooseModel,
+      block: submitBlockReason({
+        stoppable: true, blank: true, harnessMode: true,
+        harnessReadiness: "ready", harnessConfigError: false,
+        harnessOptionsLoading: false, harnessReadyForSubmit: false,
+        needsModelSelection: true, modelBlocked: true,
+        providerLoading: false, booting: false,
+      }),
+    })
+
+    fireEvent.click(view.getByRole("button", { name: "Stop" }))
+
+    expect(view.submit).toHaveBeenCalledOnce()
+    expect(onChooseModel).not.toHaveBeenCalled()
   })
 
   test("submits the real control through the shared dock form", () => {
