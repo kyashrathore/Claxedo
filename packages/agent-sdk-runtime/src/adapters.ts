@@ -1,5 +1,4 @@
 export type {
-  AbortResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterCore,
   AgentHarnessAdapterHealth,
@@ -19,7 +18,7 @@ export type {
   AgentSessionCreateOptions,
   PermissionDecision,
   ResolvedHarnessModel,
-  SupportsAbort,
+  SupportsCancel,
   SupportsAgents,
   SupportsCommands,
   SupportsConfigOptions,

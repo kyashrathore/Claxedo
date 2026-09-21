@@ -1,5 +1,15 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
-import type { SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
+import type {
+  RecoveryBudgets,
+  RecoveryError,
+  RecoveryFacts,
+  RecoveryOperation,
+  RecoveryOutcome,
+  RecoveryRequest,
+  RecoveryTurnTarget,
+  SessionHarness,
+  SessionModelGroup,
+} from "@claxedo/agent-runtime-contract"
 import type {
   AgentRuntimeStreamEvent,
   PromptDelivery,
@@ -20,10 +30,6 @@ import type { AgentRuntimeStoreWithRecovery } from "../harnesses/shared/runtime-
  */
 export type AgentRuntimeStore = AgentRuntimeStoreWithRecovery
 
-export type AgentRuntimeAbortResult =
-  | { ok: true; status: "cancelled" | "already_idle" }
-  | { ok: false; status: "not_found" | "recovering" | "failed"; message: string }
-
 export type AgentRuntimePermissionDecision = "allow_once" | "allow_always" | "deny" | "reject_always"
 
 export type AgentRuntimeInteractionResult = {
@@ -39,6 +45,40 @@ export type AgentRuntimeHealth = {
     status?: string | null
     message?: string | null
   }>
+}
+
+/**
+ * Who is asking. `callerId` scopes request-id uniqueness, so two callers may
+ * reuse one request id without joining each other's operation; `authority` is
+ * the widest target scope this caller may act on.
+ */
+export type RecoveryCaller = {
+  callerId: string
+  authority: "session" | "workspace" | "machine"
+}
+
+/**
+ * What the runtime owner knows about one session right now, answered without
+ * awaiting that session's admission, producer or store transaction — a session
+ * whose turn is wedged is exactly the one a caller needs this for.
+ */
+export type AgentRuntimeRecoveryInspection = {
+  sessionId: string
+  /** The admitted turn a caller sends back unchanged in a mutating request. */
+  target?: RecoveryTurnTarget
+  facts: RecoveryFacts
+  health: AgentRuntimeHealth
+  /** Owner failures that are retained because nothing has resolved them yet. */
+  failures: RecoveryError[]
+  operations: RecoveryOperation[]
+  /** Prompts parked on this session's admission queue. */
+  queued: number
+}
+
+export type AgentRuntimeRecovery = {
+  inspect(sessionId: string, directory?: RuntimeDirectory): AgentRuntimeRecoveryInspection
+  submit(request: RecoveryRequest, caller: RecoveryCaller): Promise<RecoveryOutcome>
+  read(operationId: string, caller: RecoveryCaller): RecoveryOutcome | undefined
 }
 
 export type AgentHarnessFactoryContext = {
@@ -69,6 +109,15 @@ export type CreateAgentRuntimeInput = {
    * published here because no turn subscription is open to carry them.
    */
   eventHub?: RuntimeEventHub
+  /**
+   * Who this runtime is on the wire. A session's own workspace id comes from
+   * its execution binding; this supplies the machine, and the workspace for a
+   * session that has no binding yet. Absent leaves both out of a recovery
+   * target rather than inventing one, and `recovery.inspect` says so.
+   */
+  identity?: { workspaceId: string; machineId?: string }
+  /** Deadlines and the clock recovery runs on; defaults are the contract's. */
+  recovery?: { budgets?: Partial<RecoveryBudgets>; now?: () => number }
 }
 
 export type AgentRuntimeEventEnvelope = {
@@ -135,6 +184,12 @@ export type AgentRuntimeTurnStartResult = {
   prompt: PromptInput
   delivery: PromptDelivery
   steering?: import("../adapter-contract").SteerResult
+  /**
+   * The turn this prompt may later ask the runtime to cancel. A queued prompt
+   * has none: the turn holding the session belongs to another caller, and
+   * naming it here would let a lease loss on this prompt stop that one.
+   */
+  target?: RecoveryTurnTarget
 }
 
 export type AgentRuntimeGoalStartInput = {

@@ -5,6 +5,7 @@ import type {
   AgentPermission,
   AgentQuestion,
   AgentTodo,
+  RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentSession, AgentTurnOutcome, PromptInput, SessionConfig, SessionConfigUpdate } from "../../index"
@@ -99,11 +100,34 @@ export type AgentRuntimeTurnFinishInput = {
   assistantMessageId?: string
   outcome: AgentTurnOutcome
   fencingToken?: number
+  /**
+   * The turn lease the writer holds. A store that is given one and finds a
+   * different lease (or none) rejects the write: the assistant message id alone
+   * cannot tell a delayed finalization apart from the replacement turn that
+   * happens to have reused it.
+   */
+  leaseId?: string
 }
 
 export type AgentRuntimeTurnFinishOutput = {
   /** Terminal events already committed by the authoritative store, in publish order. */
   events: CompatEvent[]
+}
+
+/** What the store can still say about a turn once its producer is gone. */
+export type AgentRuntimeTurnEvidence = {
+  started: boolean
+  finished: boolean
+  outcome?: AgentTurnOutcome
+}
+
+export type AgentRuntimeRecoveryOperationRecord =
+  | { created: true }
+  | { created: false; existing: RecoveryOperation }
+
+export type AgentRuntimeReplayPosition = {
+  position: number
+  blocked?: { seq: number; reason: string }
 }
 
 export type AgentRuntimeStoreCore = {
@@ -121,8 +145,26 @@ export type AgentRuntimeStoreCore = {
   setGoal?(id: string, goal: RuntimeGoalSnapshot | null): void
   acquireTurnLease(sessionId: string): string | undefined
   releaseTurnLease(sessionId: string, leaseId: string): void
+  /** The lease a recovery caller must hold to write for this session's turn. */
+  readTurnAuthority(sessionId: string): { leaseId: string; acquiredAt: number } | undefined
   startTurn(input: AgentRuntimeTurnStartInput): AgentRuntimeTurnStartOutput
   finishTurn(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput
+  turnEvidence(sessionId: string, turnId: string): AgentRuntimeTurnEvidence
+  /**
+   * Durable receipt for a recovery operation, created under an atomic
+   * uniqueness constraint on caller identity plus request id: a retried
+   * delivery of one request must join its operation rather than start a second
+   * one that would issue the side effect twice.
+   */
+  recordRecoveryOperation(
+    operation: RecoveryOperation,
+    caller: { callerId: string },
+  ): AgentRuntimeRecoveryOperationRecord
+  updateRecoveryOperation(operation: RecoveryOperation): void
+  readRecoveryOperation(operationId: string): RecoveryOperation | undefined
+  listRecoveryOperations(scope: { sessionId?: string }): RecoveryOperation[]
+  /** Only a journalling store has one; a projection-only store answers nothing. */
+  replayJournal?(sessionId: string): AgentRuntimeReplayPosition
   appendEvent(input: AgentRuntimeAppendEventInput): AgentRuntimeCommittedCompatOutput
   getMessages(id: string): AgentMessage[]
   getLatestUserMessageId(id: string): string | undefined

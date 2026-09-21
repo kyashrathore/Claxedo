@@ -2,10 +2,13 @@ import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type {
   AgentExecutionBinding,
+  CleanupFact,
   ConnectionRuntimeStatus,
   AgentSessionStartBinding,
   AgentQuestionAnswer,
+  ExecutionFact,
   HarnessInstructionChannel,
+  RecoveryErrorCode,
   SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
@@ -29,9 +32,18 @@ import type {
   SessionConfigUpdate,
 } from "./index"
 
-export type AbortResult =
-  | { ok: true; status: "cancelled" | "already_idle" }
-  | { ok: false; status: "not_found" | "recovering" | "failed"; message: string }
+/**
+ * What an adapter observed while trying to stop a turn. Execution and cleanup
+ * are separate facts because acknowledging a cancel is not stopping, and an
+ * adapter that closed its own stream has not thereby released the provider's
+ * terminals or child processes. `unknown` is the answer whenever the adapter's
+ * protocol cannot tell those apart; the runtime keeps the turn owned on it.
+ */
+export type AdapterCancelOutcome = {
+  execution: ExecutionFact
+  cleanup: CleanupFact
+  error?: { code: RecoveryErrorCode; message: string }
+}
 
 export type SteerResult =
   | { ok: true }
@@ -174,8 +186,19 @@ export interface AgentHarnessAdapterCore {
   dispose(): void | Promise<void>
 }
 
-export interface SupportsAbort {
-  abort(binding: AgentExecutionBinding): Promise<AbortResult>
+/**
+ * Stops one named turn, not a session: by the time an adapter is reached the
+ * turn the caller asked about may already have been replaced, and the runtime
+ * revalidates the identity on both sides of this call. `deadlineAt` is the
+ * caller's own deadline, and `signal` aborts at it — an adapter whose transport
+ * takes an abort signal must pass it on rather than leave a request running
+ * that nobody is waiting for.
+ */
+export interface SupportsCancel {
+  cancelTurn(
+    binding: AgentExecutionBinding,
+    input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
+  ): Promise<AdapterCancelOutcome>
 }
 
 /**
@@ -425,7 +448,7 @@ export interface SupportsConfigOptions {
 
 export type AgentHarnessAdapter =
   & AgentHarnessAdapterCore
-  & Partial<SupportsAbort>
+  & Partial<SupportsCancel>
   & Partial<SupportsSteer>
   & Partial<SupportsRevert>
   & Partial<SupportsUnrevert>
