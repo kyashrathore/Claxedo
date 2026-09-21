@@ -7,9 +7,9 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
-import { asRecord, isRecord } from "@claxedo/helpers/guards"
+import { asRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
-import { isWindowsShimBinary, killHarnessProcess, drainHarnessProcessGroup } from "../shared/windows-process"
+import { killHarnessProcess, drainHarnessProcessGroup, resolveHarnessCommand } from "../shared/windows-process"
 
 const log = Log.create({ service: "codex-app-server-process" })
 
@@ -115,15 +115,16 @@ export class CodexAppServerProcess {
   ) {
     this.exited = new Promise<void>((resolve) => { this.resolveExited = resolve })
     const command = codexAppServerCommand(binary)
-    const windowsShim = isWindowsShimBinary(command.command)
-    this.proc = spawn(windowsShim ? `"${command.command}"` : command.command, command.args, {
+    // A .cmd/.bat binary is resolved to the executable it wraps rather than
+    // routed through cmd.exe, so the launch argv stays literal.
+    const launch = resolveHarnessCommand(command.command, command.args, env, directory)
+    this.proc = spawn(launch.command, launch.args, {
       cwd: directory,
       env,
       stdio: ["pipe", "pipe", "pipe"],
       // Give this owner an isolated POSIX process group, including native
       // plugin clones and tool children that can outlive the app-server.
       detached: process.platform !== "win32",
-      ...(windowsShim ? { shell: true } : {}),
     })
     this.observation = observeCodexAppServerProcess({
       observer: processObserver,

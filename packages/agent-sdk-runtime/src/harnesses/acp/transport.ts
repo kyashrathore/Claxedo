@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcess } from "child_process"
-import { isWindowsShimBinary, killHarnessProcess, drainHarnessProcessGroup } from "../shared/windows-process"
+import { killHarnessProcess, drainHarnessProcessGroup, resolveHarnessCommand } from "../shared/windows-process"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -143,18 +143,18 @@ export type ACPWebSocketTransportFactoryOptions = {
 
 export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTransport {
   if (!input.command) throw new Error("ACP process transport requires a command")
-  // Shims must go through the shell (see isWindowsShimBinary); the quoting
-  // keeps a binary path with spaces intact through cmd.exe's tokenization.
-  const windowsShim = isWindowsShimBinary(input.command)
-  const proc = spawn(windowsShim ? `"${input.command}"` : input.command, input.args, {
+  const env = acpSpawnEnv({
+    ...process.env,
+    ...definedEnv(input.env),
+  })
+  // A .cmd/.bat command is resolved to the executable it wraps rather than
+  // routed through cmd.exe, so configured arguments stay literal argv entries.
+  const launch = resolveHarnessCommand(input.command, input.args, env, input.directory)
+  const proc = spawn(launch.command, launch.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
     detached: process.platform !== "win32",
-    ...(windowsShim ? { shell: true } : {}),
-    env: acpSpawnEnv({
-      ...process.env,
-      ...definedEnv(input.env),
-    }),
+    env,
   })
 
   proc.stderr?.on("data", (data: Buffer) => {
