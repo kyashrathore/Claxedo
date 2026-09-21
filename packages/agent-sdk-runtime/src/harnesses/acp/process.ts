@@ -992,4 +992,13 @@ export class ACPProcess {
   get alive(): boolean {
     return this.transport.alive && !this.exitReason && !this.deadNotified
   }
+
+  /**
+   * How this agent is actually reached, as opposed to how it was configured.
+   * Only `process` puts the agent on this machine, which is what decides
+   * whether a settled prompt is evidence about the agent or about the wire.
+   */
+  get transportKind() {
+    return this.transport.kind
+  }
 }

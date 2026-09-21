@@ -227,6 +227,8 @@ export type ClaudeSdkDriverOptions = {
   brokeredConfigDir?: { root: string; source?: string }
   /** Durable launch records, so a Claude CLI outliving this process stays a recoverable owner. */
   ownership?: LaunchOwnershipStore
+  /** The workspace a later owner reconciles this driver's launches under. */
+  workspaceId?: string
 }
 
 export function createClaudeSdkDriver(
@@ -648,6 +650,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           sessionId: input.sessionId,
           mcp: this.currentMcp,
           onLaunch: (owned) => { launch = owned },
+          workspaceId: this.driverOptions.workspaceId ?? "",
           ...(this.driverOptions.ownership ? { ownership: this.driverOptions.ownership } : {}),
         }),
       },
@@ -822,6 +825,8 @@ export function spawnObservedClaudeCodeProcess(input: {
   /** Called with the launch this spawn owns, so the turn can retire it. */
   onLaunch?: (launch: ClaudeDirectLaunch) => void
   ownership?: LaunchOwnershipStore
+  /** The workspace a later owner reconciles this launch under; empty when none was named. */
+  workspaceId?: string
 }): SpawnedProcess {
   const proc = (input.spawnProcess ?? spawn)(
     input.options.command,
@@ -840,6 +845,7 @@ export function spawnObservedClaudeCodeProcess(input: {
   input.onLaunch?.(ownDirectClaudeLaunch({
     proc,
     ownership: input.ownership ?? volatileLaunchOwnership(),
+    workspaceId: input.workspaceId ?? "",
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.options.cwd ? { directory: input.options.cwd } : {}),
   }))
@@ -916,6 +922,7 @@ function ownDirectClaudeLaunch(input: {
   /** Only the pid is read: `SpawnedProcess` does not carry one, but every local spawn does. */
   proc: { pid?: number }
   ownership: LaunchOwnershipStore
+  workspaceId: string
   sessionId?: string
   directory?: string
 }): ClaudeDirectLaunch {
@@ -924,6 +931,7 @@ function ownDirectClaudeLaunch(input: {
       role: "harness",
       protocol: "direct",
       scope: {
+        workspaceId: input.workspaceId,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.directory ? { directory: input.directory } : {}),
       },

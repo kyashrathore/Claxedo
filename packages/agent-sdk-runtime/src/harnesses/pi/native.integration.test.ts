@@ -180,6 +180,7 @@ test(
         args: ["--mode", "rpc", "--session", nativeFile, "--provider", "groq", "--model", PROOF_MODEL],
         env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
         ownership: volatileLaunchOwnership(),
+        workspaceId: "",
       })
       try {
         const compacted = await rpc.request("compact", { customInstructions: "Keep the file edit and completion." })

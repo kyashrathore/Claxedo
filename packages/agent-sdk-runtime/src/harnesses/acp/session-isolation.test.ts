@@ -256,7 +256,9 @@ test("acknowledged cancellation settles one session while its sibling continues"
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
     f.cancelPrompts.set("agent-1", () => f.prompts.get("agent-1")!("cancelled"))
-    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", "/work"))).toEqual({ execution: "unknown", cleanup: "unknown" })
+    // The local agent acknowledged the cancel AND its prompt settled, which is
+    // the only combination that makes a stdio ACP turn terminal.
+    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", "/work"))).toEqual({ execution: "terminal", cleanup: "unknown" })
     await a
     expect(f.store.getMessages("b").some((row) => row.info.error)).toBe(false)
     f.prompts.get("agent-2")!()

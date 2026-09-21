@@ -566,13 +566,12 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       this.store.markSessionInterrupted(id, message, agentSessionId)
       return unresolved("provider_unreachable", message)
     }
+    // ACP runs its tools inside the agent, which publishes no inventory of
+    // them, so nothing this adapter can read establishes a turn's cleanup.
+    const cleanup = "unknown" as const
     try {
       cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
       await proc.cancelAndWait(agentSessionId)
-      // The agent acknowledged the cancel notification. ACP has no reply that
-      // states the prompt stopped, and the tools it launched are its own, so
-      // neither execution nor cleanup is established here.
-      return { execution: "unknown", cleanup: "unknown" }
     } catch (err) {
       log.info("cancelTurn: cancellation outcome uncertain", { id, directory, err })
       const message = "ACP session cancellation was not acknowledged; its outcome is uncertain."
@@ -581,6 +580,32 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       if (!this.lifecycle().activeTurns.has(id)) this.store.markSessionInterrupted(id, message, agentSessionId)
       return unresolved("provider_unreachable", message)
     }
+    // The agent acknowledged the cancel notification, which ACP defines as
+    // received, not as stopped. The prompt promise settling is what this owner
+    // can actually witness, so the answer waits for it inside the deadline.
+    const settled = await Promise.race([
+      this.lifecycle().whenIdle(id).then(() => true, () => true),
+      new Promise<false>((resolve) => {
+        const timer = setTimeout(() => resolve(false), Math.max(0, input.deadlineAt - Date.now()))
+        input.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(false) }, { once: true })
+      }),
+    ])
+    if (!settled) return {
+      execution: "running",
+      cleanup,
+      error: {
+        code: "cancellation_timeout",
+        message: `ACP session ${id} acknowledged the cancel but its prompt had not settled when the deadline passed.`,
+      },
+    }
+    // A remote agent's prompt settles when this end stops hearing from it,
+    // which is a fact about the wire rather than about the agent. Only `stdio`
+    // is a child of this process.
+    if (proc.transportKind !== "stdio") return unresolved(
+      "provider_unreachable",
+      `ACP session ${id} is served over ${proc.transportKind}; a settled prompt here does not establish that the remote agent stopped.`,
+    )
+    return { execution: "terminal", cleanup }
   }
 
   async forkSession(binding: AgentExecutionBinding, _messageId: string, childSessionId?: string): Promise<{ id: string }> {

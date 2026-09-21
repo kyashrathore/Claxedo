@@ -409,17 +409,18 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       drainTurn = reject
     })
     drainPromise.catch(() => {})
+    const stops = createTurnStopRecord()
     const drain = (message: string) => {
       if (drained) return
       drained = true
       cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
-      void proc.cancelAndWait(agentSessionId).then(() => {
+      void observeStopAttempt(stops, "provider_unreachable", () => proc.cancelAndWait(agentSessionId)).then(() => {
         drainTurn(new Error(message))
       }, (error: unknown) => {
         drainTurn(error instanceof Error ? error : new Error(errorMessage(error)))
       })
     }
-    const turn = { drain }
+    const turn = { drain, stops }
     this.lifecycle().set(id, turn)
     const runtimeForSession = () => createAgentEventRuntime({
       harness: this.harnessId(),

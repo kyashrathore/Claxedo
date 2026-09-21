@@ -511,6 +511,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         ["perm-other", { aid: "agent-session-2", tool: "bash", paths: [], options: [], resolve() {} }],
       ]),
       async cancelAndWait() {},
+      transportKind: "stdio" as const,
       respondPermission(id: string, response: unknown) {
         responses.push({ id, response })
         proc.pendingPermissions.delete(id)
@@ -543,11 +544,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.sessionProcesses = new Map([["s1", "process-key"]])
     item.permissionOwners = new Map([["perm-mine", proc], ["perm-other", proc]])
 
+    // This double registers no turn, so the session is idle the moment the
+    // cancel is acknowledged and the local agent's prompt has settled.
     const result = await cancelAdapterTurn(item, executionBinding("s1", path.resolve("/work")))
 
-    // The agent acknowledged the notification; ACP says nothing about whether
-    // the prompt stopped, so neither fact may be claimed here.
-    expect(result).toEqual({ execution: "unknown", cleanup: "unknown" })
+    expect(result).toEqual({ execution: "terminal", cleanup: "unknown" })
     expect(responses).toEqual([{ id: "perm-mine", response: { outcome: { outcome: "cancelled" } } }])
     expect(proc.pendingPermissions.has("perm-mine")).toBe(false)
     expect(proc.pendingPermissions.has("perm-other")).toBe(true)

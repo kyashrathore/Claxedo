@@ -40,6 +40,8 @@ export type PiDriverOptions = {
   idleMs?: number
   /** Durable launch records, so a Pi process outliving this one stays a recoverable owner. */
   ownership?: LaunchOwnershipStore
+  /** The workspace a later owner reconciles this driver's launches under. */
+  workspaceId?: string
 }
 type Entry = {
   process: PiRpcProcess
@@ -273,6 +275,9 @@ class PiRpcDriver implements SdkRuntimeDriver {
       // record; it just cannot be reconciled after a restart, which is what
       // volatile ownership says about itself.
       ownership: this.options.ownership ?? volatileLaunchOwnership(),
+      // Empty when the composition named no workspace: a launch nobody will
+      // reconcile is worth saying so, and inventing an id would hide it.
+      workspaceId: this.options.workspaceId ?? "",
     })
     try {
       await process.request("get_state")
