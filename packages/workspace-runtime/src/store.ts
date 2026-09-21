@@ -803,11 +803,6 @@ export class RuntimeStore {
   private settleTimer: ReturnType<typeof setTimeout> | undefined
   private databaseFile: string
   private hadDatabaseFile: boolean
-  /**
-   * One instance per store: every launch this workspace prepares has to be
-   * reconcilable against the same table, and two views of it would let a
-   * survivor be owned twice.
-   */
   private launchOwnershipStore: ReturnType<typeof sqliteLaunchOwnership> | undefined
 
   constructor(root = workspaceRuntimeStoreDir()) {
@@ -4421,9 +4416,9 @@ export class RuntimeStore {
   }
 
   /**
-   * The durable owner of every process this workspace launches. A host that
-   * does not install it leaves ownership volatile, which means a survivor of
-   * this process cannot be identified after a restart.
+   * The durable owner a launch made for this workspace is recorded against.
+   * One instance per store: every launch has to be reconcilable against the
+   * same table, and two views of it would let a survivor be owned twice.
    */
   launchOwnership() {
     this.launchOwnershipStore ??= sqliteLaunchOwnership(this.db)

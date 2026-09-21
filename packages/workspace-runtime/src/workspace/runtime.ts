@@ -106,9 +106,10 @@ export type WorkspaceRuntimeStore =
     listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     /**
-     * The durable owner of every process launched for this workspace. Optional:
-     * a store that cannot keep launch records leaves ownership volatile, and
-     * nothing this process launched can be reconciled after a restart.
+     * The durable owner a launch made for this workspace is recorded against.
+     * Optional: a store that cannot keep launch records leaves each launch
+     * volatile, recorded as such in its own row, and nothing it started can be
+     * identified as a survivor after a restart.
      */
     launchOwnership?: () => LaunchOwnershipStore
     getSessionMaxSeq(sessionId: string): number
