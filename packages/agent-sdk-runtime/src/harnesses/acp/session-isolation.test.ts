@@ -332,7 +332,7 @@ test("negotiated fork support survives idle process disposal and cold discovery 
   try {
     await f.adapter.createSession("/work", undefined, "a")
     const internals = f.adapter as unknown as { processes: Map<string, { proc: { dispose(): void } | null }> }
-    const entry = [...internals.processes.values()][0]!
+    const entry = [...internals.processes.values()][0]
     entry.proc!.dispose()
     expect((await f.adapter.readHarnessCapabilities("/work", { sessionId: "a" })).fork).toBe(true)
     expect(f.transports).toHaveLength(1)
@@ -406,7 +406,7 @@ test("permission wire input preserves command, paths and complete agent details 
     const toolCall = { toolCallId: "call-1", title: "Run command", kind: "execute", rawInput: { command: "printf '<script>data</script>' > /work/result", cwd: "/work" }, locations: [{ path: "/work/result" }], content: [{ type: "content", content: { type: "text", text: "Additional agent detail" } }] }
     f.permission("agent-1", toolCall)
     await f.waitFor(() => f.store.listPermissions("/work").length === 1)
-    const row = f.store.listPermissions("/work")[0]!
+    const row = f.store.listPermissions("/work")[0]
     expect(row.metadata.command).toBe(toolCall.rawInput.command)
     expect(row.metadata.acpToolCall).toEqual(toolCall)
     expect(row.metadata.acpRequestMeta).toEqual({ permission: { version: 1, description: "Write requested file" } })

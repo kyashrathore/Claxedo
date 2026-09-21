@@ -103,7 +103,7 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         await (await waiting).text()
         active = await open()
         expect(await (await active.request("/permission")).json()).toEqual([])
-        expect((await active.request(`/session/saved/permissions/${permissions[0]!.id}`, "POST", { optionId: "once" })).status).toBe(404)
+        expect((await active.request(`/session/saved/permissions/${permissions[0].id}`, "POST", { optionId: "once" })).status).toBe(404)
         expect(JSON.stringify(await (await active.request("/session/saved/message")).json())).toContain("Persisted recovery-peer answer.")
         await (await active.request("/session/saved/message", "POST", { parts: [{ type: "text", text: "Continue explicitly." }] })).text()
         const log = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))

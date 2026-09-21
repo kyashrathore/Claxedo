@@ -659,7 +659,7 @@ describe("embedded workspace runtime", () => {
       expect(runtime.host.detail().configApply.state).toBe("idle")
       const responses = await Promise.all(["/permission/modes", "/session/capabilities", "/agent"].map((route) =>
         runtime.app.request(`http://runtime.test${route}?directory=${encodeURIComponent(project)}`)))
-      expect(await responses[2]!.json()).toMatchObject({ error: { code: "unsupported_operation", harness: "pi", capability: "agents" } })
+      expect(await responses[2].json()).toMatchObject({ error: { code: "unsupported_operation", harness: "pi", capability: "agents" } })
       expect(responses.map((response) => response.status)).toEqual([200, 200, 409])
       expect(runtime.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
     } finally {

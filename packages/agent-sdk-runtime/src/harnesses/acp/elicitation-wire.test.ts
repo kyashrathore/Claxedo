@@ -49,7 +49,7 @@ test("real ACP JSON-RPC elicitation persists a form and returns accepted content
     await f.adapter.createSession("/repo", undefined, "local")
     f.elicit("question-one", { sessionId: "remote" })
     await f.wait(() => f.store.listQuestions("/repo").length === 1)
-    const question = f.store.listQuestions("/repo")[0]!
+    const question = f.store.listQuestions("/repo")[0]
     await f.adapter.replyQuestion({ ...executionBinding("local", "/repo"), upstreamSessionId: "remote" }, question.id, [[JSON.stringify({ name: "Alice" })]])
     await f.wait(() => f.responses.has("question-one"))
     expect(f.responses.get("question-one")).toMatchObject({ result: { action: "accept", content: { name: "Alice" } } })
@@ -70,7 +70,7 @@ test("request-scoped elicitation uses an actual outstanding prompt ID and reject
     await f.wait(() => f.promptId() !== undefined)
     f.elicit("owned", { requestId: f.promptId() }, "url")
     await f.wait(() => f.store.listQuestions("/repo").length === 1)
-    await f.adapter.rejectQuestion({ ...executionBinding("local", "/repo"), upstreamSessionId: "remote" }, f.store.listQuestions("/repo")[0]!.id)
+    await f.adapter.rejectQuestion({ ...executionBinding("local", "/repo"), upstreamSessionId: "remote" }, f.store.listQuestions("/repo")[0].id)
     await f.wait(() => f.responses.has("owned"))
     expect(f.responses.get("owned")).toMatchObject({ result: { action: "decline" } })
     f.finish()
