@@ -16,7 +16,13 @@ import type { CodexAppServerProcess } from "./app-server-process"
 
 export type CodexTurnStop = {
   observe(method: string, params: JsonRecord): void
-  stop(deadline?: RequestDeadline): Promise<void>
+  /**
+   * A property, not a method: this is a standalone closure over the turn, and
+   * callers detach it — the lifecycle entry holds it as `close`, and the abort
+   * handler calls it on its own. Declaring it as a method would say it needs a
+   * receiver it has never had.
+   */
+  stop: (deadline?: RequestDeadline) => Promise<void>
   /** Where each attempt's outcome is recorded for `cancelTurn` to read. */
   readonly record: TurnStopRecord
 }

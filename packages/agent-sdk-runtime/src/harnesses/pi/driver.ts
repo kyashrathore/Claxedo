@@ -670,13 +670,13 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     await this.closeProcesses()
     await this.releaseWhenUnblocked()
   }
+  /**
+   * Retires every launch this driver holds. `retire` is the only thing that
+   * decides whether an entry survives — it drops one whose retirement settled
+   * and keeps one whose did not — so nothing here removes entries behind it.
+   */
   private async closeProcesses() {
-    const retiring = [...this.entries].map(([sessionId, entry]) => this.retire(sessionId, entry))
-    const results = await Promise.all(retiring)
-    for (const [sessionId, entry] of [...this.entries]) {
-      if (!entry.retiring) this.entries.delete(sessionId)
-    }
-    return results
+    return await Promise.all([...this.entries].map(([sessionId, entry]) => this.retire(sessionId, entry)))
   }
 
   /** Retirements that never established an exit, and the auth release they hold. */
