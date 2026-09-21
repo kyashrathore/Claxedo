@@ -47,6 +47,27 @@ export async function captureDescendants(rootPid: number): Promise<CreationIdent
 }
 
 /**
+ * The processes still inside an owned group, with their creation identities.
+ *
+ * This is the only capture left once the leader has exited on its own: its
+ * children were reparented, so the `ppid` edges that named them are gone, but
+ * a child does not leave its process group by exiting a parent.
+ */
+export async function captureOwnedGroup(processGroupId: number, excludePid?: number): Promise<CreationIdentity[]> {
+  if (process.platform === "win32") return []
+  let stdout: string
+  try {
+    ;({ stdout } = await execFileAsync("ps", ["-g", String(processGroupId), "-o", "pid="], { timeout: 5_000 }))
+  } catch {
+    // `ps` exits non-zero for an empty group, which is the common case.
+    return []
+  }
+  const pids = stdout.trim().split("\n").map((line) => Number(line.trim())).filter((pid) => pid > 0 && pid !== excludePid)
+  const identities = await Promise.all(pids.map((pid) => readCreationIdentity(pid).catch(() => undefined)))
+  return identities.filter((identity): identity is CreationIdentity => !!identity)
+}
+
+/**
  * Signals captured descendants that are still the processes they were, deepest
  * first. A pid whose creation identity changed is left alone: it belongs to
  * someone else now, and the ancestry that named it is no longer true of it.

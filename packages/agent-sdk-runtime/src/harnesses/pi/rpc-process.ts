@@ -6,8 +6,10 @@ import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserv
 import { piCommand } from "./executable"
 import {
   launchOwnedProcess,
+  settleAtRequestDeadline,
   type LaunchOwnershipStore,
   type OwnedLaunch,
+  type RequestDeadline,
   type RetirementResult,
 } from "../../launch"
 
@@ -54,7 +56,7 @@ export class PiRpcProcess {
   private readonly parser = new PiJsonLines()
   private readonly pending = new Map<
     string,
-    { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
+    { resolve(value: unknown): void; reject(error: Error): void }
   >()
   private readonly listeners = new Set<(event: PiRpcMessage) => void>()
   private readonly exits = new Set<(error: Error) => void>()
@@ -146,23 +148,19 @@ export class PiRpcProcess {
       if (error) this.fail(error)
     })
   }
-  request(type: string, body: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<unknown> {
+  request(type: string, body: Record<string, unknown> = {}, deadline: RequestDeadline): Promise<unknown> {
     if (this.failure) return Promise.reject(this.failure)
     const id = randomUUID()
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error(`Pi ${type} acknowledgement timed out; outcome is unknown`))
-      }, timeoutMs)
-      this.pending.set(id, { resolve, reject, timer })
+    const answer = new Promise<unknown>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
       this.send({ ...body, type, id })
     })
+    return settleAtRequestDeadline(`Pi ${type}`, deadline, answer, () => this.pending.delete(id))
   }
   private receive(message: PiRpcMessage) {
     if (message.type === "response" && typeof message.id === "string") {
       const pending = this.pending.get(message.id)
       if (!pending) return
-      clearTimeout(pending.timer)
       this.pending.delete(message.id)
       if (message.success === true) {
         this.observation.update({ lifecycle: "ready" })
@@ -180,10 +178,7 @@ export class PiRpcProcess {
   private fail(error: Error) {
     if (this.failure) return
     this.failure = error
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer)
-      pending.reject(error)
-    }
+    for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
   }
 

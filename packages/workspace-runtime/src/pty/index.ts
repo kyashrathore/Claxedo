@@ -15,6 +15,7 @@ import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
 import {
   LaunchRefusedError,
   captureDescendants,
+  captureOwnedGroup,
   readCreationIdentity,
   retire,
   retireDescendants,
@@ -446,6 +447,17 @@ export namespace Pty {
     clearOrphanTimer(session)
 
     if (reason === "exit") {
+      // The shell is already gone, so the ppid edges that named its children
+      // are gone with it — but a child does not leave its process group by
+      // outliving its parent, and each one is identity-checked before it is
+      // signalled. A backgrounded dev server is exactly this case.
+      if (session.identity) {
+        const members = await captureOwnedGroup(session.identity.processGroupId, session.identity.pid).catch(() => [])
+        session.escapees = await retireDescendants(members, DEFAULT_RECOVERY_BUDGETS)
+        if (session.launchId) {
+          await session.ownership?.recordRetirement(session.launchId, { leader: "exited", descendants: "unknown", signals: [] }).catch(() => {})
+        }
+      }
       await session.history.close()
 
       for (const ws of session.subscribers) {
@@ -1106,16 +1118,20 @@ export namespace Pty {
 
   /**
    * Stops tracking a terminal whose retirement never resolved. The durable
-   * ownership row stays open: this is an operator accepting that its processes
-   * are unaccounted for, not evidence that they stopped.
+   * ownership row stays open: this is a named operator accepting that its
+   * processes are unaccounted for, not evidence that they stopped, so the
+   * authorization is required and recorded.
    */
-  export function abandon(id: string) {
+  export function abandon(id: string, authorization: { actorId: string; reason: string }) {
     const session = sessions.get(id)
     if (!session || session.cleanup !== "unresolved") return undefined
+    if (!authorization.actorId || !authorization.reason) {
+      throw new Error(`Abandoning terminal ${id} needs an actor and a reason: it releases a pin over processes nothing proved had stopped`)
+    }
     session.removed = true
     sessions.delete(id)
     session.owner?.exit({ reason: "detached" })
-    log.error("PTY ownership abandoned with cleanup unresolved", { id, result: session.cleanupResult })
+    log.error("PTY ownership abandoned with cleanup unresolved", { id, ...authorization, result: session.cleanupResult })
     return session.cleanupResult
   }
 

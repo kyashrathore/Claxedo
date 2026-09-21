@@ -242,25 +242,50 @@ let gateChild: { file: string; runner: string[] } | undefined
  * directory walk covers a source-first checkout whose dist has not been built.
  */
 export function resolveLaunchGateChild() {
-  if (gateChild) return gateChild
+  // An explicit override is an instruction, not a cache: it is re-read every
+  // time so that changing it takes effect, and it never poisons the memo for
+  // the discovered path.
   const override = process.env.CLAXEDO_LAUNCH_GATE_CHILD
   if (override) {
-    if (!existsSync(override)) throw new Error(`CLAXEDO_LAUNCH_GATE_CHILD points at ${override}, which does not exist`)
-    return (gateChild = { file: override, runner: runnerFor(override) })
+    const spawnable = outsideArchive(override)
+    if (!spawnable) throw new LaunchRefusedError("harness", new Error(`CLAXEDO_LAUNCH_GATE_CHILD points at ${override}, which does not exist`))
+    return { file: spawnable, runner: runnerFor(spawnable) }
   }
+  if (gateChild) return gateChild
   const attempted: string[] = []
   try {
     const resolved = createRequire(import.meta.url).resolve("@claxedo/agent-sdk-runtime/launch-gate-child")
-    if (existsSync(resolved)) return (gateChild = { file: resolved, runner: runnerFor(resolved) })
+    const spawnable = outsideArchive(resolved)
+    if (spawnable) return (gateChild = { file: spawnable, runner: runnerFor(spawnable) })
     attempted.push(resolved)
   } catch (error) {
     attempted.push(`@claxedo/agent-sdk-runtime/launch-gate-child (${launchErrorText(error)})`)
   }
   for (const candidate of packageRelativeCandidates()) {
-    if (existsSync(candidate)) return (gateChild = { file: candidate, runner: runnerFor(candidate) })
+    const spawnable = outsideArchive(candidate)
+    if (spawnable) return (gateChild = { file: spawnable, runner: runnerFor(spawnable) })
     attempted.push(candidate)
   }
-  throw new Error(`Could not locate the launch gate child. Tried: ${attempted.join(", ")}. Set CLAXEDO_LAUNCH_GATE_CHILD to its path.`)
+  // A refusal, not a crash: without this file nothing can be launched with
+  // recoverable ownership, which is the same answer as a store that will not
+  // record one.
+  throw new LaunchRefusedError("harness", new Error(
+    `Could not locate the launch gate child. Tried: ${attempted.join(", ")}. Set CLAXEDO_LAUNCH_GATE_CHILD to its path.`,
+  ))
+}
+
+/**
+ * A packaged Electron app serves `app.asar` paths through a filesystem shim,
+ * but `spawn` goes to the real kernel and an archive member has no path there.
+ * An unpacked file is the same path with `app.asar.unpacked` in it.
+ */
+function outsideArchive(file: string) {
+  if (file.includes(`${path.sep}app.asar${path.sep}`)) {
+    const unpacked = file.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+    if (existsSync(unpacked)) return unpacked
+    return undefined
+  }
+  return existsSync(file) ? file : undefined
 }
 
 function packageRelativeCandidates() {

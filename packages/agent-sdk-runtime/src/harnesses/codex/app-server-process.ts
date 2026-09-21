@@ -136,9 +136,9 @@ export class CodexAppServerProcess {
       log.warn("codex app-server stderr", { message })
       for (const listener of this.stderrListeners) listener(message)
     })
-    this.proc.on("error", (cause) => this.handleExit(cause instanceof Error ? cause : new Error(String(cause)), "error"))
+    this.proc.on("error", (cause) => this.handleFailure(cause instanceof Error ? cause : new Error(String(cause))))
     this.proc.on("exit", (code, signal) => {
-      this.handleExit(new Error(`codex app-server exited (${signal ?? code ?? "unknown"})`), "exited", code ?? undefined)
+      this.handleExit(new Error(`codex app-server exited (${signal ?? code ?? "unknown"})`), code ?? undefined)
     })
   }
 
@@ -258,16 +258,25 @@ export class CodexAppServerProcess {
     return result
   }
 
-  private handleExit(error: Error, reason: "error" | "exited", exitCode?: number) {
+  private handleExit(error: Error, exitCode?: number) {
     // Node observed the leader exit, which is the only exit evidence this owner
     // ever gets; what the group still holds is established by retirement.
-    this.exitObservation({ reason, ...(exitCode !== undefined ? { exitCode } : {}) })
+    this.exitObservation({ reason: "exited", ...(exitCode !== undefined ? { exitCode } : {}) })
+    this.handleFailure(error)
+  }
+
+  /**
+   * The child could not be spawned or its stdio broke. Neither says the process
+   * stopped — the payload runs inside the gate's group and may outlive this
+   * stream — so nothing is published as an exit from here.
+   */
+  private handleFailure(error: Error) {
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
     if (!this.disposed) this.onClose(error)
   }
 
-  private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {
+  private exitObservation(input: { reason: "exited" | "disposed"; exitCode?: number }) {
     if (this.observationExited) return
     this.observationExited = true
     this.observation.exit(input)

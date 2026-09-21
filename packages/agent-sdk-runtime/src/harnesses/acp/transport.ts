@@ -83,10 +83,22 @@ function launchKey(directory: string, command: string, args: string[]) {
   return JSON.stringify([directory, command, args])
 }
 
+export class ACPRetirementUnresolvedError extends Error {
+  readonly code = "ownership_unverified"
+  constructor(command: string, readonly blockers: ACPRetirement[]) {
+    super(`ACP process retirement is unresolved for ${command}: ${blockers.map(describeBlocker).join("; ")}. Nothing established that the previous agent stopped, so a replacement would open its session storage alongside it.`)
+    this.name = "ACPRetirementUnresolvedError"
+  }
+}
+
 /**
- * Throws when an earlier launch of the same command is still owned. The message
- * names what blocks it, because the caller's only alternative is to start a
- * second writer over the first one's session storage.
+ * Blocks until an earlier launch of the same command is accounted for, and
+ * throws a typed refusal naming what is still owned when it is not.
+ *
+ * The fence is deliberately not self-clearing: a recycled pid that refuses a
+ * signal is exactly the case where a replacement must not start. It is cleared
+ * only by `releaseACPTransportRetirement`, which an operator reaches through
+ * the recovery surface after deciding what happened to those processes.
  */
 export async function waitForACPTransportRetirement(directory: string, connection: ACPConnection) {
   if (connection.kind !== "process") return
@@ -97,10 +109,31 @@ export async function waitForACPTransportRetirement(directory: string, connectio
     const entries = [...pending]
     await Promise.all(entries.map((entry) => entry.promise))
     const blocked = entries.filter((entry) => pending.has(entry))
-    if (blocked.length) {
-      throw new Error(`ACP process retirement is unresolved for ${connection.command}: ${blocked.map(describeBlocker).join("; ")}`)
-    }
+    if (blocked.length) throw new ACPRetirementUnresolvedError(connection.command, blocked)
   }
+}
+
+/**
+ * Drops the fence for one launch configuration. It is an operator accepting
+ * that those processes are unaccounted for, not evidence that they stopped;
+ * the unresolved results are returned so the decision is made against them.
+ */
+export function releaseACPTransportRetirement(directory: string, connection: ACPConnection) {
+  if (connection.kind !== "process") return []
+  const key = launchKey(directory, connection.command, connection.args ?? [])
+  const pending = retiring.get(key)
+  if (!pending?.size) return []
+  const released = [...pending].map((entry) => entry.result).filter((result) => !!result)
+  retiring.delete(key)
+  return released
+}
+
+/** What is still owned for one launch configuration, without waiting on it. */
+export function acpTransportRetirementBlockers(directory: string, connection: ACPConnection) {
+  if (connection.kind !== "process") return []
+  return [...(retiring.get(launchKey(directory, connection.command, connection.args ?? [])) ?? [])]
+    .map((entry) => entry.result)
+    .filter((result) => !!result)
 }
 
 function describeBlocker(entry: ACPRetirement) {

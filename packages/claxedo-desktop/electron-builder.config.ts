@@ -171,7 +171,11 @@ const getBase = (): Configuration => ({
       to: `node_modules/@lydell/node-pty-${targetOsArch}/`,
     },
   ],
-  asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
+  asarUnpack: [
+    ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
+    // Spawned as a child process by path; nothing can spawn out of an archive.
+    "**/out/main/launch-gate-child.mjs",
+  ],
   extraResources: [
     {
       // Native/data-bearing SDK packages stay on the real filesystem.

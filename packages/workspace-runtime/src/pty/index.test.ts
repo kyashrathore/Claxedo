@@ -160,7 +160,7 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
     expect(Pty.activity().running).toBe(1)
 
-    expect(Pty.abandon(info.id)?.error?.code).toBe("ownership_unverified")
+    expect(Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })?.error?.code).toBe("ownership_unverified")
     expect(Pty.get(info.id)).toBeUndefined()
   })
 
@@ -373,7 +373,7 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
     // A second remove retries rather than reporting a terminal already claimed stopped.
     expect((await Pty.remove(info.id))?.error?.code).toBe("ownership_unverified")
-    Pty.abandon(info.id)
+    Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
   }, 20_000)
 
   test("a store that cannot record ownership refuses the launch before anything is spawned", async () => {

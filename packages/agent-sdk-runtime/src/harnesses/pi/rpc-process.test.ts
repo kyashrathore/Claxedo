@@ -36,14 +36,14 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       workspaceId: "ws",
     })
     try {
-      const [state, catalog] = await Promise.all([rpc.request("get_state"), rpc.request("get_available_models")])
+      const [state, catalog] = await Promise.all([rpc.request("get_state", {}, soon()), rpc.request("get_available_models", {}, soon())])
       expect(state).toHaveProperty("sessionId")
       expect(catalog).toHaveProperty("models")
-      await expect(rpc.request("unknown-command")).rejects.toThrow()
+      await expect(rpc.request("unknown-command", {}, soon())).rejects.toThrow()
       const exited = new Promise<void>((resolve) => rpc.onExit(() => resolve()))
       await rpc.dispose()
       await exited
-      await expect(rpc.request("get_state")).rejects.toThrow("disposed")
+      await expect(rpc.request("get_state", {}, soon())).rejects.toThrow("disposed")
     } finally {
       await rpc.dispose()
       await rm(directory, { recursive: true, force: true })
@@ -73,7 +73,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       workspaceId: "ws",
     })
     try {
-      expect(await rpc.request("get_state")).toHaveProperty("sessionId")
+      expect(await rpc.request("get_state", {}, soon())).toHaveProperty("sessionId")
       expect(
         await fs.stat(marker).then(
           () => true,
@@ -113,6 +113,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 });
 `
 
+const soon = () => ({ signal: new AbortController().signal, deadlineAt: Date.now() + 10_000 })
+
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 
 test.skipIf(process.platform === "win32")("dispose retires the owned group, including a descendant that ignores TERM", async () => {
@@ -144,7 +146,7 @@ test.skipIf(process.platform === "win32")("exit is published when the OS reports
   const exits: string[] = []
   rpc.onExit((error) => exits.push(error.message))
   try {
-    await rpc.request("ping")
+    await rpc.request("ping", {}, soon())
 
     const retiring = rpc.dispose()
     expect(observed).toEqual([])

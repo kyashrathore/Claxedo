@@ -31,6 +31,7 @@ export {
 } from "./ownership-store"
 export {
   captureDescendants,
+  captureOwnedGroup,
   retireDescendants,
   type DescendantSweep,
 } from "./descendants"
