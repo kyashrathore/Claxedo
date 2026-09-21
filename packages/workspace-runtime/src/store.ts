@@ -37,6 +37,7 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import { parseRecoveryOperation, type RecoveryOperation, type RecoveryTarget } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -736,15 +737,72 @@ function provisionalPromptWidth(messageId: string, provisionalIds: readonly stri
   return Math.max(fromStore, fromAdapter)
 }
 
+/**
+ * A session whose projection cannot be brought up to its journal. `repairable`
+ * separates the two causes, because they need opposite handling: a projection
+ * that threw can be retried by replaying the same rows, while a journal row
+ * that no longer parses can never be replayed and needs an operator-requested
+ * rebuild. Both leave the session gated for writes.
+ */
+type ProjectionFailure = { seq: number; reason: string; repairable: boolean }
+
+export class RuntimeProjectionBlockedError extends Error {
+  readonly code = "runtime_projection_blocked"
+
+  constructor(readonly sessionId: string, readonly seq: number, readonly reason: string) {
+    super(`Session ${sessionId} has no usable projection past journal seq ${seq}: ${reason}`)
+    this.name = "RuntimeProjectionBlockedError"
+  }
+}
+
+export class RuntimeStoreMigrationBlockedError extends Error {
+  readonly code = "runtime_store_migration_blocked"
+
+  constructor(readonly root: string, readonly reason: string) {
+    super(
+      `Cannot snapshot ${root} before the recovery migration: ${reason}. `
+        + "Stop every process holding this workspace store open, then reopen it; the schema was left unchanged.",
+    )
+    this.name = "RuntimeStoreMigrationBlockedError"
+  }
+}
+
+/**
+ * The row a repeated recovery request is compared under. A turn and a session
+ * operation share their session's key so a caller cannot escape its own
+ * uniqueness by naming a different turn of the same session.
+ */
+function recoveryScopeKey(target: RecoveryTarget) {
+  if (target.scope === "machine") return `machine:${target.machineId}`
+  if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
+  return `session:${target.workspaceId}:${target.sessionId}`
+}
+
+function recoveryTargetSessionId(target: RecoveryTarget) {
+  return target.scope === "turn" || target.scope === "session" ? target.sessionId : null
+}
+
+function recoveryOperationSettled(operation: RecoveryOperation) {
+  return operation.state === "succeeded" || operation.state === "failed"
+}
+
+/**
+ * How long a settled recovery operation stays listed. Long enough that a
+ * caller which lost its connection can still read its own receipt; short
+ * enough that a workspace's operation list is the current picture.
+ */
+const RECOVERY_OPERATION_RETENTION_MS = 5 * 60 * 1000
+
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   private root: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
   private closed = false
-  // A journaled write may outlive a failed projection. Retry that session's
-  // journal before accepting later writes so its checkpoint cannot skip it.
-  private failedProjections = new Set<string>()
+  // A journaled write may outlive its projection. The session stays gated
+  // until the projection catches up, so its checkpoint cannot skip the rows
+  // that never applied.
+  private failedProjections = new Map<string, ProjectionFailure>()
   /**
    * Streamed text waiting to be folded into its `part` row. A harness emits a
    * `message.part.delta` per token chunk; rewriting the growing part JSON and
@@ -755,11 +813,15 @@ export class RuntimeStore {
    */
   private pendingDeltas = new Map<string, PendingDelta>()
   private settleTimer: ReturnType<typeof setTimeout> | undefined
+  private databaseFile: string
+  private hadDatabaseFile: boolean
 
   constructor(root = workspaceRuntimeStoreDir()) {
     this.root = root
     fs.mkdirSync(root, { recursive: true, mode: 0o755 })
-    this.db = openDatabase(path.join(root, "state.db"))
+    this.databaseFile = path.join(root, "state.db")
+    this.hadDatabaseFile = fs.existsSync(this.databaseFile)
+    this.db = openDatabase(this.databaseFile)
     this.db.exec("PRAGMA journal_mode = WAL")
     this.db.exec("PRAGMA synchronous = NORMAL")
     this.db.exec("PRAGMA busy_timeout = 5000")
@@ -797,13 +859,18 @@ export class RuntimeStore {
    */
   private settleDeltas(sessionId?: string) {
     if (this.pendingDeltas.size === 0) return
-    const pending = [...this.pendingDeltas.values()].filter((item) => !sessionId || item.sessionId === sessionId)
-    if (pending.length === 0) return
-    for (const item of pending) this.pendingDeltas.delete(item.partId)
+    const selected = [...this.pendingDeltas.values()].filter((item) => !sessionId || item.sessionId === sessionId)
+    if (selected.length === 0) return
+    for (const item of selected) this.pendingDeltas.delete(item.partId)
     if (this.pendingDeltas.size === 0 && this.settleTimer) {
       clearTimeout(this.settleTimer)
       this.settleTimer = undefined
     }
+    // A blocked session's deltas are already journaled. Projecting them here
+    // would advance its checkpoint past the row that stopped replay, which is
+    // exactly the skip an explicit rebuild exists to repair.
+    const pending = selected.filter((item) => !this.blockedProjection(item.sessionId))
+    if (pending.length === 0) return
     const last = new Map<string, { seq: number; ts: number }>()
     this.transaction(() => {
       for (const item of pending) {
@@ -848,6 +915,9 @@ export class RuntimeStore {
   }
 
   private migrate() {
+    // First, because the snapshot it may take has to precede every schema
+    // write, not just the one that needs it.
+    this.migrateRecoveryOperations()
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_journal (
         session_id TEXT NOT NULL,
@@ -1241,6 +1311,70 @@ export class RuntimeStore {
         this.db.exec(sql)
       } catch {
         // column already exists
+      }
+    }
+  }
+
+  private migrateRecoveryOperations() {
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'recovery_operation'").get()) return
+    if (this.hadDatabaseFile) this.snapshotBeforeRecoveryMigration()
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recovery_operation (
+        operation_id TEXT PRIMARY KEY,
+        scope_key TEXT NOT NULL,
+        caller_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        session_id TEXT,
+        action TEXT NOT NULL,
+        state TEXT NOT NULL,
+        cleanup_fact TEXT NOT NULL,
+        persistence_fact TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        payload_json TEXT NOT NULL
+      )
+    `)
+    // The uniqueness that makes a repeated request id idempotent. It is an
+    // index rather than an application check because two RuntimeStore handles
+    // on one root are two connections: only SQLite can decide which insert won.
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS recovery_operation_request_idx
+      ON recovery_operation (scope_key, caller_id, request_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS recovery_operation_session_idx
+      ON recovery_operation (session_id, updated_at DESC)
+    `)
+  }
+
+  /**
+   * Copy the database aside before the first schema write that recovery needs.
+   * A WAL file holds committed frames the main file does not, so the copy is a
+   * consistent snapshot only once the WAL has been folded in and truncated;
+   * another connection reading or writing blocks that, and a copy taken anyway
+   * would be a backup in name only. The `-wal`/`-shm` companions are copied
+   * too, because a restore replaces the set the reopened database expects.
+   */
+  private snapshotBeforeRecoveryMigration() {
+    // A boot must not wait out someone else's transaction to find out it
+    // cannot snapshot; the owner is told to close them instead.
+    this.db.exec("PRAGMA busy_timeout = 1000")
+    let checkpoint: { busy: number } | null | undefined
+    try {
+      checkpoint = this.db.prepare<{ busy: number }>("PRAGMA wal_checkpoint(TRUNCATE)").get()
+    } catch (error) {
+      throw new RuntimeStoreMigrationBlockedError(this.root, `WAL checkpoint failed (${String(error)})`)
+    } finally {
+      this.db.exec("PRAGMA busy_timeout = 5000")
+    }
+    if (!checkpoint || checkpoint.busy !== 0) {
+      throw new RuntimeStoreMigrationBlockedError(this.root, "another connection holds the database open")
+    }
+    const stamp = `${this.databaseFile}.pre-recovery-${Date.now()}.bak`
+    fs.copyFileSync(this.databaseFile, stamp)
+    for (const suffix of ["-wal", "-shm"]) {
+      if (fs.existsSync(`${this.databaseFile}${suffix}`)) {
+        fs.copyFileSync(`${this.databaseFile}${suffix}`, `${stamp}${suffix}`)
       }
     }
   }
@@ -1734,19 +1868,74 @@ export class RuntimeStore {
     }
   }
 
-  private reset() {
+  /**
+   * Discard everything one session's journal produced. The journal itself and
+   * the `deleted_session` tombstone are untouched: they are the facts being
+   * replayed, not a projection of them.
+   */
+  private resetSessionProjection(sessionId: string) {
+    for (
+      const sql of [
+        "DELETE FROM journal_checkpoint WHERE session_id = ?",
+        "DELETE FROM pending_question WHERE session_id = ?",
+        "DELETE FROM pending_permission WHERE session_id = ?",
+        "DELETE FROM todo WHERE session_id = ?",
+        "DELETE FROM part WHERE session_id = ?",
+        "DELETE FROM message WHERE session_id = ?",
+        "DELETE FROM session_execution_binding WHERE session_id = ?",
+        "DELETE FROM session_map WHERE session_id = ?",
+        "DELETE FROM session WHERE id = ?",
+      ]
+    ) {
+      this.db.prepare(sql).run(sessionId)
+    }
+  }
+
+  /**
+   * Rebuild one session's projection from its own journal, under the reducer
+   * that writes it in the first place. It publishes nothing: `apply` only
+   * writes projection rows, so the events a subscriber already saw are not
+   * replayed at them. The session is still refused afterwards if the row that
+   * stopped replay is still unreadable — a rebuild repairs a projection, never
+   * the journal.
+   */
+  rebuildProjection(sessionId: string, reason = "operator requested rebuild") {
+    this.settleDeltas(sessionId)
+    this.failedProjections.delete(sessionId)
+    const to = this.getSessionMaxSeq(sessionId)
     this.transaction(() => {
-      this.db.exec("DELETE FROM journal_checkpoint")
-      this.db.exec("DELETE FROM deleted_session")
-      this.db.exec("DELETE FROM pending_question")
-      this.db.exec("DELETE FROM pending_permission")
-      this.db.exec("DELETE FROM todo")
-      this.db.exec("DELETE FROM part")
-      this.db.exec("DELETE FROM message")
-      this.db.exec("DELETE FROM session_execution_binding")
-      this.db.exec("DELETE FROM session_map")
-      this.db.exec("DELETE FROM session")
+      const seq = this.next(sessionId)
+      this.insertRuntimeJournal(
+        { seq, ts: Date.now(), sessionId, kind: "control", control: { type: "projection.reset_requested", reason } },
+        seq,
+        { insideTransaction: true },
+      )
+      this.resetSessionProjection(sessionId)
     })
+    this.replaySession(sessionId, 0, to)
+    const failure = this.failedProjections.get(sessionId)
+    if (failure) return { rebuilt: false as const, blocked: { seq: failure.seq, reason: failure.reason } }
+    return { rebuilt: true as const, position: this.projectedPosition(sessionId) }
+  }
+
+  /**
+   * Where this session's projection stands against its journal, and what is
+   * holding it back. The only read a recovery caller needs before deciding
+   * between waiting and asking for a rebuild.
+   */
+  replayJournal(sessionId: string) {
+    this.replay(sessionId)
+    const failure = this.failedProjections.get(sessionId)
+    return {
+      position: this.projectedPosition(sessionId),
+      ...(failure ? { blocked: { seq: failure.seq, reason: failure.reason } } : {}),
+    }
+  }
+
+  private projectedPosition(sessionId: string) {
+    return this.db
+      .prepare<{ last_seq: number }>("SELECT last_seq FROM journal_checkpoint WHERE session_id = ?")
+      .get(sessionId)?.last_seq ?? 0
   }
 
   private replay(sessionId?: string) {
@@ -1766,12 +1955,22 @@ export class RuntimeStore {
       `,
       )
       .all(sessionId ?? null, sessionId ?? null)
-    for (const session of sessions) {
-      let cursor = session.last_seq
-      while (cursor < session.max_seq) {
-        const rows = this.db
-          .prepare<RuntimeJournalRow>(
-            `
+    for (const session of sessions) this.replaySession(session.session_id, session.last_seq, session.max_seq)
+  }
+
+  /**
+   * Apply one session's journal from `from` up to `to`. A row that no longer
+   * parses stops this session and only this session: skipping it would project
+   * every later row against a state it never produced, and checkpoint over the
+   * gap so no reader could tell. Other sessions in the same replay are
+   * unaffected, because nothing they hold came from this journal.
+   */
+  private replaySession(sessionId: string, from: number, to: number) {
+    let cursor = from
+    while (cursor < to) {
+      const rows = this.db
+        .prepare<RuntimeJournalRow>(
+          `
             SELECT
               session_id,
               seq,
@@ -1786,22 +1985,28 @@ export class RuntimeStore {
               payload_json,
               source_json
             FROM runtime_journal
-            WHERE session_id = ? AND seq > ?
+            WHERE session_id = ? AND seq > ? AND seq <= ?
             ORDER BY seq ASC
             LIMIT 100
           `,
-          )
-          .all(session.session_id, cursor)
-        if (rows.length === 0) break
-        for (const row of rows) {
-          cursor = row.seq
-          const parsed = this.parseJournalRow(row)
-          if (!parsed) continue
-          this.project(parsed)
+        )
+        .all(sessionId, cursor, to)
+      if (rows.length === 0) break
+      for (const row of rows) {
+        const parsed = this.parseJournalRow(row)
+        if (!parsed) {
+          this.failedProjections.set(sessionId, {
+            seq: row.seq,
+            reason: `journal row ${row.kind}/${row.type} did not parse`,
+            repairable: false,
+          })
+          return
         }
+        cursor = row.seq
+        this.project(parsed)
       }
-      this.failedProjections.delete(session.session_id)
     }
+    this.failedProjections.delete(sessionId)
   }
 
   private staleToolError(message?: string) {
@@ -2290,9 +2495,47 @@ export class RuntimeStore {
   }
 
   private checkpoint(row: Row) {
+    const blocked = this.blockedProjection(row.sessionId)
+    if (blocked) throw new RuntimeProjectionBlockedError(row.sessionId, blocked.seq, blocked.reason)
     this.db
       .prepare("INSERT OR REPLACE INTO journal_checkpoint (session_id, last_seq, updated_at) VALUES (?, ?, ?)")
       .run(row.sessionId, row.seq, row.ts)
+  }
+
+  /**
+   * Journal, apply and checkpoint one row while the caller already holds the
+   * transaction. `commit` opens a transaction per row and `transaction` is not
+   * reentrant, so a caller that needs several rows to land together builds
+   * them from here instead.
+   */
+  private commitInside(row: Row, fencingToken: number | undefined) {
+    this.assertFencingToken(row.sessionId, fencingToken)
+    const journaled = this.insertRuntimeJournal(row, row.seq, { insideTransaction: true })
+    this.apply(journaled)
+    this.checkpoint(journaled)
+    return journaled
+  }
+
+  /** The unrepairable failure gating this session, if it has one. */
+  private blockedProjection(sessionId: string) {
+    const failure = this.failedProjections.get(sessionId)
+    return failure && !failure.repairable ? failure : undefined
+  }
+
+  /**
+   * Bring a session's projection level with its journal, or refuse the write.
+   * A projection that threw is retried here; a journal row that no longer
+   * parses cannot be, and the session stays refused until an operator asks for
+   * a rebuild. Either way the caller learns the sequence it is stuck behind
+   * rather than writing past it.
+   */
+  private assertProjectionCurrent(sessionId: string) {
+    const failure = this.failedProjections.get(sessionId)
+    if (!failure) return
+    if (failure.repairable) this.replay(sessionId)
+    const remaining = this.failedProjections.get(sessionId)
+    if (!remaining) return
+    throw new RuntimeProjectionBlockedError(sessionId, remaining.seq, remaining.reason)
   }
 
   private latestFencingToken(sessionId: string) {
@@ -2321,7 +2564,7 @@ export class RuntimeStore {
   }
 
   private commit(row: Row, fence: { fencingToken?: number; advance?: boolean } = {}) {
-    if (this.failedProjections.has(row.sessionId)) this.replay(row.sessionId)
+    this.assertProjectionCurrent(row.sessionId)
     if (
       this.deleted(row.sessionId) &&
       !(row.kind === "control" && (row.control.type === "session.bind" || row.control.type === "session.delete"))
@@ -3050,7 +3293,9 @@ export class RuntimeStore {
         this.checkpoint(row)
       })
     } catch (error) {
-      this.failedProjections.add(row.sessionId)
+      if (!(error instanceof RuntimeProjectionBlockedError)) {
+        this.failedProjections.set(row.sessionId, { seq: row.seq, reason: String(error), repairable: true })
+      }
       throw error
     }
   }
@@ -3340,91 +3585,103 @@ export class RuntimeStore {
     } satisfies RuntimeStoreAppendOutput
   }
 
+  /**
+   * End the session's open turn: its terminal events and its `turn.finish`
+   * land together or not at all, so no reader can see an idle session whose
+   * turn never closed, and no retry has to work out which half survived.
+   *
+   * `leaseId` is the durable turn lease the caller believes it still holds.
+   * The lease row lives in this database, so the check and the writes share
+   * one immediate transaction and a replacement owner cannot slip between
+   * them.
+   */
   finishTurn(input: {
     sessionId: string
     assistantMessageId?: string
     outcome: AgentTurnOutcome
     fencingToken?: number
+    leaseId?: string
   }) {
-    this.assertFencingToken(input.sessionId, input.fencingToken)
-    const active = this.db
-      .prepare<{
-      provider_session_id: string | null
-      user_message_id: string | null
-      assistant_message_id: string | null
-      payload_json: string
-      created_at: number
-    }>(
-        `
+    this.assertProjectionCurrent(input.sessionId)
+    this.settleDeltas(input.sessionId)
+    if (this.deleted(input.sessionId)) throw new Error(`Session ${input.sessionId} was deleted`)
+    return this.transaction(() => {
+      if (input.leaseId !== undefined && this.readTurnAuthority(input.sessionId)?.leaseId !== input.leaseId) {
+        throw new AgentRuntimeStaleTurnError(input.sessionId)
+      }
+      this.assertFencingToken(input.sessionId, input.fencingToken)
+      const active = this.db
+        .prepare<{
+        provider_session_id: string | null
+        user_message_id: string | null
+        assistant_message_id: string | null
+        payload_json: string
+        created_at: number
+      }>(
+          `
         SELECT provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
         FROM runtime_journal
         WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
         ORDER BY seq DESC
         LIMIT 1
       `,
-      )
-      .get(input.sessionId)
-    if (!active?.assistant_message_id) return { events: [] }
-    if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
-    if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
-    const events: CompatEvent[] = []
+        )
+        .get(input.sessionId)
+      if (!active?.assistant_message_id) return { events: [] }
+      if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
+      if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
+      const agentSession = active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}
+      const terminal = (payload: CompatEvent) =>
+        this.commitInside({
+          seq: this.next(input.sessionId),
+          ts: Date.now(),
+          sessionId: input.sessionId,
+          ...agentSession,
+          kind: "event",
+          payload,
+        }, input.fencingToken)
+      const events: CompatEvent[] = []
 
-    if (input.outcome.status === "failed") {
-      const control = readColumn.turnStart(active.payload_json)
-      const session = this.getSession(input.sessionId)
-      events.push(this.appendEvent({
-        sessionId: input.sessionId,
-        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-        payload: messageUpdated(
-          buildAssistantMessage({
-            id: active.assistant_message_id,
-            sessionID: input.sessionId,
-            parentID: active.user_message_id ?? control.parentMessageId ?? input.sessionId,
-            agent: control.agent ?? "build",
-            model: control.model,
-            directory: session?.directory ?? "",
-            created: active.created_at,
-            completed: input.outcome.completedAt,
-            error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
-            ...(control.variant ? { variant: control.variant } : {}),
-          }),
-        ),
-        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
-      }).payload)
-      events.push(this.appendEvent({
-        sessionId: input.sessionId,
-        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-        payload: sessionError(input.outcome.error ?? "turn failed", input.sessionId),
-        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
-      }).payload)
-    } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
-      this.appendEvent({
-        sessionId: input.sessionId,
-        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-        payload: messageCompleted(input.sessionId, active.assistant_message_id),
-        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
-      })
-      this.appendEvent({
-        sessionId: input.sessionId,
-        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-        payload: sessionIdle(input.sessionId),
-        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
-      })
-    }
+      if (input.outcome.status === "failed") {
+        const control = readColumn.turnStart(active.payload_json)
+        const session = this.getSession(input.sessionId)
+        events.push(
+          messageUpdated(
+            buildAssistantMessage({
+              id: active.assistant_message_id,
+              sessionID: input.sessionId,
+              parentID: active.user_message_id ?? control.parentMessageId ?? input.sessionId,
+              agent: control.agent ?? "build",
+              model: control.model,
+              directory: session?.directory ?? "",
+              created: active.created_at,
+              completed: input.outcome.completedAt,
+              error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
+              ...(control.variant ? { variant: control.variant } : {}),
+            }),
+          ),
+        )
+        events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId))
+      } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
+        terminal(messageCompleted(input.sessionId, active.assistant_message_id))
+        terminal(sessionIdle(input.sessionId))
+      }
+      for (const payload of events) terminal(payload)
 
-    this.commit({
-      seq: this.next(input.sessionId),
-      ts: input.outcome.completedAt,
-      sessionId: input.sessionId,
-      ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-      kind: "control",
-      control: {
-        type: "turn.finish",
-        assistantMessageId: active.assistant_message_id,
-        outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
-      },
-    }, (input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}))
-    return { events }
+      this.commitInside({
+        seq: this.next(input.sessionId),
+        ts: input.outcome.completedAt,
+        sessionId: input.sessionId,
+        ...agentSession,
+        kind: "control",
+        control: {
+          type: "turn.finish",
+          assistantMessageId: active.assistant_message_id,
+          outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
+        },
+      }, input.fencingToken)
+      return { events }
+    }, "immediate")
   }
 
   private hasMessageCompleted(sessionId: string, messageId: string) {
@@ -3704,19 +3961,6 @@ export class RuntimeStore {
         type: "notice.created",
         notice: input.notice,
         message: input.message,
-      },
-    })
-  }
-
-  requestProjectionReset(sessionId: string, reason?: string) {
-    this.commit({
-      seq: this.next(sessionId),
-      ts: Date.now(),
-      sessionId,
-      kind: "control",
-      control: {
-        type: "projection.reset_requested",
-        ...(reason ? { reason } : {}),
       },
     })
   }
@@ -4179,6 +4423,161 @@ export class RuntimeStore {
 
   releaseTurnLease(sessionId: string, leaseId: string) {
     this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
+  }
+
+  /** Who may currently write for this session, as the durable lease row says. */
+  readTurnAuthority(sessionId: string) {
+    const row = this.db
+      .prepare<{ lease_id: string; acquired_at: number }>(
+        "SELECT lease_id, acquired_at FROM session_turn_lease WHERE session_id = ?",
+      )
+      .get(sessionId)
+    return row ? { leaseId: row.lease_id, acquiredAt: row.acquired_at } : undefined
+  }
+
+  /**
+   * What the journal records about one turn, for a caller deciding whether a
+   * cancellation still has anything to cancel.
+   *
+   * Either of the turn's two message ids identifies it. The journal keys turn
+   * rows on the assistant message id, while a recovery target carries the user
+   * message id the caller was given at admission, and neither side can derive
+   * the other without this lookup.
+   */
+  turnEvidence(sessionId: string, turnId: string) {
+    const start = this.db
+      .prepare<{ assistant_message_id: string }>(
+        `
+        SELECT assistant_message_id FROM runtime_journal
+        WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
+          AND (assistant_message_id = ? OR user_message_id = ?)
+        ORDER BY seq DESC LIMIT 1
+      `,
+      )
+      .get(sessionId, turnId, turnId)
+    if (!start) return { started: false, finished: false }
+    const finish = this.db
+      .prepare<{ payload_json: string }>(
+        `
+        SELECT payload_json FROM runtime_journal
+        WHERE session_id = ? AND kind = 'control' AND type = 'turn.finish' AND assistant_message_id = ?
+        ORDER BY seq DESC LIMIT 1
+      `,
+      )
+      .get(sessionId, start.assistant_message_id)
+    if (!finish) return { started: true, finished: false }
+    return { started: true, finished: true, outcome: readColumn.turnFinish(finish.payload_json).outcome }
+  }
+
+  /**
+   * Claim one recovery request id for one caller. The unique index decides the
+   * race, so two runtimes sharing this store cannot both believe they created
+   * the operation; the loser reads back the row that won.
+   */
+  recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }) {
+    this.pruneRecoveryOperations()
+    const scopeKey = recoveryScopeKey(operation.target)
+    const created = this.db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO recovery_operation (
+          operation_id, scope_key, caller_id, request_id, session_id, action, state,
+          cleanup_fact, persistence_fact, created_at, updated_at, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      )
+      .run(
+        operation.operationId,
+        scopeKey,
+        caller.callerId,
+        operation.requestId,
+        recoveryTargetSessionId(operation.target),
+        operation.action,
+        operation.state,
+        operation.facts.cleanup.value,
+        operation.facts.persistence.value,
+        operation.createdAt,
+        operation.updatedAt,
+        JSON.stringify(operation),
+      )
+    if (created.changes === 1) return { created: true as const }
+    const existing = requireRow(
+      this.db
+        .prepare<{ payload_json: string }>(
+          "SELECT payload_json FROM recovery_operation WHERE scope_key = ? AND caller_id = ? AND request_id = ?",
+        )
+        .get(scopeKey, caller.callerId, operation.requestId),
+      "recovery_operation existing",
+    )
+    return { created: false as const, existing: parseRecoveryOperation(JSON.parse(existing.payload_json)) }
+  }
+
+  updateRecoveryOperation(operation: RecoveryOperation) {
+    const result = this.db
+      .prepare(
+        `
+        UPDATE recovery_operation
+        SET state = ?, cleanup_fact = ?, persistence_fact = ?, updated_at = ?, payload_json = ?
+        WHERE operation_id = ?
+      `,
+      )
+      .run(
+        operation.state,
+        operation.facts.cleanup.value,
+        operation.facts.persistence.value,
+        operation.updatedAt,
+        JSON.stringify(operation),
+        operation.operationId,
+      )
+    if (result.changes === 0) {
+      throw new Error(`Recovery operation ${operation.operationId} was never recorded in this store`)
+    }
+  }
+
+  readRecoveryOperation(operationId: string) {
+    const row = this.db
+      .prepare<{ payload_json: string }>("SELECT payload_json FROM recovery_operation WHERE operation_id = ?")
+      .get(operationId)
+    return row ? parseRecoveryOperation(JSON.parse(row.payload_json)) : undefined
+  }
+
+  /**
+   * In-flight operations, plus the settled ones a caller could still be
+   * holding a receipt for. Older settled rows are omitted rather than
+   * presented as current work.
+   */
+  listRecoveryOperations(scope: { sessionId?: string } = {}) {
+    const rows = this.db
+      .prepare<{ payload_json: string }>(
+        `
+        SELECT payload_json FROM recovery_operation
+        WHERE (? IS NULL OR session_id = ?)
+          AND (state NOT IN ('succeeded', 'failed') OR updated_at >= ?)
+        ORDER BY updated_at DESC
+      `,
+      )
+      .all(scope.sessionId ?? null, scope.sessionId ?? null, Date.now() - RECOVERY_OPERATION_RETENTION_MS)
+    return rows.map((row) => parseRecoveryOperation(JSON.parse(row.payload_json)))
+  }
+
+  /**
+   * Drop settled operations past the retention window. An operation whose
+   * facts still say something is owned, unknown or unwritten is kept whatever
+   * its age: deleting it would destroy the only record of an obligation
+   * nobody has discharged.
+   */
+  private pruneRecoveryOperations() {
+    this.db
+      .prepare(
+        `
+        DELETE FROM recovery_operation
+        WHERE state IN ('succeeded', 'failed')
+          AND updated_at < ?
+          AND cleanup_fact = 'verified_clear'
+          AND persistence_fact <> 'pending'
+      `,
+      )
+      .run(Date.now() - RECOVERY_OPERATION_RETENTION_MS)
   }
 
   /**
