@@ -9,7 +9,7 @@
  */
 import path from "node:path"
 import { z } from "zod"
-import { claxedoDocumentReferenceId } from "@claxedo/helpers/claxedo-document"
+import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "@claxedo/helpers/claxedo-document"
 import { record, records, text } from "../json"
 import type { ClaxedoFetch } from "../client/contract"
 import type { McpToolContext } from "../context"
@@ -86,7 +86,13 @@ export function registerDocumentTools(registry: ToolRegistrar) {
       const documents = await listDocuments(ctx, scope, "all")
       if ("refusal" in documents) return documents.refusal
 
-      const reference = claxedoDocumentReferenceId(args.document)
+      let reference: string
+      try {
+        reference = claxedoDocumentReferenceId(args.document)
+      } catch (error) {
+        if (error instanceof InvalidDocumentReferenceError) return mcpToolRefusal(error.message)
+        throw error
+      }
       const match = resolveDocument(documents.rows, reference)
       if ("refusal" in match) return match.refusal
 

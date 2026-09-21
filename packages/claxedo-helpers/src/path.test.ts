@@ -19,9 +19,18 @@ describe("inside", () => {
     expect(inside(root, `${root}x`)).toBe(false)
   })
 
-  test("it normalizes nothing: traversal segments are the caller's job to resolve", () => {
-    // A purely lexical check says yes here; callers must pass resolved paths.
-    expect(inside(root, `${root}${sep}..${sep}other`)).toBe(true)
+  test("the filesystem root contains every absolute path on its drive", () => {
+    const root = ["", ""].join(sep)
+    expect(inside(root, root)).toBe(true)
+    expect(inside(root, ["", "etc"].join(sep))).toBe(true)
+    expect(inside(root, ["", "a", "b"].join(sep))).toBe(true)
+  })
+
+  test("a candidate that resolves outside the root is NOT inside", () => {
+    expect(inside(root, `${root}${sep}..${sep}other`)).toBe(false)
+    expect(inside(root, `${root}${sep}child${sep}..${sep}..${sep}other`)).toBe(false)
     expect(inside(root, ["", "elsewhere"].join(sep))).toBe(false)
+    // A realpath is still the caller's job: this is a lexical comparison only.
+    expect(inside(root, `${root}${sep}child${sep}..${sep}file`)).toBe(true)
   })
 })

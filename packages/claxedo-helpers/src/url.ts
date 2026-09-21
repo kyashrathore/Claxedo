@@ -47,13 +47,20 @@ export function isLoopbackHttpUrl(input: string | undefined): boolean {
 }
 
 /**
+ * Joins a PATH onto a base; an input that parses as an absolute URL is
+ * rejected, because `new URL` would otherwise let it replace the base.
+ *
  * Both normalizations are load-bearing: stripping leading slashes from the
  * pathname keeps a base that already carries a path from being reset to its
  * origin, and forcing exactly one trailing slash on the base keeps `new URL`
  * from dropping the base's last segment.
  */
 export function joinUrl(base: string, pathname: string): string {
-  return new URL(pathname.replace(/^\/+/, ""), `${base.replace(/\/+$/, "")}/`).toString()
+  // WHATWG also reads `\` as a separator on special schemes, so stripping only
+  // `/` would leave `\\host` able to retarget the join.
+  const segment = pathname.replace(/^[\\/]+/, "")
+  if (URL.canParse(segment)) throw new Error(`joinUrl takes a path, not an absolute URL: ${JSON.stringify(pathname)}`)
+  return new URL(segment, `${base.replace(/\/+$/, "")}/`).toString()
 }
 
 /** Does not preserve a lone root: "/" and "///" both return "". */

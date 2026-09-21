@@ -1,15 +1,16 @@
-import { sep } from "node:path"
+import { isAbsolute, relative, sep } from "node:path"
 
 /**
- * Purely lexical containment check on two ALREADY-RESOLVED absolute paths. The
- * root itself counts as inside; a sibling that merely shares the root as a
- * string prefix (/a/workspace-old under root /a/workspace) does not.
+ * Containment by relative path: the candidate is inside when its path down
+ * from the root needs no `..` escape. The filesystem root therefore contains
+ * every absolute path on its drive, while a sibling that merely shares the
+ * root as a string prefix (/a/workspace-old under root /a/workspace) does not.
  *
- * It performs no normalisation of its own — no resolve, no realpath, no
- * trailing-separator trimming, no case folding. Every caller is responsible for
- * passing `path.resolve`'d values and, where the check is a security boundary,
- * `fs.realpath`'d ones.
+ * The comparison is lexical — `relative` resolves `.`/`..` segments but there
+ * is no realpath and no case folding — so where the check is a security
+ * boundary the caller still passes `fs.realpath`'d values.
  */
 export function inside(root: string, candidate: string): boolean {
-  return candidate === root || candidate.startsWith(root + sep)
+  const descent = relative(root, candidate)
+  return descent === "" || (descent !== ".." && !descent.startsWith(`..${sep}`) && !isAbsolute(descent))
 }

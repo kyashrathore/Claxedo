@@ -68,6 +68,21 @@ describe("joinUrl", () => {
     expect(joinUrl("https://x.dev", "/users")).toBe("https://x.dev/users")
     expect(joinUrl("https://x.dev///", "///users")).toBe("https://x.dev/users")
   })
+
+  test("an absolute URL is rejected where a path was expected", () => {
+    for (const absolute of ["https://evil.com/users", "  https://evil.com/users  ", "javascript:alert(1)", "x:opaque"]) {
+      expect(() => joinUrl("https://x.dev/api", absolute)).toThrow("not an absolute URL")
+    }
+  })
+
+  test("a host-relative input cannot retarget the join either", () => {
+    expect(joinUrl("https://x.dev/api", "//evil.com/users")).toBe("https://x.dev/api/evil.com/users")
+    expect(joinUrl("https://x.dev/api", "\\\\evil.com\\users")).toBe("https://x.dev/api/evil.com/users")
+  })
+
+  test("a colon in a later segment is still a path", () => {
+    expect(joinUrl("https://x.dev/api", "a/b:c")).toBe("https://x.dev/api/a/b:c")
+  })
 })
 
 describe("stripTrailingSlashes", () => {

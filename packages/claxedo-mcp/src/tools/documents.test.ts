@@ -223,6 +223,16 @@ describe("documents_open", () => {
     )
   })
 
+  test("refuses a document reference whose percent escapes are malformed", async () => {
+    const service = documentsService()
+    const { url } = await listen(service)
+    const client = await connect(url, "cli-jwt")
+    const result = await call(client, "documents_open", { document: "claxedo://document/%", project: "proj_1", session: "ses_1" })
+    expect(result.isError).toBe(true)
+    expect(result.text).toBe("'claxedo://document/%' is not a readable claxedo://document/... reference")
+    expect(service.calls.filter((row) => row.method === "POST")).toEqual([])
+  })
+
   test("grants to the calling session itself, whatever session the model names", async () => {
     const service = documentsService()
     const { url } = await listen(service)
