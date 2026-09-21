@@ -474,11 +474,9 @@ test.describe("core busy / abort / errors @core", () => {
     // The operation reads as words, not as the contract's enum.
     await expect(panel).toContainText(/Stop the turn/i)
 
-    // The reopened range asks the owner about the turn it can no longer see an
-    // answer for, through the coverage read rather than a page read.
-    await expect
-      .poll(() => mock.requests.coverageReads.length, { timeout: 15_000 })
-      .toBeGreaterThan(0)
+    // No coverage read is expected here: this session's only turn is the one it
+    // is still running, which a rebuild deliberately leaves alone.
+    expect(mock.requests.coverageReads).toEqual([])
   })
 
   test("a machine that cannot answer is named as that, and the panel stays usable", async ({ page }) => {
