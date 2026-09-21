@@ -2,6 +2,8 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import type { SessionTitleRequest } from "../../title-generation"
 import type { PiRpcMessage } from "./rpc-process"
+import type { RequestDeadline } from "../../launch"
+import { controlRequestDeadline } from "../shared/request-deadline"
 
 export const PI_TITLE_COMMAND = "claxedo-title"
 const EXTENSION_FILE = "claxedo-session-title.ts"
@@ -52,7 +54,7 @@ export async function ensurePiTitleExtension(agentDir: string) {
 }
 
 export type PiTitleProcess = {
-  request(type: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<unknown>
+  request(type: string, body: Record<string, unknown>, deadline: RequestDeadline): Promise<unknown>
   onEvent(listener: (event: PiRpcMessage) => void): () => void
 }
 
@@ -67,7 +69,7 @@ export async function generatePiTitle(process: PiTitleProcess, request: SessionT
   try {
     await process.request("prompt", {
       message: `/${PI_TITLE_COMMAND} ${JSON.stringify({ system: request.system, user: request.user })}`,
-    }, TITLE_REQUEST_TIMEOUT_MS)
+    }, { signal: request.signal, deadlineAt: Date.now() + TITLE_REQUEST_TIMEOUT_MS })
     if (failure) throw new Error(failure)
     return name
   } finally {
@@ -77,5 +79,5 @@ export async function generatePiTitle(process: PiTitleProcess, request: SessionT
 
 export async function setPiSessionName(process: PiTitleProcess, title: string) {
   if (!title.trim()) return
-  await process.request("set_session_name", { name: title })
+  await process.request("set_session_name", { name: title }, controlRequestDeadline())
 }

@@ -8,9 +8,10 @@ import {
   type SdkModelEntry,
 } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
+import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import { text } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"
-import { codexAppServerModel, codexControlDeadline } from "./protocol"
+import { codexAppServerModel } from "./protocol"
 
 export function codexConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOption[] {
   if (models.length === 0) return []
@@ -44,7 +45,7 @@ export async function fetchCodexModels(input: {
     const models = new Map<string, SdkModelEntry>()
     let cursor: string | undefined
     do {
-      const result = asRecord(await proc.request("model/list", cursor ? { cursor } : {}, codexControlDeadline())) ?? {}
+      const result = asRecord(await proc.request("model/list", cursor ? { cursor } : {}, controlRequestDeadline())) ?? {}
       const data = Array.isArray(result.data) ? result.data : []
       for (const item of data) {
         const row = asRecord(item)

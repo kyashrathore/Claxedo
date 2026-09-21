@@ -23,6 +23,7 @@ import {
   resolveSupportedEffort,
 } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
+import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import {
   errorMessage,
   text,
@@ -49,11 +50,9 @@ import {
   createCodexTurnStop,
   type CodexActiveThread,
   codexAppServerModel,
-  codexControlDeadline,
   codexGoalSnapshot,
   codexIdleTimeoutMs,
   codexSpawnEnv,
-  codexTurnDeadline,
   codexTurnModel,
   codexSteerTurn,
   codexUserInput,
@@ -230,7 +229,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       // its own default provider unless the start request says otherwise.
       ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}),
       ...this.threadConfig(input.sessionId),
-    }, codexControlDeadline()).then((response) => asRecord(response) ?? {})
+    }, controlRequestDeadline()).then((response) => asRecord(response) ?? {})
     const thread = asRecord(result.thread)
     const threadId = text(thread?.id)
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
@@ -259,7 +258,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     // only through an already-running app-server: local deletion must neither
     // spawn a process nor fail because the provider cleanup did.
     const proc = this.process
-    if (proc?.alive) await proc.request("thread/archive", { threadId: agentSessionId }, codexControlDeadline()).catch(() => {})
+    if (proc?.alive) await proc.request("thread/archive", { threadId: agentSessionId }, controlRequestDeadline()).catch(() => {})
   }
 
   /**
@@ -390,7 +389,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ),
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
-    }, codexTurnDeadline())) ?? {}
+    }, modelRequestDeadline())) ?? {}
 
     try {
       if (input.abort.signal.aborted) throw new Error("Codex turn aborted")
@@ -398,7 +397,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         startTurn,
         resumeThread: async () => {
           log.info("codex thread missing from app-server process; resuming from disk", { threadId })
-          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) }, codexControlDeadline())
+          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) }, controlRequestDeadline())
         },
       })
       const result = await Promise.race([startPending, turnStartFailed])

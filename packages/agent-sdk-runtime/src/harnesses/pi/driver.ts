@@ -32,6 +32,8 @@ import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
 import type { SessionTitleRequest } from "../../title-generation"
 import { cleanupFromRetirement, createTurnStopRecord, observeStopAttempt } from "../shared/cancellation-facts"
+import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
+import type { RequestDeadline } from "../../launch"
 import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
 
 export type PiDriverOptions = {
@@ -280,7 +282,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       workspaceId: this.options.workspaceId ?? "",
     })
     try {
-      await process.request("get_state")
+      await process.request("get_state", {}, controlRequestDeadline())
       return process
     } catch (error) {
       this.recordUnresolved(await process.dispose())
@@ -293,7 +295,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       ...(input.title ? ["--name", input.title] : []),
     ], input.model)
     try {
-      const state = record(await process.request("get_state"))
+      const state = record(await process.request("get_state", {}, controlRequestDeadline()))
       const id = text(state?.sessionId)
       if (!id) throw new Error("Pi did not return its native session id")
       this.remember(id, process, input.directory)
@@ -364,7 +366,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
     entry.idle = setTimeout(() => {
       // Pi defers writing its session until the first assistant message. Keep a new session alive.
       void entry.process
-        .request("get_state")
+        .request("get_state", {}, controlRequestDeadline())
         .then(async (value) => {
           const file = text(record(value)?.sessionFile)
           const persisted =
@@ -396,7 +398,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
     if (!filename) throw new Error(`Pi session file is missing for ${id}`)
     const process = await this.start(directory, ["--session", path.join(this.agentDir, "sessions", filename)])
     try {
-      const state = record(await process.request("get_state"))
+      const state = record(await process.request("get_state", {}, controlRequestDeadline()))
       if (state?.sessionId !== id) throw new Error("Pi resumed a different session")
       return this.remember(id, process, directory)
     } catch (error) {
@@ -427,12 +429,13 @@ class PiRpcDriver implements SdkRuntimeDriver {
     // The stream may fail while awaiting command acknowledgement.
     void settled.catch(() => {})
     const stops = createTurnStopRecord()
-    const abort = () => {
+    const onTurnAbort = () => abort()
+    const abort = (deadline?: RequestDeadline) => {
       if (cancelling) return
       cancelling = observeStopAttempt(stops, "provider_unreachable", async () => {
         for (const id of questionIds) this.host.pendingQuestions.get(id)?.reject()
-        await process.request("clear_queue")
-        await process.request("abort")
+        await process.request("clear_queue", {}, controlRequestDeadline(deadline))
+        await process.request("abort", {}, controlRequestDeadline(deadline))
         finish()
       }).catch(async (error: unknown) => {
         // Pi refused or never answered the cancel, so the only remaining
@@ -483,11 +486,11 @@ class PiRpcDriver implements SdkRuntimeDriver {
           await process.request("steer", {
             message: extractTextFromParts(steered.parts),
             ...(steeredImages.length ? { images: steeredImages } : {}),
-          })
+          }, controlRequestDeadline())
           return { ok: true as const }
         },
       })
-      input.abort.signal.addEventListener("abort", abort, { once: true })
+      input.abort.signal.addEventListener("abort", onTurnAbort, { once: true })
       if (input.abort.signal.aborted) {
         abort()
         await settled
@@ -495,8 +498,8 @@ class PiRpcDriver implements SdkRuntimeDriver {
       }
       if (!input.input.model) throw new Error("Pi turn requires a resolved model")
       const model = piModel(input.input.model)
-      await process.request("set_model", { provider: model.providerID, modelId: model.modelID })
-      if (input.input.variant) await process.request("set_thinking_level", { level: input.input.variant })
+      await process.request("set_model", { provider: model.providerID, modelId: model.modelID }, controlRequestDeadline())
+      if (input.input.variant) await process.request("set_thinking_level", { level: input.input.variant }, controlRequestDeadline())
       if (input.abort.signal.aborted) {
         await settled
         return
@@ -505,7 +508,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       await process.request("prompt", {
         message: [input.input.system, extractTextFromParts(input.input.parts)].filter(Boolean).join("\n\n"),
         ...(images.length ? { images } : {}),
-      })
+      }, modelRequestDeadline())
       await settled
     } catch (error) {
       // Losing an acknowledgement does not authorize replay; retire this launch
@@ -516,7 +519,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       await cancelling
       removeEvent()
       removeExit()
-      input.abort.signal.removeEventListener("abort", abort)
+      input.abort.signal.removeEventListener("abort", onTurnAbort)
       for (const id of questionIds) this.host.pendingQuestions.delete(id)
       entry.busy = false
       if (process.alive) this.reap(agentSessionId, entry)
@@ -573,7 +576,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
     if (!directory) throw new Error("Pi model discovery requires a machine workspace")
     const probe = await this.start(directory, ["--no-session"])
     try {
-      const result = record(await probe.request("get_available_models"))
+      const result = record(await probe.request("get_available_models", {}, controlRequestDeadline()))
       if (!Array.isArray(result?.models)) throw new Error("Pi returned an invalid model catalog")
       const available = result.models.map((value) => {
         const model = record(value)
@@ -594,13 +597,13 @@ class PiRpcDriver implements SdkRuntimeDriver {
         await probe.request("set_model", {
           provider: currentModel.slice(0, slash),
           modelId: currentModel.slice(slash + 1),
-        })
+        }, controlRequestDeadline())
       }
-      const levels = record(await probe.request("get_available_thinking_levels"))
+      const levels = record(await probe.request("get_available_thinking_levels", {}, controlRequestDeadline()))
       this.thinking = Array.isArray(levels?.levels)
         ? levels.levels.filter((value): value is string => typeof value === "string")
         : []
-      const state = record(await probe.request("get_state"))
+      const state = record(await probe.request("get_state", {}, controlRequestDeadline()))
       this.selectedThinking = text(state?.thinkingLevel) ?? "off"
       const selectedProvider = text(record(state?.model)?.provider)
       const selectedModelId = text(record(state?.model)?.id)

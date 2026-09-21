@@ -6,6 +6,7 @@ import { createAgentRuntime } from "../../runtime"
 import { harnessFactory } from "../../harness-factories/factory"
 import { PiRpcProcess } from "./rpc-process"
 import { volatileLaunchOwnership } from "../../launch"
+import { modelRequestDeadline } from "../shared/request-deadline"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { GOAL_PROMPT_TEXT } from "../shared/goal-protocol"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
@@ -183,7 +184,7 @@ test(
         workspaceId: "",
       })
       try {
-        const compacted = await rpc.request("compact", { customInstructions: "Keep the file edit and completion." })
+        const compacted = await rpc.request("compact", { customInstructions: "Keep the file edit and completion." }, modelRequestDeadline())
         expect(compacted).toHaveProperty("summary")
         expect(await fs.readFile(nativeFile, "utf8")).toContain('"type":"compaction"')
       } finally {

@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto"
 import type { JsonRecord } from "../shared/sdk-runtime-driver"
 import { asRecord } from "@claxedo/helpers/guards"
+import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import { errorMessage, text } from "../shared/sdk-runtime-values"
 import { codexSandboxPolicy, codexSettingsFor } from "../shared/permission-modes"
 import type { CodexAppServerProcess } from "./app-server-process"
 import type { CodexActiveThread } from "./active-thread"
-import { codexControlDeadline, codexTurnDeadline } from "./protocol"
+
 
 type DynamicCodexThread = Pick<
   CodexActiveThread,
@@ -39,7 +40,7 @@ export async function spawnDynamicCodexAgent(input: {
       sandbox: settings.sandbox,
       threadSource: "subagent",
       ...(input.active.model ? { model: input.active.model } : {}),
-    }, codexControlDeadline()))
+    }, controlRequestDeadline()))
     childThreadId = text(asRecord(result?.thread)?.id) ?? ""
     if (!childThreadId) throw new Error("Codex app-server did not return a child thread id")
     await observe(input, childThreadId, callId, prompt, label, "running")
@@ -119,7 +120,7 @@ async function runDynamicCodexChild(
       sandboxPolicy: codexSandboxPolicy(settings.sandbox, active.directory),
       ...(active.model ? { model: active.model } : {}),
       ...(active.effort ? { effort: active.effort } : {}),
-    }, codexTurnDeadline())
+    }, modelRequestDeadline())
     await completed
   } finally {
     unsubscribe()

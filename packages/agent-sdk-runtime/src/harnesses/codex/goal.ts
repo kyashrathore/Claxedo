@@ -8,6 +8,7 @@ import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop } from "../shared/goal-stop-order"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
 import { asRecord } from "@claxedo/helpers/guards"
+import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import {
   errorMessage,
   text,
@@ -20,7 +21,6 @@ import {
   GoalTurnEventQueue,
   createCodexTurnStop,
   type CodexActiveThread,
-  codexControlDeadline,
   codexGoalSnapshot,
   startTurnWithThreadRecovery,
 } from "./protocol"
@@ -127,7 +127,7 @@ export class CodexGoalController {
   ) {
     return startTurnWithThreadRecovery({
       startTurn: async () => {
-        const response = asRecord(await proc.request(method, params, codexControlDeadline()))
+        const response = asRecord(await proc.request(method, params, controlRequestDeadline()))
         if (!response) throw new Error(`Codex app-server did not return a ${method} response`)
         return response
       },
@@ -136,7 +136,7 @@ export class CodexGoalController {
           threadId,
           cwd: directory,
           ...this.host.threadConfig(sessionId),
-        }, codexControlDeadline())
+        }, controlRequestDeadline())
       },
     })
   }

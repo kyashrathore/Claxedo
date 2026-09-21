@@ -1,6 +1,5 @@
 import type { PromptInput } from "../../index"
 import { isRuntimeGoalStatus, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import { DEFAULT_RECOVERY_BUDGETS, capChildBudget } from "@claxedo/agent-runtime-contract"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -10,34 +9,10 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { createTurnStop, type TurnStopRecord } from "../shared/cancellation-facts"
+import { controlRequestDeadline } from "../shared/request-deadline"
 import { deliverPromptAttachments, promptImageAttachments } from "../shared/prompt-attachments"
 import type { RequestDeadline } from "../../launch"
 import type { CodexAppServerProcess } from "./app-server-process"
-
-/**
- * A control request's own budget, never outliving the operation that asked for
- * it. Without a parent it still expires, so no caller of this protocol waits
- * on an app-server that has stopped answering.
- */
-export function codexControlDeadline(parent?: RequestDeadline): RequestDeadline {
-  const now = Date.now()
-  if (!parent) return { signal: new AbortController().signal, deadlineAt: now + DEFAULT_RECOVERY_BUDGETS.providerQueryMs }
-  return { signal: parent.signal, deadlineAt: capChildBudget(parent.deadlineAt, DEFAULT_RECOVERY_BUDGETS.providerQueryMs, now) }
-}
-
-/**
- * A turn request runs as long as the model does, so a provider budget here
- * would cancel healthy work for being slow. It is bounded by the app-server
- * exiting, which rejects everything still pending.
- *
- * It is deliberately NOT bound to the turn's own abort: `turn/start` answers
- * with the turn id that `turn/interrupt` needs, so abandoning it on abort
- * destroys the cancellation it was meant to serve. A deadline past 2^31-1 ms
- * is not "no deadline" either — Node truncates that timer to 1ms.
- */
-export function codexTurnDeadline(): RequestDeadline {
-  return { signal: new AbortController().signal, deadlineAt: Date.now() + 2_147_483_647 }
-}
 
 export type CodexTurnStop = {
   observe(params: JsonRecord): void
@@ -114,7 +89,7 @@ export function createCodexTurnStop(input: {
       processes.add(processId)
       commandProcesses.set(turnId, processes)
     },
-    stop: createTurnStop(input.record, "provider_unreachable", (deadline) => attempt(codexControlDeadline(deadline))),
+    stop: createTurnStop(input.record, "provider_unreachable", (deadline) => attempt(controlRequestDeadline(deadline))),
   }
 }
 
@@ -139,7 +114,7 @@ export async function codexSteerTurn(steer: {
     input: await codexUserInput({ parts: steer.input.parts, directory: steer.directory }),
     expectedTurnId: steer.turnId,
     clientUserMessageId: steer.input.userMessageId,
-  }, codexControlDeadline())
+  }, controlRequestDeadline())
   return { ok: true as const }
 }
 
