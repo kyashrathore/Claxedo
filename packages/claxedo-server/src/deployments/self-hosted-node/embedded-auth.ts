@@ -41,9 +41,9 @@ import { oauthConsentRevocation } from "../../platform/auth/oauth-consent-revoca
  * - CLAXEDO_EMBEDDED_AUTH_SECRET / BETTER_AUTH_SECRET: signing secret.
  *   When absent, a random secret is generated ONCE and persisted (0600) at
  *   `<dataDir>/embedded-auth.secret` so sessions survive restarts.
- * - CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS: comma-separated extra origins for
- *   better-auth's CSRF origin check (localhost dev origins are trusted by
- *   default via wildcard).
+ * - CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS: comma-separated exact origins
+ *   trusted by better-auth's CSRF origin check beside the public origin. The
+ *   `dev` script sets it to the vite origin (:4444).
  */
 
 export const EMBEDDED_AUTH_ISSUER = "claxedo-embedded"
@@ -121,15 +121,23 @@ function introspectionClientSecret(betterAuthSecret: string): string {
   return crypto.createHmac("sha256", betterAuthSecret).update(BETTER_AUTH_INTROSPECTION_CLIENT_ID).digest("hex")
 }
 
+/**
+ * Exact origins only. Better Auth treats a `*` in an entry as a glob, so a
+ * `http://localhost:*` entry would let a page on any local port pass the
+ * cookie-bearing CSRF check on `/api/auth/*` mutations. A public origin on
+ * `localhost` also trusts its `127.0.0.1` twin, which is the same server
+ * under the other name a browser can reach it by.
+ */
 function trustedOrigins(env: NodeJS.ProcessEnv): string[] {
   const extra = (env.CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean)
-  // Wildcards are supported by better-auth's origin matcher; localhost dev
-  // (vite :4444 → local control plane) must pass the CSRF origin check. The
-  // public origin is the HTTPS dev origin that fronts this server when set.
-  return [...new Set(["http://localhost:*", "http://127.0.0.1:*", "https://localhost:*", "https://127.0.0.1:*", embeddedAuthPublicOrigin(env), ...extra])]
+  const publicOrigin = new URL(embeddedAuthPublicOrigin(env))
+  const loopbackTwin = publicOrigin.hostname === "localhost"
+    ? [`${publicOrigin.protocol}//127.0.0.1${publicOrigin.port ? `:${publicOrigin.port}` : ""}`]
+    : []
+  return [...new Set([publicOrigin.origin, ...loopbackTwin, ...extra])]
 }
 
 const NATIVE_CLIENT_IDS: ReadonlySet<string> = new Set([BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID])
@@ -200,6 +208,11 @@ export function createEmbeddedAuth(
     // `useSecureCookies` follows the public origin's scheme.
     advanced: {
       useSecureCookies: embeddedAuthPublicOrigin(env).startsWith("https:"),
+      // Left unset, Better Auth skips both checks whenever NODE_ENV is
+      // "test", so a suite asserting the origin check would pass against a
+      // check that never ran.
+      disableCSRFCheck: false,
+      disableOriginCheck: false,
       cookiePrefix: EMBEDDED_AUTH_COOKIE_PREFIX,
       defaultCookieAttributes: {
         secure: embeddedAuthPublicOrigin(env).startsWith("https:"),

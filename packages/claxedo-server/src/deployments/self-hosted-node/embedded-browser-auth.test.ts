@@ -1,10 +1,15 @@
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { Hono } from "hono"
-import { describe, expect, test } from "vitest"
+import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import {
   embeddedBrowserAuthDescriptor,
   embeddedBrowserAuthSecurity,
   embeddedBrowserSessionBearer,
 } from "./embedded-browser-auth"
+import { createDefaultLocalControlPlaneServices, createSelfHostedApp } from "./app"
+import { resetEmbeddedAuthForTests } from "./embedded-auth"
 
 const ORIGIN = "https://localhost:4449"
 const env = { BETTER_AUTH_URL: ORIGIN } as NodeJS.ProcessEnv
@@ -93,5 +98,72 @@ describe("embedded browser auth", () => {
     })
     expect(ok.status).toBe(200)
     expect(await ok.json()).toEqual({ authorization: "Bearer tok.sig" })
+  })
+})
+
+describe("the composed self-hosted app behind an HTTPS public origin", () => {
+  let dataDir: string
+  let savedEnv: Record<string, string | undefined>
+  let services: ReturnType<typeof createDefaultLocalControlPlaneServices>
+  let composed: ReturnType<typeof createSelfHostedApp>
+
+  beforeAll(() => {
+    savedEnv = {
+      CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
+      CLAXEDO_SIGNED_CLOUD_AUTH: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
+      CLAXEDO_EMBEDDED_AUTH: process.env.CLAXEDO_EMBEDDED_AUTH,
+      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    }
+    dataDir = mkdtempSync(path.join(tmpdir(), "claxedo-embedded-browser-auth-"))
+    process.env.CLAXEDO_DATA_DIR = dataDir
+    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+    process.env.CLAXEDO_EMBEDDED_AUTH = "1"
+    process.env.BETTER_AUTH_URL = ORIGIN
+    resetEmbeddedAuthForTests()
+    services = createDefaultLocalControlPlaneServices()
+    composed = createSelfHostedApp(services)
+  }, 60_000)
+
+  afterAll(async () => {
+    await composed.dispose()
+    services.close()
+    const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+    closeAuthorityDatabases()
+    resetEmbeddedAuthForTests()
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  })
+
+  test("guards a cookie-bearing /api/auth mutation before Better Auth answers it", async () => {
+    const signup = await composed.app.request(`${ORIGIN}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "browser@selfhost.test", password: "correct-horse-battery", name: "Browser User" }),
+    })
+    expect(signup.status, await signup.clone().text()).toBe(200)
+    const cookie = signup.headers.getSetCookie().find((value) => value.startsWith("__Secure-claxedo.session_token="))?.split(";", 1)[0]
+    if (!cookie) throw new Error(`no secure session cookie among: ${signup.headers.getSetCookie().join(" | ")}`)
+    const rename = (headers: Record<string, string>) =>
+      composed.app.request(`${ORIGIN}/api/auth/update-user`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie, ...headers },
+        body: JSON.stringify({ name: "Renamed" }),
+      })
+
+    // The refusal is this composition's own, not Better Auth's INVALID_ORIGIN:
+    // that is what shows the guard ran first.
+    const otherPort = await rename({ origin: "https://localhost:9999", "sec-fetch-site": "same-site" })
+    expect(otherPort.status).toBe(403)
+    expect(await otherPort.json()).toMatchObject({ error: { code: "browser_auth_origin_forbidden" } })
+
+    const crossSite = await rename({ origin: ORIGIN, "sec-fetch-site": "cross-site" })
+    expect(crossSite.status).toBe(403)
+    expect(await crossSite.json()).toMatchObject({ error: { code: "browser_auth_cross_site_forbidden" } })
+
+    const exact = await rename({ origin: ORIGIN, "sec-fetch-site": "same-origin" })
+    expect(exact.status, await exact.clone().text()).toBe(200)
   })
 })

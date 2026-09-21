@@ -10,8 +10,9 @@ import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/au
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
-import type { McpClientInputs } from "@claxedo/mcp"
+import type { FirstPartyMcpOptions, McpClientInputs } from "@claxedo/mcp"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/local-server/self-hosted-execution"
+import { stampRequestPeerAddress } from "@claxedo/server-core/platform/http/peer-address"
 
 /**
  * Who owns what in the self-hosted composition.
@@ -164,6 +165,64 @@ describe("the first-party MCP on the self-hosted node", () => {
     const controlPlane = inputs[0]?.controlPlane
     if (!controlPlane) throw new Error("the node mount composed no control-plane client")
     expect(await (await controlPlane.fetch("/api/claxedo/health")).json()).toMatchObject({ ok: true })
+  })
+
+  const initialize = (headers: Record<string, string> = {}) => ({
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "cli", version: "0" } },
+    }),
+  })
+
+  function mcpApp(verifyRuntimeCredential?: FirstPartyMcpOptions["verifyRuntimeCredential"]) {
+    const inputs: McpClientInputs[] = []
+    const built = selfHosted({
+      firstPartyMcp: {
+        ...(verifyRuntimeCredential ? { verifyRuntimeCredential } : {}),
+        createClient: (input) => {
+          inputs.push(input)
+          return stubClient
+        },
+      },
+    })
+    return { built, inputs }
+  }
+
+  test("refuses the anonymous account to a request carrying an Origin, whatever loopback port sent it", async () => {
+    const { built, inputs } = mcpApp()
+    const response = await built.app.request("http://127.0.0.1/api/claxedo/mcp", initialize({ origin: "http://localhost:9999" }))
+    expect(response.status).toBe(401)
+    expect((await response.json() as { error: { code: string } }).error.code).toBe("mcp_unauthorized")
+    expect(inputs).toEqual([])
+  })
+
+  test("refuses the anonymous account to a request whose socket peer is not loopback", async () => {
+    const { built, inputs } = mcpApp()
+    const request = new Request("http://127.0.0.1/api/claxedo/mcp", initialize())
+    stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress: "10.0.0.7" } } })
+    const response = await built.app.request(request)
+    expect(response.status).toBe(403)
+    expect(inputs).toEqual([])
+  })
+
+  test("still admits a runtime credential, Origin or not", async () => {
+    const { built, inputs } = mcpApp((token) =>
+      token === "runtime-token" ? { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_1", expiresAt: Date.now() + 60_000 } : undefined,
+    )
+    const response = await built.app.request(
+      "http://127.0.0.1/api/claxedo/mcp",
+      initialize({ authorization: "Bearer runtime-token", origin: "http://localhost:9999" }),
+    )
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(inputs[0]).toMatchObject({
+      deployment: "node",
+      credential: { kind: "runtime", runtimeId: "rt_1", workspaceId: "ws_1" },
+      local: { workspace: { workspaceId: "ws_1" } },
+    })
   })
 })
 

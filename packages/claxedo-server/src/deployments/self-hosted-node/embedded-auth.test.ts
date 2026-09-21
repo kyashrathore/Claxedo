@@ -64,6 +64,13 @@ async function signUp(email: string) {
   return res
 }
 
+/** The session cookie a sign-up response sets, as a request would carry it back. */
+function sessionCookie(response: Response): string {
+  const header = response.headers.getSetCookie().find((value) => value.startsWith("claxedo.session_token="))
+  if (!header) throw new Error(`no session cookie among: ${response.headers.getSetCookie().join(" | ")}`)
+  return header.split(";", 1)[0]
+}
+
 describe("embedded better-auth issuer", () => {
   test("signs up a user via the mounted /api/auth route and verifies the bearer session token", async () => {
     const res = await signUp("w1@selfhost.test")
@@ -81,6 +88,25 @@ describe("embedded better-auth issuer", () => {
     expect(session!.subject).toBe(body.user!.id)
     expect(session!.issuer).toBe(EMBEDDED_AUTH_ISSUER)
     expect(session!.tokenIdentifier).toBeTruthy()
+  })
+
+  test("a cookie-bearing mutation passes the origin check only from an exact trusted origin", async () => {
+    const cookie = sessionCookie(await signUp("w1-origin@selfhost.test"))
+    const rename = (origin: string) =>
+      app.request("/api/auth/update-user", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie, origin },
+        body: JSON.stringify({ name: "Renamed" }),
+      })
+
+    const otherPort = await rename("http://localhost:9999")
+    expect(otherPort.status).toBe(403)
+    expect(await otherPort.json()).toMatchObject({ code: "INVALID_ORIGIN" })
+
+    const publicOrigin = await rename("http://localhost:2593")
+    expect(publicOrigin.status, await publicOrigin.clone().text()).toBe(200)
+    const loopbackTwin = await rename("http://127.0.0.1:2593")
+    expect(loopbackTwin.status, await loopbackTwin.clone().text()).toBe(200)
   })
 
   test("verifier returns null for garbage tokens", async () => {

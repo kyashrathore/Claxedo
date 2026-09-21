@@ -998,7 +998,6 @@ export function createSelfHostedApp(
     // createDefaultLocalControlPlaneServices), so tokens minted here are the
     // ones the signed control-plane routes accept.
     const embedded = getEmbeddedAuth()
-    app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
     // The browser half (embedded-browser-auth.ts): the descriptor the signed
     // web app validates first, the guard cookie-authenticated mutations must
     // pass, and the bridge that lets a session cookie reach the bearer
@@ -1007,12 +1006,18 @@ export function createSelfHostedApp(
     // on every route, not only `/api/*`: the signed web app reaches the
     // engine-compat surface (`/find`, `/file`, `/path`, `/session`) with the
     // same cookie, and in signed mode those routes verify a bearer too.
+    // Registered ahead of the `/api/auth/*` handler: Hono runs a route's
+    // handlers in registration order and that handler always answers, so
+    // anything registered after it never sees Better Auth's own mutations
+    // (`oauth2/consent`, `device/approve`), which the web app calls with the
+    // cookie.
     const browserDescriptor = embeddedBrowserAuthDescriptor()
     if (browserDescriptor) {
       app.use("*", embeddedBrowserAuthSecurity(browserDescriptor))
       app.use("*", embeddedBrowserSessionBearer(browserDescriptor))
       app.get("/api/claxedo/auth/descriptor", (c) => c.json(embeddedBrowserAuthDescriptor()))
     }
+    app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
   }
   // These contributions manage one machine-wide plugin generation. Every
   // entrypoint uses this gate, including reads and signed-runtime handoff.
@@ -1351,8 +1356,16 @@ export function createSelfHostedApp(
             throw error
           }
         },
+        // A browser sends `Origin` on every fetch and `isLoopbackLocalRequest`
+        // accepts any loopback port there, so a page on another local port
+        // would otherwise act as this box's owner. No browser client needs
+        // the anonymous account: the web app never calls this route, and
+        // harness or MCP clients present a credential.
         anonymousCredential: (request) =>
-          !services.auth.config.enabled && isLoopbackLocalRequest(request) && !bearerToken(request.headers.get("authorization"))
+          !services.auth.config.enabled
+          && isLoopbackLocalRequest(request)
+          && !request.headers.has("origin")
+          && !bearerToken(request.headers.get("authorization"))
             ? fullUserCredential({ actorId: "loopback", clientId: "loopback" })
             : undefined,
         ...(embeddedAuthEnabled(process.env)
