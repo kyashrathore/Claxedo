@@ -16,6 +16,7 @@ import {
   recoveryIntentEquals,
   recoveryPostconditionHolds,
   recoveryTargetsMatch,
+  turnStopped,
   serializeRecoveryOutcome,
   type CleanupFact,
   type ExecutionFact,
@@ -303,6 +304,53 @@ describe("advertised postconditions", () => {
   test("every action has a postcondition entry", () => {
     for (const action of RECOVERY_ACTIONS) {
       expect(typeof recoveryPostconditionHolds(action, facts("unknown", "unknown", "unavailable"))).toBe("boolean")
+    }
+  })
+})
+
+describe("reading whether the turn stopped", () => {
+  test.each([
+    [facts("terminal", "verified_clear", "committed"), true],
+    [facts("terminal", "unknown", "committed"), true],
+    [facts("terminal", "owned", "committed"), true],
+    [facts("terminal", "verified_clear", "pending"), false],
+    [facts("terminal", "verified_clear", "unavailable"), false],
+    [facts("running", "verified_clear", "committed"), false],
+    [facts("unknown", "verified_clear", "committed"), false],
+    [facts("running", "owned", "pending"), false],
+  ] as Array<[RecoveryFacts, boolean]>)("%o stopped: %p", (value, stopped) => {
+    expect(turnStopped({ kind: "operation", operation: { ...operation, facts: value } })).toBe(stopped)
+  })
+
+  test("a cancellation that cannot prove cleanup still stopped the turn", () => {
+    const unproven: RecoveryOutcome = {
+      kind: "operation",
+      operation: { ...operation, state: "needs_action", facts: facts("terminal", "unknown", "committed") },
+    }
+    expect(recoveryPostconditionHolds("cancel_turn", unproven.kind === "operation" ? unproven.operation.facts : facts("unknown", "unknown", "unavailable"))).toBe(false)
+    expect(turnStopped(unproven)).toBe(true)
+  })
+
+  // Keyed by the refusal kind so a kind added to the contract fails to compile
+  // here rather than silently going unchecked.
+  const everyRefusal: Record<RecoveryRefusal["kind"], RecoveryRefusal> = {
+    generation_conflict: { kind: "generation_conflict", message: "turn-7 was replaced" },
+    intent_conflict: { kind: "intent_conflict", message: "request id reused", requestId: "req-1" },
+    receipt_expired: { kind: "receipt_expired", message: "no longer retained", requestId: "req-1" },
+    scope_changed: {
+      kind: "scope_changed",
+      message: "two more sessions share this harness",
+      scopeRevision: "scope-10",
+      preview: { sessions: ["session-1"], resources: ["harness:codex@gen-3"], summary: "1 session, 1 harness" },
+    },
+    unauthorized: { kind: "unauthorized", message: "not authorized" },
+    unavailable: { kind: "unavailable", message: "the owner cannot be reached" },
+    version_update_required: { kind: "version_update_required", message: "client is older", contractVersion: 2 },
+  }
+
+  test("a refusal carries no facts, so it never reads as stopped", () => {
+    for (const refusal of Object.values(everyRefusal)) {
+      expect(turnStopped({ kind: "refused", refusal })).toBe(false)
     }
   })
 })

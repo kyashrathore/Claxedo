@@ -280,6 +280,15 @@ export const DEFAULT_RECOVERY_BUDGETS: Readonly<RecoveryBudgets> = {
 }
 
 /**
+ * How long a settled recovery operation stays listed and stored. Ten reconcile
+ * budgets: long enough that a caller which lost its connection can still read
+ * its own receipt, short enough that the list is current work. An operation
+ * whose facts still show cleanup owned or unknown, or persistence pending, is
+ * exempt at every layer: it is the only record of an undischarged obligation.
+ */
+export const RECOVERY_OPERATION_RETENTION_MS = DEFAULT_RECOVERY_BUDGETS.reconcileMs * 10
+
+/**
  * The deadline a child phase may run to. The parent caps it, so a sequence of
  * child phases cannot multiply the deadline the caller was promised. An already
  * expired parent yields `now`, which every phase treats as no time left.
@@ -318,6 +327,25 @@ export function recoveryPostconditionHolds(action: RecoveryAction, facts: Recove
   return (required.execution === undefined || facts.execution.value === required.execution)
     && (required.cleanup === undefined || facts.cleanup.value === required.cleanup)
     && (required.persistence === undefined || facts.persistence.value === required.persistence)
+}
+
+/**
+ * Whether the turn is over and the record of it is durable: the postcondition a
+ * dependent mutation waits on, and the only honest reading of "it stopped".
+ *
+ * The operation's state is not that test. `cancel_turn` additionally requires
+ * `cleanup: verified_clear` to reach `succeeded`, which an adapter reports only
+ * when it can prove nothing the turn started survives; a harness that cannot
+ * prove it leaves cleanup `unknown`, so a working cancellation closes as
+ * `needs_action`. Reading that as "did not stop" marks every healthy Stop a
+ * failure and blocks the revert, undo and handoff that need only the turn to be
+ * over and written down. Cleanup stays a separate fact rather than a weaker
+ * form of this one.
+ */
+export function turnStopped(outcome: RecoveryOutcome): boolean {
+  return outcome.kind === "operation"
+    && outcome.operation.facts.execution.value === "terminal"
+    && outcome.operation.facts.persistence.value === "committed"
 }
 
 /**
