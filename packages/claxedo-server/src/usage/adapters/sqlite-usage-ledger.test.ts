@@ -136,19 +136,78 @@ describe("sqlite usage ledger", () => {
     expect(await reopened.pendingOutbox()).toEqual([fact])
   })
 
-  test("durably binds pending turns to the first verified tenant across revisions", async () => {
-    const { ledger } = harness()
-    await ledger.writeRevision(revision())
+  test("binds pending turns to the owner stamped at creation, never to the requester", async () => {
+    const { sqlite, ledger } = harness()
     const accountA = { org_id: "org-a", user_id: "user-a" }
     const accountB = { org_id: "org-b", user_id: "user-b" }
+    await ledger.writeRevision(revision(), { owner: accountA })
 
-    expect(await ledger.claimPending(accountA)).toEqual([revision()])
-    expect(await ledger.claimPending(accountB)).toEqual([])
+    // The other account's flush — even one allowed to adopt unowned machine
+    // facts — cannot move a fact already owned by its producer.
+    expect(await ledger.claimPending(accountB, { claimUnowned: true })).toEqual([])
+    expect(
+      sqlite
+        .prepare("SELECT org_id, user_id FROM claxedo_usage_outbox WHERE revision = 1")
+        .get(),
+    ).toEqual({ org_id: "org-a", user_id: "user-a" })
 
     const final = revision({ revision: 2, settlement: "final", status: "completed" })
-    await ledger.writeRevision(final)
-    expect(await ledger.claimPending(accountB)).toEqual([])
+    await ledger.writeRevision(final, { owner: accountA })
+    expect(await ledger.claimPending(accountB, { claimUnowned: true })).toEqual([])
     expect(await ledger.claimPending(accountA)).toEqual([revision(), final])
+  })
+
+  test("keeps a producer-owned fact with its owner when two accounts race to claim it", async () => {
+    const { ledger } = harness()
+    const accountA = { org_id: "org-a", user_id: "user-a" }
+    const accountB = { org_id: "org-b", user_id: "user-b" }
+    await ledger.writeRevision(revision(), { owner: accountA })
+
+    // Order does not matter: the fact is A's before either flush runs, so
+    // B's earlier claim changes nothing for it.
+    expect(await ledger.claimPending(accountB, { claimUnowned: true })).toEqual([])
+    expect(await ledger.claimPending(accountA)).toEqual([revision()])
+  })
+
+  test("unowned machine facts stay unowned until an operator flush adopts them", async () => {
+    const { sqlite, ledger } = harness()
+    const accountA = { org_id: "org-a", user_id: "user-a" }
+    const accountB = { org_id: "org-b", user_id: "user-b" }
+    await ledger.writeRevision(revision())
+
+    // A member's flush sees nothing and assigns nothing: the fact has no
+    // producing account and does not become the requester's.
+    expect(await ledger.claimPending(accountB)).toEqual([])
+    expect(await ledger.claimPending(accountA)).toEqual([])
+    expect(
+      sqlite.prepare("SELECT org_id, user_id FROM claxedo_usage_outbox").get(),
+    ).toEqual({ org_id: null, user_id: null })
+
+    // The operator's flush adopts the machine's fact — under the operator's
+    // own identity — and later revisions inherit that binding.
+    expect(await ledger.claimPending(accountA, { claimUnowned: true })).toEqual([revision()])
+    const final = revision({ revision: 2, settlement: "final", status: "completed" })
+    await ledger.writeRevision(final)
+    expect(await ledger.claimPending(accountB, { claimUnowned: true })).toEqual([])
+    expect(await ledger.claimPending(accountA)).toEqual([revision(), final])
+  })
+
+  test("scopes pending reads to the requesting owner", async () => {
+    const { ledger } = harness()
+    const accountA = { org_id: "org-a", user_id: "user-a" }
+    const accountB = { org_id: "org-b", user_id: "user-b" }
+    await ledger.writeRevision(revision({ messageId: "a-fact" }), { owner: accountA })
+    await ledger.writeRevision(revision({ messageId: "b-fact" }), { owner: accountB })
+    await ledger.writeRevision(revision({ messageId: "machine-fact" }))
+
+    expect((await ledger.pendingOutbox({ all: true, owner: accountA })).map((item) => item.messageId)).toEqual([
+      "a-fact",
+    ])
+    expect((await ledger.pendingOutbox({ all: true })).map((item) => item.messageId)).toEqual([
+      "a-fact",
+      "b-fact",
+      "machine-fact",
+    ])
   })
 
   test("rolls back the fact when enqueue fails", async () => {

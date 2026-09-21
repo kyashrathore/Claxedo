@@ -2663,7 +2663,7 @@ export function createSqliteWorkspaceAuthority(
       if (!workspace) denied()
       const role = workspaceRoleForUser(db, workspace, who)
       if (!role || !roleAtLeast(role, minimumRole)) denied()
-      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.subject ? { userId: who.subject } : {}), ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async recordActorRuntimeAccessToken(args) {
       const db = database()
@@ -2800,6 +2800,29 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       requireRuntimeTokenWorkspace(db, who, args.workspaceId)
       return { revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [who.token_identifier]) }
+    },
+
+    async resolveSessionUsageOwner(args: { sessionId: string }) {
+      const db = database()
+      // The actor the runtime admitted for the latest turn produced the
+      // usage; a session nobody has driven yet is its creator's.
+      const produced = db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+        SELECT actor_id, workspace_id FROM session_turn_producers
+        WHERE session_id = ? ORDER BY fencing_token DESC LIMIT 1
+      `).get(args.sessionId)
+      const registered = db.prepare<unknown[], { creator_actor_id: string; workspace_id: string }>(`
+        SELECT creator_actor_id, workspace_id FROM session_history
+        WHERE session_id = ? AND deleted_at IS NULL
+      `).get(args.sessionId)
+      const actorId = produced?.actor_id ?? registered?.creator_actor_id
+      const workspaceId = produced?.workspace_id ?? registered?.workspace_id
+      if (!actorId || !workspaceId) return undefined
+      const owner = db.prepare<unknown[], { subject: string | null }>(
+        `SELECT subject FROM users WHERE token_identifier = ?`,
+      ).get(actorId)
+      const workspace = workspaceByPublicId(db, workspaceId)
+      if (!owner?.subject || !workspace || workspace.deleted_at) return undefined
+      return { org_id: workspace.org_id, user_id: owner.subject }
     },
 
     async auditDeny(auth, args) {

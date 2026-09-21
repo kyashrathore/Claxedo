@@ -150,8 +150,16 @@ export type SessionPeopleContext = {
 export type ChannelMachineIdentity = { channel: string; externalUserId: string; threadKey: string }
 
 export type WorkspaceAuthority = {
-  /** Internal host delegation; the authority rechecks the actor and current workspace role. */
-  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string, minimumRole?: ProjectRole) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
+  /**
+   * Internal host delegation; the authority rechecks the actor and current
+   * workspace role. `userId` is the user-scoped partition key the authority
+   * records for the actor (`auth.user.subject`'s side of the actor/user
+   * pair) — present when the actor resolves to a user the authority knows,
+   * absent for principals with no user row. It exists so a credential minted
+   * for a verified actor can bind that actor's personal partitions without
+   * the caller synthesizing provider subjects.
+   */
+  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string, minimumRole?: ProjectRole) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; userId?: string }>
   recordActorRuntimeAccessToken: (args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   /**
@@ -595,6 +603,20 @@ export type WorkspaceAuthority = {
       workspaceId: string
     },
   ) => Promise<unknown>
+  /**
+   * The account a session's usage is attributed to: the actor the runtime
+   * admitted for the session's latest turn, else the creator the session
+   * registered under. The metering path holds no caller auth — this takes
+   * none and answers from the authority's own records — and a session it
+   * cannot place resolves to no owner rather than a guessed one.
+   *
+   * Optional because only a deployment whose authority records runtime
+   * producers can answer it; a composition without one writes the fact
+   * unowned rather than attributing it to whoever asks next.
+   */
+  resolveSessionUsageOwner?: (
+    args: { sessionId: string },
+  ) => Promise<{ org_id: string; user_id: string } | undefined>
 
   // runtime tokens
   recordRuntimeAccessToken: (

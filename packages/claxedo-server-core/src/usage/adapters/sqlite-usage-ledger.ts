@@ -104,9 +104,15 @@ function fact(row: UsageRow): TurnUsageRevision {
 
 export type SqliteUsageLedger = UsageRevisionWriter &
   UsageRevisionReader & {
+    /**
+     * Pending rows owned by `identity`. Rows carrying another account's owner
+     * are never touched, and rows with no owner are claimed only when the
+     * caller may stand in for the machine (`claimUnowned`): a requester is
+     * never the reason a fact changes hands.
+     */
     claimPending(
       identity: { org_id: string; user_id: string },
-      input?: { limit?: number },
+      input?: { limit?: number; claimUnowned?: boolean },
     ): Promise<TurnUsageRevision[]>
     markDelivered(fact: Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">): Promise<void>
     markConflict(fact: Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">): Promise<void>
@@ -121,7 +127,7 @@ export function createSqliteUsageLedger(
   const database = input.database ?? ClaxedoDB
   const now = input.now ?? Date.now
   return {
-    async writeRevision(item) {
+    async writeRevision(item, options) {
       assertTurnUsageRevision(item)
       const hash = payloadHash(item)
       return database.transaction((db) => {
@@ -176,6 +182,10 @@ export function createSqliteUsageLedger(
             set: row,
           })
           .run()
+        // The producer resolved at fact creation is the owner; an earlier
+        // revision's stamped owner is only the fallback for a fact written
+        // before the producing session could be attributed.
+        const owner = options?.owner ?? (priorOwner?.org_id && priorOwner.user_id ? priorOwner : undefined)
         const stamp = now()
         db.insert(ClaxedoUsageOutboxTable)
           .values({
@@ -184,9 +194,7 @@ export function createSqliteUsageLedger(
             message_id: item.messageId,
             revision: item.revision,
             payload_hash: hash,
-            ...(priorOwner?.org_id && priorOwner.user_id
-              ? { org_id: priorOwner.org_id, user_id: priorOwner.user_id }
-              : {}),
+            ...(owner ? { org_id: owner.org_id, user_id: owner.user_id } : {}),
             state: "pending",
             attempts: 0,
             created_at: stamp,
@@ -237,6 +245,8 @@ export function createSqliteUsageLedger(
           .where(
             and(
               eq(ClaxedoUsageOutboxTable.state, "pending"),
+              filter.owner ? eq(ClaxedoUsageOutboxTable.org_id, filter.owner.org_id) : undefined,
+              filter.owner ? eq(ClaxedoUsageOutboxTable.user_id, filter.owner.user_id) : undefined,
               filter.since === undefined ? undefined : gte(ClaxedoUsageTurnRevisionTable.observed_at, filter.since),
               filter.until === undefined ? undefined : lte(ClaxedoUsageTurnRevisionTable.observed_at, filter.until),
             ),
@@ -250,38 +260,43 @@ export function createSqliteUsageLedger(
     async claimPending(identity, filter = {}) {
       const limit = filter.limit ?? 100
       const rows = database.transaction((db) => {
-        const unclaimed = db
-          .select({
-            host_id: ClaxedoUsageOutboxTable.host_id,
-            session_ref: ClaxedoUsageOutboxTable.session_ref,
-            message_id: ClaxedoUsageOutboxTable.message_id,
-            revision: ClaxedoUsageOutboxTable.revision,
-          })
-          .from(ClaxedoUsageOutboxTable)
-          .where(
-            and(
-              eq(ClaxedoUsageOutboxTable.state, "pending"),
-              isNull(ClaxedoUsageOutboxTable.org_id),
-              isNull(ClaxedoUsageOutboxTable.user_id),
-            ),
-          )
-          .orderBy(asc(ClaxedoUsageOutboxTable.created_at))
-          .limit(limit)
-          .all()
-        for (const row of unclaimed) {
-          db.update(ClaxedoUsageOutboxTable)
-            .set(identity)
+        // Facts whose producer could not be named at creation belong to the
+        // machine, not to whoever happens to flush first — only the machine
+        // operator's flush may adopt them.
+        if (filter.claimUnowned === true) {
+          const unclaimed = db
+            .select({
+              host_id: ClaxedoUsageOutboxTable.host_id,
+              session_ref: ClaxedoUsageOutboxTable.session_ref,
+              message_id: ClaxedoUsageOutboxTable.message_id,
+              revision: ClaxedoUsageOutboxTable.revision,
+            })
+            .from(ClaxedoUsageOutboxTable)
             .where(
               and(
-                eq(ClaxedoUsageOutboxTable.host_id, row.host_id),
-                eq(ClaxedoUsageOutboxTable.session_ref, row.session_ref),
-                eq(ClaxedoUsageOutboxTable.message_id, row.message_id),
-                eq(ClaxedoUsageOutboxTable.revision, row.revision),
+                eq(ClaxedoUsageOutboxTable.state, "pending"),
                 isNull(ClaxedoUsageOutboxTable.org_id),
                 isNull(ClaxedoUsageOutboxTable.user_id),
               ),
             )
-            .run()
+            .orderBy(asc(ClaxedoUsageOutboxTable.created_at))
+            .limit(limit)
+            .all()
+          for (const row of unclaimed) {
+            db.update(ClaxedoUsageOutboxTable)
+              .set(identity)
+              .where(
+                and(
+                  eq(ClaxedoUsageOutboxTable.host_id, row.host_id),
+                  eq(ClaxedoUsageOutboxTable.session_ref, row.session_ref),
+                  eq(ClaxedoUsageOutboxTable.message_id, row.message_id),
+                  eq(ClaxedoUsageOutboxTable.revision, row.revision),
+                  isNull(ClaxedoUsageOutboxTable.org_id),
+                  isNull(ClaxedoUsageOutboxTable.user_id),
+                ),
+              )
+              .run()
+          }
         }
         return db
           .select({ usage: ClaxedoUsageTurnRevisionTable })

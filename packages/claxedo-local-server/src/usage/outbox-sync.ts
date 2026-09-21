@@ -19,8 +19,12 @@ type UsageOutboxResult = {
 }
 
 export type UsageOutboxSync = {
-  /** Flush with an identity verified for this request. */
-  flush(identity: UsageIdentity): Promise<UsageOutboxResult>
+  /**
+   * Flush with an identity verified for this request. `claimUnowned` marks the
+   * caller as the machine operator: only then are facts that no producer
+   * account owns adopted under this identity.
+   */
+  flush(identity: UsageIdentity, options?: { claimUnowned?: boolean }): Promise<UsageOutboxResult>
   /** Clear cached authority and wait until any not-yet-uploaded signed batch is invalidated. */
   clearIdentity(): Promise<UsageOutboxResult>
   /** Wake sync after a terminal turn/reconnect using the last verified identity. */
@@ -39,6 +43,7 @@ export function createUsageOutboxSync(input: {
   const activeByIdentity = new Map<string, Promise<UsageOutboxResult>>()
   let unsignedActive: Promise<UsageOutboxResult> | undefined
   let identity: UsageIdentity | undefined
+  let identityClaimsUnowned = false
   let authGeneration = 0
   let retry: ReturnType<typeof setTimeout> | undefined
   let retryAttempt = 0
@@ -57,7 +62,13 @@ export function createUsageOutboxSync(input: {
     conflicts: 0,
     pending: (await input.local.pendingOutbox({ limit })).length,
   })
-  const schedule = (sync: UsageOutboxSync, pending: number, batchIdentity: UsageIdentity, generation: number) => {
+  const schedule = (
+    sync: UsageOutboxSync,
+    pending: number,
+    batchIdentity: UsageIdentity,
+    claimUnowned: boolean,
+    generation: number,
+  ) => {
     if (retry) clearTimeout(retry)
     retry = undefined
     if (
@@ -75,12 +86,12 @@ export function createUsageOutboxSync(input: {
     const delay = Math.min(60_000, exponential * jitter)
     retry = setTimeout(() => {
       retry = undefined
-      void sync.flush(batchIdentity).catch(() => schedule(sync, pending, batchIdentity, generation))
+      void sync.flush(batchIdentity, { claimUnowned }).catch(() => schedule(sync, pending, batchIdentity, claimUnowned, generation))
     }, delay)
     if (typeof retry === "object" && "unref" in retry) retry.unref()
   }
-  const run = async (batchIdentity: UsageIdentity, generation: number): Promise<UsageOutboxResult> => {
-    const pending = await input.local.claimPending(batchIdentity, { limit })
+  const run = async (batchIdentity: UsageIdentity, claimUnowned: boolean, generation: number): Promise<UsageOutboxResult> => {
+    const pending = await input.local.claimPending(batchIdentity, { limit, claimUnowned })
     if (generation !== authGeneration || !input.central?.recordTurnUsageBatch || pending.length === 0) {
       return { attempted: 0, delivered: 0, conflicts: 0, pending: pending.length }
     }
@@ -146,18 +157,20 @@ export function createUsageOutboxSync(input: {
     }
   }
   const sync: UsageOutboxSync = {
-    flush(nextIdentity) {
+    flush(nextIdentity, options) {
       const batchIdentity = { ...nextIdentity }
+      const claimUnowned = options?.claimUnowned === true
       const generation = authGeneration
-      const key = `${generation}\u0000${identityKey(batchIdentity)}`
+      const key = `${generation}\u0000${claimUnowned}\u0000${identityKey(batchIdentity)}`
       identity = batchIdentity
+      identityClaimsUnowned = claimUnowned
       const existing = activeByIdentity.get(key)
       if (existing) return existing
       const operation = tail
         .catch(() => undefined)
-        .then(() => run(batchIdentity, generation))
-        .then((result) => { schedule(sync, result.pending, batchIdentity, generation); return result })
-        .catch((error) => { schedule(sync, 1, batchIdentity, generation); throw error })
+        .then(() => run(batchIdentity, claimUnowned, generation))
+        .then((result) => { schedule(sync, result.pending, batchIdentity, claimUnowned, generation); return result })
+        .catch((error) => { schedule(sync, 1, batchIdentity, claimUnowned, generation); throw error })
       tail = operation.then(() => undefined, () => undefined)
       activeByIdentity.set(key, operation)
       void operation.finally(() => {
@@ -168,6 +181,7 @@ export function createUsageOutboxSync(input: {
     clearIdentity() {
       if (identity) {
         identity = undefined
+        identityClaimsUnowned = false
         authGeneration += 1
         retryAttempt = 0
         if (retry) clearTimeout(retry)
@@ -180,7 +194,9 @@ export function createUsageOutboxSync(input: {
         .finally(() => { unsignedActive = undefined })
       return unsignedActive
     },
-    notify() { return identity ? sync.flush(identity) : sync.clearIdentity() },
+    notify() {
+      return identity ? sync.flush(identity, { claimUnowned: identityClaimsUnowned }) : sync.clearIdentity()
+    },
   }
   return sync
 }

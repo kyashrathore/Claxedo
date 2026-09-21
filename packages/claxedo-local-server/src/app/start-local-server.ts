@@ -26,6 +26,7 @@ import path from "node:path"
 import type { Duplex } from "node:stream"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
@@ -299,6 +300,10 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         ? { org_id: auth.user.orgId, user_id: auth.user.subject }
         : undefined
     },
+    // This server has exactly one operator: whoever is on the machine's own
+    // loopback. Signed or unsigned, machine history, stored quota and unowned
+    // facts answer to that caller alone.
+    machineOperator: (request: Request) => isLoopbackLocalRequest(request),
     quota: async ({ request, refresh }: { request: Request; refresh: boolean }) =>
       await readQuota({ org: await requestOrg(request, authOptions), refresh }),
     history: async ({ since, until, refresh }: { since: number; until: number; refresh: boolean }) => {

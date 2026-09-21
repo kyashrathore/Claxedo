@@ -20,6 +20,12 @@ type TurnContext = {
   providerId?: string
   modelId?: string
   nativeSessionId?: string
+  /**
+   * The account that incurred the usage, resolved from the session's producer
+   * — never from a later request. Absent means the machine produced the fact
+   * unsigned; only the machine operator's sync may claim it.
+   */
+  owner?: { org_id: string; user_id: string }
 }
 
 type State = {
@@ -259,11 +265,11 @@ export function createTurnMeter(input: {
           knownCategories: current.hasUsage ? knownTokenCategories(current.tokens) : [],
         },
       }
-      let result = await input.writer.writeRevision(fact)
+      let result = await input.writer.writeRevision(fact, { owner: context.owner })
       if (result.status === "stale") {
         current.revision = result.currentRevision
         fact.revision = result.currentRevision + 1
-        result = await input.writer.writeRevision(fact)
+        result = await input.writer.writeRevision(fact, { owner: context.owner })
       }
       if (result.status === "conflict") {
         input.onDegraded?.(

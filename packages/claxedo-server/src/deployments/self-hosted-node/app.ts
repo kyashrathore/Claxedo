@@ -1302,6 +1302,20 @@ export function createSelfHostedApp(
           ? { org_id: auth.user.orgId, user_id: auth.user.subject }
           : undefined
       },
+      // Unsigned-local callers are the operator only on their own loopback;
+      // signed callers only when the deployment names them. A member's token
+      // is not a machine claim, so their flushes never adopt unowned facts.
+      machineOperator: async (request) => {
+        const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
+        if (auth.mode === "unsigned-local") return isLoopbackLocalRequest(request)
+        try {
+          authorizeOperator(auth)
+          return true
+        } catch (error) {
+          if (error instanceof ControlPlaneAuthError && error.code === "operator_required") return false
+          throw error
+        }
+      },
       quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
       history: async ({ since, until, refresh }) => {
         const facts = await options.usageRevisionStore!.current()
@@ -1657,9 +1671,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     currentFilter: (fact) => usageLocation(fact.location) === "local",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
-      const [meta, host] = await Promise.all([
+      const [meta, host, owner] = await Promise.all([
         sessionMeta(sessionId),
         localUsageHost,
+        // The session's producing account, recorded by the authority at turn
+        // admission — a fact written without it belongs to the machine, not
+        // to whichever account next asks for a sync.
+        services.authority?.resolveSessionUsageOwner?.({ sessionId }).catch(() => undefined),
       ])
       if (!meta?.sessionRef || !meta.workspaceID) {
         throw new Error(`usage metering requires canonical workspace session metadata for ${sessionId}`)
@@ -1673,6 +1691,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         harness: meteringHarnessId(config.harness),
         ...(config.model?.providerID ? { providerId: config.model.providerID } : {}),
         ...(config.model?.modelID ? { modelId: config.model.modelID } : {}),
+        ...(owner ? { owner } : {}),
       }
     },
     onTerminal: async () => { await usageOutbox.notify() },

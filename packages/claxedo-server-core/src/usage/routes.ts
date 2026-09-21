@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import type { UnifiedUsageResponse, UsageBreakdownRow, UsageFilterDimension } from "@claxedo/usage-contract"
 export type { UnifiedUsageResponse } from "@claxedo/usage-contract"
 import {
@@ -64,7 +64,10 @@ type UsageOutboxResult = {
 }
 
 type UsageOutboxSync = {
-  flush(identity: { org_id: string; user_id: string }): Promise<UsageOutboxResult>
+  flush(
+    identity: { org_id: string; user_id: string },
+    options?: { claimUnowned?: boolean },
+  ): Promise<UsageOutboxResult>
   clearIdentity(): Promise<UsageOutboxResult>
   notify(): Promise<UsageOutboxResult>
 }
@@ -1085,6 +1088,15 @@ export function LocalUsageRoutes(input: {
   outbox: Pick<UsageOutboxSync, "flush" | "clearIdentity">
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
   /**
+   * Whether this caller stands for the machine itself. Machine-scoped reads
+   * (external history, quota) and adoption of facts no producer account owns
+   * are operator-only; other signed callers see only what their identity
+   * produced. When absent, a request without a bearer token counts as the
+   * operator — the unsigned-local posture where the machine has exactly one
+   * user.
+   */
+  machineOperator?: (request: Request) => Promise<boolean> | boolean
+  /**
    * Plan usage for the quota view. Takes the request because the tenant it
    * answers for is the credential registry's, which only the composition that
    * mounted the credential routes can resolve the same way they do.
@@ -1128,10 +1140,20 @@ export function LocalUsageRoutes(input: {
     while (consumedRefreshNonces.size > 64) consumedRefreshNonces.delete(consumedRefreshNonces.values().next().value!)
     return true
   }
+  // Machine scope — external history, stored quota, facts no producer owns —
+  // belongs to the machine's operator. A signed member is not one just for
+  // reaching the route; when the composition names no predicate, only a
+  // bearer-less request counts (unsigned-local has exactly one user).
+  const machineOperator = (request: Request) =>
+    input.machineOperator ? input.machineOperator(request) : !request.headers.get("authorization")
+  const operatorRequired = (c: Context) =>
+    c.json({ error: { code: "operator_required", message: "Machine operator access is required" } }, 403)
   app.post("/sync", async (c) => {
     let identity: Awaited<ReturnType<typeof input.identity>>
+    let operator: boolean
     try {
       identity = await input.identity(c.req.raw)
+      operator = await machineOperator(c.req.raw)
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
       throw error
@@ -1140,7 +1162,9 @@ export function LocalUsageRoutes(input: {
     // valid caller. They must never upload; clearing any previous tenant
     // binding is the authoritative unsigned transition and reports the local
     // pending count without producing a noisy authentication failure.
-    const result = identity ? await input.outbox.flush(identity) : await input.outbox.clearIdentity()
+    const result = identity
+      ? await input.outbox.flush(identity, { claimUnowned: operator })
+      : await input.outbox.clearIdentity()
     return c.json({
       attempted: result.attempted,
       delivered: result.delivered,
@@ -1156,7 +1180,19 @@ export function LocalUsageRoutes(input: {
     const filters = filtersFromQuery((name) => c.req.query(name))
     const refresh = consumeRefreshNonce(c.req.query("refresh_nonce"))
     if (refresh === undefined) return c.json({ error: "invalid_refresh_nonce" }, 400)
+    let operator: boolean
+    try {
+      operator = await machineOperator(c.req.raw)
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+      throw error
+    }
     if (view === "quota") {
+      // Stored plan credentials and the machine's own CLI logins are the
+      // operator's data; a signed member asking for plans is asking for the
+      // machine's accounts, which is exactly what `operator_required` exists
+      // to refuse.
+      if (!operator) return operatorRequired(c)
       // The last good plans stand when a read fails, the same way the history
       // view holds its snapshot: the figures a user is looking at did not stop
       // being true because a refresh could not reach a vendor, and blanking
@@ -1221,6 +1257,10 @@ export function LocalUsageRoutes(input: {
       })
       return c.json(response)
     }
+    // The Total view scans the machine's own CLI history — every other
+    // account's sessions live in it, so a signed member who is not the
+    // operator is refused before the scan is even started.
+    if (view === "total" && input.history && !operator) return operatorRequired(c)
     const historyTask =
       view === "total" && input.history
         ? deadline(input.history({ since, until, refresh }), "local usage scan", LOCAL_HISTORY_DEADLINE_MS)
@@ -1242,7 +1282,9 @@ export function LocalUsageRoutes(input: {
       if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
       throw error
     }
-    const syncResult = await (identity ? input.outbox.flush(identity) : input.outbox.clearIdentity()).catch(() => ({
+    const syncResult = await (
+      identity ? input.outbox.flush(identity, { claimUnowned: operator }) : input.outbox.clearIdentity()
+    ).catch(() => ({
       attempted: 0,
       delivered: 0,
       conflicts: 0,
@@ -1295,10 +1337,16 @@ export function LocalUsageRoutes(input: {
         central = centralCache.get(centralKey)
       }
     }
+    // A signed caller who is not the machine's operator still sees this
+    // node's facts — but only the ones their own account produced. The
+    // machine-wide `current` table carries no owner, so the outbox's
+    // producer-stamped ownership is the only sound local filter for them.
     const allLocalFacts = latestUsageFacts(
-      (central
-        ? await input.local.pendingOutbox({ since, until, all: true })
-        : await input.local.current({ since, until })
+      (identity && !operator
+        ? await input.local.pendingOutbox({ since, until, all: true, owner: identity })
+        : central
+          ? await input.local.pendingOutbox({ since, until, all: true })
+          : await input.local.current({ since, until })
       ).filter((fact) => !central || !acknowledged.has(revisionKey(fact))),
     )
     const centralFactProjection = centralUsageFacts(central)
