@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { createControlPlaneChannels, mountControlPlaneChannels } from "./control-plane"
+import { cancelChannelSessionTurn, createControlPlaneChannels, mountControlPlaneChannels } from "./control-plane"
+import { serializeRecoveryOutcome, type RecoveryOperation, type RecoveryOperationState, type RecoveryOutcome, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneServices } from "../authority/services"
 
 /**
@@ -91,5 +92,117 @@ describe("pairing admin bearer gate", () => {
     })
     expect(allowed.status).toBe(200)
     expect(channels.access.approve).toHaveBeenCalledWith("ABC123", "admin:route")
+  })
+})
+
+const TARGET: RecoveryTurnTarget = {
+  scope: "turn",
+  workspaceId: "ws_1",
+  sessionId: "ses_1",
+  turnId: "msg_1",
+  ownerGeneration: "lease_1",
+}
+
+const FACTS = {
+  execution: { value: "terminal" as const, source: "codex", observedAt: 1, generation: "lease_1" },
+  cleanup: { value: "verified_clear" as const, source: "codex", observedAt: 1, generation: "lease_1" },
+  persistence: { value: "committed" as const, source: "store", observedAt: 1, generation: "lease_1" },
+}
+
+function operation(state: RecoveryOperationState, message?: string): RecoveryOperation {
+  return {
+    operationId: "op_1",
+    requestId: "req_1",
+    target: TARGET,
+    action: "cancel_turn",
+    scopeRevision: "lease_1",
+    attempt: 1,
+    state,
+    phase: "graceful_cancel",
+    phaseDeadlineAt: 2,
+    facts: FACTS,
+    ...(message
+      ? {
+          initiatingError: {
+            code: "cancellation_timeout" as const,
+            origin: "codex",
+            target: TARGET,
+            stage: "graceful_cancel" as const,
+            executionMayContinue: true,
+            message,
+            at: 1,
+          },
+        }
+      : {}),
+    cleanupErrors: [],
+    nextActions: [],
+    receipt: "durable",
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
+function runtimeDouble(input: {
+  inspection?: Response
+  answer?: RecoveryOutcome | Response
+}) {
+  const sent: Array<{ resource: string; method: string; body?: string }> = []
+  const request = async (resource: string, init: RequestInit) => {
+    sent.push({ resource, method: init.method ?? "GET", ...(typeof init.body === "string" ? { body: init.body } : {}) })
+    if ((init.method ?? "GET") === "GET") return input.inspection ?? Response.json({ sessionId: "ses_1", target: TARGET })
+    if (input.answer instanceof Response) return input.answer
+    return new Response(serializeRecoveryOutcome(input.answer ?? { kind: "operation", operation: operation("succeeded") }))
+  }
+  return { sent, request }
+}
+
+describe("a channel Stop", () => {
+  test("names the turn the owner reports and reports the operation that stopped it", async () => {
+    const runtime = runtimeDouble({})
+
+    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toEqual({ ok: true, status: "succeeded" })
+
+    expect(runtime.sent.map((call) => `${call.method} ${call.resource}`)).toEqual(["GET recovery", "POST recovery"])
+    const submitted = JSON.parse(runtime.sent[1]!.body!) as Record<string, unknown>
+    expect(submitted).toMatchObject({ action: "cancel_turn", target: TARGET, scopeRevision: "lease_1", attempt: 1 })
+    expect(String(submitted.requestId)).toMatch(/^channel-stop:/)
+  })
+
+  test("a session running no turn is not reported as stopped", async () => {
+    const runtime = runtimeDouble({ inspection: Response.json({ sessionId: "ses_1" }) })
+
+    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toMatchObject({ ok: false, status: "no_active_turn" })
+    expect(runtime.sent).toHaveLength(1)
+  })
+
+  test("a refusal is reported by its kind rather than collapsed into a failure", async () => {
+    const runtime = runtimeDouble({
+      answer: { kind: "refused", refusal: { kind: "generation_conflict", message: "the turn was replaced", current: TARGET } },
+    })
+
+    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toEqual({
+      ok: false,
+      status: "generation_conflict",
+      message: "the turn was replaced",
+    })
+  })
+
+  test("an operation that did not reach its postcondition is never ok", async () => {
+    for (const state of ["failed", "needs_action", "running", "accepted"] as const) {
+      const runtime = runtimeDouble({ answer: { kind: "operation", operation: operation(state, "the provider never acknowledged") } })
+      await expect(cancelChannelSessionTurn("ses_1", runtime.request), state).resolves.toEqual({
+        ok: false,
+        status: state,
+        message: "the provider never acknowledged",
+      })
+    }
+  })
+
+  test("an unreachable owner and an unreadable answer are both reported, not guessed at", async () => {
+    const unreachable = runtimeDouble({ inspection: new Response("", { status: 503 }) })
+    await expect(cancelChannelSessionTurn("ses_1", unreachable.request)).resolves.toMatchObject({ ok: false, status: "unavailable" })
+
+    const garbled = runtimeDouble({ answer: new Response("<html>gateway</html>", { status: 502 }) })
+    await expect(cancelChannelSessionTurn("ses_1", garbled.request)).resolves.toMatchObject({ ok: false, status: "failed" })
   })
 })

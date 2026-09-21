@@ -95,10 +95,20 @@ export const serverSelfHosted: Policy = {
    * -1 module (2026-09-17): the control bus (`platform/runtime/lib/bus.ts`)
    * carries control-plane notices only; a process frame reaches a client on
    * its workspace runtime's `wr/events` (`workspace-runtime/src/routes/
-   * events.ts`) and nothing mirrors it here. Measured 124 modules / 40
-   * packages, with no headroom.
+   * events.ts`) and nothing mirrors it here.
+   *
+   * `@claxedo/agent-runtime-contract` is the reviewed owner of the recovery
+   * wire types, and `src/channels/control-plane.ts` is the module that reaches
+   * it: a channel Stop asks this box's workspace runtime to cancel a turn and
+   * has to decode the outcome it answers with. Decoding it here rather than
+   * reading fields off the JSON is what keeps the channel from reporting a
+   * refusal or a timed-out cancellation as a stop that happened. The package
+   * is types plus pure validators with one edge of its own, `@claxedo/helpers`,
+   * which this closure already holds.
+   *
+   * Measured 124 modules / 41 packages, with no headroom.
    */
-  ceilings: { modules: 124, packages: 40 },
+  ceilings: { modules: 124, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

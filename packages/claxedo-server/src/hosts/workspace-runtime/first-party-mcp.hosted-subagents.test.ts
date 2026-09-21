@@ -138,7 +138,7 @@ function fakeHarness() {
       })()
     },
     getMessages: async (): Promise<AgentMessage[]> => [],
-    abort: async () => ({ ok: true, status: "cancelled" }),
+    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
     executeCommand: async () => {},
     listCommands: async () => [],
     listAgents: async () => [],

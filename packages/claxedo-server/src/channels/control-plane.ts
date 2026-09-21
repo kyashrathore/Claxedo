@@ -25,6 +25,9 @@ import {
   type WhatsAppBaileysSocket,
   type InboundEnvelope,
 } from "@claxedo/channels"
+import { randomUUID } from "node:crypto"
+import { asText, parseRecoveryOutcome, type RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@claxedo/helpers/guards"
 import { createSqliteChannelAccessStore, createSqliteChannelIdentityBindingStore } from "./access-store"
 import { channelFromThreadKey, channelId } from "./channel-id"
 import type { Hono as HonoType } from "hono"
@@ -155,6 +158,50 @@ function seedAdmin(allowIds: string[], channel: string, externalUserId: string):
   return allowIds.some((entry) => entry.trim() === exact)
 }
 
+/**
+ * Stop the turn a channel asked to stop, and report what stopping it reached.
+ *
+ * A channel request names a session and nothing narrower, so the turn is the
+ * one the owner reports right now: a cancellation carrying only the session
+ * reaches whichever turn is running when it lands, which after a replacement
+ * is somebody else's. The channel contract carries one status string, so the
+ * operation's state or the refusal's kind is what it gets — `ok` is true only
+ * for an operation that reached its postcondition.
+ */
+export async function cancelChannelSessionTurn(
+  sessionId: string,
+  request: (resource: string, init: RequestInit) => Promise<Response>,
+): Promise<{ ok: boolean; status: string; message?: string }> {
+  const inspected = await request("recovery", { method: "GET" })
+  if (!inspected.ok) return { ok: false, status: "unavailable", message: `Session ${sessionId} has no reachable recovery owner` }
+  const target = asRecord((await readJsonRecord(inspected))?.target)
+  if (!target) return { ok: false, status: "no_active_turn", message: `Session ${sessionId} is not running a turn` }
+  const submitted = await request("recovery", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      requestId: `channel-stop:${randomUUID()}`,
+      action: "cancel_turn",
+      target,
+      scopeRevision: asText(target.ownerGeneration) ?? "",
+      attempt: 1,
+    }),
+  })
+  let outcome: RecoveryOutcome
+  try {
+    outcome = parseRecoveryOutcome(await submitted.text())
+  } catch {
+    return { ok: false, status: "failed", message: `Session cancel returned an unreadable answer (${submitted.status})` }
+  }
+  if (outcome.kind === "refused") return { ok: false, status: outcome.refusal.kind, message: outcome.refusal.message }
+  const operation = outcome.operation
+  return {
+    ok: operation.state === "succeeded",
+    status: operation.state,
+    ...(operation.initiatingError ? { message: operation.initiatingError.message } : {}),
+  }
+}
+
 export function createControlPlaneChannels(input: {
   services: ControlPlaneServices
   runtime: ChannelMachineRuntime
@@ -209,15 +256,11 @@ export function createControlPlaneChannels(input: {
         parts: [{ type: "text", text: ["Channel-sourced input", `Source: ${request.channel}`, `External user: ${request.externalUserId}`, "Trust: external-untrusted", "", request.text].join("\n") }],
       }, caller(request))
     },
-    async abortSession(request: { sessionId: string } & ChannelMachineIdentity) {
-      const res = await input.runtime.request(request.sessionId, "abort", { method: "POST" }, caller(request))
-      if (!res.ok) return { ok: false, status: "failed", message: "Session cancel failed" }
-      const body = await readJsonRecord(res)
-      return {
-        ok: body?.ok === true,
-        status: typeof body?.status === "string" ? body.status : "failed",
-        ...(typeof body?.message === "string" && body.message ? { message: body.message } : {}),
-      }
+    abortSession(request: { sessionId: string } & ChannelMachineIdentity) {
+      return cancelChannelSessionTurn(
+        request.sessionId,
+        (resource, init) => input.runtime.request(request.sessionId, resource, init, caller(request)),
+      )
     },
   }
   const sessionsByThread = new Map<string, SessionRef>()
