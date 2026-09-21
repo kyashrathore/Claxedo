@@ -5,6 +5,7 @@ import { requireGoalResource } from "../adapter-contract"
 import { GoalCapabilityError, requireGoalAction, type GoalAction, type GoalCapabilities } from "../capabilities"
 import { normalizeDirectory } from "./execution-binding"
 import { createGoalStartAdmission } from "./goal-start-admission"
+import type { RecoveryTurnCapture } from "./recovery"
 import { AgentRuntimeGoalError } from "./contracts"
 import type {
   AgentRuntimeEventEnvelope,
@@ -17,8 +18,10 @@ export interface RuntimeGoalControllerInput {
   adapterForSession: (sessionId: string) => Promise<AgentHarnessAdapter>
   publish: (event: AgentRuntimeEventEnvelope) => void
   subscribeRuntime: (listen: (event: AgentRuntimeEventEnvelope) => void) => () => void
-  /** Ends the turn the mutation cancelled; the runtime owns turn admission. */
-  cancelActiveTurn: (sessionId: string, directory?: RuntimeDirectory) => void
+  /** Reads the turn a mutation may end, before the mutation's first await. */
+  captureTurn: (sessionId: string, directory?: RuntimeDirectory) => RecoveryTurnCapture
+  /** Ends exactly that turn; the runtime owns turn admission. */
+  cancelCapturedTurn: (capture: RecoveryTurnCapture, directory?: RuntimeDirectory) => void
 }
 
 /**
@@ -110,6 +113,10 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     mutation: GoalAction | "stop",
     requestedDirectory?: RuntimeDirectory,
   ): Promise<AgentGoalMutationResult> => {
+    // Captured before the first await. Resolving the harness and running the
+    // provider mutation both yield, and the turn this caller meant to stop can
+    // finish and be replaced across either of them.
+    const capture = input.captureTurn(sessionId, requestedDirectory)
     const context = await availableContext(sessionId, requestedDirectory)
     if (mutation !== "stop") {
       try {
@@ -121,7 +128,7 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     }
     const result = await context.resource[mutation](sessionId, context.directory) as AgentGoalMutationResult
     if (result.ok && mutation !== "resume" && input.store.getSession(sessionId)?.status === "busy") {
-      input.cancelActiveTurn(sessionId, context.directory)
+      input.cancelCapturedTurn(capture, context.directory)
     }
     publishResult(sessionId, context.directory, result)
     return result
