@@ -1,4 +1,17 @@
+import type { RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { ChannelId, InboundEnvelope } from "../envelope"
+
+/**
+ * What asking a session to stop its turn reached. The three arms are three
+ * different facts about the session, and `/new` acts on them differently: an
+ * idle session has nothing to cancel and may be rebound, an owner that never
+ * answered may not, and an owner that did answer carries the whole outcome —
+ * including a refusal, which is the owner declining, not an idle session.
+ */
+export type ChannelAbortResult =
+  | { kind: "no_active_turn" }
+  | { kind: "outcome"; outcome: RecoveryOutcome }
+  | { kind: "unreachable"; message: string }
 
 export type SessionRef = {
   sessionId: string
@@ -19,7 +32,7 @@ export type ChannelRuntime = {
     workspaceId?: string
   }): Promise<{ sessionId: string; appUrl?: string; workspaceRef?: string }>
   sendMessage(input: { sessionId: string; text: string; channel: ChannelId; externalUserId: string; threadKey: string }): AsyncIterable<unknown>
-  abortSession(input: { sessionId: string; channel: ChannelId; externalUserId: string; threadKey: string }): Promise<{ ok: boolean; status: string; message?: string }>
+  abortSession(input: { sessionId: string; channel: ChannelId; externalUserId: string; threadKey: string }): Promise<ChannelAbortResult>
 }
 
 export type SessionResolver = {

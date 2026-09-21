@@ -8,6 +8,7 @@ import {
   type ChannelRuntime,
   type InboundEnvelope,
 } from "../index"
+import { stoppedTurn } from "./session-stop.fixture"
 
 describe("sliding window rate limiter", () => {
   test("allows up to the limit, then rejects with retry-after", () => {
@@ -83,8 +84,8 @@ describe("core rate limit is driven by the server clock, not the envelope", () =
         sent.push(input.text)
         yield { type: "finish", sessionId: input.sessionId }
       },
-      async abortSession() {
-        return { ok: true, status: "cancelled" }
+      async abortSession(input) {
+        return stoppedTurn(input.sessionId)
       },
     }
   }

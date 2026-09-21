@@ -18,6 +18,7 @@ import {
   type ChannelRuntime,
   type InboundEnvelope,
 } from "../index"
+import { stoppedTurn } from "../core/session-stop.fixture"
 
 const WEBHOOK_SECRET = "fixture-webhook-secret"
 const PAIRED = { login: "octocat", id: 583231 }
@@ -119,8 +120,8 @@ function runtime(): ChannelRuntime & { sent: string[] } {
       sent.push(`${input.externalUserId}:${input.text}`)
       yield { type: "finish", sessionId: input.sessionId }
     },
-    async abortSession() {
-      return { ok: true, status: "cancelled" }
+    async abortSession(input) {
+      return stoppedTurn(input.sessionId)
     },
   }
 }

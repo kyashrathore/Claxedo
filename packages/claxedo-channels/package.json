@@ -48,6 +48,7 @@
     "@chat-adapter/slack": "4.35.0",
     "@chat-adapter/telegram": "4.35.0",
     "@chat-adapter/whatsapp": "4.35.0",
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@whiskeysockets/baileys": "7.0.0-rc13",
     "chat": "4.35.0",

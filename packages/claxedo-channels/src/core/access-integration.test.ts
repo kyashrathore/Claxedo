@@ -11,6 +11,8 @@ import {
   type InboundEnvelope,
   type OutboundChunk,
 } from "../index"
+import type { ChannelAbortResult } from "./resolve-session"
+import { stillRunning, stoppedTurn } from "./session-stop.fixture"
 
 function envelope(input: Partial<InboundEnvelope> = {}): InboundEnvelope {
   return {
@@ -44,7 +46,7 @@ function runtime(): ChannelRuntime & { created: string[]; sent: string[]; aborte
     },
     async abortSession(input) {
       aborted.push(input.sessionId)
-      return { ok: true, status: "cancelled" }
+      return stoppedTurn(input.sessionId)
     },
   }
 }
@@ -201,12 +203,27 @@ describe("session lifecycle commands", () => {
     expect(await sessions.get("telegram:install:chat:thread")).toBeUndefined()
   })
 
-  test.each(["refused", "failed"])("/new preserves the binding when runtime cancellation is %s", async (outcome) => {
+  const unstopped: Array<[string, () => Promise<ChannelAbortResult>, string]> = [
+    [
+      "the owner refuses it",
+      async () => ({ kind: "outcome", outcome: { kind: "refused", refusal: { kind: "unauthorized", message: "Session access denied" } } }),
+      "You are not allowed to stop this session.",
+    ],
+    [
+      "the turn is still running",
+      async () => stillRunning("ses_1"),
+      "The turn is still running",
+    ],
+    [
+      "the runtime throws",
+      async () => { throw new Error("runtime unavailable") },
+      "could not be reached",
+    ],
+  ]
+
+  test.each(unstopped)("/new preserves the binding when %s", async (_label, abortSession, reads) => {
     const rt = runtime()
-    rt.abortSession = async () => {
-      if (outcome === "failed") throw new Error("runtime unavailable")
-      return { ok: false, status: "failed", message: "Session access denied" }
-    }
+    rt.abortSession = abortSession
     const sessions = createMemorySessionResolver(rt)
     const core = createChannelCore({
       runtime: rt, sessions, access: openAccess(),
@@ -218,8 +235,26 @@ describe("session lifecycle commands", () => {
     const chunks: OutboundChunk[] = []
     await core.handleInbound(envelope({ intent: { kind: "new_session" } }), { reply: (chunk) => chunks.push(chunk) })
     expect(await sessions.get("telegram:install:chat:thread")).toMatchObject({ sessionId: "ses_1" })
-    expect(chunks).toHaveLength(1)
-    expect(chunks[0]).not.toMatchObject({ text: expect.stringContaining("Started a fresh session") })
+    expect(chunks).toEqual([{ kind: "text", text: expect.stringContaining(reads), final: true }])
+    expect(chunks[0]).toMatchObject({ text: expect.stringContaining("This thread still points at the existing session.") })
+  })
+
+  test("/new starts a fresh session when the existing one is running no turn", async () => {
+    const rt = runtime()
+    rt.abortSession = async () => ({ kind: "no_active_turn" })
+    const sessions = createMemorySessionResolver(rt)
+    const core = createChannelCore({
+      runtime: rt, sessions, access: openAccess(),
+      dedup: createMemoryDedupStore({ initializedAt: 0 }),
+      resetSession: (threadKey) => sessions.reset!(threadKey),
+      authorize: async () => ({ ok: true }),
+    })
+    await core.handleInbound(envelope(), { reply() {} })
+    const chunks: OutboundChunk[] = []
+    await core.handleInbound(envelope({ intent: { kind: "new_session" } }), { reply: (chunk) => chunks.push(chunk) })
+
+    expect(await sessions.get("telegram:install:chat:thread")).toBeUndefined()
+    expect(chunks).toEqual([{ kind: "text", text: "Started a fresh session. Your next message begins a new conversation.", final: true }])
   })
 
   test("/sessions lists this sender's sessions", async () => {

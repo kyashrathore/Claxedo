@@ -14,6 +14,7 @@ import {
   type InboundEnvelope,
   type OutboundChunk,
 } from "../index"
+import { stoppedTurn } from "./session-stop.fixture"
 
 function envelope(input: Partial<InboundEnvelope> = {}): InboundEnvelope {
   return {
@@ -90,7 +91,7 @@ function runtime(): ChannelRuntime & { created: string[]; sent: string[]; aborte
     },
     async abortSession(input) {
       aborted.push(input.sessionId)
-      return { ok: true, status: "cancelled" }
+      return stoppedTurn(input.sessionId)
     },
   }
 }
@@ -241,7 +242,11 @@ describe("channels core", () => {
     }), { reply: (chunk) => chunks.push(chunk) })
 
     expect(rt.aborted).toEqual(["ses_1"])
-    expect(chunks.at(-1)).toMatchObject({ kind: "text", text: "Session cancelled.", final: true })
+    expect(chunks.at(-1)).toMatchObject({
+      kind: "text",
+      text: "Stopped the turn. Whether everything it was using has been released is not verified.",
+      final: true,
+    })
   })
 
   test("cancel intent without an active thread session does not create a session", async () => {
@@ -281,7 +286,11 @@ describe("channels core", () => {
 
     expect(rt.created).toEqual(["telegram:telegram:install:chat:thread"])
     expect(rt.aborted).toEqual(["ses_1"])
-    expect(chunks.at(-1)).toMatchObject({ kind: "text", text: "Session cancelled.", final: true })
+    expect(chunks.at(-1)).toMatchObject({
+      kind: "text",
+      text: "Stopped the turn. Whether everything it was using has been released is not verified.",
+      final: true,
+    })
   })
 
   test("cancel intent rejects explicit session ids from another thread", async () => {

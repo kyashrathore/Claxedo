@@ -4,7 +4,8 @@ import type { ApprovalBridge } from "./approval-bridge"
 import type { ChannelAccess, ChannelDenialReason } from "./access"
 import { rateLimitKey, type RateLimiter } from "./rate-limit"
 import { streamRuntimeReplies } from "./reply-sink"
-import { ChannelSessionResolutionError, type ChannelRuntime, type SessionResolver } from "./resolve-session"
+import { ChannelSessionResolutionError, type ChannelAbortResult, type ChannelRuntime, type SessionResolver } from "./resolve-session"
+import { abortReplyText, abortSettled } from "./session-stop"
 import {
   APPROVAL_UNCLEAR_REPLY,
   runApprovalJudge,
@@ -224,12 +225,13 @@ export function createChannelCore(input: {
       // wedged turn never runs. Abort any active turn, then drop the binding
       // so the NEXT message opens a fresh session.
       if (existingRef) {
-        const stopped = await input.runtime.abortSession({
-          sessionId: existingRef.sessionId, channel: envelope.channel,
-          externalUserId: envelope.externalUserId, threadKey: envelope.threadKey,
-        }).catch(() => ({ ok: false, message: "Unable to cancel the existing session. Its binding was preserved." }))
-        if (!stopped.ok) {
-          await handlers.reply({ kind: "text", text: stopped.message ?? "Unable to cancel the existing session. Its binding was preserved.", final: true })
+        const stopped = await abortSession(envelope, existingRef.sessionId)
+        if (!abortSettled(stopped)) {
+          await handlers.reply({
+            kind: "text",
+            text: `${abortReplyText(stopped)} This thread still points at the existing session.`,
+            final: true,
+          })
           return true
         }
       }
@@ -321,6 +323,25 @@ export function createChannelCore(input: {
     return false
   }
 
+  /**
+   * `abortSession` answers with what stopping reached rather than throwing, so
+   * a throw here is a broken implementation; it is reported as an owner that
+   * never answered, which is the one reading that keeps the thread bound.
+   */
+  async function abortSession(envelope: InboundEnvelope, sessionId: string): Promise<ChannelAbortResult> {
+    return await input.runtime.abortSession({
+      sessionId,
+      channel: envelope.channel,
+      externalUserId: envelope.externalUserId,
+      threadKey: envelope.threadKey,
+    }).catch((error: unknown) => ({
+      kind: "unreachable" as const,
+      message: error instanceof ChannelSessionResolutionError
+        ? error.message
+        : "The machine running this session could not be reached, so nothing was stopped.",
+    }))
+  }
+
   async function handleCancel(
     envelope: InboundEnvelope,
     handlers: Parameters<ChannelCore["handleInbound"]>[1],
@@ -335,12 +356,8 @@ export function createChannelCore(input: {
         await handlers.reply({ kind: "text", text: "Session id does not match this channel thread.", final: true })
         return true
       }
-      const result = await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey })
-      await handlers.reply({
-        kind: "text",
-        text: result.ok ? `Session ${result.status}.` : (result.message ?? "Unable to cancel session."),
-        final: true,
-      })
+      const result = await abortSession(envelope, existingRef.sessionId)
+      await handlers.reply({ kind: "text", text: abortReplyText(result), final: true })
       return true
     }
     return false
