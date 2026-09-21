@@ -4,7 +4,7 @@ import { createRequire } from "module"
 import type { CompatEvent } from "../compat-events"
 import type { SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
-import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
+import { recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
 import type {
   AgentRuntimeAppendEventInput,
   AgentRuntimeSessionBinding,
@@ -23,7 +23,7 @@ import {
   persistedTodoRow,
 } from "./persisted-rows"
 import {
-  DEFAULT_RECOVERY_BUDGETS,
+  RECOVERY_OPERATION_RETENTION_MS,
   asRecord,
   isRecord,
   parseRecoveryOperation,
@@ -48,13 +48,6 @@ type SqliteDatabase = {
 
 export type SqliteRuntimeStoreOptions = { root: string }
 
-/**
- * How long a settled recovery operation stays listed and stored. Ten
- * reconcile budgets: long enough that a caller which lost its connection can
- * still read its own receipt, short enough that the list is current work.
- */
-const RECOVERY_OPERATION_RETENTION_MS = DEFAULT_RECOVERY_BUDGETS.reconcileMs * 10
-
 const SCHEMA_VERSION = 3
 /** The one earlier schema this build upgrades in place; anything else is refused. */
 const UPGRADABLE_SCHEMA_VERSION = 2
@@ -66,6 +59,15 @@ export class UnsupportedRuntimeStoreSchemaError extends Error {
   constructor(readonly found: number | "snapshot", readonly expected = SCHEMA_VERSION) {
     super(`Unsupported agent runtime store schema ${found}; expected ${expected}. Reset or explicitly export the old store before continuing.`)
     this.name = "UnsupportedRuntimeStoreSchemaError"
+  }
+}
+
+export class RecoveryOperationIdCollisionError extends Error {
+  readonly code = "recovery_operation_id_collision"
+
+  constructor(readonly operationId: string) {
+    super(`Recovery operation id ${operationId} is already held by a different caller's request`)
+    this.name = "RecoveryOperationIdCollisionError"
   }
 }
 
@@ -121,8 +123,13 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   readonly sessionStarts: AgentSessionStarts
   private readonly db: SqliteDatabase
   private memory = new MemoryRuntimeStore()
-  private readonly turnLeases = new Map<string, { leaseId: string; acquiredAt: number }>()
-  private nextTurnLease = 0
+  /**
+   * Who holds each session's turn, kept outside the reducer because a rollback
+   * reloads the reducer from SQLite and a lease is not a row in it. The map is
+   * the authority; `hydrateMemory` restores it into the reducer so there is
+   * one answer, not two.
+   */
+  private turnLeases = new Map<string, { leaseId: string; acquiredAt: number }>()
 
   constructor(options: SqliteRuntimeStoreOptions) {
     fs.mkdirSync(options.root, { recursive: true, mode: 0o755 })
@@ -194,24 +201,27 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getAgentSessionId(id: string) { return this.memory.getAgentSessionId(id) }
   getExecutionBinding(id: string) { return this.memory.getExecutionBinding(id) }
-  acquireTurnLease(sessionId: string): string | undefined {
-    if (this.turnLeases.has(sessionId)) return undefined
-    const leaseId = `${sessionId}:${++this.nextTurnLease}`
-    this.turnLeases.set(sessionId, { leaseId, acquiredAt: Date.now() })
+  /**
+   * Turn leases have one owner here, the reducer that also decides what a
+   * finalization does. There is no lease table: a lease lives in the process
+   * that minted it, so a restart leaves no holder and the first writer after
+   * it acquires one, and a rollback — which reloads the reducer from SQLite —
+   * drops the leases with it, refusing the finalization that was in flight
+   * rather than letting it write against state this store just re-read.
+   */
+  acquireTurnLease(sessionId: string) {
+    const leaseId = this.memory.acquireTurnLease(sessionId)
+    const held = this.memory.readTurnAuthority(sessionId)
+    if (leaseId && held) this.turnLeases.set(sessionId, held)
     return leaseId
   }
+
   releaseTurnLease(sessionId: string, leaseId: string) {
+    this.memory.releaseTurnLease(sessionId, leaseId)
     if (this.turnLeases.get(sessionId)?.leaseId === leaseId) this.turnLeases.delete(sessionId)
   }
-  /**
-   * This store's turn leases live in the process that minted them: there is no
-   * lease table, so a restart leaves no holder and the first writer after it
-   * acquires one. Only writers inside one process are fenced against each
-   * other here.
-   */
-  readTurnAuthority(sessionId: string) {
-    return this.turnLeases.get(sessionId)
-  }
+
+  readTurnAuthority(sessionId: string) { return this.turnLeases.get(sessionId) }
   turnEvidence(sessionId: string, turnId: string) { return this.memory.turnEvidence(sessionId, turnId) }
 
   startTurn(input: AgentRuntimeTurnStartInput) {
@@ -225,15 +235,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     return this.write(() => {
-      if (input.leaseId !== undefined && this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
-        throw new AgentRuntimeStaleTurnError(input.sessionId)
-      }
-      // The lease checked above is this store's. `this.memory` is rebuilt from
-      // SQLite after any failed write, which would drop every lease it held,
-      // so it is the projection reducer here and never the fence; forwarding
-      // the lease id would have it reject against a map it never filled.
-      const { leaseId: _fenced, ...projected } = input
-      const result = this.memory.finishTurn(projected)
+      const result = this.memory.finishTurn(input)
       this.persistSession(input.sessionId)
       if (input.outcome.status === "failed") this.persistMessage(input.sessionId, input.assistantMessageId)
       return result
@@ -317,6 +319,19 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private initializeSchema() {
     const legacy = this.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'runtime_store_snapshot'")
     if (legacy) throw new UnsupportedRuntimeStoreSchemaError("snapshot")
+    // Read the version before any DDL. A store this build cannot read must be
+    // left exactly as its own binary wrote it: creating tables in it first
+    // would be a partial migration to a schema we then refuse to open.
+    const existing = this.tableExists("runtime_schema")
+      ? this.get("SELECT version FROM runtime_schema LIMIT 1")
+      : undefined
+    const found = existing ? columnNumber(existing, "version") : undefined
+    if (found !== undefined && found !== SCHEMA_VERSION && found !== UPGRADABLE_SCHEMA_VERSION) {
+      throw new UnsupportedRuntimeStoreSchemaError(found)
+    }
+    // Everything version 3 adds over version 2 is new tables and indexes, so
+    // the upgrade needs no data rewrite and no snapshot to fall back to: the
+    // rows version 2 wrote are untouched and still readable by it.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_schema (version INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS runtime_sessions (id TEXT PRIMARY KEY, data_json TEXT NOT NULL);
@@ -352,33 +367,51 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       CREATE INDEX IF NOT EXISTS runtime_questions_session ON runtime_questions(session_id);
       CREATE UNIQUE INDEX IF NOT EXISTS runtime_recovery_operations_request
         ON runtime_recovery_operations(scope_key, caller_id, request_id);
+      CREATE TABLE IF NOT EXISTS runtime_recovery_operation_callers (
+        operation_id TEXT NOT NULL, caller_id TEXT NOT NULL,
+        PRIMARY KEY (operation_id, caller_id)
+      );
       CREATE INDEX IF NOT EXISTS runtime_recovery_operations_session
         ON runtime_recovery_operations(session_id, updated_at DESC);
     `)
-    const schema = this.get("SELECT version FROM runtime_schema LIMIT 1")
-    if (!schema) {
+    if (found === undefined) {
       this.run("INSERT INTO runtime_schema(version) VALUES (?)", SCHEMA_VERSION)
       return
     }
-    const found = columnNumber(schema, "version")
     if (found === SCHEMA_VERSION) return
-    // The statements above already added what version 3 holds; recording the
-    // version is the whole upgrade. Any other version is a store this build
-    // cannot read, and guessing at its rows would invent history.
-    if (found !== UPGRADABLE_SCHEMA_VERSION) throw new UnsupportedRuntimeStoreSchemaError(found)
     this.run("UPDATE runtime_schema SET version = ?", SCHEMA_VERSION)
   }
 
+  private tableExists(name: string) {
+    return !!this.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name)
+  }
+
   /**
-   * Claim one request id for one caller. `INSERT OR IGNORE` plus a read-back
-   * lets the unique index settle the race between two writers, so a retried
-   * delivery joins the operation that won rather than issuing the effect twice.
+   * Claim one request id for one caller. The unique index settles the race
+   * between two writers, so a retried delivery joins the operation that won
+   * rather than issuing the effect twice. `changes` is what decides, the same
+   * signal the workspace store reads: a read-back could not tell an insert
+   * that won from one that never ran.
    */
   recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }) {
     this.pruneRecoveryOperations()
     const scopeKey = recoveryScopeKey(operation.target)
+    // An operation id this store already holds under a different claim is a
+    // minted id colliding with a live receipt, not an idempotent retry.
+    const collision = this.get(
+      "SELECT scope_key, caller_id, request_id FROM runtime_recovery_operations WHERE operation_id = ?",
+      operation.operationId,
+    )
+    if (
+      collision
+      && (columnText(collision, "scope_key") !== scopeKey
+        || columnText(collision, "caller_id") !== caller.callerId
+        || columnText(collision, "request_id") !== operation.requestId)
+    ) {
+      throw new RecoveryOperationIdCollisionError(operation.operationId)
+    }
     return this.write(() => {
-      this.run(`
+      const inserted = this.changed(`
         INSERT OR IGNORE INTO runtime_recovery_operations(
           operation_id, scope_key, caller_id, request_id, session_id, state, cleanup_fact, persistence_fact, updated_at, data_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -387,12 +420,18 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
         operation.state, operation.facts.cleanup.value, operation.facts.persistence.value, operation.updatedAt,
         JSON.stringify(operation),
       )
+      if (inserted === 1) {
+        this.run(
+          "INSERT OR IGNORE INTO runtime_recovery_operation_callers(operation_id, caller_id) VALUES (?, ?)",
+          operation.operationId, caller.callerId,
+        )
+        return { created: true as const }
+      }
       const row = this.get(
-        "SELECT operation_id, data_json FROM runtime_recovery_operations WHERE scope_key = ? AND caller_id = ? AND request_id = ?",
+        "SELECT data_json FROM runtime_recovery_operations WHERE scope_key = ? AND caller_id = ? AND request_id = ?",
         scopeKey, caller.callerId, operation.requestId,
       )
       if (!row) throw new Error(`Recovery operation ${operation.operationId} was not recorded`)
-      if (columnText(row, "operation_id") === operation.operationId) return { created: true as const }
       return {
         created: false as const,
         existing: parseRecoveryOperation(JSON.parse(columnText(row, "data_json"))),
@@ -400,14 +439,29 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     })
   }
 
-  updateRecoveryOperation(operation: RecoveryOperation) {
+  addRecoveryOperationCaller(operationId: string, caller: { callerId: string }) {
+    if (!this.get("SELECT 1 FROM runtime_recovery_operations WHERE operation_id = ?", operationId)) return
     this.write(() => {
-      if (!this.get("SELECT 1 FROM runtime_recovery_operations WHERE operation_id = ?", operation.operationId)) {
-        throw new Error(
-          `Recovery operation ${operation.operationId} is not recorded in this store; it was never created here, `
-            + "or it settled with nothing outstanding and aged out",
-        )
-      }
+      this.run(
+        "INSERT OR IGNORE INTO runtime_recovery_operation_callers(operation_id, caller_id) VALUES (?, ?)",
+        operationId, caller.callerId,
+      )
+    })
+  }
+
+  /**
+   * Refused before the transaction opens: a rollback reloads the whole
+   * in-memory projection from SQLite, and a precondition this store never
+   * tried to write has no reason to cost that.
+   */
+  updateRecoveryOperation(operation: RecoveryOperation) {
+    if (!this.get("SELECT 1 FROM runtime_recovery_operations WHERE operation_id = ?", operation.operationId)) {
+      throw new Error(
+        `Recovery operation ${operation.operationId} is not recorded in this store; it was never created here, `
+          + "or it settled with nothing outstanding and aged out",
+      )
+    }
+    this.write(() => {
       this.run(`
         UPDATE runtime_recovery_operations
         SET state = ?, cleanup_fact = ?, persistence_fact = ?, updated_at = ?, data_json = ?
@@ -419,15 +473,24 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     })
   }
 
-  readRecoveryOperation(operationId: string) {
-    const row = this.get("SELECT data_json FROM runtime_recovery_operations WHERE operation_id = ?", operationId)
+  readRecoveryOperation(operationId: string, caller: { callerId: string }) {
+    const row = this.get(`
+      SELECT op.data_json FROM runtime_recovery_operations AS op
+      JOIN runtime_recovery_operation_callers AS reader
+        ON reader.operation_id = op.operation_id AND reader.caller_id = ?
+      WHERE op.operation_id = ?
+    `, caller.callerId, operationId)
     return row ? parseRecoveryOperation(JSON.parse(columnText(row, "data_json"))) : undefined
   }
 
   listRecoveryOperations(scope: { sessionId?: string } = {}) {
     return this.rows(`
       SELECT data_json FROM runtime_recovery_operations
-      WHERE (? IS NULL OR session_id = ?) AND (state NOT IN ('succeeded', 'failed') OR updated_at >= ?)
+      WHERE (? IS NULL OR session_id = ?)
+        AND (
+          state NOT IN ('succeeded', 'failed') OR updated_at >= ?
+          OR cleanup_fact <> 'verified_clear' OR persistence_fact = 'pending'
+        )
       ORDER BY updated_at DESC
     `, scope.sessionId ?? null, scope.sessionId ?? null, Date.now() - RECOVERY_OPERATION_RETENTION_MS)
       .map((row) => parseRecoveryOperation(JSON.parse(columnText(row, "data_json"))))
@@ -439,12 +502,15 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
    * obligation was never discharged.
    */
   private pruneRecoveryOperations() {
+    const expired = `
+      SELECT operation_id FROM runtime_recovery_operations
+      WHERE state IN ('succeeded', 'failed') AND updated_at < ?
+        AND cleanup_fact = 'verified_clear' AND persistence_fact <> 'pending'
+    `
+    const cutoff = Date.now() - RECOVERY_OPERATION_RETENTION_MS
     this.write(() => {
-      this.run(`
-        DELETE FROM runtime_recovery_operations
-        WHERE state IN ('succeeded', 'failed') AND updated_at < ?
-          AND cleanup_fact = 'verified_clear' AND persistence_fact <> 'pending'
-      `, Date.now() - RECOVERY_OPERATION_RETENTION_MS)
+      this.run(`DELETE FROM runtime_recovery_operation_callers WHERE operation_id IN (${expired})`, cutoff)
+      this.run(`DELETE FROM runtime_recovery_operations WHERE operation_id IN (${expired})`, cutoff)
     })
   }
 
@@ -479,7 +545,10 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       })),
     }
     this.memory = new MemoryRuntimeStore(this.sessionStarts)
-    this.memory.importSnapshot(snapshot)
+    this.memory.importSnapshot({
+      ...snapshot,
+      turnLeases: [...this.turnLeases].map(([sessionId, held]) => ({ sessionId, ...held })),
+    })
   }
 
   private write<T>(operation: () => T): T {
@@ -651,6 +720,12 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const row = read(decoded)
     if (row === undefined) throw new RuntimeStoreCorruptionError(table, key, new Error("row does not match its stored shape"))
     return row
+  }
+
+  /** How many rows a write touched; `INSERT OR IGNORE` reports 0 when it lost. */
+  private changed(sql: string, ...params: unknown[]) {
+    const result = asRecord(this.run(sql, ...params))
+    return typeof result?.changes === "number" ? result.changes : Number.NaN
   }
 
   private run(sql: string, ...params: unknown[]) {

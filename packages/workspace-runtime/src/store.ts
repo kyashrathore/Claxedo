@@ -868,24 +868,26 @@ export class RuntimeStore {
       clearTimeout(this.settleTimer)
       this.settleTimer = undefined
     }
-    // A blocked session's deltas are already journaled. Projecting them here
-    // would advance its checkpoint past the row that stopped replay, which is
-    // exactly the skip an explicit rebuild exists to repair.
-    const pending = selected.filter((item) => !this.blockedProjection(item.sessionId))
-    if (pending.length === 0) return
-    const last = new Map<string, { seq: number; ts: number }>()
-    this.transaction(() => {
-      for (const item of pending) {
-        this.delta(item.sessionId, item.messageId, item.partId, item.field, item.text, item.ts)
-        const prev = last.get(item.sessionId)
-        if (!prev || item.seq > prev.seq) last.set(item.sessionId, { seq: item.seq, ts: item.ts })
+    // One transaction per session, and the advance goes through `checkpoint`
+    // like every other: a session whose projection is behind its journal must
+    // keep its deltas in the journal alone, and that refusal must not take
+    // another session's settled deltas down with it.
+    const bySession = new Map<string, PendingDelta[]>()
+    for (const item of selected) bySession.set(item.sessionId, [...(bySession.get(item.sessionId) ?? []), item])
+    for (const [session, items] of bySession) {
+      let last = { seq: 0, ts: 0 }
+      try {
+        this.transaction(() => {
+          for (const item of items) {
+            this.delta(item.sessionId, item.messageId, item.partId, item.field, item.text, item.ts)
+            if (item.seq > last.seq) last = { seq: item.seq, ts: item.ts }
+          }
+          this.checkpoint({ sessionId: session, seq: last.seq, ts: last.ts })
+        })
+      } catch (error) {
+        if (!(error instanceof RuntimeProjectionBlockedError)) throw error
       }
-      for (const [session, { seq, ts }] of last) {
-        this.db
-          .prepare("INSERT OR REPLACE INTO journal_checkpoint (session_id, last_seq, updated_at) VALUES (?, ?, ?)")
-          .run(session, seq, ts)
-      }
-    })
+    }
   }
 
   private deferDelta(row: Row & { kind: "event" }) {
@@ -1924,7 +1926,19 @@ export class RuntimeStore {
    * the journal.
    */
   rebuildProjection(sessionId: string, reason = "operator requested rebuild") {
+    // A held turn lease means a writer still believes it owns this session's
+    // turn. Discarding the projection under it would leave that writer
+    // committing against rows this rebuild is re-deriving.
+    const lease = this.readTurnAuthority(sessionId)
+    if (lease) {
+      throw new RuntimeProjectionBlockedError(
+        sessionId,
+        this.projectedPosition(sessionId),
+        `turn lease ${lease.leaseId} is still held; release it before rebuilding`,
+      )
+    }
     this.settleDeltas(sessionId)
+    const before = this.failedProjections.get(sessionId)
     this.failedProjections.delete(sessionId)
     const to = this.getSessionMaxSeq(sessionId)
     this.transaction(() => {
@@ -1936,7 +1950,19 @@ export class RuntimeStore {
       )
       this.resetSessionProjection(sessionId)
     })
-    this.replaySession(sessionId, 0, to)
+    try {
+      this.replaySession(sessionId, 0, to)
+    } catch (error) {
+      // The projection is discarded and the replay that was meant to re-derive
+      // it did not finish. Leave the session refused rather than open for
+      // writes against rows that are now missing.
+      this.failedProjections.set(sessionId, {
+        seq: before?.seq ?? this.projectedPosition(sessionId),
+        reason: `rebuild did not finish: ${String(error)}`,
+        repairable: false,
+      })
+      throw error
+    }
     const failure = this.failedProjections.get(sessionId)
     if (failure) return { rebuilt: false as const, blocked: { seq: failure.seq, reason: failure.reason } }
     return { rebuilt: true as const, position: this.projectedPosition(sessionId) }
@@ -1990,6 +2016,9 @@ export class RuntimeStore {
    * unaffected, because nothing they hold came from this journal.
    */
   private replaySession(sessionId: string, from: number, to: number) {
+    // Entering replay IS the retry, so the marker from the last attempt goes
+    // now; `project` re-raises it if the same rows fail again.
+    this.failedProjections.delete(sessionId)
     let cursor = from
     while (cursor < to) {
       const rows = this.db
@@ -2518,9 +2547,9 @@ export class RuntimeStore {
     return { ...row, seq }
   }
 
-  private checkpoint(row: Row) {
-    const blocked = this.blockedProjection(row.sessionId)
-    if (blocked) throw new RuntimeProjectionBlockedError(row.sessionId, blocked.seq, blocked.reason)
+  private checkpoint(row: Pick<Row, "sessionId" | "seq" | "ts">) {
+    const failure = this.failedProjections.get(row.sessionId)
+    if (failure) throw new RuntimeProjectionBlockedError(row.sessionId, failure.seq, failure.reason)
     this.db
       .prepare("INSERT OR REPLACE INTO journal_checkpoint (session_id, last_seq, updated_at) VALUES (?, ?, ?)")
       .run(row.sessionId, row.seq, row.ts)
@@ -2538,12 +2567,6 @@ export class RuntimeStore {
     this.apply(journaled)
     this.checkpoint(journaled)
     return journaled
-  }
-
-  /** The unrepairable failure gating this session, if it has one. */
-  private blockedProjection(sessionId: string) {
-    const failure = this.failedProjections.get(sessionId)
-    return failure && !failure.repairable ? failure : undefined
   }
 
   /**
@@ -3614,23 +3637,24 @@ export class RuntimeStore {
    * land together or not at all, so no reader can see an idle session whose
    * turn never closed, and no retry has to work out which half survived.
    *
-   * `leaseId` is the durable turn lease the caller believes it still holds.
-   * The lease row lives in this database, so the check and the writes share
-   * one immediate transaction and a replacement owner cannot slip between
-   * them.
+   * `leaseId` is the durable turn lease the caller believes it still holds,
+   * and it is required: the lease row lives in this database, so the check and
+   * the writes share one immediate transaction and a replacement owner cannot
+   * slip between them. A caller with no lease has nothing this store will
+   * accept a terminal from.
    */
   finishTurn(input: {
     sessionId: string
     assistantMessageId?: string
     outcome: AgentTurnOutcome
     fencingToken?: number
-    leaseId?: string
+    leaseId: string
   }) {
     this.assertProjectionCurrent(input.sessionId)
     this.settleDeltas(input.sessionId)
     if (this.deleted(input.sessionId)) throw new Error(`Session ${input.sessionId} was deleted`)
     return this.transaction(() => {
-      if (input.leaseId !== undefined && this.readTurnAuthority(input.sessionId)?.leaseId !== input.leaseId) {
+      if (this.readTurnAuthority(input.sessionId)?.leaseId !== input.leaseId) {
         throw new AgentRuntimeStaleTurnError(input.sessionId)
       }
       this.assertFencingToken(input.sessionId, input.fencingToken)

@@ -18,7 +18,7 @@ import {
 } from "../compat-events"
 import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
 import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
-import { RuntimeStoreCorruptionError, SqliteRuntimeStore, UnsupportedRuntimeStoreSchemaError } from "./sqlite"
+import { RecoveryOperationIdCollisionError, RuntimeStoreCorruptionError, SqliteRuntimeStore, UnsupportedRuntimeStoreSchemaError } from "./sqlite"
 
 function recoveryFact<V extends string>(value: V) {
   return { value, source: "test", observedAt: 10, generation: "lease-1" }
@@ -350,9 +350,9 @@ describe("SqliteRuntimeStore", () => {
 
     const upgraded = new SqliteRuntimeStore({ root })
     expect(upgraded.getSession("ses_old")?.directory).toBe("/repo")
-    expect(upgraded.readRecoveryOperation("none")).toBeUndefined()
+    expect(upgraded.readRecoveryOperation("none", { callerId: "caller-a" })).toBeUndefined()
     upgraded.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
-    expect(upgraded.readRecoveryOperation("op-1")?.requestId).toBe("req-1")
+    expect(upgraded.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId).toBe("req-1")
     upgraded.close()
 
     const version = new Database(path.join(root, "agent-runtime.db"))
@@ -377,14 +377,14 @@ describe("SqliteRuntimeStore", () => {
     const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
     expect(again.created).toBe(false)
     expect(again.created === false && again.existing.operationId).toBe("op-1")
-    expect(store.readRecoveryOperation("op-2")).toBeUndefined()
+    expect(store.readRecoveryOperation("op-2", { callerId: "caller-a" })).toBeUndefined()
     expect(store.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" })).toEqual({ created: true })
     expect(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId).sort()).toEqual(["op-1", "op-3"])
     expect(() => store.updateRecoveryOperation(recoveryOperation({ operationId: "absent" }))).toThrow("is not recorded in this store")
     store.close()
 
     const reopened = new SqliteRuntimeStore({ root })
-    expect(reopened.readRecoveryOperation("op-1")?.state).toBe("accepted")
+    expect(reopened.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state).toBe("accepted")
     reopened.close()
   })
 
@@ -417,7 +417,7 @@ describe("SqliteRuntimeStore", () => {
     const reopened = new SqliteRuntimeStore({ root })
     // Leases are this process's; the receipts are not.
     expect(reopened.readTurnAuthority("s1")).toBeUndefined()
-    expect(reopened.readRecoveryOperation("op-1")?.state).toBe("running")
+    expect(reopened.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state).toBe("running")
     const again = reopened.recordRecoveryOperation(recoveryOperation({ operationId: "op-9" }), { callerId: "caller-a" })
     expect(again.created === false && again.existing.state).toBe("running")
     reopened.close()
@@ -443,10 +443,53 @@ describe("SqliteRuntimeStore", () => {
     const replacement = store.acquireTurnLease("s1")
     expect(replacement).not.toBe(leaseId)
 
-    expect(() => store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId })).toThrow(AgentRuntimeStaleTurnError)
+    expect(() => store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId: leaseId! })).toThrow(AgentRuntimeStaleTurnError)
     expect(store.getSession("s1")?.status).toBe("busy")
-    store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId: replacement })
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId: replacement! })
     expect(store.getSession("s1")?.status).not.toBe("busy")
     store.close()
+  })
+
+  test("a receipt is readable by its creator and by a caller that coalesced onto it, and by nobody else", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
+    store.addRecoveryOperationCaller("op-1", { callerId: "caller-b" })
+    store.addRecoveryOperationCaller("never-recorded", { callerId: "caller-c" })
+
+    expect(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId).toBe("req-1")
+    expect(store.readRecoveryOperation("op-1", { callerId: "caller-b" })?.requestId).toBe("req-1")
+    expect(store.readRecoveryOperation("op-1", { callerId: "caller-c" })).toBeUndefined()
+    expect(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId)).toEqual(["op-1"])
+    store.close()
+
+    const reopened = new SqliteRuntimeStore({ root })
+    expect(reopened.readRecoveryOperation("op-1", { callerId: "caller-b" })?.requestId).toBe("req-1")
+    expect(reopened.readRecoveryOperation("op-1", { callerId: "caller-c" })).toBeUndefined()
+    reopened.close()
+  })
+
+  test("a minted operation id already held under another claim is refused, not merged", () => {
+    const store = new SqliteRuntimeStore({ root: tempRoot() })
+    store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
+    expect(() => store.recordRecoveryOperation(recoveryOperation({ requestId: "req-other" }), { callerId: "caller-a" }))
+      .toThrow(RecoveryOperationIdCollisionError)
+    // The live receipt is untouched by the refusal.
+    expect(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId).toBe("req-1")
+    store.close()
+  })
+
+  test("a schema version this build cannot read is refused before any table is created", () => {
+    const root = tempRoot()
+    const db = new Database(path.join(root, "agent-runtime.db"))
+    db.exec("CREATE TABLE runtime_schema (version INTEGER NOT NULL)")
+    db.query("INSERT INTO runtime_schema(version) VALUES (?)").run(9)
+    db.close()
+
+    expect(() => new SqliteRuntimeStore({ root })).toThrow(UnsupportedRuntimeStoreSchemaError)
+    const reopened = new Database(path.join(root, "agent-runtime.db"))
+    const tables = reopened.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    expect(tables.map((row) => row.name)).toEqual(["runtime_schema"])
+    reopened.close()
   })
 })

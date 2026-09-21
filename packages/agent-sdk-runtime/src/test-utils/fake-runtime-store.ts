@@ -1,5 +1,5 @@
 import type { CompatEvent } from "../compat-events"
-import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
+import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
 import type {
   AgentRuntimeCommittedCompatOutput,
   AgentRuntimeStoreWithRecovery,
@@ -7,16 +7,15 @@ import type {
   AgentRuntimeTurnStartInput,
 } from "../harnesses/shared/runtime-store"
 import { MemoryRuntimeStore } from "../stores/memory"
-import type { RecoveryOperation, RecoveryTarget } from "@claxedo/agent-runtime-contract"
+import { RECOVERY_OPERATION_RETENTION_MS, type RecoveryOperation, type RecoveryTarget } from "@claxedo/agent-runtime-contract"
 
-/** Matches the uniqueness the durable stores enforce with a unique index. */
+/**
+ * The same key the durable stores enforce with a unique index, spelled the way
+ * the memory store spells it: a fake that keyed receipts differently would
+ * accept a request every real store refuses.
+ */
 function recoveryRequestKey(target: RecoveryTarget, callerId: string, requestId: string) {
-  const scope = target.scope === "machine"
-    ? `machine:${target.machineId}`
-    : target.scope === "harness"
-      ? `harness:${target.workspaceId}:${target.harnessKey}`
-      : `session:${target.workspaceId}:${target.sessionId}`
-  return `${scope}|${callerId}|${requestId}`
+  return `${recoveryScopeKey(target)}\u0000${callerId}\u0000${requestId}`
 }
 
 /** Creates the commit receipt used by focused store-port tests. */
@@ -46,6 +45,7 @@ export function fakeRuntimeStore(
   const leases = new Map<string, { leaseId: string; acquiredAt: number }>()
   const operations = new Map<string, RecoveryOperation>()
   const claims = new Map<string, RecoveryOperation>()
+  const callers = new Map<string, Set<string>>()
   let mintedLeases = 0
   return {
     listSessions: () => [],
@@ -65,7 +65,12 @@ export function fakeRuntimeStore(
       if (claimed) return { created: false, existing: operations.get(claimed.operationId) ?? claimed }
       claims.set(key, operation)
       operations.set(operation.operationId, operation)
+      callers.set(operation.operationId, new Set([caller.callerId]))
       return { created: true }
+    },
+    addRecoveryOperationCaller: (operationId, caller) => {
+      if (!operations.has(operationId)) return
+      callers.set(operationId, (callers.get(operationId) ?? new Set<string>()).add(caller.callerId))
     },
     updateRecoveryOperation: (operation) => {
       if (!operations.has(operation.operationId)) {
@@ -73,12 +78,18 @@ export function fakeRuntimeStore(
       }
       operations.set(operation.operationId, operation)
     },
-    readRecoveryOperation: (operationId) => operations.get(operationId),
-    listRecoveryOperations: (scope) => [...operations.values()].filter((operation) =>
-      scope.sessionId === undefined
-      || ((operation.target.scope === "turn" || operation.target.scope === "session")
-        && operation.target.sessionId === scope.sessionId)
-    ),
+    readRecoveryOperation: (operationId, caller) =>
+      callers.get(operationId)?.has(caller.callerId) ? operations.get(operationId) : undefined,
+    listRecoveryOperations: (scope) => {
+      const cutoff = Date.now() - RECOVERY_OPERATION_RETENTION_MS
+      return [...operations.values()].filter((operation) => {
+        if (scope.sessionId !== undefined && recoveryTargetSessionId(operation.target) !== scope.sessionId) return false
+        if (operation.state !== "succeeded" && operation.state !== "failed") return true
+        if (operation.facts.cleanup.value !== "verified_clear") return true
+        if (operation.facts.persistence.value === "pending") return true
+        return operation.updatedAt >= cutoff
+      })
+    },
     appendEvent: committedAppend,
     getMessages: () => [],
     getLatestUserMessageId: () => undefined,
@@ -105,7 +116,7 @@ export function fakeRuntimeStore(
     // Fences by default. A fake that accepted any lease would let every
     // caller's test pass against a store that never checked one.
     finishTurn: (input: AgentRuntimeTurnFinishInput) => {
-      if (input.leaseId !== undefined && leases.get(input.sessionId)?.leaseId !== input.leaseId) {
+      if (leases.get(input.sessionId)?.leaseId !== input.leaseId) {
         throw new AgentRuntimeStaleTurnError(input.sessionId)
       }
       return overrides.finishTurn ? overrides.finishTurn(input) : { events: [] }

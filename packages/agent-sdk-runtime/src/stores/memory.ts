@@ -88,6 +88,12 @@ export type MemoryRuntimeStoreSnapshot = {
   todos: Array<{ sessionId: string; rows: AgentTodo[] }>
   recoveryErrors: Array<{ sessionId: string; message: string }>
   seq: Array<{ sessionId: string; seq: number }>
+  /**
+   * Who holds each session's turn. A durable store that reloads this reducer
+   * mid-turn restores them: the lease outlives the reload, so the reducer must
+   * not be the thing that forgets it and refuses the writer that still owns it.
+   */
+  turnLeases?: Array<{ sessionId: string; leaseId: string; acquiredAt: number }>
   subagents: Array<{
     parentSessionId: string
     observation: SubagentObservation
@@ -715,6 +721,12 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.todos = new Map((snapshot.todos ?? []).map((row) => [row.sessionId, row.rows]))
     this.recoveryErrors = new Map((snapshot.recoveryErrors ?? []).map((row) => [row.sessionId, row.message]))
     this.seq = new Map((snapshot.seq ?? []).map((row) => [row.sessionId, row.seq]))
+    if (snapshot.turnLeases) {
+      this.turnLeases = new Map(snapshot.turnLeases.map((row) => [
+        row.sessionId,
+        { leaseId: row.leaseId, acquiredAt: row.acquiredAt },
+      ]))
+    }
     this.subagents = (snapshot.subagents ?? []).map((row) => ({
       parentSessionId: row.parentSessionId,
       observation: { ...row.observation },

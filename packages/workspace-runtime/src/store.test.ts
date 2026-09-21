@@ -97,6 +97,20 @@ function db(store: RuntimeStore) {
   ).db
 }
 
+/**
+ * Finish a turn as the holder of its session's lease. These cases are about
+ * what the journal and the projection do, not about fencing; the fencing cases
+ * below pass a lease the session does not hold, on purpose.
+ */
+function finishHeldTurn(
+  store: RuntimeStore,
+  input: Omit<Parameters<RuntimeStore["finishTurn"]>[0], "leaseId">,
+) {
+  const leaseId = store.readTurnAuthority(input.sessionId)?.leaseId ?? store.acquireTurnLease(input.sessionId)
+  assert.ok(leaseId, "the session has a turn lease to finish under")
+  return store.finishTurn({ ...input, leaseId })
+}
+
 afterEach(() => {
   for (const store of stores.splice(0)) store.close()
   while (roots.length > 0) {
@@ -2221,7 +2235,7 @@ void describe("RuntimeStore", () => {
     })
 
     assert.equal((store.getSession("s1") as { status?: string } | null)?.status, "busy")
-    store.finishTurn({
+    finishHeldTurn(store, {
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "completed", completedAt: 123 },
@@ -2268,7 +2282,7 @@ void describe("RuntimeStore", () => {
       AgentRuntimeStaleTurnError,
     )
     assert.throws(
-      () => first.finishTurn({
+      () => finishHeldTurn(first, {
         sessionId: "s1",
         assistantMessageId: "m1",
         outcome: { status: "completed", completedAt: 10 },
@@ -2284,7 +2298,7 @@ void describe("RuntimeStore", () => {
       AgentRuntimeStaleTurnError,
     )
     reconstructed.appendEvent({ sessionId: "s1", payload: sessionIdle("s1"), fencingToken: 5 })
-    reconstructed.finishTurn({
+    finishHeldTurn(reconstructed, {
       sessionId: "s1",
       assistantMessageId: "m2",
       outcome: { status: "completed", completedAt: 11 },
@@ -2324,7 +2338,7 @@ void describe("RuntimeStore", () => {
         },
       }),
     })
-    store.finishTurn({
+    finishHeldTurn(store, {
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "completed", completedAt: 123 },
@@ -2375,7 +2389,7 @@ void describe("RuntimeStore", () => {
       payload: sessionIdle("s1"),
     })
 
-    store.finishTurn({
+    finishHeldTurn(store, {
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "completed", completedAt: 123 },
@@ -2409,7 +2423,7 @@ void describe("RuntimeStore", () => {
       parts: [{ type: "text", text: "hello" }],
     })
 
-    store.finishTurn({
+    finishHeldTurn(store, {
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "cancelled", completedAt: 123, reason: "abort" },
@@ -2421,7 +2435,7 @@ void describe("RuntimeStore", () => {
       reason: "abort",
       assistantMessageId: "m1",
     })
-    store.finishTurn({
+    finishHeldTurn(store, {
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "completed", completedAt: 124 },
@@ -2462,7 +2476,7 @@ void describe("RuntimeStore", () => {
       parts: [{ type: "text", text: "hello" }],
     })
 
-    const finished = store.finishTurn({
+    const finished = finishHeldTurn(store, {
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "failed", completedAt: 123, error: "The database connection is not open" },
@@ -3292,7 +3306,7 @@ void it("finishTurn refuses a writer whose durable turn lease was replaced", () 
   assert.equal(journalTypes(store).includes("turn.finish"), false)
   assert.equal(store.getSession("s1")?.status, "busy")
 
-  store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId: replacement })
+  store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId: replacement! })
   assert.equal(journalTypes(store).includes("turn.finish"), true)
   assert.equal(store.getSession("s1")?.status, "idle")
   store.close()
@@ -3505,16 +3519,16 @@ void it("two store handles on one root cannot both create one caller's request",
   const again = second.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
   assert.equal(again.created, false)
   assert.equal(again.created === false ? again.existing.operationId : undefined, "op-1")
-  assert.equal(second.readRecoveryOperation("op-2"), undefined)
+  assert.equal(second.readRecoveryOperation("op-2", { callerId: "caller-a" }), undefined)
   // A different caller reusing the same request id owns its own operation.
   assert.deepEqual(second.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" }), { created: true })
 
-  assert.equal(second.readRecoveryOperation("op-1")?.requestId, "req-1")
+  assert.equal(second.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId, "req-1")
   assert.deepEqual(first.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId).sort(), ["op-1", "op-3"])
   assert.deepEqual(first.listRecoveryOperations({ sessionId: "other" }), [])
 
   second.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
-  assert.equal(first.readRecoveryOperation("op-1")?.state, "running")
+  assert.equal(first.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state, "running")
   assert.throws(() => first.updateRecoveryOperation(recoveryOperation({ operationId: "never-recorded" })), /is not recorded in this store/)
   first.close()
   second.close()
@@ -3547,9 +3561,11 @@ void it("settled recovery operations age out, and one still holding cleanup neve
   store.recordRecoveryOperation(unresolved, { callerId: "caller-a" })
   store.recordRecoveryOperation(recoveryOperation({ operationId: "live", requestId: "req-live" }), { callerId: "caller-a" })
 
-  assert.deepEqual(store.listRecoveryOperations({}).map((op) => op.operationId), ["live"])
-  assert.equal(store.readRecoveryOperation("settled"), undefined)
-  assert.equal(store.readRecoveryOperation("unresolved")?.state, "failed")
+  // The settled one aged out; the one still holding cleanup did not, in the
+  // listing as well as in the table — the list is what an owner looks at.
+  assert.deepEqual(store.listRecoveryOperations({}).map((op) => op.operationId), ["unresolved", "live"])
+  assert.equal(store.readRecoveryOperation("settled", { callerId: "caller-a" }), undefined)
+  assert.equal(store.readRecoveryOperation("unresolved", { callerId: "caller-a" })?.state, "failed")
   store.close()
 })
 
@@ -3561,7 +3577,7 @@ void it("the recovery migration snapshots an existing store before it writes the
   first.close()
 
   const migrated = new RuntimeStore(root)
-  assert.equal(migrated.readRecoveryOperation("none"), undefined)
+  assert.equal(migrated.readRecoveryOperation("none", { callerId: "caller-a" }), undefined)
   assert.equal(migrated.getAgentSessionId("s1"), "a1")
   migrated.close()
 
@@ -3600,7 +3616,7 @@ void it("the recovery migration refuses to run when the store cannot be quiesced
   }
 
   const repaired = new RuntimeStore(root)
-  assert.equal(repaired.readRecoveryOperation("none"), undefined)
+  assert.equal(repaired.readRecoveryOperation("none", { callerId: "caller-a" }), undefined)
   repaired.close()
   assert.equal(fs.readdirSync(root).filter((name) => name.endsWith(".bak")).length, 1)
 })
@@ -3630,7 +3646,7 @@ void it("an update replaces the stored operation without creating a second recei
   store.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
 
   assert.deepEqual(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
-  assert.equal(store.readRecoveryOperation("op-1")?.state, "running")
+  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.state, "running")
   // The same request id still joins the one receipt rather than reopening it.
   const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
   assert.equal(again.created === false ? again.existing.state : undefined, "running")
@@ -3758,6 +3774,60 @@ void it("turnCoverage refuses a session it does not hold at all", () => {
   assert.throws(
     () => store.turnCoverage("missing", "u1"),
     (error: unknown) => error instanceof AgentMessagePageError && error.status === 404,
+  )
+  store.close()
+})
+
+void it("a receipt is readable by the caller that created it and by one that coalesced onto it, and by nobody else", () => {
+  const root = tmp()
+  const store = new RuntimeStore(root)
+  store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
+  store.addRecoveryOperationCaller("op-1", { callerId: "caller-b" })
+  // An id this store does not hold records nobody.
+  store.addRecoveryOperationCaller("never-recorded", { callerId: "caller-c" })
+
+  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-a" })?.requestId, "req-1")
+  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-b" })?.requestId, "req-1")
+  assert.equal(store.readRecoveryOperation("op-1", { callerId: "caller-c" }), undefined)
+  // Listing is scoped to the session, not the reader; only the receipt is.
+  assert.deepEqual(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
+  store.close()
+
+  const reopened = new RuntimeStore(root)
+  assert.equal(reopened.readRecoveryOperation("op-1", { callerId: "caller-b" })?.requestId, "req-1")
+  assert.equal(reopened.readRecoveryOperation("op-1", { callerId: "caller-c" }), undefined)
+  reopened.close()
+})
+
+void it("a session whose projection is behind cannot advance its checkpoint through pending deltas", () => {
+  const root = tmp()
+  const store = new RuntimeStore(root)
+  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  const delta = (sessionId: string, text: string) => store.appendEvent({
+    sessionId,
+    payload: messagePartDelta({ sessionID: sessionId, messageID: "m", partID: `p-${sessionId}`, field: "text", delta: text }),
+  })
+  delta("s1", "held ")
+  delta("s2", "other")
+  const checkpoint = (sessionId: string) =>
+    db(store).prepare("SELECT last_seq FROM journal_checkpoint WHERE session_id = ?").get(sessionId)
+  const before = checkpoint("s1")
+
+  // The session falls behind its journal while its deltas are still pending.
+  db(store).prepare("DELETE FROM journal_checkpoint WHERE session_id = ?").run("s1")
+  db(store).prepare("UPDATE runtime_journal SET payload_json = ? WHERE session_id = ? AND seq = ?").run("{not json", "s1", 1)
+  assert.equal(store.replayJournal("s1").blocked?.seq, 1)
+
+  store.flush()
+
+  assert.equal(checkpoint("s1"), undefined, "the blocked session's checkpoint did not advance")
+  assert.notDeepEqual(checkpoint("s2"), undefined)
+  assert.notDeepEqual(before, undefined)
+  // The other session's deltas settled in the same sweep.
+  assert.equal(
+    (db(store).prepare("SELECT count(*) AS n FROM part WHERE id = ?").get("p-s2") as { n: number }).n,
+    1,
   )
   store.close()
 })

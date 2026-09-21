@@ -231,6 +231,7 @@
       "createMemoryRuntimeStore"
     ],
     "@claxedo/agent-sdk-runtime/stores/sqlite": [
+      "RecoveryOperationIdCollisionError",
       "RuntimeStoreCorruptionError",
       "SqliteRuntimeStore",
       "UnsupportedRuntimeStoreSchemaError",
