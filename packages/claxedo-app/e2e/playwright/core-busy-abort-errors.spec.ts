@@ -338,10 +338,10 @@ test.describe("core busy / abort / errors @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("Stop click aborts the turn and status reconciles optimistically before the network responds", async ({
-    page,
-  }) => {
-    // The abort response is held until `releaseAbort()`, so ready-before-response is under test.
+  test("a Stop still in flight keeps the last execution the runtime reported", async ({ page }) => {
+    // The Stop response is held until `releaseAbort()`. Nothing has reported the
+    // turn ended, so the control must still offer Stop: the optimistic idle this
+    // once wrote made a Stop that never landed look like a turn that finished.
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -357,20 +357,155 @@ test.describe("core busy / abort / errors @core", () => {
     await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible({ timeout: 20_000 })
     await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
     await waitForDispatchReceived(promptState)
+    // This spec answers prompt_async itself, so the owner never recorded the turn.
+    mock.setRunningTurn(promptState.lastMessageID)
 
     await submitIcon(page).click()
 
-    // The abort has reached the network and its response is still held, so only the
-    // optimistic idle write can have moved the control.
     await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     await expect(
       submitIcon(page),
-      "submit control did not return to ready while the abort response was still held open",
-    ).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+      "the composer left its busy state while nothing had reported the turn ended",
+    ).toHaveAttribute("data-icon", "stop", { timeout: 5_000 })
+    await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
     expect(promptState.count).toBe(1)
 
-    // Release the held response so teardown is clean.
     mock.releaseAbort()
+  })
+
+  test("a cancellation the harness never answered leaves the turn running and offers recovery", async ({ page }) => {
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      holdTurn: true,
+      recoveryExecutionUnresolved: true,
+    })
+    const promptState = await silencePromptAsync(page)
+    await neutralizeStatusPoll(page)
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    await sendPrompt(page, input, "this stop will not be answered")
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+    // This spec answers prompt_async itself, so the owner never recorded the
+    // turn; wait for the dispatch before stating which turn it is running.
+    await waitForDispatchReceived(promptState)
+    mock.setRunningTurn(promptState.lastMessageID)
+    await submitIcon(page).click()
+
+    await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBe(1)
+    const panel = page.getByRole("region", { name: /Session recovery/i })
+    await expect(panel, "an unanswered cancellation offers no way to inspect or retry").toBeVisible({ timeout: 15_000 })
+    await expect(panel).toContainText(/still running/i)
+
+    // Retry is a new attempt against the same turn, linked to the one it follows,
+    // not a re-read of the attempt that already ran out.
+    await panel.getByRole("button", { name: /Try stopping again/i }).click()
+    await expect.poll(() => mock.requests.recoveryRequests.length, { timeout: 15_000 }).toBe(2)
+    const [first, retry] = mock.requests.recoveryRequests
+    expect(retry.requestId).not.toBe(first.requestId)
+    expect(retry.attempt).toBe(2)
+    expect(retry.linkedOperationId).toBe("op_1")
+  })
+
+  test("a turn that ended but was never written down says so, and does not claim the transcript changed", async ({ page }) => {
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      holdTurn: true,
+      recoveryStorageFailure: true,
+    })
+    const promptState = await silencePromptAsync(page)
+    await neutralizeStatusPoll(page)
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    await sendPrompt(page, input, "storage will refuse this")
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+    // This spec answers prompt_async itself, so the owner never recorded the
+    // turn; wait for the dispatch before stating which turn it is running.
+    await waitForDispatchReceived(promptState)
+    mock.setRunningTurn(promptState.lastMessageID)
+    await submitIcon(page).click()
+
+    await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBe(1)
+    const panel = page.getByRole("region", { name: /Session recovery/i })
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    await expect(panel, "a failed save must be named as one, not as a turn still running").toContainText(/not saved/i)
+    // The store never accepted the interruption, so no divider may claim it did.
+    await expect(
+      page.locator('[data-slot="compaction-part-label"]').filter({ hasText: /You stopped after/ }),
+    ).toHaveCount(0)
+  })
+
+  test("a Stop whose response is lost is still an operation the owner holds", async ({ page }) => {
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      holdTurn: true,
+      recoveryResponseLost: true,
+    })
+    const promptState = await silencePromptAsync(page)
+    await neutralizeStatusPoll(page)
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    await sendPrompt(page, input, "this response will be lost")
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+    await waitForDispatchReceived(promptState)
+    mock.setRunningTurn(promptState.lastMessageID)
+    await submitIcon(page).click()
+
+    // The owner created and recorded the operation; only the answer was lost, so
+    // the client must show a Stop it cannot account for rather than a stopped turn.
+    await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBe(1)
+    const panel = page.getByRole("region", { name: /Session recovery/i })
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    await expect(panel, "a Stop whose answer never arrived must not read as a stopped turn")
+      .toContainText(/did not reach the session/i)
+
+    // Inspecting reaches the owner, which still holds the operation that request
+    // opened — the receipt outlived the response.
+    await panel.getByRole("button", { name: /^Inspect$/i }).click()
+    await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(1)
+    await expect(panel).toContainText(/cancel_turn/)
+  })
+
+  test("a machine that cannot answer is named as that, and the panel stays usable", async ({ page }) => {
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      holdTurn: true,
+      recoveryUnavailable: true,
+    })
+    const promptState = await silencePromptAsync(page)
+    await neutralizeStatusPoll(page)
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    await sendPrompt(page, input, "the machine will not answer")
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+    // This spec answers prompt_async itself, so the owner never recorded the
+    // turn; wait for the dispatch before stating which turn it is running.
+    await waitForDispatchReceived(promptState)
+    mock.setRunningTurn(promptState.lastMessageID)
+    await submitIcon(page).click()
+
+    const panel = page.getByRole("region", { name: /Session recovery/i })
+    await expect(panel).toBeVisible({ timeout: 20_000 })
+    await expect(panel.getByRole("alert")).toContainText(/machine is unavailable/i)
+
+    // Reachable by keyboard while the composer refuses new turns.
+    const inspect = panel.getByRole("button", { name: /^Inspect$/i })
+    await inspect.focus()
+    await expect(inspect).toBeFocused()
+    const before = mock.requests.recoveryInspectCount
+    await page.keyboard.press("Enter")
+    await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(before)
   })
 
   test("Stop shows the canonical cancelled-turn outcome without reloading", async ({ page }, testInfo) => {
@@ -418,6 +553,8 @@ test.describe("core busy / abort / errors @core", () => {
       timeout: 20_000,
     })
     await waitForDispatchReceived(promptState)
+    // This spec answers prompt_async itself, so the owner never recorded the turn.
+    mock.setRunningTurn(promptState.lastMessageID)
 
     await submitIcon(page).click()
     await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
@@ -680,7 +817,7 @@ test.describe("core busy / abort / errors @core", () => {
     async ({ page }) => {
       test.setTimeout(300_000)
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
-      await silencePromptAsync(page)
+      const promptState = await silencePromptAsync(page)
 
       // Simulate a backend that accepts the dispatch and then goes completely silent: no
       // SSE session.status/session.idle ever (silencePromptAsync above), and
@@ -696,6 +833,9 @@ test.describe("core busy / abort / errors @core", () => {
       await sendPrompt(page, input, "is anyone still there")
 
       await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible({ timeout: 20_000 })
+      await waitForDispatchReceived(promptState)
+      // This spec answers prompt_async itself, so the owner never recorded the turn.
+      mock.setRunningTurn(promptState.lastMessageID)
 
       const stage = page.getByTestId("session-status-stage")
       // The 20s pending timer starts at send, not here; the ceiling absorbs contention.
@@ -752,6 +892,8 @@ test.describe("core busy / abort / errors @core", () => {
       // A Stop before dispatch leaves the first send's late reconcile to land during the
       // second turn and clear its status meta.
       await waitForDispatchReceived(promptState)
+      // This spec answers prompt_async itself, so the owner never recorded the turn.
+      mock.setRunningTurn(promptState.lastMessageID)
 
       await submitIcon(page).click()
       await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })

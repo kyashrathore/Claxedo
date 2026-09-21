@@ -297,12 +297,18 @@ export type MockRuntimeRequests = {
   promptCount: number
   promptBodies: PromptBody[]
   /**
-   * `POST /session/:id/abort` — one per request, counted the moment it is RECEIVED
-   * (before `holdAbort`'s gate, so a held-open abort still increments here).
+   * `POST /session/:id/recovery` — one per request, counted the moment it is
+   * RECEIVED (before `holdAbort`'s gate, so a held-open Stop still increments).
    */
   abortCount: number
-  /** The `?turnId=` each Stop named, in order; `undefined` for one that named none. */
+  /** The turn each Stop named in its target, in order; `undefined` for one that named none. */
   abortedTurnIds: Array<string | undefined>
+  /** `GET /session/:id/recovery` — every inspection, including the panel's. */
+  recoveryInspectCount: number
+  /** Each submitted request's identity, so a spec can tell a join from a retry. */
+  recoveryRequests: Array<{ requestId: string; action: string; turnId?: string; attempt: number; linkedOperationId?: string }>
+  /** Operation ids read back through `GET /session/:id/recovery/operations/:id`. */
+  recoveryOperationReads: string[]
   /** Validated `POST /session/:id/permissions/:permId` decisions, in order. */
   permissionResponses: PermissionResponseValue[]
   /**
@@ -469,8 +475,20 @@ export type MockRuntimeOptions = {
   errorMidTurn?: boolean | string
   /** `POST /session/:id/prompt_async` returns 500 instead of dispatching. */
   dispatchFailure?: boolean
+  /** `GET /session/:id/recovery` refuses with `unavailable`, as a machine with no owner does. */
+  recoveryUnavailable?: boolean
   /**
-   * `POST /session/:id/abort` records the request (see `requests.abortCount`) but
+   * The cancellation reaches its deadline without the harness answering:
+   * `execution: unknown`, and the turn keeps running. This is the case a client
+   * must NOT read as stopped.
+   */
+  recoveryExecutionUnresolved?: boolean
+  /** The turn ends but writing that down fails, so `persistence` never reaches `committed`. */
+  recoveryStorageFailure?: boolean
+  /** The operation is created and recorded, but its response never reaches the client. */
+  recoveryResponseLost?: boolean
+  /**
+   * `POST /session/:id/recovery` records the request (see `requests.abortCount`) but
    * withholds its response until `handles.releaseAbort()` is called.
    *
    * This is what makes "status reconciles optimistically before the network
@@ -572,6 +590,15 @@ export type MockRuntimeHandles = {
    * unconditionally.
    */
   releaseAbort: () => void
+  /**
+   * States which turn this session's owner is running, for a spec that answers
+   * `prompt_async` itself and so never reaches the route that would record one.
+   *
+   * Recovery reads the owner, not the renderer: without this the owner reports
+   * no admitted turn, a Stop correctly finds nothing of the caller's to cancel,
+   * and the spec measures its own fixture rather than the app.
+   */
+  setRunningTurn: (turnId: string | undefined) => void
   /**
    * Moves a session in or out of the LIVE map `GET /session/status` answers, for ANY
    * session id the spec models — not only the mock's own `sessionId`.
@@ -1017,6 +1044,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     promptBodies: [],
     abortCount: 0,
     abortedTurnIds: [],
+    recoveryInspectCount: 0,
+    recoveryRequests: [],
+    recoveryOperationReads: [],
     permissionResponses: [],
     permissionModeWrites: [],
     questionReplies: [],
@@ -1072,6 +1102,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // The user message id of the turn the mock is driving, which is what a scoped
   // Stop names and what a steered prompt joins.
   let runningTurn: string | undefined
+  /** The owner generation every recovery target and fact in this mock is stamped with. */
+  const OWNER_GENERATION = "lease_e2e"
+  const recoveryOperations = new Map<string, Record<string, unknown>>()
+  /** Starts committed: a session with no interrupted turn has nothing owed to the store. */
+  let lastRecoveryPersistence: "committed" | "pending" | "unavailable" = "committed"
   let sessionCreated = false
   const archivedSessions = new Map<string, number>()
   let sessionDirectory = DIR
@@ -2940,46 +2975,169 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     void driveTurn({ userID, assistantID, text, agent, providerID, modelID, turn: requests.promptCount })
   })
 
-  // CONTRACT (workspace-runtime/src/routes/session-core.ts): the handler
-  // returns `c.json(result)` — HTTP 200 with the adapter's `AbortResult`
-  // (`agent-sdk-runtime/src/adapter-contract.ts`), i.e.
-  // `{ ok: true, status: "cancelled" | "already_idle" }` on success. The
-  // app awaits and discards the body, so only the status and shape are observable.
+  // CONTRACT (workspace-runtime/src/routes/session-core.ts): all three recovery
+  // routes answer a serialized `RecoveryOutcome`, including for every refusal, so
+  // a client decodes one shape rather than branching on HTTP status. Inspection
+  // answers the turn identity a caller must send back unchanged.
   //
-  // "cancelled", not "already_idle": every spec that exercises this has a genuinely
-  // in-flight turn. `already_idle` is the adapter's answer when the lifecycle had no
-  // live turn to cancel (`harnesses/shared/sdk-runtime-adapter.ts`); a mock that
-  // returned it unconditionally would misdescribe every scenario in the suite.
-  await page.route("**/session/*/abort**", async (route) => {
+  // The facts a healthy local Stop reports are `execution: terminal`,
+  // `persistence: committed`, `cleanup: unknown` — no adapter in this wave can
+  // prove `verified_clear`, so the operation closes `needs_action`. A mock that
+  // answered `succeeded` would hide the defect every consumer of these routes
+  // was written against.
+  const evidence = (value: string, source: string) => ({
+    value,
+    source,
+    observedAt: Date.now(),
+    generation: OWNER_GENERATION,
+  })
+  const recoveryTarget = () => runningTurn
+    ? {
+        scope: "turn" as const,
+        workspaceId: "ws_e2e",
+        sessionId: SESSION_ID,
+        turnId: runningTurn,
+        ownerGeneration: OWNER_GENERATION,
+      }
+    : undefined
+
+  await page.route("**/session/*/recovery**", async (route) => {
     if (!api(route)) return route.continue()
-    if (!new URL(route.request().url()).pathname.match(/\/session\/[^/]+\/abort$/)) return route.fallback()
+    const url = new URL(route.request().url())
+    const operationRead = url.pathname.match(/\/session\/[^/]+\/recovery\/operations\/([^/]+)$/)
+    if (operationRead) {
+      requests.recoveryOperationReads.push(operationRead[1])
+      const held = recoveryOperations.get(operationRead[1])
+      if (!held) {
+        return json(route, {
+          kind: "refused",
+          refusal: { kind: "receipt_expired", message: `no operation ${operationRead[1]}`, requestId: operationRead[1] },
+        })
+      }
+      return json(route, { kind: "operation", operation: held })
+    }
+    if (!url.pathname.match(/\/session\/[^/]+\/recovery$/)) return route.fallback()
+
+    if (route.request().method() === "GET") {
+      requests.recoveryInspectCount += 1
+      if (options.recoveryUnavailable) {
+        return json(route, {
+          kind: "refused",
+          refusal: { kind: "unavailable", message: "no owner on this machine can answer for this session" },
+        })
+      }
+      const target = recoveryTarget()
+      return json(route, {
+        sessionId: SESSION_ID,
+        ...(target ? { target } : {}),
+        facts: {
+          execution: evidence(runningTurn ? "running" : "terminal", "codex"),
+          cleanup: evidence(runningTurn ? "owned" : "unknown", "process-owner"),
+          persistence: evidence(lastRecoveryPersistence, "runtime-store"),
+        },
+        health: { status: "ok" as const },
+        failures: [],
+        operations: [...recoveryOperations.values()],
+        queued: 0,
+      })
+    }
     if (route.request().method() !== "POST") return route.fallback()
-    // Counted on RECEIPT, before the gate: a held-open abort has still reached the
+
+    // Counted on RECEIPT, before the gate: a held-open Stop has still reached the
     // network, and proving exactly that is what `holdAbort` exists for.
     requests.abortCount += 1
-    const namedTurn = new URL(route.request().url()).searchParams.get("turnId") ?? undefined
+    const body = route.request().postDataJSON?.() ?? {}
+    const namedTurn = body?.target?.turnId as string | undefined
     requests.abortedTurnIds.push(namedTurn)
+    requests.recoveryRequests.push({
+      requestId: String(body?.requestId ?? ""),
+      action: String(body?.action ?? ""),
+      turnId: namedTurn,
+      attempt: Number(body?.attempt ?? 0),
+      linkedOperationId: body?.linkedOperationId as string | undefined,
+    })
     if (abortGate) await abortGate
-    // A Stop that names a turn the session is no longer running is ignored, the
-    // way the runtime ignores it: the turn that replaced it keeps going.
+
+    const operationId = `op_${requests.abortCount}`
+    const refuse = (refusal: Record<string, unknown>) => json(route, { kind: "refused", refusal })
+
+    // A Stop naming a turn the session is no longer running is refused with the
+    // turn that replaced it, the way the runtime refuses it: cancelling whatever
+    // is running now would stop work nobody asked to stop.
     if (namedTurn && runningTurn && namedTurn !== runningTurn) {
-      return json(route, { ok: true, status: "already_idle" })
+      return refuse({
+        kind: "generation_conflict",
+        message: "that turn has already ended",
+        current: recoveryTarget(),
+      })
     }
-    if (options.messageRefreshOnly && options.holdTurn && runningTurn) {
-      const assistantMessageId = assistantIdForUserMessage(runningTurn)
-      const completedAt = Date.now()
-      lastTurn = { status: "cancelled", completedAt, reason: "abort", assistantMessageId }
-      messages = messages.map(row => row.info.id === assistantMessageId
-        ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: completedAt } } }
-        : row)
-      setSessionStatus(SESSION_ID)
-      emit({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
-    } else if (options.holdTurn) {
-      setSessionStatus(SESSION_ID)
-      emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
+    if (options.recoveryStorageFailure) {
+      lastRecoveryPersistence = "unavailable"
+    } else if (body?.action === "cancel_turn") {
+      lastRecoveryPersistence = "committed"
     }
-    runningTurn = undefined
-    return json(route, { ok: true, status: "cancelled" })
+
+    if (body?.action === "cancel_turn" && !options.recoveryExecutionUnresolved) {
+      if (options.messageRefreshOnly && runningTurn) {
+        const assistantMessageId = assistantIdForUserMessage(runningTurn)
+        const completedAt = Date.now()
+        lastTurn = { status: "cancelled", completedAt, reason: "abort", assistantMessageId }
+        messages = messages.map(row => row.info.id === assistantMessageId
+          ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: completedAt } } }
+          : row)
+        setSessionStatus(SESSION_ID)
+        emit({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
+      } else {
+        // A runtime that cancelled a turn and committed the interruption
+        // publishes the idle itself. The client no longer writes one, so a mock
+        // that stayed silent here would leave every Stop looking unanswered.
+        setSessionStatus(SESSION_ID)
+        emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
+      }
+      runningTurn = undefined
+    }
+
+    const unresolved = options.recoveryExecutionUnresolved === true
+    const operation = {
+      operationId,
+      requestId: String(body?.requestId ?? ""),
+      target: body?.target,
+      action: String(body?.action ?? "cancel_turn"),
+      scopeRevision: String(body?.scopeRevision ?? OWNER_GENERATION),
+      attempt: Number(body?.attempt ?? 1),
+      state: "needs_action" as const,
+      phase: "graceful_cancel" as const,
+      phaseDeadlineAt: Date.now() + 10_000,
+      facts: {
+        execution: evidence(unresolved ? "unknown" : "terminal", "codex"),
+        cleanup: evidence("unknown", "process-owner"),
+        persistence: evidence(lastRecoveryPersistence, "runtime-store"),
+      },
+      ...(unresolved || options.recoveryStorageFailure
+        ? {
+            initiatingError: {
+              code: unresolved ? "cancellation_timeout" : "persistence_unavailable",
+              origin: "workspace-host",
+              target: body?.target,
+              stage: unresolved ? "graceful_cancel" : "reconcile",
+              executionMayContinue: unresolved,
+              message: unresolved
+                ? "the harness did not answer the cancellation"
+                : "the interrupted turn could not be written",
+              at: Date.now(),
+            },
+          }
+        : {}),
+      cleanupErrors: [],
+      nextActions: [{ action: "inspect" as const, scopePreviewRequired: false, reason: "cleanup is unproven" }],
+      receipt: "durable" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(body?.linkedOperationId ? { linkedOperationId: body.linkedOperationId } : {}),
+    }
+    recoveryOperations.set(operationId, operation)
+    if (options.recoveryResponseLost) return route.abort("connectionaborted")
+    return json(route, { kind: "operation", operation })
   })
 
   await contractRoute(page, "**/session/*/command**", async (route) => {
@@ -3423,6 +3581,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       pendingQuestions = pendingQuestions.filter(question => question.id !== requestID)
     },
     releaseAbort: () => releaseAbort(),
+    setRunningTurn: (turnId: string | undefined) => { runningTurn = turnId },
     setSessionStatus,
 
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID, workspaceId: LOCAL_WORKSPACE_ID },
