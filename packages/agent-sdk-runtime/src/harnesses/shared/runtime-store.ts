@@ -102,12 +102,13 @@ export type AgentRuntimeTurnFinishInput = {
   outcome: AgentTurnOutcome
   fencingToken?: number
   /**
-   * The turn lease the writer holds. A store that is given one and finds a
-   * different lease (or none) rejects the write: the assistant message id alone
-   * cannot tell a delayed finalization apart from the replacement turn that
-   * happens to have reused it.
+   * The turn lease the writer holds. Required, with no waiver form: the store
+   * rejects a finalization whose lease is not the one the session currently
+   * holds, and an optional field would let every caller that forgot it write
+   * as if it still owned the turn. The assistant message id alone cannot tell
+   * a delayed finalization apart from the replacement turn that reused it.
    */
-  leaseId?: string
+  leaseId: string
 }
 
 export type AgentRuntimeTurnFinishOutput = {
@@ -177,7 +178,14 @@ export type AgentRuntimeStoreCore = {
     caller: { callerId: string },
   ): AgentRuntimeRecoveryOperationRecord
   updateRecoveryOperation(operation: RecoveryOperation): void
-  readRecoveryOperation(operationId: string): RecoveryOperation | undefined
+  /**
+   * Answers only for a caller the operation was recorded or joined under. The
+   * receipt is what authorizes the read, and it is the store that holds it
+   * across the restart of whichever owner issued it.
+   */
+  readRecoveryOperation(operationId: string, caller: { callerId: string }): RecoveryOperation | undefined
+  /** Adds a caller that joined an operation already running for its target. */
+  addRecoveryOperationCaller(operationId: string, caller: { callerId: string }): void
   listRecoveryOperations(scope: { sessionId?: string }): RecoveryOperation[]
   /** Only a journalling store has one; a projection-only store answers nothing. */
   replayJournal?(sessionId: string): AgentRuntimeReplayPosition

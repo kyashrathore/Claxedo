@@ -842,3 +842,76 @@ describe("two callers naming one turn", () => {
     await runtime.dispose()
   })
 })
+
+describe("an operation that outlives the owner that issued it", () => {
+  test("is read back by the callers holding its receipt, and by nobody else", async () => {
+    const store = new MemoryRuntimeStore()
+    const issued = fixture({ store })
+    const sessionId = await openSession(issued.runtime, "ses_restart")
+    const started = await issued.runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+    const issuing = issued.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+    await until(() => issued.cancels.length === 1, "the harness to be asked to cancel")
+    // A second caller joins the operation already running for that turn, so its
+    // receipt has to reach the store as well.
+    const joined = { callerId: "joined-caller", authority: "session" as const }
+    const shared = submittedOperation(await issued.runtime.recovery.submit(cancelTurnRequest(started.target!), joined))
+    const operation = submittedOperation(await issuing)
+    expect(shared.operationId).toBe(operation.operationId)
+    issued.turns[0].finish()
+    issued.cancels[0]?.settle({ execution: "unknown", cleanup: "unknown" })
+    await issued.runtime.dispose()
+
+    // A fresh owner over the same store: its in-memory registry is empty, so
+    // every answer below comes from the receipts the store kept.
+    const restarted = fixture({ store })
+
+    expect(restarted.runtime.recovery.read(operation.operationId, RECOVERY_TEST_CALLER))
+      .toMatchObject({ kind: "operation", operation: { operationId: operation.operationId } })
+    expect(restarted.runtime.recovery.read(operation.operationId, joined))
+      .toMatchObject({ kind: "operation", operation: { operationId: operation.operationId } })
+    expect(restarted.runtime.recovery.read(operation.operationId, { callerId: "never-asked", authority: "session" }))
+      .toBeUndefined()
+
+    await restarted.runtime.dispose()
+  })
+
+  test("an unreadable store answers nothing and reports why, rather than throwing", async () => {
+    class UnreadableStore extends MemoryRuntimeStore {
+      override readRecoveryOperation(): RecoveryOperation | undefined {
+        throw new Error("the operations table is unreadable")
+      }
+    }
+    const { runtime } = fixture({ store: new UnreadableStore() })
+    const sessionId = await openSession(runtime, "ses_unreadable")
+
+    expect(runtime.recovery.read("rop_from_before", RECOVERY_TEST_CALLER)).toBeUndefined()
+    expect(runtime.recovery.inspect(sessionId).failures)
+      .toContainEqual(expect.objectContaining({ code: "persistence_unavailable" }))
+
+    await runtime.dispose()
+  })
+})
+
+describe("the lease a finalization must carry", () => {
+  test("an admission that still owns the session cannot finalize without the lease behind it", () => {
+    const { store, admissions, recovery, published, startTurn } = owner()
+    const claimed = admissions.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!
+    startTurn("msg_a", "asst_a")
+    const held = recovery.captureTurn("ses", claimed)
+    // The admission slot is an in-process fact. Without the durable lease
+    // behind it there is nothing to fence the write with, and the store is the
+    // only thing that can tell this writer from the next one.
+    const unleased = {
+      sessionId: held.sessionId, turnId: held.turnId, assistantMessageId: held.assistantMessageId,
+      admission: held.admission, target: held.target,
+    }
+
+    expect(recovery.finalizeTurn(unleased, { status: "cancelled", completedAt: 1, reason: "abort" }))
+      .toEqual({ ok: false, reason: "no_authority" })
+    expect(store.getSession("ses")?.status).toBe("busy")
+    expect(published).toEqual([])
+    // The real capture, which carries it, still works.
+    expect(recovery.finalizeTurn(held, { status: "cancelled", completedAt: 2, reason: "abort" }))
+      .toEqual({ ok: true, wrote: true })
+  })
+})

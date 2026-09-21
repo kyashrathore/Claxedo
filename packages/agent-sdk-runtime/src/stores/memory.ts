@@ -137,6 +137,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private nextTurnLease = 0
   private recoveryOperations = new Map<string, RecoveryOperation>()
   private recoveryReceipts = new Map<string, string>()
+  /** Who may read each receipt: its creator plus everyone who coalesced onto it. */
+  private recoveryOperationCallers = new Map<string, Set<string>>()
 
   listSessions(directory: string) {
     return [...this.sessions.values()]
@@ -373,7 +375,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     // Checked ahead of the active-turn read: a delayed finalization whose lease
     // has since been reissued must be refused, not quietly answered with the
     // empty result that an already-finished turn produces.
-    if (input.leaseId !== undefined && this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
+    if (this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
       throw new AgentRuntimeStaleTurnError(input.sessionId)
     }
     const prev = this.sessions.get(input.sessionId)
@@ -444,8 +446,17 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (existing) return { created: false, existing }
     this.recoveryOperations.set(operation.operationId, operation)
     this.recoveryReceipts.set(key, operation.operationId)
+    this.recoveryOperationCallers.set(operation.operationId, new Set([caller.callerId]))
     this.afterChange()
     return { created: true }
+  }
+
+  addRecoveryOperationCaller(operationId: string, caller: { callerId: string }) {
+    if (!this.recoveryOperations.has(operationId)) return
+    const held = this.recoveryOperationCallers.get(operationId) ?? new Set<string>()
+    held.add(caller.callerId)
+    this.recoveryOperationCallers.set(operationId, held)
+    this.afterChange()
   }
 
   updateRecoveryOperation(operation: RecoveryOperation) {
@@ -453,7 +464,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.afterChange()
   }
 
-  readRecoveryOperation(operationId: string) {
+  readRecoveryOperation(operationId: string, caller: { callerId: string }) {
+    if (!this.recoveryOperationCallers.get(operationId)?.has(caller.callerId)) return undefined
     return this.recoveryOperations.get(operationId)
   }
 

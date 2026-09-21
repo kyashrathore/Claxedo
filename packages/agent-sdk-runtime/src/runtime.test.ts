@@ -2541,6 +2541,7 @@ describe("createAgentRuntime", () => {
       title: "Review",
       agentSessionId: "ses_1",
     })
+    const leaseId = store.acquireTurnLease("ses_1")!
     store.startTurn({
       sessionId: "ses_1",
       userMessageId: "msg_user",
@@ -2553,6 +2554,7 @@ describe("createAgentRuntime", () => {
       sessionId: "ses_1",
       assistantMessageId: "msg_assistant",
       outcome: { status: "failed", completedAt: 123, error: "Codex authentication failed" },
+      leaseId,
     })
 
     expect(finished?.events.map((event) => event.type)).toEqual(["message.updated", "session.error"])

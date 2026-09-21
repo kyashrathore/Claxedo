@@ -280,10 +280,10 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     if (capture.admission ? held?.generation !== capture.admission : held !== undefined) {
       return { ok: false, reason: "superseded" }
     }
-    // Neither the in-process admission nor the durable lease: this owner has no
-    // authority over that turn, and writing its terminal would be the unfenced
+    // The durable lease is the write authority, and an in-process admission is
+    // not a substitute for it: a capture without one would be the unfenced
     // write the lease exists to prevent.
-    if (!capture.admission && capture.leaseId === undefined) return { ok: false, reason: "no_authority" }
+    if (capture.leaseId === undefined) return { ok: false, reason: "no_authority" }
     if (capture.fence && !capture.fence.valid()) return { ok: false, reason: "authority_lost" }
     const emit = options.emit ?? input.publish
     let finished
@@ -292,7 +292,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
         sessionId: capture.sessionId,
         ...(capture.assistantMessageId !== undefined ? { assistantMessageId: capture.assistantMessageId } : {}),
         outcome,
-        ...(capture.leaseId !== undefined ? { leaseId: capture.leaseId } : {}),
+        leaseId: capture.leaseId,
         ...(capture.fence ? { fencingToken: capture.fence.fencingToken() } : {}),
       })
     } catch (error) {
@@ -940,6 +940,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     const joinable = joined !== undefined ? operations.get(joined) : undefined
     if (joinable && !joinable.closed) {
       joinable.callers.add(caller.callerId)
+      joinReceipt(joinable, caller.callerId)
       byRequest.set(key, joinable.operation.operationId)
       return answer(joinable.operation)
     }
@@ -973,6 +974,15 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     return answer(claimed)
   }
 
+  /** The receipt a joining caller reads its operation back by, after a restart. */
+  const joinReceipt = (tracked: TrackedOperation, callerId: string) => {
+    try {
+      store.addRecoveryOperationCaller(tracked.operation.operationId, { callerId })
+    } catch (error) {
+      volatileReceipt(tracked, error)
+    }
+  }
+
   const read = (operationId: string, caller: RecoveryCaller): RecoveryOutcome | undefined => {
     sweep()
     const tracked = operations.get(operationId)
@@ -989,10 +999,30 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
         requestId: operationId,
       })
     }
-    // A stored operation carries no caller, so an owner that never recorded
-    // this one cannot establish that the asker is one of its callers. Handing
-    // over another caller's operation is worse than not answering.
-    return undefined
+    // An operation this process never recorded: another instance's, or its own
+    // from before a restart. The store holds the receipts, so it is the store
+    // that decides whether this caller is one of them.
+    const durable = readStoredOperation(operationId, caller)
+    if (!durable) return undefined
+    if (!mayAct(caller, durable.target)) {
+      return refuse({ kind: "unauthorized", message: "That recovery operation belongs to another caller" })
+    }
+    return answer(durable)
+  }
+
+  const readStoredOperation = (operationId: string, caller: RecoveryCaller) => {
+    try {
+      return store.readRecoveryOperation(operationId, { callerId: caller.callerId })
+    } catch (error) {
+      ownerFailures.push(recoveryError(
+        "persistence_unavailable",
+        { scope: "machine", machineId: input.identity?.machineId ?? "local", ownerGeneration: owner },
+        "reconcile",
+        false,
+        `Stored recovery operation ${operationId} is unreadable: ${messageOf(error)}`,
+      ))
+      return undefined
+    }
   }
 
   /**

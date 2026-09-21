@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { RecoveryOperation, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { createMemoryRuntimeStore } from "./memory"
 import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
+import type { AgentRuntimeTurnFinishInput } from "../harnesses/shared/runtime-store"
 
 function store() {
   const rows = createMemoryRuntimeStore()
@@ -107,10 +108,11 @@ describe("MemoryRuntimeStore turn evidence", () => {
     const rows = store()
     expect(rows.turnEvidence("ses", "msg_a")).toEqual({ started: false, finished: false })
 
+    const leaseId = rows.acquireTurnLease("ses")!
     startTurn(rows, "msg_a", "asst_a")
     expect(rows.turnEvidence("ses", "msg_a")).toEqual({ started: true, finished: false })
 
-    rows.finishTurn({ sessionId: "ses", assistantMessageId: "asst_a", outcome: { status: "completed", completedAt: 7 } })
+    rows.finishTurn({ sessionId: "ses", assistantMessageId: "asst_a", outcome: { status: "completed", completedAt: 7 }, leaseId })
     expect(rows.turnEvidence("ses", "msg_a")).toMatchObject({
       started: true,
       finished: true,
@@ -138,8 +140,10 @@ describe("MemoryRuntimeStore recovery receipts", () => {
     expect(rows.recordRecoveryOperation(first, { callerId: "ui" })).toEqual({ created: true })
     expect(rows.recordRecoveryOperation(operation("req_1", { operationId: "rop_other" }), { callerId: "ui" }))
       .toEqual({ created: false, existing: first })
-    expect(rows.readRecoveryOperation(first.operationId)).toEqual(first)
-    expect(rows.readRecoveryOperation("rop_other")).toBeUndefined()
+    expect(rows.readRecoveryOperation(first.operationId, { callerId: "ui" })).toEqual(first)
+    // The receipt is what authorizes the read, so another caller gets nothing.
+    expect(rows.readRecoveryOperation(first.operationId, { callerId: "cli" })).toBeUndefined()
+    expect(rows.readRecoveryOperation("rop_other", { callerId: "ui" })).toBeUndefined()
   })
 
   test("request ids are scoped to the caller, and listing is scoped to the session", () => {
@@ -167,7 +171,40 @@ describe("MemoryRuntimeStore recovery receipts", () => {
     const settled: RecoveryOperation = { ...first, state: "needs_action", updatedAt: 9 }
     rows.updateRecoveryOperation(settled)
 
-    expect(rows.readRecoveryOperation(first.operationId)).toEqual(settled)
+    expect(rows.readRecoveryOperation(first.operationId, { callerId: "ui" })).toEqual(settled)
     expect(rows.listRecoveryOperations({ sessionId: "ses" })).toEqual([settled])
+  })
+
+  test("a caller that joined an operation reads it back; one that never did cannot", () => {
+    const rows = store()
+    const first = operation("req_1")
+    rows.recordRecoveryOperation(first, { callerId: "ui" })
+
+    rows.addRecoveryOperationCaller(first.operationId, { callerId: "cli" })
+    // An operation nobody recorded takes no callers, so a join cannot invent a
+    // receipt for one.
+    rows.addRecoveryOperationCaller("rop_never_recorded", { callerId: "cli" })
+
+    expect(rows.readRecoveryOperation(first.operationId, { callerId: "cli" })).toEqual(first)
+    expect(rows.readRecoveryOperation(first.operationId, { callerId: "mcp" })).toBeUndefined()
+    expect(rows.readRecoveryOperation("rop_never_recorded", { callerId: "cli" })).toBeUndefined()
+  })
+})
+
+describe("MemoryRuntimeStore write authority", () => {
+  test("a finish carrying no lease at all is refused", () => {
+    const rows = store()
+    rows.acquireTurnLease("ses")
+    startTurn(rows, "msg_a", "asst_a")
+
+    // The lease is required by the type, so the cast is what a caller reaching
+    // this store across a package boundary looks like. The store is the last
+    // thing standing between such a caller and an unfenced write.
+    expect(() => rows.finishTurn({
+      sessionId: "ses",
+      assistantMessageId: "asst_a",
+      outcome: { status: "completed", completedAt: 5 },
+    } as unknown as AgentRuntimeTurnFinishInput)).toThrow(AgentRuntimeStaleTurnError)
+    expect(rows.getSession("ses")?.status).toBe("busy")
   })
 })
