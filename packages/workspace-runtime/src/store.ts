@@ -6,6 +6,8 @@ import { escapeRegExp } from "@claxedo/helpers/string"
 import {
   ACP_RECOVER,
   AgentRuntimeStaleTurnError,
+  recoveryScopeKey,
+  recoveryTargetSessionId,
   AgentMessagePageError,
   type AgentMessagePage,
   type AgentMessagePageInput,
@@ -37,7 +39,7 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import { DEFAULT_RECOVERY_BUDGETS, parseRecoveryOperation, type RecoveryOperation, type RecoveryTarget } from "@claxedo/agent-runtime-contract"
+import { DEFAULT_RECOVERY_BUDGETS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -765,21 +767,6 @@ export class RuntimeStoreMigrationBlockedError extends Error {
     )
     this.name = "RuntimeStoreMigrationBlockedError"
   }
-}
-
-/**
- * The row a repeated recovery request is compared under. A turn and a session
- * operation share their session's key so a caller cannot escape its own
- * uniqueness by naming a different turn of the same session.
- */
-function recoveryScopeKey(target: RecoveryTarget) {
-  if (target.scope === "machine") return `machine:${target.machineId}`
-  if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
-  return `session:${target.workspaceId}:${target.sessionId}`
-}
-
-function recoveryTargetSessionId(target: RecoveryTarget) {
-  return target.scope === "turn" || target.scope === "session" ? target.sessionId : null
 }
 
 function recoveryOperationSettled(operation: RecoveryOperation) {

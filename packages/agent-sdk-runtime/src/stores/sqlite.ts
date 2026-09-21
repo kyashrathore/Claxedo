@@ -4,7 +4,7 @@ import { createRequire } from "module"
 import type { CompatEvent } from "../compat-events"
 import type { SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
-import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
+import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
 import type {
   AgentRuntimeAppendEventInput,
   AgentRuntimeSessionBinding,
@@ -29,7 +29,6 @@ import {
   parseRecoveryOperation,
   type AgentSessionStarts,
   type RecoveryOperation,
-  type RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
 import type { SubagentObservation } from "../subagent-admission"
 import { sqliteSessionStarts } from "./session-start"
@@ -55,21 +54,6 @@ export type SqliteRuntimeStoreOptions = { root: string }
  * still read its own receipt, short enough that the list is current work.
  */
 const RECOVERY_OPERATION_RETENTION_MS = DEFAULT_RECOVERY_BUDGETS.reconcileMs * 10
-
-/**
- * The row a repeated recovery request is compared under. A turn and a session
- * operation share their session's key, so a caller cannot escape its own
- * uniqueness by naming a different turn of the same session.
- */
-function recoveryScopeKey(target: RecoveryTarget) {
-  if (target.scope === "machine") return `machine:${target.machineId}`
-  if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
-  return `session:${target.workspaceId}:${target.sessionId}`
-}
-
-function recoveryTargetSessionId(target: RecoveryTarget) {
-  return target.scope === "turn" || target.scope === "session" ? target.sessionId : null
-}
 
 const SCHEMA_VERSION = 3
 /** The one earlier schema this build upgrades in place; anything else is refused. */

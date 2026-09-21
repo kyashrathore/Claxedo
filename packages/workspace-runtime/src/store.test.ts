@@ -3605,6 +3605,38 @@ void it("the recovery migration refuses to run when the store cannot be quiesced
   assert.equal(fs.readdirSync(root).filter((name) => name.endsWith(".bak")).length, 1)
 })
 
+void it("a turn the replacement superseded is still reported against its own id", () => {
+  const store = new RuntimeStore(tmp())
+  turnFixture(store)
+  store.startTurn({
+    sessionId: "s1",
+    agentSessionId: "a1",
+    userMessageId: "u2",
+    assistantMessageId: "m2",
+    agent: "build",
+    model: { providerID: "anthropic", modelID: "opus" },
+    parts: [{ type: "text", text: "again" }],
+  })
+  // Nothing finished the first turn and no outcome names it, so the store says
+  // so rather than inferring an end from the newer turn.
+  assert.deepEqual(store.turnEvidence("s1", "u1"), { started: true, finished: false })
+  assert.deepEqual(store.turnEvidence("s1", "u2"), { started: true, finished: false })
+  store.close()
+})
+
+void it("an update replaces the stored operation without creating a second receipt", () => {
+  const store = new RuntimeStore(tmp())
+  store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
+  store.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
+
+  assert.deepEqual(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId), ["op-1"])
+  assert.equal(store.readRecoveryOperation("op-1")?.state, "running")
+  // The same request id still joins the one receipt rather than reopening it.
+  const again = store.recordRecoveryOperation(recoveryOperation({ operationId: "op-2" }), { callerId: "caller-a" })
+  assert.equal(again.created === false ? again.existing.state : undefined, "running")
+  store.close()
+})
+
 void it("turnEvidence answers for either of a turn's two message ids", () => {
   const store = new RuntimeStore(tmp())
   const leaseId = turnFixture(store)

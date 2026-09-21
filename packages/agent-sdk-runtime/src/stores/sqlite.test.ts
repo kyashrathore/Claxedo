@@ -388,6 +388,41 @@ describe("SqliteRuntimeStore", () => {
     reopened.close()
   })
 
+  test("turn evidence and receipts survive a reopen of the same store", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    store.bindSession({ sessionId: "s1", directory: "/repo", agentSessionId: "native_1" })
+    const turn = (userMessageId: string, assistantMessageId: string) => store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "native_1",
+      userMessageId,
+      assistantMessageId,
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "opus" },
+      parts: [{ type: "text", text: "go" }],
+    })
+    expect(store.turnEvidence("s1", "msg_a")).toEqual({ started: false, finished: false })
+    turn("msg_a", "asst_a")
+    turn("msg_b", "asst_b")
+    // Nothing finished the first turn, so the store says so rather than
+    // inferring an end from the newer one.
+    expect(store.turnEvidence("s1", "msg_a")).toEqual({ started: true, finished: false })
+    expect(store.turnEvidence("s1", "msg_b")).toEqual({ started: true, finished: false })
+
+    store.recordRecoveryOperation(recoveryOperation(), { callerId: "caller-a" })
+    store.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
+    expect(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId)).toEqual(["op-1"])
+    store.close()
+
+    const reopened = new SqliteRuntimeStore({ root })
+    // Leases are this process's; the receipts are not.
+    expect(reopened.readTurnAuthority("s1")).toBeUndefined()
+    expect(reopened.readRecoveryOperation("op-1")?.state).toBe("running")
+    const again = reopened.recordRecoveryOperation(recoveryOperation({ operationId: "op-9" }), { callerId: "caller-a" })
+    expect(again.created === false && again.existing.state).toBe("running")
+    reopened.close()
+  })
+
   test("finishTurn refuses a writer whose turn lease was replaced", () => {
     const root = tempRoot()
     const store = new SqliteRuntimeStore({ root })
