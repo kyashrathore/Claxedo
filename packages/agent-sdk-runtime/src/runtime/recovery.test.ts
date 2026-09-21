@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { RECOVERY_OPERATION_RETENTION_MS } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding, RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import { createAgentRuntime } from "../runtime"
 import type { AgentHarnessFactory } from "../runtime"
@@ -53,7 +54,7 @@ type Cancellation = {
   settle: (outcome: AdapterCancelOutcome) => void
 }
 
-function fixture(options: { store?: MemoryRuntimeStore; cancels?: Cancellation[]; cancelThrows?: string } = {}) {
+function fixture(options: { store?: MemoryRuntimeStore; cancels?: Cancellation[]; cancelThrows?: string; now?: () => number } = {}) {
   const store = options.store ?? new MemoryRuntimeStore()
   const turns: TurnControl[] = []
   const cancels = options.cancels ?? []
@@ -81,7 +82,11 @@ function fixture(options: { store?: MemoryRuntimeStore; cancels?: Cancellation[]
     dispose() {},
   } as unknown as AgentHarnessAdapter
   const factory = { id: "pi", access: "native", create: () => adapter } as unknown as AgentHarnessFactory
-  const runtime = createAgentRuntime({ store, harnesses: [factory], recovery: { budgets: BUDGETS } })
+  const runtime = createAgentRuntime({
+    store,
+    harnesses: [factory],
+    recovery: { budgets: BUDGETS, ...(options.now ? { now: options.now } : {}) },
+  })
   return { runtime, store, turns, cancels }
 }
 
@@ -960,6 +965,30 @@ describe("a containment attempt that never became an operation", () => {
     expect(runtime.recovery.inspect(sessionId).failures).toHaveLength(1)
     expect(runtime.recovery.inspect("another-session").failures).toHaveLength(1)
     turns[0].finish()
+    await runtime.dispose()
+  })
+})
+
+describe("how long a settled operation stays readable", () => {
+  test("for the contract's retention, not for whatever this caller's deadlines were", async () => {
+    let clock = 1_000_000
+    const { runtime, turns, cancels } = fixture({ now: () => clock })
+    const sessionId = await openSession(runtime, "ses_retention")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+    const operation = submittedOperation(await runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+
+    // Well past every budget this runtime was given, and past ten times the
+    // reconcile one. Retention is not derived from them.
+    clock += BUDGETS.reconcileMs * 100
+    expect(runtime.recovery.read(operation.operationId, RECOVERY_TEST_CALLER))
+      .toMatchObject({ kind: "operation", operation: { operationId: operation.operationId } })
+
+    clock += RECOVERY_OPERATION_RETENTION_MS
+    expect(runtime.recovery.read(operation.operationId, RECOVERY_TEST_CALLER))
+      .toMatchObject({ kind: "refused", refusal: { kind: "receipt_expired" } })
+
+    turns[0].finish()
+    cancels[0]?.settle({ execution: "unknown", cleanup: "unknown" })
     await runtime.dispose()
   })
 })

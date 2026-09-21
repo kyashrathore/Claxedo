@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import {
   DEFAULT_RECOVERY_BUDGETS,
   RECOVERY_ACTION_SCOPES,
+  RECOVERY_OPERATION_RETENTION_MS,
   capChildBudget,
   finalizeRecoveryOperation,
   normalizeRecoveryTarget,
@@ -477,7 +478,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   }
 
   const sweep = () => {
-    const horizon = now() - budgets.reconcileMs * 10
+    const horizon = now() - RECOVERY_OPERATION_RETENTION_MS
     for (const [operationId, tracked] of operations) {
       if (!tracked.closed || (tracked.closedAt ?? now()) > horizon) continue
       operations.delete(operationId)
