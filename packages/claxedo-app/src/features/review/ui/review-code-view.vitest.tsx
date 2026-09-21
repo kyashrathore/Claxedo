@@ -9,6 +9,18 @@ const engine = vi.hoisted(() => {
   type Item = { id: string; type: "diff" | "custom"; fileDiff?: { name: string }; collapsed: boolean }
   type Options = {
     diffStyle?: string
+    theme?: string
+    unsafeCSS?: string
+    disableLineNumbers?: boolean
+    disableFileHeader?: boolean
+    diffIndicators?: string
+    lineDiffType?: string
+    lineHoverHighlight?: string
+    hunkSeparators?: string
+    overflow?: string
+    enableLineSelection?: boolean
+    enableGutterUtility?: boolean
+    controlledSelection?: boolean
     renderCustomHeader?: (diff: { name: string }) => HTMLElement
     renderCustomItem?: (item: Item) => HTMLElement
     onPostRender?: () => void
@@ -37,6 +49,7 @@ const engine = vi.hoisted(() => {
       return this.items.slice(Math.max(0, this.start - (extend?.before ?? 0)), this.start + 2 + (extend?.after ?? 0)).map((item) => item.id)
     }
     scrollTo = vi.fn()
+    setSelectedLines = vi.fn()
     render() {
       const retained = new Map(this.rendered.map((record) => [record.id, record]))
       this.rendered = this.items.slice(this.start, this.start + 2).map((item) => {
@@ -70,9 +83,11 @@ vi.mock("../../../../../session-ui/node_modules/@pierre/diffs", async (original)
   ...await original<typeof import("../../../../../session-ui/node_modules/@pierre/diffs")>(),
   CodeView: engine.Viewer,
 }))
-vi.mock("../../../../../session-ui/src/pierre/worker", () => ({ getWorkerPool: () => undefined }))
+const getWorkerPool = vi.hoisted(() => vi.fn(() => undefined))
+vi.mock("../../../../../session-ui/src/pierre/worker", () => ({ getWorkerPool }))
 
 afterEach(cleanup)
+afterEach(() => getWorkerPool.mockClear())
 const diffs = Array.from({ length: 100 }, (_, index) => ({ file: `${index}.ts`, before: "a\n", after: "b\n" }))
 
 describe("ReviewCodeView rendered item ownership", () => {
@@ -138,5 +153,74 @@ describe("ReviewCodeView rendered item ownership", () => {
     expect(engine.Viewer.current.options.renderCustomHeader).toBe(header)
     expect(rendered).toHaveBeenCalled()
     expect(screen.getByText("0.ts")).toBeTruthy()
+  })
+})
+
+describe("ReviewCodeView reading settings", () => {
+  it("hands CodeView the shared Pierre style plus the review reading options", () => {
+    render(() => <ReviewCodeView diffs={diffs} open={[]} diffStyle="unified" renderHeader={(file) => <span>{file}</span>} />)
+    const options = engine.Viewer.current.options
+
+    expect(options.theme).toBe("OpenCode")
+    expect(options.unsafeCSS).toContain("--diffs-bg")
+    expect(options).toMatchObject({
+      disableLineNumbers: true,
+      diffIndicators: "none",
+      lineDiffType: "none",
+      lineHoverHighlight: "both",
+      hunkSeparators: "line-info-basic",
+      overflow: "scroll",
+    })
+    // The one default this surface must invert: the header slot is where the
+    // accordion row is portalled, and it is also what gives sticky headers a
+    // region to occupy.
+    expect(options.disableFileHeader).toBe(false)
+  })
+
+  it("puts the shared Pierre style variables on the scroll root", () => {
+    render(() => <ReviewCodeView diffs={diffs} open={[]} diffStyle="unified" />)
+    const surface = document.querySelector("[data-component=session-review]")
+    if (!(surface instanceof HTMLElement)) throw new Error("the surface did not mount")
+
+    expect(surface.style.getPropertyValue("--diffs-font-family")).toBe("var(--font-family-mono)")
+    expect(surface.style.getPropertyValue("--diffs-line-height")).toBe("var(--line-height-24)")
+  })
+
+  it("keeps lineDiffType matching the worker pool across the style toggle", () => {
+    const [style, setStyle] = createSignal<"unified" | "split">("unified")
+    render(() => <ReviewCodeView diffs={diffs} open={[]} diffStyle={style()} />)
+    // "unified" names the pool built with `lineDiffType: "none"`. The instance
+    // keeps that pool for its whole life, so the option must not become
+    // "word-alt" when the reader switches to split.
+    expect(getWorkerPool).toHaveBeenCalledWith("unified")
+
+    setStyle("split")
+    expect(engine.Viewer.current.options.diffStyle).toBe("split")
+    expect(engine.Viewer.current.options.lineDiffType).toBe("none")
+  })
+
+  it("keeps line selection, the gutter utility and controlled selection when comments are wired", () => {
+    render(() => (
+      <ReviewCodeView
+        diffs={diffs}
+        open={[]}
+        diffStyle="unified"
+        comments={{
+          annotations: () => undefined,
+          owner: () => ({
+            renderAnnotation: () => undefined,
+            renderGutterUtility: () => undefined,
+            onLineSelected: () => {},
+            onLineSelectionEnd: () => {},
+          }),
+          onRenderedFilesChange: () => {},
+        }}
+      />
+    ))
+    expect(engine.Viewer.current.options).toMatchObject({
+      enableLineSelection: true,
+      enableGutterUtility: true,
+      controlledSelection: true,
+    })
   })
 })

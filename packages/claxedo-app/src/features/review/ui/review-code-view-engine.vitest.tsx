@@ -1,7 +1,7 @@
 import { cleanup, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { CodeView, type CodeViewCustomItem, type CodeViewItem } from "../../../../../session-ui/node_modules/@pierre/diffs"
+import { CodeView, type CodeViewCustomItem, type CodeViewItem, registerCustomTheme } from "../../../../../session-ui/node_modules/@pierre/diffs"
 import { resolveFileDiff } from "../../../../../session-ui/src/components/session-diff"
 import { ReviewCodeView, type ReviewCodeViewDiff } from "@opencode-ai/session-ui/review-code-view"
 
@@ -13,6 +13,12 @@ vi.mock("../../../../../session-ui/src/pierre/worker", () => ({ getWorkerPool: (
 // contract `review-code-view.tsx` builds on, so a stub would only restate the
 // test's own assumptions. The test environment runs no layout, so heights come
 // from the `data-test-height` model below; real geometry is a browser step.
+
+// The surface names the `OpenCode` theme, and CodeView renders nothing until
+// that theme resolves. In the app `workspace-panel-review-load` registers it on
+// the same lazy edge that loads the surface; here the registry is process-wide
+// and write-once, so register it before the first mount.
+registerCustomTheme("OpenCode", () => Promise.resolve({ name: "OpenCode", type: "dark", settings: [] }))
 
 const VIEWPORT = 600
 /** Height the engine reserves for an item it has not measured. */

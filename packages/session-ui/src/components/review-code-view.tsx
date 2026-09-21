@@ -24,6 +24,7 @@ import {
 import { createEffect, createMemo, createSignal, For, Show, on, onCleanup, onMount, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 
+import { createDefaultOptions, styleVariables } from "../pierre"
 import { getWorkerPool } from "../pierre/worker"
 import { createReviewCodeViewItems } from "./review-code-view-items"
 
@@ -323,7 +324,25 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     // the engine allocates and whether selection is live at all.
     const comments = props.comments
     const options: CodeViewOptions<LAnnotation, undefined> = {
-      diffStyle: props.diffStyle,
+      // The app's one Pierre style owner: the OpenCode theme, the shared
+      // `unsafeCSS` that maps Pierre's variables onto app tokens, and the
+      // reading defaults the file viewers already use.
+      ...createDefaultOptions(props.diffStyle),
+      // Long lines scroll inside their own row rather than wrapping, and a hunk
+      // break carries its line info and nothing else.
+      overflow: "scroll",
+      hunkSeparators: "line-info-basic",
+      // `none` for BOTH diff styles, because this option has to agree with the
+      // worker pool's: WorkerPoolManager bakes `lineDiffType` into every
+      // highlighted render, while CodeView's copy only drives the main-thread
+      // plain pass. Disagreement shows as word highlights that appear and then
+      // vanish when the worker result lands.
+      lineDiffType: "none",
+      // createDefaultOptions turns the file header off for the inline viewers.
+      // This surface is the one that uses it: Pierre's header slot is where the
+      // accordion row is portalled, and CodeView drops both that slot and the
+      // whole sticky-header region when the header is disabled.
+      disableFileHeader: false,
       stickyHeaders: true,
       // The engine's own 8px gap and document padding read as loose next to the
       // review list this replaces, whose rows sit 2px apart.
@@ -363,7 +382,12 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     optionsForView = options
     // NOT container-managed: the managed mode is the React wrapper's portal
     // path and it disables the vanilla header-slot rendering entirely.
-    const instance = new CodeView<LAnnotation, undefined>(options, getWorkerPool(props.diffStyle))
+    //
+    // The pool is chosen by `lineDiffType`, not by diff style: `"unified"` is
+    // the pool built with `lineDiffType: "none"`, which is what the options
+    // above ask for in either style. It also survives the style toggle, which
+    // replaces options but never the instance's pool.
+    const instance = new CodeView<LAnnotation, undefined>(options, getWorkerPool("unified"))
     view = instance
     instance.setSlotCoordinator({
       hasHeaderRenderers: true,
@@ -498,7 +522,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       data-component="session-review"
       data-slot="session-review-scroll"
       class={props.class}
-      style={{ height: "100%", "min-height": "0", overflow: "auto", position: "relative" }}
+      style={{ ...styleVariables, height: "100%", "min-height": "0", overflow: "auto", position: "relative" }}
       onPointerMove={(event) => setHoveredFile(rowOf(event.target))}
       onPointerLeave={() => setHoveredFile(undefined)}
       onFocusIn={(event) => setFocusedRow(rowOf(event.target))}

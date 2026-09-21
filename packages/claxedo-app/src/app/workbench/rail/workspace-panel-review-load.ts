@@ -1,3 +1,4 @@
+import { ensureOpenCodeTheme } from "@opencode-ai/ui/context/marked"
 import { lazy } from "solid-js"
 
 /**
@@ -20,10 +21,21 @@ import { lazy } from "solid-js"
  * further ~74ms for them. Started at the click instead, they overlap the
  * shell's 120ms opening motion, which is otherwise idle but for the review
  * corpus fetch.
+ *
+ * The theme is registered on the same edge, as `loadFileComponent` does for the
+ * file viewer: the review surface asks Pierre for the `OpenCode` theme by name,
+ * both in its CodeView options and in the worker pool's render options, and
+ * CodeView renders nothing until that theme resolves. Both promises run
+ * concurrently, so this does not delay the chunk; what it guarantees is that
+ * the surface cannot mount before the theme is registered.
  */
-export const ReviewWorkspace = lazy(() =>
-  import("@/app/workbench/review/review-workspace").then((module) => ({ default: module.ReviewWorkspace })),
-)
+export const ReviewWorkspace = lazy(async () => {
+  const [module] = await Promise.all([
+    import("@/app/workbench/review/review-workspace"),
+    ensureOpenCodeTheme(),
+  ])
+  return { default: module.ReviewWorkspace }
+})
 
 let warming: Promise<unknown> | undefined
 
