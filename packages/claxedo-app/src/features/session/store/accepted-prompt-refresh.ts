@@ -110,6 +110,32 @@ export function retireTurnCoverage(target: TurnCoverageTarget) {
   setObligations((current) => current.filter((entry) => !sameTurn(target, entry)))
 }
 
+/**
+ * What a coverage page settles for the turn it was requested for.
+ *
+ * `unresolved` keeps the obligation: the transcript may still be merged, but
+ * nothing about it says this turn is over. `unavailable` is only the owner's
+ * own answer that the turn can never be covered.
+ */
+export type TurnCoverageAnswer = "complete" | "unavailable" | "unresolved"
+
+/** The coverage envelope as this reader needs it, spelled without the producer's package. */
+type CoveragePage = { turnId: string; coverage: "complete" | "partial" | "unavailable" }
+
+/**
+ * A page is evidence about the turn it names and no other. A latest-turn answer
+ * for turn B arriving while turn A is owed would otherwise retire A's
+ * obligation and merge B's window over it.
+ */
+export function readTurnCoverage(target: TurnCoverageTarget, page?: CoveragePage): {
+  merge: boolean
+  answer: TurnCoverageAnswer
+} {
+  if (!page || page.turnId !== target.turnId) return { merge: false, answer: "unresolved" }
+  if (page.coverage === "unavailable") return { merge: false, answer: "unavailable" }
+  return { merge: true, answer: page.coverage === "complete" ? "complete" : "unresolved" }
+}
+
 export function resetAcceptedPromptRefreshForTest() {
   setObligations([])
 }

@@ -5,6 +5,7 @@ import {
   outstandingTurnCoverage,
   readAcceptedPromptStatus,
   releaseTurnCoverage,
+  readTurnCoverage,
   requestAcceptedPromptRefresh,
   resetAcceptedPromptRefreshForTest,
   retireTurnCoverage,
@@ -149,5 +150,34 @@ describe("status reconciliation", () => {
     })
 
     expect(result).toBeUndefined()
+  })
+})
+
+describe("what a coverage page settles", () => {
+  const owed = turn("msg_1")
+
+  test("a complete page for this turn discharges the obligation", () => {
+    expect(readTurnCoverage(owed, { turnId: "msg_1", coverage: "complete" })).toEqual({ merge: true, answer: "complete" })
+  })
+
+  test("a partial page for this turn is merged but settles nothing", () => {
+    expect(readTurnCoverage(owed, { turnId: "msg_1", coverage: "partial" })).toEqual({ merge: true, answer: "unresolved" })
+  })
+
+  // The defect this rule exists for: a reply describing the turn that replaced
+  // this one would otherwise both retire the obligation and merge its window.
+  test.each(["complete", "partial", "unavailable"] as const)(
+    "a %s page for a different turn is neither merged nor an answer about this one",
+    (coverage) => {
+      expect(readTurnCoverage(owed, { turnId: "msg_2", coverage })).toEqual({ merge: false, answer: "unresolved" })
+    },
+  )
+
+  test("only the owner's own unavailable answer retires the obligation", () => {
+    expect(readTurnCoverage(owed, { turnId: "msg_1", coverage: "unavailable" })).toEqual({ merge: false, answer: "unavailable" })
+  })
+
+  test("a read that produced no page settles nothing", () => {
+    expect(readTurnCoverage(owed, undefined)).toEqual({ merge: false, answer: "unresolved" })
   })
 })

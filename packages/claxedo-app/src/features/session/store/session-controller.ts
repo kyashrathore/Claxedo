@@ -17,6 +17,7 @@ import {
   MAX_CONCURRENT_COVERAGE_READS,
   outstandingTurnCoverage,
   promptRefreshDelay,
+  readTurnCoverage,
   readAcceptedPromptStatus,
   releaseTurnCoverage,
   retireTurnCoverage,
@@ -753,18 +754,17 @@ export function createSessionController(input: {
       { signal },
     )
     const covered = page.data
-    // The owner answers for the turn that was asked for. A page describing a
-    // different turn is evidence about that turn, never about this one.
-    if (!covered || covered.turnId !== target.turnId) return "unresolved" as const
-    if (covered.coverage === "unavailable") return "unavailable" as const
-    hydrateConversationPage({
-      directory: target.directory,
-      sessionID: target.sessionID,
-      rows: covered.messages,
-      messageCompleteness: "canonical",
-      partCompleteness: "canonical",
-    })
-    return covered.coverage === "complete" ? ("complete" as const) : ("unresolved" as const)
+    const decision = readTurnCoverage(target, covered)
+    if (decision.merge) {
+      hydrateConversationPage({
+        directory: target.directory,
+        sessionID: target.sessionID,
+        rows: covered.messages,
+        messageCompleteness: "canonical",
+        partCompleteness: "canonical",
+      })
+    }
+    return decision.answer
   }
 
   const runTurnCoverageAttempt = async (obligation: TurnCoverageObligation, epoch: { active: () => boolean; signal: AbortSignal }) => {
