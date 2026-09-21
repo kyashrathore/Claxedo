@@ -391,4 +391,28 @@ describe("Pty unresolved retirement", () => {
     expect((failure as { code: string }).code).toBe("launch_refused_ownership_unavailable")
     expect(Pty.list().length).toBe(before)
   })
+
+  test("a terminal whose group still holds a process stays addressable and keeps pinning the runtime", async () => {
+    const { Pty } = await import("./index")
+    // A leader with a member of its own. Killing only the leader leaves the
+    // group populated, which is the one outcome that is honestly reportable
+    // here: macOS cannot make a process survive SIGKILL.
+    const leader = spawnChild("/bin/sh", ["-c", "sleep 30 & sleep 30"], { detached: true, stdio: "ignore" })
+    disposableChildren.push(leader)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    nextSpawnPid = leader.pid!
+
+    const info = await Pty.create({ cwd: tmpDir, title: "orphaned-group" }, ownership)
+    process.kill(leader.pid!, "SIGKILL")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const result = await Pty.remove(info.id)
+
+    expect(result).toMatchObject({ leader: "exited", descendants: "owned" })
+    expect(Pty.get(info.id)).toBeDefined()
+    expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
+    expect(Pty.activity().running).toBe(1)
+
+    Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
+  }, 20_000)
 })
