@@ -2161,3 +2161,106 @@ describe("parseWorkspaceRelayTarget", () => {
     expect(parseWorkspaceRelayTarget(row)).toBeUndefined()
   })
 })
+
+/**
+ * The relay is opaque to the recovery contract: nothing here imports it, and
+ * these tests assert bytes and status rather than a decoded outcome.
+ */
+describe("forwarding a session recovery request", () => {
+  const submission = JSON.stringify({
+    requestId: "req_1",
+    action: "cancel_turn",
+    target: { scope: "turn", workspaceId: "ws_1", sessionId: "ses_1", turnId: "msg_1", ownerGeneration: "lease_1" },
+    scopeRevision: "lease_1",
+    attempt: 1,
+  })
+  const refusal = JSON.stringify({
+    kind: "refused",
+    refusal: { kind: "generation_conflict", message: "Session ses_1 is running another turn" },
+  })
+
+  test("reaches the runtime as the same bytes, and returns its refusal status and body unchanged", async () => {
+    const relay = await harness({
+      fetch: ((url, init) => {
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
+        return Promise.resolve(new Response(refusal, { status: 409, headers: { "content-type": "application/json" } }))
+      }) as typeof fetch,
+    })
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery?directory=%2Fwork", {
+      method: "POST",
+      headers: { authorization: `Bearer ${await relay.token()}`, "content-type": "application/json" },
+      body: submission,
+    })
+
+    expect(res.status).toBe(409)
+    expect(res.headers.get("content-type")).toBe("application/json")
+    await expect(res.text()).resolves.toBe(refusal)
+
+    const upstream = relay.forwarded[0]
+    expect(upstream?.url).toBe("https://host.example.test/session/ses_1/recovery?directory=%2Fwork")
+    expect(upstream?.request.method).toBe("POST")
+    await expect(upstream!.request.text()).resolves.toBe(submission)
+  })
+
+  test("returns the same operation receipt for a read, without touching its body", async () => {
+    const receipt = JSON.stringify({ kind: "operation", operation: { operationId: "op_1", requestId: "req_1" } })
+    const relay = await harness({
+      fetch: ((url, init) => {
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
+        return Promise.resolve(new Response(receipt, { status: 200, headers: { "content-type": "application/json" } }))
+      }) as typeof fetch,
+    })
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery/operations/op_1", {
+      headers: { authorization: `Bearer ${await relay.token()}` },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.text()).resolves.toBe(receipt)
+    expect(relay.forwarded[0]?.url).toBe("https://host.example.test/session/ses_1/recovery/operations/op_1")
+  })
+
+  test("answers an upstream that never replies with a transport failure, never a recovery outcome", async () => {
+    const relay = await harness({
+      forwardTimeoutMs: 10,
+      fetch: ((_url, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const aborted = new Error("aborted")
+          aborted.name = "AbortError"
+          reject(aborted)
+        })
+      })) as typeof fetch,
+    })
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery", {
+      method: "POST",
+      headers: { authorization: `Bearer ${await relay.token()}`, "content-type": "application/json" },
+      body: submission,
+    })
+
+    expect(res.status).toBe(504)
+    const body = await res.json() as Record<string, unknown>
+    expect(body).toEqual({ error: { code: "upstream_timeout", message: "Workspace upstream timed out" } })
+    // A caller that decoded every non-200 as a recovery outcome would read a
+    // lost response as a refusal the owner never made.
+    expect(body.kind).toBeUndefined()
+  })
+
+  test("answers an unreachable upstream with a transport failure, never a recovery outcome", async () => {
+    const relay = await harness({
+      fetch: ((_url: string | URL | Request) => Promise.reject(new Error("connect ECONNREFUSED"))) as unknown as typeof fetch,
+    })
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery", {
+      method: "POST",
+      headers: { authorization: `Bearer ${await relay.token()}`, "content-type": "application/json" },
+      body: submission,
+    })
+
+    expect(res.status).toBe(503)
+    const body = await res.json() as Record<string, unknown>
+    expect(body).toEqual({ error: { code: "upstream_unavailable", message: "Workspace upstream is unavailable" } })
+    expect(body.kind).toBeUndefined()
+  })
+})
