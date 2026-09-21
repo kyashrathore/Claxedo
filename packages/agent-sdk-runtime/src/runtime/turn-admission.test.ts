@@ -7,6 +7,8 @@ import { createMemoryRuntimeStore } from "../stores/memory"
 import { sessionIdle } from "../compat-events"
 import type { AgentRuntimeStreamEvent, PromptInput } from "../index"
 import { createRuntimeEventHub } from "../runtime-event-hub"
+import { RECOVERY_TEST_CALLER, cancelRuntimeTurn, cancelTurnRequest, submittedOperation } from "../test-utils/cancel-turn"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 
 type TurnControl = {
   finish: () => void
@@ -79,9 +81,9 @@ function harness(options: {
           },
         }
       : {}),
-    async abort(binding) {
+    async cancelTurn(binding: AgentExecutionBinding) {
       options.aborts?.push(binding.sessionId)
-      return { ok: true as const, status: "cancelled" as const }
+      return { execution: "terminal" as const, cleanup: "unknown" as const }
     },
     dispose() {},
   }
@@ -391,15 +393,20 @@ describe("handing an idle session to the prompts waiting for it", () => {
     expect(woken).toEqual(["a", "b", "late"])
   })
 
-  test("a second cancellation does not wake a waiter the first one did not", async () => {
+  test("a release from a generation that no longer owns the session wakes nobody", async () => {
     const woken: string[] = []
     const session = running(woken)
+    const stale = session.claimed.generation
 
-    session.turns.discard("ses")
-    session.turns.discard("ses")
+    session.claimed.release()
+    await settle()
+    const next = session.turns.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!
+    session.turns.release("ses", stale)
+    session.turns.release("ses", stale)
     await settle()
 
     expect(woken).toEqual(["a"])
+    expect(session.turns.active("ses")?.generation).toBe(next.generation)
   })
 
   test("disposal releases every prompt still waiting", async () => {
@@ -413,42 +420,50 @@ describe("handing an idle session to the prompts waiting for it", () => {
   })
 })
 
-describe("scoping an abort to the turn the caller was looking at", () => {
-  test("an abort naming the running turn cancels it", async () => {
+describe("scoping a cancellation to the turn the caller was looking at", () => {
+  test("a cancellation naming the running turn stops it", async () => {
     const aborts: string[] = []
     const control = openTurn("ses_busy")
     const { runtime, sessionId } = await session(harness({ turns: [], aborts, open: () => control }))
-    await runtime.turns.start({ sessionId, messageId: "msg_first", text: "start the work" })
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_first", text: "start the work" })
 
-    const result = await runtime.turns.abort(sessionId, "/repo", { turnId: "msg_first" })
+    const operation = submittedOperation(await runtime.recovery.submit(
+      cancelTurnRequest(started.target!),
+      RECOVERY_TEST_CALLER,
+    ))
 
-    expect(result).toEqual({ ok: true, status: "cancelled" })
+    expect(operation.facts.execution.value).toBe("terminal")
+    expect(operation.facts.persistence.value).toBe("committed")
     expect(aborts).toEqual([sessionId])
     control.finish()
     await runtime.dispose()
   })
 
-  test("an abort naming a turn that already ended leaves the running one alone", async () => {
+  test("a cancellation naming a turn that already ended leaves the running one alone", async () => {
     const aborts: string[] = []
     const control = openTurn("ses_busy")
     const { runtime, sessionId } = await session(harness({ turns: [], aborts, open: () => control }))
-    await runtime.turns.start({ sessionId, messageId: "msg_second", text: "start the work" })
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_second", text: "start the work" })
 
-    const result = await runtime.turns.abort(sessionId, "/repo", { turnId: "msg_first" })
+    const outcome = await runtime.recovery.submit(
+      cancelTurnRequest({ ...started.target!, turnId: "msg_first", ownerGeneration: "an-older-lease" }),
+      RECOVERY_TEST_CALLER,
+    )
 
-    expect(result).toEqual({ ok: true, status: "already_idle" })
+    expect(outcome).toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
     expect(aborts).toEqual([])
+    expect(runtime.recovery.inspect(sessionId).target).toMatchObject({ turnId: "msg_second" })
     control.finish()
     await runtime.dispose()
   })
 
-  test("an abort with no turn id still stops whatever is running", async () => {
+  test("a cancellation of the turn a caller just read stops it", async () => {
     const aborts: string[] = []
     const control = openTurn("ses_busy")
     const { runtime, sessionId } = await session(harness({ turns: [], aborts, open: () => control }))
     await runtime.turns.start({ sessionId, messageId: "msg_first", text: "start the work" })
 
-    expect(await runtime.turns.abort(sessionId, "/repo")).toEqual({ ok: true, status: "cancelled" })
+    expect(submittedOperation(await cancelRuntimeTurn(runtime, sessionId)).facts.execution.value).toBe("terminal")
     expect(aborts).toEqual([sessionId])
     control.finish()
     await runtime.dispose()

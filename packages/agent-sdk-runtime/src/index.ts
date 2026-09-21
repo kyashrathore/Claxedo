@@ -38,15 +38,17 @@ export type {
   AgentRuntimeEventEnvelope,
   AgentRuntimeGoalErrorCode,
   AgentRuntimeGoalStartInput,
-  AgentRuntimeAbortResult,
   AgentRuntimeHealth,
   AgentRuntimeInteractionResult,
   AgentRuntimePermissionDecision,
+  AgentRuntimeRecovery,
+  AgentRuntimeRecoveryInspection,
   AgentRuntimeSessionCreateInput,
   AgentRuntimeSubscribeInput,
   AgentRuntimeStore,
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
+  RecoveryCaller,
 } from "./runtime"
 export type {
   AgentAgent,

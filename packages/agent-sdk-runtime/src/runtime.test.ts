@@ -13,6 +13,7 @@ import { NO_HARNESS_EFFORT, type SessionHarnessId } from "@claxedo/agent-runtime
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
 import { claude, pi } from "./harnesses"
 import { installFakePiRpc } from "./test-utils/fake-pi-rpc.mjs"
+import { RECOVERY_TEST_CALLER, cancelRuntimeTurn, cancelTurnRequest, submittedOperation } from "./test-utils/cancel-turn"
 let nativePi: Awaited<ReturnType<typeof installFakePiRpc>>
 beforeAll(async () => { nativePi = await installFakePiRpc() })
 afterAll(async () => { await nativePi.dispose() })
@@ -103,7 +104,7 @@ function testHarness(options: {
   ) => AsyncIterable<AgentRuntimeStreamEvent>
   goals?: AgentGoalResource
   readHarnessCapabilities?: AgentHarnessAdapter["readHarnessCapabilities"]
-  abort?: AgentHarnessAdapter["abort"]
+  cancelTurn?: AgentHarnessAdapter["cancelTurn"]
   runtimeConfigCalls?: string[]
   commitsStreamEvents?: boolean
   onPermissionResponse?: () => void
@@ -174,7 +175,7 @@ function testHarness(options: {
         }
       : {}),
     dispose() {},
-    ...(options.abort ? { abort: options.abort } : {}),
+    ...(options.cancelTurn ? { cancelTurn: options.cancelTurn } : {}),
   }
   return {
     id: "pi",
@@ -2116,7 +2117,7 @@ describe("createAgentRuntime", () => {
     await runtime.dispose()
   })
 
-  test.each(["error", "not_found"] as const)("a failed abort (%s) keeps admission until the executing turn finishes", async (failure) => {
+  test.each(["error", "not_found"] as const)("a failed cancellation (%s) keeps admission until the executing turn finishes", async (failure) => {
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })
     const store = createMemoryRuntimeStore()
@@ -2129,9 +2130,13 @@ describe("createAgentRuntime", () => {
           yield messagePartUpdated({ id: "continued-part", sessionID: id, messageID: prompt.assistantMessageId, type: "text", text: "continued reply" })
           yield { type: "finish", sessionId: id }
         },
-        abort: async () => {
+        cancelTurn: async () => {
           if (failure === "error") throw new Error("remote abort failed")
-          return { ok: false, status: "not_found", message: "Remote session not found" }
+          return {
+            execution: "unknown" as const,
+            cleanup: "unknown" as const,
+            error: { code: "owner_unavailable" as const, message: "Remote session not found" },
+          }
         },
       })],
     })
@@ -2139,9 +2144,16 @@ describe("createAgentRuntime", () => {
       const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
       const completed = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
       await runtime.turns.start({ sessionId: session.id, messageId: "kept-user", text: "hello" })
-      if (failure === "error") await expect(runtime.turns.abort(session.id)).rejects.toThrow("remote abort failed")
-      else await expect(runtime.turns.abort(session.id)).resolves.toMatchObject({ ok: false, status: "not_found" })
+      const operation = submittedOperation(await cancelRuntimeTurn(runtime, session.id))
+      expect(operation.state).not.toBe("succeeded")
+      expect(operation.initiatingError).toMatchObject(failure === "error"
+        ? { code: "provider_unreachable", message: expect.stringContaining("remote abort failed") }
+        : { code: "owner_unavailable", message: "Remote session not found" })
+      // Nothing established that the turn stopped, so its admission and its
+      // lease both stay with this owner.
+      expect(operation.facts.execution.value).not.toBe("terminal")
       expect(rows.acquireTurnLease(session.id)).toBeUndefined()
+      expect(runtime.recovery.inspect(session.id).target).toMatchObject({ turnId: "kept-user" })
       await expect(runtime.turns.start({ sessionId: session.id, messageId: "rejected-user", text: "concurrent" })).rejects.toThrow()
       expect(JSON.stringify(rows.getMessages(session.id))).not.toContain("rejected-user")
       release()
@@ -2153,10 +2165,10 @@ describe("createAgentRuntime", () => {
     }
   })
 
-  test("an idle adapter acknowledgement settles a persisted unfinished turn", async () => {
+  test("a persisted unfinished turn is inspectable but cannot be cancelled by an owner that never admitted it", async () => {
     const root = tempRoot()
     let store = createSqliteRuntimeStore({ root })
-    const harness = () => testHarness({ abort: async () => ({ ok: true, status: "already_idle" }) })
+    const harness = () => testHarness({ cancelTurn: async () => ({ execution: "unknown" as const, cleanup: "unknown" as const }) })
     let runtime = createAgentRuntime({ store, harnesses: [harness()] })
     try {
       const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
@@ -2173,16 +2185,21 @@ describe("createAgentRuntime", () => {
       store = createSqliteRuntimeStore({ root })
       runtime = createAgentRuntime({ store, harnesses: [harness()] })
       expect(store.getSession(session.id)?.status).toBe("busy")
-      const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
-      await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "already_idle" })
-      expect(await events).toContainEqual(expect.objectContaining({ payload: { type: "finish", sessionId: session.id } }))
-      expect(store.getSession(session.id)).toMatchObject({
-        status: null,
-        lastTurn: { status: "cancelled", reason: "abort", assistantMessageId: "interrupted-assistant" },
-      })
-      const outcome = store.getSession(session.id)?.lastTurn
-      await runtime.turns.abort(session.id)
-      expect(store.getSession(session.id)?.lastTurn).toEqual(outcome)
+      const inspection = runtime.recovery.inspect(session.id)
+      // The turn outlived the runtime that admitted it. This one holds no
+      // generation for it, so it reports what it can see and refuses to end it.
+      expect(inspection.target).toBeUndefined()
+      expect(inspection.facts.execution.value).toBe("unknown")
+      expect(inspection.facts.persistence.value).toBe("pending")
+      const stale = await runtime.recovery.submit(cancelTurnRequest({
+        scope: "turn",
+        workspaceId: "workspace-test",
+        sessionId: session.id,
+        turnId: "interrupted-user",
+        ownerGeneration: "lease-from-the-previous-process",
+      }), RECOVERY_TEST_CALLER)
+      expect(stale).toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
+      expect(store.getSession(session.id)?.status).toBe("busy")
       const replacement = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
       await runtime.turns.start({ sessionId: session.id, messageId: "replacement-user", text: "continue" })
       await replacement
@@ -2207,7 +2224,7 @@ describe("createAgentRuntime", () => {
           await streamDone
           yield { type: "finish", sessionId: id }
         },
-        abort: async () => ({ ok: true, status: "cancelled" }),
+        cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "unknown" as const }),
       })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
@@ -2216,7 +2233,7 @@ describe("createAgentRuntime", () => {
     })
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
-    await expect(runtime.turns.abort(session.id)).resolves.toMatchObject({ ok: true, status: "cancelled" })
+    expect(submittedOperation(await cancelRuntimeTurn(runtime, session.id)).facts.execution.value).toBe("terminal")
     release?.()
     await tick()
 
@@ -2227,7 +2244,7 @@ describe("createAgentRuntime", () => {
     await runtime.dispose()
   })
 
-  test("an acknowledged abort releases admission and fences a stuck turn's late events", async () => {
+  test("a cancellation with terminal execution releases admission and fences a stuck turn's late events", async () => {
     let releaseFirst: (() => void) | undefined
     const firstTurn = new Promise<void>((resolve) => {
       releaseFirst = resolve
@@ -2259,7 +2276,7 @@ describe("createAgentRuntime", () => {
           })
           yield { type: "finish", sessionId: id }
         },
-        abort: async () => ({ ok: true, status: "cancelled" }),
+        cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "unknown" as const }),
       })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
@@ -2269,7 +2286,7 @@ describe("createAgentRuntime", () => {
 
     const abortedEvents = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "first" })
-    await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "cancelled" })
+    expect(submittedOperation(await cancelRuntimeTurn(runtime, session.id)).facts.persistence.value).toBe("committed")
     await expect(abortedEvents).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ payload: { type: "finish", sessionId: session.id } }),
     ]))

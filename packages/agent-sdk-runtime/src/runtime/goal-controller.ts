@@ -17,8 +17,8 @@ export interface RuntimeGoalControllerInput {
   adapterForSession: (sessionId: string) => Promise<AgentHarnessAdapter>
   publish: (event: AgentRuntimeEventEnvelope) => void
   subscribeRuntime: (listen: (event: AgentRuntimeEventEnvelope) => void) => () => void
-  /** Ends a turn the mutation cancelled; the runtime owns turn admission. */
-  completeCancellation: (sessionId: string, directory?: RuntimeDirectory) => void
+  /** Ends the turn the mutation cancelled; the runtime owns turn admission. */
+  cancelActiveTurn: (sessionId: string, directory?: RuntimeDirectory) => void
 }
 
 /**
@@ -121,7 +121,7 @@ export function createRuntimeGoalController(input: RuntimeGoalControllerInput) {
     }
     const result = await context.resource[mutation](sessionId, context.directory) as AgentGoalMutationResult
     if (result.ok && mutation !== "resume" && input.store.getSession(sessionId)?.status === "busy") {
-      input.completeCancellation(sessionId, context.directory)
+      input.cancelActiveTurn(sessionId, context.directory)
     }
     publishResult(sessionId, context.directory, result)
     return result

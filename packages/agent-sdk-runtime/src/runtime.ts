@@ -36,6 +36,8 @@ import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
 import { createRuntimeGoalController } from "./runtime/goal-controller"
+import { createRuntimeRecovery } from "./runtime/recovery"
+import type { AdmittedTurnCapture, TurnFinalization } from "./runtime/recovery"
 import { createSessionTitleOwner } from "./runtime/session-titles"
 import { createTurnAdmissions, deliverToBusySession } from "./runtime/turn-admission"
 
@@ -50,26 +52,28 @@ export {
 } from "./runtime/contracts"
 export type {
   AgentHarnessFactory,
-  AgentRuntimeAbortResult,
   AgentRuntimeEventEnvelope,
   AgentRuntimeGoalErrorCode,
   AgentRuntimeGoalStartInput,
   AgentRuntimeHealth,
   AgentRuntimeInteractionResult,
   AgentRuntimePermissionDecision,
+  AgentRuntimeRecovery,
+  AgentRuntimeRecoveryInspection,
   AgentRuntimeSessionCreateInput,
   AgentRuntimeStore,
   AgentRuntimeSubscribeInput,
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
   CreateAgentRuntimeInput,
+  RecoveryCaller,
 } from "./runtime/contracts"
 import { AgentRuntimeTurnAdmissionError } from "./runtime/contracts"
 import type {
   AgentHarnessFactory,
-  AgentRuntimeAbortResult,
   AgentRuntimeEventEnvelope,
   AgentRuntimeHealth,
+  AgentRuntimeRecovery,
   AgentRuntimeInteractionResult,
   AgentRuntimePermissionDecision,
   AgentRuntimeSessionCreateInput,
@@ -96,7 +100,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   ]))
   const resolvingAdapters = new Map<string, Promise<AgentHarnessAdapter>>()
   const subscribers = new Set<RuntimeSubscriber>()
-  const lifecycle = createRuntimeLifecycle()
+  const lifecycle = createRuntimeLifecycle({ onTeardownFailure: (error) => recovery.reportOwnerFailure(error) })
   const { resource, track } = lifecycle
   // The session is claimed before the user/assistant rows are persisted, so a
   // refused concurrent prompt cannot manufacture a failed turn or overwrite the
@@ -234,7 +238,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     binding: AgentExecutionBinding,
     prompt: PromptInput,
     adapter: AgentHarnessAdapter,
-    admission: object,
+    capture: AdmittedTurnCapture,
     releaseAdmission: () => void,
     clearsHandoff = false,
     openingUserPublished = false,
@@ -242,6 +246,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   ) => {
     const sessionId = binding.sessionId
     const directory = binding.directory
+    const admission = capture.admission
     const ownsAdmission = () => admissions.owns(sessionId, admission)
     // Two fences guard every producer write for this turn. `ownsAdmission`
     // rejects a superseded in-process generation; `fence` is the host's
@@ -249,7 +254,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     // instance still owns the in-memory slot.
     const admitted = () => ownsAdmission() && (fence?.valid() ?? true)
     if (!admitted()) return
-    const { publish: publishTurn, finish: finishPublication } = createTurnPublication(sessionId, publish, admitted, releaseAdmission)
+    const { publish: publishTurn, finish: finishPublication } = createTurnPublication(sessionId, publish, releaseAdmission)
+    let finalized: TurnFinalization | undefined
     // The store already published the opening user message with the turn
     // record; the adapter's own echo of it would fan a duplicate to every
     // subscriber, so exactly one echo is dropped.
@@ -435,33 +441,28 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       }
       // Terminal compat events and the durable turn outcome are separate
       // contracts. A committing adapter may already have journaled
-      // message.completed/session.idle, but only finishTurn records the
+      // message.completed/session.idle, but only the finalizer records the
       // replayable turn.finish outcome. Stores make this call idempotent and
       // avoid duplicating terminal events that the adapter already committed.
-      const finished = store.finishTurn({
-        sessionId,
-        assistantMessageId: prompt.assistantMessageId,
-        outcome: outcome ?? { status: "completed", completedAt: Date.now() },
-        ...(fence ? { fencingToken: fence.fencingToken() } : {}),
-      })
-      for (const payload of finished.events) publishTurn({ sessionId, directory, payload })
-      if (outcome?.status === "completed") {
+      const settled = outcome ?? { status: "completed" as const, completedAt: Date.now() }
+      finalized = recovery.finalizeTurn(capture, settled, { emit: publishTurn })
+      recovery.retainFailure(capture, settled, finalized)
+      if (finalized.ok && outcome?.status === "completed") {
         if (clearsHandoff) store.updateSessionConfig(sessionId, { handoff: null })
         void titles.generate(binding, runtimeDirectory(directory), adapter)
       }
     } catch (err) {
       if (!admitted()) return
-      const message = err instanceof Error ? err.message : "turn failed"
-      const finished = store.finishTurn({
-        sessionId,
-        assistantMessageId: prompt.assistantMessageId,
-        outcome: { status: "failed", completedAt: Date.now(), error: message },
-        ...(fence ? { fencingToken: fence.fencingToken() } : {}),
-      })
-      for (const payload of finished.events) publishTurn({ sessionId, directory, payload })
+      const failure = {
+        status: "failed" as const,
+        completedAt: Date.now(),
+        error: err instanceof Error ? err.message : "turn failed",
+      }
+      finalized = recovery.finalizeTurn(capture, failure, { emit: publishTurn })
+      recovery.retainFailure(capture, failure, finalized)
     } finally {
       router.dispose()
-      finishPublication()
+      finishPublication(finalized?.ok === true)
     }
   }
 
@@ -506,27 +507,25 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     })
   }
 
-  const completeCancellation = (sessionId: string, directory?: RuntimeDirectory) => {
-    store.finishTurn({
-      sessionId,
-      outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
-    })
-    // The runtime owns cancellation completion. Some adapters terminate
-    // their stream after acknowledging abort, while a stuck adapter may
-    // never yield again. Publish the canonical terminal frame before
-    // releasing admission so route-level subscribers always settle and
-    // any later adapter frames remain fenced as the old generation.
-    eventHub.publishGlobal({ directory: runtimeDirectory(directory), payload: sessionIdle(sessionId) })
-    publish({ sessionId, directory, payload: { type: "finish", sessionId } })
-    admissions.discard(sessionId)
-  }
+  const recovery = createRuntimeRecovery({
+    store,
+    admissions,
+    adapterForSession,
+    executionBinding,
+    publish,
+    announceIdle: (sessionId, directory) =>
+      eventHub.publishGlobal({ directory: runtimeDirectory(directory), payload: sessionIdle(sessionId) }),
+    ...(input.identity ? { identity: input.identity } : {}),
+    ...(input.recovery?.budgets ? { budgets: input.recovery.budgets } : {}),
+    ...(input.recovery?.now ? { now: input.recovery.now } : {}),
+  })
 
   const goals = createRuntimeGoalController({
     store,
     adapterForSession,
     publish,
     subscribeRuntime: eventHub.subscribeRuntime,
-    completeCancellation,
+    cancelActiveTurn: recovery.cancelActiveTurn,
   })
 
   return {
@@ -619,7 +618,17 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         goals.forgetSession(sessionId)
       },
     }),
-    turns: resource({
+    turns: {
+      /**
+       * Resolves once the caller owns this session's next turn; a start that
+       * then fails must `abandon` it. Deliberately outside `resource()`: a
+       * prompt parked here is waiting for work the runtime must be able to
+       * drain, not work that has to finish before disposal can proceed.
+       */
+      whenIdle(sessionId: string) {
+        return admissions.whenIdle(sessionId)
+      },
+      ...resource({
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
         if ((turn.actorId === undefined) !== (turn.actorKind === undefined)) {
           throw new Error("Turn actor id and kind must be provided together")
@@ -650,15 +659,24 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         if (running) {
           if (!turn.delivery) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-          return await deliverToBusySession({
+          const delivered = await deliverToBusySession({
             running, turn, prompt, userMessageId, assistantMessageId, directory,
             requested: turn.delivery,
             ...(adapter.steerTurn ? { steer: () => adapter.steerTurn!(binding, prompt) } : {}),
           })
+          // A steered prompt joined the running turn and may later ask for it
+          // to be cancelled. A queued one owns nothing yet.
+          return delivered.delivery === "steer"
+            ? { ...delivered, target: recovery.turnTarget(turn.sessionId, running) }
+            : delivered
         }
-        const claimed = admissions.claim(turn.sessionId, { turnId: userMessageId, assistantMessageId })
+        const claimed = admissions.claim(turn.sessionId, {
+          turnId: userMessageId,
+          assistantMessageId,
+          ...(turn.admission ? { fence: turn.admission } : {}),
+        })
         if (!claimed) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-        const admission = claimed.generation
+        const capture = recovery.captureTurn(turn.sessionId, claimed, directory)
         const releaseAdmission = claimed.release
         try {
           turn.onAdmitted?.()
@@ -672,38 +690,26 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          void track(() => runTurn(binding, prompt, adapter, admission, releaseAdmission, !!handoff, openingUserPublished, turn.admission)
-            .finally(releaseAdmission)).catch((error) => console.error("AgentRuntime turn finalization failed", error))
+          // The turn's own finalizer owns the release. A failure here reaches
+          // the owner through `recovery.inspect` instead of a log line, and the
+          // admission and lease stay held until it is reconciled.
+          void track(() => runTurn(binding, prompt, adapter, capture, releaseAdmission, !!handoff, openingUserPublished, turn.admission))
+            .catch((error: unknown) => recovery.reportTurnFailure(capture, error))
         } catch (error) {
           releaseAdmission()
           throw error
         }
-        return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt, delivery: "start" }
+        return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt, delivery: "start", target: capture.target }
       },
-      async abort(sessionId: string, directory?: RuntimeDirectory, scope?: { turnId?: string }): Promise<AgentRuntimeAbortResult> {
-        // A late abort names the turn the caller was looking at. Once a
-        // different turn owns the session, stopping it is not what was asked.
-        const running = admissions.active(sessionId)
-        if (scope?.turnId && running && running.turnId !== scope.turnId) {
-          return { ok: true, status: "already_idle" }
-        }
-        const adapter = await adapterForSession(sessionId)
-        if (!adapter.abort) throw new Error("This harness does not support abort")
-        const result = await adapter.abort(executionBinding(sessionId, directory))
-        // An adapter with no live turn can still have an unfinished persisted
-        // turn after its process restarted. Its idle acknowledgement also
-        // completes that cancellation; otherwise Stop can never clear busy.
-        if (result.ok && (result.status === "cancelled" || store.getSession(sessionId)?.status === "busy")) {
-          completeCancellation(sessionId, directory)
-        }
-        return result
-      },
-      /** Resolves once the caller owns this session's next turn; a start that then fails must `abandon` it. */
-      whenIdle(sessionId: string) {
-        return admissions.whenIdle(sessionId)
-      },
-    }),
+      }),
+    },
     goals: resource(goals.resource),
+    /**
+     * Outside `resource()`: inspecting a wedged session and acting on it must
+     * stay answerable while the runtime is closing, and a recovery request must
+     * not be counted among the work disposal has to drain.
+     */
+    recovery: { inspect: recovery.inspect, submit: recovery.submit, read: recovery.read } satisfies AgentRuntimeRecovery,
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")

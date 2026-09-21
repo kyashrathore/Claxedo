@@ -15,6 +15,7 @@ import { CLAUDE_INSTALL_HINT, resolveClaudeExecutable } from "./claude/executabl
 import { CODEX_INSTALL_HINT, resolveCodexExecutable } from "./codex/executable"
 import { codexChatgptAuthTokens, readCodexAuthFile } from "./codex/auth-file"
 import { PI_INSTALL_HINT, PI_VERSION, piCommand, resolvePiExecutable } from "./pi/executable"
+import { RECOVERY_TEST_CALLER, cancelTurnRequest } from "../test-utils/cancel-turn"
 
 /**
  * A prompt sent while a turn runs, driven against the real CLIs through the
@@ -199,8 +200,13 @@ function liveSession(harness: LiveCase) {
         ...(input.messageId ? { messageId: input.messageId } : {}),
       })
     },
-    abort(turnId: string) {
-      return runtime.turns.abort(sessionId, undefined, { turnId })
+    cancel(turnId: string) {
+      const current = runtime.recovery.inspect(sessionId).target
+      if (!current) throw new Error(`Session ${sessionId} has no admitted turn`)
+      return runtime.recovery.submit(
+        cancelTurnRequest({ ...current, turnId, ownerGeneration: `${current.ownerGeneration}-stale` }),
+        RECOVERY_TEST_CALLER,
+      )
     },
     whenIdle() {
       return runtime.turns.whenIdle(sessionId)
@@ -280,9 +286,10 @@ describe("a prompt sent while a real harness runs a turn", () => {
           expect(steered.assistantMessageId).toBe(first.assistantMessageId)
           expect(steered.userMessageId).not.toBe(first.userMessageId)
 
-          // The abort names a turn this session no longer runs, so it stops
-          // nothing and leaves the turn that steer joined running.
-          expect(await live.abort(`${first.userMessageId}-stale`)).toEqual({ ok: true, status: "already_idle" })
+          // The cancellation names a turn this session no longer runs, so it is
+          // refused and leaves the turn that steer joined running.
+          expect(await live.cancel(`${first.userMessageId}-stale`))
+            .toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
           expect((await live.session())?.status).toBe("busy")
 
           expect(await bounded(ended, TURN_BUDGET_MS, `${harness.id} to end the steered turn`)).toEqual(["session.idle"])
@@ -337,7 +344,8 @@ describe("a prompt sent while a real harness runs a turn", () => {
           expect(queued.assistantMessageId).not.toBe(first.assistantMessageId)
           expect((await live.messages()).map((message) => message.info.id)).not.toContain(queuedMessageId)
 
-          expect(await live.abort(`${first.userMessageId}-stale`)).toEqual({ ok: true, status: "already_idle" })
+          expect(await live.cancel(`${first.userMessageId}-stale`))
+            .toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
           expect((await live.session())?.status).toBe("busy")
 
           // The caller holding a queued prompt is what starts it, exactly as

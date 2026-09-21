@@ -1,7 +1,9 @@
+export type RuntimeDisposeResult = { ok: true } | { ok: false; error: unknown }
+
 /** Fences new calls while admitted operations and their producer tails drain. */
-export function createRuntimeLifecycle() {
+export function createRuntimeLifecycle(input: { onTeardownFailure: (error: unknown) => void }) {
   let closing = false
-  let disposal: Promise<void> | undefined
+  let disposal: Promise<RuntimeDisposeResult> | undefined
   const pendingTasks = new Set<Promise<void>>()
 
   function track<T>(operation: () => T): T {
@@ -32,18 +34,36 @@ export function createRuntimeLifecycle() {
     get closing() { return closing },
     track,
     resource,
-    dispose(stop: () => Promise<unknown>, cleanup: () => void) {
+    /**
+     * A teardown failure is reported and returned as soon as it happens. It
+     * cannot wait for `pendingTasks`, because the producer that will not drain
+     * is exactly the one whose owner needs to hear that its stop failed.
+     *
+     * Resolving early is not permission to close what the failed teardown still
+     * owns: `cleanup` runs only once the producers have actually drained, so a
+     * caller that treats the result as final still leaves the store open to the
+     * writers that are live.
+     */
+    dispose(stop: () => Promise<unknown>, cleanup: () => void): Promise<RuntimeDisposeResult> {
       if (disposal) return disposal
       closing = true
-      disposal = (async () => {
-        const stopped = Promise.resolve().then(stop)
-        // Observe early teardown failure while admitted producers drain.
-        void stopped.catch(() => {})
+      const drained = (async () => {
         while (pendingTasks.size) await Promise.all(pendingTasks)
-        await stopped
-        cleanup()
       })()
-      void disposal.catch((error) => console.error("AgentRuntime disposal failed", error))
+      disposal = (async () => {
+        const failure = await Promise.resolve().then(stop).then(
+          () => undefined,
+          (error: unknown) => error ?? new Error("AgentRuntime teardown failed"),
+        )
+        if (failure !== undefined) {
+          input.onTeardownFailure(failure)
+          void drained.then(cleanup, (error: unknown) => input.onTeardownFailure(error))
+          return { ok: false as const, error: failure }
+        }
+        await drained
+        cleanup()
+        return { ok: true as const }
+      })()
       return disposal
     },
   }
