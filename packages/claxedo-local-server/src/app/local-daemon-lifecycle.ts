@@ -17,7 +17,12 @@ import {
   type RecoveryScopePreview,
   type RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
-import { reconcileLaunch, verifyCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import {
+  reconcileLaunch,
+  verifyCreationIdentity,
+  type CreationIdentity,
+  type IdentityVerdict,
+} from "@claxedo/agent-sdk-runtime/launch"
 import { Pty } from "@claxedo/workspace-runtime"
 import {
   embeddedWorkspaceRuntimeActivity,
@@ -151,16 +156,29 @@ export function localDaemonScopePreview(
   // turn ids that name which of each session's work would be interrupted.
   const sessions = [...new Set(work.owners.flatMap((owner) =>
     owner.kind === "turn" ? [owner.id.split(":")[2]!] : []))].sort()
+  // Two terminal states that a drain cannot wait out, named apart from the
+  // running count they sit inside. An unresolved retirement may still settle;
+  // an unrecorded spawn never will, because no later owner can find it.
+  if (work.pty.unrecorded > 0) {
+    resources.push(
+      `${work.pty.unrecorded} terminal(s) whose spawn could not be recorded — unreachable by any later owner`,
+    )
+  }
+  if (work.pty.unresolved > 0) {
+    resources.push(`${work.pty.unresolved} terminal(s) whose retirement is unverified`)
+  }
   // Writes and checkpoint transitions own nothing and appear in no owner list,
   // but either one blocks a drain, so a summary counting only owners would
   // describe a machine as emptier than it is.
   const blocking = [
     ...(work.runtime.activeWrites > 0 ? [`${work.runtime.activeWrites} workspace write(s)`] : []),
     ...(work.runtime.checkpointing > 0 ? [`${work.runtime.checkpointing} checkpoint transition(s)`] : []),
+    ...(work.pty.unrecorded > 0 ? [`${work.pty.unrecorded} unrecorded terminal spawn(s)`] : []),
+    ...(work.pty.unresolved > 0 ? [`${work.pty.unresolved} unverified terminal retirement(s)`] : []),
   ]
   const summary = [
     `${work.owners.length} named owners`,
-    ...(blocking.length > 0 ? [`${blocking.join(" and ")} that own nothing but block a drain`] : []),
+    ...(blocking.length > 0 ? [`${blocking.join(", ")} that own nothing but block a drain`] : []),
     ...(unreadable.size > 0
       ? [`additional impact in ${unreadable.size} workspace(s) is unknown because their launch records could not be read`]
       : []),
@@ -201,7 +219,7 @@ export type ReconciledLaunch = {
   execution: "none" | "unknown" | "started"
   because: string
   /** `unknown` covers both a probe that could not answer and one there was no time for. */
-  identity?: string
+  identity?: IdentityVerdict["state"]
 }
 
 export type MachineRecoveryInspection = {
@@ -252,7 +270,7 @@ export function createLocalDaemonLifecycle(options: {
     /** Reads what each workspace store has no settled retirement for. */
     ownership?: () => Promise<EmbeddedWorkspaceRuntimeOwnership[]>
     /** Whether a recorded process is still the launch it was recorded for. */
-    verifyIdentity?: (identity: CreationIdentity) => Promise<{ state: string }>
+    verifyIdentity?: LaunchIdentityProbe
     /** Where each survivor is reported; a store that could not be read too. */
     onLaunchReconciled?: (reconciled: ReconciledLaunch) => void
     /** `workspaceId` is absent when the ownership read itself failed. */
@@ -285,6 +303,7 @@ export function createLocalDaemonLifecycle(options: {
   let storeUnavailable: Error | undefined
   let gate: MachineRecoveryGate | undefined
   let reconcilingLaunches: Promise<ReconciledLaunch[]> | undefined
+  let releaseLaunchHold: ((reconciled: ReconciledLaunch[]) => void) | undefined
   let launchesReconciled = false
   let launchesOverdueAfterMs: number | undefined
   /** Launch ids read but not yet answered for, so an overdue refusal names them. */
@@ -471,36 +490,59 @@ export function createLocalDaemonLifecycle(options: {
   function reportOverdue() {
     if (launchesOverdueAfterMs !== undefined) return
     launchesOverdueAfterMs = budgets.reconcileMs
+    const outstanding = launchesPending.length > 0 ? ` Outstanding: ${launchesPending.join(", ")}.` : ""
     options.machine.onLaunchesUnreadable?.(
       undefined,
-      `the launch reconciliation did not answer within ${String(budgets.reconcileMs)}ms; machine admission stays closed`,
+      `the launch reconciliation did not answer within ${String(budgets.reconcileMs)}ms; `
+        + `machine admission stays closed.${outstanding}`,
     )
   }
 
+  /**
+   * Reads what the previous owner left unsettled and reports what each record
+   * is now.
+   *
+   * It stops WAITING at its deadline but never stops watching: a read that is
+   * still out is answered for when it lands, and until then admission stays
+   * closed with the refusal saying the reconciliation is overdue. Those are
+   * different properties — the first keeps a wedged store out of the request
+   * path, the second keeps work out of a machine nothing has accounted for.
+   */
   async function reconcileLaunches(): Promise<ReconciledLaunch[]> {
     const read = options.machine.ownership ?? embeddedWorkspaceRuntimeOwnership
-    const reconciled: ReconciledLaunch[] = []
     // One deadline for the whole reconciliation, not one per step: a per-step
     // budget multiplied by the number of launches is a deadline the caller was
     // never promised.
     const deadlineAt = now() + budgets.reconcileMs
+    const reconciled: ReconciledLaunch[] = []
+    const pending = read()
+    const answered = await settleWithin(pending, deadlineAt - now(), reportOverdue)
+    if (!answered.settled) {
+      // Detached from this call, still owned: the hold stays closed and the
+      // late records are reconciled on arrival.
+      void pending.then(
+        (late) => absorb(late, reconciled, deadlineAt),
+        (error) => { reportUnreadable(undefined, error) },
+      ).finally(() => finishLaunchReconciliation(reconciled))
+      return reconciled
+    }
+    try {
+      await absorb(answered.value, reconciled, deadlineAt)
+    } finally {
+      finishLaunchReconciliation(reconciled)
+    }
+    return reconciled
+  }
+
+  /**
+   * Turns one ownership read into reported rows. Every failure inside is
+   * reported rather than thrown: nothing at the entrypoint holds this promise,
+   * and a rejection nobody holds would take the daemon down over a read that
+   * only decides whether admission may reopen.
+   */
+  async function absorb(owned: EmbeddedWorkspaceRuntimeOwnership[], into: ReconciledLaunch[], deadlineAt: number) {
     const verify = options.machine.verifyIdentity ?? verifyCreationIdentity
     try {
-      let owned: EmbeddedWorkspaceRuntimeOwnership[]
-      try {
-        // Bounded, because admission stays closed until this answers and an
-        // unbounded await would leave the machine refusing work with no way out
-        // but a restart. The read is detached rather than abandoned: when it
-        // settles late its records are still reconciled, and until then the
-        // refusal says the reconciliation is overdue instead of going quiet.
-        owned = await settleWithin(read(), deadlineAt - now(), reportOverdue)
-      } catch (error) {
-        // Reported, not rethrown: nothing awaits this at the entrypoint, and a
-        // rejection nobody holds would take the daemon down over a read that
-        // only decides whether admission may reopen.
-        options.machine.onLaunchesUnreadable?.(undefined, error instanceof Error ? error.message : String(error))
-        return reconciled
-      }
       for (const owner of owned) {
         if (owner.launchesUnreadable !== undefined) {
           // Retained, not just reported: a preview that left this workspace out
@@ -527,24 +569,32 @@ export function createLocalDaemonLifecycle(options: {
               execution: execution.execution,
               because: execution.because,
               ...(record.identity
-                ? { identity: await identityVerdict(verify, record.identity, deadlineAt, reportOverdue) }
+                ? { identity: await identityVerdict(verify, record.identity, deadlineAt, now, reportOverdue) }
                 : {}),
             }
           }))
           for (const row of rows) {
-            reconciled.push(row)
+            into.push(row)
             launchesPending = launchesPending.filter((id) => id !== row.launchId)
             options.machine.onLaunchReconciled?.(row)
           }
         }
       }
-    } finally {
-      launchesReconciled = true
-      launchesOverdueAfterMs = undefined
-      launchesPending = []
-      changed()
+    } catch (error) {
+      reportUnreadable(undefined, error)
     }
-    return reconciled
+  }
+
+  function reportUnreadable(workspaceId: string | undefined, error: unknown) {
+    options.machine.onLaunchesUnreadable?.(workspaceId, error instanceof Error ? error.message : String(error))
+  }
+
+  function finishLaunchReconciliation(reconciled: ReconciledLaunch[]) {
+    launchesReconciled = true
+    launchesOverdueAfterMs = undefined
+    launchesPending = []
+    releaseLaunchHold?.(reconciled)
+    changed()
   }
 
   function inspect(): MachineRecoveryInspection {
@@ -989,15 +1039,20 @@ export function createLocalDaemonLifecycle(options: {
    */
   function settlePreviousGeneration(operation: RecoveryOperation, gates: number, at: number): RecoveryOperation {
     const generation = operation.target.ownerGeneration
+    const source = "local-daemon-replacement"
     const evidence: RecoveryFacts = {
-      execution: { value: "terminal", source: "local-daemon", observedAt: at, generation },
-      // Only the daemon process is established gone. What it launched is the
-      // launch reconciliation's answer, not this one's.
-      cleanup: { value: "unknown", source: "local-daemon", observedAt: at, generation },
-      persistence: { value: "committed", source: "local-daemon", observedAt: at, generation },
+      execution: { value: "terminal", source, observedAt: at, generation },
+      // That daemon's own execution is clear: a process holding neither the
+      // port nor the data directory has nothing of its own left running. What
+      // it LAUNCHED is a different question, and the launch reconciliation is
+      // what answers it — which is why this is not a claim about the machine.
+      cleanup: { value: "verified_clear", source, observedAt: at, generation },
+      persistence: { value: "committed", source, observedAt: at, generation },
     }
     if (operation.action === "stop_daemon") {
-      return { ...operation, state: "succeeded", updatedAt: at, facts: evidence }
+      // Through the contract's own rule rather than around it: a hand-written
+      // `succeeded` can assert a postcondition the action does not hold.
+      return finalizeRecoveryOperation({ ...operation, updatedAt: at }, evidence)
     }
     return {
       ...operation,
@@ -1022,7 +1077,20 @@ export function createLocalDaemonLifecycle(options: {
       if (state !== "created") return
       state = "running"
       reconcileMachineOperations()
-      reconcilingLaunches = reconcileLaunches()
+      // Nothing at the entrypoint holds this. Every failure inside is already
+      // reported, and this is the backstop that keeps the one nobody predicted
+      // from ending the daemon at boot.
+      // Resolves when the HOLD is gone, not when this call returns: after the
+      // deadline the read is detached and still being watched, and a caller
+      // waiting for the machine to open must wait for that, not for the
+      // deadline that stopped this function waiting.
+      reconcilingLaunches = new Promise<ReconciledLaunch[]>((resolve) => { releaseLaunchHold = resolve })
+      void reconcileLaunches().catch((error: unknown) => {
+        // Every failure inside is already reported; this is the backstop that
+        // keeps the one nobody predicted from ending the daemon at boot.
+        reportUnreadable(undefined, error)
+        finishLaunchReconciliation([])
+      })
       changed()
     },
     stop() {
@@ -1136,24 +1204,35 @@ function positive(value: number | undefined, fallback: number) {
 }
 
 /**
- * Resolves the promise, or reports that it did not within the budget and keeps
- * waiting. The late value is still returned, so a slow read is detached from
- * the deadline rather than dropped.
+ * The promise's value, or the fact that it did not arrive in time.
+ *
+ * It never awaits past the budget: the caller decides what to do with a promise
+ * that is still out, which is the difference between a deadline and a wish. A
+ * rejection is the caller's to handle and propagates as one.
  */
-async function settleWithin<T>(pending: Promise<T>, budgetMs: number, onOverdue: () => void): Promise<T> {
+async function settleWithin<T>(
+  pending: Promise<T>,
+  budgetMs: number,
+  onOverdue: () => void,
+): Promise<{ settled: true; value: T } | { settled: false }> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const overdue = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, budgetMs)
+    timer = setTimeout(resolve, Math.max(0, budgetMs))
     timer.unref?.()
   })
   try {
-    const raced = await Promise.race([pending.then(() => "settled" as const), overdue.then(() => "overdue" as const)])
-    if (raced === "overdue") onOverdue()
-    return await pending
+    const raced = await Promise.race([
+      pending.then((value) => ({ settled: true as const, value })),
+      overdue.then(() => ({ settled: false as const })),
+    ])
+    if (!raced.settled) onOverdue()
+    return raced
   } finally {
     if (timer) clearTimeout(timer)
   }
 }
+
+export type LaunchIdentityProbe = (identity: CreationIdentity) => Promise<IdentityVerdict>
 
 /** How many creation identities are probed at once; each costs a subprocess. */
 const IDENTITY_PROBE_CONCURRENCY = 4
@@ -1164,16 +1243,26 @@ const IDENTITY_PROBE_CONCURRENCY = 4
  * and it is the same answer the probe would be believed for anyway.
  */
 async function identityVerdict(
-  verify: (identity: CreationIdentity) => Promise<{ state: string }>,
+  verify: LaunchIdentityProbe,
   identity: CreationIdentity,
   deadlineAt: number,
+  now: () => number,
   onOverdue: () => void,
-) {
-  const at = Date.now()
-  const budget = capChildBudget(deadlineAt, deadlineAt - at, at) - at
+): Promise<IdentityVerdict["state"]> {
+  const at = now()
+  // `capChildBudget` refuses a negative child budget, and once the read has
+  // overrun the deadline that is exactly what the remaining time is.
+  const budget = capChildBudget(deadlineAt, Math.max(0, deadlineAt - at), at) - at
   if (budget <= 0) {
     onOverdue()
     return "unknown"
   }
-  return (await settleWithin(verify(identity), budget, onOverdue).catch(() => ({ state: "unknown" }))).state
+  const probed = await settleWithin(verify(identity), budget, onOverdue).catch(() => undefined)
+  if (!probed?.settled) {
+    // The probe is still out. This owner cannot wait on it and will not guess
+    // what it would have said.
+    onOverdue()
+    return "unknown"
+  }
+  return probed.value.state
 }

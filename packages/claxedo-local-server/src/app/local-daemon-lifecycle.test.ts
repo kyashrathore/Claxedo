@@ -1,8 +1,8 @@
 import Database from "better-sqlite3"
 import { describe, expect, test, vi } from "vitest"
-import type { RecoveryRequest } from "@claxedo/agent-runtime-contract"
+import { recoveryPostconditionHolds, type RecoveryRequest } from "@claxedo/agent-runtime-contract"
 import { DaemonOperationStore } from "./daemon-operation-store"
-import { servedDuringMachineRecovery } from "./daemon-admission"
+import { machineRecoveryFence, servedDuringMachineRecovery } from "./daemon-admission"
 import {
   createLocalDaemonLifecycle,
   localDaemonOwners,
@@ -479,7 +479,13 @@ describe("machine recovery operations", () => {
     // what the stop asked for.
     const settled = replacement.recovery.read(submitted.operation.operationId)
     if (settled.kind !== "operation") throw new Error("the stop was not reconstructed")
+    // Reached through the contract's postcondition for stop_daemon, not
+    // asserted past it: the facts have to hold for the state to be succeeded.
     expect(settled.operation.state).toBe("succeeded")
+    expect(recoveryPostconditionHolds("stop_daemon", settled.operation.facts)).toBe(true)
+    expect(settled.operation.facts.execution.value).toBe("terminal")
+    expect(settled.operation.facts.cleanup.value).toBe("verified_clear")
+    expect(settled.operation.facts.cleanup.source).toBe("local-daemon-replacement")
     expect(replacement.recovery.ingressClosed()?.kind).not.toBe("operation")
     expect(store.gates(submitted.operation.operationId)).toEqual([])
     replacement.stop()
@@ -823,6 +829,43 @@ describe("what the inventory names", () => {
     ])
   })
 
+  test("a terminal nothing can find again is named apart from one that may yet settle", () => {
+    const work: LocalDaemonWorkActivity = {
+      ...empty(),
+      pty: { running: 3, committed: 3, provisional: 0, managed: 0, subscribers: 0, unrecorded: 1, unresolved: 2 },
+      residencyPins: 3,
+      replacementBlockers: 3,
+    }
+
+    const preview = localDaemonScopePreview(work)
+    // Two different futures: an unverified retirement may still settle, while
+    // an unrecorded spawn never will, because no later owner has a record to
+    // find it by. Folding them together would let one read as the other.
+    expect(preview.resources).toEqual([
+      "1 terminal(s) whose spawn could not be recorded — unreachable by any later owner",
+      "2 terminal(s) whose retirement is unverified",
+    ])
+    expect(preview.summary).toContain("1 unrecorded terminal spawn(s)")
+    expect(preview.summary).toContain("2 unverified terminal retirement(s)")
+  })
+
+  test("the preview names the writes and checkpoint transitions that own nothing", () => {
+    const work: LocalDaemonWorkActivity = {
+      ...empty(),
+      runtime: { hosts: 1, activeTurns: 0, activeWrites: 2, checkpointing: 1, owners: [] },
+      residencyPins: 3,
+      replacementBlockers: 3,
+    }
+
+    const preview = localDaemonScopePreview(work)
+    expect(preview.resources).toEqual(["workspace writes: 2", "checkpoint transitions: 1"])
+    // A summary counting only owners would call this machine empty while three
+    // things are holding the drain open.
+    expect(preview.summary).toBe(
+      "0 named owners; 2 workspace write(s), 1 checkpoint transition(s) that own nothing but block a drain",
+    )
+  })
+
   test("the preview names the sessions a stop would interrupt, not a count of them", () => {
     const work: LocalDaemonWorkActivity = {
       ...empty(),
@@ -957,7 +1000,7 @@ describe("startup launch reconciliation", () => {
       // the previous owner left, and a timeout is not an answer.
       expect(lifecycle.recovery.ingressClosed())
         .toEqual({ kind: "launch_reconciliation", overdueAfterMs: 1_000, pending: [] })
-      expect(unreadable).toEqual([[undefined, "the launch reconciliation did not answer within 1000ms; machine admission stays closed"]])
+      expect(unreadable).toEqual([[undefined, "the launch reconciliation did not answer within 1000ms; machine admission stays closed."]])
 
       // The read was detached from the deadline, not abandoned.
       answer([])
@@ -971,6 +1014,7 @@ describe("startup launch reconciliation", () => {
 
   test("an overdue reconciliation names the launches it has not answered for", async () => {
     vi.useFakeTimers()
+    const reported: Array<[string | undefined, string]> = []
     try {
       const lifecycle = createLocalDaemonLifecycle({
         activity: empty,
@@ -1004,20 +1048,114 @@ describe("startup launch reconciliation", () => {
               },
             })],
           }],
-          onLaunchesUnreadable: () => {},
+          onLaunchesUnreadable: (workspaceId, reason) => reported.push([workspaceId, reason]),
         },
       })
       lifecycle.start()
       await vi.advanceTimersByTimeAsync(1_001)
 
-      const hold = lifecycle.recovery.ingressClosed()
-      expect(hold?.kind).toBe("launch_reconciliation")
-      // Named, so an operator reading the 503 knows which record is holding
-      // the machine rather than only that something is.
-      if (hold?.kind === "launch_reconciliation") {
-        expect(hold.overdueAfterMs).toBe(1_000)
-        expect(hold.pending).toEqual(["launch-slow"])
-      }
+      // The probe is bounded too, so the reconciliation finishes instead of
+      // hanging on it — and what it could not establish stays unknown rather
+      // than being guessed at.
+      const [row] = await lifecycle.recovery.launchesReconciled()
+      expect(row?.identity).toBe("unknown")
+      expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+      // Named, so an operator reading the refusal knows which record ran the
+      // machine past its deadline rather than only that something did.
+      expect(reported).toEqual([[undefined,
+        "the launch reconciliation did not answer within 1000ms; machine admission stays closed. Outstanding: launch-slow.",
+      ]])
+      lifecycle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a read that lands after the deadline is still reconciled, not thrown away", async () => {
+    vi.useFakeTimers()
+    const reported: ReconciledLaunch[] = []
+    const unreadable: Array<[string | undefined, string]> = []
+    try {
+      let answer = (_owners: unknown[]) => {}
+      const lifecycle = createLocalDaemonLifecycle({
+        activity: empty,
+        onStop() {},
+        machine: {
+          ...machine,
+          budgets: { reconcileMs: 1_000 },
+          ownership: () => new Promise((resolve) => { answer = resolve as typeof answer }),
+          // The launch has an identity, so the overran deadline reaches the
+          // probe's own budget — which is where a negative child budget was
+          // thrown, out of a promise nothing at the entrypoint holds.
+          verifyIdentity: async () => ({ state: "exited" }),
+          onLaunchReconciled: (row) => reported.push(row),
+          onLaunchesUnreadable: (workspaceId, reason) => unreadable.push([workspaceId, reason]),
+        },
+      })
+      lifecycle.start()
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      answer([{
+        workspaceId: "ws_a",
+        generation: "mount-1",
+        state: "serving",
+        attempt: 0,
+        turns: [],
+        launches: [record("launch-late", {
+          identityReceivedAt: 2,
+          activationAuthorizedAt: 3,
+          activationAcknowledgedAt: 4,
+          identity: {
+            pid: 4242,
+            processGroupId: 4242,
+            parentPid: 1,
+            startSecond: "Thu Jan  1 00:00:00 1970",
+            startedAtMs: 0,
+            bootTime: "0",
+            source: "darwin-ps",
+          },
+        })],
+      }])
+      await lifecycle.recovery.launchesReconciled()
+
+      expect(reported.map((row) => row.launchId)).toEqual(["launch-late"])
+      // No time was left, so the probe was never run and its answer is
+      // unknown — not a verdict invented to fill the field.
+      expect(reported[0]?.identity).toBe("unknown")
+      // The only thing reported as unreadable is the overrun itself.
+      expect(unreadable.map(([workspaceId]) => workspaceId)).toEqual([undefined])
+      expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+      lifecycle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a read that never settles is answered around, not waited on", async () => {
+    vi.useFakeTimers()
+    try {
+      const lifecycle = createLocalDaemonLifecycle({
+        activity: empty,
+        onStop() {},
+        machine: { ...machine, budgets: { reconcileMs: 1_000 }, ownership: () => new Promise(() => {}) },
+      })
+      lifecycle.start()
+
+      await vi.advanceTimersByTimeAsync(1_001)
+
+      // The refusal is a synchronous read of the hold, so a request arriving
+      // now is answered from it rather than queued behind a store that may
+      // never answer. Admission stays closed, which is the other half.
+      const answered = machineRecoveryFence(() => lifecycle.recovery.ingressClosed())
+      let status = 0
+      await answered(
+        { req: { method: "POST", raw: { url: "http://localhost/session/ses_1/prompt" } }, json: (_body: unknown, code: number) => {
+          status = code
+          return new Response()
+        } } as never,
+        async () => { throw new Error("the fence let a prompt through while the machine was unreconciled") },
+      )
+      expect(status).toBe(503)
       lifecycle.stop()
     } finally {
       vi.useRealTimers()
