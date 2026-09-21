@@ -1156,6 +1156,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       const attachment = socketAttachment(socket)
       if (!attachment) continue
       if (attachment.kind === "host-tunnel") {
+        // `getWebSockets` has no ordering guarantee, and a replaced socket's
+        // attachment survives until its close is delivered.
+        const incumbent = hostTunnels.get(attachment.hostId)
+        if (incumbent && incumbent.connectedAt > attachment.connectedAt) continue
         hostTunnels.set(attachment.hostId, {
           hostId: attachment.hostId,
           workspaceIds: attachment.workspaceIds,
@@ -1836,12 +1840,15 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     void scheduleHibernatedRevocationCheck()
   }
 
-  const handleTunnelMessage = async (hostId: string, event: { data: unknown }) => {
+  const handleTunnelMessage = async (hostId: string, socket: WorkspaceRelayDurableObjectSocket, event: { data: unknown }) => {
     const row = parseTunnelMessageData(event.data)
     if (!row.ok) return
     const parsed = validateTunnelMessage(row.value)
     const tunnel = hostTunnels.get(hostId)
-    if (!parsed.ok || !tunnel) return
+    // A replaced socket's listener and hibernation attachment outlive its
+    // tunnel entry, so a frame is only the live tunnel's when it arrived on
+    // the live tunnel's socket.
+    if (!parsed.ok || !tunnel || tunnel.socket !== socket) return
     // ANY inbound frame that actually reached this handler proves the tunnel is
     // alive, so refresh directory presence here rather than only on ping. On the
     // hibernation path protocol-level ping/pong is handled below this message
@@ -2050,7 +2057,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         if (!event || event.data === undefined) return
         // Same guard as the hibernation `webSocketMessage` path: a bare `void` on
         // a rejecting promise is an unhandled rejection — no close, no log.
-        void handleTunnelMessage(hostId, { data: event.data })
+        void handleTunnelMessage(hostId, pair.server, { data: event.data })
           .catch((err) => reportFrameHandlerFailure(pair.server, err))
       })
       pair.server.addEventListener?.("close", () => cleanupHostTunnel(hostId, pair.server, "Host tunnel disconnected"))
@@ -2438,7 +2445,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         const attachment = socketAttachment(socket)
         if (!attachment) return
         if (attachment.kind === "host-tunnel") {
-          await handleTunnelMessage(attachment.hostId, { data: message })
+          await handleTunnelMessage(attachment.hostId, socket, { data: message })
           return
         }
         await handleHostTunnelClientMessage(attachment.channelId, socket, message)

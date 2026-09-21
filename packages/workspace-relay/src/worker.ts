@@ -292,6 +292,10 @@ export class WorkspaceRelayRoom {
         ...(this.hibernation() ? { hibernation: this.hibernation() } : {}),
         ...(this.alarms() ? { alarms: this.alarms() } : {}),
       }))
+      .catch((err: unknown) => {
+        this.loading = undefined
+        throw err
+      })
     this.room = await this.loading
     return this.room
   }

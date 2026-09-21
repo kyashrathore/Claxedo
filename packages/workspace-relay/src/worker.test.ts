@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import worker, {
+  WorkspaceRelayRoom,
   workspaceRelayWorkerResolverClient,
   workspaceRelayWorkerResolverUrl,
   type WorkspaceRelayWorkerEnv,
@@ -156,5 +158,28 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
     })
     await client.hostGeneration({ enrollmentId: "enr_1", generation: 2 })
     expect(requests.map((request) => request.url)).toEqual(["https://other.test/host-generation?enrollmentId=enr_1"])
+  })
+
+  test("a room whose first boot fails boots on the next request once the env is repaired", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const env: WorkspaceRelayWorkerEnv = {
+      CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(runtime.publicKey),
+    }
+    const room = new WorkspaceRelayRoom({}, env)
+    const request = () => new Request("https://relay.test/workspaces/ws_1/api/wr/health")
+
+    const failed = await room.fetch(request())
+    expect(failed.status).toBe(503)
+    await expect(failed.json()).resolves.toEqual({
+      error: { code: "relay_durable_object_boot_failed", message: "CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM is required" },
+    })
+
+    env.CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM = await exportPKCS8(relayHost.privateKey)
+    const served = await room.fetch(request())
+    expect(served.status).toBe(401)
+    await expect(served.json()).resolves.toMatchObject({ error: { code: "runtime_access_token_required" } })
   })
 })

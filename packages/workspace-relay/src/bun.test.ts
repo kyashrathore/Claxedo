@@ -2738,6 +2738,98 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("a registration update from a replaced host tunnel socket reaches neither the resolver nor the live tunnel", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
+    const auditEvents: WorkspaceRelayAuditEvent[] = []
+    let resolverCalls = 0
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      directory,
+      audit: (event) => {
+        auditEvents.push(event)
+      },
+      resolveHostGeneration: async ({ generation }) => {
+        resolverCalls += 1
+        return { enrollmentId: "enr_1", generation, revoked: false }
+      },
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://host-tunnel.invalid",
+        backing: "local-worktree",
+      }),
+    }, { hostTunnelStateDebounceMs: 0 })
+    type RelaySocket = Parameters<NonNullable<typeof relayHandler.websocket.open>>[0]
+    // A real client cannot deliver a frame after the server's close frame
+    // (a CLOSING WebSocket drops `send`), so the replaced socket is driven
+    // through the handlers directly.
+    const hostTunnelSocket = () => {
+      const socket = {
+        readyState: WebSocket.OPEN as number,
+        closed: [] as Array<{ code?: number; reason?: string }>,
+        data: {
+          kind: "host-tunnel" as const,
+          hostId: "host_1",
+          workspaceIds: ["ws_1"],
+          enrollmentId: "enr_1",
+          generation: 3,
+          pending: new Map(),
+          activeStreams: 0,
+          channels: new Map(),
+          missedPongs: 0,
+          generationCheckFailures: 0,
+          messageBuffer: "",
+        },
+        send: () => 1,
+        close(code?: number, reason?: string) {
+          socket.closed.push({ code, reason })
+        },
+      }
+      return socket as unknown as RelaySocket & typeof socket
+    }
+    const replaced = hostTunnelSocket()
+    const live = hostTunnelSocket()
+    const update = async (workspaceIds: string[], token: string) => {
+      relayHandler.websocket.message(replaced, JSON.stringify({
+        type: "host.registration.update",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        workspace_ids: workspaceIds,
+        token,
+      }))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    try {
+      relayHandler.websocket.open?.(replaced)
+      relayHandler.websocket.open?.(live)
+      expect(replaced.closed).toEqual([{ code: 1012, reason: "Host tunnel replaced by a newer connection" }])
+      expect(live.closed).toEqual([])
+      const denied = () => auditEvents.filter((event) => event.action === "host_tunnel.denied")
+
+      await update(["ws_1", "ws_2"], "garbage")
+      expect(denied()).toEqual([])
+      expect(replaced.closed).toHaveLength(1)
+
+      await update(["ws_1", "ws_2"], await mintHostTunnelToken({
+        subject: "user_1",
+        hostId: "host_1",
+        workspaceIds: ["ws_1", "ws_2"],
+        enrollmentId: "enr_1",
+        generation: 3,
+      }, runtime.privateKey, "EdDSA"))
+      expect(resolverCalls).toBe(0)
+      expect(live.closed).toEqual([])
+      expect(directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })?.workspaceIds).toEqual(["ws_1"])
+      expect(directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" })).toBeUndefined()
+    } finally {
+      relayHandler.websocket.close?.(replaced, 1012, "")
+      relayHandler.websocket.close?.(live, 1000, "")
+    }
+  })
+
   test("rejects user→relay WS upgrades with a disallowed Origin", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })

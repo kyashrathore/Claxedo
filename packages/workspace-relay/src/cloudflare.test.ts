@@ -3188,6 +3188,54 @@ describe("workspace relay Cloudflare room host generation fence", () => {
     expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
   })
 
+  test("a registration update from the replaced socket does not close the live tunnel", async () => {
+    const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
+    expect((await admit(harness, 3)).status).toBe(101)
+    expect((await admit(harness, 3)).status).toBe(101)
+    expect(harness.socket(0).closed).toEqual({ code: 1012, reason: "Host tunnel replaced" })
+    ;harness.socket(0).message(updateMessage("garbage", ["ws_1", "ws_2"]))
+    await waitForClosed(harness.socket(1))
+    expect(harness.socket(1).closed).toBeUndefined()
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
+    expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })?.workspaceIds).toEqual(["ws_1"])
+  })
+
+  test("a ping from the replaced socket is not answered on the live tunnel", async () => {
+    const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
+    expect((await admit(harness, 3)).status).toBe(101)
+    expect((await admit(harness, 3)).status).toBe(101)
+    ;harness.socket(0).message(JSON.stringify({ type: "ping", protocol: TUNNEL_PROTOCOL_VERSION, id: "ping_stale", sent_at: 10 }))
+    await waitForSent(harness.socket(1), 1)
+    expect(harness.socket(1).sent).toEqual([])
+    expect(harness.socket(0).sent).toEqual([])
+  })
+
+  test("a hibernated registration update from the replaced socket does not close the live tunnel", async () => {
+    const harness = await roomHarness({ hibernation: true, resolveHostGeneration: async () => current(3) })
+    expect((await admit(harness, 3)).status).toBe(101)
+    expect((await admit(harness, 3)).status).toBe(101)
+    expect(harness.socket(0).closed).toEqual({ code: 1012, reason: "Host tunnel replaced" })
+    await harness.room.webSocketMessage(harness.socket(0), updateMessage("garbage", ["ws_1", "ws_2"]))
+    expect(harness.socket(1).closed).toBeUndefined()
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
+  })
+
+  test("a rebuild after wake keeps the newest host-tunnel attachment when an older one is listed after it", async () => {
+    const newer = new FakeSocket()
+    newer.attachment = { kind: "host-tunnel", hostId: "host_1", workspaceIds: ["ws_1"], connectedAt: 2_000 }
+    const older = new FakeSocket()
+    older.attachment = { kind: "host-tunnel", hostId: "host_1", workspaceIds: ["ws_1"], connectedAt: 1_000 }
+    const harness = await roomHarness({ hibernation: true, hibernatedSockets: [newer, older] })
+    expect(harness.room.state()).toMatchObject({ hostTunnelCount: 1 })
+    const ping = JSON.stringify({ type: "ping", protocol: TUNNEL_PROTOCOL_VERSION, id: "ping_1", sent_at: 10 })
+    await harness.room.webSocketMessage(older, ping)
+    expect(older.sent).toEqual([])
+    expect(newer.sent).toEqual([])
+    await harness.room.webSocketMessage(newer, ping)
+    expect(newer.sent).toHaveLength(1)
+    expect(JSON.parse(frameText(newer.sent[0]))).toMatchObject({ type: "pong", id: "ping_1" })
+  })
+
   test("refuses a registration update whose token carries a lower generation than the socket", async () => {
     const harness = await roomHarness({ resolveHostGeneration: async () => current(3) })
     expect((await admit(harness, 3)).status).toBe(101)

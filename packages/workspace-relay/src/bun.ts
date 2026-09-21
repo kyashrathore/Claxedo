@@ -1971,6 +1971,10 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             message,
             fragmentationStats,
           )
+          // Frames from a displaced socket keep arriving until the peer
+          // handles the close frame; once it owns no identity nothing it says
+          // belongs to the live tunnel.
+          if (ownedWorkspaceIds(hostTunnels, ws).length === 0) return
           if (parsed?.type === "ping") {
             options.directory?.recordPong(ws.data.hostId, ownedWorkspaceIds(hostTunnels, ws))
             if (!relayOverBackpressureLimit(ws, socketMaxBufferedBytes)) {
