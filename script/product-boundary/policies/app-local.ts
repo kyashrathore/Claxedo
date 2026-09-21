@@ -492,8 +492,16 @@ export const appLocal: Policy = {
   // existing workspace navigation; draft-session-start persists creation-owner
   // references and reads canonical session lifecycle status. ACP questions use
   // the unchanged question dock; its separate UI, worker, query and action
-  // modules have been removed. Exact measured 1099 modules / 58 packages.
-  ceilings: { modules: 1099, packages: 58 },
+  // modules have been removed.
+  // +2 modules (2026-09-21): `features/session/ui/recovery-outcome-copy.ts` is
+  // the one owner of how a cancellation's three facts read, and
+  // `features/session/ui/session-recovery.tsx` is the panel the composer region
+  // shows while a recovery command is unresolved. Both live under the session
+  // feature that already owns the composer and its docks, and both reach only
+  // `@claxedo/agent-runtime-contract`, which this entry already carries; the
+  // package closure is unchanged at 58. Exact measured 1101 modules /
+  // 58 packages, with no headroom.
+  ceilings: { modules: 1101, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -558,8 +558,13 @@ export const desktopRendererUnsigned: Policy = {
   // existing workspace navigation; draft-session-start persists creation-owner
   // references and reads canonical session lifecycle status. ACP questions use
   // the unchanged question dock; its separate UI, worker, query and action
-  // modules have been removed. Exact measured 1142 modules / 58 packages.
-  ceilings: { modules: 1142, packages: 58 },
+  // modules have been removed.
+  // +2 modules (2026-09-21): `features/session/ui/recovery-outcome-copy.ts` and
+  // `features/session/ui/session-recovery.tsx` — see the app-local ledger. The
+  // renderer shares the session feature's composer region, which is what mounts
+  // the panel, so both ride in here too; no new package edge. Exact measured
+  // 1144 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1144, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
