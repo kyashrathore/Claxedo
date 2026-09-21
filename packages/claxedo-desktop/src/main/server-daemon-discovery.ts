@@ -155,6 +155,7 @@ function isCreationIdentity(value: unknown): value is CreationIdentity {
     typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 &&
     typeof record.processGroupId === "number" && Number.isSafeInteger(record.processGroupId) &&
     typeof record.parentPid === "number" && Number.isSafeInteger(record.parentPid) &&
+    typeof record.startedAtMs === "number" && Number.isFinite(record.startedAtMs) &&
     isNonEmptyString(record.startSecond) &&
     isNonEmptyString(record.bootTime) &&
     isNonEmptyString(record.source)

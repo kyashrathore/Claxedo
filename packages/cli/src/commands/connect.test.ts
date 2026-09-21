@@ -67,6 +67,7 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
           processGroupId: pid,
           parentPid: 1,
           startSecond: "Thu Jan  1 00:00:00 1970",
+          startedAtMs: 0,
           bootTime: "0",
           source: "darwin-ps",
         },

@@ -83,13 +83,15 @@ function creationIdentity(value: unknown): CreationIdentity | undefined {
   const pid = integerBetween(row.pid, 1, Number.MAX_SAFE_INTEGER)
   const processGroupId = integerBetween(row.processGroupId, 0, Number.MAX_SAFE_INTEGER)
   const parentPid = integerBetween(row.parentPid, 0, Number.MAX_SAFE_INTEGER)
+  const startedAtMs = row.startedAtMs
   const startSecond = nonEmptyString(row.startSecond)
   const bootTime = nonEmptyString(row.bootTime)
   const source = nonEmptyString(row.source)
   if (pid === undefined || processGroupId === undefined || parentPid === undefined) return undefined
+  if (typeof startedAtMs !== "number" || !Number.isFinite(startedAtMs)) return undefined
   if (!startSecond || !bootTime || !source) return undefined
   if (source !== "darwin-ps" && source !== "linux-procfs" && source !== "win32-cim") return undefined
-  return { pid, processGroupId, parentPid, startSecond, bootTime, source }
+  return { pid, processGroupId, parentPid, startSecond, startedAtMs, bootTime, source }
 }
 
 export type DesktopDaemonVerdict = "live" | "unresponsive"
