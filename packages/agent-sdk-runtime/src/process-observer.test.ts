@@ -10,7 +10,7 @@ import {
   type AgentProcessDescriptor,
   type AgentProcessObserver,
 } from "./process-observer"
-import { spawnObservedClaudeCodeProcess } from "./harnesses/claude/driver"
+import { spawnObservedClaudeCodeProcess } from "./harnesses/claude/launch"
 
 const direct = {
   ownerId: "harness-1",
@@ -166,6 +166,9 @@ describe("agent process observer", () => {
         env: { SENTINEL_TOKEN: sentinel },
         signal,
         stdio: ["pipe", "pipe", "inherit"],
+        // Its own POSIX group, so what the CLI starts is inside a scope this
+        // owner can retire.
+        detached: process.platform !== "win32",
       },
     }])
     expect(descriptors.map((descriptor) => [descriptor.role, descriptor.locality])).toEqual([

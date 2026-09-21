@@ -38,8 +38,8 @@ export class TurnAuthorityUnavailableError extends Error {
  * projection starting and its terminal arriving, the session can be admitted
  * to a replacement turn, and an assistant message id alone cannot tell the two
  * apart. Returns nothing when the lease is already held, which the caller must
- * treat as a refusal to project — writing unfenced would be the defect the
- * lease exists to prevent.
+ * treat as a refusal to project: writing unfenced is exactly what the lease is
+ * there to stop.
  */
 export function registerTurnAuthority(
   store: TurnAuthorityStore,

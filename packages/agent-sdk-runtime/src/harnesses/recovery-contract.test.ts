@@ -235,8 +235,8 @@ describe("per-harness recovery capability matrix", () => {
 
   test("a producer that left after a cancel the provider refused is unknown, never terminal", async () => {
     const session = sdkSession({ stop: () => Promise.reject(new Error("pi refused the abort")) })
-    // The producer leaves anyway, which is exactly the shape that used to read
-    // as a clean stop.
+    // The producer leaves anyway: a clean-looking exit over a cancellation the
+    // provider never accepted.
     session.leave()
     const outcome = await cancelSdkRuntimeTurn(session.lifecycle, "pi", "s1", deadline())
     expect(outcome).toMatchObject({
