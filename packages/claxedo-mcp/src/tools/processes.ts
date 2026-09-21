@@ -278,7 +278,8 @@ export function registerProcessTools(registry: ToolRegistrar) {
   registry.tool(
     "process_stop",
     {
-      description: "Stop a running process and report whether the workspace stopped one.",
+      description:
+        "Stop a running process and report what stopping it reached: `stopped` when the workspace proved it gone, `unresolved` when it did not, with the retirement evidence behind that answer. An unresolved stop leaves the process running and its port held.",
       inputSchema: { ...PROCESS_ARG, ...WORKSPACE_TARGET_SCHEMA },
       access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act" }),
     },
@@ -286,7 +287,11 @@ export function registerProcessTools(registry: ToolRegistrar) {
       const target = toolTarget(ctx, args)
       assertWritableTarget(ctx, "process_stop", target)
       const server = await ctx.client.server(target)
-      return toolJson({ process: args.process, stopped: await server.process.stop(args.process) })
+      const { state, retirement } = await server.process.stop(args.process)
+      return {
+        ...toolJson({ process: args.process, state, retirement: retirement ?? null }),
+        ...(state === "unresolved" ? { isError: true } : {}),
+      }
     },
   )
 

@@ -5,7 +5,20 @@ import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import type { AgentMessage, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentMessage,
+  AgentRuntimeStatus,
+  CleanupFact,
+  ExecutionFact,
+  PersistenceFact,
+  RecoveryFactEvidence,
+  RecoveryFacts,
+  RecoveryError,
+  RecoveryOutcome,
+  RecoveryRefusal,
+  RecoveryRequest,
+  RecoveryTarget,
+} from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
 import { createClaxedoMcpClient } from "../client/index"
 import type { ClaxedoFetch } from "../client/contract"
@@ -50,6 +63,8 @@ type Workspace = {
   modes: Record<string, string>
   /** Holds every turn open until it is cancelled, so a Stop has a turn to name. */
   holdTurns?: boolean
+  /** What the recovery owner answers a submitted cancellation with. */
+  cancellation?: (request: RecoveryRequest) => RecoveryOutcome
   releases: Map<string, () => void>
   running: Set<string>
 }
@@ -89,16 +104,73 @@ function message(id: string, text: string): AgentMessage {
   return { info: { id, role: "assistant" }, parts: [{ type: "text", text }] } as unknown as AgentMessage
 }
 
+function evidence<V extends string>(value: V): RecoveryFactEvidence<V> {
+  return { value, source: "fixture", observedAt: 1, generation: "gen_1" }
+}
+
+function recoveryFacts(
+  overrides: { execution?: ExecutionFact; cleanup?: CleanupFact; persistence?: PersistenceFact } = {},
+): RecoveryFacts {
+  return {
+    execution: evidence(overrides.execution ?? "terminal"),
+    cleanup: evidence(overrides.cleanup ?? "unknown"),
+    persistence: evidence(overrides.persistence ?? "committed"),
+  }
+}
+
 /**
- * One workspace's runtime: the real session-core routes over an in-memory
- * adapter, plus the local server's worktree route, which lives in
- * `@claxedo/local-server` and cannot be imported here without a cycle. Its
- * body is the shape `createWorktree` answers with.
+ * What a local Stop settles as. `cancel_turn`'s postcondition demands
+ * `cleanup: "verified_clear"` and no adapter can establish that, so `succeeded`
+ * is unreachable and a healthy Stop closes as `needs_action` with cleanup
+ * unknown — the shape every consumer has to read as a stop.
  */
-const RECOVERY_FACTS = {
-  execution: { value: "terminal" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
-  cleanup: { value: "verified_clear" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
-  persistence: { value: "committed" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+function healthyStop(
+  operationId: string,
+  requestId: string,
+  target: RecoveryTarget,
+): RecoveryOutcome {
+  return {
+    kind: "operation",
+    operation: {
+      operationId, requestId, target, action: "cancel_turn", scopeRevision: "gen_1", attempt: 1,
+      state: "needs_action", phase: "graceful_cancel", phaseDeadlineAt: 2, facts: recoveryFacts(),
+      cleanupErrors: [],
+      nextActions: [{ action: "inspect", scopePreviewRequired: false, reason: "confirm the turn released its resources" }],
+      receipt: "durable", createdAt: 1, updatedAt: 1,
+    },
+  }
+}
+
+/**
+ * A Stop whose facts leave work behind: execution still running or unproven,
+ * or the interrupted state not committed. The owner names the error that
+ * explains it, which is what makes the operation `failed` rather than
+ * `needs_action`.
+ */
+function unsettledStop(
+  request: RecoveryRequest,
+  facts: { execution?: ExecutionFact; persistence?: PersistenceFact },
+): RecoveryOutcome {
+  const target = request.target
+  const initiatingError: RecoveryError = {
+    code: facts.execution ? "cancellation_timeout" : "persistence_unavailable",
+    origin: "fixture-owner",
+    target,
+    stage: facts.execution ? "graceful_cancel" : "reconcile",
+    executionMayContinue: facts.execution !== undefined,
+    message: facts.execution ? "the provider never acknowledged the cancellation" : "the transcript store refused the write",
+    at: 2,
+  }
+  return {
+    kind: "operation",
+    operation: {
+      operationId: "op_unsettled", requestId: request.requestId, target, action: "cancel_turn",
+      scopeRevision: "gen_1", attempt: 1, state: "failed", phase: initiatingError.stage, phaseDeadlineAt: 2,
+      facts: recoveryFacts(facts), initiatingError, cleanupErrors: [],
+      nextActions: [{ action: "cancel_turn", scopePreviewRequired: false, reason: "retry the cancellation" }],
+      receipt: "durable", createdAt: 1, updatedAt: 2,
+    },
+  }
 }
 
 /**
@@ -106,36 +178,38 @@ const RECOVERY_FACTS = {
  * has a target, so a Stop on an idle session gets the same "no turn to name"
  * refusal the real owner gives rather than a fabricated success.
  */
-function recoveryOwner(state: Workspace, sessionId: string) {
+function recoveryOwner(state: Workspace, _sessionId: string) {
   return {
     inspect: (id: string) => ({
       sessionId: id,
       ...(state.running.has(id)
         ? { target: { scope: "turn" as const, workspaceId: state.id, sessionId: id, turnId: `turn_${id}`, ownerGeneration: "gen_1" } }
         : {}),
-      facts: RECOVERY_FACTS,
+      facts: recoveryFacts(),
       health: { status: "ok" as const },
       failures: [],
       operations: [],
       queued: 0,
     }),
-    submit: async (request: { requestId: string; target: { sessionId: string } }) => {
-      state.aborted.push(request.target.sessionId)
-      state.releases.get(request.target.sessionId)?.()
-      return {
-        kind: "operation" as const,
-        operation: {
-          operationId: `op_${state.aborted.length}`, requestId: request.requestId, target: request.target as never,
-          action: "cancel_turn" as const, scopeRevision: "gen_1", attempt: 1, state: "succeeded" as const,
-          phase: "graceful_cancel" as const, phaseDeadlineAt: 2, facts: RECOVERY_FACTS,
-          cleanupErrors: [], nextActions: [], receipt: "durable" as const, createdAt: 1, updatedAt: 1,
-        },
-      }
+    submit: async (request: RecoveryRequest): Promise<RecoveryOutcome> => {
+      const target = request.target
+      if (target.scope !== "turn") throw new Error(`the fixture only cancels turns, not a ${target.scope}`)
+      state.aborted.push(target.sessionId)
+      state.releases.get(target.sessionId)?.()
+      return state.cancellation
+        ? state.cancellation(request)
+        : healthyStop(`op_${state.aborted.length}`, request.requestId, target)
     },
     read: () => undefined,
   }
 }
 
+/**
+ * One workspace's runtime: the real session-core routes over an in-memory
+ * adapter, plus the local server's worktree route, which lives in
+ * `@claxedo/local-server` and cannot be imported here without a cycle. Its
+ * body is the shape `createWorktree` answers with.
+ */
 function runtimeApp(state: Workspace) {
   const find = (id: string) => state.sessions.find((row) => row.id === id) ?? null
   const routes = createSessionRoutes({
@@ -381,10 +455,28 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return { text: block?.text ?? "", isError: result.isError === true }
 }
 
+/** A recovery tool answers with its summary ahead of the payload, so both are read. */
+async function cancel(client: Client, args: Record<string, unknown>) {
+  const result = await client.callTool({ name: "session_cancel_turn", arguments: args })
+  const [summary, payload] = result.content as Array<{ type: string; text: string }>
+  return {
+    summary: summary?.text ?? "",
+    payload: JSON.parse(payload?.text ?? "{}") as Record<string, unknown>,
+    isError: result.isError === true,
+  }
+}
+
+/** A recovery tool puts its summary ahead of the payload, so the payload is found by parsing. */
 async function json(client: Client, name: string, args: Record<string, unknown> = {}) {
-  const result = await call(client, name, args)
-  if (result.isError) throw new Error(result.text)
-  return JSON.parse(result.text) as Record<string, unknown>
+  const result = await client.callTool({ name, arguments: args })
+  const blocks = result.content as Array<{ type: string; text: string }>
+  if (result.isError === true) throw new Error(blocks[0]?.text ?? "")
+  for (const block of blocks) {
+    try {
+      return JSON.parse(block.text ?? "") as Record<string, unknown>
+    } catch {}
+  }
+  throw new Error(`${name} answered no JSON payload: ${blocks.map((block) => block.text).join(" | ")}`)
 }
 
 const local = (overrides: Partial<Workspace> = {}) =>
@@ -561,17 +653,91 @@ describe("reading and driving one session", () => {
     ])
   })
 
-  test("session_cancel_turn stops the turn the owner reports, and reports what stopping it reached", async () => {
+  test("session_cancel_turn reports a healthy Stop as a stop, not as an error", async () => {
     const state = local({ holdTurns: true })
     const { url } = await listen({ local: state })
     const client = await connect(url, "cli-jwt")
     await json(client, "session_send", { session: "ses_root", text: "carry on" })
     await until(() => state.prompts.length === 1, "the turn to reach the harness")
 
-    const stopped = await json(client, "session_cancel_turn", { session: "ses_root" })
+    const stopped = await cancel(client, { session: "ses_root" })
 
     expect(state.aborted).toEqual(["ses_root"])
-    expect(stopped.cancellation).toMatchObject({ kind: "operation", operation: { action: "cancel_turn", state: "succeeded" } })
+    expect(stopped.isError).toBe(false)
+    expect(stopped.summary).toContain("Stopped — cleanup not verified")
+    expect(stopped.summary).toContain("Next: inspect — confirm the turn released its resources")
+    expect(stopped.payload.cancellation).toMatchObject({
+      kind: "operation",
+      operation: { action: "cancel_turn", state: "needs_action" },
+    })
+  })
+
+  test.each([
+    { fact: "running" as const, reads: "The turn is still running" },
+    { fact: "unknown" as const, reads: "Cancellation did not answer for the turn" },
+  ])("session_cancel_turn reports execution $fact as unfinished work", async ({ fact, reads }) => {
+    const state = local({
+      holdTurns: true,
+      cancellation: (request) => unsettledStop(request, { execution: fact }),
+    })
+    const { url } = await listen({ local: state })
+    const client = await connect(url, "cli-jwt")
+    await json(client, "session_send", { session: "ses_root", text: "carry on" })
+    await until(() => state.prompts.length === 1, "the turn to reach the harness")
+
+    const answered = await cancel(client, { session: "ses_root" })
+
+    expect(answered.isError).toBe(true)
+    expect(answered.summary).toContain(reads)
+    expect(answered.summary).toContain("Next: cancel_turn — retry the cancellation")
+  })
+
+  test.each([
+    { fact: "pending" as const, reads: "saving the interrupted state has not been committed" },
+    { fact: "unavailable" as const, reads: "the store that records the interrupted state is unavailable" },
+  ])("session_cancel_turn says the stop was not recorded when persistence is $fact", async ({ fact, reads }) => {
+    const state = local({
+      holdTurns: true,
+      cancellation: (request) => unsettledStop(request, { persistence: fact }),
+    })
+    const { url } = await listen({ local: state })
+    const client = await connect(url, "cli-jwt")
+    await json(client, "session_send", { session: "ses_root", text: "carry on" })
+    await until(() => state.prompts.length === 1, "the turn to reach the harness")
+
+    const answered = await cancel(client, { session: "ses_root" })
+
+    expect(answered.summary).toContain(reads)
+    expect(answered.summary).toContain("Error persistence_unavailable from fixture-owner at reconcile")
+  })
+
+  test("session_cancel_turn gives every refusal kind its own wording", async () => {
+    const wordings: Array<[RecoveryRefusal, string]> = [
+      [{ kind: "generation_conflict", message: "the turn was replaced" }, "that turn has already ended"],
+      [{ kind: "intent_conflict", message: "seen before", requestId: "req_1" }, "request req_1 was already used for a different command"],
+      [{ kind: "receipt_expired", message: "too late", requestId: "req_1" }, "the receipt for request req_1 has expired"],
+      [
+        { kind: "scope_changed", message: "widened", scopeRevision: "rev_2", preview: { sessions: ["ses_root"], resources: ["pty_1"], summary: "one session and its terminal" } },
+        "what this command would interrupt changed since revision rev_2",
+      ],
+      [{ kind: "unauthorized", message: "read-only credential" }, "this credential may not run that recovery command"],
+      [{ kind: "unavailable", message: "the machine is offline" }, "the owner is unavailable"],
+      [{ kind: "version_update_required", message: "update Claxedo", contractVersion: 4 }, "recovery contract version 4"],
+    ]
+    for (const [refusal, reads] of wordings) {
+      const state = local({ holdTurns: true, cancellation: () => ({ kind: "refused", refusal }) })
+      const { url } = await listen({ local: state })
+      const client = await connect(url, "cli-jwt")
+      await json(client, "session_send", { session: "ses_root", text: "carry on" })
+      await until(() => state.prompts.length === 1, "the turn to reach the harness")
+
+      const answered = await cancel(client, { session: "ses_root" })
+
+      expect(answered.isError, refusal.kind).toBe(true)
+      expect(answered.summary, refusal.kind).toContain(reads)
+      expect(answered.summary, refusal.kind).toContain(refusal.message)
+      state.releases.get("ses_root")?.()
+    }
   })
 
   test("a session running no turn is told so instead of being reported as stopped", async () => {

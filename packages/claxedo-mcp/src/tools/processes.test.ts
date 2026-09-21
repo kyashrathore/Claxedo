@@ -61,7 +61,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
 })
 
-async function listen() {
+async function listen(workspace: Hono = runtime) {
   const elsewhere: string[] = []
   const routes = createClaxedoMcpRoutes({
     mount: "node",
@@ -72,7 +72,7 @@ async function listen() {
     createClient: () =>
       createClaxedoMcpClient({
         deployment: "node",
-        local: { fetch: inProcessFetch((request) => runtime.fetch(request)), workspace: { workspaceId: "ws_local", directory } },
+        local: { fetch: inProcessFetch((request) => workspace.fetch(request)), workspace: { workspaceId: "ws_local", directory } },
         controlPlane: {
           fetch: async (requestPath) => {
             const connection = /^\/api\/workspace\/([^/]+)\/connection$/.exec(new URL(requestPath, "http://control.local").pathname)
@@ -156,12 +156,42 @@ describe("the process tools over the runtime's own process routes", () => {
     const logs = await call(client, "process_logs", { process: "proc_greeter", lines: 20 })
     expect(logs.isError).toBe(false)
 
-    expect(JSON.parse((await call(client, "process_stop", { process: "proc_greeter" })).text)).toEqual({
+    const stopped = await call(client, "process_stop", { process: "proc_greeter" })
+    expect(stopped.isError).toBe(false)
+    expect(JSON.parse(stopped.text)).toMatchObject({
       process: "proc_greeter",
-      stopped: true,
+      state: "stopped",
+      retirement: { leader: "exited" },
     })
     await removeConfig("proc_greeter")
   }, 30_000)
+
+  test("an unresolved stop is reported as one, with the evidence and as an error", async () => {
+    const unresolved = new Hono().post("/api/wr/process/:id/stop", (c) =>
+      c.json({
+        state: "unresolved",
+        retirement: {
+          leader: "alive",
+          descendants: "unknown",
+          signals: [{ signal: "SIGKILL", scope: "group", delivered: false, refusal: "permission_denied" }],
+        },
+      }))
+    const { url } = await listen(unresolved)
+    const client = await connect(url, "cli-jwt")
+
+    const answered = await call(client, "process_stop", { process: "proc_stuck" })
+
+    expect(answered.isError).toBe(true)
+    expect(JSON.parse(answered.text)).toEqual({
+      process: "proc_stuck",
+      state: "unresolved",
+      retirement: {
+        leader: "alive",
+        descendants: "unknown",
+        signals: [{ signal: "SIGKILL", scope: "group", delivered: false, refusal: "permission_denied" }],
+      },
+    })
+  })
 
   test("refuses to start a process on another machine from inside a session", async () => {
     const { url, elsewhere } = await listen()

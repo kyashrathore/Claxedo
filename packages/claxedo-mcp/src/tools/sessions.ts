@@ -9,14 +9,14 @@
 import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import { workspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
-import type { RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import { isRecoveryOutcome, type RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import { McpAccessDenied, type McpToolContext } from "../context"
-import type { McpToolResult } from "../mcp-tool"
 import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
 import type { ToolRegistrar } from "./registry"
 import { runtimeToolAccess } from "./inventory"
+import { recoveryResult } from "./recovery-report"
 import { assertSessionReach } from "./session-reach"
 import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
@@ -70,6 +70,9 @@ export async function cancelSessionTurn(
   sessionId: string,
 ): Promise<RecoveryOutcome> {
   const inspected = await server.session.recovery.inspect({ sessionID: sessionId, ...scope })
+  // A refusal is what the owner said, and what the tool reports; it is not a
+  // session that happens to be running nothing.
+  if (isRecoveryOutcome(inspected.data)) return inspected.data
   const target = inspected.data.target
   if (!target) {
     return { kind: "refused", refusal: { kind: "generation_conflict", message: `Session ${sessionId} is not running a turn` } }
@@ -86,12 +89,6 @@ export async function cancelSessionTurn(
     },
   })
   return submitted.data
-}
-
-/** An operation that reached its postcondition is the only non-error answer. */
-export function recoveryResult(payload: unknown, outcome: RecoveryOutcome): McpToolResult {
-  const succeeded = outcome.kind === "operation" && outcome.operation.state === "succeeded"
-  return { ...toolJson(payload), ...(succeeded ? {} : { isError: true }) }
 }
 
 export function registerSessionTools(registry: ToolRegistrar) {

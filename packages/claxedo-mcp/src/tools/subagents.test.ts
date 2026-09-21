@@ -70,10 +70,14 @@ const error = (code: string, message: string) => ({ error: { code, message } })
  * adapter and a store from `@claxedo/agent-sdk-runtime`, which is not a
  * dependency here.
  */
-const RECOVERY_FACTS = {
-  execution: { value: "terminal", source: "fixture", observedAt: 1, generation: "gen_1" },
-  cleanup: { value: "verified_clear", source: "fixture", observedAt: 1, generation: "gen_1" },
-  persistence: { value: "committed", source: "fixture", observedAt: 1, generation: "gen_1" },
+/**
+ * What a local Stop can actually establish. `cancel_turn` only closes as
+ * `succeeded` under `cleanup: "verified_clear"`, which no adapter can prove, so
+ * a healthy Stop settles as `needs_action` with cleanup unknown.
+ */
+function recoveryFacts(execution = "terminal") {
+  const evidence = (value: string) => ({ value, source: "fixture", observedAt: 1, generation: "gen_1" })
+  return { execution: evidence(execution), cleanup: evidence("unknown"), persistence: evidence("committed") }
 }
 
 function fakeRuntime(options: {
@@ -81,6 +85,8 @@ function fakeRuntime(options: {
   parentMode?: string
   defaultHarness?: string | null
   harnessCapabilities?: FakeHarnessCapabilities
+  /** What the owner reports about execution after the cancellation. */
+  cancelledExecution?: "terminal" | "running" | "unknown"
 } = {}) {
   const sessions = new Map<string, FakeSession>()
   const rows = new Map<string, FakeRow[]>()
@@ -225,7 +231,7 @@ function fakeRuntime(options: {
       return c.json({
         sessionId: id,
         ...(running ? { target: { scope: "turn", workspaceId: "ws_fixture", sessionId: id, turnId: `turn_${id}`, ownerGeneration: "gen_1" } } : {}),
-        facts: RECOVERY_FACTS,
+        facts: recoveryFacts(),
         health: { status: "ok" },
         failures: [],
         operations: [],
@@ -235,14 +241,20 @@ function fakeRuntime(options: {
     .post("/session/:id/recovery", async (c) => {
       const body = await c.req.json() as { requestId: string; target: { sessionId: string } }
       const child = sessions.get(body.target.sessionId)
-      if (child) scheduleTurn(child, "killed", 0)
+      const execution = options.cancelledExecution ?? "terminal"
+      if (child && execution === "terminal") scheduleTurn(child, "killed", 0)
       return c.json({
         kind: "operation",
         operation: {
           operationId: `op_${body.requestId}`, requestId: body.requestId, target: body.target,
-          action: "cancel_turn", scopeRevision: "gen_1", attempt: 1, state: "succeeded",
-          phase: "graceful_cancel", phaseDeadlineAt: 2, facts: RECOVERY_FACTS,
-          cleanupErrors: [], nextActions: [], receipt: "durable", createdAt: 1, updatedAt: 1,
+          action: "cancel_turn", scopeRevision: "gen_1", attempt: 1,
+          state: execution === "terminal" ? "needs_action" : "failed",
+          phase: "graceful_cancel", phaseDeadlineAt: 2, facts: recoveryFacts(execution),
+          cleanupErrors: [],
+          nextActions: execution === "terminal"
+            ? [{ action: "inspect", scopePreviewRequired: false, reason: "confirm the child released its resources" }]
+            : [{ action: "cancel_turn", scopePreviewRequired: false, reason: "retry the cancellation" }],
+          receipt: "durable", createdAt: 1, updatedAt: 1,
         },
       })
     })
@@ -369,7 +381,15 @@ function textOf(result: CallToolResult) {
   return block.text
 }
 
-const jsonOf = (result: CallToolResult) => JSON.parse(textOf(result)) as Record<string, unknown>
+/** A recovery tool puts its summary ahead of the binding, so the binding is found by parsing. */
+const jsonOf = (result: CallToolResult) => {
+  for (const block of result.content as Array<{ text?: string }>) {
+    try {
+      return JSON.parse(block.text ?? "") as Record<string, unknown>
+    } catch {}
+  }
+  throw new Error(`no JSON payload in ${textOf(result)}`)
+}
 
 async function until(predicate: () => boolean, label: string) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -575,12 +595,34 @@ describe("subagent tools", () => {
     expect(jsonOf(await call(client, "subagent_status", { subagentKey: created.subagentKey })))
       .toMatchObject({ kind: "claxedo.subagent", sessionId: created.sessionId, status: "running" })
 
-    expect(jsonOf(await call(client, "subagent_cancel", { sessionId: created.sessionId })))
-      .toMatchObject({ kind: "claxedo.subagent", sessionId: created.sessionId })
+    const cancelled = await call(client, "subagent_cancel", { sessionId: created.sessionId })
+    expect(cancelled.isError).toBeFalsy()
+    expect(textOf(cancelled)).toContain("Stopped — cleanup not verified")
+    expect(textOf(cancelled)).toContain("Next: inspect — confirm the child released its resources")
+    expect(jsonOf(cancelled)).toMatchObject({
+      kind: "claxedo.subagent",
+      sessionId: created.sessionId,
+      facts: { execution: { value: "terminal" }, cleanup: { value: "unknown" }, persistence: { value: "committed" } },
+    })
 
     await until(() => runtime.childrenOf("parent")[0]?.status === "killed", "the cancelled child to settle")
     expect(jsonOf(await call(client, "subagent_status", { subagentKey: created.subagentKey })))
       .toMatchObject({ status: "killed", summary: "Ship it." })
+  })
+
+  test("subagent_cancel reports a child that never stopped as an error the caller can retry", async () => {
+    const runtime = fakeRuntime({ turnMs: 60_000, cancelledExecution: "running" })
+    const url = await mount(runtime)
+    runtime.seed("parent")
+    const client = await asRuntime(url, "parent")
+
+    const created = jsonOf(await call(client, "create_subagent", { harness: "codex", prompt: "Consult", mode: "async" }))
+    const cancelled = await call(client, "subagent_cancel", { sessionId: created.sessionId })
+
+    expect(cancelled.isError).toBe(true)
+    expect(textOf(cancelled)).toContain("The turn is still running")
+    expect(textOf(cancelled)).toContain("Next: cancel_turn — retry the cancellation")
+    expect(jsonOf(cancelled)).toMatchObject({ facts: { execution: { value: "running" } } })
   })
 
   test("the child is created on the model the caller named", async () => {

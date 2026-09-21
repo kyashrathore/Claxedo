@@ -17,6 +17,7 @@ import { McpAccessDenied, type McpToolContext } from "../context"
 import { McpHttpError, mcpHttpError } from "../http-error"
 import { num, oneOf, record, records, text } from "../json"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
+import { recoveryFailed, recoveryText } from "./recovery-report"
 import type { ToolRegistrar } from "./registry"
 import { cancelSessionTurn } from "./sessions"
 
@@ -124,11 +125,13 @@ export function registerSubagentTools(registry: ToolRegistrar): void {
       subagentKey: row.subagentKey,
       sessionId: row.sessionId,
       cancellation: outcome,
+      ...(outcome.kind === "operation" ? { facts: outcome.operation.facts } : {}),
       ...(snapshot?.status ? { status: snapshot.status } : {}),
     })
-    return outcome.kind === "operation" && outcome.operation.state === "succeeded"
-      ? reported
-      : { ...reported, isError: true }
+    return {
+      content: [{ type: "text", text: recoveryText(outcome) }, ...reported.content],
+      ...(recoveryFailed(outcome) ? { isError: true } : {}),
+    }
   }))
 }
 
