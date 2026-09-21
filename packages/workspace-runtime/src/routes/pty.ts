@@ -25,6 +25,7 @@ import {
   type SessionAccessOperation,
   type SessionAccessPolicy,
 } from "../session-access-policy"
+import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
 
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)
@@ -58,10 +59,20 @@ function requestPort(url: string): string | undefined {
 /** The admission the pre-upgrade handler took, read by the upgrade closure behind it. */
 type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: PtyStreamAdmission }
 
+/**
+ * `ownership` is resolved per request, not captured once: one process serves
+ * many workspaces, and a terminal must be owned by the store of the workspace
+ * it was opened in.
+ */
+export type PtyRouteOptions = {
+  ownership?: () => LaunchOwnershipStore
+}
+
 export function PtyRoutes(
   upgradeWebSocket: UpgradeWebSocket,
   processObserver?: ProcessObserver,
   policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy(),
+  options: PtyRouteOptions = {},
 ) {
   const authorize = async (
     c: Context<{ Variables: PtyRouteVariables }>,
@@ -206,6 +217,9 @@ export function PtyRoutes(
             ...(agentHookAccess ? { CLAXEDO_AGENT_HOOK_TOKEN: agentHookAccess.token } : {}),
           },
         },
+        // A workspace with no durable store gets volatile ownership, said here
+        // rather than defaulted inside the PTY owner.
+        options.ownership?.() ?? volatileLaunchOwnership(),
         processObserver
           ? {
               observer: processObserver,

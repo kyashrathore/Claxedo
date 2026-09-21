@@ -34,6 +34,10 @@ import {
   hostTunnelFromEnv,
   managementTargetFromEnv,
 } from "./workspace-relay-env"
+import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+
+/** This suite asserts routing, not recovery: the launch records die with the test. */
+const ownership = volatileLaunchOwnership()
 
 const relayHostAuth: RelayHostAuthOptions = {
   key: new Uint8Array([1]),
@@ -735,7 +739,7 @@ describe("workspace runtime drain", () => {
       args: ["-e", "setInterval(() => {}, 1000)"],
       cwd: dir,
       title: "drain-pty",
-    })
+    }, ownership)
 
     try {
       expect(Pty.get(pty.id)?.id).toBe(pty.id)

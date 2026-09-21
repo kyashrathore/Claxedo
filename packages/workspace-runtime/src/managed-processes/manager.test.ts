@@ -96,6 +96,10 @@ describe("process config file", () => {
 // interaction with the real ~/.claxedo/state directory.
 
 import * as PortLease from "./port-lease"
+import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+
+/** These tests assert scheduling and ports, not recovery: the records die with the test. */
+const ownership = volatileLaunchOwnership()
 
 describe("PortLease", () => {
   let tmpDir: string
@@ -353,7 +357,7 @@ describe("resolvePort via start()", () => {
     // No lease written — start should try the preferred port
     const { start, dispose } = await import("./manager")
     try {
-      const result = await start(dir, "proc_a")
+      const result = await start(dir, "proc_a", { ownership })
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
         expect(result.process.assignedPort).toBe(preferred)
@@ -385,7 +389,7 @@ describe("resolvePort via start()", () => {
 
     const { start, dispose } = await import("./manager")
     try {
-      const result = await start(dir, "proc_unsafe")
+      const result = await start(dir, "proc_unsafe", { ownership })
       expect(result).toEqual({
         kind: "failed",
         error: "workspace command path must be relative",
@@ -421,7 +425,7 @@ describe("resolvePort via start()", () => {
 
     const { start, dispose } = await import("./manager")
     try {
-      const result = await start(dir, "proc_b")
+      const result = await start(dir, "proc_b", { ownership })
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
         // Should use the LEASED port, not preferred
@@ -465,7 +469,7 @@ describe("resolvePort via start()", () => {
 
     const { start, dispose } = await import("./manager")
     try {
-      const result = await start(dir, "proc_c")
+      const result = await start(dir, "proc_c", { ownership })
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
         // Should fall back to preferred since port_name doesn't match
@@ -501,7 +505,7 @@ describe("resolvePort via start()", () => {
 
     const { start, dispose } = await import("./manager")
     try {
-      const result = await start(dir, "proc_d")
+      const result = await start(dir, "proc_d", { ownership })
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
         // Should fall back to preferred since lease.preferred doesn't match
@@ -526,7 +530,7 @@ describe("resolvePort via start()", () => {
 
     const { start, dispose } = await import("./manager")
     try {
-      const result = await start(dir, "proc_e")
+      const result = await start(dir, "proc_e", { ownership })
       expect(result.kind).toBe("started")
 
       const lease = await PortLease.read({
@@ -571,7 +575,7 @@ describe("resolvePort via start()", () => {
       }
     })
     try {
-      const results = await Promise.all([start(dir, "proc_once"), start(dir, "proc_once")])
+      const results = await Promise.all([start(dir, "proc_once", { ownership }), start(dir, "proc_once", { ownership })])
       expect(results.map((result) => result.kind)).toEqual(["started", "started"])
       expect(created).toHaveLength(1)
       expect(results[0].kind === "started" ? results[0].process.ptyId : undefined).toBe("pty_proc_once_1")
@@ -615,7 +619,7 @@ describe("resolvePort via start()", () => {
       }
     })
     try {
-      const results = await Promise.all([start(dir, "proc_a"), start(dir, "proc_b")])
+      const results = await Promise.all([start(dir, "proc_a", { ownership }), start(dir, "proc_b", { ownership })])
       expect(results.map((result) => result.kind)).toEqual(["started", "started"])
       const ports = results.map((result) => result.kind === "started" ? result.process.assignedPort : undefined)
       expect(new Set(ports).size).toBe(2)
@@ -653,7 +657,7 @@ describe("resolvePort via start()", () => {
     })
     const write = spyOn(Pty, "write").mockImplementation(() => {})
     try {
-      const result = await start(dir, "proc_initial")
+      const result = await start(dir, "proc_initial", { ownership })
       expect(result.kind).toBe("started")
 
       expect(created).toHaveLength(1)
@@ -700,7 +704,7 @@ describe("resolvePort via start()", () => {
     })
     const remove = spyOn(Pty, "remove").mockImplementation(async () => {})
     try {
-      const pendingStart = start(dir, "proc_starting")
+      const pendingStart = start(dir, "proc_starting", { ownership })
       await entered
 
       await dispose(dir)
@@ -760,8 +764,8 @@ describe("resolvePort via start()", () => {
       active.delete(id)
     })
     try {
-      expect((await start(dir, "proc_running")).kind).toBe("started")
-      expect((await start(dir, "proc_stopping")).kind).toBe("started")
+      expect((await start(dir, "proc_running", { ownership })).kind).toBe("started")
+      expect((await start(dir, "proc_stopping", { ownership })).kind).toBe("started")
       const stopping = stop(dir, "proc_stopping")
       await Promise.resolve()
 
@@ -813,7 +817,7 @@ describe("resolvePort via start()", () => {
       active.delete(id)
     })
     try {
-      const started = await start(dir, "proc_restart")
+      const started = await start(dir, "proc_restart", { ownership })
       expect(started.kind).toBe("started")
 
       active.delete("pty_1")
@@ -850,7 +854,7 @@ describe("resolvePort via start()", () => {
       throw new Error("spawn failed")
     })
     try {
-      const failed = await start(dir, "proc_crashed")
+      const failed = await start(dir, "proc_crashed", { ownership })
       expect(failed.kind).toBe("failed")
       expect(get(dir, "proc_crashed")?.status).toBe("crashed")
 
@@ -890,10 +894,10 @@ describe("resolvePort via start()", () => {
         pid: 1,
       }))
     try {
-      const failed = await start(dir, "proc_fail")
+      const failed = await start(dir, "proc_fail", { ownership })
       expect(failed.kind).toBe("failed")
 
-      const started = await start(dir, "proc_fail")
+      const started = await start(dir, "proc_fail", { ownership })
       expect(started.kind).toBe("started")
       if (started.kind === "started") {
         expect(started.process.assignedPort).toBe(19884)
@@ -932,11 +936,11 @@ describe("resolvePort via start()", () => {
       })
       .mockImplementationOnce(async () => {})
     try {
-      const failed = await start(dir, "proc_lease_fail")
+      const failed = await start(dir, "proc_lease_fail", { ownership })
       expect(failed.kind).toBe("failed")
       expect(remove).toHaveBeenCalledWith("pty_lease_fail_19885")
 
-      const started = await start(dir, "proc_lease_fail")
+      const started = await start(dir, "proc_lease_fail", { ownership })
       expect(started.kind).toBe("started")
       if (started.kind === "started") {
         expect(started.process.assignedPort).toBe(19885)
@@ -982,7 +986,7 @@ describe("resolvePort via start()", () => {
       }
     })
     try {
-      const result = await start(dir, "proc_env")
+      const result = await start(dir, "proc_env", { ownership })
       expect(result.kind).toBe("started")
       if (result.kind !== "started") return
 
@@ -1033,7 +1037,7 @@ describe("stop without proof of exit", () => {
       }),
     )
     await Manager.loadConfig(directory)
-    return await Manager.start(directory, "proc_held")
+    return await Manager.start(directory, "proc_held", { ownership })
   }
 
   test("an unresolved stop keeps the pty id, the port and a status that does not claim it stopped", async () => {

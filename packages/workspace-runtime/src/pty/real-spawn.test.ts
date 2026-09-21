@@ -7,6 +7,10 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
+import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+
+/** This suite asserts real process containment, not record durability. */
+const ownership = volatileLaunchOwnership()
 
 /**
  * REAL @lydell/node-pty spawns — deliberately no module mock here, unlike
@@ -81,8 +85,8 @@ const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { d
 console.log('CHILD_PID=' + child.pid);
 setInterval(() => {}, 1000);
 `)
-    const target = await Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir })
-    const neighbor = await Pty.create({ command: "/bin/sh", cwd: tmpDir })
+    const target = await Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, ownership)
+    const neighbor = await Pty.create({ command: "/bin/sh", cwd: tmpDir }, ownership)
     const targetClient = socket()
     const neighborClient = socket()
     assert.ok(Pty.connect(target.id, targetClient.ws))
@@ -113,7 +117,7 @@ setInterval(() => {}, 1000);
 
   void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" })
+    const info = await Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" }, ownership)
     assert.equal(info.status, "running")
     assert.ok(info.pid > 0)
 

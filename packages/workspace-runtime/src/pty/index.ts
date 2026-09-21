@@ -19,7 +19,6 @@ import {
   retire,
   retireDescendants,
   retirementSettled,
-  volatileLaunchOwnership,
   type CreationIdentity,
   type DescendantSweep,
   type LaunchOwnershipStore,
@@ -234,17 +233,6 @@ export namespace Pty {
     )
   }
 
-  let ownership: LaunchOwnershipStore = volatileLaunchOwnership()
-
-  /**
-   * Host compositions inject the workspace's durable store. Until they do,
-   * ownership is volatile: the records exist for this process only, so nothing
-   * here can be reconciled after a restart.
-   */
-  export function useLaunchOwnership(store: LaunchOwnershipStore) {
-    ownership = store
-  }
-
   /**
    * A terminal's own session and process group come from the PTY itself
    * (`forkpty` calls `setsid`), so the scope this retires is the one the OS
@@ -271,7 +259,7 @@ export namespace Pty {
       escapees.filter((candidate) => candidate.processGroupId !== session.identity!.processGroupId),
       DEFAULT_RECOVERY_BUDGETS,
     )
-    if (session.launchId) await ownership.recordRetirement(session.launchId, result).catch(() => {})
+    if (session.launchId) await session.ownership?.recordRetirement(session.launchId, result).catch(() => {})
     return result
   }
 
@@ -365,6 +353,12 @@ export namespace Pty {
     cleanupOperation?: Promise<RetirementResult | undefined>
     removeOperation?: Promise<RetirementResult | undefined>
     launchId?: string
+    /**
+     * The store that owns this terminal's launch record. It is the one given at
+     * `create`, not whatever store some other workspace installed afterwards:
+     * one process serves many workspaces, and each terminal answers to its own.
+     */
+    ownership?: LaunchOwnershipStore
     identity?: CreationIdentity
     /**
      * Set when retirement did not establish that this terminal's processes are
@@ -639,6 +633,12 @@ export namespace Pty {
 
   export async function create(
     input: CreateInput,
+    /**
+     * Required, and never defaulted here: a caller with no durable store passes
+     * `volatileLaunchOwnership()` itself, so a terminal nothing can reconcile
+     * after a restart is a visible decision at the call site.
+     */
+    ownership: LaunchOwnershipStore,
     observation?: {
       observer: ProcessObserver
       kind: Extract<ProcessOwnerKind, "pty" | "managed-process">
@@ -744,6 +744,9 @@ export namespace Pty {
       .catch((error: unknown) => { throw new LaunchRefusedError("terminal", error) })
 
     const t3 = performance.now()
+    // `ps` reports whole seconds, so a process that started in the second
+    // before this one is still allowed to be ours.
+    const spawnedAfter = Date.now() - 1_000
     const ptyProcess = spawn(command, args, {
       name: "xterm-256color",
       cwd,
@@ -751,12 +754,29 @@ export namespace Pty {
     })
     const spawnMs = performance.now() - t3
     const observed = Number.isInteger(ptyProcess.pid) && ptyProcess.pid > 0
-      ? await readCreationIdentity(ptyProcess.pid).catch(() => undefined)
+      ? await readCreationIdentity(ptyProcess.pid).catch((error: unknown) => {
+          log.error("could not read the terminal's creation identity; it cannot be retired by signal", { id, pid: ptyProcess.pid, error: String(error) })
+          return undefined
+        })
       : undefined
     // Only a process this runtime is the parent of may be recorded. A pid the
     // PTY library reported but that belongs to something else must never
     // become a signal target.
-    const identity = observed?.parentPid === process.pid ? observed : undefined
+    // The PTY library's own spawn helper is the child's parent, not this
+    // runtime, so parentage proves nothing. What does: a process that already
+    // existed before this spawn cannot be the one this spawn created, and a
+    // pid that is not its own group leader is not a terminal session.
+    const ours = !!observed && observed.startedAtMs >= spawnedAfter && observed.processGroupId === observed.pid
+    const identity = ours ? observed : undefined
+    if (observed && !identity) {
+      log.error("the PTY reported a pid this spawn cannot own; it will not be signalled", {
+        id,
+        pid: observed.pid,
+        startedAtMs: observed.startedAtMs,
+        processGroupId: observed.processGroupId,
+        spawnedAfter,
+      })
+    }
     if (identity) await ownership.recordIdentity(prepared.launchId, identity).catch(() => {})
 
     const info = {
@@ -895,6 +915,7 @@ export namespace Pty {
       orphanTimer: undefined,
       interruptTimer: undefined,
       launchId: prepared.launchId,
+      ownership,
       ...(identity ? { identity } : {}),
       ...(owner ? { owner } : {}),
       ...(agentHookAccess ? { agentHookAccess } : {}),

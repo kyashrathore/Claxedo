@@ -18,6 +18,7 @@ import {
   sessionAccessDenied,
   type SessionAccessPolicy,
 } from "../session-access-policy"
+import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
 
 function dir(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): string {
   return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
@@ -135,7 +136,8 @@ async function validateConfig(directory: string, config: Partial<Process.Process
   })
 }
 
-function createFullProcessRoutes(policy: SessionAccessPolicy) {
+function createFullProcessRoutes(policy: SessionAccessPolicy, options: ProcessRouteOptions) {
+  const ownership = () => options.ownership?.() ?? volatileLaunchOwnership()
   return (
   new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
@@ -202,6 +204,7 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
       const id = c.req.param("id")
       const launch = Process.LaunchRequest.safeParse(await boundedJsonBody(c) ?? {})
       const result = await ProcessManager.start(directory, id, {
+        ownership: ownership(),
         portConflict: launch.success ? launch.data.portConflict : undefined,
         routeConflict: launch.success ? launch.data.routeConflict : undefined,
       })
@@ -228,7 +231,7 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
     .post("/:id/restart", async (c) => {
       const directory = await init(c)
       const id = c.req.param("id")
-      const result = await ProcessManager.restart(directory, id)
+      const result = await ProcessManager.restart(directory, id, { ownership: ownership() })
       if (result.kind === "not_found") {
         return c.json(result, 404)
       }
@@ -239,7 +242,7 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
     })
     .post("/start-all", async (c) => {
       const directory = await init(c)
-      await ProcessManager.startAll(directory)
+      await ProcessManager.startAll(directory, { ownership: ownership() })
       return c.json(true)
     })
     .post("/stop-all", async (c) => {
@@ -258,8 +261,17 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
   )
 }
 
-export function ProcessRoutes(policy?: SessionAccessPolicy) {
-  return createFullProcessRoutes(policy ?? managedWorkspaceSessionAccessPolicy())
+/**
+ * `ownership` is resolved per request, not captured once: one process serves
+ * many workspaces, and a managed process must be owned by the store of the
+ * workspace it was started in.
+ */
+export type ProcessRouteOptions = {
+  ownership?: () => LaunchOwnershipStore
+}
+
+export function ProcessRoutes(policy?: SessionAccessPolicy, options: ProcessRouteOptions = {}) {
+  return createFullProcessRoutes(policy ?? managedWorkspaceSessionAccessPolicy(), options)
 }
 
 /**

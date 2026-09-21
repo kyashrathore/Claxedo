@@ -115,7 +115,7 @@ describe("PtyRoutes", () => {
       )
       expect(response.status).toBe(200)
       expect(create.mock.calls[0]?.[0]?.env).toMatchObject({ CLAXEDO_WORKSPACE_ID: "ws_actual", USER_VALUE: "kept" })
-      expect(create.mock.calls[0]?.[1]).toMatchObject({ workspaceId: "ws_actual", directory })
+      expect(create.mock.calls[0]?.[2]).toMatchObject({ workspaceId: "ws_actual", directory })
 
       delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
       process.env.WORKSPACE_RUNTIME_DIRECTORY = directory
@@ -127,7 +127,7 @@ describe("PtyRoutes", () => {
       expect(withoutIdentity.status).toBe(200)
       expect(create.mock.calls[1]?.[0]?.env?.CLAXEDO_WORKSPACE_ID).toBeUndefined()
       expect(create.mock.calls[1]?.[0]?.env?.USER_VALUE).toBe("kept")
-      expect(create.mock.calls[1]?.[1]).toMatchObject({ workspaceId: directory, directory })
+      expect(create.mock.calls[1]?.[2]).toMatchObject({ workspaceId: directory, directory })
     } finally {
       if (previousWorkspaceId === undefined) delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
       else process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = previousWorkspaceId
@@ -523,7 +523,7 @@ describe("PtyRoutes", () => {
       expect(allowed.status).toBe(200)
       await expect(allowed.json()).resolves.toMatchObject({ sessionId: "session_a" })
       expect(create).toHaveBeenCalledTimes(1)
-      expect(create.mock.calls[0]?.[2]).toMatchObject({
+      expect(create.mock.calls[0]?.[3]).toMatchObject({
         sessionId: "session_a",
         authorityLease: "terminal-capability",
       })
@@ -596,7 +596,7 @@ describe("PtyRoutes", () => {
       })
       expect(created.status).toBe(200)
       expect(streamed).toEqual([{ sessionId: "session_a", operation: "agent_lifecycle_write" }])
-      expect(create.mock.calls[0]?.[2]).toMatchObject({
+      expect(create.mock.calls[0]?.[3]).toMatchObject({
         sessionId: "session_a",
         authorityLease: "authority-lease",
         authorityExpiresAt: 1_700_000_000_000,

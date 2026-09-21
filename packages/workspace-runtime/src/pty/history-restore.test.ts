@@ -6,6 +6,10 @@ import type { WSContext } from "hono/ws"
 import { historyPath } from "./history-disk"
 import xterm from "@xterm/headless"
 import { terminalCheckpointSchema, applyTerminalCheckpointState } from "./terminal-checkpoint-state"
+import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
+
+/** History restore is about transcripts, not recovery: these records die with the test. */
+const ownership = volatileLaunchOwnership()
 
 /**
  * End-to-end cover for the COLD RESTORE path: the PTY a client was attached to
@@ -125,7 +129,7 @@ describe("cold restore: replacing a lost PTY", () => {
   test("the replacement session comes up carrying the old session's scrollback", async () => {
     const { Pty } = await import("./index")
 
-    const first = await Pty.create({ cwd: tmpDir, title: "before" })
+    const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, "IMPORTANT-OUTPUT-FROM-BEFORE\n")
     await waitFor(() => Pty.snapshot(first.id).includes("IMPORTANT-OUTPUT-FROM-BEFORE"))
@@ -136,7 +140,7 @@ describe("cold restore: replacing a lost PTY", () => {
       cwd: tmpDir,
       title: "after",
       env: { previousPtyId: first.id },
-    })
+    }, ownership)
 
     expect(Pty.snapshot(replacement.id)).toContain("IMPORTANT-OUTPUT-FROM-BEFORE")
   })
@@ -144,7 +148,7 @@ describe("cold restore: replacing a lost PTY", () => {
   test("a client attaching to the replacement is SENT the restored scrollback", async () => {
     const { Pty } = await import("./index")
 
-    const first = await Pty.create({ cwd: tmpDir, title: "before" })
+    const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, "REPLAYED-TO-THE-CLIENT\n")
     await waitFor(() => Pty.snapshot(first.id).includes("REPLAYED-TO-THE-CLIENT"))
@@ -154,7 +158,7 @@ describe("cold restore: replacing a lost PTY", () => {
       cwd: tmpDir,
       title: "after",
       env: { previousPtyId: first.id },
-    })
+    }, ownership)
     const client = socket()
     Pty.connect(replacement.id, client.ws)
 
@@ -164,7 +168,7 @@ describe("cold restore: replacing a lost PTY", () => {
   test("the restored session is marked with the separator, exactly once", async () => {
     const { Pty } = await import("./index")
 
-    const first = await Pty.create({ cwd: tmpDir, title: "before" })
+    const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, "OLD-CONTENT\n")
     await waitFor(() => Pty.snapshot(first.id).includes("OLD-CONTENT"))
@@ -174,7 +178,7 @@ describe("cold restore: replacing a lost PTY", () => {
       cwd: tmpDir,
       title: "after",
       env: { previousPtyId: first.id },
-    })
+    }, ownership)
 
     const firstClient = socket()
     Pty.connect(replacement.id, firstClient.ws)
@@ -192,7 +196,7 @@ describe("cold restore: replacing a lost PTY", () => {
   test("the separator sits between restored content and fresh shell output", async () => {
     const { Pty } = await import("./index")
 
-    const first = await Pty.create({ cwd: tmpDir, title: "before" })
+    const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, "OLD-CONTENT\n")
     await waitFor(() => Pty.snapshot(first.id).includes("OLD-CONTENT"))
@@ -202,7 +206,7 @@ describe("cold restore: replacing a lost PTY", () => {
       cwd: tmpDir,
       title: "after",
       env: { previousPtyId: first.id },
-    })
+    }, ownership)
     fakeProcesses.get(replacement.pid)!.dataHandlers.forEach((handler) => handler("NEW-PROMPT"))
     const client = socket()
     Pty.connect(replacement.id, client.ws)
@@ -215,7 +219,7 @@ describe("cold restore: replacing a lost PTY", () => {
   test("a session that replaced nothing is NOT marked as restored", async () => {
     const { Pty } = await import("./index")
 
-    const fresh = await Pty.create({ cwd: tmpDir, title: "fresh" })
+    const fresh = await Pty.create({ cwd: tmpDir, title: "fresh" }, ownership)
     const client = socket()
     Pty.connect(fresh.id, client.ws)
 
@@ -225,7 +229,7 @@ describe("cold restore: replacing a lost PTY", () => {
   test("the history file is re-keyed onto the new id, leaving none behind", async () => {
     const { Pty } = await import("./index")
 
-    const first = await Pty.create({ cwd: tmpDir, title: "before" })
+    const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, "RE-KEYED\n")
     await waitFor(() => Pty.snapshot(first.id).includes("RE-KEYED"))
@@ -235,7 +239,7 @@ describe("cold restore: replacing a lost PTY", () => {
       cwd: tmpDir,
       title: "after",
       env: { previousPtyId: first.id },
-    })
+    }, ownership)
 
     expect(await fs.readFile(historyPath(tmpDir, replacement.id), "utf8")).toContain("RE-KEYED")
     // The old path must not linger, or a later restore could resurrect it.
@@ -249,7 +253,7 @@ describe("cold restore: replacing a lost PTY", () => {
       cwd: tmpDir,
       title: "after",
       env: { previousPtyId: "pty_does_not_exist" },
-    })
+    }, ownership)
     const client = socket()
     Pty.connect(replacement.id, client.ws)
 
@@ -261,19 +265,19 @@ describe("cold restore: replacing a lost PTY", () => {
   test("restored content survives a SECOND loss — the chain does not break", async () => {
     const { Pty } = await import("./index")
 
-    const first = await Pty.create({ cwd: tmpDir, title: "gen1" })
+    const first = await Pty.create({ cwd: tmpDir, title: "gen1" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, "GENERATION-ONE\n")
     await waitFor(() => Pty.snapshot(first.id).includes("GENERATION-ONE"))
     await Pty.remove(first.id)
 
-    const second = await Pty.create({ cwd: tmpDir, title: "gen2", env: { previousPtyId: first.id } })
+    const second = await Pty.create({ cwd: tmpDir, title: "gen2", env: { previousPtyId: first.id } }, ownership)
     Pty.connect(second.id, socket().ws)
     Pty.write(second.id, "GENERATION-TWO\n")
     await waitFor(() => Pty.snapshot(second.id).includes("GENERATION-TWO"))
     await Pty.remove(second.id)
 
-    const third = await Pty.create({ cwd: tmpDir, title: "gen3", env: { previousPtyId: second.id } })
+    const third = await Pty.create({ cwd: tmpDir, title: "gen3", env: { previousPtyId: second.id } }, ownership)
 
     const snapshot = Pty.snapshot(third.id)
     expect(snapshot).toContain("GENERATION-ONE")
@@ -286,13 +290,13 @@ describe("cold restore: replacing a lost PTY", () => {
     // A TUI's scrollback is mostly escape sequences; a restore that mangles
     // them shows as coloured garbage rather than the frame the user left.
     const tuiish = "\x1b[1;32mBOLD-GREEN\x1b[0m \x1b[?25l\x1b[38;5;196mRED\x1b[0m\n"
-    const first = await Pty.create({ cwd: tmpDir, title: "tui" })
+    const first = await Pty.create({ cwd: tmpDir, title: "tui" }, ownership)
     Pty.connect(first.id, socket().ws)
     Pty.write(first.id, tuiish)
     await waitFor(() => Pty.snapshot(first.id).includes("BOLD-GREEN"))
     await Pty.remove(first.id)
 
-    const replacement = await Pty.create({ cwd: tmpDir, title: "after", env: { previousPtyId: first.id } })
+    const replacement = await Pty.create({ cwd: tmpDir, title: "after", env: { previousPtyId: first.id } }, ownership)
     expect(Pty.snapshot(replacement.id)).toContain(tuiish.trimEnd())
   })
 })

@@ -14,6 +14,7 @@ const identity: CreationIdentity = {
   processGroupId: 4242,
   parentPid: 4241,
   startSecond: "Sun Sep 21 12:00:00 2026",
+  startedAtMs: Date.parse("Sun Sep 21 12:00:00 2026"),
   bootTime: "1758000000",
   source: "darwin-ps",
 }

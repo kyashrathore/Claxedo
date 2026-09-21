@@ -7,7 +7,7 @@
  * deterministic workspace ports, and graceful shutdown.
  */
 
-import { LaunchRefusedError, retirementSettled, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { LaunchRefusedError, retirementSettled, type LaunchOwnershipStore, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 import { workspaceRuntimeBus } from "../bus"
 import { Pty } from "../pty/index"
 import { Log } from "../log"
@@ -65,6 +65,12 @@ interface State {
   configs: Map<string, Process.ProcessConfig>
   processes: Map<string, Process.ManagedProcess>
   startFlights: Map<string, Promise<Process.LaunchResult>>
+  /**
+   * The launch owner for this directory's processes, recorded by the explicit
+   * start that opened them. A crash restart launches against the same store
+   * rather than whatever another workspace installed since.
+   */
+  ownership: LaunchOwnershipStore | undefined
   restartTimers: Map<string, ReturnType<typeof setTimeout>>
   watcher: FSWatcher | undefined
   debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -92,6 +98,7 @@ function getState(directory: string): State {
       configs: new Map(),
       processes: new Map(),
       startFlights: new Map(),
+      ownership: undefined,
       restartTimers: new Map(),
       watcher: undefined,
       debounceTimer: undefined,
@@ -695,7 +702,8 @@ async function reconcileFromDisk(directory: string): Promise<void> {
         const proc = s.processes.get(id)
         if (proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")) {
           log.info("config changed, restarting process", { id, name: newConfig.name })
-          await restart(directory, id)
+          if (s.ownership) await restart(directory, id, { ownership: s.ownership })
+          else log.error("refusing a config-change restart with no recorded launch owner", { id })
         } else {
           log.info("config changed", { id, name: newConfig.name })
         }
@@ -905,13 +913,21 @@ export async function reconcileRuntime(directory: string, ids?: string[]): Promi
 /**
  * Start a process by config ID.
  */
+export type ProcessStartOptions = {
+  /** The durable owner of every process this start launches. */
+  ownership: LaunchOwnershipStore
+  portConflict?: Process.PortConflictStrategy
+  routeConflict?: Process.PortConflictStrategy
+}
+
 export async function start(
   directory: string,
   configId: string,
-  opts?: { portConflict?: Process.PortConflictStrategy; routeConflict?: Process.PortConflictStrategy },
+  opts: ProcessStartOptions,
 ): Promise<Process.LaunchResult> {
   const s = getState(directory)
   if (s.disposed) return fail(`Workspace process manager is disposed: ${real(directory)}`)
+  s.ownership = opts.ownership
   const existingFlight = s.startFlights.get(configId)
   if (existingFlight) return await existingFlight
 
@@ -927,6 +943,7 @@ async function startDependencies(
   directory: string,
   configId: string,
   s: State,
+  ownership: LaunchOwnershipStore,
 ): Promise<Process.LaunchResult | undefined> {
   try {
     const depOrder = resolveDependencyOrder(directory, configId)
@@ -935,7 +952,7 @@ async function startDependencies(
       if (depProc && (depProc.status === "running" || depProc.status === "starting")) continue
       const depConfig = s.configs.get(depId)
       log.info("auto-starting dependency", { configId, dependency: depConfig?.name ?? depId })
-      const started = await start(directory, depId, { portConflict: "pick-new" })
+      const started = await start(directory, depId, { ownership, portConflict: "pick-new" })
       if (started.kind !== "started" && started.kind !== "already_running") {
         log.error("dependency failed to start", {
           configId,
@@ -991,7 +1008,7 @@ function processCommand(config: Process.ProcessConfig, assignedPort: number | un
 async function startOnce(
   directory: string,
   configId: string,
-  opts?: { portConflict?: Process.PortConflictStrategy; routeConflict?: Process.PortConflictStrategy },
+  opts: ProcessStartOptions,
 ): Promise<Process.LaunchResult> {
   const s = getState(directory)
   if (s.disposed) return fail(`Workspace process manager is disposed: ${real(directory)}`)
@@ -1026,7 +1043,7 @@ async function startOnce(
     await stop(directory, configId)
   }
 
-  const dependencyFailure = await startDependencies(directory, configId, s)
+  const dependencyFailure = await startDependencies(directory, configId, s, opts.ownership)
   if (dependencyFailure) return dependencyFailure
 
   // --- Port assignment ---
@@ -1094,6 +1111,7 @@ async function startOnce(
         env,
         managed: true,
       },
+      opts.ownership,
       processObserver
         ? {
             observer: processObserver,
@@ -1247,7 +1265,11 @@ export async function stop(directory: string, configIdOrPtyId: string, signal?: 
 /**
  * Restart a process by config ID or pty ID.
  */
-export async function restart(directory: string, configIdOrPtyId: string): Promise<Process.LaunchResult> {
+export async function restart(
+  directory: string,
+  configIdOrPtyId: string,
+  opts: { ownership: LaunchOwnershipStore },
+): Promise<Process.LaunchResult> {
   const { configId } = resolveProcess(directory, configIdOrPtyId)
   if (!getState(directory).configs.has(configId)) return miss()
   await stop(directory, configId)
@@ -1259,7 +1281,7 @@ export async function restart(directory: string, configIdOrPtyId: string): Promi
     s.processes.set(configId, existing)
   }
 
-  const result = await start(directory, configId, { portConflict: "pick-new" })
+  const result = await start(directory, configId, { ownership: opts.ownership, portConflict: "pick-new" })
   if (result.kind === "port_conflict") {
     return fail(`Unexpected port conflict while restarting process: ${configId}`)
   }
@@ -1306,8 +1328,9 @@ function topologicalSort(directory: string, configIds: string[]): string[] {
 /**
  * Start all processes with autoStart=true that are not already running.
  */
-export async function startAll(directory: string): Promise<void> {
+export async function startAll(directory: string, opts: { ownership: LaunchOwnershipStore }): Promise<void> {
   const s = getState(directory)
+  s.ownership = opts.ownership
   await reconcileRuntime(directory)
   const autoStartIds = Array.from(s.configs.entries())
     .filter(([, config]) => config.autoStart)
@@ -1329,7 +1352,7 @@ export async function startAll(directory: string): Promise<void> {
   for (const configId of sorted) {
     const proc = s.processes.get(configId)
     if (proc && (proc.status === "running" || proc.status === "starting")) continue
-    await start(directory, configId, { portConflict: "pick-new" })
+    await start(directory, configId, { ownership: opts.ownership, portConflict: "pick-new" })
     started.push(s.configs.get(configId)?.name ?? configId)
   }
 
@@ -1427,7 +1450,13 @@ function applyRestartPolicy(
     }
     // The restart timer fires and forgets: `start` reports through the process
     // record and the log, and there is no caller left to await it.
-    void start(directory, configId, { portConflict: "pick-new" })
+    const ownership = s.ownership
+    if (!ownership) {
+      log.error("refusing an automatic restart with no recorded launch owner", { configId })
+      scrub(directory, configId, "unknown")
+      return
+    }
+    void start(directory, configId, { ownership, portConflict: "pick-new" })
   }, delay)
   s.restartTimers.set(configId, timer)
 }
@@ -1643,7 +1672,8 @@ export async function updateConfig(
 
   const proc = s.processes.get(id)
   if (proc && (proc.status === "running" || proc.status === "starting")) {
-    await restart(directory, id)
+    if (!s.ownership) throw new Error(`Cannot restart ${id}: this workspace has no recorded launch owner`)
+    await restart(directory, id, { ownership: s.ownership })
   }
 
   return updated

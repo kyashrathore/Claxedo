@@ -20,11 +20,18 @@ export type CreationIdentity = {
   startSecond: string
   bootTime: string
   /**
-   * Who the process answered to when it was read. It is never compared during
-   * verification — an orphan is reparented to init — but it is how a launcher
-   * checks that a pid it is about to record is one it actually spawned.
+   * Who the process answered to when it was read. Never compared during
+   * verification: an orphan is reparented to init, and a PTY child's parent is
+   * the library's own spawn helper rather than the runtime.
    */
   parentPid: number
+  /**
+   * `startSecond` as epoch milliseconds, floored to the second. It is how a
+   * launcher rejects a pid that already existed before it called spawn; the
+   * string remains the verification key, because it is what the platform
+   * actually reports.
+   */
+  startedAtMs: number
   source: CreationIdentitySource
 }
 
@@ -84,11 +91,13 @@ async function readDarwinCreationIdentity(pid: number, boot: string): Promise<Cr
   }
   const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
   if (!row) return undefined
+  const startSecond = row[3]!.trim()
   return {
     pid,
     processGroupId: Number(row[1]),
     parentPid: Number(row[2]),
-    startSecond: row[3]!.trim(),
+    startSecond,
+    startedAtMs: Date.parse(startSecond),
     bootTime: boot,
     source: "darwin-ps",
   }
@@ -111,11 +120,13 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
   const processGroupId = Number(tail[2])
   const startTicks = Number(tail[19])
   if (!Number.isFinite(processGroupId) || !Number.isFinite(startTicks)) return undefined
+  const secondsSinceBoot = Math.floor(startTicks / LINUX_CLOCK_TICKS)
   return {
     pid,
     processGroupId,
     parentPid,
-    startSecond: String(Math.floor(startTicks / LINUX_CLOCK_TICKS)),
+    startSecond: String(secondsSinceBoot),
+    startedAtMs: (Number(boot) + secondsSinceBoot) * 1000,
     bootTime: boot,
     source: "linux-procfs",
   }
@@ -140,11 +151,13 @@ async function readWindowsCreationIdentity(pid: number, boot: string): Promise<C
   const value = stdout.trim()
   if (!value) return undefined
   const split = value.lastIndexOf(" ")
+  const startSecond = value.slice(0, split)
   return {
     pid,
     processGroupId: pid,
     parentPid: Number(value.slice(split + 1)),
-    startSecond: value.slice(0, split),
+    startSecond,
+    startedAtMs: Date.parse(startSecond),
     bootTime: boot,
     source: "win32-cim",
   }

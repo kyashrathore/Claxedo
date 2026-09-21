@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { spawn as spawnChild, type ChildProcess } from "node:child_process"
+import { volatileLaunchOwnership } from "@claxedo/agent-sdk-runtime/launch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -31,6 +32,9 @@ function disposablePid() {
 }
 
 /** EPERM means the process is there and belongs to someone else, not that it is gone. */
+/** These tests assert PTY lifecycle, not recovery: the records die with the test. */
+const ownership = volatileLaunchOwnership()
+
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0)
@@ -108,7 +112,7 @@ describe("Pty lifecycle cleanup", () => {
       cwd: tmpDir,
       title: "correlated",
       createRequestId: "request-client-a",
-    })
+    }, ownership)
 
     expect(info.createRequestId).toBe("request-client-a")
     expect(Pty.get(info.id)?.createRequestId).toBe("request-client-a")
@@ -123,6 +127,7 @@ describe("Pty lifecycle cleanup", () => {
 
     const info = await Pty.create(
       { cwd: tmpDir, title: "unknown-pid" },
+      ownership,
       {
         observer,
         kind: "pty",
@@ -161,7 +166,7 @@ describe("Pty lifecycle cleanup", () => {
 
   test("remove closes subscribers, flushes history, kills the process group, and deletes the session", async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ cwd: tmpDir, title: "cleanup" })
+    const info = await Pty.create({ cwd: tmpDir, title: "cleanup" }, ownership)
     const ws = socket()
     Pty.connect(info.id, ws)
 
@@ -177,7 +182,7 @@ describe("Pty lifecycle cleanup", () => {
 
   test("orphan timeout removes abandoned unmanaged sessions", async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ cwd: tmpDir, title: "orphan" })
+    const info = await Pty.create({ cwd: tmpDir, title: "orphan" }, ownership)
     expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, managed: 0, subscribers: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
@@ -189,7 +194,7 @@ describe("Pty lifecycle cleanup", () => {
 
   test("committed sessions survive subscriber disconnects", async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ cwd: tmpDir, title: "committed" })
+    const info = await Pty.create({ cwd: tmpDir, title: "committed" }, ownership)
 
     expect(Pty.commit(info.id)).toEqual(info)
     expect(Pty.listDetailed().find((session) => session.id === info.id)).toMatchObject({
@@ -207,7 +212,7 @@ describe("Pty lifecycle cleanup", () => {
 
   test("reconnect cancels the orphan timer", async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ cwd: tmpDir, title: "reconnect" })
+    const info = await Pty.create({ cwd: tmpDir, title: "reconnect" }, ownership)
     const first = Pty.connect(info.id, socket())
 
     first?.onClose()
@@ -223,7 +228,7 @@ describe("Pty lifecycle cleanup", () => {
 
   test("remove clears a pending orphan timer", async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ cwd: tmpDir, title: "remove-orphan" })
+    const info = await Pty.create({ cwd: tmpDir, title: "remove-orphan" }, ownership)
     const connection = Pty.connect(info.id, socket())
 
     connection?.onClose()
@@ -238,7 +243,7 @@ describe("Pty lifecycle cleanup", () => {
 
   test("explicit remove wins a race with native exit retention", async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ cwd: tmpDir, title: "exit-remove-race" })
+    const info = await Pty.create({ cwd: tmpDir, title: "exit-remove-race" }, ownership)
     const handlers = fakeProcesses.get(info.pid)?.exitHandlers ?? []
 
     const exiting = Promise.all(handlers.map((handler) => handler({ exitCode: 0 })))
@@ -250,8 +255,8 @@ describe("Pty lifecycle cleanup", () => {
 
   test("dispose removes every active session", async () => {
     const { Pty } = await import("./index")
-    const first = await Pty.create({ cwd: tmpDir, title: "first" })
-    const second = await Pty.create({ cwd: tmpDir, title: "second" })
+    const first = await Pty.create({ cwd: tmpDir, title: "first" }, ownership)
+    const second = await Pty.create({ cwd: tmpDir, title: "second" }, ownership)
 
     await Pty.dispose()
 
@@ -276,7 +281,7 @@ describe("Pty agent hook access", () => {
   test("lookup resolves the correct token and rejects incorrect and different-length tokens", async () => {
     const { Pty } = await import("./index")
     const token = "01234567-89ab-cdef-0123-456789abcdef"
-    const info = await Pty.create({ cwd: tmpDir, title: "hook" }, undefined, hookAccess(token))
+    const info = await Pty.create({ cwd: tmpDir, title: "hook" }, ownership, undefined, hookAccess(token))
 
     expect(Pty.agentHookAccessForToken(token)).toMatchObject({ terminalId: info.id, sessionId: "ses_1" })
     expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdee")).toBeUndefined()
@@ -287,7 +292,7 @@ describe("Pty agent hook access", () => {
   test("renewal updates the correct token's lease and rejects incorrect and different-length tokens", async () => {
     const { Pty } = await import("./index")
     const token = "01234567-89ab-cdef-0123-456789abcdef"
-    const info = await Pty.create({ cwd: tmpDir, title: "hook-renew" }, undefined, hookAccess(token))
+    const info = await Pty.create({ cwd: tmpDir, title: "hook-renew" }, ownership, undefined, hookAccess(token))
 
     expect(Pty.renewAgentHookAccess(token, { authorityLease: "lease_2", authorityExpiresAt: 42 })).toBe(true)
     expect(Pty.agentHookAccessForToken(token)).toMatchObject({
@@ -342,7 +347,7 @@ describe("Pty unresolved retirement", () => {
     // Let the trap take effect, or the first TERM kills it for the wrong reason.
     await new Promise((resolve) => setTimeout(resolve, 300))
 
-    const info = await Pty.create({ cwd: tmpDir, title: "stubborn" })
+    const info = await Pty.create({ cwd: tmpDir, title: "stubborn" }, ownership)
     expect(info.pid).toBe(stubborn.pid!)
 
     const result = await Pty.remove(info.id)
@@ -359,7 +364,7 @@ describe("Pty unresolved retirement", () => {
     // would make the next removal signal the whole machine's process group 1.
     nextSpawnPid = 1
 
-    const info = await Pty.create({ cwd: tmpDir, title: "foreign" })
+    const info = await Pty.create({ cwd: tmpDir, title: "foreign" }, ownership)
     const result = await Pty.remove(info.id)
 
     expect(result?.error?.code).toBe("ownership_unverified")
@@ -373,19 +378,17 @@ describe("Pty unresolved retirement", () => {
 
   test("a store that cannot record ownership refuses the launch before anything is spawned", async () => {
     const { Pty } = await import("./index")
-    const { volatileLaunchOwnership, LaunchRefusedError } = await import("@claxedo/agent-sdk-runtime/launch")
+    const { LaunchRefusedError } = await import("@claxedo/agent-sdk-runtime/launch")
     const before = Pty.list().length
-    Pty.useLaunchOwnership({
+    const refusing = {
       ...volatileLaunchOwnership(),
       prepare: async () => { throw new Error("workspace store is unavailable") },
-    })
-    try {
-      const failure = await Pty.create({ cwd: tmpDir, title: "refused" }).catch((error: unknown) => error)
-      expect(failure).toBeInstanceOf(LaunchRefusedError)
-      expect((failure as { code: string }).code).toBe("launch_refused_ownership_unavailable")
-      expect(Pty.list().length).toBe(before)
-    } finally {
-      Pty.useLaunchOwnership(volatileLaunchOwnership())
     }
+
+    const failure = await Pty.create({ cwd: tmpDir, title: "refused" }, refusing).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(LaunchRefusedError)
+    expect((failure as { code: string }).code).toBe("launch_refused_ownership_unavailable")
+    expect(Pty.list().length).toBe(before)
   })
 })
