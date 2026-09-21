@@ -225,8 +225,9 @@ function createFullProcessRoutes(policy: SessionAccessPolicy, options: ProcessRo
     .post("/:id/stop", async (c) => {
       const directory = await init(c)
       const id = c.req.param("id")
-      await ProcessManager.stop(directory, id)
-      return c.json(true)
+      // The caller is told what stopping reached, not that it was asked for:
+      // an unresolved stop leaves processes running and its port held.
+      return c.json(await ProcessManager.stop(directory, id))
     })
     .post("/:id/restart", async (c) => {
       const directory = await init(c)

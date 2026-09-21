@@ -154,7 +154,7 @@ describe("Pty lifecycle cleanup", () => {
       ownerId: registered.descriptor.ownerId,
       ownerGeneration: registered.descriptor.ownerGeneration,
       operation: "stop",
-    })).resolves.toBe("unresolved")
+    })).resolves.toEqual({ result: "unresolved", retirement: { leader: "unknown", descendants: "unknown" } })
     expect(nativeKills).toContain(0)
     expect(Pty.get(info.id)).toBeDefined()
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")

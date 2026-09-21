@@ -90,7 +90,7 @@ describe("process observer", () => {
         ownerGeneration: "generation-2",
         operation: "kill",
       }),
-    ).toBe("owner-unavailable")
+    ).toMatchObject({ result: "owner-unavailable" })
   })
 
   test("rejects contradictory owner kind and role", () => {
@@ -155,7 +155,7 @@ describe("process observer", () => {
         ownerGeneration: "generation-1",
         operation: "stop",
       }),
-    ).toBe("operation-unavailable")
+    ).toMatchObject({ result: "operation-unavailable" })
   })
 
   test("coalesces repeated lifecycle updates without losing a PID transition", () => {
@@ -223,13 +223,33 @@ describe("process observer", () => {
         ownerGeneration: "generation-1",
         operation: "stop",
       }),
-    ).toBe("operation-unavailable")
+    ).toMatchObject({ result: "operation-unavailable" })
     expect(
       await observer.invoke({
         ownerId: "pty-workspace-b",
         ownerGeneration: "generation-1",
         operation: "stop",
       }),
-    ).toBe("completed")
+    ).toMatchObject({ result: "completed" })
+  })
+})
+
+test("an unresolved operation says which half is unproven", async () => {
+  const observer = createProcessObserver()
+  observer.register(
+    { ownerId: "pty-held", ownerGeneration: "generation-1", launchId: "launch-held", kind: "pty", role: "pty", label: "Held", workspaceId: "ws", directory: "/w" },
+    {
+      stopGracefully: async () => ({
+        leader: "exited" as const,
+        descendants: "owned" as const,
+        signals: [],
+        error: { code: "exit_unverified" as const, message: "group still had members" },
+      }),
+    },
+  )
+
+  expect(await observer.invoke({ ownerId: "pty-held", ownerGeneration: "generation-1", operation: "stop" })).toEqual({
+    result: "unresolved",
+    retirement: { leader: "exited", descendants: "owned" },
   })
 })

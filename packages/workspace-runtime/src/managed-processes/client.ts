@@ -1,4 +1,5 @@
 import { Process } from "./schema"
+import type { ProcessStopResult } from "./manager"
 
 /**
  * The client only ever calls `(url, init)`, so the injectable seam is typed to
@@ -163,15 +164,20 @@ export function createProcessClient(input: Input) {
 
     restart,
 
-    async stop(id: string) {
+    /**
+     * Answers with what the owner established. A transport failure is reported
+     * as unresolved with no retirement rather than as a stop that happened:
+     * nothing here observed the process.
+     */
+    async stop(id: string): Promise<ProcessStopResult> {
       try {
         const { res, raw } = await req(`/${encodeURIComponent(id)}/stop`, {
           method: "POST",
         })
-        if (!res.ok) return false
-        return raw === undefined ? true : raw === true
+        if (!res.ok) return { state: "unresolved", retirement: undefined }
+        return isProcessStopResult(raw) ? raw : { state: "unresolved", retirement: undefined }
       } catch {
-        return false
+        return { state: "unresolved", retirement: undefined }
       }
     },
 
@@ -199,4 +205,11 @@ export function createProcessClient(input: Input) {
       }
     },
   }
+}
+
+
+function isProcessStopResult(value: unknown): value is ProcessStopResult {
+  if (typeof value !== "object" || value === null) return false
+  const state = (value as { state?: unknown }).state
+  return state === "stopped" || state === "unresolved"
 }

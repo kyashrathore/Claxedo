@@ -2,6 +2,7 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
 import type { WorkspaceCapabilities } from "../capabilities"
 import type { RuntimeSnapshot } from "../routes/config"
+import type { ProcessStopResult } from "../managed-processes/manager"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
 import { fileClient, filesClient, findClient, type WorkspaceFileClient, type WorkspaceFilesClient, type WorkspaceFindClient } from "./files"
 import {
@@ -98,7 +99,7 @@ export type WorkspaceRuntimeClient = {
     update: (id: string, body: unknown, options?: Options) => Promise<unknown>
     remove: (id: string, options?: Options) => Promise<boolean>
     start: (id: string, body?: unknown, options?: Options) => Promise<unknown>
-    stop: (id: string, options?: Options) => Promise<boolean>
+    stop: (id: string, options?: Options) => Promise<ProcessStopResult>
     restart: (id: string, options?: Options) => Promise<unknown>
     logs: (query?: Query, options?: Options) => Promise<string>
   }

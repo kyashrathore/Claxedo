@@ -44,6 +44,17 @@ export type ProcessOwnerOperations = {
   killOwnedTree?: () => Promise<RetirementResult | undefined>
 }
 
+/**
+ * What an owner operation reached. `unresolved` on its own says only that the
+ * job is not finished; `retirement` says which half is unproven — a leader
+ * still alive is a different problem for the operator than descendants nobody
+ * can enumerate.
+ */
+export type ProcessOwnerInvocation = {
+  result: "completed" | "unresolved" | "owner-unavailable" | "operation-unavailable"
+  retirement?: Pick<RetirementResult, "leader" | "descendants">
+}
+
 export type ProcessOwnerExit = {
   reason: "exited" | "error" | "timeout" | "cancelled" | "disposed" | "detached"
   exitCode?: number
@@ -99,7 +110,7 @@ export type ProcessObserver = {
     ownerId: string
     ownerGeneration: string
     operation: "stop" | "kill"
-  }): Promise<"completed" | "unresolved" | "owner-unavailable" | "operation-unavailable">
+  }): Promise<ProcessOwnerInvocation>
   detachWorkspace(workspaceId: string): number
   dispose(): void
 }
@@ -195,13 +206,16 @@ export function createProcessObserver(input: {
     exit,
     async invoke(request) {
       const record = records.get(request.ownerId)
-      if (!record || record.descriptor.ownerGeneration !== request.ownerGeneration) return "owner-unavailable"
+      if (!record || record.descriptor.ownerGeneration !== request.ownerGeneration) return { result: "owner-unavailable" }
       const operation =
         request.operation === "stop" ? record.operations.stopGracefully : record.operations.killOwnedTree
-      if (!operation) return "operation-unavailable"
-      const result = await operation()
-      if (!result) return "unresolved"
-      return retirementSettled(result) ? "completed" : "unresolved"
+      if (!operation) return { result: "operation-unavailable" }
+      const retirement = await operation()
+      if (!retirement) return { result: "unresolved" }
+      return {
+        result: retirementSettled(retirement) ? "completed" : "unresolved",
+        retirement: { leader: retirement.leader, descendants: retirement.descendants },
+      }
     },
     detachWorkspace(workspaceId) {
       const matching = [...records.values()].filter(
