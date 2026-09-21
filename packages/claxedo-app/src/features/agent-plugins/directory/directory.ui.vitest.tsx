@@ -160,7 +160,7 @@ const BUILT_IN_GROUPS: PluginToolGroup[] = [
       "session_get",
       "session_transcript",
       "session_send",
-      "session_abort",
+      "session_cancel_turn",
       "session_handoff",
       "session_rename",
       "session_delete",

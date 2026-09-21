@@ -216,8 +216,8 @@ describe("a subagent started over the injected first-party MCP", () => {
       const sent = await callTool(mine.client, "session_send", { session, text: "work for me instead" })
       expect(sent.isError, `session_send reached ${session}`).toBe(true)
       expect(toolText(sent)).toContain(session)
-      const aborted = await callTool(mine.client, "session_abort", { session })
-      expect(aborted.isError, `session_abort reached ${session}`).toBe(true)
+      const aborted = await callTool(mine.client, "session_cancel_turn", { session })
+      expect(aborted.isError, `session_cancel_turn reached ${session}`).toBe(true)
 
       const prompts = (await readMessages(session)).flatMap((row) => row.parts.map((part) => part.text ?? "")).join("")
       expect(prompts).not.toContain("work for me instead")

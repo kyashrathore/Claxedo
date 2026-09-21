@@ -63,13 +63,47 @@ function question(id: string, sessionID: string, prompt: string): AgentQuestion 
   return { id, sessionID, questions: [{ question: prompt, header: prompt, options: [{ label: "yes", description: "" }] }] }
 }
 
+const RECOVERY_FACTS = {
+  execution: { value: "terminal" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+  cleanup: { value: "verified_clear" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+  persistence: { value: "committed" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+}
+
 /**
- * The real workspace-runtime session routes over an in-memory harness: the
- * only thing faked is the adapter a driver would be, which is where a pending
- * permission is produced and where the ACP abort fix clears one.
+ * The real workspace-runtime session routes over an in-memory harness: faked
+ * are the adapter a driver would be, which is where a pending permission is
+ * produced, and the recovery owner, whose cancellation is where the ACP fix
+ * clears one.
  */
 function runtimeApp(state: Harness) {
+  const recovery = {
+    inspect: (sessionId: string) => ({
+      sessionId,
+      ...(state.status[sessionId]?.type === "busy"
+        ? { target: { scope: "turn" as const, workspaceId: "ws_local", sessionId, turnId: `turn_${sessionId}`, ownerGeneration: "gen_1" } }
+        : {}),
+      facts: RECOVERY_FACTS,
+      health: { status: "ok" as const },
+      failures: [],
+      operations: [],
+      queued: 0,
+    }),
+    submit: async (request: { requestId: string; target: { sessionId: string } }) => {
+      state.pendingPermissions = state.pendingPermissions.filter((row) => row.sessionID !== request.target.sessionId)
+      return {
+        kind: "operation" as const,
+        operation: {
+          operationId: `op_${request.requestId}`, requestId: request.requestId, target: request.target as never,
+          action: "cancel_turn" as const, scopeRevision: "gen_1", attempt: 1, state: "succeeded" as const,
+          phase: "graceful_cancel" as const, phaseDeadlineAt: 2, facts: RECOVERY_FACTS,
+          cleanupErrors: [], nextActions: [], receipt: "durable" as const, createdAt: 1, updatedAt: 1,
+        },
+      }
+    },
+    read: () => undefined,
+  }
   const routes = createSessionRoutes({
+    resolveRecoveryOwner: () => recovery as never,
     resolveDirectory: () => DIRECTORY,
     resolveExecutionBinding: (_c, directory, sessionId) => ({
       workspaceId: "ws_local",
@@ -113,10 +147,6 @@ function runtimeApp(state: Harness) {
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],
       dispose: () => {},
-      abort: async (binding) => {
-        state.pendingPermissions = state.pendingPermissions.filter((row) => row.sessionID !== binding.sessionId)
-        return { ok: true as const, status: "cancelled" as const }
-      },
       listPermissions: async () => state.pendingPermissions,
       respondPermission: async (_binding, permId, decision) => {
         state.answered.push({ id: permId, decision })
@@ -294,7 +324,14 @@ describe("sessions_board", () => {
     const { url, runtime } = await listen({ state })
     const { client } = await connect(url, "cli-jwt")
     expect((await callText(client, "sessions_board")).text).toContain("permission perm_acp")
-    expect((await runtime(new Request("http://127.0.0.1/session/ses_acp/abort", { method: "POST" }))).status).toBe(200)
+    const inspected = await (await runtime(new Request("http://127.0.0.1/session/ses_acp/recovery"))).json() as { target?: unknown }
+    expect(inspected.target).toBeDefined()
+    const cancelled = await runtime(new Request("http://127.0.0.1/session/ses_acp/recovery", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ requestId: "req_board", action: "cancel_turn", target: inspected.target, scopeRevision: "board", attempt: 1 }),
+    }))
+    expect(cancelled.status).toBe(200)
     expect((await callText(client, "sessions_board")).text).not.toContain("perm_acp")
   })
 

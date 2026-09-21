@@ -22,7 +22,7 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   session_get: "ui.claxedoTool.session_get",
   session_transcript: "ui.claxedoTool.session_transcript",
   session_send: "ui.claxedoTool.session_send",
-  session_abort: "ui.claxedoTool.session_abort",
+  session_cancel_turn: "ui.claxedoTool.session_cancel_turn",
   session_handoff: "ui.claxedoTool.session_handoff",
   session_rename: "ui.claxedoTool.session_rename",
   session_delete: "ui.claxedoTool.session_delete",
@@ -285,11 +285,11 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
     }
     case "session_rename":
       return { ...base, link: session(nonEmptyString(args.session)), ...(nonEmptyString(args.title) ? { subject: nonEmptyString(args.title) } : {}) }
-    case "session_abort":
+    case "session_cancel_turn":
       return {
         ...base,
         link: session(nonEmptyString(args.session)),
-        ...(result ? { note: i18n.t(result.aborted === false ? "ui.claxedoTool.note.notRunning" : "ui.claxedoTool.note.stopped") } : {}),
+        ...(result ? { note: i18n.t(cancellationNote(result.cancellation)) } : {}),
       }
     case "session_get":
     case "session_transcript":
@@ -356,6 +356,19 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
     default:
       return { ...base, subject: firstLabel(args), ...prose(view.output) }
   }
+}
+
+/**
+ * A cancellation is stopped only when the operation reached its postcondition.
+ * Everything else — a refusal, a failure, an operation still owed an action —
+ * is a turn this row cannot claim was stopped.
+ */
+function cancellationNote(outcome: unknown) {
+  const row = asRecord(outcome)
+  if (row?.kind === "refused") return "ui.claxedoTool.note.notRunning" as const
+  return asRecord(row?.operation)?.state === "succeeded"
+    ? ("ui.claxedoTool.note.stopped" as const)
+    : ("ui.claxedoTool.note.notStopped" as const)
 }
 
 function taskLink(id: string | undefined, key?: string, title?: string): ClaxedoLink {

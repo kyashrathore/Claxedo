@@ -100,7 +100,7 @@ describe("the first-party MCP a local session is launched with", () => {
       "process_stop",
       "processes",
       "question_reply",
-      "session_abort",
+      "session_cancel_turn",
       "session_create",
       "session_get",
       "session_send",

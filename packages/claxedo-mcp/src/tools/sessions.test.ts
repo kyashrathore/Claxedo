@@ -48,6 +48,10 @@ type Workspace = {
   worktrees: Array<{ name?: string; query: Record<string, string> }>
   requests: string[]
   modes: Record<string, string>
+  /** Holds every turn open until it is cancelled, so a Stop has a turn to name. */
+  holdTurns?: boolean
+  releases: Map<string, () => void>
+  running: Set<string>
 }
 
 function workspace(input: Partial<Workspace> & Pick<Workspace, "id" | "directory">): Workspace {
@@ -64,6 +68,8 @@ function workspace(input: Partial<Workspace> & Pick<Workspace, "id" | "directory
     worktrees: [],
     requests: [],
     modes: {},
+    releases: new Map(),
+    running: new Set(),
     ...input,
   }
 }
@@ -89,6 +95,47 @@ function message(id: string, text: string): AgentMessage {
  * `@claxedo/local-server` and cannot be imported here without a cycle. Its
  * body is the shape `createWorktree` answers with.
  */
+const RECOVERY_FACTS = {
+  execution: { value: "terminal" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+  cleanup: { value: "verified_clear" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+  persistence: { value: "committed" as const, source: "fixture", observedAt: 1, generation: "gen_1" },
+}
+
+/**
+ * The owner the recovery routes answer from. Only a session with a turn open
+ * has a target, so a Stop on an idle session gets the same "no turn to name"
+ * refusal the real owner gives rather than a fabricated success.
+ */
+function recoveryOwner(state: Workspace, sessionId: string) {
+  return {
+    inspect: (id: string) => ({
+      sessionId: id,
+      ...(state.running.has(id)
+        ? { target: { scope: "turn" as const, workspaceId: state.id, sessionId: id, turnId: `turn_${id}`, ownerGeneration: "gen_1" } }
+        : {}),
+      facts: RECOVERY_FACTS,
+      health: { status: "ok" as const },
+      failures: [],
+      operations: [],
+      queued: 0,
+    }),
+    submit: async (request: { requestId: string; target: { sessionId: string } }) => {
+      state.aborted.push(request.target.sessionId)
+      state.releases.get(request.target.sessionId)?.()
+      return {
+        kind: "operation" as const,
+        operation: {
+          operationId: `op_${state.aborted.length}`, requestId: request.requestId, target: request.target as never,
+          action: "cancel_turn" as const, scopeRevision: "gen_1", attempt: 1, state: "succeeded" as const,
+          phase: "graceful_cancel" as const, phaseDeadlineAt: 2, facts: RECOVERY_FACTS,
+          cleanupErrors: [], nextActions: [], receipt: "durable" as const, createdAt: 1, updatedAt: 1,
+        },
+      }
+    },
+    read: () => undefined,
+  }
+}
+
 function runtimeApp(state: Workspace) {
   const find = (id: string) => state.sessions.find((row) => row.id === id) ?? null
   const routes = createSessionRoutes({
@@ -117,6 +164,7 @@ function runtimeApp(state: Workspace) {
       return { harness: { id: row?.harness ?? "claude", access: "native" as const }, agent: "build", variant: null }
     },
     publishGlobal: () => {},
+    resolveRecoveryOwner: (_c, { sessionId }) => recoveryOwner(state, sessionId),
     resolveAdapter: () => ({
       instructionChannel: "none" as const,
       getSession: async (binding) => find(binding.sessionId),
@@ -163,14 +211,19 @@ function runtimeApp(state: Workspace) {
       executeTurn: (binding, input) => {
         const text = input.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
         state.prompts.push({ session: binding.sessionId, text })
-        return (async function* () {})()
+        const holding = state.holdTurns
+        state.running.add(binding.sessionId)
+        return (async function* () {
+          try {
+            if (holding) await new Promise<void>((resolve) => { state.releases.set(binding.sessionId, resolve) })
+          } finally {
+            state.running.delete(binding.sessionId)
+            state.releases.delete(binding.sessionId)
+          }
+        })()
       },
       getMessages: async () => state.messages,
       dispose: () => {},
-      abort: async (binding) => {
-        state.aborted.push(binding.sessionId)
-        return { ok: true as const, status: "cancelled" as const }
-      },
       listPermissions: async () => [],
       listQuestions: async () => [],
       listDraftPermissionModes: async () => ({ modes: PERMISSION_MODES, appliesFrom: "next-turn" as const }),
@@ -334,7 +387,7 @@ async function json(client: Client, name: string, args: Record<string, unknown> 
   return JSON.parse(result.text) as Record<string, unknown>
 }
 
-const local = () =>
+const local = (overrides: Partial<Workspace> = {}) =>
   workspace({
     id: "ws_local",
     directory: "/w",
@@ -342,6 +395,7 @@ const local = () =>
     sessions: [{ id: "ses_root", title: "Fix login", harness: "claude" }, { id: "ses_child", title: "Child", parentID: "ses_root", harness: "codex" }],
     status: { ses_root: { type: "busy" }, ses_child: { type: "idle" } },
     messages: [message("msg_1", "hello")],
+    ...overrides,
   })
 
 describe("session_create", () => {
@@ -507,12 +561,28 @@ describe("reading and driving one session", () => {
     ])
   })
 
-  test("session_abort stops the running turn", async () => {
+  test("session_cancel_turn stops the turn the owner reports, and reports what stopping it reached", async () => {
+    const state = local({ holdTurns: true })
+    const { url } = await listen({ local: state })
+    const client = await connect(url, "cli-jwt")
+    await json(client, "session_send", { session: "ses_root", text: "carry on" })
+    await until(() => state.prompts.length === 1, "the turn to reach the harness")
+
+    const stopped = await json(client, "session_cancel_turn", { session: "ses_root" })
+
+    expect(state.aborted).toEqual(["ses_root"])
+    expect(stopped.cancellation).toMatchObject({ kind: "operation", operation: { action: "cancel_turn", state: "succeeded" } })
+  })
+
+  test("a session running no turn is told so instead of being reported as stopped", async () => {
     const state = local()
     const { url } = await listen({ local: state })
     const client = await connect(url, "cli-jwt")
-    await json(client, "session_abort", { session: "ses_root" })
-    expect(state.aborted).toEqual(["ses_root"])
+
+    const answered = await call(client, "session_cancel_turn", { session: "ses_root" })
+
+    expect(answered.isError).toBe(true)
+    expect(state.aborted).toEqual([])
   })
 
   test("session_rename retitles and session_handoff moves the session to another harness", async () => {
@@ -555,13 +625,15 @@ describe("reading and driving one session", () => {
         { id: "ses_nephew", title: "Sibling's child", parentID: "ses_sibling", harness: "claude" },
       ],
       status: { ses_root: { type: "busy" } },
+      holdTurns: true,
     })
     const { url } = await listen({ local: state, claims: { sessionId: "ses_root" } })
     const client = await connect(url, "rt-token")
 
     await json(client, "session_send", { session: "ses_root", text: "carry on" })
     await json(client, "session_send", { session: "ses_child", text: "finish up" })
-    await json(client, "session_abort", { session: "ses_child" })
+    await until(() => state.running.has("ses_child"), "the child's turn to reach the harness")
+    await json(client, "session_cancel_turn", { session: "ses_child" })
     expect(state.prompts).toEqual([{ session: "ses_root", text: "carry on" }, { session: "ses_child", text: "finish up" }])
     expect(state.aborted).toEqual(["ses_child"])
 
@@ -569,11 +641,12 @@ describe("reading and driving one session", () => {
       const sent = await call(client, "session_send", { session, text: "do my work" })
       expect(sent.isError, `session_send reached ${session}`).toBe(true)
       expect(sent.text).toContain(session)
-      const aborted = await call(client, "session_abort", { session })
-      expect(aborted.isError, `session_abort reached ${session}`).toBe(true)
+      const aborted = await call(client, "session_cancel_turn", { session })
+      expect(aborted.isError, `session_cancel_turn reached ${session}`).toBe(true)
     }
     expect(state.prompts).toHaveLength(2)
     expect(state.aborted).toEqual(["ses_child"])
+    state.releases.get("ses_root")?.()
   })
 
   test("takes the parent from the stored session, not from anything the call carries", async () => {
@@ -614,8 +687,8 @@ describe("reading and driving one session", () => {
       const sent = await call(client, "session_send", { session, workspace: "ws_other", text: "run it" })
       expect(sent.isError, `session_send reached ${session} on ws_other`).toBe(true)
       expect(sent.text).toContain("ws_other")
-      const aborted = await call(client, "session_abort", { session, workspace: "ws_other" })
-      expect(aborted.isError, `session_abort reached ${session} on ws_other`).toBe(true)
+      const aborted = await call(client, "session_cancel_turn", { session, workspace: "ws_other" })
+      expect(aborted.isError, `session_cancel_turn reached ${session} on ws_other`).toBe(true)
     }
     expect(other.prompts).toEqual([])
     expect(other.aborted).toEqual([])
@@ -658,3 +731,11 @@ describe("reading and driving one session", () => {
     expect(read.messages).toHaveLength(1)
   })
 })
+
+async function until(predicate: () => boolean, label: string) {
+  const deadline = Date.now() + 2_000
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}

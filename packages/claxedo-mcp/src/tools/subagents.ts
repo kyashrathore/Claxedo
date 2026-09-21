@@ -18,6 +18,7 @@ import { McpHttpError, mcpHttpError } from "../http-error"
 import { num, oneOf, record, records, text } from "../json"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistrar } from "./registry"
+import { cancelSessionTurn } from "./sessions"
 
 /** The self-identifying marker `hostSubagentBinding` looks for in a `create_subagent` result. */
 const SUBAGENT_RESULT_KIND = "claxedo.subagent"
@@ -117,13 +118,17 @@ export function registerSubagentTools(registry: ToolRegistrar): void {
   }, surfaced(async (args: ChildLocator, ctx) => {
     const parent = requireParentSession(ctx)
     const row = await locateChild(ctx, parent, args)
-    await (await ownRuntimeClient(ctx)).session.abort({ sessionID: row.sessionId })
+    const outcome = await cancelSessionTurn(await ownRuntimeClient(ctx), {}, row.sessionId)
     const snapshot = await findChild(ctx, parent, { subagentKey: row.subagentKey })
-    return bindingResult({
+    const reported = bindingResult({
       subagentKey: row.subagentKey,
       sessionId: row.sessionId,
+      cancellation: outcome,
       ...(snapshot?.status ? { status: snapshot.status } : {}),
     })
+    return outcome.kind === "operation" && outcome.operation.state === "succeeded"
+      ? reported
+      : { ...reported, isError: true }
   }))
 }
 

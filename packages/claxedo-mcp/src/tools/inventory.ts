@@ -54,7 +54,7 @@ export const MCP_TOOL_OPERATIONS = {
   session_get: ["session_meta_read", "session_config_read"],
   session_transcript: ["message_read"],
   session_send: ["prompt"],
-  session_abort: ["abort"],
+  session_cancel_turn: ["recovery_inspect", "recovery_submit"],
   session_handoff: ["session_config_write"],
   session_rename: ["session_meta_write"],
   session_delete: ["delete"],

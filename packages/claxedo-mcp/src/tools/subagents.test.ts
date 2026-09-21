@@ -70,6 +70,12 @@ const error = (code: string, message: string) => ({ error: { code, message } })
  * adapter and a store from `@claxedo/agent-sdk-runtime`, which is not a
  * dependency here.
  */
+const RECOVERY_FACTS = {
+  execution: { value: "terminal", source: "fixture", observedAt: 1, generation: "gen_1" },
+  cleanup: { value: "verified_clear", source: "fixture", observedAt: 1, generation: "gen_1" },
+  persistence: { value: "committed", source: "fixture", observedAt: 1, generation: "gen_1" },
+}
+
 function fakeRuntime(options: {
   turnMs?: number
   parentMode?: string
@@ -109,8 +115,8 @@ function fakeRuntime(options: {
   /**
    * The runtime marks a child terminal only when its turn unwinds, in
    * `onTurnSettled`: the last assistant message decides `completed` against
-   * `killed`, and the parent's wake is queued from there. An abort therefore
-   * lands on the row a tick after `POST /abort` has already answered.
+   * `killed`, and the parent's wake is queued from there. A cancellation
+   * therefore lands on the row a tick after the recovery route has answered.
    */
   const settleTurn = (child: FakeSession, status: "completed" | "killed") => {
     turnTimers.delete(child.id)
@@ -213,10 +219,32 @@ function fakeRuntime(options: {
       scheduleTurn(child, "completed", child.turnMs)
       return c.body(null, 204)
     })
-    .post("/session/:id/abort", (c) => {
-      const child = sessions.get(c.req.param("id"))
+    .get("/session/:id/recovery", (c) => {
+      const id = c.req.param("id")
+      const running = turnTimers.has(id)
+      return c.json({
+        sessionId: id,
+        ...(running ? { target: { scope: "turn", workspaceId: "ws_fixture", sessionId: id, turnId: `turn_${id}`, ownerGeneration: "gen_1" } } : {}),
+        facts: RECOVERY_FACTS,
+        health: { status: "ok" },
+        failures: [],
+        operations: [],
+        queued: 0,
+      })
+    })
+    .post("/session/:id/recovery", async (c) => {
+      const body = await c.req.json() as { requestId: string; target: { sessionId: string } }
+      const child = sessions.get(body.target.sessionId)
       if (child) scheduleTurn(child, "killed", 0)
-      return c.json({ ok: true, status: "cancelled" })
+      return c.json({
+        kind: "operation",
+        operation: {
+          operationId: `op_${body.requestId}`, requestId: body.requestId, target: body.target,
+          action: "cancel_turn", scopeRevision: "gen_1", attempt: 1, state: "succeeded",
+          phase: "graceful_cancel", phaseDeadlineAt: 2, facts: RECOVERY_FACTS,
+          cleanupErrors: [], nextActions: [], receipt: "durable", createdAt: 1, updatedAt: 1,
+        },
+      })
     })
     .get("/session/capabilities", (c) => {
       const requested = c.req.query("nativeHarness") ?? c.req.query("connectionId")

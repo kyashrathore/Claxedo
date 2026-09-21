@@ -6,11 +6,14 @@
  * branch in this group: everything after it is the same typed runtime client
  * pointed at a resolved target.
  */
+import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import { workspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
+import type { RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import { McpAccessDenied, type McpToolContext } from "../context"
+import type { McpToolResult } from "../mcp-tool"
 import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
 import type { ToolRegistrar } from "./registry"
 import { runtimeToolAccess } from "./inventory"
@@ -54,6 +57,42 @@ const placementSchema = z
   .describe("Where the session runs: the workspace itself, a new git worktree beside it, or a new cloud workspace.")
 
 type Placement = z.infer<typeof placementSchema>
+
+/**
+ * Cancel whatever turn the session is running now, under the identity the
+ * owner reports for it. The target comes from inspection rather than from the
+ * caller: a cancellation naming only the session reaches whichever turn is
+ * running when it lands, which after a replacement is a different one.
+ */
+export async function cancelSessionTurn(
+  server: WorkspaceRuntimeClient,
+  scope: { workspace?: string; directory?: string },
+  sessionId: string,
+): Promise<RecoveryOutcome> {
+  const inspected = await server.session.recovery.inspect({ sessionID: sessionId, ...scope })
+  const target = inspected.data.target
+  if (!target) {
+    return { kind: "refused", refusal: { kind: "generation_conflict", message: `Session ${sessionId} is not running a turn` } }
+  }
+  const submitted = await server.session.recovery.submit({
+    sessionID: sessionId,
+    ...scope,
+    request: {
+      requestId: randomUUID(),
+      action: "cancel_turn",
+      target,
+      scopeRevision: target.ownerGeneration,
+      attempt: 1,
+    },
+  })
+  return submitted.data
+}
+
+/** An operation that reached its postcondition is the only non-error answer. */
+export function recoveryResult(payload: unknown, outcome: RecoveryOutcome): McpToolResult {
+  const succeeded = outcome.kind === "operation" && outcome.operation.state === "succeeded"
+  return { ...toolJson(payload), ...(succeeded ? {} : { isError: true }) }
+}
 
 export function registerSessionTools(registry: ToolRegistrar) {
   registry.tool(
@@ -165,21 +204,21 @@ export function registerSessionTools(registry: ToolRegistrar) {
   )
 
   registry.tool(
-    "session_abort",
+    "session_cancel_turn",
     {
       description:
-        "Abort the turn a session is running. Inside a session, this reaches that session and the children it started, and no other.",
+        "Cancel the turn a session is running, and report what actually happened to it: whether execution stopped, whether the turn's resources were cleared, and whether that was recorded. Inside a session, this reaches that session and the children it started, and no other.",
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA },
-      access: runtimeToolAccess("session_abort", { audiences: ["runtime", "user"], scope: "act" }),
+      access: runtimeToolAccess("session_cancel_turn", { audiences: ["runtime", "user"], scope: "act" }),
       sessionIdOf: (args) => args.session,
     },
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
-      assertWritableTarget(ctx, "session_abort", target)
+      assertWritableTarget(ctx, "session_cancel_turn", target)
       const server = await ctx.client.server(target)
-      await assertSessionReach({ ctx, tool: "session_abort", server, target, session: args.session, reach: "itself-or-own-children" })
-      const aborted = await server.session.abort({ sessionID: args.session, ...targetScope(target) })
-      return toolJson({ session: args.session, aborted: aborted.data })
+      await assertSessionReach({ ctx, tool: "session_cancel_turn", server, target, session: args.session, reach: "itself-or-own-children" })
+      const outcome = await cancelSessionTurn(server, targetScope(target), args.session)
+      return recoveryResult({ session: args.session, cancellation: outcome }, outcome)
     },
   )
 
