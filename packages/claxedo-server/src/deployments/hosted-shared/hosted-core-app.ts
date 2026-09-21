@@ -74,7 +74,14 @@ import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
-  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage" | "prepareRuntime" | "provisionRuntime" | "releaseRuntime"
+  | "connections"
+  | "countActiveOrgSandboxLeases"
+  | "sandboxUsage"
+  | "prepareRuntime"
+  | "provisionRuntime"
+  | "releaseRuntime"
+  | "createWorkspaceRateLimiter"
+  | "sandboxLeaseCap"
 >
 
 export type HostedCoreAppOptions = {
@@ -294,7 +301,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       serviceCatalog: options.serviceCatalog,
       harnessStatus: hostedHarnessRuntimeStatus(services),
-      ...hostedPiCredentials({ resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth), env: plane.env }),
+      ...hostedPiCredentials({ resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth), credentials: plane.orgCredentials }),
     }),
   )
   app.route(

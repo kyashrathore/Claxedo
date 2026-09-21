@@ -223,7 +223,6 @@ describe("single-artifact Better Auth D1 release", () => {
       ...env,
       CLAXEDO_SANDBOX_POSTURE: "full-hosted",
       CLAXEDO_SANDBOX_DRIVER: "cloudflare",
-      CLAXEDO_PRODUCTION_CREDENTIALS_KV_NAMESPACE_ID: "8ba5baa64c82449080d36d3008208fa9",
       CLAXEDO_PRODUCTION_SANDBOX_WORKER_URL: "https://sandbox.claxedo.test",
       CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT: String(Date.now() + 86_400_000),
       CLAXEDO_ENVIRONMENT_ID: "production",
@@ -246,6 +245,7 @@ describe("single-artifact Better Auth D1 release", () => {
       'main = "../src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"',
     )
     expect(config).toContain('binding = "CLAXEDO_AGENT_PLUGINS"')
+    expect(config).not.toContain("kv_namespaces")
     const manifest = betterAuthD1DeploymentManifest({
       release,
       workerBuildId: `sha256:${"a".repeat(64)}`,

@@ -1,24 +1,28 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { HTTPException } from "hono/http-exception"
 import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
-import { hostedCredentialsEnabled, hostedOrgCredentials } from "./index"
+import type { ControlPlaneCredentials } from "../../authority/services"
 
 function credentialError(status: 400 | 503, code: string, message: string) {
   return new HTTPException(status, { res: Response.json({ error: { code, message } }, { status }) })
 }
 
-/** Production hosted ports: every credential operation is bound to the authority's org. */
+/**
+ * Production hosted ports: every credential operation is bound to the
+ * authority's org. `credentials` is the plane's per-org store, absent while
+ * `CLAXEDO_HOSTED_CREDENTIALS_ENABLED` is off.
+ */
 export function hostedPiCredentials(input: {
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
-  env: Record<string, string | undefined>
+  credentials: ((orgId: string) => ControlPlaneCredentials) | undefined
 }) {
   const credentials = async (auth: SignedControlPlaneAuth) => {
-    if (!hostedCredentialsEnabled(input.env)) throw credentialError(503, "pi_credentials_unavailable", "Hosted credentials are disabled")
-    return hostedOrgCredentials(await input.resolveOrgId(auth), input.env)
+    if (!input.credentials) throw credentialError(503, "pi_credentials_unavailable", "Hosted credentials are disabled")
+    return input.credentials(await input.resolveOrgId(auth))
   }
   return {
     piProviderCatalog: async (auth: SignedControlPlaneAuth) => {
-      if (!hostedCredentialsEnabled(input.env)) return projectPiProviderCatalog(new Set())
+      if (!input.credentials) return projectPiProviderCatalog(new Set())
       const store = await credentials(auth)
       const connected = await Promise.all(PI_LAUNCH_PROVIDERS.map(async (provider) => {
         for (const id of piCredentialProviderIDs(provider)) {

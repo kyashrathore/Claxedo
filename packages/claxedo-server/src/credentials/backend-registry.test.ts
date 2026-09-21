@@ -167,11 +167,11 @@ describe("credential store", () => {
   })
 
   describe("backend selection", () => {
-    test("defaults to local backend when CLAXEDO_CF_KV_URL is not set", () => {
-      delete process.env.CLAXEDO_CF_KV_URL
+    test("the process backend is the local encrypted file store, created once", async () => {
       setBackendOverride(undefined)
       const backend = getBackend()
-      expect(backend).toBeTruthy()
+      expect(getBackend()).toBe(backend)
+      expect(await backend.put("selection", "value")).toBe("local:selection")
     })
 
     test("override takes precedence", async () => {

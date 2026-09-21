@@ -13,7 +13,8 @@
  *     reads;
  *   - WHERE the bytes live: connection metadata in D1 (`hosted_connections`),
  *     attempts in D1 (`hosted_connection_attempts`), secrets in the
- *     envelope-encrypted per-org KV store (`hostedOrgCredentials`).
+ *     envelope-encrypted per-org credential rows (`hostedOrgCredentials`,
+ *     reached through the injected `credentials` factory).
  *
  * `ownerlessRows: "refuse"` is the hosted invariant: a hosted host must derive
  * its team partition from the caller's org and never expose the kit's
@@ -40,7 +41,6 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
 import { signedOrError } from "../../workspace/route-support"
-import { hostedOrgCredentials } from "../../credentials/worker/index"
 import { createCredentialStoreAdapter } from "../credential-store-adapter"
 import { githubIntegrationForEnv } from "../github-oauth"
 import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConnectionAttempts } from "./attempts"
@@ -67,8 +67,8 @@ export type HostedD1ConnectionsSetupInput = Readonly<{
   integrations?: ReadonlyArray<{ decl: IntegrationDeclaration; impl: IntegrationImpl }>
   /** Optional feature-owned integrations resolved from the authenticated durable owner context. */
   dynamicIntegrations?: HostedDynamicConnectionIntegrations
-  /** Test seam. Production composes the envelope-encrypted per-org KV store below. */
-  credentials?: (orgId: string) => ControlPlaneCredentials
+  /** The per-org credential store the resolved org's secrets are read from and written to. */
+  credentials: (orgId: string) => ControlPlaneCredentials
   /** Test seam. Production composes the durable D1 attempt store below. */
   attempts?: HostedConnectionAttempts
   requireEntitlement?: (orgId: string) => Promise<{
@@ -467,7 +467,7 @@ async function hostedConnectionsService(
   }
   return createConnectionsService({
     registry,
-    credentials: createCredentialStoreAdapter(input.credentials?.(orgId) ?? hostedOrgCredentials(orgId, input.env)),
+    credentials: createCredentialStoreAdapter(input.credentials(orgId)),
     connections,
     // The service is built PER REQUEST, so the kit's default in-memory attempt
     // store is empty on every call after the one that created the attempt:

@@ -1,4 +1,3 @@
-import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/adapters/worker/better-auth-d1-compose"
 import { createHostedAgentPluginsComposition } from "../../agent-plugins/hosted-composition"
 import type { AgentPluginR2Bucket } from "../../agent-plugins/artifacts/r2-artifact-adapter"
@@ -21,7 +20,6 @@ export { LiveSyncRoom }
 
 export type BetterAuthD1AgentPluginsCandidateWorkerEnv = BetterAuthD1CandidateWorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
-  CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
 }
 
 /** The string-valued half of a Worker env, for the composers that read configuration rather than bindings. */
@@ -44,12 +42,8 @@ export function composeBetterAuthD1AgentPluginsCandidate(
   env: BetterAuthD1AgentPluginsCandidateWorkerEnv,
   extra: Pick<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0], "sandbox"> = {},
 ) {
-  // The credentials KV binding is an object, so it cannot ride in the
-  // string-only composition env; the base plane needs it for
-  // `workerCredentials`, which the hosted-credentials flag turns on.
   const base = composeBetterAuthD1UserDeployedControlPlane({
     ...betterAuthD1CandidateCompositionInput(env),
-    ...(env.CLAXEDO_CREDENTIALS ? { credentialsNamespace: env.CLAXEDO_CREDENTIALS } : {}),
     ...extra,
   })
   // One signing key decides both halves: the deployment that mints a root's
@@ -82,6 +76,25 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     selectedCapabilities: feature.selectedCapabilities,
     rootEnvironment: feature.rootEnvironment,
     releaseRuntime: feature.releaseRuntime,
+    cloudCreateAdmission: {
+      // The same entitlement gate the create route answers through, so a
+      // task-driven create is billed or refused on the same tenant — the
+      // workspace routes' `countActiveOrgSandboxLeases`/`sandboxUsage` and cap
+      // knobs apply here by the same name.
+      entitlement: base.options.cloudWorkspaceAdmission,
+      ...(base.options.productWorkspace?.countActiveOrgSandboxLeases
+        ? { countActiveLeases: base.options.productWorkspace.countActiveOrgSandboxLeases }
+        : {}),
+      ...(base.options.productWorkspace?.sandboxLeaseCap !== undefined
+        ? { leaseCap: base.options.productWorkspace.sandboxLeaseCap }
+        : {}),
+      ...(base.options.productWorkspace?.createWorkspaceRateLimiter
+        ? { rateLimiter: base.options.productWorkspace.createWorkspaceRateLimiter }
+        : {}),
+    },
+    ...(base.options.productWorkspace?.sandboxUsage
+      ? { sandboxUsage: base.options.productWorkspace.sandboxUsage }
+      : {}),
     sandboxEgress: { controlPlaneOrigin: hostedControlPlaneOrigin(signingEnv) },
     signingEnv,
     passes,

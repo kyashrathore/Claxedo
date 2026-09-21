@@ -1,6 +1,6 @@
 /**
  * The credential store port for every host: SQLite (local) and the
- * envelope-encrypted per-org KV store (hosted) both reach the kit through this
+ * envelope-encrypted per-org D1 rows (hosted) both reach the kit through this
  * one adapter over `ControlPlaneCredentials`.
  *
  * There was a hand-written adapter on each side and they disagreed about the

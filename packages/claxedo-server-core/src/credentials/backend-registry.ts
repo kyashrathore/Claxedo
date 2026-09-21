@@ -1,46 +1,22 @@
 /**
- * Credential store — selects and caches the deployment-specific secret backend.
- *
- * - Hosted/cloud: envelope-encrypted Cloudflare KV (when CLAXEDO_CF_KV_URL is
- *   set). MANDATORY encryption: constructing the KV backend without a KEK
- *   (CLAXEDO_CREDENTIALS_KEK) throws — a hosted deployment missing its
- *   encryption key must be down, not storing plaintext (invariant I-5).
- *   The partition defaults to "deployment" for this single-tenant Node path;
- *   set CLAXEDO_CREDENTIALS_ORG_ID to name it explicitly.
- * - Local desktop: encrypted file store under ~/.claxedo/credentials/
- *
- * Also provides an in-memory test backend for unit tests.
+ * The secret backend of a Node process: the encrypted file store under
+ * `<dataDir>/credentials/`, created once and cached, with an override seam for
+ * tests. The hosted Worker never imports this module; its secrets live in D1
+ * behind `credentials/worker/index.ts` in claxedo-server.
  */
 
 import type { SecretBackend } from "./types"
 import { createLocalBackend } from "./backends/local"
-import { createEncryptedCloudflareBackend } from "./backends/cloudflare"
-import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-
-const log = Log.create({ service: "credentials-store" })
 
 let backend: SecretBackend | undefined
 let override: SecretBackend | undefined
 
-/** Returns true if running in a hosted/cloud deployment. */
-function isHosted() {
-  return !!process.env.CLAXEDO_CF_KV_URL
-}
-
-/** Get or create the active secret backend. */
 export function getBackend(): SecretBackend {
   if (override) return override
-  if (backend) return backend
-
-  if (isHosted()) {
-    log.info("Using envelope-encrypted Cloudflare KV secret backend")
-    backend = createEncryptedCloudflareBackend({
-      orgId: process.env.CLAXEDO_CREDENTIALS_ORG_ID?.trim() || "deployment",
-    })
-  } else {
-    log.info("Using local encrypted secret backend")
-    backend = createLocalBackend()
-  }
+  // One key per machine: a self-hosted node serves every org from one
+  // operator's disk, so per-org key separation would not separate anything
+  // that operator does not already hold.
+  backend ??= createLocalBackend()
   return backend
 }
 

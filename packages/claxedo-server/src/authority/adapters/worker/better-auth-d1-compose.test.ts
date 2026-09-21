@@ -126,16 +126,8 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(controlSql.some((sql) => sql.trim() === "select 1")).toBe(true)
   })
 
-  test("hands a bound credentials KV namespace to the hosted credential store", async () => {
-    // The composition env is strings only, so the binding object cannot ride
-    // in it. Without this explicit seam, a deployment with the hosted
-    // credential store enabled would refuse to start, still expecting REST KV
-    // configuration.
+  test("exposes the per-org credential store over CONTROL_PLANE_DB once the hosted credential flag is on", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
-    const credentialEnv = env({
-      CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
-      CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 7).toString("base64"),
-    })
     const input = {
       authDatabase,
       controlPlaneDatabase,
@@ -148,21 +140,32 @@ describe("Better Auth + D1 user-deployed composition", () => {
         ownerBootstrap: "one-use-claim" as const,
       },
     }
-    expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: credentialEnv })).toThrow(
-      /CLAXEDO_CF_KV_URL is not configured/,
-    )
-    const binding = {
-      get: async () => null,
-      put: async () => undefined,
-      delete: async () => undefined,
-      list: async () => ({ keys: [], list_complete: true, cacheStatus: null }),
-    }
+    // Flag off: no store, and nothing about the KEK is required.
+    const off = composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env() })
+    expect(off.plane.orgCredentials).toBeUndefined()
+    await off.authReady.catch(() => undefined)
+
+    // Flag on without a KEK: the composition refuses to start.
+    expect(() =>
+      composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env({ CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1" }) }),
+    ).toThrow(/CLAXEDO_CREDENTIALS_KEK/)
+
     const composed = composeBetterAuthD1UserDeployedControlPlane({
       ...input,
-      env: credentialEnv,
-      credentialsNamespace: binding as never,
+      env: env({
+        CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
+        CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 7).toString("base64"),
+      }),
     })
     expect(await composed.plane.services.credentials.listCredentials("org_deployment")).toEqual([])
+    const store = composed.plane.orgCredentials!("org_deployment")
+    await store.putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-composed" })
+    expect(await store.resolveCredentialSecret?.("openai")).toBe("sk-composed")
+    const stored = await controlPlaneDatabase
+      .prepare("select org_id, secret_envelope from hosted_provider_credentials")
+      .all<{ org_id: string; secret_envelope: string }>()
+    expect(stored.results).toEqual([{ org_id: "org_deployment", secret_envelope: expect.stringMatching(/^cenc1:/) }])
+    expect(stored.results[0].secret_envelope).not.toContain("sk-composed")
     // Let Better Auth's init settle before the databases are disposed.
     await composed.authReady.catch(() => undefined)
   })

@@ -42,14 +42,16 @@
  * the retired KEK from configuration.
  */
 
-import { credentialIdFromRef, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
-import { listCloudflareCredentialRefs, createEncryptedCloudflareBackend } from "@claxedo/server-core/credentials/backends/cloudflare"
+import { credentialIdFromRef, envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
 import type { SecretBackend } from "@claxedo/server-core/credentials/types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import {
+  hostedCredentialSecretSlots,
+  listHostedCredentialSlots,
+  type HostedCredentialStoreInput,
+} from "../worker/index"
 
 const log = Log.create({ service: "credentials-rotate" })
-
-type EnvLike = Record<string, string | undefined>
 
 /** A backend that can be swept: the secret API plus the key-id inspector. */
 export type RotatableBackend = SecretBackend & EnvelopeAdmin
@@ -307,44 +309,22 @@ export function auditEnvelopeKeys(
 }
 
 /**
- * The envelope partition a hosted KV ref belongs to.
- *
- * `hostedOrgCredentials` writes under `cf:org/<orgId>/credential/<providerId>`
- * (worker-credentials.ts), and that org segment is the ONLY record of which
- * HKDF subkey the value was encrypted under — KV itself has no tenant column.
- * Returns undefined for a ref that does not carry one, so the caller reports it
- * rather than guessing a partition and producing an authentication failure.
+ * Rotate the hosted credential store: every row of
+ * `hosted_provider_credentials`, each re-sealed under its own org's subkey
+ * derived from the current KEK.
  */
-export function hostedCredentialOrgFromRef(ref: string): string | undefined {
-  const match = /^cf:org\/([^/]+)\/credential\//.exec(ref)
-  return match?.[1]
-}
-
-/**
- * Rotate the HOSTED (Cloudflare KV) credential store.
- *
- * Enumerates via the KV key listing — the only directory the hosted store has —
- * and re-encrypts each value under its own org's subkey derived from the
- * current KEK.
- */
-export async function rotateHostedCredentialKeys(opts: {
-  env?: EnvLike
-  dryRun?: boolean
-  /** Partition resolver override for refs that do not carry an org segment. */
-  orgIdFor?: (ref: string) => string | undefined
-  onEntry?: (entry: EnvelopeRotationEntry) => void
-} = {}): Promise<EnvelopeRotationReport> {
-  const env = opts.env ?? process.env
-  const resolveOrg = opts.orgIdFor ?? hostedCredentialOrgFromRef
-  // No `fetch` override here on purpose: the KV BYTE store this rotates always
-  // uses the global `fetch`, so an override that reached only the key listing
-  // would look like a transport seam while half the traffic ignored it.
-  const refs = await listCloudflareCredentialRefs({ env })
-
+export async function rotateHostedCredentialKeys(
+  input: HostedCredentialStoreInput & {
+    dryRun?: boolean
+    onEntry?: (entry: EnvelopeRotationEntry) => void
+  },
+): Promise<EnvelopeRotationReport> {
+  // A misconfigured KEK is one refusal here, not one "failed" entry per row.
+  envelopeKeyProviderFromEnv(input.env)
   return rotateEnvelopeKeys({
-    items: refs.map((ref) => ({ ref, orgId: resolveOrg(ref) ?? "" })),
-    backendFor: (orgId) => createEncryptedCloudflareBackend({ orgId, env }),
-    ...(opts.dryRun === undefined ? {} : { dryRun: opts.dryRun }),
-    ...(opts.onEntry ? { onEntry: opts.onEntry } : {}),
+    items: await listHostedCredentialSlots(input.database),
+    backendFor: (orgId) => hostedCredentialSecretSlots(orgId, input),
+    ...(input.dryRun === undefined ? {} : { dryRun: input.dryRun }),
+    ...(input.onEntry ? { onEntry: input.onEntry } : {}),
   })
 }

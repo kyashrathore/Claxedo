@@ -140,7 +140,7 @@ describe("hosted deploy command selection", () => {
       dryRun: true,
       targets: ["central"],
       agentPlugins: true,
-      env: { ...betterAuthD1Env, CLAXEDO_STAGING_CREDENTIALS_KV_NAMESPACE_ID: "8ba5baa64c82449080d36d3008208fa9" },
+      env: betterAuthD1Env,
     })
 
     expect(commands.map((command) => command.name)).toEqual(["better_auth_d1.release.preflight"])

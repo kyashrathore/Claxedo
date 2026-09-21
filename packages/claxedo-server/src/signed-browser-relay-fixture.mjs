@@ -102,10 +102,6 @@ let localHostHeartbeatPromise = Promise.resolve()
 process.env.CLAXEDO_DATA_DIR = dataDir
 process.env.CLAXEDO_RELAY_JWT_ALG = "EdDSA"
 process.env.WORKSPACE_RUNTIME_CONFIG_TOKEN = runtimeConfigToken
-if (scriptedModelUrl) {
-  // Scripted runs use only the fixture's encrypted credential store.
-  delete process.env.CLAXEDO_CF_KV_URL
-}
 // The product has no implicit default harness: a fresh data dir leaves the
 // embedded runtime with no runner, and every route that names no harness
 // (`GET /command`, `GET /agent`) fails with `workspace_harness_not_configured`.

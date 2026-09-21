@@ -1,5 +1,5 @@
 /**
- * Credential KEK rotation / retirement check.
+ * Credential KEK rotation / retirement check for the hosted credential store.
  *
  * Rotation of `CLAXEDO_CREDENTIALS_KEK` is a DRAIN, not a swap: adding a new
  * key only changes what NEW writes use, so until every stored ciphertext is
@@ -8,44 +8,52 @@
  * gates un-configuring the old key.
  *
  * Procedure:
- *   1. Stage the rotation — new key in `CLAXEDO_CREDENTIALS_KEK`, the key being
- *      retired in `CLAXEDO_CREDENTIALS_KEK_NEXT` (still accepted for reads).
- *   2. Drain:  node --import tsx scripts/maintenance/rotate-credential-kek.ts --hosted
- *              node --import tsx scripts/maintenance/rotate-credential-kek.ts --local
+ *   1. Stage the rotation on the Worker: new key in `CLAXEDO_CREDENTIALS_KEK`,
+ *      the key being retired in `CLAXEDO_CREDENTIALS_KEK_NEXT` (still accepted
+ *      for reads). Export the same two values into this process.
+ *   2. Drain:  node --import tsx scripts/maintenance/rotate-credential-kek.ts --staging
+ *              node --import tsx scripts/maintenance/rotate-credential-kek.ts --production
+ *      with CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN (D1 write access) and
+ *      CLAXEDO_<ENV>_CONTROL_PLANE_D1_DATABASE_ID set.
  *   3. Verify: re-run with --audit. Exit code 0 and `complete: true` means no
  *      ciphertext remains under any retired key-id.
  *   4. Only then remove `CLAXEDO_CREDENTIALS_KEK_NEXT` from configuration.
  *
+ * The local file store of a self-hosted node is outside the KEK scheme (it
+ * seals with a machine-local seed), so there is nothing to drain there.
+ *
  * Exit codes: 0 = complete, 1 = work remains or items failed. Safe to re-run at
- * any point — the pass is idempotent and each slot is a single overwrite.
+ * any point: the pass is idempotent and each slot is a single overwrite.
  */
 
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { EnvelopeRotationReport } from "../../src/credentials/operations/rotate"
 
-type Target = "hosted" | "local"
-
 function usage(): never {
   console.error(
     [
-      "usage: rotate-credential-kek.ts (--hosted | --local) [--audit]",
+      "usage: rotate-credential-kek.ts (--staging | --production) [--audit]",
       "",
-      "  --hosted   sweep the hosted Cloudflare KV credential store (all orgs)",
-      "  --local    sweep this process's local/self-host credential store",
-      "  --audit    classify only, write nothing (the completion check)",
+      "  --staging      sweep the staging control plane's hosted credential rows (all orgs)",
+      "  --production   sweep the production control plane's hosted credential rows (all orgs)",
+      "  --audit        classify only, write nothing (the completion check)",
     ].join("\n"),
   )
   process.exit(2)
 }
 
-function summarize(target: Target, report: EnvelopeRotationReport & { envelopeManaged?: boolean }) {
-  console.log(JSON.stringify({ target, ...report, entries: undefined }, null, 2))
-  if (report.envelopeManaged === false) {
-    console.log(
-      "target is not KEK-managed (local file store) — no ciphertext is bound to CLAXEDO_CREDENTIALS_KEK",
-    )
+function required(name: string): string {
+  const value = process.env[name]?.trim()
+  if (!value) {
+    console.error(`${name} is required`)
+    process.exit(2)
   }
+  return value
+}
+
+function summarize(report: EnvelopeRotationReport) {
+  console.log(JSON.stringify({ ...report, entries: undefined }, null, 2))
   for (const failure of report.failures) {
     console.error(`FAILED ${failure.ref} (org ${failure.orgId}): ${failure.error}`)
   }
@@ -62,16 +70,19 @@ function summarize(target: Target, report: EnvelopeRotationReport & { envelopeMa
 async function main() {
   const args = new Set(process.argv.slice(2))
   const dryRun = args.has("--audit") || args.has("--dry-run")
-  const hosted = args.has("--hosted")
-  const local = args.has("--local")
-  if (hosted === local) usage()
+  const staging = args.has("--staging")
+  const production = args.has("--production")
+  if (staging === production) usage()
+  const environment = staging ? "STAGING" : "PRODUCTION"
 
-  if (hosted) {
-    const { rotateHostedCredentialKeys } = await import("../../src/credentials/operations/rotate")
-    process.exit(summarize("hosted", await rotateHostedCredentialKeys({ dryRun })))
-  }
-  const { rotateLocalCredentialKeys } = await import("../../src/credentials/operations/rotate-local")
-  process.exit(summarize("local", await rotateLocalCredentialKeys({ dryRun })))
+  const { d1HttpDatabase } = await import("./d1-http-database")
+  const { rotateHostedCredentialKeys } = await import("../../src/credentials/operations/rotate")
+  const database = d1HttpDatabase({
+    accountId: required("CLOUDFLARE_ACCOUNT_ID"),
+    apiToken: required("CLOUDFLARE_API_TOKEN"),
+    databaseId: required(`CLAXEDO_${environment}_CONTROL_PLANE_D1_DATABASE_ID`),
+  })
+  process.exit(summarize(await rotateHostedCredentialKeys({ database, env: process.env, dryRun })))
 }
 
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) {

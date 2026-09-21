@@ -10,7 +10,8 @@ import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/plat
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
-import { fetchUrl, fetchBodyText } from "../../test-support/fetch-calls"
+import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { fetchUrl } from "../../test-support/fetch-calls"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
 
@@ -105,8 +106,8 @@ describe("cloud-workspace admission", () => {
     const admitted: string[] = []
     const app = createHostedCoreApp(plane(), {
       ...options,
-      cloudWorkspaceAdmission: async (admittedAuth) => {
-        admitted.push(admittedAuth.user.subject)
+      cloudWorkspaceAdmission: async (tenant) => {
+        admitted.push(tenant.auth?.user.subject ?? "")
         return {
           status: 402 as const,
           body: { error: { code: "billing_entitlement_required", message: "subscription required" } },
@@ -176,25 +177,21 @@ describe("hosted production Pi and connection discovery", () => {
 
   test("enabled catalog and mutations use authority orgs and encrypted credentials; failures remain errors", async () => {
     const base = plane()
-    base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64"), CLAXEDO_CF_KV_URL: "https://kv.test/ns", CLAXEDO_CF_KV_TOKEN: "kv-test" }
+    base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") }
     base.services.authority!.resolveOrgId = vi.fn(async (auth) => `internal-${auth.user.subject}` as never)
-    const kv = new Map<string, string>()
+    const controlPlane = await miniflareControlPlaneDatabase(["0039_hosted_provider_credentials.sql"])
     let broken = false
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      if (broken) return new Response("unavailable", { status: 503 })
-      const key = decodeURIComponent(new URL(fetchUrl(input)).pathname.split("/values/")[1] ?? "")
-      if (init?.method === "PUT") { kv.set(key, fetchBodyText(init.body)); return new Response("ok") }
-      if (init?.method === "DELETE") { kv.delete(key); return new Response("ok") }
-      return kv.has(key) ? new Response(kv.get(key)) : new Response("missing", { status: 404 })
-    }) as unknown as typeof fetch
+    base.orgCredentials = (orgId) => {
+      if (broken) throw new Error("CONTROL_PLANE_DB unavailable")
+      return hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
+    }
     try {
       const app = createHostedCoreApp(base, options) as unknown as Hono
       const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
       expect((await app.request("/auth/openai?harness=pi&orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "alice-key" } }) })).status).toBe(200)
       expect(await connected("alice")).toEqual(["openai"])
       expect(await connected("bob")).toEqual([])
-      const credentials = hostedOrgCredentials("internal-alice", base.env)
+      const credentials = hostedOrgCredentials("internal-alice", { database: controlPlane.database, env: base.env })
       await credentials.putCredential({ provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "oauth-secret" })
       expect((await connected("alice")).sort()).toEqual(["openai", "openai-codex"])
       expect((await app.request("/auth/openai-codex?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "not-oauth" } }) })).status).toBe(400)
@@ -204,11 +201,15 @@ describe("hosted production Pi and connection discovery", () => {
       expect(await connected("alice")).toEqual(["openai"])
       expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers() })).status).toBe(200)
       expect(await connected("alice")).toEqual([])
-      expect([...kv.values()].every((value) => !value.includes("oauth-secret"))).toBe(true)
+      const stored = await controlPlane.database
+        .prepare("select org_id, secret_envelope from hosted_provider_credentials")
+        .all<{ org_id: string; secret_envelope: string }>()
+      expect(stored.results.map((row) => row.org_id)).toEqual(["internal-alice"])
+      expect(stored.results.every((row) => row.secret_envelope.startsWith("cenc1:") && !row.secret_envelope.includes("oauth-secret"))).toBe(true)
       broken = true
       expect((await app.request(catalogPath, { headers: headers() })).status).toBe(500)
     } finally {
-      globalThis.fetch = originalFetch
+      await controlPlane.dispose()
     }
   })
 })
