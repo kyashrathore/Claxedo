@@ -400,3 +400,80 @@ async function childCount() {
     ps.on("close", () => resolve(out.split("\n").filter((line) => Number(line.trim()) === process.pid).length))
   })
 }
+
+/**
+ * The owner dies mid-protocol. Each case runs the production module inside a
+ * throwaway parent that kills itself at one boundary, then reads the record the
+ * way a fresh owner would.
+ */
+const crashProxy = (mode: "before-identity" | "before-ack", store: string, marker: string) => [
+  `import { launchOwnedProcess } from ${JSON.stringify(new URL("./launch-gate.ts", import.meta.url).href)}`,
+  `import { readFileSync, writeFileSync } from "node:fs"`,
+  `import { randomUUID } from "node:crypto"`,
+  `const file = ${JSON.stringify(store)}`,
+  `const read = () => { try { return JSON.parse(readFileSync(file, "utf8")) } catch { return {} } }`,
+  `const patch = (id, change) => { const all = read(); all[id] = { ...all[id], ...change }; writeFileSync(file, JSON.stringify(all)) }`,
+  `const ownership = {`,
+  `  prepare: async (input) => { const p = { launchId: randomUUID(), role: input.role, protocol: input.protocol, scope: input.scope, preparedAt: Date.now() }; patch(p.launchId, p); return p },`,
+  `  recordIdentity: async (id, identity, gateNonce) => patch(id, { identity, gateNonce, identityReceivedAt: Date.now() }),`,
+  `  authorizeActivation: async (id) => patch(id, { activationAuthorizedAt: Date.now() }),`,
+  mode === "before-ack"
+    ? `  acknowledgeActivation: async () => { process.kill(process.pid, "SIGKILL") },`
+    : `  acknowledgeActivation: async (id) => patch(id, { activationAcknowledgedAt: Date.now() }),`,
+  `  recordRetirement: async (id, cleanup) => patch(id, { cleanup }),`,
+  `  read: async (id) => read()[id],`,
+  `  listUnresolved: async () => Object.values(read()),`,
+  `}`,
+  mode === "before-identity" ? `process.kill(process.pid, "SIGKILL")` : ``,
+  `await launchOwnedProcess({`,
+  `  ownership, role: "harness", scope: {},`,
+  `  payload: { command: "/bin/sh", args: ["-c", "touch ${marker}; sleep 30"] },`,
+  `  cwd: ${JSON.stringify(process.cwd())}, env: process.env, activationDeadlineMs: 4000,`,
+  `})`,
+  `await new Promise((resolve) => setTimeout(resolve, 20000))`,
+].join("\n")
+
+async function runCrashProxy(source: string, directory: string) {
+  const file = path.join(directory, "crash-proxy.mjs")
+  await fs.writeFile(file, source)
+  const proxy = spawn(process.execPath, [file], { stdio: ["ignore", "ignore", "pipe"] })
+  cleanup.push(() => void proxy.kill("SIGKILL"))
+  return await new Promise<void>((resolve) => proxy.on("exit", () => resolve()))
+}
+
+test.skipIf(!posix || !process.versions.bun)("an owner that dies before using the identity leaves no payload", async () => {
+  const directory = await workspace()
+  const store = path.join(directory, "ownership.json")
+  const marker = path.join(directory, "payload-ran")
+  await runCrashProxy(crashProxy("before-identity", store, marker), directory)
+
+  await new Promise((resolve) => setTimeout(resolve, 5000))
+  expect(await exists(marker)).toBe(false)
+  const records: Record<string, never> = JSON.parse(await fs.readFile(store, "utf8").catch(() => "{}"))
+  for (const record of Object.values(records)) expect(reconcileLaunch(record).execution).toBe("none")
+})
+
+test.skipIf(!posix || !process.versions.bun)("an owner that dies before the acknowledgement leaves a reacquirable launch", async () => {
+  const directory = await workspace()
+  const store = path.join(directory, "ownership.json")
+  const marker = path.join(directory, "payload-ran")
+  await runCrashProxy(crashProxy("before-ack", store, marker), directory)
+
+  await waitForFile(marker, 10_000)
+  const records: Record<string, LaunchOwnershipRecordShape> = JSON.parse(await fs.readFile(store, "utf8"))
+  const record = Object.values(records)[0]!
+  expect(record.activationAcknowledgedAt).toBeUndefined()
+  expect(reconcileLaunch(record as never).execution).toBe("unknown")
+
+  cleanup.push(() => { try { process.kill(-record.identity!.pid, "SIGKILL") } catch {} })
+  expect((await verifyCreationIdentity(record.identity!)).state).toBe("live")
+  const result = await retire({ identity: record.identity! }, budgets)
+  expect(result.leader).toBe("exited")
+  expect(await gone(record.identity!.pid)).toBe(true)
+})
+
+type LaunchOwnershipRecordShape = {
+  identity?: Awaited<ReturnType<typeof readCreationIdentity>>
+  activationAuthorizedAt?: number
+  activationAcknowledgedAt?: number
+}
