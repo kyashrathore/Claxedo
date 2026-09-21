@@ -77,8 +77,9 @@ describe("access gate wired into the core", () => {
 
   test("approved sender flows through to a real turn", async () => {
     const rt = runtime()
-    const store = createMemoryChannelAccessStore()
-    const access = createChannelAccess({ dmPolicy: "pairing", store, now: () => 1_000_000, random: () => 0.1 })
+    const now = () => 1_000_000
+    const store = createMemoryChannelAccessStore(now)
+    const access = createChannelAccess({ dmPolicy: "pairing", store, now, random: () => 0.1 })
     const core = createChannelCore({
       runtime: rt,
       dedup: createMemoryDedupStore({ initializedAt: 0 }),

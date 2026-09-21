@@ -191,7 +191,7 @@ export function parseGroupEngagement(
   return fallback
 }
 
-export function createMemoryChannelAccessStore(): ChannelAccessStore {
+export function createMemoryChannelAccessStore(now: () => number = Date.now): ChannelAccessStore {
   const allowed = new Set<string>()
   const pending = new Map<string, PairingRequest>()
   return {
@@ -217,7 +217,9 @@ export function createMemoryChannelAccessStore(): ChannelAccessStore {
       pending.set(request.code, request)
     },
     async deletePending(code) {
-      return pending.delete(code)
+      const request = pending.get(code)
+      pending.delete(code)
+      return !!request && request.expiresAt > now()
     },
   }
 }

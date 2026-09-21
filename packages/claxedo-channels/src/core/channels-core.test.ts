@@ -315,6 +315,24 @@ describe("channels core", () => {
     expect(parseChannelCommand("/stop please")).toEqual({ kind: "cancel" })
   })
 
+  test("pairing approval is the whole message: the keyword and the code, nothing around them", () => {
+    expect(parseChannelCommand("/pairing approve ABCD2345")).toEqual({ kind: "pairing_approve", code: "ABCD2345" })
+    expect(parseChannelCommand("  /pairing approve abcd2345  ")).toEqual({ kind: "pairing_approve", code: "ABCD2345" })
+    expect(parseChannelCommand("@claxedo /pairing approve ABCD2345", { mentions: ["@claxedo"] }))
+      .toEqual({ kind: "pairing_approve", code: "ABCD2345" })
+
+    for (const text of [
+      "I do not approve this",
+      "approve ABCD2345",
+      "please /pairing approve ABCD2345",
+      "/pairing approve ABCD2345 now",
+      "/pairing approve ABCD2345 and /pairing approve WXYZ6789",
+      "/pairing approve",
+    ]) {
+      expect(parseChannelCommand(text)).toEqual({ kind: "message" })
+    }
+  })
+
   test("authorization rejection does not claim idempotency or create a session", async () => {
     const rt = runtime()
     const chunks: OutboundChunk[] = []
@@ -733,6 +751,66 @@ describe("approval action admission", () => {
       message: "This approval action was already processed.",
     })
     expect(decisions).toEqual(["ses_1:perm_1:true:owner"])
+  })
+
+  test("a refused approval releases its delivery claim on both the press and the reply path", async () => {
+    // Nothing was recorded, so the redelivery of that same card has to be able
+    // to land. The two paths share `recordApproval`, so they agree on it.
+    async function refusedOnce() {
+      const rt = runtime()
+      const decisions: string[] = []
+      let refuseNext = true
+      const approvals = createMemoryApprovalBridge({
+        async onDecision(_request, decision) {
+          if (refuseNext) {
+            refuseNext = false
+            return { ok: false, message: "Unable to record approval response." }
+          }
+          decisions.push(`${decision.callId}:${decision.approved}:${decision.actorExternalUserId}`)
+          return { ok: true }
+        },
+      })
+      const core = createChannelCore({
+        runtime: rt,
+        dedup: createMemoryDedupStore({ initializedAt: 0 }),
+        sessions: createMemorySessionResolver(rt),
+        approvals,
+      })
+      await core.handleInbound(envelope({ text: "needs approval" }), { reply: () => {} })
+      const [request] = await approvals.pendingForThread("telegram:install:chat:thread")
+      return { core, decisions, request }
+    }
+
+    const pressed = await refusedOnce()
+    const core = pressed.core
+    const decisions = pressed.decisions
+    const request = pressed.request
+    const press = {
+      channel: "telegram" as const,
+      messageId: "card-1",
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "owner",
+      threadKey: request.threadKey,
+    }
+    await expect(core.onApproval(press)).resolves.toEqual({ ok: false, message: "Unable to record approval response." })
+    await expect(core.onApproval(press)).resolves.toEqual({ ok: true })
+    expect(decisions).toEqual(["ses_1:perm_1:true:owner"])
+
+    const replied = await refusedOnce()
+    const reply = envelope({
+      idempotencyKey: "card-2",
+      intent: { kind: "approval_reply", approved: false, token: replied.request.token },
+    })
+    const chunks: OutboundChunk[] = []
+    await replied.core.handleInbound(reply, { reply: (chunk) => chunks.push(chunk) })
+    await replied.core.handleInbound(reply, { reply: (chunk) => chunks.push(chunk) })
+
+    expect(chunks).toEqual([
+      { kind: "text", text: "Unable to record approval response.", final: true },
+      { kind: "text", text: "Approval recorded.", final: true },
+    ])
+    expect(replied.decisions).toEqual(["ses_1:perm_1:false:owner"])
   })
 
   test("a press that can name no channel is refused rather than ungated", async () => {
