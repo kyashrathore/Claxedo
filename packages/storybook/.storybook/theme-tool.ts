@@ -13,7 +13,7 @@ export function ThemeTool() {
     ToggleButton,
     {
       title: "Toggle theme",
-      active: mode === "dark",
+      pressed: mode === "dark",
       onClick: toggle,
     },
     mode === "dark" ? "Dark" : "Light",

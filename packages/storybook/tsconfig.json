@@ -11,9 +11,10 @@
     // Workspace packages export `development` -> src/*.ts ahead of `types` ->
     // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
     "customConditions": ["development"],
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node", "bun"]
   },
   "include": [".storybook/**/*.ts", ".storybook/**/*.tsx"]
 }
