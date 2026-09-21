@@ -265,26 +265,45 @@ describe("claxedoToolView", () => {
   })
 
   test("a healthy Stop reads as stopped even though the operation never says succeeded", () => {
-    const facts = (cleanup: string, execution = "terminal", persistence = "committed") => ({
-      execution: { value: execution, source: "codex", observedAt: 1, generation: "gen_1" },
-      cleanup: { value: cleanup, source: "codex", observedAt: 1, generation: "gen_1" },
-      persistence: { value: persistence, source: "store", observedAt: 1, generation: "gen_1" },
+    const target = {
+      scope: "turn", workspaceId: "ws_1", sessionId: "ses_x", turnId: "turn_1", ownerGeneration: "gen_1",
+    }
+    const evidence = (value: string) => ({ value, source: "codex", observedAt: 1, generation: "gen_1" })
+    const operation = (
+      state: string,
+      facts: { execution?: string; cleanup?: string; persistence?: string },
+    ) => ({
+      operationId: "op_1", requestId: "req_1", target, action: "cancel_turn", scopeRevision: "gen_1", attempt: 1,
+      state, phase: "graceful_cancel", phaseDeadlineAt: 2,
+      facts: {
+        execution: evidence(facts.execution ?? "terminal"),
+        cleanup: evidence(facts.cleanup ?? "unknown"),
+        persistence: evidence(facts.persistence ?? "committed"),
+      },
+      cleanupErrors: [], nextActions: [], receipt: "durable", createdAt: 1, updatedAt: 1,
     })
     const cancelled = (cancellation: unknown) =>
       view("session_cancel_turn", { session: "ses_x" }, `Stopped.\n${JSON.stringify({ session: "ses_x", cancellation })}`)
 
-    expect(cancelled({ kind: "operation", operation: { state: "needs_action", facts: facts("unknown") } }))
+    expect(cancelled({ kind: "operation", operation: operation("needs_action", {}) }))
       .toMatchObject({ note: "stopped, cleanup unverified" })
-    expect(cancelled({ kind: "operation", operation: { state: "succeeded", facts: facts("verified_clear") } }))
+    expect(cancelled({ kind: "operation", operation: operation("succeeded", { cleanup: "verified_clear" }) }))
       .toMatchObject({ note: "stopped" })
-    expect(cancelled({ kind: "operation", operation: { state: "failed", facts: facts("unknown", "running") } }))
+    expect(cancelled({ kind: "operation", operation: operation("failed", { execution: "running" }) }))
       .toMatchObject({ note: "did not stop" })
-    expect(cancelled({ kind: "operation", operation: { state: "needs_action", facts: facts("unknown", "terminal", "pending") } }))
+    expect(cancelled({ kind: "operation", operation: operation("needs_action", { persistence: "pending" }) }))
       .toMatchObject({ note: "did not stop" })
     expect(cancelled({ kind: "refused", refusal: { kind: "generation_conflict", message: "already ended" } }))
       .toMatchObject({ note: "was not running" })
     expect(cancelled({ kind: "refused", refusal: { kind: "unavailable", message: "machine offline" } }))
       .toMatchObject({ note: "did not stop" })
+  })
+
+  test("an answer the contract cannot read leaves the Stop row claiming nothing", () => {
+    const card = view("session_cancel_turn", { session: "ses_x" }, JSON.stringify({ session: "ses_x", cancellation: { kind: "operation", operation: { state: "succeeded" } } }))
+
+    expect(card.note).toBeUndefined()
+    expect(card.link).toEqual({ kind: "session", id: "ses_x", label: "ses_x" })
   })
 
   test("a prose-only tool shows its answer as it came", () => {

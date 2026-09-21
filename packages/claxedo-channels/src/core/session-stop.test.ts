@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { ExecutionFact, PersistenceFact, RecoveryOutcome, RecoveryRefusal } from "@claxedo/agent-runtime-contract"
 import type { ChannelAbortResult } from "./resolve-session"
-import { abortReplyText, abortSettled, turnStopped } from "./session-stop"
+import { abortReplyText, abortSettled } from "./session-stop"
 import { stoppedTurn } from "./session-stop.fixture"
 
 function outcomeWith(facts: { execution?: ExecutionFact; persistence?: PersistenceFact; cleanup?: "owned" | "unknown" | "verified_clear" }): RecoveryOutcome {
@@ -28,8 +28,8 @@ describe("reading a channel Stop", () => {
     { execution: "terminal" as const, persistence: "pending" as const, stopped: false },
     { execution: "running" as const, persistence: "committed" as const, stopped: false },
     { execution: "running" as const, persistence: "pending" as const, stopped: false },
-  ])("execution $execution with persistence $persistence is stopped=$stopped", ({ execution, persistence, stopped }) => {
-    expect(turnStopped(outcomeWith({ execution, persistence }))).toBe(stopped)
+  ])("execution $execution with persistence $persistence settles the thread: $stopped", ({ execution, persistence, stopped }) => {
+    expect(abortSettled({ kind: "outcome", outcome: outcomeWith({ execution, persistence }) })).toBe(stopped)
   })
 
   test("the state on the wire never decides it: a needs_action turn with the facts stopped", () => {
@@ -37,7 +37,6 @@ describe("reading a channel Stop", () => {
     if (healthy.kind !== "outcome" || healthy.outcome.kind !== "operation") throw new Error("the fixture builds an operation")
 
     expect(healthy.outcome.operation.state).toBe("needs_action")
-    expect(turnStopped(healthy.outcome)).toBe(true)
     expect(abortSettled(healthy)).toBe(true)
     expect(abortReplyText(healthy)).toBe("Stopped the turn. Whether everything it was using has been released is not verified.")
   })

@@ -708,8 +708,37 @@ describe("reading and driving one session", () => {
 
     const answered = await cancel(client, { session: "ses_root" })
 
+    expect(answered.isError).toBe(true)
     expect(answered.summary).toContain(reads)
     expect(answered.summary).toContain("Error persistence_unavailable from fixture-owner at reconcile")
+  })
+
+  test("an interruption nobody recorded is an error even when the owner named no failure", async () => {
+    const state = local({
+      holdTurns: true,
+      cancellation: (request) => ({
+        kind: "operation",
+        operation: {
+          operationId: "op_unsaved", requestId: request.requestId, target: request.target,
+          action: "cancel_turn", scopeRevision: "gen_1", attempt: 1, state: "needs_action",
+          phase: "reconcile", phaseDeadlineAt: 2, facts: recoveryFacts({ persistence: "pending" }),
+          cleanupErrors: [],
+          nextActions: [{ action: "reconcile_session", scopePreviewRequired: false, reason: "write the interrupted turn down" }],
+          receipt: "volatile", createdAt: 1, updatedAt: 2,
+        },
+      }),
+    })
+    const { url } = await listen({ local: state })
+    const client = await connect(url, "cli-jwt")
+    await json(client, "session_send", { session: "ses_root", text: "carry on" })
+    await until(() => state.prompts.length === 1, "the turn to reach the harness")
+
+    const answered = await cancel(client, { session: "ses_root" })
+
+    expect(answered.isError).toBe(true)
+    expect(answered.summary).toContain("Execution stopped, but saving the interrupted state has not been committed.")
+    expect(answered.summary).not.toContain("still running")
+    expect(answered.summary).toContain("Next: reconcile_session — write the interrupted turn down")
   })
 
   test("session_cancel_turn gives every refusal kind its own wording", async () => {

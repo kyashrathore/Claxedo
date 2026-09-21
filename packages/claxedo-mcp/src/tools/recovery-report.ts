@@ -3,39 +3,29 @@
  * for whether the turn stopped, one text rendering, and the tool result both
  * are assembled into.
  */
-import type {
-  RecoveryOperation,
-  RecoveryOutcome,
-  RecoveryRefusal,
+import {
+  turnStopped,
+  type RecoveryOperation,
+  type RecoveryOutcome,
+  type RecoveryRefusal,
 } from "@claxedo/agent-runtime-contract"
 import type { McpToolResult } from "../mcp-tool"
 import { toolJson } from "./target"
 
 /**
- * A turn stopped when its owner reports execution terminal and the interrupted
- * state committed. `cancel_turn` additionally requires `cleanup:
- * "verified_clear"` to close as `succeeded`, which no adapter can establish, so
- * a healthy Stop settles as `needs_action` with cleanup unknown — reading
- * `state !== "succeeded"` as failure reports every healthy Stop as one.
- */
-export function turnStopped(outcome: RecoveryOutcome): boolean {
-  if (outcome.kind !== "operation") return false
-  const facts = outcome.operation.facts
-  return facts.execution.value === "terminal" && facts.persistence.value === "committed"
-}
-
-/**
- * A running or unknown execution leaves work the caller has to deal with, and
- * so does an owner that named an error. Unverified cleanup does not: it is a
- * stopped turn whose resources nothing has proven released.
+ * Anything the caller still has to deal with: a turn that is not over and
+ * written down, or an owner that named an error. An interruption nobody
+ * recorded is one of these — the turn comes back on the next read — while
+ * unverified cleanup is not, because the turn is over and saved and only its
+ * resources are unaccounted for.
  */
 export function recoveryFailed(outcome: RecoveryOutcome): boolean {
   if (outcome.kind === "refused") return true
-  return outcome.operation.facts.execution.value !== "terminal" || outcome.operation.state === "failed"
+  return !turnStopped(outcome) || outcome.operation.state === "failed"
 }
 
 export function recoveryText(outcome: RecoveryOutcome): string {
-  if (outcome.kind === "refused") return refusalText(outcome.refusal)
+  if (outcome.kind === "refused") return refusalSummary(outcome.refusal)
   const operation = outcome.operation
   return [
     turnStopped(outcome) ? stoppedText(operation) : unfinishedText(operation),
@@ -104,7 +94,7 @@ function nextActionLines(operation: RecoveryOperation): string[] {
   )
 }
 
-function refusalText(refusal: RecoveryRefusal): string {
+function refusalSummary(refusal: RecoveryRefusal): string {
   switch (refusal.kind) {
     case "generation_conflict":
       return `Refused: that turn has already ended, so nothing was cancelled. ${refusal.message}`
@@ -116,7 +106,7 @@ function refusalText(refusal: RecoveryRefusal): string {
       return [
         `Refused: what this command would interrupt changed since revision ${refusal.scopeRevision} was authorized. ${refusal.message}`,
         `It now reaches ${refusal.preview.summary}`,
-        `Sessions: ${list(refusal.preview.sessions)}. Resources: ${list(refusal.preview.resources)}.`,
+        `Sessions: ${namedOrNone(refusal.preview.sessions)}. Resources: ${namedOrNone(refusal.preview.resources)}.`,
       ].join("\n")
     case "unauthorized":
       return `Refused: this credential may not run that recovery command. ${refusal.message}`
@@ -127,6 +117,6 @@ function refusalText(refusal: RecoveryRefusal): string {
   }
 }
 
-function list(values: readonly string[]): string {
+function namedOrNone(values: readonly string[]): string {
   return values.length > 0 ? values.join(", ") : "none"
 }

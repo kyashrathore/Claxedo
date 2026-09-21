@@ -1,6 +1,7 @@
 import type { UiI18n, UiI18nKey } from "@opencode-ai/ui/context/i18n"
 import { asArray, asFiniteNumber, asRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { jsonRecord } from "@claxedo/helpers"
+import { isRecoveryOutcome, parseRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
 import { clampLabel } from "./message-part-text"
 
 export const CLAXEDO_MCP_SERVER = "claxedo"
@@ -295,7 +296,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       return {
         ...base,
         link: session(nonEmptyString(args.session)),
-        ...(result ? { note: i18n.t(cancellationNote(result.cancellation)) } : {}),
+        ...noteOf(i18n, cancellationNote(result?.cancellation)),
       }
     case "session_get":
     case "session_transcript":
@@ -371,23 +372,27 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
 }
 
 /**
- * A turn stopped when its owner reports execution terminal and the interrupted
- * state committed. `cancel_turn` only closes as `succeeded` under `cleanup:
- * "verified_clear"`, which no adapter can establish, so reading the state would
- * label every healthy Stop as one that did not stop.
+ * The card reads the contract's own test rather than the operation's state:
+ * `cancel_turn` only reaches `succeeded` under a cleanup no adapter can prove,
+ * so a state read labels every healthy Stop as one that did not stop.
+ *
+ * An answer the contract cannot parse is not a cancellation this row may read,
+ * so it says nothing about the turn instead of guessing from loose fields.
  */
-function cancellationNote(outcome: unknown) {
-  const row = asRecord(outcome)
-  if (row?.kind === "refused") {
-    return asRecord(row.refusal)?.kind === "generation_conflict"
+function noteOf(i18n: UiI18n, key: UiI18nKey | undefined) {
+  return key ? { note: i18n.t(key) } : {}
+}
+
+function cancellationNote(answer: unknown) {
+  if (!isRecoveryOutcome(answer)) return undefined
+  const outcome = parseRecoveryOutcome(answer)
+  if (outcome.kind === "refused") {
+    return outcome.refusal.kind === "generation_conflict"
       ? ("ui.claxedoTool.note.notRunning" as const)
       : ("ui.claxedoTool.note.notStopped" as const)
   }
-  const facts = asRecord(asRecord(row?.operation)?.facts)
-  const stopped = asRecord(facts?.execution)?.value === "terminal"
-    && asRecord(facts?.persistence)?.value === "committed"
-  if (!stopped) return "ui.claxedoTool.note.notStopped" as const
-  return asRecord(facts?.cleanup)?.value === "verified_clear"
+  if (!turnStopped(outcome)) return "ui.claxedoTool.note.notStopped" as const
+  return outcome.operation.facts.cleanup.value === "verified_clear"
     ? ("ui.claxedoTool.note.stopped" as const)
     : ("ui.claxedoTool.note.cleanupUnverified" as const)
 }

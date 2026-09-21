@@ -3,21 +3,8 @@
  * turn stopped, whether the thread may be rebound, and the sentence to reply
  * with.
  */
-import type { RecoveryOutcome, RecoveryRefusal } from "@claxedo/agent-runtime-contract"
+import { turnStopped, type RecoveryRefusal } from "@claxedo/agent-runtime-contract"
 import type { ChannelAbortResult } from "./resolve-session"
-
-/**
- * A turn stopped when its owner reports execution terminal and the interrupted
- * state committed. `cancel_turn` only closes as `succeeded` under `cleanup:
- * "verified_clear"`, which no adapter can establish, so a healthy Stop settles
- * as `needs_action` — replying "Session needs_action." to that told a person
- * their Stop had failed when it had not.
- */
-export function turnStopped(outcome: RecoveryOutcome): boolean {
-  if (outcome.kind !== "operation") return false
-  const facts = outcome.operation.facts
-  return facts.execution.value === "terminal" && facts.persistence.value === "committed"
-}
 
 /**
  * Whether `/new` may drop the thread's binding. Nothing was running, or what
@@ -33,7 +20,7 @@ export function abortReplyText(result: ChannelAbortResult): string {
   if (result.kind === "no_active_turn") return "Nothing was running in this session."
   if (result.kind === "unreachable") return result.message
   const outcome = result.outcome
-  if (outcome.kind === "refused") return refusalText(outcome.refusal)
+  if (outcome.kind === "refused") return refusalReply(outcome.refusal)
   const { execution, cleanup, persistence } = outcome.operation.facts
   if (execution.value === "running") {
     return "The turn is still running: cancelling it did not stop it. Send the command again, or open the session to look."
@@ -49,7 +36,7 @@ export function abortReplyText(result: ChannelAbortResult): string {
     : "Stopped the turn. Whether everything it was using has been released is not verified."
 }
 
-function refusalText(refusal: RecoveryRefusal): string {
+function refusalReply(refusal: RecoveryRefusal): string {
   switch (refusal.kind) {
     case "generation_conflict":
       return "That turn has already ended."
