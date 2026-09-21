@@ -25,6 +25,7 @@ import {
   requireAgentExecutionBinding,
   type AgentExecutionBinding,
   type AgentSessionStartBinding,
+  type RecoveryErrorCode,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type {
@@ -549,27 +550,21 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const { sessionId: id } = binding
     const directory = requireWorkspaceDirectory(binding.directory)
     log.info("cancelTurn: called", { id, directory, turnId: input.turnId })
+    const unresolved = (code: RecoveryErrorCode, message: string): AdapterCancelOutcome =>
+      ({ execution: "unknown", cleanup: "unknown", error: { code, message } })
     const agentSessionId = this.store.getAgentSessionId(id)
     if (!agentSessionId) {
       log.info("cancelTurn: session not found in store", { id })
       const message = "ACP session could not be cancelled because no agent session is attached."
       this.store.markSessionInterrupted(id, message)
-      return {
-        execution: "unknown",
-        cleanup: "unknown",
-        error: { code: "ownership_unverified", message },
-      }
+      return unresolved("ownership_unverified", message)
     }
     const proc = this.entryForSession(id)?.proc
     if (!proc?.alive) {
       log.info("cancelTurn: no alive process for session", { id, directory })
       const message = "ACP session could not be cancelled because its process is no longer alive."
       this.store.markSessionInterrupted(id, message, agentSessionId)
-      return {
-        execution: "unknown",
-        cleanup: "unknown",
-        error: { code: "provider_unreachable", message },
-      }
+      return unresolved("provider_unreachable", message)
     }
     try {
       cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
@@ -584,11 +579,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       // A live original turn owns its recovering status and eventual terminal
       // event. Do not queue a restart error for its next successful prompt.
       if (!this.lifecycle().activeTurns.has(id)) this.store.markSessionInterrupted(id, message, agentSessionId)
-      return {
-        execution: "unknown",
-        cleanup: "unknown",
-        error: { code: "provider_unreachable", message },
-      }
+      return unresolved("provider_unreachable", message)
     }
   }
 
