@@ -4302,10 +4302,12 @@ describe("workspace relay Bun adapter", () => {
         pendingChunks: [] as Uint8Array[],
         bytesQueued: 0,
         responseStarted: false,
+        eventStream: false,
+        corsHeaders: (upstream: Headers) => upstream,
       })
     })
     void responsePromise
-    const fakeWs = { data: { pending: pendingMap } } as unknown as Parameters<
+    const fakeWs = { data: { pending: pendingMap, activeStreams: 0 } } as unknown as Parameters<
       typeof __slowConsumerInternalsForTest.enqueueChunkWithBackpressure
     >[0]["ws"]
     const entry = pendingMap.get(requestId) as Parameters<
@@ -5856,6 +5858,392 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
       host.close()
       await stopServer(relay)
       directory.dispose()
+    }
+  }, 30_000)
+})
+
+/**
+ * P-129：流预算、控制预留与 socket 发送背压。
+ *
+ * 预算用小的确定性阈值（pending 4 / stream 2 / reserve 2）驱动，
+ * 与既有"32 并发打满真实 cap"的测试互补；背压沿用负阈值技巧
+ * （0 > -1 恒 breach）—— loopback 上填不出真实 8 MiB 积压，阈值
+ * 算术由前面的单测钉住，这里钉的是接线和 policy。
+ */
+describe("host tunnel stream budgets", () => {
+  async function tunnelHarness(bunOptions: WorkspaceRelayBunOptions = {}) {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const directory = createWorkspaceRelayDirectory()
+    const observer = observeDirectory(directory)
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      directory,
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://host-tunnel.invalid",
+        backing: "local-worktree",
+      }),
+    }, {
+      authorizeHostTunnel: () => true,
+      // 心跳的 ping 也过背压守卫；拉长间隔把它移出测试窗口，
+      // 让 -1 阈值的用例只断言请求路径而不是心跳副作用。
+      hostTunnelPingIntervalMs: 300_000,
+      ...bunOptions,
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const host = new WebSocket(
+      new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
+    )
+    await waitForOpen(host)
+    await observer.waitForPresence()
+    return { relay, token, host, directory }
+  }
+
+  // Bun 要等 body 的第一个 chunk 才向客户端刷出响应头，所以测试里的 SSE
+  // start 必须紧跟一个初始事件（真实 SSE 端点也会先发注释/心跳帧）。
+  const sseStart = (requestId: string) => [
+    JSON.stringify({
+      type: "http.response.start",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestId,
+      status: 200,
+      headers: { "content-type": "text/event-stream; charset=utf-8" },
+    }),
+    JSON.stringify({
+      type: "http.response.chunk",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestId,
+      body_base64: Buffer.from(": connected\n\n").toString("base64"),
+    }),
+  ]
+  const plainResponse = (requestId: string, body: string) => [
+    JSON.stringify({
+      type: "http.response.start",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestId,
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    }),
+    JSON.stringify({
+      type: "http.response.chunk",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestId,
+      body_base64: Buffer.from(body).toString("base64"),
+    }),
+    JSON.stringify({
+      type: "http.response.end",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestId,
+    }),
+  ]
+
+  async function waitUntil(label: string, fn: () => boolean, timeoutMs = 5_000) {
+    const deadline = Date.now() + timeoutMs
+    while (!fn()) {
+      if (Date.now() >= deadline) throw new Error(label)
+      await Bun.sleep(15)
+    }
+  }
+
+  test("started SSE streams leave the pending budget so ordinary HTTP still answers", async () => {
+    const { relay, token, host, directory } = await tunnelHarness({
+      tunnelPendingRequestMax: 4,
+      tunnelActiveStreamMax: 8,
+    })
+    host.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as { type: string; request_id: string; path: string }
+      if (message.type !== "http.request") return
+      if (message.path.startsWith("/api/events")) {
+        for (const frame of sseStart(message.request_id)) host.send(frame)
+        return
+      }
+      for (const frame of plainResponse(message.request_id, "ok")) host.send(frame)
+    }
+    try {
+      // 四条并发 SSE 恰好打满 pending 上限(4)；响应开始后它们应改记
+      // stream 预算而不是继续占请求槽。
+      const streams = await Promise.all([0, 1, 2, 3].map((i) =>
+        fetch(new URL(`/workspaces/ws_1/api/events?i=${i}`, relay.url), {
+          headers: { authorization: `Bearer ${token}` },
+        }),
+      ))
+      for (const res of streams) {
+        expect(res.status).toBe(200)
+        expect(res.headers.get("content-type")).toContain("text/event-stream")
+      }
+      // 四条流都开着，但 pending 预算已经让出来：普通请求照常进、照常答。
+      const plain = await fetch(new URL("/workspaces/ws_1/api/plain", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(plain.status).toBe(200)
+      await expect(plain.text()).resolves.toBe("ok")
+      for (const res of streams) await res.body?.cancel()
+    } finally {
+      host.close()
+      await stopServer(relay)
+      directory.dispose()
+    }
+  }, 30_000)
+
+  test("stream-declared requests cannot spend the reserved control budget", async () => {
+    const { relay, token, host, directory } = await tunnelHarness({
+      tunnelPendingRequestMax: 4,
+      tunnelControlRequestReserve: 2,
+      tunnelActiveStreamMax: 8,
+    })
+    const heldStreamIds: string[] = []
+    host.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as { type: string; request_id: string; path: string }
+      if (message.type !== "http.request") return
+      if (message.path.startsWith("/api/events")) {
+        // 先按住 start，让请求停在 pre-start 的 pending 预算里。
+        heldStreamIds.push(message.request_id)
+        return
+      }
+      for (const frame of plainResponse(message.request_id, "ok")) host.send(frame)
+    }
+    const streamHeaders = { authorization: `Bearer ${token}`, accept: "text/event-stream" }
+    const openStream = (i: number) =>
+      fetch(new URL(`/workspaces/ws_1/api/events?i=${i}`, relay.url), { headers: streamHeaders })
+    try {
+      const p1 = openStream(1)
+      const p2 = openStream(2)
+      await waitUntil("host did not receive both stream requests", () => heldStreamIds.length === 2)
+
+      // 声明流的请求只能用 4-2=2 个 pending 槽：第三条被预留挡下。
+      const rejected = await openStream(3)
+      expect(rejected.status).toBe(429)
+      const rejectedBody = await rejected.json() as { error?: { code?: string } }
+      expect(rejectedBody.error?.code).toBe("too_many_in_flight")
+
+      // 预留槽是留给普通请求的：同样的饱和度下它照常进来、照常答。
+      const plain = await fetch(new URL("/workspaces/ws_1/api/plain", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(plain.status).toBe(200)
+      await expect(plain.text()).resolves.toBe("ok")
+
+      // 放开 start：两条流进 stream 预算，请求预算重新空出来。
+      for (const id of heldStreamIds) {
+        for (const frame of sseStart(id)) host.send(frame)
+      }
+      for (const res of await Promise.all([p1, p2])) {
+        expect(res.status).toBe(200)
+        await res.body?.cancel()
+      }
+    } finally {
+      host.close()
+      await stopServer(relay)
+      directory.dispose()
+    }
+  }, 30_000)
+
+  test("event streams past the active-stream cap are refused and their upstream is aborted", async () => {
+    const { relay, token, host, directory } = await tunnelHarness({
+      tunnelPendingRequestMax: 8,
+      tunnelActiveStreamMax: 2,
+    })
+    const flowClosedFor: string[] = []
+    host.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as {
+        type: string
+        request_id: string
+        path: string
+        reason?: string
+      }
+      if (message.type === "http.response.flow" && message.reason === "closed") {
+        flowClosedFor.push(message.request_id)
+        return
+      }
+      if (message.type !== "http.request") return
+      if (message.path.startsWith("/api/events")) {
+        for (const frame of sseStart(message.request_id)) host.send(frame)
+      }
+    }
+    const streamHeaders = { authorization: `Bearer ${token}`, accept: "text/event-stream" }
+    const openStream = (i: number) =>
+      fetch(new URL(`/workspaces/ws_1/api/events?i=${i}`, relay.url), { headers: streamHeaders })
+    try {
+      const first = await openStream(1)
+      const second = await openStream(2)
+      expect(first.status).toBe(200)
+      expect(second.status).toBe(200)
+
+      // 声明流的第三条：admission 就看见流预算已满，请求根本不发给主机。
+      const third = await openStream(3)
+      expect(third.status).toBe(429)
+      const thirdBody = await third.json() as { error?: { code?: string } }
+      expect(thirdBody.error?.code).toBe("too_many_streams")
+
+      // 未声明的请求要等到 response.start 才暴露流身份：在 start 处拒绝，
+      // 回 503 并用 flow:closed 让主机中止它那边的上游请求。
+      const undeclared = await fetch(new URL("/workspaces/ws_1/api/events?i=4", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(undeclared.status).toBe(503)
+      const undeclaredBody = await undeclared.json() as { error?: { code?: string } }
+      expect(undeclaredBody.error?.code).toBe("too_many_streams")
+      await waitUntil("host was not told to abort the refused stream", () => flowClosedFor.length === 1)
+
+      await first.body?.cancel()
+      await second.body?.cancel()
+    } finally {
+      host.close()
+      await stopServer(relay)
+      directory.dispose()
+    }
+  }, 30_000)
+
+  test("a saturated host tunnel socket refuses new tunnelled HTTP instead of queueing it", async () => {
+    const { relay, token, host, directory } = await tunnelHarness({
+      webSocketBufferedAmountMaxBytes: -1,
+    })
+    let sawRequest = false
+    host.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as { type: string }
+      if (message.type === "http.request") sawRequest = true
+    }
+    try {
+      const res = await fetch(new URL("/workspaces/ws_1/api/plain", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(res.status).toBe(503)
+      const body = await res.json() as { error?: { code?: string } }
+      expect(body.error?.code).toBe("host_tunnel_backpressured")
+      // 拒绝发生在发送前：主机侧不应看到任何 http.request。
+      expect(sawRequest).toBe(false)
+      // 拒绝是请求级的，不是把整条隧道关掉。
+      expect(host.readyState).toBe(WebSocket.OPEN)
+    } finally {
+      host.close()
+      await stopServer(relay)
+      directory.dispose()
+    }
+  }, 30_000)
+})
+
+describe("cloud WebSocket send backpressure wiring", () => {
+  /**
+   * 可驾驶的上游 double：open() 放行握手，emit() 推一帧进 relay→client
+   * 方向，bufferedAmount 由用例直接写——loopback 填不出真实积压，
+   * 与 -1 阈值互补地钉住"客户端→上游"方向的 guard。
+   */
+  class ControllableUpstreamWebSocket {
+    static instance: ControllableUpstreamWebSocket | undefined
+    readyState: number = WebSocket.CONNECTING
+    binaryType: WebSocket["binaryType"] = "arraybuffer"
+    bufferedAmount = 0
+    sent: unknown[] = []
+    onopen: ((event: Event) => void) | null = null
+    onmessage: ((event: MessageEvent) => void) | null = null
+    onclose: ((event: CloseEvent) => void) | null = null
+    onerror: ((event: Event) => void) | null = null
+    constructor(public url: string, public options?: unknown) {
+      ControllableUpstreamWebSocket.instance = this
+    }
+    send(payload: unknown) { this.sent.push(payload) }
+    close(code = 1000, reason = "") {
+      this.readyState = WebSocket.CLOSED
+      this.onclose?.({ code, reason } as CloseEvent)
+    }
+    open() {
+      this.readyState = WebSocket.OPEN
+      this.onopen?.({} as Event)
+    }
+    emit(data: unknown) {
+      this.onmessage?.({ data } as MessageEvent)
+    }
+  }
+
+  async function cloudHarness(bunOptions: WorkspaceRelayBunOptions) {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://cloud.example.test",
+        backing: "cloud-vm",
+      }),
+    }, {
+      upstreamWebSocket: ControllableUpstreamWebSocket as unknown as WorkspaceRelayBunOptions["upstreamWebSocket"],
+      upstreamWebSocketOpenTimeoutMs: 30_000,
+      ...bunOptions,
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers?: Record<string, string>; protocols?: string[] }): WebSocket
+    })(
+      new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"),
+      { headers: { origin: "http://localhost:3000" }, protocols: [`claxedo-rat.${token}`] },
+    )
+    await waitForOpen(client)
+    return { relay, client }
+  }
+
+  test("upstream→client sends over a saturated client socket close it 1011", async () => {
+    const { relay, client } = await cloudHarness({ webSocketBufferedAmountMaxBytes: -1 })
+    try {
+      const upstream = ControllableUpstreamWebSocket.instance!
+      const clientClosed = waitForClose(client)
+      upstream.open()
+      upstream.emit("chunk")
+      const closed = await Promise.race([
+        clientClosed,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("client was never closed")), 5_000)),
+      ])
+      expect(closed.code).toBe(1011)
+      expect(closed.reason).toBe("Client WebSocket backpressure limit exceeded")
+    } finally {
+      client.close()
+      await stopServer(relay)
+    }
+  }, 30_000)
+
+  test("client→upstream sends over a saturated upstream close the client 1011", async () => {
+    const { relay, client } = await cloudHarness({})
+    try {
+      const upstream = ControllableUpstreamWebSocket.instance!
+      upstream.open()
+      upstream.bufferedAmount = 64 * 1024 * 1024
+      const clientClosed = waitForClose(client)
+      client.send("x".repeat(64 * 1024))
+      const closed = await Promise.race([
+        clientClosed,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("client was never closed")), 5_000)),
+      ])
+      expect(closed.code).toBe(1011)
+      expect(closed.reason).toBe("Upstream WebSocket backpressure limit exceeded")
+      // 被挡下的帧不能进上游的发送缓冲——丢弃会破坏有序字节流，所以关 socket。
+      expect(upstream.sent.length).toBe(0)
+    } finally {
+      client.close()
+      await stopServer(relay)
     }
   }, 30_000)
 })

@@ -71,6 +71,13 @@ type RelayHostTunnelWebSocketData = {
   enrollmentId?: string
   generation?: number
   pending: Map<string, PendingTunnelHttpResponse>
+  /**
+   * Pending entries whose response started as `text/event-stream`. They stay
+   * in `pending` (chunks, end and cancel all still route through it) but hold
+   * a slot in this separate budget instead of the pending-request cap, so a
+   * healthy set of long-lived streams cannot starve ordinary requests.
+   */
+  activeStreams: number
   channels: Map<string, RelayHostTunnelClientWebSocket>
   heartbeat?: ReturnType<typeof setInterval>
   missedPongs: number
@@ -133,6 +140,12 @@ type PendingTunnelHttpResponse = {
   slowConsumerTimeout?: ReturnType<typeof setTimeout>
   responseStarted: boolean
   /**
+   * Set when `http.response.start` declares `text/event-stream`: the entry
+   * then holds a slot in `ws.data.activeStreams` rather than the
+   * pending-request budget, released only by `deletePendingHttpResponse`.
+   */
+  eventStream: boolean
+  /**
    * The relay's own CORS headers for this request, applied to whatever the
    * tunnelled host answers with. The browser talks to the RELAY, so the
    * relay's allowlist is the one that decides what it may read — the host
@@ -193,6 +206,24 @@ export type WorkspaceRelayBackpressureOptions = {
   tunnelHttpResponseTimeoutMs?: number
   directHttpTimeoutMs?: number
   directHttpConcurrency?: number
+  /**
+   * In-flight non-stream tunnel HTTP requests admitted per host tunnel.
+   * Default 32. A response that starts as `text/event-stream` leaves this
+   * budget for `tunnelActiveStreamMax`.
+   */
+  tunnelPendingRequestMax?: number
+  /**
+   * Concurrent started `text/event-stream` responses per host tunnel.
+   * Default 64. Streams past the cap are refused 503/429 `too_many_streams`.
+   */
+  tunnelActiveStreamMax?: number
+  /**
+   * Pending-request slots a request declaring `Accept: text/event-stream`
+   * may not consume. A burst of stream opens sits in the pending budget only
+   * until `http.response.start` reclassifies it; the reserve keeps that
+   * window from crowding out ordinary health/management requests. Default 4.
+   */
+  tunnelControlRequestReserve?: number
   upstreamWebSocketOpenTimeoutMs?: number
   upstreamWebSocketPreOpenQueueMaxFrames?: number
   upstreamWebSocketPreOpenQueueMaxBytes?: number
@@ -249,6 +280,16 @@ export type WorkspaceRelayBunDrainController = {
 
 // Per-tunnel resource caps.
 const TUNNEL_PENDING_HTTP_CAP = 32
+// Started text/event-stream responses hold their own budget instead of the
+// pending-request cap: an SSE response is expected to stay open indefinitely,
+// so counting it against a budget sized for request/response turnaround lets
+// a handful of healthy streams starve every other request on the tunnel.
+const TUNNEL_ACTIVE_STREAM_CAP = 64
+// Pending-request slots an `Accept: text/event-stream` request may not hold
+// while it waits for http.response.start to move it into the stream budget,
+// so a burst of stream opens cannot crowd out ordinary requests. A pending
+// entry counts against this reserve only until its response starts.
+const TUNNEL_CONTROL_REQUEST_RESERVE = 4
 const TUNNEL_CHANNEL_CAP = 16
 const HOST_TUNNEL_REGISTRATION_RECONNECT_CAP = 5
 const HOST_TUNNEL_REGISTRATION_RECONNECT_WINDOW_MS = 60_000
@@ -523,10 +564,11 @@ function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
 }
 
-function sendRelayWebSocketTrace(ws: RelayClientWebSocket) {
+function sendRelayWebSocketTrace(ws: RelayClientWebSocket, maxBufferedBytes: number) {
   const trace = ws.data.trace
   if (!trace || trace.emitted) return
   trace.emitted = true
+  if (relayOverBackpressureLimit(ws, maxBufferedBytes)) return
   ws.send(JSON.stringify({
     type: "relay.trace",
     wsUpstreamOpenMs: trace.upstreamOpenMs === undefined ? undefined : roundedMs(trace.upstreamOpenMs),
@@ -568,6 +610,19 @@ function isEventStream(input: TunnelHeaderMap) {
   return Object.entries(input).some(([key, value]) =>
     key.toLowerCase() === "content-type" && value.toLowerCase().includes("text/event-stream")
   )
+}
+
+/**
+ * Admission-time stream classification. Whether a response streams is known
+ * only at `http.response.start`; until then the request occupies the
+ * pending-request budget. The `Accept` header (EventSource and fetch-based
+ * SSE clients send it) lets a stream-intended request be held to the
+ * control-reserve side of that budget for the pre-start window. An
+ * undeclared stream is not refused — it just uses an ordinary slot until
+ * its response start reclassifies it.
+ */
+function requestAcceptsEventStream(request: Request) {
+  return request.headers.get("accept")?.toLowerCase().includes("text/event-stream") ?? false
 }
 
 /**
@@ -683,9 +738,13 @@ function tunnelMessage(
   return undefined
 }
 
-function sendTunnelPing(ws: RelayHostTunnelWebSocket) {
+function sendTunnelPing(ws: RelayHostTunnelWebSocket, maxBufferedBytes: number) {
   if (ws.readyState !== WebSocket.OPEN) return
   ws.data.missedPongs += 1
+  // 发送缓冲已满说明主机没在消费这条隧道；跳过本帧，让 missedPongs
+  // 继续累积 —— 持续打满的隧道会由既有的心跳超时关闭，而不是靠 ping
+  // 把缓冲越堆越高。
+  if (relayOverBackpressureLimit(ws, maxBufferedBytes)) return
   ws.send(JSON.stringify(makeTunnelPing()))
 }
 
@@ -695,6 +754,18 @@ function clearPendingTimers(entry: PendingTunnelHttpResponse) {
     clearTimeout(entry.slowConsumerTimeout)
     entry.slowConsumerTimeout = undefined
   }
+}
+
+/**
+ * Single removal point for `ws.data.pending`: an entry reclassified as an
+ * event stream holds a slot in `activeStreams`, and that slot is released
+ * only here — every delete path (end, error, timeout, cancel, slow-consumer
+ * drop, stream-cap refusal) must pass through it or the budget leaks.
+ */
+function deletePendingHttpResponse(ws: RelayHostTunnelWebSocket, requestId: string) {
+  const entry = ws.data.pending.get(requestId)
+  if (entry?.eventStream) ws.data.activeStreams = Math.max(0, ws.data.activeStreams - 1)
+  ws.data.pending.delete(requestId)
 }
 
 function failPendingHttpResponse(input: {
@@ -744,6 +815,7 @@ function cleanupHostTunnelSocket(input: {
     })
   }
   input.ws.data.pending.clear()
+  input.ws.data.activeStreams = 0
   for (const channel of input.ws.data.channels.values()) {
     if (input.closeChannels) closeWebSocket(channel, 1011, "Host tunnel disconnected")
   }
@@ -937,7 +1009,7 @@ function dropSlowConsumer(input: {
     }),
     error: new Error(`${input.code}: ${input.message}`),
   })
-  input.ws.data.pending.delete(input.requestId)
+  deletePendingHttpResponse(input.ws, input.requestId)
   // Count after cleanup so droppedRequests reflects requests actually freed.
   input.slowConsumerStats.droppedRequests += 1
 }
@@ -1018,15 +1090,39 @@ async function tunnelHttpRequest(input: {
   slowConsumerStats: SlowConsumerStats
   requestBodyMaxBytes: number
   responseTimeoutMs: number
+  pendingRequestMax: number
+  activeStreamMax: number
+  controlRequestReserve: number
+  socketMaxBufferedBytes: number
 }) {
   if (input.ws.readyState !== WebSocket.OPEN) {
     return new Response("The machine serving this workspace is offline", { status: 503 })
   }
-  if (input.ws.data.pending.size >= TUNNEL_PENDING_HTTP_CAP) {
+  // 非流 pending 占请求预算；已开始的 SSE 改记 activeStreams，不占这里。
+  const inFlightRequests = Math.max(0, input.ws.data.pending.size - input.ws.data.activeStreams)
+  const wantsStream = requestAcceptsEventStream(input.request)
+  const requestLimit = wantsStream
+    ? Math.max(0, input.pendingRequestMax - input.controlRequestReserve)
+    : input.pendingRequestMax
+  if (inFlightRequests >= requestLimit) {
     return jsonError(
       "too_many_in_flight",
       "Host tunnel has too many in-flight HTTP requests",
       429,
+    )
+  }
+  if (wantsStream && input.ws.data.activeStreams >= input.activeStreamMax) {
+    return jsonError(
+      "too_many_streams",
+      "Host tunnel has too many active event streams",
+      429,
+    )
+  }
+  if (relayOverBackpressureLimit(input.ws, input.socketMaxBufferedBytes)) {
+    return jsonError(
+      "host_tunnel_backpressured",
+      "Host tunnel socket send buffer is saturated",
+      503,
     )
   }
   const requestId = crypto.randomUUID()
@@ -1052,11 +1148,12 @@ async function tunnelHttpRequest(input: {
       // pending slot until the tunnel cap starves all future requests.
       const entry = input.ws.data.pending.get(requestId)
       if (!entry) return
-      input.ws.data.pending.delete(requestId)
+      deletePendingHttpResponse(input.ws, requestId)
       clearPendingTimers(entry)
       entry.pendingChunks.length = 0
       entry.bytesQueued = 0
-      if (input.ws.readyState === WebSocket.OPEN) {
+      if (input.ws.readyState === WebSocket.OPEN
+        && !relayOverBackpressureLimit(input.ws, input.socketMaxBufferedBytes)) {
         input.ws.send(JSON.stringify({
           type: "http.response.flow",
           protocol: TUNNEL_PROTOCOL_VERSION,
@@ -1071,7 +1168,7 @@ async function tunnelHttpRequest(input: {
     const timeout = setTimeout(() => {
       const entry = input.ws.data.pending.get(requestId)
       if (!entry) return
-      input.ws.data.pending.delete(requestId)
+      deletePendingHttpResponse(input.ws, requestId)
       if (entry.responseStarted) {
         clearPendingTimers(entry)
         entry.pendingChunks.length = 0
@@ -1099,6 +1196,7 @@ async function tunnelHttpRequest(input: {
       pendingChunks: [],
       bytesQueued: 0,
       responseStarted: false,
+      eventStream: false,
       corsHeaders: (upstream) => relayCorsHeaders(input.request, input.originAllowed, upstream),
     })
   })
@@ -1108,13 +1206,25 @@ async function tunnelHttpRequest(input: {
   if (body && "tooLarge" in body) {
     const entry = input.ws.data.pending.get(requestId)
     if (entry) clearPendingTimers(entry)
-    input.ws.data.pending.delete(requestId)
+    deletePendingHttpResponse(input.ws, requestId)
     return corsJsonError(
       input.request,
       input.originAllowed,
       "request_body_too_large",
       "Tunnel request body exceeds the relay limit",
       413,
+    )
+  }
+  // Body 读取期间隧道可能被打满；发送前再挡一次，避免把请求塞进发不出去
+  // 的 socket 后让 pending 空等到超时。
+  if (relayOverBackpressureLimit(input.ws, input.socketMaxBufferedBytes)) {
+    const entry = input.ws.data.pending.get(requestId)
+    if (entry) clearPendingTimers(entry)
+    deletePendingHttpResponse(input.ws, requestId)
+    return jsonError(
+      "host_tunnel_backpressured",
+      "Host tunnel socket send buffer is saturated",
+      503,
     )
   }
   input.ws.send(JSON.stringify({
@@ -1401,6 +1511,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
   const relayClients = new Set<RelayClientWebSocket>()
   const hostTunnelRegistrations = new Map<string, HostTunnelRegistrationTracker>()
   const directHttpLimiter = createDirectHttpLimiter(bunOptions.directHttpConcurrency)
+  // 全 socket 发送路径共用的 buffered-byte 上限：同一阈值、同一
+  // relayOverBackpressureLimit 判定，policy（拒绝/关闭/跳过）由各调用点定。
+  const socketMaxBufferedBytes = bunOptions.webSocketBufferedAmountMaxBytes ?? WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT
   const hostTunnelStateDebounce = new Map<string, HostTunnelStateEntry>()
   const fragmentationStats = createFragmentationStats()
   const slowConsumerStats = createSlowConsumerStats()
@@ -1710,6 +1823,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             ...(claims?.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
             ...(claims?.generation !== undefined ? { generation: claims.generation } : {}),
             pending: new Map(),
+            activeStreams: 0,
             channels: new Map(),
             missedPongs: 0,
             messageBuffer: "",
@@ -1748,6 +1862,10 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
                 slowConsumerStats,
                 requestBodyMaxBytes: bunOptions.tunnelRequestBodyMaxBytes ?? TUNNEL_REQUEST_BODY_MAX_BYTES_DEFAULT,
                 responseTimeoutMs: bunOptions.tunnelHttpResponseTimeoutMs ?? TUNNEL_HTTP_RESPONSE_TIMEOUT_MS_DEFAULT,
+                pendingRequestMax: bunOptions.tunnelPendingRequestMax ?? TUNNEL_PENDING_HTTP_CAP,
+                activeStreamMax: bunOptions.tunnelActiveStreamMax ?? TUNNEL_ACTIVE_STREAM_CAP,
+                controlRequestReserve: bunOptions.tunnelControlRequestReserve ?? TUNNEL_CONTROL_REQUEST_RESERVE,
+                socketMaxBufferedBytes,
               }))
               : new Response("The machine serving this workspace is offline", { status: 503 })
           }
@@ -1855,7 +1973,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           )
           if (parsed?.type === "ping") {
             options.directory?.recordPong(ws.data.hostId, ownedWorkspaceIds(hostTunnels, ws))
-            ws.send(JSON.stringify(makeTunnelPong(parsed)))
+            if (!relayOverBackpressureLimit(ws, socketMaxBufferedBytes)) {
+              ws.send(JSON.stringify(makeTunnelPong(parsed)))
+            }
           }
           if (parsed?.type === "pong") {
             ws.data.missedPongs = 0
@@ -1871,7 +1991,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             if (parsed.request_id) {
               const pending = ws.data.pending.get(parsed.request_id)
               if (pending) {
-                ws.data.pending.delete(parsed.request_id)
+                deletePendingHttpResponse(ws, parsed.request_id)
                 failPendingHttpResponse({
                   entry: pending,
                   response: jsonError(parsed.code, parsed.message, 502),
@@ -1884,8 +2004,44 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             const pending = ws.data.pending.get(parsed.request_id)
             if (pending) {
               const response = parsed
+              if (isEventStream(response.headers) && !pending.eventStream) {
+                const streamMax = bunOptions.tunnelActiveStreamMax ?? TUNNEL_ACTIVE_STREAM_CAP
+                if (ws.data.activeStreams >= streamMax) {
+                  // 未声明 SSE 的请求在响应开始时才暴露流身份；此时流预算已满，
+                  // 只能在这里拒绝。必须抢在 responseStarted 置位之前走
+                  // failPendingHttpResponse，它才会把 503 resolve 给客户端；
+                  // 同时释放 pending 槽位，并用 paused:false+reason:closed
+                  // 让主机中止它那边的上游请求。
+                  deletePendingHttpResponse(ws, parsed.request_id)
+                  const refused = jsonError(
+                    "too_many_streams",
+                    "Host tunnel has too many active event streams",
+                    503,
+                  )
+                  failPendingHttpResponse({
+                    entry: pending,
+                    response: new Response(refused.body, {
+                      status: refused.status,
+                      headers: pending.corsHeaders(refused.headers),
+                    }),
+                    error: new Error("Host tunnel has too many active event streams"),
+                  })
+                  if (!relayOverBackpressureLimit(ws, socketMaxBufferedBytes)) {
+                    ws.send(JSON.stringify({
+                      type: "http.response.flow",
+                      protocol: TUNNEL_PROTOCOL_VERSION,
+                      request_id: parsed.request_id,
+                      paused: false,
+                      reason: "closed",
+                    }))
+                  }
+                  return
+                }
+                pending.eventStream = true
+                ws.data.activeStreams += 1
+                clearTimeout(pending.timeout)
+              }
               pending.responseStarted = true
-              if (isEventStream(response.headers)) clearTimeout(pending.timeout)
               pending.resolve(new Response(pending.stream, {
                 status: response.status,
                 headers: pending.corsHeaders(headers(response.headers)),
@@ -1936,7 +2092,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               } catch {
                 // already closed/errored
               }
-              ws.data.pending.delete((parsed).request_id)
+              deletePendingHttpResponse(ws, (parsed).request_id)
             }
           }
           if (parsed?.type === "ws.frame") {
@@ -1946,7 +2102,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               ws.data.channels.delete(frame.channel_id)
               return
             }
-            if (relayOverBackpressureLimit(channel, bunOptions.webSocketBufferedAmountMaxBytes ?? WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT)) {
+            if (relayOverBackpressureLimit(channel, socketMaxBufferedBytes)) {
               ws.data.channels.delete(frame.channel_id)
               closeWebSocket(channel, 1011, "Client WebSocket backpressure limit exceeded")
               return
@@ -1969,7 +2125,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             ws.close(1011, "Host tunnel disconnected")
             return
           }
-          if (relayOverBackpressureLimit(tunnel, bunOptions.webSocketBufferedAmountMaxBytes ?? WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT)) {
+          if (relayOverBackpressureLimit(tunnel, socketMaxBufferedBytes)) {
             closeWebSocket(ws, 1011, "Host tunnel backpressure limit exceeded")
             return
           }
@@ -1983,6 +2139,10 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         }
         if (!isRelayClientSocket(ws)) return
         if (ws.data.upstream?.readyState === WebSocket.OPEN) {
+          if (relayOverBackpressureLimit(ws.data.upstream, socketMaxBufferedBytes)) {
+            closeWebSocket(ws, 1011, "Upstream WebSocket backpressure limit exceeded")
+            return
+          }
           ws.data.upstream.send(message)
           return
         }
@@ -2020,7 +2180,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               closeWebSocket(ws, 1001, "Host tunnel heartbeat timed out", 1001)
               return
             }
-            sendTunnelPing(hostWs)
+            sendTunnelPing(hostWs, socketMaxBufferedBytes)
           }, bunOptions.hostTunnelPingIntervalMs ?? 15_000)
           watchHostGeneration(ws, options, bunOptions)
           scheduleHostTunnelStateChange(hostTunnelStateDebounce, options, {
@@ -2090,14 +2250,28 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               (max, item) => Math.max(max, openedAt - item.queuedAt),
               0,
             )
-            sendRelayWebSocketTrace(ws)
+            sendRelayWebSocketTrace(ws, socketMaxBufferedBytes)
           }
-          for (const item of data.queue.splice(0)) upstream.send(item.payload)
+          const queued = data.queue.splice(0)
           data.queuedBytes = 0
+          for (const item of queued) {
+            // 上游 socket 一打开就打满（病态 upstream 或队列刷进慢链路）时，
+            // 关闭客户端而不是继续堆——有序字节流丢帧比断开更糟。
+            if (relayOverBackpressureLimit(upstream, socketMaxBufferedBytes)) {
+              closeWebSocket(ws, 1011, "Upstream WebSocket backpressure limit exceeded")
+              return
+            }
+            upstream.send(item.payload)
+          }
         }
         upstream.onmessage = (event) => {
           const payload = relayWebSocketPayload(event.data)
-          if (payload !== undefined) ws.send(payload)
+          if (payload === undefined) return
+          if (relayOverBackpressureLimit(ws, socketMaxBufferedBytes)) {
+            closeWebSocket(ws, 1011, "Client WebSocket backpressure limit exceeded")
+            return
+          }
+          ws.send(payload)
         }
         upstream.onclose = (event) => {
           if (data.upstreamOpenTimer) {
