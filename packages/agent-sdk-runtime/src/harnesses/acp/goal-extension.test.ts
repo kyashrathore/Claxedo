@@ -338,7 +338,7 @@ describe("neutral ACP Goal extension", () => {
     const internal = adapter as unknown as {
       processes: Map<string, unknown>
       sessionProcesses: Map<string, string>
-      publishGoal: (sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) => void
+      goalSurface(): { publishGoal: (sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) => void }
     }
     internal.processes = new Map([[
       "process-key",
@@ -372,7 +372,7 @@ describe("neutral ACP Goal extension", () => {
     expect(unlistened).toEqual(["agent-session"])
     // Deleting the session drops its dedupe state, so an identical snapshot
     // publishes again instead of being swallowed.
-    internal.publishGoal("local-session", "/work", goal)
+    internal.goalSurface().publishGoal("local-session", "/work", goal)
     expect(published).toEqual(["active", "active"])
     adapter.dispose()
   })

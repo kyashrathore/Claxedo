@@ -66,6 +66,7 @@ import { questionReplied } from "../../compat-events"
 import { answerAcpPermission } from "./permission-grants"
 import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
 import { cancelAcpTurn } from "./cancellation"
+import { createAcpGoals, type AcpGoals } from "./goals"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
 import { resolvedMcpServers, toAcpMcpServers } from "../../mcp-resolver"
@@ -217,17 +218,32 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   // `annotations.audience: ["assistant"]`; ACP has no separate instruction slot.
   readonly instructionChannel = "prompt-prefix" as const
   readonly commitsStreamEvents = true
-  private goalPublisher?: GoalPublisher
-  readonly goals: AgentGoalResource = this.goalResource()
+  private goals_?: AcpGoals
+  private goalResource_?: AgentGoalResource
 
   /**
-   * Built on first publication, like the sibling Goal maps on the turn runner.
-   * A field initializer would read `this.options` before it exists on instances
-   * that skip the constructor, and nothing that only RETIRES publisher state
-   * needs the publisher to have been built at all.
+   * A getter, not a field: a field initializer runs before the constructor
+   * assigns the store this surface closes over, and would capture nothing.
    */
-  private publisher(): GoalPublisher {
-    return this.goalPublisher ??= createGoalPublisher(this.options.eventHub)
+  get goals(): AgentGoalResource {
+    return (this.goalResource_ ??= this.goalSurface().resource())
+  }
+
+  /**
+   * Built on first use, like the sibling Goal maps on the turn runner. A field
+   * initializer would read `this.options` before it exists on instances that
+   * skip the constructor.
+   */
+  private goalSurface(): AcpGoals {
+    return (this.goals_ ??= createAcpGoals({
+      store: this.store,
+      ...(this.options?.eventHub ? { eventHub: this.options.eventHub } : {}),
+      entryForSession: (sessionId) => this.entryForSession(sessionId),
+      getOrSpawnProcess: (sessionId, directory) => this.getOrSpawnProcess(sessionId, directory),
+      finishGoalProjection: (sessionId, error) => this.finishGoalProjection(sessionId, error),
+      observeGoalSessionUpdate: (sessionId, agentSessionId, directory, proc, update) =>
+        this.observeGoalSessionUpdate(sessionId, agentSessionId, directory, proc, update),
+    }))
   }
   private cfg(model?: SessionConfig["model"]) { return acpSessionConfig(this.harnessId(), this.currentModel, model) }
 
@@ -260,132 +276,6 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       config,
       ...(config ? { modelSelection: { status: config.options.some(option => option.category === "model" || option.id === "model") ? "optional" : "unsupported" } as const } : {}),
     })
-  }
-
-  private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
-    this.publisher().publish({
-      sessionId,
-      directory,
-      agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
-      goal,
-      applyState: (next) => {
-        const previous = this.store.getGoal?.(sessionId)
-        this.store.setGoal?.(sessionId, next)
-        const advancedIteration = next?.status === "active"
-          && previous?.status === "active"
-          && next.iteration !== undefined
-          && previous.iteration !== undefined
-          && next.iteration !== previous.iteration
-        if (!next || next.status !== "active" || advancedIteration) this.finishGoalProjection(sessionId)
-      },
-    })
-  }
-
-  private bindGoalListeners(sessionId: string, directory: string, agentSessionId: string, proc: ACPProcess) {
-    proc.listenGoal(agentSessionId, sessionId, (goal) => this.publishGoal(sessionId, directory, goal))
-    proc.listenGoalUpdates(agentSessionId, (update) => {
-      this.observeGoalSessionUpdate(sessionId, agentSessionId, directory, proc, update)
-    })
-  }
-
-  /**
-   * Goal target for a session whose agent is ALREADY running.
-   *
-   * Returns null instead of spawning. Reads (capabilities and Goal state) go
-   * through here so that merely activating a session — which the app does on
-   * every open, to render the composer dock — never resurrects an idle-reaped
-   * agent binary. Only Goal actions pay that cost, through `goalTarget`.
-   */
-  private liveGoalTarget(sessionId: string, directory: string | undefined) {
-    const required = requireWorkspaceDirectory(directory)
-    const agentSessionId = this.store.getAgentSessionId(sessionId)
-    const proc = this.entryForSession(sessionId)?.proc
-    if (!agentSessionId || !proc?.alive) return null
-    this.bindGoalListeners(sessionId, required, agentSessionId, proc)
-    return { agentSessionId, directory: required, proc }
-  }
-
-  /** Goal target for ACTIONS: spawns the agent when it has been idle-reaped. */
-  private async goalTarget(sessionId: string, directory: string) {
-    const required = requireWorkspaceDirectory(directory)
-    const agentSessionId = this.store.getAgentSessionId(sessionId)
-    if (!agentSessionId) throw new Error(`Session ${sessionId} has no ACP session binding`)
-    const { proc } = await this.getOrSpawnProcess(sessionId, required)
-    this.bindGoalListeners(sessionId, required, agentSessionId, proc)
-    return { agentSessionId, directory: required, proc }
-  }
-
-  private goalResource(): AgentGoalResource {
-    const mutate = async <T extends RuntimeGoalSnapshot | null>(
-      sessionId: string,
-      directory: string,
-      operation: (target: Awaited<ReturnType<AcpHarnessAdapter["goalTarget"]>>) => Promise<T>,
-    ): Promise<AgentGoalMutationResult<T>> => {
-      try {
-        const target = await this.goalTarget(sessionId, directory)
-        const goal = await operation(target)
-        this.publishGoal(sessionId, target.directory, goal)
-        return { ok: true, goal }
-      } catch (cause) {
-        return {
-          ok: false,
-          status: "failed",
-          message: errorMessage(cause),
-        }
-      }
-    }
-    return {
-      readCapabilities: async (sessionId, directory) => {
-        const unavailable = (unavailableReason: string) => goalCapabilities({
-          implemented: false,
-          available: false,
-          unavailableReason,
-          actions: [],
-          recovery: "blocked",
-          optionalFields: [],
-        })
-        try {
-          const target = this.liveGoalTarget(sessionId, directory)
-          if (!target) return unavailable("The ACP agent for this session is not running")
-          return goalCapabilities(target.proc.goalCapabilities())
-        } catch (cause) {
-          return unavailable(errorMessage(cause))
-        }
-      },
-      read: async (sessionId, directory) => {
-        const target = this.liveGoalTarget(sessionId, directory)
-        // No live agent: the store projection is the last state the agent
-        // reported, and answering from it keeps a session open from costing a
-        // process spawn plus a full ACP initialize.
-        if (!target) return this.store.getGoal?.(sessionId) ?? null
-        const goal = await target.proc.readGoal(target.agentSessionId, sessionId)
-        this.store.setGoal?.(sessionId, goal)
-        return goal
-      },
-      start: (sessionId, input, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
-        const goal = await target.proc.startGoal(target.agentSessionId, sessionId, input.objective)
-        if (!goal) throw new Error("ACP Goal start returned no Goal")
-        return goal
-      }),
-      pause: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
-        const goal = await target.proc.goalAction("pause", target.agentSessionId, sessionId)
-        if (!goal) throw new Error("ACP Goal pause returned no Goal")
-        return goal
-      }),
-      resume: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
-        const resumed = await target.proc.goalAction("resume", target.agentSessionId, sessionId)
-        const refreshed = await target.proc.readGoal(target.agentSessionId, sessionId)
-        const goal = refreshed ?? resumed
-        if (!goal) throw new Error("ACP Goal resume returned no Goal")
-        return goal
-      }),
-      stop: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), (target) =>
-        target.proc.stopGoal(target.agentSessionId, sessionId)),
-      delete: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
-        await target.proc.goalAction("delete", target.agentSessionId, sessionId)
-        return null
-      }),
-    }
   }
 
   async listSessions(directory: string): Promise<AgentSession[]> {
@@ -526,7 +416,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     if (agentSessionId) entry?.proc?.unlistenGoal(agentSessionId)
     if (agentSessionId) entry?.proc?.unobserveCommands(agentSessionId)
     // Nothing published means nothing to retire; never build a publisher here.
-    this.goalPublisher?.forget(id)
+    this.goals_?.forget(id)
     entry?.sessionIds.delete(id)
     this.sessionProcessMap().delete(id)
     const persistedSiblings = key
