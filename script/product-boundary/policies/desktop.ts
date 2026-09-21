@@ -562,9 +562,13 @@ export const desktopRendererUnsigned: Policy = {
   // +2 modules (2026-09-21): `features/session/ui/recovery-outcome-copy.ts` and
   // `features/session/ui/session-recovery.tsx` — see the app-local ledger. The
   // renderer shares the session feature's composer region, which is what mounts
-  // the panel, so both ride in here too; no new package edge. Exact measured
-  // 1144 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1144, packages: 58 },
+  // the panel, so both ride in here too; no new package edge.
+  //
+  // +19 modules (2026-09-22): the recovery size split — see the app-local
+  // ledger. The renderer shares the i18n manifest and the session feature, so
+  // the themed dictionary and both extracted owners ride in here too; no new
+  // package edge. Exact measured 1163 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1163, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
