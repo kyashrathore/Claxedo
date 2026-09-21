@@ -210,8 +210,8 @@ The next-action column is the first step; each finding link opens the complete e
 | 15 | High priority | [P-3 — Host enrollment accepts an insecure control-plane URL](#finding-p-3) | HIGH (conditional) → High, conditional | Fixed; focused checks passed | Retain canonical ownership and regression checks; see remediation progress. |
 | 16 | High priority | [P-116 — Management JWKS URL permits an insecure trust anchor](#finding-p-116) | LOW → High, conditional | Fixed; focused checks passed | Retain HTTPS/redirect checks and pinned local key delivery. |
 | 17 | High priority | [P-20 — HTTP introspection can trust forged authorization claims](#finding-p-20) | MED → High, conditional | Fixed; focused checks passed | Retain endpoint, redirect and temporal-claim checks; explicit loopback development only. |
-| 18 | High priority | [H-1 — Runtime bearer remains in the privileged process](#finding-h-1) | HIGH → High, conditional | Partial | Separate agent and privileged runtime users/processes, remove the deployment-wide token override, and scope short-lived service credentials to a workspace and operation. |
-| 19 | Next fixes / validation | [P-64 — Workspace file APIs do not enforce private-session ownership](#finding-p-64) | MED → Medium; High for sensitive cross-session files | Partial; API gates verified, commit race remains | Preserve exact authorized paths and bind committed content to the authorized index snapshot. |
+| 18 | High priority | [H-1 — Runtime bearer remains in the privileged process](#finding-h-1) | HIGH → High, conditional | Partial; deployment override and whole-host bearer removed, process isolation open | Separate agent and privileged runtime users/processes. |
+| 19 | Next fixes / validation | [P-64 — Workspace file APIs do not enforce private-session ownership](#finding-p-64) | MED → Medium; High for sensitive cross-session files | Fixed; snapshot-bound commit tests; same-UID filesystem access remains H-1 | Retain the late-stage and hook regressions. |
 | 20 | Next fixes / validation | [P-131 — Daemon document git still inherits privileged environment](#finding-p-131) | LOW-MED → Medium; High if privileged secrets reachable | Fixed; focused checks passed | Retain shared safe Git runner, narrow credential/index options and real helper/clone regression checks. |
 | 21 | Next fixes / validation | [P-103 — Document capability operation comes from a header](#finding-p-103) | MED → Medium before remediation | Fixed; broker HTTP and relay integration | Keep route-owned operations and verified document/session scope. |
 | 22 | Next fixes / validation | [P-104 — Agent-open checks project membership but not target session ownership](#finding-p-104) | MED-LOW → Medium before remediation | Fixed; real HTTP and writeback proof | Canonical session authority gates hydration and every writeback; revocation preserves document content. |
@@ -221,12 +221,12 @@ The next-action column is the first step; each finding link opens the complete e
 | 26 | Next fixes / validation | [P-93 — Recovered and child-completion turns skip durable authority admission](#finding-p-93) | MED → Medium availability/integrity | Partial; embedded recovery verified | Add scoped remote recovery proof without owner impersonation or unleased execution. |
 | 27 | Next fixes / validation | [P-111 — Sessionless SSE frames can outlive membership](#finding-p-111) | MED → Medium | Fixed; verified with real SQLite and open SSE | Keep renewable workspace leases and fail closed on invalid renewal or revocation. |
 | 28 | Next fixes / validation | [P-91 — Workspace editors can invoke runtime-wide checkpoint control](#finding-p-91) | MED → Medium | Fixed; verified through checkpoint HTTP | Retain current workspace membership checks and scoped supervisor grants. |
-| 29 | Next fixes / validation | [P-98 — Refreshing a revoked OAuth credential can reactivate it](#finding-p-98) | MED → Medium | Partial; local fixed, hosted KV open | Add authoritative hosted lifecycle fencing; retain atomic local revocation regressions. |
+| 29 | Next fixes / validation | [P-98 — Refreshing a revoked OAuth credential can reactivate it](#finding-p-98) | MED → Medium | Partial; local and hosted writes preserve revocation, cross-worker fence open | Choose the authoritative hosted owner (D1 conditional update or a Durable Object) and fence lifecycle writes there. |
 | 30 | Next fixes / validation | [P-17 — Expired wakes can fire before the sweep](#finding-p-17) | MED → Medium for approvals | Fixed; focused checks passed | Retain atomic deadline admission and expiry-boundary regression tests. |
 | 31 | Next fixes / validation | [P-10 — Missing MCP confirmation support silently means approval](#finding-p-10) | MED → Medium | Fixed; HTTP/SDK tests passed | Retain the shared confirmation gate and positive/negative destructive-tool coverage. |
 | 32 | Next fixes / validation | [P-21 — Channel reset runs before per-session authorization](#finding-p-21) | MED → Medium | Fixed; focused checks passed | Retain canonical session admission before commands and preserve binding on cancellation failure. |
 | 33 | Next fixes / validation | [P-27 — Some channel identities use usernames](#finding-p-27) | MED-LOW → Medium where mutable identity is authoritative | Partial | Persist platform-stable user ids, keep usernames only for display, and reject missing stable ids. |
-| 34 | Next fixes / validation | [P-108 — Localhost cookies are shared across ports](#finding-p-108) | MED → Medium | Present, deployment-dependent | Use exact trusted origins and a dedicated auth hostname/secure deployment boundary; avoid bearer-equivalent cookies on shared localhost hosts. |
+| 34 | Next fixes / validation | [P-108 — Localhost cookies are shared across ports](#finding-p-108) | MED → Medium | Partial; exact origins and guard order fixed, cookie bearer-equivalence open | Decide between a dedicated auth hostname, a session token distinct from the cookie, or HTTPS-only embedded auth. |
 | 35 | Next fixes / validation | [P-109 — Device approval may be driven through permissive local CSRF policy](#finding-p-109) | MED → Medium, HTTP embedded + hostile localhost origin | Partial exploit confirmation | Require explicit approval with exact-origin CSRF protection, make GET read-only and bind approval to the displayed device transaction. |
 | 36 | Next fixes / validation | [P-89 — Workspace tunnel exposes machine credential compatibility routes](#finding-p-89) | MED-HIGH → Medium; credential write chain conditional | Fixed; tunnel and local account checks passed | Retain denial before replay and local account-management acceptance. |
 | 37 | Next fixes / validation | [P-67 — MCP discovery's private-network predicate is incomplete](#finding-p-67) | MED → Medium | Fixed; focused discovery tests | Use canonical IP parsing and enforce destination policy at connection time and every redirect, with DNS rebinding protection. |
@@ -234,7 +234,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 39 | Next fixes / validation | [P-72 — Cloning and initial network policy allow caller-selected hosts](#finding-p-72) | MED-LOW → Medium, signed clone access | Present | Apply one canonical repository admission policy before both clone and network-policy generation. |
 | 40 | Next fixes / validation | [P-107 — Relay memory limits are bypassed by queue conditions](#finding-p-107) | MED → Medium | Partial; Bun bounds implemented | Finish Cloudflare and host-client bounds; retain Bun queue, body-admission and slow-consumer regressions. |
 | 41 | Next fixes / validation | [P-14 — Bun buffers ordinary request and response bodies](#finding-p-14) | MED → Medium | Present | Acquire capacity before reading, enforce a byte limit, and stream responses with bounded buffering. |
-| 42 | Next fixes / validation | [P-34 — Several relay lifecycle bugs were grouped together](#finding-p-34) | LOW → Medium for buffering; Low for other parts | Mixed | Track P-107, P-128, P-129 and P-130 separately. |
+| 42 | Next fixes / validation | [P-34 — Several relay lifecycle bugs were grouped together](#finding-p-34) | LOW → Medium for buffering; Low for other parts | Fixed for stale sockets and room boot; buffering tracked under P-107/P-129 | Track P-107, P-128, P-129 and P-130 separately. |
 | 43 | Next fixes / validation | [P-129 — Long streams and WebSocket sends share weak resource limits](#finding-p-129) | LOW → Medium availability | Fixed; focused budget tests | Separate active-stream and pending-request budgets, enforce socket backpressure and preserve a small control-request budget. |
 | 44 | Next fixes / validation | [P-74 — Several runtime routes parse unbounded JSON](#finding-p-74) | LOW → Medium for body DoS; Informational health | Partial; body and identity checks passed | One byte-limit reader serves runtime/document routes; process and PTY identity is authoritative. Public health diagnostics remain open. |
 | 45 | Next fixes / validation | [P-16 — Invalid arrays amplify validation errors](#finding-p-16) | MED → Medium before remediation | Fixed; task HTTP proof | Reject arrays before element decoding using contract limits; bound error collection. |
@@ -246,7 +246,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 51 | Next fixes / validation | [P-26 — Browser registry accepts non-guest webContents](#finding-p-26) | MED-LOW → Medium, renderer prerequisite | Present | Record guest ownership in main when the webview attaches and require that relation on registration. |
 | 52 | Next fixes / validation | [P-9 — Beta and stable share update metadata](#finding-p-9) | MED → Medium operational risk | Present | Publish separate channels and artifact names, disable automatic downgrades, and test each installed variant against its own signed release metadata. |
 | 53 | Next fixes / validation | [P-23 — Web openLink does not validate schemes](#finding-p-23) | MED-LOW → Medium, potential XSS | Partial | Use one platform URL opener that accepts intended schemes and sets noopener/noreferrer. |
-| 54 | Next fixes / validation | [P-5 — Tool text can invent a subagent relationship](#finding-p-5) | MED→HIGH → Medium; cross-session disclosure unconfirmed | Partial | Only accept bindings from the canonical create-subagent result for its matching tool call, then verify stored parent/child ownership. |
+| 54 | Next fixes / validation | [P-5 — Tool text can invent a subagent relationship](#finding-p-5) | MED→HIGH → Medium; cross-session disclosure unconfirmed | Fixed; adapter, admission and routing tests | Retain the hostile-tool-result and unknown-key regressions. |
 | 55 | Next fixes / validation | [P-96 — Usage ownership follows the requesting account](#finding-p-96) | MED → Medium | Present | Bind usage identity to the session/runtime producer when facts are created, restrict local history to the machine operator and scope quota reads. |
 | 56 | Next fixes / validation | [P-97 — Task cloud starts bypass the route's admission policy](#finding-p-97) | MED → Medium; paid-product reachability conditional | Present source gap | Move cloud creation admission into the canonical creation service and call it from tasks and routes. |
 | 57 | Next fixes / validation | [P-99 — Custom provider endpoint and env selection need policy](#finding-p-99) | MED → Medium transport; env-exfiltration unconfirmed | Partial | Require secure approved destinations and deliver only registry-owned provider credentials to the engine. |
@@ -284,8 +284,8 @@ The next-action column is the first step; each finding link opens the complete e
 | 89 | Scheduled fixes | [P-77 — Root project compatibility ignores tunnel scope](#finding-p-77) | LOW → Low disclosure | Fixed; viewer/editor inventory denial passed | Retain workspace-scoped tunnel denial and positive workspace reads. |
 | 90 | Scheduled fixes | [P-73 — Some GETs still create state or disclose inventory](#finding-p-73) | MED-LOW → Low | Partial | Move creation to an explicit authorized POST and scope each inventory at its owner. |
 | 91 | Scheduled fixes | [P-132 — Agent discovery GET can create and start a workspace](#finding-p-132) | LOW-MED → Low; local-owner chain | Fixed; focused discovery tests | Separate read-only discovery from explicit authorized workspace creation. |
-| 92 | Scheduled fixes | [M-1 — Unsigned loopback MCP grants machine-owner scope](#finding-m-1) | MED → Low; chain with S-1 | Present | Require an application-held capability for machine-wide MCP, retain socket-peer verification, and avoid publishing the loopback service through an unauthenticated proxy. |
-| 93 | Scheduled fixes | [R-1 — A header cannot prove relay provenance](#finding-r-1) | MED → Low, conditional | Present | Use private network access or an authenticated relay-to-runtime channel if relay-only reachability is required. |
+| 92 | Scheduled fixes | [M-1 — Unsigned loopback MCP grants machine-owner scope](#finding-m-1) | MED → Low; chain with S-1 | Partial; browser origins refused, loopback trust model open | Decide whether the unsigned node keeps loopback-as-owner or admits runtime credentials only; avoid publishing the loopback service through an unauthenticated proxy. |
+| 93 | Scheduled fixes | [R-1 — A header cannot prove relay provenance](#finding-r-1) | MED → Low, conditional | Present; runtime routes enforce role independently, so the marker is provenance only | Decide whether relay-only reachability is required; if so, private network access or an authenticated relay-to-runtime channel. |
 | 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Partial | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
 | 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
 | 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Mixed | Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. |
@@ -295,7 +295,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Fixed; focused hook tests | Require an existing terminal and its bound hook capability for lifecycle writes. |
 | 101 | Scheduled fixes | [P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection](#finding-p-136) | LOW → Low | Fixed; focused bridge tests | Reject dual presentation before authentication or change the declared contract if precedence is intentional. |
 | 102 | Scheduled fixes | [P-25 — Deep links can register a caller-named project](#finding-p-25) | MED-LOW → Low, user interaction required | Present | Confirm externally initiated project registration with the resolved directory visible; never auto-submit a deep-link prompt. |
-| 103 | Scheduled fixes | [P-31 — Guest content can influence prompt context](#finding-p-31) | LOW → Low | Partial | Track guest identity, navigation generation and active pick state; require user acceptance before adding context. |
+| 103 | Scheduled fixes | [P-31 — Guest content can influence prompt context](#finding-p-31) | LOW → Low | Partial; host-side gating fixed, acceptance step open | Decide whether a host-side acceptance step is added before guest comments enter prompt context. |
 | 104 | Scheduled fixes | [S-9 — Open-path grants broad OS file-opening power](#finding-s-9) | LOW → Low in isolation | Present | Use reveal-in-folder for location navigation and explicit user actions for executable opening. |
 | 105 | Scheduled fixes | [P-33 — ACP Windows arguments are interpreted by a shell](#finding-p-33) | LOW → Low, configuration-dependent | Present/latent | Use real executables or robust platform launch handling and preserve each argument literally. |
 | 106 | Scheduled fixes | [P-75 — Daytona list delimiters and image arguments are not locally validated](#finding-p-75) | LOW → Low, input-policy dependent | Fixed; focused validation tests | Validate hostname/CIDR lists before formatting and reject option-like image identifiers at the driver boundary. |
@@ -361,11 +361,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-h-1"></a>
 ### H-1 — Runtime bearer remains in the privileged process
 
-**Original severity:** HIGH. **Current:** Partial. **Reassessed severity:** High, conditional.
+**Original severity:** HIGH. **Current:** Partial; deployment override and whole-host bearer removed, process isolation open. **Reassessed severity:** High, conditional.
 
-**What happens and why it matters:** Harness inheritance is fixed, but the runtime still receives a trusted-direct bearer and accepts it before normal relay authorization. The shared externalConfigToken override still exists. Same-UID access to the runtime process is a separate exposure; filtering child env does not establish process isolation.
+**What changed:** The deployment-wide `externalConfigToken` override was removed in 3b8650bfcb; control tokens are per-workspace and verified by workspace lookup. The runtime no longer accepts a static all-route bearer: the `trustedDirectToken` option and `WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN` are gone, and the only pre-signature grants are request-scoped (config token on `GET /api/wr/health`, first-party MCP credential and agent-hook token on their own paths). Config push and checkpoint carry the Supervisor Backplane Token alone; the unread bootstrap expiry and config-token header are no longer written.
 
-**Fix and acceptance:** Separate agent and privileged runtime users/processes, remove the deployment-wide token override, and scope short-lived service credentials to a workspace and operation. Verify a token from A cannot reach B, and an agent process cannot read the runtime environment.
+**Acceptance:** Focused tests prove a config-token bearer is refused on `POST /session` and accepted only on health, a whole-host token in the environment grants nothing, and the Daytona boot env and config push carry no direct bearer. Committed as 74c18bc823. No live Daytona boot was run.
+
+**Remaining:** Same-UID access to the runtime process is still H-1: separating agent and privileged runtime users/processes is a deployment-shape decision.
 
 **Current code:** [packages/claxedo-server-core/src/hosts/workspace-runtime/env.ts](../packages/claxedo-server-core/src/hosts/workspace-runtime/env.ts); [packages/workspace-runtime/src/workspace-host-service-auth.ts](../packages/workspace-runtime/src/workspace-host-service-auth.ts); [packages/agent-sdk-runtime/src/harnesses/shared/spawn-env.ts](../packages/agent-sdk-runtime/src/harnesses/shared/spawn-env.ts). [Concept walkthrough B](#flow-b).
 
@@ -405,9 +407,9 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-r-1"></a>
 ### R-1 — A header cannot prove relay provenance
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Low, conditional.
+**Original severity:** MED. **Current:** Present; runtime routes enforce role independently, so the marker is provenance only. **Reassessed severity:** Low, conditional.
 
-**What happens and why it matters:** workspace-host-service-auth still checks x-forwarded-by after verifying the relay token. Anyone already holding a valid token can forge the marker; the marker itself does not bypass signature, workspace, host or role checks. MED overstates an independent vulnerability without a stolen token or a policy bypass.
+**What happens and why it matters:** workspace-host-service-auth still checks x-forwarded-by after verifying the relay token. Anyone already holding a valid token can forge the marker; the marker itself does not bypass signature, workspace, host or role checks. MED overstates an independent vulnerability without a stolen token or a policy bypass. Source review on 2026-09-21 confirmed the check only restricts: the runtime's PTY route denies workspace viewers itself and authorizes every read and write through the session access policy, so a replayed token with a forged marker gets exactly the role the token encodes. Whether relay-only reachability is a requirement is a deployment decision, not a runtime code change.
 
 **Fix and acceptance:** Use private network access or an authenticated relay-to-runtime channel if relay-only reachability is required. Keep token validation and renewal. Test direct replay with a valid synthetic token and a forged marker.
 
@@ -438,11 +440,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-m-1"></a>
 ### M-1 — Unsigned loopback MCP grants machine-owner scope
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Low; chain with S-1.
+**Original severity:** MED. **Current:** Partial; browser origins refused, loopback trust model open. **Reassessed severity:** Low; chain with S-1.
 
-**What happens and why it matters:** The node explicitly creates fullUserCredential for unsigned loopback requests without a bearer. That is the local-owner trust model, not a remote authentication bypass by itself. A hostile local page/process or a proxy that turns remote traffic into loopback makes the boundary matter.
+**What changed:** The self-hosted node's anonymous loopback MCP credential now also requires a request with no `Origin` header, so a page on another localhost port can no longer act as the box's owner; socket-peer verification is unchanged. No browser client used the anonymous path: the web app never calls it and harness or MCP clients present a credential.
 
-**Fix and acceptance:** Require an application-held capability for machine-wide MCP, retain socket-peer verification, and avoid publishing the loopback service through an unauthenticated proxy. Test an anonymous local caller separately from the authorized app.
+**Acceptance:** Mounted tests refuse an anonymous loopback request carrying a browser origin and one whose stamped peer is not loopback, admit a runtime credential alongside a browser origin, and keep the non-browser anonymous loopback case. Committed as 0722ad19b0.
+
+**Remaining:** Whether the unsigned node keeps loopback-as-owner at all, or admits runtime credentials only like the desktop daemon, is a product decision; the desktop's capability-header pattern exists but no node consumer would receive such a capability today. Publishing the loopback listener through a same-host proxy that rewrites Host is a deployment concern.
 
 **Current code:** [packages/claxedo-server/src/deployments/self-hosted-node/app.ts](../packages/claxedo-server/src/deployments/self-hosted-node/app.ts). [Concept walkthrough A](#flow-a).
 
@@ -638,11 +642,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-5"></a>
 ### P-5 — Tool text can invent a subagent relationship
 
-**Original severity:** MED→HIGH. **Current:** Partial. **Reassessed severity:** Medium; cross-session disclosure unconfirmed.
+**Original severity:** MED→HIGH. **Current:** Fixed; adapter, admission and routing tests. **Reassessed severity:** Medium; cross-session disclosure unconfirmed.
 
-**What happens and why it matters:** A pure probe confirms hostSubagentBinding accepts JSON embedded in text with a foreign session id. Claude scans generic tool results. The admission store correlates observations within a parent but that is not proof of authoritative ownership of the named child; actual transcript access remains a separate check.
+**What changed:** The Claude adapter records the `tool_use` ids of `create_subagent` calls in the per-query ledger and binds only the `tool_result` blocks that answer one of them, reading each block from its own content; a message-level `tool_use_result` stands in only for a single-block message, which also stops one result stamping every block. Cursor and Codex already gated on the tool name. The admission store refuses a claxedo tool edge whose `(parent, subagentKey)` the host never minted, so no row is created and `linkChildSession` never re-parents a foreign session; the harness seam records that as a `subagent-binding-unknown` diagnostic instead of failing the turn.
 
-**Fix and acceptance:** Only accept bindings from the canonical create-subagent result for its matching tool call, then verify stored parent/child ownership. Test hostile read-file output and a real child binding.
+**Acceptance:** A Bash or foreign-MCP result printing the binding JSON yields no observation, a batched delivery binds only the block answering `create_subagent`, an unknown key is refused with no record and nothing published, a `host:create` row then a matching binding is admitted, a real end-to-end Bash result creates no child session, and the seam test proves the diagnostic and normal turn completion. Committed as 27c6834265.
 
 **Current code:** [packages/agent-event-runtime/src/harnesses/host-subagent.ts](../packages/agent-event-runtime/src/harnesses/host-subagent.ts); [packages/agent-event-runtime/src/harnesses/claude/adapter.ts](../packages/agent-event-runtime/src/harnesses/claude/adapter.ts). [Concept walkthrough G](#flow-g).
 
@@ -928,11 +932,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-31"></a>
 ### P-31 — Guest content can influence prompt context
 
-**Original severity:** LOW. **Current:** Partial. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Partial; host-side gating fixed, acceptance step open. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The browser pane validates payload shape but does not bind every guest message to an active inspection interaction/navigation generation. A guest page is untrusted text even if a preload forwards it. This is not proof that guest JavaScript can directly call privileged main IPC.
+**What changed:** Guest pick and comment-submit messages are dropped unless the picker is armed; a submit must match a prior pick's selector and the host's navigation generation, which full and in-page main-frame navigations advance while clearing the pick; `pageUrl` is the host-observed URL and a guest `frameUrl` on another origin drops the message; every field is re-validated and size-bounded into a fresh object. Guest JavaScript cannot reach react-grab's API: the preload runs in the isolated world and injects nothing into the page.
 
-**Fix and acceptance:** Track guest identity, navigation generation and active pick state; require user acceptance before adding context. Gate navigated schemes and test messages from stale pages.
+**Acceptance:** Component tests cover submit without inspect, without a pick, with a differing selector, after an in-page navigation, from another origin, oversized content, and the legitimate pick-then-submit flow. Committed as 2446cecd95.
+
+**Remaining:** While the picker is armed, page script can synthesize pointer events into react-grab's open shadow root and fill the popover, and that submit passes every host check. A host-side acceptance step before the comment enters prompt context is the only closure and is a product decision.
 
 **Current code:** [packages/claxedo-app/src/features/browser/components/browser-pane.tsx](../packages/claxedo-app/src/features/browser/components/browser-pane.tsx); [packages/claxedo-app/src/features/browser/components/browser-url.ts](../packages/claxedo-app/src/features/browser/components/browser-url.ts). [Concept walkthrough E](#flow-e).
 
@@ -961,11 +967,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-34"></a>
 ### P-34 — Several relay lifecycle bugs were grouped together
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Medium for buffering; Low for other parts.
+**Original severity:** LOW. **Current:** Fixed for stale sockets and room boot; buffering tracked under P-107/P-129. **Reassessed severity:** Medium for buffering; Low for other parts.
 
-**What happens and why it matters:** The AND queue bound remains. CF now does enforce a cumulative tunnel response cap, contradicting that part of the old row. Timer and region issues have separate IDs; stale-socket dispatch and rejected room-cache recovery need targeted lifecycle reproduction.
+**What changed:** The Cloudflare room looked tunnels up by host id, so frames from a socket it had already replaced were applied to the live tunnel: a stale registration update with a bad token closed the live tunnel with 1008, a stale ping was answered on it, and a hibernation wake could reinstall the old socket. Tunnel messages now bind to the socket they arrived on and rebuild keeps the newest attachment per host. The Bun adapter drops frames from a socket that owns no identity. `WorkspaceRelayRoom` evicts a rejected boot promise so a transient boot failure no longer returns `relay_durable_object_boot_failed` for the isolate's lifetime.
 
-**Fix and acceptance:** Track P-107, P-128, P-129 and P-130 separately. Reject frames from replaced sockets and evict rejected room initialization promises; test reconnect races and recovery after initialization failure.
+**Acceptance:** Reproductions ran red first: a garbage update from the replaced socket left the live socket open, a stale ping produced no pong, the hibernation variant matched, rebuild with the older attachment listed last kept the newer socket, and a room whose first boot failed served after the environment was corrected. Committed as 1fb63bf0e5.
 
 **Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts); [packages/workspace-relay/src/cloudflare.ts](../packages/workspace-relay/src/cloudflare.ts). [Concept walkthrough H](#flow-h).
 
@@ -1289,13 +1295,15 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-64"></a>
 ### P-64 — Workspace file APIs do not enforce private-session ownership
 
-**Original severity:** MED. **Current:** Partial; API gates verified, commit race remains. **Reassessed severity:** Medium; High for sensitive cross-session files.
+**Original severity:** MED. **Current:** Fixed; snapshot-bound commit tests; same-UID filesystem access remains H-1. **Reassessed severity:** Medium; High for sensitive cross-session files.
 
 **Change:** File/diff/Git routes now derive every private owner from canonical worktree registrations and use existing session authority. Recursive paths also check descendant owners; listing/diff/status exclude denied owners and rename sources. Git pathspec inputs are literal. Authorization uses the same path spelling as execution, preserving exact filenames where Git diff does. Co-located registrations retain every owner's denial. The policyless lazy diff singleton and unused file-route resolver hook were removed.
 
 **Acceptance so far:** Root first reproduced ancestor staging (204), whitespace file-content disclosure (200), wildcard private-patch disclosure, duplicate-owner filename disclosure, and a second exact-whitespace diff disclosure. The corrected mounted HTTP suite and neighboring diff/Git/target tests pass together: 71 tests. Runtime typecheck, focused lint and architecture ratchets passed. Legitimate shared/owner access still works, while stage/unstage, commit/amend and push are checked against affected private paths.
 
-**Remaining:** Commit-staged holds the canonical process-local Git write lock and rejects an index change while authority answers. An external process can still change the index after the final recheck and before `git commit`; immutable content binding is required to close that race. API gating does not isolate processes sharing the host filesystem. The listing filter now receives explicit filesystem/repository path bases; a failed Git-root lookup fails closed instead of substituting the served directory. Nongit filesystem listing remains supported, with focused failure and sibling-path tests.
+**Commit binding:** Commit-staged now records the index as a tree with `write-tree` once, authorizes the paths that tree changes against HEAD, fills a scratch index from that tree and runs `git commit` with `GIT_INDEX_FILE` pointing at it, so the live index is never read for the commit and a path staged by another process after the snapshot is not published. Hooks, signing, message cleanup and the reflog entry are kept. After the commit the live index is synced to HEAD for the committed paths only, so a pre-commit hook's re-stage lands and an unrelated late stage stays staged and uncommitted; the former 409 `index changed` response no longer exists. Tests prove a private path staged between authorization and commit is absent from the commit and still staged, a failing pre-commit hook leaves HEAD and index untouched, a commit-msg rewrite is honoured, a hook re-stage is committed with a clean index afterwards, and an unborn-branch first commit works. Committed as 0637e19705.
+
+**Remaining:** API gating does not isolate processes sharing the host filesystem; that is H-1. The listing filter receives explicit filesystem/repository path bases; a failed Git-root lookup fails closed instead of substituting the served directory. Nongit filesystem listing remains supported, with focused failure and sibling-path tests.
 
 **Current code:** [worktree target access](../packages/workspace-runtime/src/routes/worktree-target-access.ts); [Git routes](../packages/workspace-runtime/src/routes/git-worktree.ts); [target owner](../packages/workspace-runtime/src/target.ts); [mounted regression tests](../packages/workspace-runtime/src/workspace/worktree-file-access.test.ts). [Concept walkthrough A](#flow-a).
 
@@ -1673,11 +1681,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-98"></a>
 ### P-98 — Refreshing a revoked OAuth credential can reactivate it
 
-**Original severity:** MED. **Current:** Partial; local registry fixed, hosted KV open. **Reassessed severity:** Medium.
+**Original severity:** MED. **Current:** Partial; local and hosted writes preserve revocation, cross-worker fence open. **Reassessed severity:** Medium.
 
-**What happens and why it matters:** The SQLite registry now preserves revoked status atomically when secret rotation or health verification completes. Provider health and operator revocation remain separate decisions. The hosted KV adapter still rewrites the lifecycle-bearing record on health updates and lacks an atomic cross-worker fence.
+**What changed:** The SQLite registry preserves revoked status inside its UPDATE when secret rotation or health verification completes. The hosted KV store now does the same in both writes: a health update keeps `revoked` until an explicit status change, and a new `updateCredentialSecret` stores a renewed OAuth token with the same rule, so a hosted check no longer drops the refreshed token or reactivates a revoked credential. Explicit status restoration stays a separate operation; the connections token path already refuses a revoked credential before any refresh runs, on both stores.
 
-**Fix and acceptance:** Retain local before/during-refresh and held-backend-write regressions, plus explicit restoration coverage. Move hosted lifecycle decisions to an authoritative atomic owner before closing the whole finding; an in-process lock cannot establish cross-worker correctness.
+**Acceptance:** Hosted tests ran red first for health after revocation, secret replacement after revocation, and a real `checkCredential` over the hosted store revoked never, before and during refresh; a `describe.each` over both stores proves the token path refuses a revoked credential without calling refresh. Committed as 5de6378c2d and 43f2067fdb.
+
+**Remaining:** The hosted store still rewrites the whole KV blob without a cross-worker fence. Closing the finding needs an authoritative atomic owner: D1 already holds hosted connection state with conditional updates, or a Durable Object; which one is a design decision. The Connections `Re-verify` action restores `available` on both stores by explicit user click, which the audit treats as sanctioned restoration.
 
 **Current code:** [packages/claxedo-local-server/src/credentials/routes/credential.ts](../packages/claxedo-local-server/src/credentials/routes/credential.ts); [packages/claxedo-server-core/src/credentials/registry.ts](../packages/claxedo-server-core/src/credentials/registry.ts). [Concept walkthrough B](#flow-b).
 
@@ -1783,11 +1793,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-108"></a>
 ### P-108 — Localhost cookies are shared across ports
 
-**Original severity:** MED. **Current:** Present, deployment-dependent. **Reassessed severity:** Medium.
+**Original severity:** MED. **Current:** Partial; exact origins and guard order fixed, cookie bearer-equivalence open. **Reassessed severity:** Medium.
 
-**What happens and why it matters:** Embedded auth uses a host-scoped session cookie and broad localhost trusted origins. Cookies do not isolate ports. A second localhost server can receive a cookie sent to it; HttpOnly prevents JavaScript reads but not receipt by that server. HTTPS public-origin mode has a stricter browser guard.
+**What changed:** Better Auth's trusted-origin list no longer carries localhost port globs; it is the public origin, its `127.0.0.1` twin and the explicit `CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS` entries, with the `dev` script supplying the vite origin. The exact-origin browser guard is registered ahead of the `/api/auth/*` handler so it now covers Better Auth's own cookie-bearing mutations in HTTPS mode. Better Auth skips its origin and CSRF checks under `NODE_ENV=test` unless pinned, so the embedded issuer pins both on; the earlier suites had never exercised the check.
 
-**Fix and acceptance:** Use exact trusted origins and a dedicated auth hostname/secure deployment boundary; avoid bearer-equivalent cookies on shared localhost hosts. Test a second port receiving no usable auth credential.
+**Acceptance:** A cookie-bearing `/api/auth` mutation from `http://localhost:9999` is refused with `INVALID_ORIGIN` and accepted from the exact origin; under an HTTPS public origin the composed app refuses a non-exact origin and a cross-site fetch through the browser guard, and the ordering is proven by the guard answering rather than Better Auth. Committed as 0722ad19b0.
+
+**Remaining:** The session cookie's value is still accepted as a bearer on every signed route, so a server on another localhost port that receives the cookie can replay it. Closing that needs one of: a dedicated auth hostname so the cookie is host-scoped away from other local apps, a session token distinct from the cookie value, or refusing embedded auth over plain-HTTP localhost. Which one is a product decision.
 
 **Current code:** [packages/claxedo-server/src/deployments/self-hosted-node/embedded-auth.ts](../packages/claxedo-server/src/deployments/self-hosted-node/embedded-auth.ts). [Concept walkthrough C](#flow-c).
 
