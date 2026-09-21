@@ -66,7 +66,8 @@ It answers: "What can my host do with agent sessions?"
 The facade is organized into resource namespaces:
 
 - `sessions` for create/list/get/update/delete/config
-- `turns` for start/abort
+- `turns` for starting a turn
+- `recovery` for inspecting a session and submitting an operation against a named turn
 - `events` for subscription and replay reads
 - `permissions` and `questions` for interactive harness checkpoints
 - `todos`, `commands`, `config`, and `health` for optional harness surfaces

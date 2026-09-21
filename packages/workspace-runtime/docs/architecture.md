@@ -80,8 +80,9 @@ construction time in [`src/workspace/runtime.ts`](../src/workspace/runtime.ts).
 After that point the rest of the codebase calls only through the
 `AgentHarnessAdapter` interface — there is no harness-type branching in the
 route/call paths. The full interface, error semantics (`sendMessage` yields
-`{ type: "error", error }` events on adapter faults; `abort` returns a typed
-`AbortResult`; `dispose()` races a wall-clock drain timeout), and crash
+`{ type: "error", error }` events on adapter faults; `cancelTurn` returns the
+execution and cleanup facts it established; `dispose()` races a wall-clock
+drain timeout), and crash
 recovery behavior (ACP crashes mark the affected session `"recovering"` and
 emit `session.recover` without taking down the workspace) are documented in
 the README's [`AgentHarnessAdapter` contract](../README.md#agentharnessadapter-contract)

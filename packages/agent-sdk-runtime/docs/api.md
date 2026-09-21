@@ -172,7 +172,9 @@ Import: `@claxedo/agent-sdk-runtime`
 
 Types:
 
-- `AgentRuntimeAbortResult`
+- `AgentRuntimeRecovery`
+- `AgentRuntimeRecoveryInspection`
+- `RecoveryCaller`
 - `AgentRuntimeHealth`
 - `AgentRuntimePermissionDecision`
 - `AgentRuntimeInteractionResult`

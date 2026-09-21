@@ -42,12 +42,19 @@ The change point is the ownership and recovery boundary: normal completion remai
 | Runtime turn admission | Session turn identity, admission, and write generation | Workspace host may retire the affected execution under an authorized recovery operation |
 | Runtime store and journal | Durable turn outcomes, ordered projections, persisted leases | Runtime reconciliation repairs from canonical evidence; clients never patch these tables |
 | Harness adapter/driver | Provider interaction identity and normal cancel/query operations | Its host may retire the owned harness generation |
-| Local process launch owner | Process handle/group, launch identity, verified exit and descendants | Host may signal its owned resources without provider cooperation |
+| Local process launch owner | Process handle/group, verified creation identity, the leader's exit, and whatever it can still establish about descendants | Host may signal its owned resources without provider cooperation |
 | Workspace host | Affected sessions, admission gating, cleanup obligations, recovery operation results | Machine daemon coordinates escalation spanning a shared harness or workspaces |
 | Machine daemon | Machine-local work and client leases; coordinated drain | Desktop main or the host launcher can terminate the verified local daemon generation if it is unresponsive |
 | Renderer / remote client | Display facts and invoke authorized operations | No direct database repair or inferred process authority |
 
 Implement these responsibilities within the existing owners. Do not create another session store or a separate background recovery daemon.
+
+A retirement reports the leader and its descendants as separate facts.
+`descendants: "verified_clear"` is earned only where the launch protocol
+proves no payload ever ran: a descendant that called `setsid` has left the
+process group, and neither macOS nor Linux offers an enumeration that finds it
+again. An emptied group is therefore `unknown`, and the owner keeps the
+obligation rather than reporting the resources gone.
 
 `AgentProcessObserver` is currently optional diagnostics. Its inferred process rows and swallowed observer errors cannot establish permission to kill a process. Recovery must use the launch owner's mandatory handle and identity. Reuse descriptor identities where appropriate, but keep observation distinct from authority.
 
@@ -77,16 +84,17 @@ Reuse `AgentRuntimeStatus.recovering` with `uncertain_execution` for unresolved 
 
 ## 6. Public operation contract
 
-These are logical operation names. Extend the existing runtime/host APIs; route spelling is not a second implementation. Existing abort and daemon shutdown routes must expose these semantics instead of returning ambiguous success. UI, CLI, and agent callers use the same typed operations and authorization checks.
+Every operation is one `RecoveryAction` on one scope-discriminated `RecoveryTarget`, carried by the three routes each owner serves. The session owner answers `GET /session/:id/recovery`, `POST /session/:id/recovery` and `GET /session/:id/recovery/operations/:operationId`; the machine daemon answers the same three at `/api/claxedo/daemon/recovery`. There is no separate abort route and no daemon shutdown route: those spellings were removed rather than kept beside these. UI, CLI, and agent callers use the same typed operations and authorization checks.
 
-| Operation | Owner | Required postcondition / bounded result |
-|---|---|---|
-| Inspect | Host, with optional bounded provider reads | Return ownership, waiting reason, current failure, evidence freshness, persistence health, and permitted recovery actions. Return partial evidence if a dependency fails. Never resume a session to inspect it. |
-| Reconcile session | Runtime/store owner | Replay valid journal entries in order; consult the existing execution owner where necessary; commit justified terminal state and lease changes. Otherwise return the precise unresolved evidence or storage blocker. Never repeat the user's prompt or tool call. |
-| Cancel turn | Runtime, delegating to the harness | Target the exact turn generation. Attempt provider cancellation and clean up turn-owned resources within the authorized scope. Success requires terminal execution, required cleanup, and committed finalization. Otherwise report partial effects and the next permitted action. |
-| Retire harness generation | Host/process owner | Gate admission for affected sessions, retire write authority, stop the owned generation, verify resources, then reconcile its affected turns. Never silently restart the failed prompt. |
-| Drain daemon | Machine daemon | Gate new work; report all existing work and cleanup blockers; wait only to the operation deadline. A nonempty scope returns a blocked result, not an indefinitely pending shutdown. Ordinary client exit still permits background work. |
-| Stop/restart daemon | Machine owner; external launcher if necessary | Execute an explicitly authorized scope of interruption, verify the old owned generation, and run startup reconciliation before reopening admission. A responding HTTP endpoint alone is not replacement readiness. |
+| Operation | Action | Owner | Required postcondition / bounded result |
+|---|---|---|---|
+| Inspect | `inspect` | Host, with optional bounded provider reads | Return ownership, waiting reason, current failure, evidence freshness, persistence health, and permitted recovery actions. Return partial evidence if a dependency fails. Never resume a session to inspect it. |
+| Reconcile session | `reconcile_session` | Runtime/store owner | Replay valid journal entries in order; consult the existing execution owner where necessary; commit justified terminal state and lease changes. Otherwise return the precise unresolved evidence or storage blocker. Never repeat the user's prompt or tool call. |
+| Cancel turn | `cancel_turn` | Runtime, delegating to the harness | Target the exact turn generation. Attempt provider cancellation and clean up turn-owned resources within the authorized scope. Success requires terminal execution, required cleanup, and committed finalization. Otherwise report partial effects and the next permitted action. |
+| Retire harness generation | `retire_harness` | Host/process owner | Gate admission for affected sessions, retire write authority, stop the owned generation, verify resources, then reconcile its affected turns. Never silently restart the failed prompt. |
+| Drain daemon | `drain_daemon` | Machine daemon | Gate new work; report all existing work and cleanup blockers; wait only to the operation deadline. A nonempty scope returns a blocked result, not an indefinitely pending shutdown. Ordinary client exit still permits background work. |
+| Stop/restart daemon | `stop_daemon` | Machine owner; external launcher if necessary | Execute an explicitly authorized scope of interruption, verify the old owned generation, and run startup reconciliation before reopening admission. A responding HTTP endpoint alone is not replacement readiness. |
+| Release drain | `release_drain` | Machine daemon | Reopen the gates one earlier drain closed, named by its operation id in `linkedOperationId`. It reopens that operation's scope only: two drains may hold overlapping owners, and releasing "the fence" would un-gate work whose own caller never authorized reopening. It asserts nothing about execution or cleanup. |
 
 Inspection must report the individual owners behind aggregate counts. `activeTurns: 3` is insufficient for recovery: identify the three turns and their waiting conditions. Draining never means deleting lease rows until counts become zero.
 

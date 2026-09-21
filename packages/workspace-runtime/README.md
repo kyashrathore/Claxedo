@@ -370,7 +370,7 @@ export interface AgentHarnessAdapter {
   // Messaging
   sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent>
   getMessages(id: string, directory: string): Promise<unknown[]>
-  abort(id: string, directory: string): Promise<AbortResult>
+  cancelTurn(id: string, input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number }, directory: string): Promise<AdapterCancelOutcome>
   revert(id: string, directory: string): Promise<void>
   unrevert(id: string, directory: string): Promise<void>
   forkSession(id: string, messageId: string, directory: string): Promise<{ id: string }>
@@ -443,9 +443,11 @@ enable/disable, id rebinding) live in
 - `sendMessage` yields a `CompatEvent` async iterable. Adapter-level
   errors surface as `{ type: "error", error }` events; transport
   faults raise as exceptions and are caught by the host route handler.
-- `abort` returns a typed `AbortResult` (`cancelled` / `already_idle`
-  / `not_found` / `recovering` / `failed`). Callers map this onto HTTP
-  status codes.
+- `cancelTurn` returns an `AdapterCancelOutcome`: an `execution` fact
+  (`running` / `terminal` / `unknown`), a `cleanup` fact (`owned` /
+  `verified_clear` / `unknown`) and an optional error. It reports what the
+  harness established, not whether the request was accepted; the runtime
+  decides from those facts whether the turn may be finalized.
 - `dispose()` is fire-and-forget. The drain phase runs it inside
   `Promise.race` with a wall-clock timeout (default 10s) so a stuck
   dispose cannot strand SIGTERM-driven shutdown.
