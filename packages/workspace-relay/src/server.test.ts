@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import {
@@ -92,6 +93,43 @@ async function harness(
 }
 
 describe("workspace relay server", () => {
+  test("a channel actor's provenance reaches the host on the Relay Host Token", async () => {
+    const relay = await harness()
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((url, init) => {
+      relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
+      return Promise.resolve(new Response("ok"))
+    }) as typeof fetch
+
+    try {
+      const runtimeAccessToken = await mintRuntimeAccessToken({
+        principalKind: "user",
+        actorId: "actor_1",
+        actorKind: "human",
+        orgId: "org_1",
+        workspaceId: "ws_1",
+        hostId: "host_1",
+        role: "editor",
+        channelIdentity: { channel: "telegram", externalUserId: "123456789", identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION },
+      }, relay.runtime.privateKey, "EdDSA")
+      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: `Bearer ${runtimeAccessToken}` },
+      })
+
+      expect(res.status).toBe(200)
+      const auth = relay.forwarded[0]?.request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+      await expect(verifyRelayHostToken(auth!, relay.relayHost.publicKey, {
+        workspaceId: "ws_1",
+        hostId: "host_1",
+      })).resolves.toMatchObject({
+        parent_jti: decodeJwt(runtimeAccessToken).jti,
+        channel_identity: { channel: "telegram", external_user_id: "123456789", identity_version: CURRENT_CHANNEL_IDENTITY_VERSION },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test("forwards HTTP requests with a Relay Host Token", async () => {
     const relay = await harness()
     const originalFetch = globalThis.fetch

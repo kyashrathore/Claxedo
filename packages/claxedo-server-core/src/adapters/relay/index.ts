@@ -93,6 +93,15 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
               ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
             }
           : {}),
+        ...(input.channelIdentity
+          ? {
+              channelIdentity: {
+                channel: input.channelIdentity.channel,
+                externalUserId: input.channelIdentity.externalUserId,
+                identityVersion: input.channelIdentity.identityVersion,
+              },
+            }
+          : {}),
         orgId: input.orgId,
         workspaceId: input.workspaceId,
         hostId: input.hostId,

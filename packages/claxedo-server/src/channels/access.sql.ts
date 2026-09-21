@@ -1,14 +1,10 @@
 import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core"
 
 /**
- * Which generation of the sender-identity contract a row was written under.
- * 0 is every row written before the transports were proven to carry the
- * platform's stable account id, so its key may be a handle that now belongs to
- * somebody else; only `CURRENT_CHANNEL_IDENTITY_VERSION` admits. The live DDL
- * defaults the column to 0, which puts a writer that forgets it on the
- * non-authorizing side.
+ * The live DDL defaults every `identity_version` column below to 0, so a
+ * writer that omits it lands on the non-authorizing side.
  */
-export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
+export { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 
 /** Pending pairing requests (short-lived codes). One row per (channel, sender). */
 export const ClaxedoChannelPairingTable = sqliteTable(

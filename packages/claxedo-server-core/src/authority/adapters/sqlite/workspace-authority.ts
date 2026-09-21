@@ -51,11 +51,11 @@ import {
   requestedSessionShareLevel,
   storedSessionShareLevel,
 } from "@claxedo/server-core/platform/auth/session-share-level"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import {
   activeOrgById,
   authorizeProjectForUser,
   authorizeWorkspaceForUser,
-  CURRENT_CHANNEL_IDENTITY_VERSION,
   ensurePersonalOrg,
   ensureProject,
   openAuthorityDb,
@@ -2678,7 +2678,7 @@ export function createSqliteWorkspaceAuthority(
       const workspace = requireWorkspace(db, who, workspaceId, "write")
       const role = workspaceRoleForUser(db, workspace, who)
       if (!role || !workspace.org_id) denied()
-      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async recordChannelRuntimeAccessToken(identity, args) {
       const db = database()

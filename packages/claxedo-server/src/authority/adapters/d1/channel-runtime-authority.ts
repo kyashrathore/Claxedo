@@ -8,19 +8,11 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import { organizationRoleRankSql } from "./host-access-authority"
 import { SESSION_SHARE_WORKSPACE_ACCESS_SQL } from "./workspace-authority"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
-
-/**
- * The generation of the sender-identity contract this build binds and reads
- * under. A stored binding below it was keyed by whatever string its transport
- * called a sender id, so it cannot stand for the platform account that string
- * names today; it is history, not authority. See
- * `migrations/control-plane/0038_channel_identity_version.sql`.
- */
-const CURRENT_CHANNEL_IDENTITY_VERSION = 1
 
 export const D1_CHANNEL_RUNTIME_AUTHORITY_METHODS = [
   "resolveRuntimeMachineAccess",
@@ -254,7 +246,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const who = await this.requireBinding(identity)
     const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
     if (!access || access.role_rank < actionRank("write")) throw denied()
-    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank) }
+    return {
+      actorId: who.actorId,
+      actorKind: who.actorKind,
+      orgId: access.org_id,
+      role: rankRole(access.role_rank),
+      identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION,
+    }
   }
 
   async recordChannelRuntimeAccessToken(identity: ChannelMachineIdentity, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) {

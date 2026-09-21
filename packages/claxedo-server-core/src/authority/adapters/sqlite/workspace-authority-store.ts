@@ -8,6 +8,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { columnInfo, hasColumn, hasTable } from "@claxedo/server-core/platform/db/schema-introspection"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 
 // Claxedo's LOCAL workspace-authority storage: the SQLite tables and the
 // user/org/project/role model behind `createSqliteWorkspaceAuthority`. The
@@ -39,21 +40,6 @@ CREATE TABLE runtime_access_tokens (
   created_at INTEGER NOT NULL
 );`
 
-/**
- * `identity_version` is which generation of the sender-identity contract a
- * binding was written under. 0 is every row that predates the local mirror of
- * the control plane's boundary migration: its key is whatever string a
- * transport called a sender id, so `telegram:12345` may be the handle @12345
- * rather than account 12345, and only one of those is a person this row can
- * speak for. Only `CURRENT_CHANNEL_IDENTITY_VERSION` authorizes; a 0 row is
- * history and is never promoted.
- *
- * The active-binding uniqueness is scoped to current rows for the same reason
- * the hosted index is: left across versions, a legacy row would veto the
- * binding the account that owns the id needs in order to be readmitted.
- */
-export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
-
 const CANONICAL_CHANNEL_IDENTITIES_SCHEMA = `
 CREATE TABLE channel_identities (
   binding_id TEXT PRIMARY KEY,
@@ -70,6 +56,10 @@ CREATE TABLE channel_identities (
  * EXISTS` over databases whose `channel_identities` is still an older shape,
  * and an index predicate naming a column that table does not have yet fails
  * the whole open before the migration that would add it has run.
+ *
+ * Scoped to the current generation for the same reason the hosted index is:
+ * left across versions, a legacy row would veto the binding the account that
+ * owns the id needs in order to be readmitted.
  */
 const CHANNEL_IDENTITIES_ACTIVE_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS channel_identities_active_external

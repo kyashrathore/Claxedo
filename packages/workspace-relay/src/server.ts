@@ -1019,6 +1019,39 @@ function pruneRelayHostTokenCache(cache: Map<string, RelayHostTokenCacheEntry>, 
   }
 }
 
+function relayHostMintInput(
+  options: WorkspaceRelayOptions,
+  claims: RuntimeAccessTokenClaims,
+  target: WorkspaceRelayTarget,
+) {
+  return {
+    principalKind: claims.principal_kind,
+    actorId: claims.actor_id,
+    actorKind: claims.actor_kind,
+    parentJti: claims.jti,
+    ...(claims.actor_public_id && claims.actor_name
+      ? {
+          actorPublicId: claims.actor_public_id,
+          actorName: claims.actor_name,
+          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+        }
+      : {}),
+    ...(claims.channel_identity
+      ? {
+          channelIdentity: {
+            channel: claims.channel_identity.channel,
+            externalUserId: claims.channel_identity.external_user_id,
+            identityVersion: claims.channel_identity.identity_version,
+          },
+        }
+      : {}),
+    orgId: claims.org_id,
+    role: claims.role,
+    ...target,
+    ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
+  }
+}
+
 async function relayHostTokenFor(
   options: WorkspaceRelayOptions,
   claims: RuntimeAccessTokenClaims,
@@ -1043,23 +1076,11 @@ async function relayHostTokenFor(
   let promise: Promise<string> | undefined
   try {
     const token = await trace.span("rht-mint", async () => {
-      promise = mintRelayHostToken({
-        principalKind: claims.principal_kind,
-        actorId: claims.actor_id,
-        actorKind: claims.actor_kind,
-        parentJti: claims.jti,
-        ...(claims.actor_public_id && claims.actor_name
-          ? {
-              actorPublicId: claims.actor_public_id,
-              actorName: claims.actor_name,
-              ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-            }
-          : {}),
-        orgId: claims.org_id,
-        role: claims.role,
-        ...target,
-        ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
-      }, options.relayHostSigningKey, options.relayHostAlgorithm)
+      promise = mintRelayHostToken(
+        relayHostMintInput(options, claims, target),
+        options.relayHostSigningKey,
+        options.relayHostAlgorithm,
+      )
       pruneRelayHostTokenCache(cache, now)
       cache.set(key, { promise, expiresAt: now + ttlMs })
       return await promise
@@ -1082,23 +1103,11 @@ async function uncachedRelayHostTokenFor(
   trace: WorkspaceRelayAuthorizeTrace,
 ) {
   return await trace.span("rht-mint", async () =>
-    await mintRelayHostToken({
-      principalKind: claims.principal_kind,
-      actorId: claims.actor_id,
-      actorKind: claims.actor_kind,
-      parentJti: claims.jti,
-      ...(claims.actor_public_id && claims.actor_name
-        ? {
-            actorPublicId: claims.actor_public_id,
-            actorName: claims.actor_name,
-            ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-          }
-        : {}),
-      orgId: claims.org_id,
-      role: claims.role,
-      ...target,
-      ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
-    }, options.relayHostSigningKey, options.relayHostAlgorithm)
+    await mintRelayHostToken(
+      relayHostMintInput(options, claims, target),
+      options.relayHostSigningKey,
+      options.relayHostAlgorithm,
+    )
   )
 }
 

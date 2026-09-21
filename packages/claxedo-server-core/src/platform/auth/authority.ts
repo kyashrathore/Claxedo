@@ -149,6 +149,9 @@ export type SessionPeopleContext = {
 /** Identity supplied only by authenticated channel ingress; authority resolves the linked actor afresh. */
 export type ChannelMachineIdentity = { channel: string; externalUserId: string; threadKey: string }
 
+/** The same identity carrying the binding generation the authority admitted it under. */
+export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
+
 export type WorkspaceAuthority = {
   /**
    * Internal host delegation; the authority rechecks the actor and current
@@ -161,7 +164,7 @@ export type WorkspaceAuthority = {
    */
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string, minimumRole?: ProjectRole) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; userId?: string }>
   recordActorRuntimeAccessToken: (args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
-  resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
+  resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
   /**
    * The workspace's canonical owner, for a credential this control plane
    * minted that carries no signed bearer of its own.

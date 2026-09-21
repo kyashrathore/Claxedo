@@ -55,10 +55,13 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
     if (auth || channelIdentity || delegatedActor) {
       if (!services.authority)
         throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
+      const channelAccess = channelIdentity
+        ? await services.authority.resolveChannelMachineAccess(channelIdentity, workspaceId)
+        : undefined
       const access = delegatedActor
         ? await services.authority.resolveRuntimeMachineAccess(delegatedActor, workspaceId)
-        : channelIdentity
-          ? await services.authority.resolveChannelMachineAccess(channelIdentity, workspaceId)
+        : channelAccess
+          ? channelAccess
           : await services.authority
               .openWorkspace(auth!, { workspaceId })
               .then(async (result) => ({
@@ -78,7 +81,9 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       runtimeOptions = {
         ...options,
         auth,
-        channelIdentity,
+        ...(channelIdentity && channelAccess
+          ? { channelIdentity: { ...channelIdentity, identityVersion: channelAccess.identityVersion } }
+          : {}),
         delegatedActor: !!delegatedActor,
         orgId,
         role,

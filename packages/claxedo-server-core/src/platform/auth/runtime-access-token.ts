@@ -10,6 +10,8 @@ import {
   hostTunnelTokenAudience,
   runtimeAccessTokenAudience,
   runtimeAccessTokenIssuer,
+  toChannelIdentityClaim,
+  type ChannelIdentityInput,
   type RelayRole,
 } from "@claxedo/workspace-relay"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
@@ -67,6 +69,8 @@ type RuntimeAccessTokenSignerBaseInput = {
   actorName?: string
   actorAvatarUrl?: string
   role: RelayRole
+  /** Present only for a token a channel binding authorized; the relay checks its generation. */
+  channelIdentity?: ChannelIdentityInput
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
 }
@@ -228,6 +232,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
             ...(input.actorAvatarUrl ? { actor_avatar_url: input.actorAvatarUrl } : {}),
           }
         : {}),
+      ...(input.channelIdentity ? { channel_identity: toChannelIdentityClaim(input.channelIdentity) } : {}),
       org_id: input.orgId,
       workspace_id: input.workspaceId,
       host_id: input.hostId,

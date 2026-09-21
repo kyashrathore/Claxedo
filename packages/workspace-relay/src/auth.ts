@@ -1,5 +1,6 @@
 import { SignJWT, errors, exportJWK, importJWK, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
 import { isRecord, numberClaim } from "@claxedo/helpers/guards"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 
 const algorithms = ["EdDSA", "ES256", "RS256"] as const
 
@@ -19,6 +20,38 @@ export type RelayJwtAlgorithm = (typeof algorithms)[number]
 export type RelayRole = "viewer" | "editor" | "admin" | "owner"
 export type ActorKind = "human" | "agent"
 
+/**
+ * Earliest `iat` a Runtime Access Token may carry (2026-09-21T00:00:00Z).
+ *
+ * Tokens minted before channel provenance existed carry no `channel_identity`,
+ * so a channel-issued one among them is indistinguishable from an app token
+ * and there is no binding generation to check it against. The whole vintage is
+ * refused rather than trusted until it expires.
+ */
+export const RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS = 1_789_948_800
+
+/** The channel binding that authorized a token, as the token carries it. */
+export type ChannelIdentityClaim = {
+  channel: string
+  external_user_id: string
+  identity_version: number
+}
+
+/** The same binding as a mint argument. */
+export type ChannelIdentityInput = {
+  channel: string
+  externalUserId: string
+  identityVersion: number
+}
+
+export function toChannelIdentityClaim(input: ChannelIdentityInput): ChannelIdentityClaim {
+  return {
+    channel: input.channel,
+    external_user_id: input.externalUserId,
+    identity_version: input.identityVersion,
+  }
+}
+
 export type RuntimeAccessTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
   aud: typeof runtimeAccessTokenAudience
@@ -32,6 +65,7 @@ export type RuntimeAccessTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
   jti: string
@@ -50,6 +84,7 @@ export type RelayHostTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
   jti: string
@@ -102,6 +137,7 @@ type RuntimeInput = {
   workspaceId: string
   hostId: string
   role: RelayRole
+  channelIdentity?: ChannelIdentityInput
   ttlSeconds?: number
   jti?: string
   now?: number
@@ -213,6 +249,47 @@ function actorProfilePayload(input: {
   }
 }
 
+function channelIdentityPayload(input: { channelIdentity?: ChannelIdentityInput }) {
+  return input.channelIdentity ? { channel_identity: toChannelIdentityClaim(input.channelIdentity) } : {}
+}
+
+/**
+ * A token with no `channel_identity` was minted for an app or CLI actor and
+ * carries no provenance to check. A malformed one, or one naming a binding
+ * generation the authority stores no longer admit, names an identity nobody
+ * can still speak for.
+ */
+function channelIdentityClaims(payload: JWTPayload): ChannelIdentityClaim | undefined {
+  const value = payload.channel_identity
+  if (value === undefined) return undefined
+  if (!isRecord(value)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Channel provenance claim is not a claims object")
+  }
+  const claim = value as JWTPayload
+  const channel = stringClaim(claim, "channel")
+  const external_user_id = stringClaim(claim, "external_user_id")
+  const identity_version = numberClaim(claim, "identity_version")
+  if (!channel || !external_user_id || identity_version === undefined || !Number.isInteger(identity_version)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Channel provenance claim is incomplete")
+  }
+  if (identity_version < CURRENT_CHANNEL_IDENTITY_VERSION) {
+    throw new WorkspaceRelayAuthError(
+      "relay_token_claims_invalid",
+      "Channel provenance claim predates the current channel identity version",
+    )
+  }
+  return { channel, external_user_id, identity_version }
+}
+
+function checkIssuedAtFloor(iat: number) {
+  if (iat < RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS) {
+    throw new WorkspaceRelayAuthError(
+      "relay_token_claims_invalid",
+      "Runtime Access Token was issued before the channel provenance floor",
+    )
+  }
+}
+
 export function isRelayBacking(input: unknown): input is RelayBacking {
   return input === "cloud-vm" || input === "local-worktree"
 }
@@ -318,6 +395,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     actor_id: input.actorId,
     actor_kind: input.actorKind,
     ...actorProfilePayload(input),
+    ...channelIdentityPayload(input),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -342,6 +420,7 @@ export async function verifyRuntimeAccessToken(token: string, key: RelayKey, exp
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token claims are incomplete")
   }
+  checkIssuedAtFloor(claims.iat)
   return claims
 }
 
@@ -383,6 +462,7 @@ export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>,
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token claims are incomplete")
   }
+  checkIssuedAtFloor(claims.iat)
   checkTokenTimeClaims(payload, claims.exp, "Runtime Access Token")
   return claims
 }
@@ -473,6 +553,7 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
     actor_id: input.actorId,
     actor_kind: input.actorKind,
     ...actorProfilePayload(input),
+    ...channelIdentityPayload(input),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -522,6 +603,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   ) return undefined
   const actorProfile = actorProfileClaims(payload)
   if (!actorProfile) return undefined
+  const channel_identity = channelIdentityClaims(payload)
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
@@ -529,6 +611,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     actor_id,
     actor_kind,
     ...actorProfile,
+    ...(channel_identity ? { channel_identity } : {}),
     org_id,
     workspace_id,
     host_id,

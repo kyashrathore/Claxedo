@@ -103,6 +103,41 @@ describe("control-plane relay provider", () => {
     })
   })
 
+  test("forwards channel provenance to the signer without the thread key and records the full identity", async () => {
+    const runtimeAccessTokenSigner = vi.fn(async () => ({
+      runtimeAccessToken: "rat_1",
+      tokenExpiresAt: 2_000,
+      jti: "rat_jti",
+    }))
+    const recordRuntimeAccessToken = vi.fn(async () => {})
+    const provider = createControlPlaneRelayProvider({
+      relay: { relayUrl: "https://relay.test" },
+      runtimeAccessTokenSigner,
+      hostTunnelTokenSigner: vi.fn(),
+      targetLookup: vi.fn(),
+      recordRuntimeAccessToken,
+    })
+    const channelIdentity = { channel: "telegram", externalUserId: "123456789", threadKey: "telegram:chat:1", identityVersion: 1 }
+
+    await provider.mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "actor_1",
+      actorKind: "human",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      orgId: "org_1",
+      role: "editor",
+      ttlMs: 30 * 60_000,
+      channelIdentity,
+    })
+
+    expect(runtimeAccessTokenSigner).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: "actor_1",
+      channelIdentity: { channel: "telegram", externalUserId: "123456789", identityVersion: 1 },
+    }))
+    expect(recordRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ channelIdentity, jti: "rat_jti" }))
+  })
+
   test("honors in-bounds ttlMs and clamps out-of-bounds ttlMs to the signer bounds", async () => {
     const hostTunnelTokenSigner = vi.fn(async () => ({
       hostTunnelToken: "htt_1",
