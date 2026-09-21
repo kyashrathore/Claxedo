@@ -156,8 +156,12 @@ export const localServer: Policy = {
   //    traffic. It lives beside the dispatcher because the paths and the
   //    canonical ingress verification are the dispatcher's own knowledge, and
   //    reaches only `internals.ts` and `ingress-provenance.ts` beside it.
-  //    68/27, no headroom.
-  ceilings: { modules: 68, packages: 27 },
+  //  - `node:worker_threads` via `shell/files.ts` (owner: the `/find` text
+  //    search): a caller-named regex can backtrack catastrophically on the
+  //    server thread, and only `worker.terminate()` interrupts synchronous
+  //    evaluation, so grepSearch evaluates the pattern in a bounded worker.
+  //    68/28, no headroom.
+  ceilings: { modules: 68, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

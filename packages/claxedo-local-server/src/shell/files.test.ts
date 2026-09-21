@@ -2,7 +2,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { fileSearchCacheSize, globSearch } from "./files"
+import { fileSearchCacheSize, globSearch, grepSearch } from "./files"
 
 const scratch: string[] = []
 
@@ -120,4 +120,64 @@ describe("globSearch for directories", () => {
     }
     expect(reads.length).toBeLessThanOrEqual(400)
   })
+})
+
+describe("grepSearch", () => {
+  test("matches a regular expression with line numbers, offsets and submatches", async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-grep-"))
+    scratch.push(root)
+    await fs.promises.writeFile(path.join(root, "a.txt"), "hello world\nfoo bar\nhello again\n")
+
+    const found = await grepSearch(root, "hel+o")
+    expect(found).toEqual([
+      {
+        path: { text: "a.txt" },
+        lines: { text: "hello world" },
+        line_number: 1,
+        absolute_offset: 0,
+        submatches: [{ match: { text: "hello" }, start: 0, end: 5 }],
+      },
+      {
+        path: { text: "a.txt" },
+        lines: { text: "hello again" },
+        line_number: 3,
+        absolute_offset: 20,
+        submatches: [{ match: { text: "hello" }, start: 0, end: 5 }],
+      },
+    ])
+  })
+
+  test("keeps regex semantics for metacharacters and returns nothing for an invalid pattern", async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-grep-"))
+    scratch.push(root)
+    await fs.promises.writeFile(path.join(root, "a.txt"), "foo.bar\nfooXbar\n")
+
+    // `.` still matches any character — the pattern is a regex, not a literal.
+    expect((await grepSearch(root, "foo.bar")).map((hit) => hit.line_number)).toEqual([1, 2])
+    expect(await grepSearch(root, "foo\\.bar")).toEqual([
+      expect.objectContaining({ line_number: 1, lines: { text: "foo.bar" } }),
+    ])
+    expect(await grepSearch(root, "([")).toEqual([])
+    expect(await grepSearch(root, "hello", 0)).toEqual([])
+  })
+
+  test("a catastrophic pattern terminates on the scan deadline instead of hanging", async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-grep-"))
+    scratch.push(root)
+    await fs.promises.writeFile(path.join(root, "a.txt"), `${"a".repeat(100_000)}!\n`)
+
+    const started = Date.now()
+    const found = await grepSearch(root, "(a+)+$")
+    const elapsed = Date.now() - started
+    expect(found).toEqual([])
+    // The unbounded evaluation is effectively forever; the worker deadline must
+    // cut it off in seconds. Generous slack keeps slow CI from flaking.
+    expect(elapsed).toBeLessThan(15_000)
+
+    // A search after a terminated worker still gets a fresh, working scanner.
+    await fs.promises.writeFile(path.join(root, "b.txt"), "needle here\n")
+    expect(await grepSearch(root, "needle")).toEqual([
+      expect.objectContaining({ path: { text: "b.txt" }, line_number: 1 }),
+    ])
+  }, 30_000)
 })
