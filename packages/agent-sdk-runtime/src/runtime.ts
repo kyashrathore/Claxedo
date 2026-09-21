@@ -690,9 +690,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          // The finalizer inside owns the release. A turn that never reaches
-          // it keeps its admission and its lease, and `recovery.inspect`
-          // reports why.
+          // This promise is detached, so a rejection has no caller to reach.
+          // The failure is retained against the session instead, and the turn
+          // keeps its admission and its lease until something clears it.
           void track(() => runTurn(binding, prompt, adapter, capture, releaseAdmission, !!handoff, openingUserPublished, turn.admission))
             .catch((error: unknown) => recovery.reportTurnFailure(capture, error))
         } catch (error) {
