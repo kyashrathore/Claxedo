@@ -32,3 +32,20 @@ export function conversationHasAssistantMessage(directory: ConversationDirectory
   if (!message) return false
   return "error" in message && !!message.error || (conversation.parts[message.id]?.length ?? 0) > 0
 }
+
+/**
+ * Whether the owner has produced any assistant row for this turn.
+ *
+ * Weaker than `conversationHasAssistantMessage` on purpose, and for a different
+ * question. That one asks whether a turn has settled, which needs a finish the
+ * reply carries. This asks whether the owner answered the turn at all, which is
+ * what decides whether a reopened range still owes coverage for it: a turn with
+ * a reply in the transcript is at worst incomplete, and the ordinary history
+ * read owns that. A turn with nothing is the one whose obligation was lost.
+ */
+export function conversationHasTurnReply(directory: ConversationDirectory, sessionID: string, userMessageId: string) {
+  const conversation = registeredConversationSnapshot(directory, sessionID)
+  return conversation.messages.some(
+    (item) => isRuntimeAgentMessage(item) && item.role === "assistant" && item.parentID === userMessageId,
+  )
+}

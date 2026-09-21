@@ -87,6 +87,18 @@ export function hasOutstandingTurnCoverage(turnId: string) {
 }
 
 /**
+ * Whether an owner is reading this turn's coverage right now.
+ *
+ * Distinct from merely owing it: a range reopened after a reload owes coverage
+ * for every turn whose reply this client cannot see, which is not the same as
+ * a turn that is settling. A transcript row that reads the first as the second
+ * shows a finished turn as still working.
+ */
+export function turnCoverageInFlight(turnId: string) {
+  return obligations().some((entry) => entry.turnId === turnId && entry.claimedBy !== undefined)
+}
+
+/**
  * Take over working one obligation. A second mounted owner is refused rather
  * than queued: both would issue the same read and apply the same page.
  */

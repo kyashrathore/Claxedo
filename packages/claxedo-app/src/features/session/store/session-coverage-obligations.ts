@@ -2,7 +2,7 @@ import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { hydrateConversationPage } from "../conversation/conversation-hydrator"
 import { assistantMessageIdForUserMessage } from "../data/session-types"
-import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
+import { conversationHasAssistantMessage, conversationHasTurnReply } from "./assistant-turn-evidence"
 import { dispatchSessionStatusEvent } from "./session-status-dispatcher"
 import {
   claimTurnCoverage,
@@ -54,6 +54,8 @@ export function createTurnCoverageOwner(input: {
   createReadEpoch: () => ReadEpoch
   /** The user messages of the history range this pane has loaded, oldest first. */
   loadedTurnIds: () => readonly string[]
+  /** What the runtime last reported for this session. */
+  status: () => SessionStatus | undefined
 }) {
   const owner = {}
   const attempts = new Map<string, VoidFunction>()
@@ -141,6 +143,11 @@ export function createTurnCoverageOwner(input: {
    * in-memory index but not the evidence: a user message whose reply never
    * landed is a turn still owed coverage, and without this nothing would ever
    * fetch it again.
+   *
+   * Only for a session the runtime does not report idle. An idle session has
+   * nothing in flight, so the history read that painted the range is already
+   * the owner's answer for it; chasing every turn in the range would issue a
+   * coverage read per turn on open and show settled turns as still working.
    */
   let reconstructed: string | undefined
   createEffect(() => {
@@ -149,13 +156,14 @@ export function createTurnCoverageOwner(input: {
     if (!sessionID) return
     const scope = `${directory}\0${sessionID}`
     if (reconstructed === scope) return
+    const status = input.status()
+    if (!status || status.type === "idle") return
     const loaded = input.loadedTurnIds()
     // An empty range is a history that has not arrived yet, not a session with
     // no turns; reconstructing from it would conclude nothing is owed.
     if (loaded.length === 0) return
     reconstructed = scope
-    const awaiting = turnsAwaitingCoverage(loaded, (turnId) =>
-      conversationHasAssistantMessage(directory, sessionID, assistantMessageIdForUserMessage(turnId)))
+    const awaiting = turnsAwaitingCoverage(loaded, (turnId) => conversationHasTurnReply(directory, sessionID, turnId))
     for (const turnId of awaiting) requestAcceptedPromptRefresh({ directory, sessionID, messageID: turnId })
   })
 

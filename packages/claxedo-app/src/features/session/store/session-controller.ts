@@ -421,6 +421,17 @@ export function createSessionController(input: {
     return statusQuery.data ?? idleSessionStatus
   })
   const status = createActivePaneProjection({ active: paneActive, read: sourceStatus, initial: idleSessionStatus })
+
+  createTurnCoverageOwner({
+    sessionID: input.sessionID,
+    directory: input.directory,
+    paneActive,
+    client: sdk.client,
+    createReadEpoch: createActivationSessionReadEpoch,
+    loadedTurnIds: () =>
+      registeredConversationUserMessages(input.directory(), input.sessionID()).map((message) => message.id),
+    status,
+  })
   const statusReady = createMemo(() => !input.sessionID() || input.sessionID() === "new" || statusQuery.data !== undefined)
 
   const sourcePermissionRequest = createMemo(() => {
@@ -725,15 +736,6 @@ export function createSessionController(input: {
     },
   ))
 
-  createTurnCoverageOwner({
-    sessionID: input.sessionID,
-    directory: input.directory,
-    paneActive,
-    client: sdk.client,
-    createReadEpoch: createActivationSessionReadEpoch,
-    loadedTurnIds: () =>
-      registeredConversationUserMessages(input.directory(), input.sessionID()).map((message) => message.id),
-  })
 
   const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false

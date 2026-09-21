@@ -84,7 +84,7 @@ import { createActiveConversationSnapshot } from "../conversation/conversation-r
 import { isRuntimeAgentMessage } from "../conversation/agent-conversation-codec"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { isSessionTurnActive } from "../store/session-store"
-import { hasOutstandingTurnCoverage } from "../store/accepted-prompt-refresh"
+import { turnCoverageInFlight } from "../store/accepted-prompt-refresh"
 import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
 import { removeDirectorySessionTree, updateDirectorySession } from "../data/sync/directory-session-cache"
 import { mergeCanonicalSessionUpdate } from "../data/sync/session-list-events"
@@ -430,7 +430,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   // until the snapshot arrived. The request clears only after the reconciled
   // conversation is in the store, so no frame shows neither indicator.
   const turnSettleRefreshPending = (userMessageID: string) =>
-    hasOutstandingTurnCoverage(userMessageID)
+    turnCoverageInFlight(userMessageID)
   const working = createMemo(() => isSessionTurnActive({ status: sessionStatus() }))
   const directorySessionRows = createActivePaneProjection({ active: props.active, read: props.directorySessions, initial: [] as ReturnType<MessageTimelineProps["directorySessions"]> })
   const directorySession = (sessionID: string | undefined) =>
