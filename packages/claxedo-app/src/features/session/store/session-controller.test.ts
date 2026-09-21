@@ -6,6 +6,7 @@ import {
   activeSessionStatusPollingDecision,
   activeTurnTransition,
   conversationHasAssistantMessage,
+  conversationHasTurnReply,
   fetchTransportSession,
   FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
   FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
@@ -232,6 +233,58 @@ describe("session controller helpers", () => {
     expect(recorded).toBe("cur_older")
     setValue("failedCursor", key, recorded)
     expect(historyHasMore(meta(), key)).toBe(false)
+  })
+
+  // A different question from `conversationHasAssistantMessage`: not whether the
+  // turn settled, but whether the owner answered it at all. A reopened range
+  // uses this to decide which turns it still owes coverage for.
+  test("a turn with any assistant row has a reply, finished or not", () => {
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo/main",
+      sessionID: "ses_reply",
+      messages: [{
+        id: "msg_assistant",
+        sessionID: "ses_reply",
+        role: "assistant",
+        parentID: "msg_user",
+        time: { created: 1 },
+        agent: "build",
+      } as Message],
+      parts: { msg_assistant: [] },
+    })
+
+    // No parts and no finish: still an answer, which the settle check denies.
+    expect(conversationHasTurnReply("/repo/main", "ses_reply", "msg_user")).toBe(true)
+    expect(conversationHasAssistantMessage("/repo/main", "ses_reply", "msg_user_r")).toBe(false)
+  })
+
+  test("a turn the owner never answered has no reply", () => {
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo/main",
+      sessionID: "ses_unanswered",
+      messages: [{ id: "msg_user", sessionID: "ses_unanswered", role: "user", time: { created: 1 }, agent: "build" } as Message],
+      parts: { msg_user: [] },
+    })
+
+    expect(conversationHasTurnReply("/repo/main", "ses_unanswered", "msg_user")).toBe(false)
+  })
+
+  test("another turn's reply is not this turn's", () => {
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo/main",
+      sessionID: "ses_other",
+      messages: [{
+        id: "msg_assistant",
+        sessionID: "ses_other",
+        role: "assistant",
+        parentID: "msg_other",
+        time: { created: 1 },
+        agent: "build",
+      } as Message],
+      parts: { msg_assistant: [] },
+    })
+
+    expect(conversationHasTurnReply("/repo/main", "ses_other", "msg_user")).toBe(false)
   })
 
   test("assistant error messages count as present even without renderable parts", () => {

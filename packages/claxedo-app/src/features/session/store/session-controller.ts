@@ -88,7 +88,7 @@ import {
 } from "./session-activation-work"
 export { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS } from "@/platform/runtime/session-switch"
 export { resolveStoredMessages, resolveStoredParts }
-export { conversationHasAssistantMessage } from "./assistant-turn-evidence"
+export { conversationHasAssistantMessage, conversationHasTurnReply } from "./assistant-turn-evidence"
 export { firstFoldSessionPrefetch } from "./first-fold-prefetch"
 export { createSessionInfoHydrationGetter, fetchTransportSession } from "./session-transport"
 export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
@@ -432,6 +432,7 @@ export function createSessionController(input: {
       registeredConversationUserMessages(input.directory(), input.sessionID()).map((message) => message.id),
     status,
   })
+
   const statusReady = createMemo(() => !input.sessionID() || input.sessionID() === "new" || statusQuery.data !== undefined)
 
   const sourcePermissionRequest = createMemo(() => {
@@ -735,7 +736,6 @@ export function createSessionController(input: {
       }
     },
   ))
-
 
   const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false
