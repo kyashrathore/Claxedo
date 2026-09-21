@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { RecoveryOperation, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import { createMemoryRuntimeStore } from "./memory"
+import { MemoryRuntimeStore } from "./memory"
 import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
 import type { AgentRuntimeTurnFinishInput } from "../harnesses/shared/runtime-store"
 
 function store() {
-  const rows = createMemoryRuntimeStore()
+  const rows = new MemoryRuntimeStore()
   rows.bindSession({ sessionId: "ses", directory: "/repo", workspaceId: "ws", agentSessionId: "ses" })
   return rows
 }
@@ -192,19 +192,69 @@ describe("MemoryRuntimeStore recovery receipts", () => {
 })
 
 describe("MemoryRuntimeStore write authority", () => {
-  test("a finish carrying no lease at all is refused", () => {
+  // The lease is required by the type, so these casts are what a caller that
+  // reaches this store from outside its own typecheck looks like. The store is
+  // the last thing between such a caller and an unfenced write.
+  const unfenced = { sessionId: "ses", assistantMessageId: "asst_a", outcome: { status: "completed" as const, completedAt: 5 } }
+
+  test("a finish carrying no lease is refused while the session holds one", () => {
     const rows = store()
     rows.acquireTurnLease("ses")
     startTurn(rows, "msg_a", "asst_a")
 
-    // The lease is required by the type, so the cast is what a caller reaching
-    // this store across a package boundary looks like. The store is the last
-    // thing standing between such a caller and an unfenced write.
-    expect(() => rows.finishTurn({
+    expect(() => rows.finishTurn(unfenced as unknown as AgentRuntimeTurnFinishInput)).toThrow(AgentRuntimeStaleTurnError)
+    expect(rows.getSession("ses")?.status).toBe("busy")
+  })
+
+  test("a finish carrying no lease is refused even when the session granted none", () => {
+    const rows = store()
+    startTurn(rows, "msg_a", "asst_a")
+
+    // Two absent leases are not a match. A writer holding nothing has no more
+    // authority over a session that granted nothing than over one that did.
+    expect(() => rows.finishTurn(unfenced as unknown as AgentRuntimeTurnFinishInput)).toThrow(AgentRuntimeStaleTurnError)
+    expect(rows.getSession("ses")?.status).toBe("busy")
+    expect(rows.getSession("ses")?.lastTurn).toBeUndefined()
+  })
+})
+
+describe("MemoryRuntimeStore snapshots", () => {
+  test("a restored snapshot keeps the lease, and the writer that lost it is still fenced out", () => {
+    const rows = store()
+    const leaseId = rows.acquireTurnLease("ses")!
+    startTurn(rows, "msg_a", "asst_a")
+
+    const restored = new MemoryRuntimeStore()
+    restored.importSnapshot(new MemoryRuntimeStore().exportSnapshot())
+    restored.importSnapshot(rows.exportSnapshot())
+
+    // The lease outlives the reload, so the writer that holds it can still
+    // finish its turn and the session refuses to grant a second one.
+    expect(restored.readTurnAuthority("ses")).toMatchObject({ leaseId })
+    expect(restored.acquireTurnLease("ses")).toBeUndefined()
+    expect(() => restored.finishTurn({
       sessionId: "ses",
       assistantMessageId: "asst_a",
-      outcome: { status: "completed", completedAt: 5 },
-    } as unknown as AgentRuntimeTurnFinishInput)).toThrow(AgentRuntimeStaleTurnError)
-    expect(rows.getSession("ses")?.status).toBe("busy")
+      outcome: { status: "cancelled", completedAt: 5, reason: "abort" },
+      leaseId: "a-lease-from-somewhere-else",
+    })).toThrow(AgentRuntimeStaleTurnError)
+    restored.finishTurn({
+      sessionId: "ses",
+      assistantMessageId: "asst_a",
+      outcome: { status: "cancelled", completedAt: 6, reason: "abort" },
+      leaseId,
+    })
+    expect(restored.getSession("ses")?.lastTurn).toMatchObject({ status: "cancelled" })
+  })
+
+  test("a snapshot naming no leases restores a session that holds none", () => {
+    const rows = store()
+    rows.acquireTurnLease("ses")
+
+    // Not a merge: whatever this reducer was holding is not evidence about the
+    // snapshot being restored over it.
+    rows.importSnapshot({ sessions: [], seq: [] })
+
+    expect(rows.readTurnAuthority("ses")).toBeUndefined()
   })
 })

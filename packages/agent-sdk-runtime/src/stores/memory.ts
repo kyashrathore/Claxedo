@@ -380,8 +380,10 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     // Checked ahead of the active-turn read: a delayed finalization whose lease
     // has since been reissued must be refused, not quietly answered with the
-    // empty result that an already-finished turn produces.
-    if (this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
+    // empty result that an already-finished turn produces. The absent case is
+    // spelled out because comparing two absent leases would pass a writer that
+    // holds nothing over a session that has granted nothing.
+    if (input.leaseId === undefined || this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
       throw new AgentRuntimeStaleTurnError(input.sessionId)
     }
     const prev = this.sessions.get(input.sessionId)
@@ -696,6 +698,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       todos: [...this.todos.entries()].map(([sessionId, rows]) => ({ sessionId, rows })),
       recoveryErrors: [...this.recoveryErrors.entries()].map(([sessionId, message]) => ({ sessionId, message })),
       seq: [...this.seq.entries()].map(([sessionId, seq]) => ({ sessionId, seq })),
+      turnLeases: [...this.turnLeases.entries()].map(([sessionId, held]) => ({ sessionId, ...held })),
       subagents: this.subagents.map((row) => ({
         parentSessionId: row.parentSessionId,
         observation: { ...row.observation },
@@ -721,12 +724,13 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.todos = new Map((snapshot.todos ?? []).map((row) => [row.sessionId, row.rows]))
     this.recoveryErrors = new Map((snapshot.recoveryErrors ?? []).map((row) => [row.sessionId, row.message]))
     this.seq = new Map((snapshot.seq ?? []).map((row) => [row.sessionId, row.seq]))
-    if (snapshot.turnLeases) {
-      this.turnLeases = new Map(snapshot.turnLeases.map((row) => [
-        row.sessionId,
-        { leaseId: row.leaseId, acquiredAt: row.acquiredAt },
-      ]))
-    }
+    // Replaced, never merged: a snapshot naming no leases is a session that
+    // holds none, and keeping the ones already in the map would make this
+    // reducer a second authority alongside whatever produced the snapshot.
+    this.turnLeases = new Map((snapshot.turnLeases ?? []).map((row) => [
+      row.sessionId,
+      { leaseId: row.leaseId, acquiredAt: row.acquiredAt },
+    ]))
     this.subagents = (snapshot.subagents ?? []).map((row) => ({
       parentSessionId: row.parentSessionId,
       observation: { ...row.observation },
