@@ -47,6 +47,7 @@ import {
   readEmbeddedWorkspaceSessionConfig,
   shutdownEmbeddedWorkspaceRuntimes,
   verifyEmbeddedRuntimeCredential,
+  type EmbeddedRetirementResult,
 } from "../deployments/local/embedded-workspace-runtime"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
@@ -98,8 +99,17 @@ export type LocalServer = {
   app: Hono
   /** Resolves when the listener accepts connections; see startOwned. */
   ready: Promise<void>
-  /** Stops accepting connections and releases everything this started. */
-  stop: () => Promise<void>
+  /**
+   * Stops accepting connections and releases everything this started. `ok` is
+   * false when an owner refused retirement; its `results` name each one, so a
+   * launcher can report what survived instead of exiting as though nothing did.
+   */
+  stop: () => Promise<LocalServerStopResult>
+}
+
+export type LocalServerStopResult = {
+  ok: boolean
+  results: EmbeddedRetirementResult[]
 }
 
 /**
@@ -402,7 +412,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     socket.once("close", () => upgraded.delete(socket))
   })
 
-  let stopOperation: Promise<void> | undefined
+  let stopOperation: Promise<LocalServerStopResult> | undefined
   const stop = () => {
     if (stopOperation) return stopOperation
     stopping = true
@@ -443,6 +453,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
           })
         }
         await drainUsageEvents(usageEventTail, turnMeter)
+        return retirement
       } finally {
         await listenerClosed
         disposeAgentConfig()

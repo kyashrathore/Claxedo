@@ -91,13 +91,22 @@ export {
   createLocalDaemonLifecycle,
   localDaemonWorkActivity,
   type LocalDaemonLifecycle,
+  type LocalDaemonOwner,
   type LocalDaemonWorkActivity,
+  type MachineRecoveryInspection,
 } from "./app/local-daemon-lifecycle"
+export { DaemonOperationStore, localDaemonOperationStore } from "./app/daemon-operation-store"
+export {
+  claxedoDaemonOwnershipPath,
+  clearDaemonOwnershipSnapshot,
+  createDaemonOwnershipPublisher,
+  type DaemonOwnershipSnapshot,
+} from "./app/daemon-ownership-snapshot"
 export { createLocalControlPlaneServices, localSessionProjectionStore } from "./app/local-services"
 
 /** The reviewed git launch a documents backend commits through, whichever host composed it. */
 export { documentGit } from "./app/local-documents"
-export { isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
+export { DAEMON_PROTOCOL_HEADER, isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
 
 // Verified caller stamping for an embedded machine request.
 export { embeddedRelayHostAuthFromActor, EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./workspace/runtime-dispatch/embedded-relay-host-auth"

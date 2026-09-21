@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
+import type { RecoveryRequest } from "@claxedo/agent-runtime-contract"
 import {
   createLocalDaemonLifecycle,
   localDaemonResidencyPins,
@@ -8,11 +9,25 @@ import {
 const empty = (): LocalDaemonWorkActivity => ({
   pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
   runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
+  owners: [],
   residencyPins: 0,
   replacementBlockers: 0,
 })
 
+const machine = { machineId: "local", generation: "gen-1" }
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function drain(scopeRevision: string, overrides: Partial<RecoveryRequest> = {}): RecoveryRequest {
+  return {
+    requestId: `req-${Math.random().toString(16).slice(2)}`,
+    action: "drain_daemon",
+    target: { scope: "machine", machineId: "local", ownerGeneration: "gen-1" },
+    scopeRevision,
+    attempt: 1,
+    ...overrides,
+  }
+}
 
 describe("local daemon lifecycle", () => {
   test("counts active sessions, terminals, and managed processes as daemon work", () => {
@@ -33,7 +48,7 @@ describe("local daemon lifecycle", () => {
     vi.useFakeTimers()
     try {
       const onIdle = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine })
       lifecycle.start()
       const lease = lifecycle.acquire()!
 
@@ -52,7 +67,7 @@ describe("local daemon lifecycle", () => {
     vi.useFakeTimers()
     try {
       const onIdle = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine })
       lifecycle.start()
       const lease = lifecycle.acquire()!
 
@@ -68,17 +83,22 @@ describe("local daemon lifecycle", () => {
     }
   })
 
-  test("a clean app shutdown stops as soon as leases and active work are gone", async () => {
+  test("a drain holds the daemon until its owners are gone, then stops it without the handoff grace", async () => {
     vi.useFakeTimers()
     try {
       const onIdle = vi.fn()
       let pins = 1
       const activity = () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins })
-      const lifecycle = createLocalDaemonLifecycle({ activity, onIdle })
+      const lifecycle = createLocalDaemonLifecycle({ activity, onStop: onIdle, machine })
       lifecycle.start()
       const lease = lifecycle.acquire()!
+      lifecycle.release(lease.id)
 
-      lifecycle.requestShutdown(lease.id)
+      const submitted = lifecycle.recovery.submit(
+        drain(lifecycle.recovery.inspect().scopeRevision),
+        { callerId: "desktop", authority: "machine" },
+      )
+      expect(submitted.kind).toBe("operation")
       await vi.advanceTimersByTimeAsync(360_000)
       expect(onIdle).not.toHaveBeenCalled()
 
@@ -94,7 +114,7 @@ describe("local daemon lifecycle", () => {
   test("a pre-start state snapshot cannot consume lifecycle startup", () => {
     vi.useFakeTimers()
     try {
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle() {} })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
       expect(lifecycle.snapshot().state).toBe("created")
       expect(vi.getTimerCount()).toBe(0)
 
@@ -110,7 +130,7 @@ describe("local daemon lifecycle", () => {
   test("lease changes retain exactly one lifecycle timer", () => {
     vi.useFakeTimers()
     try {
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle() {} })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine })
       lifecycle.start()
       expect(vi.getTimerCount()).toBe(1)
 
@@ -130,7 +150,7 @@ describe("local daemon lifecycle", () => {
 
   test("expires a crashed desktop lease and exits after one idle grace", async () => {
     const onIdle = vi.fn()
-    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle, leaseTtlMs: 20, idleGraceMs: 20, pollIntervalMs: 2 })
+    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, leaseTtlMs: 20, idleGraceMs: 20, pollIntervalMs: 2 })
     lifecycle.start()
     lifecycle.acquire()
 
@@ -144,7 +164,7 @@ describe("local daemon lifecycle", () => {
     vi.useFakeTimers()
     try {
       const onIdle = vi.fn()
-      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle, leaseTtlMs: 30, idleGraceMs: 15, pollIntervalMs: 2 })
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop: onIdle, machine, leaseTtlMs: 30, idleGraceMs: 15, pollIntervalMs: 2 })
       lifecycle.start()
       const lease = lifecycle.acquire()!
       await vi.advanceTimersByTimeAsync(20)
@@ -163,7 +183,7 @@ describe("local daemon lifecycle", () => {
     const onIdle = vi.fn()
     let pins = 1
     const activity = () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins })
-    const lifecycle = createLocalDaemonLifecycle({ activity, onIdle, leaseTtlMs: 20, idleGraceMs: 15, pollIntervalMs: 2 })
+    const lifecycle = createLocalDaemonLifecycle({ activity, onStop: onIdle, machine, leaseTtlMs: 20, idleGraceMs: 15, pollIntervalMs: 2 })
     lifecycle.start()
 
     await wait(50)
@@ -175,7 +195,7 @@ describe("local daemon lifecycle", () => {
   })
 
   test("an expired lease cannot be renewed", async () => {
-    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle() {}, leaseTtlMs: 15, idleGraceMs: 100, pollIntervalMs: 2 })
+    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onStop() {}, machine, leaseTtlMs: 15, idleGraceMs: 100, pollIntervalMs: 2 })
     lifecycle.start()
     const lease = lifecycle.acquire()!
     await wait(20)

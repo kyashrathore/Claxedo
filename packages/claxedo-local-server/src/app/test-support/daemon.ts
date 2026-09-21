@@ -10,6 +10,7 @@
 
 import { randomUUID } from "node:crypto"
 import { DAEMON_CAPABILITY_HEADER } from "../daemon-admission"
+import { DAEMON_PROTOCOL_HEADER } from "../local-app"
 import { createLocalDaemonLifecycle } from "../local-daemon-lifecycle"
 import type { LocalAppOptions } from "../local-app"
 
@@ -43,15 +44,19 @@ export function openDaemonSocket(url: string, capability: Record<string, string>
 
 export function testDaemon(): TestDaemon {
   const token = `daemon-capability-${randomUUID()}`
-  const capability = { [DAEMON_CAPABILITY_HEADER]: token }
+  const generation = `generation-${randomUUID()}`
+  const capability = { [DAEMON_CAPABILITY_HEADER]: token, [DAEMON_PROTOCOL_HEADER]: "1" }
   return {
     token,
     capability,
     call: (url, init = {}) =>
       fetch(url, { ...init, headers: { ...capability, ...Object.fromEntries(new Headers(init.headers)) } }),
     daemon: {
-      identity: { token, protocol: 1, generation: `generation-${randomUUID()}`, pid: process.pid },
-      lifecycle: createLocalDaemonLifecycle({ onIdle: () => {} }),
+      identity: { token, protocol: 1, generation, pid: process.pid },
+      lifecycle: createLocalDaemonLifecycle({
+        onStop: () => {},
+        machine: { machineId: "local", generation },
+      }),
     },
   }
 }

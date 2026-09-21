@@ -68,6 +68,40 @@ export function daemonCapability(token: string): string {
 }
 
 /**
+ * Paths that answer while machine ingress is closed.
+ *
+ * Recovery and inspection are exactly the surfaces whoever must decide what to
+ * do about the fence needs. A session Stop submitted during a machine drain is
+ * served through the session recovery route immediately: it is a narrower
+ * authorization the caller already holds, not a request to widen the drain, so
+ * it never waits for one.
+ */
+export function servedDuringMachineRecovery(method: string, pathname: string): boolean {
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return true
+  if (pathname.startsWith("/api/claxedo/daemon")) return true
+  return /\/session\/[^/]+\/recovery(\/operations\/[^/]+)?$/.test(pathname)
+}
+
+/**
+ * Closes this machine to new work while a machine-scope operation is
+ * outstanding. Mounted ahead of every route family, because the fence is a
+ * property of the machine rather than of whichever handler admits a turn.
+ */
+export function machineRecoveryFence(pending: () => { operationId: string } | undefined): MiddlewareHandler {
+  return async (c, next) => {
+    const gate = pending()
+    if (!gate || servedDuringMachineRecovery(c.req.method, new URL(c.req.raw.url).pathname)) return next()
+    return c.json(
+      errorBody(
+        "machine_recovery_pending",
+        `This machine is held by recovery operation ${gate.operationId}; new work is refused until it is resolved or released`,
+      ),
+      503,
+    )
+  }
+}
+
+/**
  * Requests this process built for itself. Object identity is the one property a
  * network peer cannot forge, and entries die with the request.
  */

@@ -1,7 +1,44 @@
+import { createHash, randomUUID } from "node:crypto"
+import {
+  DEFAULT_RECOVERY_BUDGETS,
+  finalizeRecoveryOperation,
+  recoveryIntentEquals,
+  recoveryTargetsMatch,
+  type RecoveryBudgets,
+  type RecoveryError,
+  type RecoveryFacts,
+  type RecoveryMachineTarget,
+  type RecoveryOperation,
+  type RecoveryOutcome,
+  type RecoveryPhase,
+  type RecoveryRequest,
+  type RecoveryScopePreview,
+  type RecoveryTarget,
+} from "@claxedo/agent-runtime-contract"
 import { Pty } from "@claxedo/workspace-runtime"
 import { embeddedWorkspaceRuntimeActivity } from "../deployments/local/embedded-workspace-runtime"
+import type { DaemonOperationStore } from "./daemon-operation-store"
 
 export type LocalDaemonWorkActivity = ReturnType<typeof localDaemonWorkActivity>
+
+/**
+ * One thing this daemon still owns, by name. A drain reports these rather than
+ * a count, because an operator deciding whether to stop a machine has to know
+ * which workspace or terminal is holding it, and a number names nothing.
+ */
+export type LocalDaemonOwner = {
+  id: string
+  kind: "workspace_runtime" | "terminal" | "managed_process"
+  /**
+   * What makes this owner answerable across a restart: a gate acknowledged for
+   * one generation does not carry to a replacement wearing the same id.
+   */
+  generation: string
+  state: string
+  /** Whether this owner keeps the daemon resident. */
+  pins: boolean
+  detail?: string
+}
 
 export function localDaemonResidencyPins(
   pty: ReturnType<typeof Pty.activity>,
@@ -12,6 +49,37 @@ export function localDaemonResidencyPins(
   return pty.running + runtime.activeTurns + runtime.activeWrites + runtime.checkpointing
 }
 
+export function localDaemonOwners(
+  terminals: ReturnType<typeof Pty.listDetailed>,
+  runtime: ReturnType<typeof embeddedWorkspaceRuntimeActivity>,
+): LocalDaemonOwner[] {
+  const owners: LocalDaemonOwner[] = runtime.owners.map((owner) => ({
+    id: `workspace:${owner.workspaceId}`,
+    kind: "workspace_runtime" as const,
+    generation: `${owner.state}#${owner.attempt}`,
+    state: owner.state,
+    // A serving runtime releases with the process it runs in; one whose
+    // retirement never settled holds resources nothing accounted for.
+    pins: owner.state !== "serving",
+    ...(owner.error ? { detail: owner.error } : {}),
+  }))
+  for (const terminal of terminals) {
+    const unresolved = terminal.cleanup === "unresolved"
+    if (!unresolved && (terminal.removed || terminal.exited || terminal.status !== "running")) continue
+    owners.push({
+      id: `terminal:${terminal.id}`,
+      kind: terminal.managed ? "managed_process" : "terminal",
+      generation: String(terminal.pid),
+      state: unresolved ? "cleanup_unresolved" : terminal.status,
+      pins: true,
+      ...(unresolved && terminal.cleanupResult
+        ? { detail: `leader ${terminal.cleanupResult.leader}, descendants ${terminal.cleanupResult.descendants}` }
+        : {}),
+    })
+  }
+  return owners.sort((a, b) => a.id.localeCompare(b.id))
+}
+
 export function localDaemonWorkActivity() {
   const pty = Pty.activity()
   const runtime = embeddedWorkspaceRuntimeActivity()
@@ -19,11 +87,47 @@ export function localDaemonWorkActivity() {
   return {
     pty,
     runtime,
+    owners: localDaemonOwners(Pty.listDetailed(), runtime),
     residencyPins,
     // Today every live local process or in-flight mutation is tied to this
     // process generation. A future replacement protocol may reduce this set,
     // but it must do so by transferring ownership rather than guessing.
     replacementBlockers: residencyPins,
+  }
+}
+
+/**
+ * The revision a caller authorizes against. It covers every named owner and the
+ * agent work the workspace runtimes report, so a terminal opened or a turn
+ * admitted between a preview and the action it authorized changes it.
+ */
+export function localDaemonScopeRevision(work: LocalDaemonWorkActivity): string {
+  const shape = [
+    work.owners.map((owner) => [owner.id, owner.generation, owner.state]),
+    work.runtime.activeTurns,
+    work.runtime.activeWrites,
+    work.runtime.checkpointing,
+  ]
+  return createHash("sha256").update(JSON.stringify(shape)).digest("hex").slice(0, 16)
+}
+
+/**
+ * What an escalation would interrupt. Agent turns appear as one resource with
+ * their count: this daemon's inventory reaches each workspace runtime but not
+ * the turns inside it, and listing a number among the names would let a caller
+ * believe the list is complete.
+ */
+export function localDaemonScopePreview(work: LocalDaemonWorkActivity): RecoveryScopePreview {
+  const resources = work.owners.map((owner) => `${owner.id} (${owner.state})`)
+  if (work.runtime.activeTurns > 0) resources.push(`agent turns: ${work.runtime.activeTurns}`)
+  if (work.runtime.activeWrites > 0) resources.push(`workspace writes: ${work.runtime.activeWrites}`)
+  if (work.runtime.checkpointing > 0) resources.push(`checkpoint transitions: ${work.runtime.checkpointing}`)
+  return {
+    sessions: [],
+    resources,
+    summary: work.runtime.activeTurns > 0
+      ? `${work.owners.length} named owners and ${work.runtime.activeTurns} agent turns this daemon does not name individually`
+      : `${work.owners.length} named owners`,
   }
 }
 
@@ -35,9 +139,45 @@ export type LocalDaemonLease = Readonly<{
 
 export type LocalDaemonLifecycle = ReturnType<typeof createLocalDaemonLifecycle>
 
+/** Who a machine operation is recorded against. Only machine authority may mutate. */
+export type MachineRecoveryCaller = { callerId: string; authority: "session" | "workspace" | "machine" }
+
+export type MachineRecoveryGate = { operationId: string; scopeRevision: string; owners: string[] }
+
+export type MachineRecoveryInspection = {
+  machineId: string
+  generation: string
+  target: RecoveryMachineTarget
+  scopeRevision: string
+  owners: LocalDaemonOwner[]
+  preview: RecoveryScopePreview
+  residencyPins: number
+  /** Present while machine ingress is closed for an operation. */
+  gate?: MachineRecoveryGate
+  operations: RecoveryOperation[]
+  receipt: "durable" | "volatile"
+}
+
+type MachineOperationRun = {
+  operation: RecoveryOperation
+  callers: Set<string>
+  settled: Promise<void>
+}
+
 export function createLocalDaemonLifecycle(options: {
   activity?: () => LocalDaemonWorkActivity
-  onIdle: () => void | Promise<void>
+  /** Requests that this process stop: reached by idle grace and by `stop_daemon`. */
+  onStop: () => void | Promise<void>
+  machine: {
+    machineId: string
+    generation: string
+    /**
+     * Opened on first use rather than at composition: the lifecycle is created
+     * before the database is. Absent, or throwing, makes every receipt volatile.
+     */
+    operations?: () => DaemonOperationStore
+    budgets?: Partial<RecoveryBudgets>
+  }
   leaseTtlMs?: number
   idleGraceMs?: number
   pollIntervalMs?: number
@@ -48,10 +188,24 @@ export function createLocalDaemonLifecycle(options: {
   const idleGraceMs = positive(options.idleGraceMs, 180_000)
   const pollIntervalMs = positive(options.pollIntervalMs, 1_000)
   const now = options.now ?? Date.now
+  const budgets: RecoveryBudgets = { ...DEFAULT_RECOVERY_BUDGETS, ...options.machine.budgets }
+  const machineTarget: RecoveryMachineTarget = {
+    scope: "machine",
+    machineId: options.machine.machineId,
+    ownerGeneration: options.machine.generation,
+  }
   const leases = new Map<string, LocalDaemonLease>()
+  const runs = new Map<string, MachineOperationRun>()
+  let operationStore: DaemonOperationStore | undefined
+  let gate: MachineRecoveryGate | undefined
+
+  function operations() {
+    if (!options.machine.operations) return undefined
+    operationStore ??= options.machine.operations()
+    return operationStore
+  }
   let timer: ReturnType<typeof setTimeout> | undefined
   let idleSince: number | undefined
-  let shutdownRequested = false
   let state: "created" | "running" | "idle" | "stopping" | "stopped" = "created"
 
   function clearTimer() {
@@ -91,7 +245,9 @@ export function createLocalDaemonLifecycle(options: {
     }
     idleSince ??= at
     if (state !== "stopping" && state !== "stopped") state = "idle"
-    const graceMs = shutdownRequested ? 0 : idleGraceMs
+    // The handoff window exists for a launcher that is coming back. A drain
+    // holding the gate is the launcher saying it is not.
+    const graceMs = gate ? 0 : idleGraceMs
     return { at, work, residencyPins, idleRemainingMs: Math.max(0, graceMs - (at - idleSince)) }
   }
 
@@ -101,7 +257,7 @@ export function createLocalDaemonLifecycle(options: {
     const current = evaluate()
     if (current.residencyPins === 0 && current.idleRemainingMs === 0) {
       state = "stopping"
-      void Promise.resolve(options.onIdle()).finally(() => {
+      void Promise.resolve(options.onStop()).finally(() => {
         state = "stopped"
       })
       return
@@ -123,10 +279,324 @@ export function createLocalDaemonLifecycle(options: {
     tick()
   }
 
+  function facts(work: LocalDaemonWorkActivity, at: number): RecoveryFacts {
+    const drained = work.residencyPins === 0
+    const generation = options.machine.generation
+    const unresolved = work.owners.some((owner) => owner.state === "cleanup_unresolved")
+    return {
+      execution: { value: drained ? "terminal" : "running", source: "local-daemon", observedAt: at, generation },
+      // A terminal whose retirement never settled is the one thing this daemon
+      // knows it did not clear; everything else it owns ends with the process.
+      cleanup: {
+        value: drained ? (unresolved ? "unknown" : "verified_clear") : "owned",
+        source: "local-daemon",
+        observedAt: at,
+        generation,
+      },
+      persistence: {
+        value: options.machine.operations ? "committed" : "unavailable",
+        source: "local-daemon",
+        observedAt: at,
+        generation,
+      },
+    }
+  }
+
+  function persist(operation: RecoveryOperation, request: RecoveryRequest, caller: MachineRecoveryCaller) {
+    if (!options.machine.operations) return { receipt: "volatile" as const }
+    try {
+      const recorded = operations()!.record(operation, caller, request)
+      if (recorded.created) return { receipt: "durable" as const }
+      return { receipt: "durable" as const, existing: recorded.existing }
+    } catch (error) {
+      return { receipt: "volatile" as const, failure: storeFailure(error, request.target, "ack", now()) }
+    }
+  }
+
+  function commit(operation: RecoveryOperation) {
+    if (!options.machine.operations || operation.receipt === "volatile") return operation
+    try {
+      operations()!.update(operation)
+      return operation
+    } catch (error) {
+      return {
+        ...operation,
+        receipt: "volatile" as const,
+        cleanupErrors: [...operation.cleanupErrors, storeFailure(error, operation.target, operation.phase, now())],
+      }
+    }
+  }
+
+  /**
+   * Writes every named owner's gate before any of them is acted on. A crash
+   * between two of these writes leaves the earlier ones readable, which is what
+   * lets a restart reconstruct the gated subset instead of assuming it is empty.
+   */
+  function recordGates(operationId: string, owners: LocalDaemonOwner[], at: number) {
+    const store = operations()
+    if (!store) return owners.map((owner) => owner.id)
+    const acknowledged: string[] = []
+    for (const owner of owners) {
+      const row = store.acknowledgeGate({
+        operationId,
+        ownerId: owner.id,
+        ownerGeneration: owner.generation,
+        acknowledgedAt: at,
+      })
+      if (row.accepted) acknowledged.push(owner.id)
+    }
+    return acknowledged
+  }
+
+  function inspect(): MachineRecoveryInspection {
+    const work = activity()
+    return {
+      machineId: options.machine.machineId,
+      generation: options.machine.generation,
+      target: machineTarget,
+      scopeRevision: localDaemonScopeRevision(work),
+      owners: work.owners,
+      preview: localDaemonScopePreview(work),
+      residencyPins: work.residencyPins + leases.size,
+      ...(gate ? { gate } : {}),
+      operations: [...runs.values()].map((run) => run.operation),
+      receipt: options.machine.operations ? "durable" : "volatile",
+    }
+  }
+
+  async function runDrain(operationId: string, deadlineAt: number) {
+    const run = runs.get(operationId)
+    if (!run) return
+    for (;;) {
+      const work = activity()
+      const at = now()
+      if (work.residencyPins + leases.size === 0) {
+        run.operation = commit(finalizeRecoveryOperation({ ...run.operation, updatedAt: at }, facts(work, at)))
+        return
+      }
+      if (at >= deadlineAt) {
+        const blocked: RecoveryError = {
+          code: "deadline_exceeded",
+          origin: "local-daemon",
+          target: run.operation.target,
+          stage: "drain",
+          executionMayContinue: true,
+          message: `the drain deadline passed with ${localDaemonScopePreview(work).resources.join("; ")} still owned`,
+          at,
+        }
+        run.operation = commit({
+          ...finalizeRecoveryOperation({ ...run.operation, updatedAt: at, initiatingError: blocked }, facts(work, at)),
+          nextActions: [
+            { action: "drain_daemon", scopePreviewRequired: true, reason: "wait for the named owners again" },
+            { action: "stop_daemon", scopePreviewRequired: true, reason: "stop this daemon and the owners it still holds" },
+          ],
+        })
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(1, deadlineAt - at))))
+    }
+  }
+
+  async function runStop(operationId: string) {
+    const run = runs.get(operationId)
+    if (!run) return
+    state = "stopping"
+    try {
+      await options.onStop()
+    } finally {
+      state = "stopped"
+    }
+    const at = now()
+    const work = activity()
+    run.operation = commit(finalizeRecoveryOperation({ ...run.operation, updatedAt: at }, facts(work, at)))
+  }
+
+  function submit(request: RecoveryRequest, caller: MachineRecoveryCaller): RecoveryOutcome {
+    if (caller.authority !== "machine") {
+      return {
+        kind: "refused",
+        refusal: { kind: "unauthorized", message: "a machine recovery operation requires this machine's daemon authority" },
+      }
+    }
+    if (request.action !== "drain_daemon" && request.action !== "stop_daemon") {
+      return { kind: "refused", refusal: { kind: "unauthorized", message: `the daemon owner does not serve ${request.action}` } }
+    }
+    if (!recoveryTargetsMatch(request.target, machineTarget)) {
+      return {
+        kind: "refused",
+        refusal: {
+          kind: "generation_conflict",
+          message: "the request names a different machine or daemon generation",
+          current: machineTarget,
+        },
+      }
+    }
+
+    const at = now()
+    const work = activity()
+    const scopeRevision = localDaemonScopeRevision(work)
+    // A stop removes owners, so it runs only against the exact scope its caller
+    // was shown. A drain gates and waits, so it accepts the current scope and
+    // reports what it could not drain through its own result.
+    if (request.action === "stop_daemon" && request.scopeRevision !== scopeRevision) {
+      return {
+        kind: "refused",
+        refusal: {
+          kind: "scope_changed",
+          message: "the machine's owners changed since the preview this stop was authorized against",
+          scopeRevision,
+          preview: localDaemonScopePreview(work),
+        },
+      }
+    }
+
+    const existingRun = gate && gate.operationId !== request.linkedOperationId ? runs.get(gate.operationId) : undefined
+    if (existingRun) {
+      if (request.action === "drain_daemon" && existingRun.operation.action === "drain_daemon") {
+        existingRun.callers.add(caller.callerId)
+        return { kind: "operation", operation: existingRun.operation }
+      }
+      if (request.action === "drain_daemon") {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "scope_changed",
+            message: `machine ingress is already closed for operation ${existingRun.operation.operationId}`,
+            scopeRevision,
+            preview: localDaemonScopePreview(work),
+          },
+        }
+      }
+    }
+
+    const phase: RecoveryPhase = request.action === "drain_daemon" ? "drain" : "term_grace"
+    let operation: RecoveryOperation = {
+      operationId: randomUUID(),
+      requestId: request.requestId,
+      target: request.target,
+      action: request.action,
+      scopeRevision,
+      attempt: request.attempt,
+      state: "running",
+      phase,
+      phaseDeadlineAt: at + budgets.drainMs,
+      facts: facts(work, at),
+      cleanupErrors: [],
+      nextActions: [],
+      receipt: "durable",
+      ...(request.linkedOperationId !== undefined ? { linkedOperationId: request.linkedOperationId } : {}),
+      createdAt: at,
+      updatedAt: at,
+    }
+
+    const recorded = persist(operation, request, caller)
+    if (recorded.existing) {
+      if (!recoveryIntentEquals(request, requestOf(recorded.existing))) {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "intent_conflict",
+            message: "this request id was already used for a different machine operation",
+            requestId: request.requestId,
+          },
+        }
+      }
+      const joined = runs.get(recorded.existing.operationId)
+      joined?.callers.add(caller.callerId)
+      return { kind: "operation", operation: joined?.operation ?? recorded.existing }
+    }
+    if (recorded.receipt === "volatile") {
+      operation = {
+        ...operation,
+        receipt: "volatile",
+        ...(recorded.failure ? { cleanupErrors: [recorded.failure] } : {}),
+      }
+    }
+
+    // Ingress closes with acceptance, before any owner is gated or stopped, so
+    // nothing enters a scope that was just authorized for removal.
+    const acknowledged = recordGates(operation.operationId, work.owners, at)
+    gate = { operationId: operation.operationId, scopeRevision, owners: acknowledged }
+
+    const run: MachineOperationRun = { operation, callers: new Set([caller.callerId]), settled: Promise.resolve() }
+    runs.set(operation.operationId, run)
+    run.settled = request.action === "drain_daemon"
+      ? runDrain(operation.operationId, at + budgets.drainMs)
+      : runStop(operation.operationId)
+    return { kind: "operation", operation: run.operation }
+  }
+
+  function read(operationId: string): RecoveryOutcome {
+    const run = runs.get(operationId)
+    if (run) return { kind: "operation", operation: run.operation }
+    const stored = operations()?.read(operationId)
+    if (stored) return { kind: "operation", operation: stored }
+    return {
+      kind: "refused",
+      refusal: {
+        kind: "receipt_expired",
+        message: `machine operation ${operationId} is not held on this machine`,
+        requestId: operationId,
+      },
+    }
+  }
+
+  /**
+   * Restores the fence an incomplete machine operation left behind. A drain is
+   * bookkeeping, so the authorization still covers an unchanged scope and its
+   * wait resumes; a stop is destructive, so it returns to its caller for a fresh
+   * decision with every gate it took still recorded.
+   */
+  function reconcileMachineOperations() {
+    const store = operations()
+    if (!store) return
+    const outstanding = store.outstanding()
+    if (outstanding.length === 0) return
+    const work = activity()
+    const scopeRevision = localDaemonScopeRevision(work)
+    const at = now()
+    for (const operation of outstanding) {
+      const gates = store.gates(operation.operationId)
+      const run: MachineOperationRun = { operation, callers: new Set(), settled: Promise.resolve() }
+      runs.set(operation.operationId, run)
+      gate ??= {
+        operationId: operation.operationId,
+        scopeRevision: operation.scopeRevision,
+        owners: gates.map((row) => row.ownerId),
+      }
+      if (operation.action === "drain_daemon" && operation.scopeRevision === scopeRevision) {
+        run.settled = runDrain(operation.operationId, at + budgets.drainMs)
+        continue
+      }
+      const restarted: RecoveryError = {
+        code: "owner_unavailable",
+        origin: "local-daemon",
+        target: operation.target,
+        stage: operation.phase,
+        executionMayContinue: true,
+        message: operation.scopeRevision === scopeRevision
+          ? `this daemon restarted while the operation was running; its ${gates.length} gates are retained and it must be authorized again`
+          : `this daemon restarted and its owners changed; ${gates.length} gates are retained and a new preview is required`,
+        at,
+      }
+      run.operation = commit({
+        ...operation,
+        state: "needs_action",
+        updatedAt: at,
+        initiatingError: restarted,
+        nextActions: [
+          { action: "inspect", scopePreviewRequired: false, reason: "read the owners this daemon holds now" },
+          { action: operation.action, scopePreviewRequired: true, reason: "authorize the operation against the current scope" },
+        ],
+      })
+    }
+  }
+
   return {
     start() {
       if (state !== "created") return
       state = "running"
+      reconcileMachineOperations()
       changed()
     },
     stop() {
@@ -135,10 +605,9 @@ export function createLocalDaemonLifecycle(options: {
       leases.clear()
     },
     acquire(client = "desktop") {
-      if (state === "stopping" || state === "stopped") return undefined
-      const lease = { id: crypto.randomUUID(), client, expiresAt: now() + leaseTtlMs }
+      if (state === "stopping" || state === "stopped" || gate) return undefined
+      const lease = { id: randomUUID(), client, expiresAt: now() + leaseTtlMs }
       leases.set(lease.id, lease)
-      shutdownRequested = false
       idleSince = undefined
       changed()
       return lease
@@ -159,11 +628,24 @@ export function createLocalDaemonLifecycle(options: {
       if (released) changed()
       return released
     },
-    requestShutdown(leaseId: string) {
-      const released = leases.delete(leaseId)
-      shutdownRequested = true
-      changed()
-      return { shutdownRequested: true as const, released }
+    recovery: {
+      inspect,
+      submit,
+      read,
+      /**
+       * What daemon admission asks before letting new session or prompt work in.
+       * Recovery and inspection are answered regardless: whoever has to decide
+       * what to do about the fence must be able to see through it.
+       */
+      ingressClosed() {
+        return gate
+      },
+      target: machineTarget,
+      budgets,
+      /** Joins the operations this owner started. Tests await it; admission does not. */
+      settled() {
+        return Promise.all([...runs.values()].map((run) => run.settled))
+      },
     },
     reconcile: changed,
     snapshot() {
@@ -174,11 +656,38 @@ export function createLocalDaemonLifecycle(options: {
         leaseTtlMs,
         idleGraceMs,
         idleSince,
-        shutdownRequested,
         residencyPins: current.residencyPins,
         work: current.work,
+        ...(gate ? { machineRecovery: gate } : {}),
       }
     },
+  }
+}
+
+/**
+ * The request an already recorded operation was created from. Only the intent
+ * is compared, and the operation carries every field of it.
+ */
+function requestOf(operation: RecoveryOperation): RecoveryRequest {
+  return {
+    requestId: operation.requestId,
+    action: operation.action,
+    target: operation.target,
+    scopeRevision: operation.scopeRevision,
+    attempt: operation.attempt,
+    ...(operation.linkedOperationId !== undefined ? { linkedOperationId: operation.linkedOperationId } : {}),
+  }
+}
+
+function storeFailure(error: unknown, target: RecoveryTarget, stage: RecoveryPhase, at: number): RecoveryError {
+  return {
+    code: "persistence_unavailable",
+    origin: "local-daemon",
+    target,
+    stage,
+    executionMayContinue: true,
+    message: `this machine's operation store refused the receipt: ${error instanceof Error ? error.message : String(error)}`,
+    at,
   }
 }
 

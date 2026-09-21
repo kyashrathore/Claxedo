@@ -66,8 +66,16 @@ import {
 import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
-import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
-import { raw, record } from "../platform/json"
+import type { LocalDaemonLifecycle, MachineRecoveryCaller } from "./local-daemon-lifecycle"
+import {
+  RecoveryContractError,
+  parseRecoveryRequest,
+  serializeRecoveryOutcome,
+  type RecoveryOutcome,
+  type RecoveryRefusal,
+  type RecoveryRequest,
+} from "@claxedo/agent-runtime-contract"
+import { machineRecoveryFence } from "./daemon-admission"
 import { localDocumentsRoutes } from "./local-documents"
 
 /**
@@ -88,6 +96,38 @@ export function isLocalCredentialPath(path: string): boolean {
  * Loopback plus the product's own web origin. Deliberately not paired with
  * `credentials: true` — see the cors mount below.
  */
+/**
+ * The management protocol the caller declares. Both halves of this protocol
+ * are literals in two packages, so a client that does not send it is one built
+ * before the header existed and is refused rather than guessed at.
+ */
+export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
+
+const RECOVERY_REFUSAL_STATUS: Readonly<Record<RecoveryRefusal["kind"], 403 | 409 | 410 | 426 | 503>> = {
+  generation_conflict: 409,
+  intent_conflict: 409,
+  scope_changed: 409,
+  receipt_expired: 410,
+  unauthorized: 403,
+  unavailable: 503,
+  version_update_required: 426,
+}
+
+function recoveryOutcome(c: Context, outcome: RecoveryOutcome) {
+  const status = outcome.kind === "operation" ? 200 : RECOVERY_REFUSAL_STATUS[outcome.refusal.kind]
+  return c.body(serializeRecoveryOutcome(outcome), status, { "content-type": "application/json" })
+}
+
+/**
+ * Only the daemon bearer reaches these routes, and that bearer IS this
+ * machine's authority. The client name is a label for the receipt, never the
+ * authority: a caller able to name its own authority could escalate itself.
+ */
+function daemonCaller(c: Context): MachineRecoveryCaller {
+  const client = c.req.header("x-claxedo-daemon-client")?.trim()
+  return { callerId: `daemon-capability:${client || "unnamed"}`, authority: "machine" }
+}
+
 export function localCorsOrigin(origin: string): string | undefined {
   if (origin.startsWith("http://localhost:")) return origin
   if (origin.startsWith("http://127.0.0.1:")) return origin
@@ -120,6 +160,8 @@ export type LocalAppOptions = {
       protocol: number
       generation: string
       pid: number
+      /** This process's OS creation identity, for a launcher that must signal it. */
+      creation?: unknown
     }
     lifecycle: LocalDaemonLifecycle
   }
@@ -221,6 +263,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     c.json({ healthy: true, version: env.npm_package_version || "1.0.0" }))
   if (options.daemon) {
     const { identity, lifecycle } = options.daemon
+    app.use(machineRecoveryFence(() => lifecycle.recovery.ingressClosed()))
     const authorized = (provided: string | undefined) => {
       const token = provided?.replace(/^Bearer\s+/i, "") ?? ""
       const expectedBytes = Buffer.from(identity.token)
@@ -229,6 +272,33 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     }
     const unauthorized = (c: Context) =>
       c.json({ error: { code: "daemon_identity_unauthorized", message: "Daemon token is invalid" } }, 401)
+    /**
+     * A client that does not state a protocol this daemon serves is refused
+     * before anything else answers it. That refusal is what a launcher acts on
+     * instead of deciding, from a failed call, that the daemon is unhealthy and
+     * signalling a pid it never identified.
+     */
+    const incompatible = (c: Context) => {
+      const declared = Number(c.req.header(DAEMON_PROTOCOL_HEADER))
+      if (declared === identity.protocol) return undefined
+      return c.body(
+        serializeRecoveryOutcome({
+          kind: "refused",
+          refusal: {
+            kind: "version_update_required",
+            message: `This daemon serves management protocol ${identity.protocol}; the caller declared ${
+              Number.isInteger(declared) ? String(declared) : "none"
+            }. Update both halves and restart.`,
+            contractVersion: identity.protocol,
+          },
+        }),
+        426,
+        { "content-type": "application/json" },
+      )
+    }
+    const guard = (c: Context) => (authorized(c.req.header("authorization")) ? incompatible(c) : unauthorized(c))
+    // The identity route answers its own protocol to any authorized caller:
+    // refusing it on version would leave an old client unable to learn why.
     app.get("/api/claxedo/daemon", (c) => {
       if (!authorized(c.req.header("authorization"))) return unauthorized(c)
       return c.json({
@@ -236,35 +306,57 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         protocol: identity.protocol,
         generation: identity.generation,
         pid: identity.pid,
+        ...(identity.creation ? { identity: identity.creation } : {}),
       })
     })
     app.get("/api/claxedo/daemon/state", (c) => {
-      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const refused = guard(c)
+      if (refused) return refused
       return c.json(lifecycle.snapshot())
     })
+    app.get("/api/claxedo/daemon/recovery", (c) => {
+      const refused = guard(c)
+      if (refused) return refused
+      return c.json(lifecycle.recovery.inspect())
+    })
+    app.post("/api/claxedo/daemon/recovery", async (c) => {
+      const refused = guard(c)
+      if (refused) return refused
+      let request: RecoveryRequest
+      try {
+        request = parseRecoveryRequest(await c.req.json().catch(() => undefined))
+      } catch (error) {
+        if (!(error instanceof RecoveryContractError)) throw error
+        return c.json(
+          { error: { code: "recovery_request_invalid", message: error.message, data: { code: error.code } } },
+          400,
+        )
+      }
+      return recoveryOutcome(c, lifecycle.recovery.submit(request, daemonCaller(c)))
+    })
+    app.get("/api/claxedo/daemon/recovery/operations/:operationId", (c) => {
+      const refused = guard(c)
+      if (refused) return refused
+      return recoveryOutcome(c, lifecycle.recovery.read(c.req.param("operationId")))
+    })
     app.post("/api/claxedo/daemon/leases", (c) => {
-      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const refused = guard(c)
+      if (refused) return refused
       const lease = lifecycle.acquire(c.req.header("x-claxedo-daemon-client")?.trim() || "desktop")
       if (!lease) return c.json({ error: { code: "daemon_stopping", message: "Daemon is stopping" } }, 409)
       return c.json(lease, 201)
     })
     app.put("/api/claxedo/daemon/leases/:leaseId", (c) => {
-      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const refused = guard(c)
+      if (refused) return refused
       const lease = lifecycle.renew(c.req.param("leaseId"))
       if (!lease) return c.json({ error: { code: "daemon_lease_not_found", message: "Daemon lease was not found" } }, 404)
       return c.json(lease)
     })
     app.delete("/api/claxedo/daemon/leases/:leaseId", (c) => {
-      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const refused = guard(c)
+      if (refused) return refused
       return c.json({ released: lifecycle.release(c.req.param("leaseId")) })
-    })
-    app.post("/api/claxedo/daemon/shutdown", async (c) => {
-      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
-      const leaseId = raw(record(await c.req.json().catch(() => undefined))?.leaseId)
-      if (!leaseId) {
-        return c.json({ error: { code: "daemon_shutdown_invalid_body", message: "A lease ID is required" } }, 400)
-      }
-      return c.json(lifecycle.requestShutdown(leaseId))
     })
   }
 

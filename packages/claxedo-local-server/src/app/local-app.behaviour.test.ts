@@ -282,10 +282,12 @@ describe("local composition — health and telemetry", () => {
       activity: () => ({
         pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
         runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
+        owners: [],
         residencyPins: 0,
         replacementBlockers: 0,
       }),
-      onIdle,
+      onStop: onIdle,
+      machine: { machineId: "local", generation: "generation-1" },
     })
     lifecycle.start()
     const local = app({ daemon: { identity, lifecycle } })
