@@ -61,7 +61,6 @@ import {
 import { createReviewContentQueue } from "./review-content-queue"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { afterVisibleWork } from "./review-deferred-work"
-import { warmDiffHighlightWorkerPool } from "@/ui/session-kit-loaders"
 import { callEventHandler } from "@/ui/event-handler"
 
 
@@ -109,9 +108,6 @@ function initialDiffStyle(): "unified" | "split" {
 }
 
 export function ReviewTab(props: ReviewTabProps) {
-  // Reactive, not plain refs: a focus request can arrive before the surface
-  // mounts, and the request is applied when these appear rather than retried.
-  const [revealCodeViewFile, setRevealCodeViewFile] = createSignal<((file: string) => void) | undefined>()
   const comments = useComments()
   const file = useFile()
   const language = useLanguage()
@@ -374,15 +370,6 @@ export function ReviewTab(props: ReviewTabProps) {
     const diff = diffs().find((diff) => diff.file === file)
     return (diff?.additions ?? 0) + (diff?.deletions ?? 0)
   }
-  // A corpus on screen is a promise that some row will be expanded. Build the
-  // highlighter's workers now, while the surface is idle, instead of inside
-  // the expand click — see `warmDiffHighlightWorkerPool`.
-  createEffect(() => {
-    if (diffs().length === 0) return
-    const style = store.diffStyle
-    const stop = afterVisibleWork(() => warmDiffHighlightWorkerPool(style))
-    onCleanup(stop)
-  })
   const hasReview = createMemo(() => diffs().length > 0)
   const reviewCount = createMemo(() => diffs().length)
   const totalChanges = createMemo(() => {
@@ -539,7 +526,6 @@ export function ReviewTab(props: ReviewTabProps) {
    * is a real expanded diff.
    */
   const revealTarget = createMemo<ReviewCodeViewRevealTarget | null>(() => {
-    if (!revealCodeViewFile()) return null
     const focus = comments.focus()
     if (!focus) return fileTarget()
     const comment = focusedComment()
@@ -718,7 +704,6 @@ export function ReviewTab(props: ReviewTabProps) {
                   comments={codeViewComments}
                   selectedLines={codeViewComments?.selectedLines() ?? null}
                   scrollRef={props.scrollRef}
-                  revealRef={(reveal) => setRevealCodeViewFile(() => reveal)}
                   anchorTopRef={props.anchorTopRef}
                   revealTarget={revealTarget()}
                   onRevealed={onRevealApplied}

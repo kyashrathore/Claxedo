@@ -91,8 +91,6 @@ export type ReviewCodeViewProps<LAnnotation = undefined> = {
   focusedFile?: string
   /** Receives the live scroll element for scroll capture/restoration. */
   scrollRef?: (element: HTMLDivElement) => void
-  /** Reveal a file by engine identity, including files outside the rendered range. */
-  revealRef?: (reveal: ((file: string) => void) | undefined) => void
   /**
    * Receives a reader for where a file sits in the document, in the scroll
    * element's coordinates. The engine knows every file's position whether or
@@ -390,10 +388,10 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     })
     instance.setup(host)
     instance.setItems(items())
-    // setItems reconciles and measures; the content render pass is a separate
-    // explicit kick (Pierre's own React wrapper does the same after seeding).
+    // setItems queues its own pass; this one is synchronous because `tryReveal`
+    // below resolves a line against committed layout, and a queued pass would
+    // arrive after it.
     instance.render(true)
-    props.revealRef?.((file) => instance.scrollTo({ type: "item", id: file, align: "start", behavior: "instant" }))
     props.anchorTopRef?.((file) => instance.getTopForItem(file))
     tryReveal()
 
@@ -415,7 +413,6 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
 
     onCleanup(() => {
       view = undefined
-      props.revealRef?.(undefined)
       props.anchorTopRef?.(undefined)
       unsubscribe()
       scroller.removeEventListener("scroll", forwardScroll)
@@ -434,10 +431,11 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     (next, previous) => {
       if (previous === undefined) return
       view?.setItems(next)
-      // A held reveal target needs this commit's layout before its line exists,
-      // so while one is outstanding the pass is taken synchronously rather than
-      // queued. Ordinary content arrivals keep the queued pass.
-      view?.render(!!props.revealTarget)
+      // setItems queues its own pass, which is all an ordinary content arrival
+      // needs. A held reveal target needs this commit's layout before
+      // `tryReveal` can resolve its line, so that one case is forced
+      // synchronous instead.
+      if (props.revealTarget) view?.render(true)
       tryReveal()
       stampSoon()
     },
@@ -463,7 +461,6 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       // setOptions replaces the complete options object, including callbacks.
       // Preserve the header and post-render owners when switching modes.
       view?.setOptions({ ...optionsForView, diffStyle: style })
-      view?.render()
       stampSoon()
     },
   ))

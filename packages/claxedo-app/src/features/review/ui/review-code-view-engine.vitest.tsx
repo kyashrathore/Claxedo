@@ -81,18 +81,33 @@ class RecordingResizeObserver implements ResizeObserver {
 }
 
 
-/** Report a root-size change through the engine's own resize entry point. */
-function reportRootResize(root: HTMLElement) {
-  const size: ResizeObserverSize = { blockSize: measure(root), inlineSize: 0 }
+/** Report a size change for one element through the engine's own resize entry
+ *  point. The engine observes its root AND its sticky container, and treats the
+ *  two differently, so the target decides which branch runs. */
+function reportResize(target: HTMLElement) {
+  const size: ResizeObserverSize = { blockSize: measure(target), inlineSize: 0 }
   const entry: ResizeObserverEntry = {
-    target: root,
+    target,
     borderBoxSize: [size],
     contentBoxSize: [size],
     devicePixelContentBoxSize: [size],
-    contentRect: root.getBoundingClientRect(),
+    contentRect: target.getBoundingClientRect(),
   }
   const observer = new RecordingResizeObserver(() => undefined)
   for (const callback of resizeCallbacks) callback([entry], observer)
+}
+
+const reportRootResize = reportResize
+
+/**
+ * The sticky container, reached the way the DOM gives it: the rendered rows are
+ * its flex children. Growing one of them grows its border box, which is what
+ * makes the browser deliver an entry for it.
+ */
+function stickyContainerOf(view: CodeView): HTMLElement {
+  const parent = view.getRenderedItems()[0]?.element.parentElement
+  if (!(parent instanceof HTMLElement)) throw new Error("no rendered row to find the sticky container from")
+  return parent
 }
 
 const lines = (count: number) => Array.from({ length: count }, (_, index) => `line ${index}\n`).join("")
@@ -270,6 +285,52 @@ describe("CodeView custom items", () => {
     expect(view.getTopForItem(anchorId)! - view.getScrollTop()).toBe(offsetBefore)
     // The replacement is a real diff, not a row still reserving header height.
     expect(view.getTopForItem(items[anchorIndex + 1]!.id)! - view.getTopForItem(anchorId)!).toBeGreaterThan(HEADER)
+  })
+
+  /**
+   * A viewport WIDTH change reflows owner-rendered rows — a wrapped comment
+   * annotation, a media preview, the large-diff block — and the engine tracks
+   * no width at all. It does not need to: the rows are flex children of the
+   * sticky container, so a reflowed row grows that container's border box and
+   * the browser delivers an entry for it. That branch of `handleResize` calls
+   * `reconcileRenderedItems()` with no `updatedItems` restriction, which
+   * re-measures every rendered row, and then re-anchors the scroll position.
+   *
+   * This is why the review surface keeps no width observer of its own. If a
+   * later @pierre/diffs stops re-measuring or stops anchoring here, this fails.
+   */
+  it("re-measures rendered rows and holds the anchor when a row reflows taller", async () => {
+    const items = Array.from({ length: 200 }, (_, index) => pending(`f${index}.ts`))
+    const { view, bodies } = createHarness(items)
+    expect(await settle(() => view.getRenderedItems().length > 0)).toBe(true)
+
+    // Anchoring is only defined away from the top of the document:
+    // `getScrollAnchor` returns nothing at scrollTop <= 0.
+    view.scrollTo({ type: "item", id: "f100.ts", align: "start", behavior: "instant" })
+    expect(await settle(() => view.getScrollTop() > 0 && view.getRenderedItemIds().length > 2)).toBe(true)
+
+    const scrollTop = view.getScrollTop()
+    const rendered = view.getRenderedItemIds()
+    // The engine anchors on the first rendered item at or below the viewport
+    // top; the rows before it are the overscan band above the viewport.
+    const anchorIndex = rendered.findIndex((id) => view.getTopForItem(id)! >= scrollTop)
+    expect(anchorIndex).toBeGreaterThan(0)
+    const anchorId = rendered[anchorIndex]!
+    const anchorOffset = view.getTopForItem(anchorId)! - scrollTop
+    const growingId = rendered[0]!
+
+    // The reflow: one row above the viewport is now twice as tall. Nothing
+    // re-renders it — a width change never does — so the engine learns about it
+    // only through the sticky container's own resize entry.
+    bodies.get(growingId)!.dataset.testHeight = String(ROW * 2)
+    reportResize(stickyContainerOf(view))
+
+    // It re-measured the row it never re-rendered...
+    expect(view.getTopForItem(rendered[1]!)! - view.getTopForItem(growingId)!).toBe(ROW * 2)
+    // ...and corrected the scroll position, so the anchored row is still
+    // exactly where the reader left it rather than pushed down by the growth.
+    expect(view.getScrollTop()).toBeGreaterThan(scrollTop)
+    expect(view.getTopForItem(anchorId)! - view.getScrollTop()).toBe(anchorOffset)
   })
 })
 

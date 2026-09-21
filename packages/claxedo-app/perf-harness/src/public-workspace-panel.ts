@@ -811,18 +811,12 @@ async function waitForPanelProfile(
           if (viewerRoot) {
             return rowRect.width > 0 && rowRect.height > 0 && !!viewerRoot.querySelector("[data-line]")
           }
-          const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
-          const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
-          const rect = content?.getBoundingClientRect()
-          const style = content ? getComputedStyle(content) : undefined
-          return !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
-            style?.display !== "none" && style?.visibility !== "hidden" &&
-            !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+          return false
         })
         const expansionReady = expectedReviewOpenCount === undefined ||
           (openCount === expectedReviewOpenCount &&
             (expectedReviewOpenCount === 0
-              ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
+              ? expandedRows.length === 0
               : visibleExpandedRows.length > 0 && paintedRows.length === visibleExpandedRows.length &&
                 Number(state?.dataset.reviewRenderedHunks ?? 0) > 0))
         const ready = shell?.dataset.shellSettled === "true" && shell.dataset.stateMode === "review" && !!root &&
@@ -1015,18 +1009,12 @@ export async function waitForPanelOwner(
               if (viewerRoot) {
                 return rowRect.width > 0 && rowRect.height > 0 && !!viewerRoot.querySelector("[data-line]")
               }
-              const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
-              const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
-              const rect = content?.getBoundingClientRect()
-              const style = content ? getComputedStyle(content) : undefined
-              return !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
-                style?.display !== "none" && style?.visibility !== "hidden" &&
-                !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+              return false
             })
             const expansionReady = expectedReviewOpenCount === undefined ||
               (openCount === expectedReviewOpenCount &&
                 (expectedReviewOpenCount === 0
-                  ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
+                  ? expandedRows.length === 0
                   : visibleExpandedRows.length > 0 && paintedRows.length === visibleExpandedRows.length &&
                     Number(state?.dataset.reviewRenderedHunks ?? 0) > 0))
             ready = ownerExact &&
@@ -1307,24 +1295,17 @@ async function waitForDiffState(
           if (viewerRoot) {
             return rowRect.width > 0 && rowRect.height > 0 && !!viewerRoot.querySelector("[data-line]")
           }
-          const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
-          const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
-          const rect = content?.getBoundingClientRect()
-          const style = content ? getComputedStyle(content) : undefined
-          return !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
-            style?.display !== "none" && style?.visibility !== "hidden" &&
-            !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+          return false
         })
-        const bodyCount = pane?.querySelectorAll("[data-slot='session-review-accordion-content']").length ?? 0
         const expansionReady = expected.openCount === undefined || (expected.openCount === 0
-          ? openCount === 0 && expandedRows.length === 0 && bodyCount === 0
+          ? openCount === 0 && expandedRows.length === 0
           : openCount === expected.openCount && visibleExpandedRows.length > 0 &&
             paintedRows.length === visibleExpandedRows.length &&
             Number(root?.dataset.reviewRenderedHunks ?? 0) > 0)
         const ready = !!root && loadedCount === changed.length &&
           root.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity &&
           (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && expansionReady
-        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
+        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, root.dataset.reviewRenderedHunks]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
         // `requireActiveTrace` has already rejected a missing or un-armed
@@ -1343,7 +1324,6 @@ async function waitForDiffState(
           expandedRows: expandedRows.length,
           visibleExpandedRows: visibleExpandedRows.length,
           paintedRows: paintedRows.length,
-          bodyCount,
           stable,
         })}`))
         requestAnimationFrame(frame)

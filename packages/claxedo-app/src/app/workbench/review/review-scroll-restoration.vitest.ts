@@ -95,8 +95,8 @@ describe("review scroll restoration", () => {
     viewport.scrollTop = 0
     restoration.restore()
     await flushFrames(1)
-    // The anchor row is not in the DOM yet (the windowed file list only
-    // materializes rows near the scroll position), so restoration parks on the
+    // The anchor row is not in the DOM yet (CodeView only materializes rows
+    // near the scroll position), so restoration parks on the
     // recorded pixel top immediately -- that is the scroll that makes the
     // anchor's neighborhood mount -- and keeps waiting for the anchor.
     expect(viewport.scrollTop).toBe(1_000)
@@ -249,40 +249,21 @@ describe("review scroll restoration", () => {
     restoration.dispose()
   })
 
-  test("re-applies the semantic anchor when the viewport width changes", async () => {
-    let resize: ((entries: Array<{ contentRect: { width: number } }>) => void) | undefined
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        constructor(callback: (entries: Array<{ contentRect: { width: number } }>) => void) {
-          resize = callback
-        }
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    )
+  test("observes nothing while the surface is alive: reflow is CodeView's", () => {
+    const observed: Element[] = []
+    vi.stubGlobal("ResizeObserver", class {
+      observe(target: Element) { observed.push(target) }
+      unobserve() {}
+      disconnect() {}
+    })
     const { viewport } = fixture()
     const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
 
+    // A row that reflows at a new width grows CodeView's sticky container, and
+    // the engine re-measures and re-anchors off that entry. A second observer
+    // here would be a second owner of the same correction.
     restoration.bind(viewport)
-    viewport.addEventListener("scroll", restoration.remember)
-    await flushFrames()
-    viewport.scrollTop = 1_000
-    viewport.dispatchEvent(new Event("scroll"))
-    restoration.capture()
-
-    // The first observation only records the width; it must not scroll.
-    resize?.([{ contentRect: { width: 800 } }])
-    await flushFrames()
-    expect(viewport.scrollTop).toBe(1_000)
-
-    // A navigator squeezing the panel reflows the rows; the drifted pixel
-    // position is corrected back to the recorded semantic anchor.
-    viewport.scrollTop = 900
-    resize?.([{ contentRect: { width: 500 } }])
-    await flushFrames()
-    expect(viewport.scrollTop).toBe(1_000)
+    expect(observed).toEqual([])
     restoration.dispose()
   })
 

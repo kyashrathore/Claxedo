@@ -33,9 +33,8 @@ export const virtualMetrics: Partial<VirtualFileMetrics> = {
  * Pierre's 1000px default buffer is sized for a full-page viewport: its window
  * is `viewportHeight + 2 * overscrollSize`, so inside an ~860px panel scroller
  * the first render materializes roughly three times the rows the reader can
- * see. Every surface below draws into a panel scroller, so all of them retain
- * ten lines instead and let the virtualizer grow the window from there without
- * rebuilding what it already drew.
+ * see. A panel-hosted view retains ten lines instead and lets the virtualizer
+ * grow the window from there without rebuilding what it already drew.
  */
 export const PANEL_OVERSCROLL_SIZE = (virtualMetrics.lineHeight ?? 24) * 10
 
@@ -55,19 +54,6 @@ function scrollRoot(container: HTMLElement): HTMLElement | undefined {
 
 function target(container: HTMLElement): Target | undefined {
   if (typeof document === "undefined") return undefined
-
-  const review = container.closest("[data-component='session-review']")
-  if (review instanceof HTMLElement) {
-    const root = scrollRoot(container) ?? review
-    const content = review.querySelector("[data-slot='session-review-container']")
-    return {
-      owner: review,
-      variant: "default",
-      root,
-      content: content instanceof HTMLElement ? content : undefined,
-      config: { overscrollSize: PANEL_OVERSCROLL_SIZE },
-    }
-  }
 
   const root = scrollRoot(container)
   if (root) {

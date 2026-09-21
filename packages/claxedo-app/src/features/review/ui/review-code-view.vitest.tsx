@@ -23,8 +23,13 @@ const engine = vi.hoisted(() => {
     coordinator?: { onSnapshotChange: (snapshot: { items: { id: string; type: "diff" | "custom" }[] } | undefined) => void }
     constructor(options: Options) { this.options = options; Viewer.current = this }
     setup(root: HTMLElement) { this.root = root }
-    setItems(items: Item[]) { this.items = items }
-    setOptions(options: Options) { this.options = options }
+    // Both render, as @pierre/diffs 1.4.3 does: `setItems` renders from
+    // appendItemsInternal/reconcileItems, and `setOptions` ends in `render()`
+    // for a non-container-managed view with items. Pierre's skips (an append
+    // entirely below the window, a no-op reconcile) leave the rendered set
+    // unchanged, which is what this fake's `render` recomputes anyway.
+    setItems(items: Item[]) { this.items = items; this.render() }
+    setOptions(options: Options) { this.options = options; this.render() }
     setSlotCoordinator(coordinator: Viewer["coordinator"]) { this.coordinator = coordinator }
     subscribeToScroll() { return () => {} }
     getRenderedItems() { return this.rendered }
@@ -98,17 +103,6 @@ describe("ReviewCodeView rendered item ownership", () => {
     expect(live.size).toBe(0)
     expect(screen.queryByText("Loading 20.ts")).toBeNull()
     expect(engine.Viewer.current.items[20].type).toBe("diff")
-  })
-
-  it("reveals an offscreen file through Pierre and releases the handle on disposal", () => {
-    let reveal: ((file: string) => void) | undefined
-    render(() => <ReviewCodeView diffs={diffs} open={[]} diffStyle="unified" revealRef={(next) => { reveal = next }} />)
-    expect(engine.Viewer.current.getRenderedItems().some((item) => item.id === "99.ts")).toBe(false)
-    expect(reveal).toBeTypeOf("function")
-    reveal?.("99.ts")
-    expect(engine.Viewer.current.scrollTo).toHaveBeenCalledWith({ type: "item", id: "99.ts", align: "start", behavior: "instant" })
-    cleanup()
-    expect(reveal).toBeUndefined()
   })
 
   it("expand all changes state without mounting offscreen headers; release disposes portals", () => {

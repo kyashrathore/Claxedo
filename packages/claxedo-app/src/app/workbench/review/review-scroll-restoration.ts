@@ -24,8 +24,8 @@ export function createReviewScrollRestoration(input: {
   initial?: ReviewScrollPosition
   onChange?: (position: ReviewScrollPosition) => void
   /**
-   * Whether `path` exists in the canonical review corpus. The windowed file
-   * list only mounts rows near the scroll position, so an absent row proves
+   * Whether `path` exists in the canonical review corpus. CodeView only mounts
+   * rows near the scroll position, so an absent row proves
    * nothing — only this predicate can prove the anchor file was deleted or
    * renamed while Review was closed. Return `false` for a known-absent path:
    * restoration then settles on the clamped pixel top instead of waiting for
@@ -192,8 +192,12 @@ export function createReviewScrollRestoration(input: {
     action = "restore-requested"
     apply()
   }
-  let resizeObserver: ResizeObserver | undefined
-  let lastViewportWidth: number | undefined
+  // No resize handling here: reflow inside a live surface is CodeView's. Its
+  // rendered rows are flex children of its sticky container, so a row that
+  // reflows at a new width grows that container, and the resize entry the
+  // browser delivers for it re-measures every rendered row and re-anchors the
+  // scroll position. What this module owns is the position that outlives the
+  // surface — the engine and its geometry are gone across a tab switch.
   const bind = (next: HTMLElement) => {
     element = next
     action = "bound"
@@ -201,25 +205,6 @@ export function createReviewScrollRestoration(input: {
       configurable: true,
       value: diagnostic,
     })
-    // A viewport width change (the files/processes navigator squeezing the
-    // panel) reflows every row, and with the windowed file list the estimated
-    // gap heights reflow with them -- the pixel scrollTop then points somewhere
-    // slightly different. The semantic anchor is the position's truth, so
-    // re-apply it: the anchor row returns to its recorded offset instead of
-    // drifting with the reflow.
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver?.disconnect()
-      lastViewportWidth = undefined
-      resizeObserver = new ResizeObserver((entries) => {
-        const width = entries.at(-1)?.contentRect.width
-        if (width === undefined || width === lastViewportWidth) return
-        const first = lastViewportWidth === undefined
-        lastViewportWidth = width
-        if (first || !input.visible()) return
-        restore()
-      })
-      resizeObserver.observe(next)
-    }
     restore()
   }
   /**
@@ -264,8 +249,6 @@ export function createReviewScrollRestoration(input: {
     // nothing runs after this cleanup.
     if (captureFrame !== undefined) capture()
     stopObserver()
-    resizeObserver?.disconnect()
-    resizeObserver = undefined
     if (element) Reflect.deleteProperty(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
     if (diagnosticHost) Reflect.deleteProperty(diagnosticHost, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
     // Release the viewport: a deactivated tab's detached subtree must not stay

@@ -185,20 +185,11 @@ vi.mock("@opencode-ai/ui/dropdown-menu", () => {
   return { DropdownMenu }
 })
 
+/** Only so components that construct one can mount; nothing here resizes. */
 class FakeResizeObserver {
-  static instances: FakeResizeObserver[] = []
-  observed: Element[] = []
-  disconnected = false
-  constructor(_callback: ResizeObserverCallback) {
-    FakeResizeObserver.instances.push(this)
-  }
-  observe(element: Element) {
-    this.observed.push(element)
-  }
+  observe() {}
   unobserve() {}
-  disconnect() {
-    this.disconnected = true
-  }
+  disconnect() {}
 }
 
 let frameQueue: Array<FrameRequestCallback | undefined>
@@ -213,7 +204,6 @@ function flushFrames() {
 beforeEach(() => {
   deletedSession.read = () => undefined
   reviewTabMounts.list = []
-  FakeResizeObserver.instances = []
   frameQueue = []
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frameQueue.push(callback)
@@ -316,32 +306,34 @@ describe("review surface ownership across tab deactivation", () => {
     const { container } = renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
 
     const firstViewport = mounts()[0].viewport!
-    const firstObserver = FakeResizeObserver.instances[0]
-    expect(firstObserver.observed).toContain(firstViewport)
-    expect(firstObserver.disconnected).toBe(false)
-    expect(Object.getOwnPropertyDescriptor(firstViewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeTruthy()
+    const bound = (element: HTMLElement) =>
+      !!Object.getOwnPropertyDescriptor(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
+    expect(bound(firstViewport)).toBe(true)
 
     tabButton(container, "file:src/a.ts").click()
     expect(container.querySelector("[data-testid='workspace-review-body']")).toBeNull()
     expect(container.querySelector("[data-testid='mock-review-viewport']")).toBeNull()
-    expect(firstObserver.disconnected).toBe(true)
-    expect(Object.getOwnPropertyDescriptor(firstViewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeUndefined()
+    expect(bound(firstViewport)).toBe(false)
 
     tabButton(container, "review").click()
     expect(mounts()).toHaveLength(2)
-    expect(mounts()[1].viewport).not.toBe(firstViewport)
-    expect(FakeResizeObserver.instances).toHaveLength(2)
+    const secondViewport = mounts()[1].viewport!
+    expect(secondViewport).not.toBe(firstViewport)
+    // The remount binds the new viewport, and nothing still points at the dead
+    // one: a retained binding is how a disposed subtree stays reachable.
+    expect(bound(secondViewport)).toBe(true)
+    expect(bound(firstViewport)).toBe(false)
   })
 
   test("the viewport binding still dies with the surface's DOM", () => {
     renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
-    const observer = FakeResizeObserver.instances[0]
-    expect(observer.disconnected).toBe(false)
+    const viewport = mounts()[0].viewport!
+    expect(Object.getOwnPropertyDescriptor(viewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeTruthy()
 
     // Closing the panel disposes the whole workspace — the one disposal the
     // zero-DOM contract is about — and the binding must go with it.
     cleanup()
-    expect(observer.disconnected).toBe(true)
+    expect(Object.getOwnPropertyDescriptor(viewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeUndefined()
   })
 })
 

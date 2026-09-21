@@ -68,10 +68,3 @@ export function getFileWorkerPool(): WorkerPoolManager | undefined {
   if (typeof window === "undefined") return undefined
   return unified ?? split ?? getWorkerPool("unified")
 }
-
-export function getWorkerPools() {
-  return {
-    unified: getWorkerPool("unified"),
-    split: getWorkerPool("split"),
-  }
-}
