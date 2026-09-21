@@ -651,7 +651,17 @@ export type SandboxRuntimeSnapshotInput = {
 export type SandboxBootMode = "restore" | "resume" | "cold-start"
 
 export type SandboxEnsureResult =
-  | ({ status: "ready" } & SandboxTarget & { epoch: number; homeRegion: SandboxRegion })
+  | ({ status: "ready" } & SandboxTarget & {
+      epoch: number
+      homeRegion: SandboxRegion
+      /**
+       * Set when the driver call for this ensure failed on a lease that was
+       * already serving: the returned target predates this ensure's inputs.
+       * A caller that handed new brokered secrets must not record them as
+       * delivered — the provider edge still holds the previous set.
+       */
+      stale?: true
+    })
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion; bootMode?: SandboxBootMode }
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
 
@@ -1024,7 +1034,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         const updated = await options.leaseStore.update(workspaceId, lease.epoch, { lastError: error }, "ready")
         if (updated) {
           const resolved = await leaseTarget(updated)
-          if (resolved.status === "ready") return resolved
+          if (resolved.status === "ready") return { ...resolved, stale: true }
         }
       }
       const nextRetryCount = lease.retryCount + 1
