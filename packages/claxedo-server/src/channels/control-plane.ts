@@ -19,6 +19,7 @@ import {
   type ChannelAccessStore,
   type ChannelIdentityBindingStore,
   type ChatSdkBot,
+  type ChannelAbortResult,
   type SessionRef,
   type SessionResolver,
   type ChannelTextMinimizationOptions,
@@ -26,7 +27,7 @@ import {
   type InboundEnvelope,
 } from "@claxedo/channels"
 import { randomUUID } from "node:crypto"
-import { asText, parseRecoveryOutcome, type RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import { asText, isRecoveryOutcome, parseRecoveryOutcome, type RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { createSqliteChannelAccessStore, createSqliteChannelIdentityBindingStore } from "./access-store"
 import { channelFromThreadKey, channelId } from "./channel-id"
@@ -164,18 +165,26 @@ function seedAdmin(allowIds: string[], channel: string, externalUserId: string):
  * A channel request names a session and nothing narrower, so the turn is the
  * one the owner reports right now: a cancellation carrying only the session
  * reaches whichever turn is running when it lands, which after a replacement
- * is somebody else's. The channel contract carries one status string, so the
- * operation's state or the refusal's kind is what it gets — `ok` is true only
- * for an operation that reached its postcondition.
+ * is somebody else's. The whole outcome is what the caller gets, because a
+ * turn that stopped without a verified cleanup and a turn that never stopped
+ * are the same operation state and different answers to the person waiting.
+ *
+ * Inspection answers a refusal when the owner declines, which is the owner
+ * speaking and not an idle session; only a body with no target means there was
+ * nothing to cancel.
  */
 export async function cancelChannelSessionTurn(
   sessionId: string,
   request: (resource: string, init: RequestInit) => Promise<Response>,
-): Promise<{ ok: boolean; status: string; message?: string }> {
+): Promise<ChannelAbortResult> {
   const inspected = await request("recovery", { method: "GET" })
-  if (!inspected.ok) return { ok: false, status: "unavailable", message: `Session ${sessionId} has no reachable recovery owner` }
-  const target = asRecord((await readJsonRecord(inspected))?.target)
-  if (!target) return { ok: false, status: "no_active_turn", message: `Session ${sessionId} is not running a turn` }
+  const inspection = await readJsonRecord(inspected)
+  if (inspection && isRecoveryOutcome(inspection)) return { kind: "outcome", outcome: parseRecoveryOutcome(inspection) }
+  if (!inspected.ok || !inspection) {
+    return { kind: "unreachable", message: `Session ${sessionId} has no reachable recovery owner` }
+  }
+  const target = asRecord(inspection.target)
+  if (!target) return { kind: "no_active_turn" }
   const submitted = await request("recovery", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -191,16 +200,11 @@ export async function cancelChannelSessionTurn(
   try {
     outcome = parseRecoveryOutcome(await submitted.text())
   } catch {
-    return { ok: false, status: "failed", message: `Session cancel returned an unreadable answer (${submitted.status})` }
+    return { kind: "unreachable", message: `Session cancel returned an unreadable answer (${submitted.status})` }
   }
-  if (outcome.kind === "refused") return { ok: false, status: outcome.refusal.kind, message: outcome.refusal.message }
-  const operation = outcome.operation
-  return {
-    ok: operation.state === "succeeded",
-    status: operation.state,
-    ...(operation.initiatingError ? { message: operation.initiatingError.message } : {}),
-  }
+  return { kind: "outcome", outcome }
 }
+
 
 export function createControlPlaneChannels(input: {
   services: ControlPlaneServices

@@ -103,9 +103,14 @@ const TARGET: RecoveryTurnTarget = {
   ownerGeneration: "lease_1",
 }
 
+/**
+ * What a local Stop can establish. `cancel_turn` only closes as `succeeded`
+ * under `cleanup: "verified_clear"`, which no adapter proves, so a healthy Stop
+ * settles as `needs_action` with cleanup unknown.
+ */
 const FACTS = {
   execution: { value: "terminal" as const, source: "codex", observedAt: 1, generation: "lease_1" },
-  cleanup: { value: "verified_clear" as const, source: "codex", observedAt: 1, generation: "lease_1" },
+  cleanup: { value: "unknown" as const, source: "codex", observedAt: 1, generation: "lease_1" },
   persistence: { value: "committed" as const, source: "store", observedAt: 1, generation: "lease_1" },
 }
 
@@ -151,58 +156,73 @@ function runtimeDouble(input: {
     sent.push({ resource, method: init.method ?? "GET", ...(typeof init.body === "string" ? { body: init.body } : {}) })
     if ((init.method ?? "GET") === "GET") return input.inspection ?? Response.json({ sessionId: "ses_1", target: TARGET })
     if (input.answer instanceof Response) return input.answer
-    return new Response(serializeRecoveryOutcome(input.answer ?? { kind: "operation", operation: operation("succeeded") }))
+    return new Response(serializeRecoveryOutcome(input.answer ?? { kind: "operation", operation: operation("needs_action") }))
   }
   return { sent, request }
 }
 
 describe("a channel Stop", () => {
-  test("names the turn the owner reports and reports the operation that stopped it", async () => {
+  test("names the turn the owner reports and hands the whole outcome back", async () => {
     const runtime = runtimeDouble({})
 
-    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toEqual({ ok: true, status: "succeeded" })
+    const result = await cancelChannelSessionTurn("ses_1", runtime.request)
 
+    expect(result).toEqual({ kind: "outcome", outcome: { kind: "operation", operation: operation("needs_action") } })
     expect(runtime.sent.map((call) => `${call.method} ${call.resource}`)).toEqual(["GET recovery", "POST recovery"])
     const submitted = JSON.parse(runtime.sent[1]!.body!) as Record<string, unknown>
     expect(submitted).toMatchObject({ action: "cancel_turn", target: TARGET, scopeRevision: "lease_1", attempt: 1 })
     expect(String(submitted.requestId)).toMatch(/^channel-stop:/)
   })
 
-  test("a session running no turn is not reported as stopped", async () => {
+  test("a session running no turn is its own answer, and nothing is submitted for it", async () => {
     const runtime = runtimeDouble({ inspection: Response.json({ sessionId: "ses_1" }) })
 
-    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toMatchObject({ ok: false, status: "no_active_turn" })
+    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toEqual({ kind: "no_active_turn" })
     expect(runtime.sent).toHaveLength(1)
   })
 
-  test("a refusal is reported by its kind rather than collapsed into a failure", async () => {
+  test("an owner that refuses the inspection is the owner speaking, not an idle session", async () => {
+    const refusal = { kind: "unavailable" as const, message: "the machine is offline" }
     const runtime = runtimeDouble({
-      answer: { kind: "refused", refusal: { kind: "generation_conflict", message: "the turn was replaced", current: TARGET } },
+      inspection: new Response(serializeRecoveryOutcome({ kind: "refused", refusal }), { status: 503 }),
     })
 
     await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toEqual({
-      ok: false,
-      status: "generation_conflict",
-      message: "the turn was replaced",
+      kind: "outcome",
+      outcome: { kind: "refused", refusal },
+    })
+    expect(runtime.sent).toHaveLength(1)
+  })
+
+  test("a refusal of the cancellation reaches the caller whole", async () => {
+    const refusal = { kind: "generation_conflict" as const, message: "the turn was replaced", current: TARGET }
+    const runtime = runtimeDouble({ answer: { kind: "refused", refusal } })
+
+    await expect(cancelChannelSessionTurn("ses_1", runtime.request)).resolves.toEqual({
+      kind: "outcome",
+      outcome: { kind: "refused", refusal },
     })
   })
 
-  test("an operation that did not reach its postcondition is never ok", async () => {
-    for (const state of ["failed", "needs_action", "running", "accepted"] as const) {
-      const runtime = runtimeDouble({ answer: { kind: "operation", operation: operation(state, "the provider never acknowledged") } })
+  test("every operation state is reported as the operation it was, none of them collapsed", async () => {
+    for (const state of ["succeeded", "failed", "needs_action", "running", "accepted"] as const) {
+      const answered = operation(state, "the provider never acknowledged")
+      const runtime = runtimeDouble({ answer: { kind: "operation", operation: answered } })
       await expect(cancelChannelSessionTurn("ses_1", runtime.request), state).resolves.toEqual({
-        ok: false,
-        status: state,
-        message: "the provider never acknowledged",
+        kind: "outcome",
+        outcome: { kind: "operation", operation: answered },
       })
     }
   })
 
   test("an unreachable owner and an unreadable answer are both reported, not guessed at", async () => {
     const unreachable = runtimeDouble({ inspection: new Response("", { status: 503 }) })
-    await expect(cancelChannelSessionTurn("ses_1", unreachable.request)).resolves.toMatchObject({ ok: false, status: "unavailable" })
+    await expect(cancelChannelSessionTurn("ses_1", unreachable.request)).resolves.toEqual({
+      kind: "unreachable",
+      message: "Session ses_1 has no reachable recovery owner",
+    })
 
     const garbled = runtimeDouble({ answer: new Response("<html>gateway</html>", { status: 502 }) })
-    await expect(cancelChannelSessionTurn("ses_1", garbled.request)).resolves.toMatchObject({ ok: false, status: "failed" })
+    await expect(cancelChannelSessionTurn("ses_1", garbled.request)).resolves.toMatchObject({ kind: "unreachable" })
   })
 })

@@ -35,10 +35,12 @@ export { createMemoryDedupStore, type DedupDecision, type DedupStore } from "./c
 export {
   ChannelSessionResolutionError,
   createMemorySessionResolver,
+  type ChannelAbortResult,
   type ChannelRuntime,
   type SessionRef,
   type SessionResolver,
 } from "./core/resolve-session"
+export { abortReplyText, abortSettled, turnStopped } from "./core/session-stop"
 export { createMemoryApprovalBridge, type ApprovalBridge } from "./core/approval-bridge"
 export { sanitizeChannelText, type ChannelTextMinimizationOptions } from "./core/data-minimization"
 export { createChannelCore, type ChannelCore, type ChannelSessionSummary } from "./core/command-emit"
