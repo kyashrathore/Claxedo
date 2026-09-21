@@ -84,12 +84,32 @@ export type ProcessObserverEvent =
       exitCode?: number
       observedLifetimeMs: number
     }
+  | {
+      type: "ownership"
+      at: number
+      ownerId: string
+      ownerGeneration: string
+      state: ProcessOwnerOwnershipFault["state"]
+      message: string
+    }
 
 export type ProcessObserverSink = (event: ProcessObserverEvent) => void
 
 export type ProcessOwnerHandle = {
   update(input: { pid?: number; lifecycle: "starting" | "ready" | "detached" }): void
   exit(input: ProcessOwnerExit): void
+  ownership(input: ProcessOwnerOwnershipFault): void
+}
+
+/**
+ * The durable record of a running process could not be written. It is not
+ * telemetry: `unrecorded` means nothing will ever find this process again, and
+ * `persistence-unavailable` means the record still claims a launch that this
+ * owner has already retired.
+ */
+export type ProcessOwnerOwnershipFault = {
+  state: "unrecorded" | "persistence-unavailable"
+  message: string
 }
 
 export type ProcessObserver = {
@@ -180,7 +200,7 @@ export function createProcessObserver(input: {
 
   return {
     register(descriptor, operations = {}) {
-      if (disposed) return { update: () => undefined, exit: () => undefined }
+      if (disposed) return { update: () => undefined, exit: () => undefined, ownership: () => undefined }
       const safe = safeDescriptor(descriptor)
       const registeredAt = now()
       records.set(safe.ownerId, { descriptor: safe, operations, registeredAt, lifecycle: "starting" })
@@ -199,6 +219,16 @@ export function createProcessObserver(input: {
         },
         exit: (event) => {
           exit({ ownerId: safe.ownerId, ownerGeneration: safe.ownerGeneration, ...event })
+        },
+        ownership: (event) => {
+          publish({
+            type: "ownership",
+            at: now(),
+            ownerId: safe.ownerId,
+            ownerGeneration: safe.ownerGeneration,
+            state: event.state,
+            message: safeText(event.message, 512),
+          })
         },
       }
     },

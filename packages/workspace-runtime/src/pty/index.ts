@@ -260,8 +260,39 @@ export namespace Pty {
       escapees.filter((candidate) => candidate.processGroupId !== session.identity!.processGroupId),
       DEFAULT_RECOVERY_BUDGETS,
     )
-    if (session.launchId) await session.ownership?.recordRetirement(session.launchId, result).catch(() => {})
+    await persistRetirement(id, session, result)
     return result
+  }
+
+  /**
+   * A retirement nothing recorded leaves the durable row claiming a launch
+   * that is over, which a later owner will try to reconcile against processes
+   * that are already gone.
+   */
+  async function persistRetirement(id: string, session: ActiveSession, result: RetirementResult) {
+    if (!session.launchId || !session.store) return
+    try {
+      await session.store.recordRetirement(session.launchId, result)
+      session.persistence = undefined
+      session.persistenceError = undefined
+    } catch (error) {
+      session.persistence = "unavailable"
+      session.persistenceError = errorText(error)
+      log.error("PTY retirement could not be recorded", { id, error: session.persistenceError })
+      session.owner?.ownership({ state: "persistence-unavailable", message: session.persistenceError })
+    }
+  }
+
+  /**
+   * Whether this terminal must stay addressable: either its processes were
+   * never proven gone, or the record that says they are is not written yet.
+   */
+  function retained(session: ActiveSession) {
+    return session.cleanup === "unresolved" || session.persistence === "unavailable"
+  }
+
+  function errorText(error: unknown) {
+    return error instanceof Error ? error.message : String(error)
   }
 
   export const Info = z.object({
@@ -359,7 +390,7 @@ export namespace Pty {
      * `create`, not whatever store some other workspace installed afterwards:
      * one process serves many workspaces, and each terminal answers to its own.
      */
-    ownership?: LaunchOwnershipStore
+    store?: LaunchOwnershipStore
     identity?: CreationIdentity
     /**
      * Set when retirement did not establish that this terminal's processes are
@@ -368,6 +399,20 @@ export namespace Pty {
      */
     cleanup?: "unresolved"
     cleanupResult?: RetirementResult
+    /**
+     * Set when the spawn could not be written to the durable ownership record.
+     * The process is running and nothing will ever find it again, so the entry
+     * is kept and it pins the runtime exactly as unresolved cleanup does.
+     */
+    ownership?: "unrecorded"
+    ownershipError?: string
+    /**
+     * Set when a settled retirement could not be recorded. The durable row
+     * still claims a launch this owner has already finished, so the entry is
+     * kept and the write is retried on the next `remove` or `abandon`.
+     */
+    persistence?: "unavailable"
+    persistenceError?: string
     /**
      * What the identity-checked sweep of processes that left this terminal's
      * group found. Survivors here do not hold the entry: nothing can prove they
@@ -454,9 +499,7 @@ export namespace Pty {
       if (session.identity) {
         const members = await captureOwnedGroup(session.identity.processGroupId, session.identity.pid).catch(() => [])
         session.escapees = await retireDescendants(members, DEFAULT_RECOVERY_BUDGETS)
-        if (session.launchId) {
-          await session.ownership?.recordRetirement(session.launchId, { leader: "exited", descendants: "unknown", signals: [] }).catch(() => {})
-        }
+        await persistRetirement(id, session, { leader: "exited", descendants: "unknown", signals: [] })
       }
       await session.history.close()
 
@@ -496,11 +539,11 @@ export namespace Pty {
     const result = await retireSession(id, session, closeNative)
     session.cleanupResult = result
     await session.history.close()
-    if (!retirementSettled(result)) {
+    if (!retirementSettled(result) || session.persistence === "unavailable") {
       // The processes this terminal started may still be running, so the entry
       // stays: it carries the only identity that can reach them, and dropping
       // it would report a stopped terminal over a live one.
-      session.cleanup = "unresolved"
+      if (!retirementSettled(result)) session.cleanup = "unresolved"
       session.removed = false
       session.cleanupOperation = undefined
       log.error("PTY retirement unresolved", { id, pid: session.info.pid, result })
@@ -553,6 +596,8 @@ export namespace Pty {
       committed: s.committed,
       orphanTimerActive: !!s.orphanTimer,
       ...(s.cleanup ? { cleanup: s.cleanup, cleanupResult: s.cleanupResult } : {}),
+      ...(s.ownership ? { ownership: s.ownership, ownershipError: s.ownershipError } : {}),
+      ...(s.persistence ? { persistence: s.persistence, persistenceError: s.persistenceError } : {}),
       ...(s.escapees ? { escapees: s.escapees } : {}),
     }))
   }
@@ -565,8 +610,10 @@ export namespace Pty {
     let subscribers = 0
     for (const session of sessions.values()) {
       // An unresolved terminal still pins the runtime: its processes were never
-      // proven gone, and a daemon that exits here abandons them.
-      if (session.cleanup !== "unresolved" && (session.removed || session.exited || session.info.status !== "running")) continue
+      // proven gone, and a daemon that exits here abandons them. So does one
+      // whose spawn was never recorded — nothing would ever find it again.
+      const pinned = session.cleanup === "unresolved" || (session.ownership === "unrecorded" && !session.exited)
+      if (!pinned && (session.removed || session.exited || session.info.status !== "running")) continue
       running++
       subscribers += session.subscribers.size
       if (session.managed) managed++
@@ -797,7 +844,15 @@ export namespace Pty {
         spawnedAfter,
       })
     }
-    if (identity) await ownership.recordIdentity(prepared.launchId, identity).catch(() => {})
+    let unrecorded: string | undefined
+    if (identity) {
+      try {
+        await ownership.recordIdentity(prepared.launchId, identity)
+      } catch (error) {
+        unrecorded = errorText(error)
+        log.error("PTY creation identity could not be recorded; this terminal is unowned", { id, pid: identity.pid, error: unrecorded })
+      }
+    }
 
     const info = {
       id,
@@ -829,6 +884,8 @@ export namespace Pty {
         ...(observedPid !== undefined ? { killOwnedTree: async () => remove(info.id) } : {}),
       },
     )
+
+    if (unrecorded) owner?.ownership({ state: "unrecorded", message: unrecorded })
 
     const previousPtyId = input.env?.previousPtyId
     if (previousPtyId) {
@@ -935,7 +992,8 @@ export namespace Pty {
       orphanTimer: undefined,
       interruptTimer: undefined,
       launchId: prepared.launchId,
-      ownership,
+      store: ownership,
+      ...(unrecorded ? { ownership: "unrecorded" as const, ownershipError: unrecorded } : {}),
       ...(identity ? { identity } : {}),
       ...(owner ? { owner } : {}),
       ...(agentHookAccess ? { agentHookAccess } : {}),
@@ -1094,7 +1152,7 @@ export namespace Pty {
       log.info("removing session", { id })
       const alreadyExited = session.exited
       const result = await cleanupSession(id, session, "remove")
-      if (session.cleanup === "unresolved") return result
+      if (retained(session)) return result
       // Native exit cleanup may already own `cleanupOperation`. Explicit
       // remove still owns the stronger public contract: after it resolves the
       // session must no longer be addressable, rather than waiting for exit
@@ -1112,7 +1170,7 @@ export namespace Pty {
       return result
     })()
     const result = await session.removeOperation
-    if (session.cleanup === "unresolved") session.removeOperation = undefined
+    if (retained(session)) session.removeOperation = undefined
     return result
   }
 
@@ -1122,16 +1180,24 @@ export namespace Pty {
    * processes are unaccounted for, not evidence that they stopped, so the
    * authorization is required and recorded.
    */
-  export function abandon(id: string, authorization: { actorId: string; reason: string }) {
+  export async function abandon(id: string, authorization: { actorId: string; reason: string }) {
     const session = sessions.get(id)
-    if (!session || session.cleanup !== "unresolved") return undefined
+    if (!session || (session.cleanup !== "unresolved" && session.persistence !== "unavailable")) return undefined
     if (!authorization.actorId || !authorization.reason) {
       throw new Error(`Abandoning terminal ${id} needs an actor and a reason: it releases a pin over processes nothing proved had stopped`)
     }
+    // One last attempt at the record, so an operator does not have to accept a
+    // durable row that is merely stale as well as one that is unresolved.
+    if (session.cleanupResult) await persistRetirement(id, session, session.cleanupResult)
     session.removed = true
     sessions.delete(id)
     session.owner?.exit({ reason: "detached" })
-    log.error("PTY ownership abandoned with cleanup unresolved", { id, ...authorization, result: session.cleanupResult })
+    log.error("PTY ownership abandoned with cleanup unresolved", {
+      id,
+      ...authorization,
+      result: session.cleanupResult,
+      persistence: session.persistence,
+    })
     return session.cleanupResult
   }
 

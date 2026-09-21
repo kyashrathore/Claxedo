@@ -160,7 +160,7 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
     expect(Pty.activity().running).toBe(1)
 
-    expect(Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })?.error?.code).toBe("ownership_unverified")
+    expect((await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" }))?.error?.code).toBe("ownership_unverified")
     expect(Pty.get(info.id)).toBeUndefined()
   })
 
@@ -373,7 +373,7 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
     // A second remove retries rather than reporting a terminal already claimed stopped.
     expect((await Pty.remove(info.id))?.error?.code).toBe("ownership_unverified")
-    Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
+    await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
   }, 20_000)
 
   test("a store that cannot record ownership refuses the launch before anything is spawned", async () => {
@@ -413,6 +413,82 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
     expect(Pty.activity().running).toBe(1)
 
-    Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
+    await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
+  }, 20_000)
+})
+
+describe("Pty ownership persistence", () => {
+  test("a spawn that could not be recorded is kept, pinned and reported as unowned", async () => {
+    const { Pty } = await import("./index")
+    const events: ProcessObserverEvent[] = []
+    const observer = createProcessObserver({ sink: (event) => events.push(event) })
+    const store = {
+      ...volatileLaunchOwnership(),
+      recordIdentity: async () => { throw new Error("launch_ownership write failed") },
+    }
+    nextSpawnPid = disposablePid()
+
+    const info = await Pty.create({ cwd: tmpDir, title: "unowned" }, store, {
+      observer,
+      kind: "pty",
+      ownerId: "pty:unowned",
+      workspaceId: "ws_unowned",
+      directory: tmpDir,
+      label: "Unowned",
+    })
+
+    // The terminal is running: refusing it would be worse, but nothing can
+    // find it again, so it is neither hidden nor allowed to un-pin the runtime.
+    const detailed = Pty.listDetailed().find((session) => session.id === info.id)
+    expect(detailed?.ownership).toBe("unrecorded")
+    expect(detailed?.ownershipError).toContain("launch_ownership write failed")
+    expect(Pty.activity().running).toBe(1)
+    expect(events.filter((event) => event.type === "ownership")).toEqual([
+      {
+        type: "ownership",
+        at: expect.any(Number),
+        ownerId: "pty:unowned",
+        ownerGeneration: expect.any(String),
+        state: "unrecorded",
+        message: expect.stringContaining("launch_ownership write failed"),
+      },
+    ])
+  }, 20_000)
+
+  test("a retirement that could not be recorded keeps the terminal and retries", async () => {
+    const { Pty } = await import("./index")
+    const events: ProcessObserverEvent[] = []
+    const observer = createProcessObserver({ sink: (event) => events.push(event) })
+    let writes = 0
+    const store = {
+      ...volatileLaunchOwnership(),
+      recordRetirement: async () => {
+        if (++writes === 1) throw new Error("launch_ownership is unavailable")
+      },
+    }
+    nextSpawnPid = disposablePid()
+
+    const info = await Pty.create({ cwd: tmpDir, title: "unrecorded-retirement" }, store, {
+      observer,
+      kind: "pty",
+      ownerId: "pty:unrecorded-retirement",
+      workspaceId: "ws_retirement",
+      directory: tmpDir,
+      label: "Retirement",
+    })
+
+    const first = await Pty.remove(info.id)
+
+    // The processes are gone; the durable row still says otherwise.
+    expect(first?.leader).toBe("exited")
+    expect(Pty.get(info.id)).toBeDefined()
+    expect(Pty.listDetailed().find((session) => session.id === info.id)?.persistence).toBe("unavailable")
+    expect(events.filter((event) => event.type === "ownership").map((event) => event.type === "ownership" && event.state))
+      .toEqual(["persistence-unavailable"])
+
+    await Pty.remove(info.id)
+
+    expect(writes).toBe(2)
+    expect(Pty.get(info.id)).toBeUndefined()
   }, 20_000)
 })
