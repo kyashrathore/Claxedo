@@ -531,7 +531,9 @@ function relayWebSocketPayload(input: MessageEvent["data"]): string | ArrayBuffe
 }
 
 function headersRecord(headers: Headers) {
-  const result: Record<string, string> = {}
+  // A `__proto__` header name is a legal token: assigned onto `{}` it hits the
+  // prototype setter and is silently dropped, so the map gets a null prototype.
+  const result: Record<string, string> = Object.create(null)
   headers.forEach((value, key) => {
     result[key] = value
   })

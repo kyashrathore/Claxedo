@@ -300,6 +300,48 @@ describe("workspace relay host tunnel client", () => {
     tunnel.close()
   })
 
+  test("carries __proto__ and constructor header names onto the wire as ordinary data", async () => {
+    const sockets: FakeWebSocket[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      localBaseUrl: "http://runtime.invalid",
+      request: async () => {
+        const headers = new Headers()
+        headers.set("__proto__", "spoofed")
+        headers.set("constructor", "spoofed")
+        return new Response("ok", { headers })
+      },
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    const socket = sockets[0]
+    socket.open()
+    socket.receive(JSON.stringify({
+      type: "http.request",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "req_1",
+      workspace_id: "ws_1",
+      method: "GET",
+      path: "/api/wr/health",
+      headers: {},
+      end: true,
+    }))
+
+    const [start] = await waitForSentTypeCount<{ type: string; headers: Record<string, string> }>(socket, "http.response.start", 1)
+    // Assigned onto `{}`, `__proto__` would hit the prototype setter and the
+    // header would vanish; the wire map must keep it as an own property.
+    expect(Object.hasOwn(start.headers, "__proto__")).toBe(true)
+    expect(start.headers["__proto__"]).toBe("spoofed")
+    expect(start.headers["constructor"]).toBe("spoofed")
+    tunnel.close()
+  })
+
   test("ignores malformed JSON and unknown tunnel frames without breaking the tunnel", () => {
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({

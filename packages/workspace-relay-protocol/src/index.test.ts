@@ -133,6 +133,40 @@ describe("workspace relay protocol", () => {
     } satisfies TunnelWsClose)).toBe(true)
   })
 
+  test("rejects WebSocket close codes outside the legal wire range", () => {
+    const close = (code: unknown) => ({
+      type: "ws.close",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      channel_id: "ch_1",
+      code,
+    })
+    for (const code of [-1, 0, 999, 1_004, 1_005, 1_006, 1_015, 5_000, 65_535, 1_000.5]) {
+      expect(validateTunnelMessage(close(code))).toEqual({ ok: false, reason: "invalid" })
+    }
+    for (const code of [1_000, 1_001, 1_014, 2_000, 3_000, 4_999]) {
+      expect(isTunnelMessage(close(code))).toBe(true)
+    }
+  })
+
+  test("rejects header maps whose names are not legal HTTP field names", () => {
+    const request = (headers: unknown) => ({
+      type: "http.request",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "req_1",
+      workspace_id: "ws_1",
+      method: "GET",
+      path: "/api/wr/health",
+      headers,
+      end: true,
+    })
+    for (const headers of [{ "bad name": "x" }, { "": "x" }, { "x:y": "x" }, { "bad\nname": "x" }]) {
+      expect(validateTunnelMessage(request(headers))).toEqual({ ok: false, reason: "invalid" })
+    }
+    // `__proto__` and `constructor` are legal field names: they stay data and
+    // merge safely because consumers build their maps on null prototypes.
+    expect(isTunnelMessage(request(JSON.parse('{"__proto__":"spoofed","constructor":"spoofed"}')))).toBe(true)
+  })
+
   test("builds heartbeat pong frames from ping frames", () => {
     expect(makeTunnelPong({
       type: "ping",

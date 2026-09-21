@@ -2062,7 +2062,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("clamps invalid host-tunnel ws.close codes before closing user clients", async () => {
+  test("drops host-tunnel ws.close frames with reserved close codes", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
@@ -2099,6 +2099,15 @@ describe("workspace relay Bun adapter", () => {
         code: 1005,
         reason: "reserved host close",
       }))
+      // The reserved-code frame is dropped at the boundary; a legal close
+      // must still reach the client on the same channel.
+      host.send(JSON.stringify({
+        type: "ws.close",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        channel_id: String(message.channel_id),
+        code: 1000,
+        reason: "done",
+      }))
     }
     const token = await mintRuntimeAccessToken({
       principalKind: "user",
@@ -2122,8 +2131,8 @@ describe("workspace relay Bun adapter", () => {
       try {
         await waitForOpen(client)
         await expect(waitForClose(client)).resolves.toMatchObject({
-          code: 1011,
-          reason: "reserved host close",
+          code: 1000,
+          reason: "done",
         })
       } finally {
         client.close()

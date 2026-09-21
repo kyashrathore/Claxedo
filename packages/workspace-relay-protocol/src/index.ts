@@ -252,13 +252,20 @@ function isHttpStatus(input: unknown) {
 }
 
 function isCloseCode(input: unknown) {
-  return typeof input === "number" && Number.isInteger(input) && input >= 0 && input <= 65_535
+  // 1004, 1005, 1006 and 1015 are reserved and never legal on the wire.
+  return typeof input === "number" && Number.isInteger(input)
+    && input >= 1_000 && input <= 4_999
+    && input !== 1_004 && input !== 1_005 && input !== 1_006 && input !== 1_015
 }
+
+// RFC 9110 field-name grammar. A name outside it throws in the Headers
+// conversion every consumer performs, so it is rejected here instead.
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
 function isTunnelHeaderMap(input: unknown): input is TunnelHeaderMap {
   if (!input || typeof input !== "object" || Array.isArray(input)) return false
-  for (const value of Object.values(input)) {
-    if (typeof value !== "string") return false
+  for (const [name, value] of Object.entries(input)) {
+    if (!HEADER_NAME.test(name) || typeof value !== "string") return false
   }
   return true
 }

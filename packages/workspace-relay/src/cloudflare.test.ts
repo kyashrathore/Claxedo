@@ -1197,7 +1197,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(clientSocket.sent).toEqual(["from-host-after-wake"])
   })
 
-  test("clamps invalid tunnelled WebSocket close codes from the host tunnel", async () => {
+  test("drops a tunnelled WebSocket close carrying a reserved code, then honours a legal one", async () => {
     const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
@@ -1225,9 +1225,20 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       reason: "reserved host close",
     }))
 
+    // The boundary validator drops the whole frame; the channel stays open.
+    expect(clientSocket.closed).toBeUndefined()
+
+    hostSocket.message(JSON.stringify({
+      type: "ws.close",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      channel_id: open.channel_id,
+      code: 1000,
+      reason: "done",
+    }))
+
     expect(clientSocket.closed).toEqual({
-      code: 1011,
-      reason: "reserved host close",
+      code: 1000,
+      reason: "done",
     })
   })
 
@@ -1450,6 +1461,50 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(203)
     expect(res.headers.get("content-type")).toBe("text/plain")
     await expect(res.text()).resolves.toBe("host-tunnel-ok")
+  })
+
+  test("carries __proto__ and constructor header names onto the tunnel as ordinary data", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
+    await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+
+    const requestHeaders = new Headers()
+    requestHeaders.set("authorization", `Bearer ${await harness.runtimeAccessToken()}`)
+    requestHeaders.set("__proto__", "spoofed")
+    requestHeaders.set("constructor", "spoofed")
+    const pending = harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: requestHeaders,
+    }))
+    const hostSocket = harness.socket(0)
+    await waitForSent(hostSocket, 1)
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as {
+      request_id: string
+      headers: Record<string, string>
+    }
+    // Assigned onto `{}`, `__proto__` would hit the prototype setter and the
+    // header would vanish; the wire map must keep it as an own property.
+    expect(Object.hasOwn(requestMessage.headers, "__proto__")).toBe(true)
+    expect(requestMessage.headers["__proto__"]).toBe("spoofed")
+    expect(requestMessage.headers["constructor"]).toBe("spoofed")
+
+    hostSocket.message(JSON.stringify({
+      type: "http.response.start",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestMessage.request_id,
+      status: 204,
+      headers: {},
+    }))
+    hostSocket.message(JSON.stringify({
+      type: "http.response.end",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestMessage.request_id,
+    }))
+    const res = await pending
+    expect(res.status).toBe(204)
   })
 
   test("returns tunnelled 204 HTTP responses without opening a body stream", async () => {

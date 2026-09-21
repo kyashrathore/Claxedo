@@ -170,7 +170,9 @@ function headers(input: TunnelHeaderMap) {
 }
 
 function headerMap(input: Headers) {
-  const result: TunnelHeaderMap = {}
+  // A `__proto__` header name is a legal token: assigned onto `{}` it hits the
+  // prototype setter and is silently dropped, so the map gets a null prototype.
+  const result: TunnelHeaderMap = Object.create(null)
   input.forEach((value, key) => {
     result[key] = value
   })
