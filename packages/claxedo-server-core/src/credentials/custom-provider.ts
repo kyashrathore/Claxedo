@@ -10,6 +10,12 @@
  * `readCustomProvider` accepts only the fields below. The engine's provider
  * schema has many more, and a pass-through would let a control-plane caller
  * set any of them — so an unknown field is a rejection, not a copy.
+ *
+ * Two fields steer where the engine sends the provider's credential, so they
+ * carry policy rather than just shape: `baseURL` must be HTTPS (or loopback
+ * HTTP where the deployment allows it) and `env` may name only the variable
+ * `customProviderEnvName` dedicates to this provider — never an arbitrary
+ * `process.env` entry.
  */
 import { eq } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
@@ -20,6 +26,13 @@ import { credentialOrg, type CredentialOrgScope } from "./registry"
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * Exact loopback hostnames only — the same list `bindingBaseUrl` admits for a
+ * plaintext broker origin. WHATWG always yields the bracketed `[::1]`, and
+ * `localhost.` or `*.localhost` deliberately miss.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
 
 export type CustomProviderConfig = {
   providerID: string
@@ -36,6 +49,32 @@ export class CustomProviderInvalidError extends Error {
     super(message)
     this.name = "CustomProviderInvalidError"
   }
+}
+
+export type CustomProviderPolicy = {
+  /**
+   * Whether `http:` base URLs on exact loopback hosts are admitted. The local
+   * single-tenant deployment sets this (a local model server such as Ollama
+   * has no TLS endpoint); a signed multi-tenant control plane must not, since
+   * the loopback it would reach is the server's own.
+   */
+  allowInsecureLoopback?: boolean
+}
+
+/**
+ * The one environment variable a custom provider may read its key from.
+ *
+ * The engine resolves a provider's `env` entries by reading that name out of
+ * its own process environment and sending the value to the provider's base
+ * URL, so a free choice of name would hand it any secret the host exports
+ * (`CLAXEDO_CREDENTIALS_TOKEN`, `DAYTONA_API_KEY`, a cloud token). The name
+ * lives in a namespace reserved for this feature and bound to the provider's
+ * own id — deliberately NOT `CLAXEDO_PROVIDER_`, which `native-delivery`
+ * already owns for brokered credential placeholders, so a custom provider can
+ * never name a variable carrying a registry-issued capability either.
+ */
+export function customProviderEnvName(providerID: string): string {
+  return `CLAXEDO_CUSTOM_PROVIDER_${providerID.toUpperCase().replace(/-/g, "_")}_API_KEY`
 }
 
 function refuseProviderBody(message: string): never {
@@ -85,6 +124,25 @@ function readEnv(value: unknown): string[] {
   })
 }
 
+function readBaseURL(value: unknown, policy: CustomProviderPolicy): string {
+  const baseURL = providerText(value, "baseURL")
+  let url: URL
+  try {
+    url = new URL(baseURL)
+  } catch {
+    refuseProviderBody("baseURL must be a URL")
+  }
+  const loopbackHttp = url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)
+  if (url.protocol !== "https:" && !(policy.allowInsecureLoopback === true && loopbackHttp)) {
+    refuseProviderBody(
+      `baseURL must use HTTPS${policy.allowInsecureLoopback === true ? " or a loopback HTTP endpoint" : ""}`,
+    )
+  }
+  if (url.username || url.password) refuseProviderBody("baseURL must not embed credentials")
+  if (url.search || url.hash) refuseProviderBody("baseURL must not carry a query or fragment")
+  return baseURL
+}
+
 /**
  * Narrow an untrusted request body to the fields a custom provider may set.
  *
@@ -92,15 +150,15 @@ function readEnv(value: unknown): string[] {
  * plane answers with 400. Without this one boundary a validation failure would
  * be indistinguishable from a server fault and surface as a 500.
  */
-export function readCustomProvider(value: unknown): CustomProviderConfig {
+export function readCustomProvider(value: unknown, policy: CustomProviderPolicy = {}): CustomProviderConfig {
   try {
-    return parseCustomProvider(value)
+    return parseCustomProvider(value, policy)
   } catch (cause) {
     throw new CustomProviderInvalidError(cause instanceof Error ? cause.message : String(cause))
   }
 }
 
-function parseCustomProvider(value: unknown): CustomProviderConfig {
+function parseCustomProvider(value: unknown, policy: CustomProviderPolicy): CustomProviderConfig {
   if (!isJsonRecord(value)) refuseProviderBody("a custom provider must be an object")
   const known = new Set(["providerID", "name", "baseURL", "env", "headers", "models"])
   const extra = Object.keys(value).filter((key) => !known.has(key))
@@ -108,25 +166,34 @@ function parseCustomProvider(value: unknown): CustomProviderConfig {
 
   const providerID = providerText(value.providerID, "providerID")
   if (!PROVIDER_ID.test(providerID)) refuseProviderBody("providerID must be lowercase letters, numbers, hyphens or underscores")
-  const baseURL = providerText(value.baseURL, "baseURL")
-  if (!/^https?:\/\//.test(baseURL)) refuseProviderBody("baseURL must start with http:// or https://")
+  const env = readEnv(value.env)
+  const foreign = env.filter((name) => name !== customProviderEnvName(providerID))
+  if (foreign.length) {
+    refuseProviderBody(
+      `env may name only ${customProviderEnvName(providerID)}, the variable dedicated to this provider: ` +
+        `${foreign.join(", ")} would deliver a process secret it does not own`,
+    )
+  }
 
   return {
     providerID,
     name: providerText(value.name, "name"),
-    baseURL,
-    env: readEnv(value.env),
+    baseURL: readBaseURL(value.baseURL, policy),
+    env,
     headers: readHeaders(value.headers),
     models: readModelTable(value.models),
   }
 }
 
 function toConfig(row: typeof ClaxedoCustomProviderTable.$inferSelect): CustomProviderConfig {
+  const owned = customProviderEnvName(row.provider_id)
   return {
     providerID: row.provider_id,
     name: row.name,
     baseURL: row.base_url,
-    env: readEnv(JSON.parse(row.env_json)),
+    // A row persisted before the env-name policy keeps its other fields; a
+    // name outside the provider's own variable is stripped, never served.
+    env: readEnv(JSON.parse(row.env_json)).filter((name) => name === owned),
     headers: readHeaders(JSON.parse(row.headers_json)),
     models: readModelTable(JSON.parse(row.models_json)),
   }
@@ -139,16 +206,21 @@ export function listCustomProviders(org?: CredentialOrgScope): CustomProviderCon
 }
 
 export function putCustomProvider(input: CustomProviderConfig, org?: CredentialOrgScope): CustomProviderConfig {
+  // The store does not trust callers to have validated. Loopback HTTP is a
+  // request-time deployment policy, so this re-check covers only the absolute
+  // rules — including it would refuse a provider the route legitimately
+  // admitted on a local single-tenant host.
+  const config = readCustomProvider(input, { allowInsecureLoopback: true })
   const orgId = credentialOrg(org)
   const now = Date.now()
   const row = {
     org_id: orgId,
-    provider_id: input.providerID,
-    name: input.name,
-    base_url: input.baseURL,
-    env_json: JSON.stringify(input.env),
-    headers_json: JSON.stringify(input.headers),
-    models_json: JSON.stringify(input.models),
+    provider_id: config.providerID,
+    name: config.name,
+    base_url: config.baseURL,
+    env_json: JSON.stringify(config.env),
+    headers_json: JSON.stringify(config.headers),
+    models_json: JSON.stringify(config.models),
     created_at: now,
     updated_at: now,
   }
@@ -169,6 +241,6 @@ export function putCustomProvider(input: CustomProviderConfig, org?: CredentialO
       })
       .run(),
   )
-  return input
+  return config
 }
 

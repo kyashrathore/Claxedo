@@ -16,12 +16,14 @@ const [
   { deleteCredential, listCredentials, putCredential },
   { createTestBackend, setBackendOverride },
   { ClaxedoDB },
+  { ClaxedoCustomProviderTable },
 ] = await Promise.all([
   import("./opencode-provider-catalog"),
   import("./custom-provider"),
   import("./registry"),
   import("./backend-registry"),
   import("../platform/db/index"),
+  import("./custom-provider.sql"),
 ])
 const dirs: string[] = []
 
@@ -201,7 +203,7 @@ describe("operator-declared providers in the OpenCode catalog", () => {
     providerID: "acme",
     name: "Acme",
     baseURL: "https://api.acme.test/v1",
-    env: ["ACME_API_KEY"],
+    env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"],
     headers: { "X-Acme-Tenant": "prod" },
     models: { "acme-b": { name: "Acme B" }, "acme-a": { name: "Acme A" } },
   }
@@ -223,21 +225,53 @@ describe("operator-declared providers in the OpenCode catalog", () => {
     expect(catalog.all.some((provider) => provider.id === "acme")).toBe(false)
   })
 
-  test("it is connected exactly when its environment key is set", async () => {
+  test("it is connected exactly when its own environment variable is set", async () => {
     putCustomProvider(acme, "org_custom")
     const without = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
     expect(without.connected).not.toContain("acme")
 
     const with_ = await opencodeProviderCatalog({
-      env: env(cacheFile(), { ACME_API_KEY: "sk-test" }),
+      env: env(cacheFile(), { CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY: "sk-test" }),
       fetchImpl: fetchOk(),
       org: "org_custom",
     })
     expect(with_.connected).toContain("acme")
   })
 
+  test("a process secret named on a stored row never connects or ships in the catalog", async () => {
+    // The parse boundary refuses foreign env names; a row carrying one anyway
+    // (written before the policy, or by a path that skipped it) must still be
+    // neutralized on the way out.
+    const now = Date.now()
+    ClaxedoDB.use((db) =>
+      db
+        .insert(ClaxedoCustomProviderTable)
+        .values({
+          org_id: "org_secret_env",
+          provider_id: "acme",
+          name: "Acme",
+          base_url: "https://api.acme.test/v1",
+          env_json: JSON.stringify(["CLAXEDO_CREDENTIALS_TOKEN"]),
+          headers_json: "{}",
+          models_json: JSON.stringify({ "acme-1": { name: "Acme One" } }),
+          created_at: now,
+          updated_at: now,
+        })
+        .run(),
+    )
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile(), { CLAXEDO_CREDENTIALS_TOKEN: "internal-secret" }),
+      fetchImpl: fetchOk(),
+      org: "org_secret_env",
+    })
+    const entry = catalog.all.find((provider) => provider.id === "acme")
+    expect(entry?.env).toEqual([])
+    expect(catalog.connected).toContain("acme")
+    expect(JSON.stringify(catalog)).not.toContain("CLAXEDO_CREDENTIALS_TOKEN")
+  })
+
   test("a custom provider replaces the models.dev row it shadows", async () => {
-    putCustomProvider({ ...acme, providerID: "anthropic", name: "Local Anthropic" }, "org_shadow")
+    putCustomProvider({ ...acme, providerID: "anthropic", name: "Local Anthropic", env: ["CLAXEDO_CUSTOM_PROVIDER_ANTHROPIC_API_KEY"] }, "org_shadow")
     const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_shadow" })
     const rows = catalog.all.filter((provider) => provider.id === "anthropic")
     expect(rows).toHaveLength(1)
