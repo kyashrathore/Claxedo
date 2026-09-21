@@ -16,12 +16,12 @@
 import fs from "node:fs"
 import path from "node:path"
 import {
-  DAEMON_OWNERSHIP_SNAPSHOT_FILE,
   DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
+  daemonOwnershipSnapshotPath,
+  isDaemonOwnershipSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { LocalDaemonOwner, MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
 
-export { DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS }
 const PUBLISH_INTERVAL_MS = 5_000
 
 export type DaemonOwnershipSnapshot = {
@@ -35,9 +35,7 @@ export type DaemonOwnershipSnapshot = {
   gate?: MachineRecoveryGate
 }
 
-export function claxedoDaemonOwnershipPath(dataRoot: string) {
-  return path.join(dataRoot, DAEMON_OWNERSHIP_SNAPSHOT_FILE)
-}
+export const claxedoDaemonOwnershipPath = daemonOwnershipSnapshotPath
 
 export function daemonOwnershipSnapshot(
   inspection: MachineRecoveryInspection,
@@ -98,7 +96,7 @@ export function readDaemonOwnershipSnapshot(file: string): DaemonOwnershipSnapsh
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) return undefined
     throw error
   }
-  return isDaemonOwnershipSnapshot(parsed) ? parsed : undefined
+  return isDaemonOwnershipSnapshot(parsed) ? parsed as DaemonOwnershipSnapshot : undefined
 }
 
 export function daemonOwnershipSnapshotIsStale(snapshot: DaemonOwnershipSnapshot, at: number) {
@@ -153,23 +151,3 @@ export function createDaemonOwnershipPublisher(options: {
   }
 }
 
-function isDaemonOwnershipSnapshot(value: unknown): value is DaemonOwnershipSnapshot {
-  if (typeof value !== "object" || value === null) return false
-  const record = value as Record<string, unknown>
-  return (
-    typeof record.machineId === "string" && record.machineId.length > 0
-    && typeof record.generation === "string" && record.generation.length > 0
-    && typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0
-    && typeof record.revision === "string" && record.revision.length > 0
-    && typeof record.writtenAt === "number" && Number.isFinite(record.writtenAt)
-    && typeof record.residencyPins === "number" && Number.isFinite(record.residencyPins)
-    && Array.isArray(record.owners)
-    && record.owners.every((owner) => {
-      if (typeof owner !== "object" || owner === null) return false
-      const row = owner as Record<string, unknown>
-      return typeof row.id === "string" && typeof row.kind === "string"
-        && typeof row.generation === "string" && typeof row.state === "string"
-        && typeof row.pins === "boolean"
-    })
-  )
-}

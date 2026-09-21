@@ -172,6 +172,25 @@ async function readWindowsCreationIdentity(pid: number, boot: string): Promise<C
   }
 }
 
+/**
+ * Whether a recorded identity and one REPORTED by something else describe the
+ * same launch — a daemon answering about itself over HTTP, a child over IPC.
+ *
+ * `parentPid` is excluded deliberately: an orphan is reparented to init, so
+ * comparing it would call a live process a stranger. `startedAtMs` is included
+ * because a reported identity is a value someone else computed, and a field a
+ * record requires but never checks is a weaker guarantee than it advertises.
+ * `verifyCreationIdentity` re-reads the process itself and derives that field
+ * from `startSecond`, so it compares the four it actually observes.
+ */
+export function sameCreationIdentity(recorded: CreationIdentity, observed: CreationIdentity): boolean {
+  return observed.pid === recorded.pid
+    && observed.processGroupId === recorded.processGroupId
+    && observed.startSecond === recorded.startSecond
+    && observed.startedAtMs === recorded.startedAtMs
+    && observed.bootTime === recorded.bootTime
+}
+
 export async function verifyCreationIdentity(recorded: CreationIdentity): Promise<IdentityVerdict> {
   let observed: CreationIdentity | undefined
   try {

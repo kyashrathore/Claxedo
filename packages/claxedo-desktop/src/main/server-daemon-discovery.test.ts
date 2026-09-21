@@ -99,8 +99,26 @@ describe("Claxedo daemon discovery", () => {
 
   test("a listener that disagrees about its own process identity is not the recorded daemon", async () => {
     const record = fixture({ identity: identity() })
+    // Every field the record requires is a field it checks, or the requirement
+    // is a weaker guarantee than it advertises.
+    for (const differing of [
+      { startSecond: "Fri Jan  2 00:00:00 1970" },
+      { startedAtMs: 86_400_000 },
+      { processGroupId: 43 },
+      { bootTime: "1" },
+      { pid: 43 },
+    ]) {
+      const verified = await verifyClaxedoDaemonDiscovery(record, async () =>
+        Response.json({ ...record, identity: { ...identity(), ...differing } }))
+
+      expect(verified, JSON.stringify(differing)).toBeUndefined()
+    }
+  })
+
+  test("a listener reporting no identity at all cannot stand in for one the record names", async () => {
+    const record = fixture({ identity: identity() })
     const verified = await verifyClaxedoDaemonDiscovery(record, async () =>
-      Response.json({ ...record, identity: { ...identity(), startSecond: "Fri Jan  2 00:00:00 1970" } }))
+      Response.json({ ...record, identity: undefined }))
 
     expect(verified).toBeUndefined()
   })

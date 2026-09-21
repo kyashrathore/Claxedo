@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { verifyCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { sameCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 import { asRecordOrEmpty, isNonNegativeSafeInteger, nonEmptyString } from "@claxedo/helpers/guards"
 
 /**
@@ -181,10 +181,5 @@ async function recordedOwnerIsGone(record: DesktopDaemonDiscovery): Promise<bool
 function sameReportedIdentity(recorded: CreationIdentity | undefined, reported: unknown): boolean {
   if (!recorded) return true
   const observed = creationIdentity(reported)
-  if (!observed) return false
-  return observed.pid === recorded.pid
-    && observed.processGroupId === recorded.processGroupId
-    && observed.startSecond === recorded.startSecond
-    && observed.startedAtMs === recorded.startedAtMs
-    && observed.bootTime === recorded.bootTime
+  return !!observed && sameCreationIdentity(recorded, observed)
 }

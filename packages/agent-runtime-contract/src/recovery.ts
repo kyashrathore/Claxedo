@@ -58,6 +58,57 @@ export type RecoveryFacts = {
 export const DAEMON_OWNERSHIP_SNAPSHOT_FILE = "local-daemon-ownership.json"
 export const DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS = 10_000
 
+/** The snapshot's path under a daemon data root, for the writer and the reader alike. */
+export function daemonOwnershipSnapshotPath(dataRoot: string): string {
+  return `${dataRoot.replace(/[/\\]+$/, "")}/${DAEMON_OWNERSHIP_SNAPSHOT_FILE}`
+}
+
+/** One owner row as the snapshot carries it: ids, states and generations, never a command. */
+export type DaemonOwnershipRow = {
+  id: string
+  kind: string
+  generation: string
+  state: string
+  pins: boolean
+  detail?: string
+}
+
+/**
+ * What a launcher may rely on in a snapshot it did not write.
+ *
+ * Both sides validate through this rather than each declaring the shape: the
+ * writer is a daemon and the reader is the launcher that cannot import it, so
+ * two declarations would be two chances to drift.
+ */
+export function isDaemonOwnershipSnapshot(value: unknown): value is {
+  machineId: string
+  generation: string
+  pid: number
+  revision: string
+  writtenAt: number
+  residencyPins: number
+  owners: DaemonOwnershipRow[]
+} {
+  const row = asRecord(value)
+  return (
+    !!row
+    && text(row.machineId) && text(row.generation) && text(row.revision)
+    && typeof row.pid === "number" && Number.isSafeInteger(row.pid) && row.pid > 0
+    && typeof row.writtenAt === "number" && Number.isFinite(row.writtenAt)
+    && typeof row.residencyPins === "number" && Number.isFinite(row.residencyPins)
+    && Array.isArray(row.owners)
+    && row.owners.every((owner) => {
+      const entry = asRecord(owner)
+      return !!entry && text(entry.id) && text(entry.kind) && text(entry.generation)
+        && text(entry.state) && typeof entry.pins === "boolean"
+    })
+  )
+}
+
+function text(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0
+}
+
 export const RECOVERY_TARGET_SCOPES = ["turn", "session", "harness", "machine"] as const
 export type RecoveryTargetScope = (typeof RECOVERY_TARGET_SCOPES)[number]
 

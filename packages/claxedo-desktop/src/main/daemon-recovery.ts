@@ -18,10 +18,10 @@
 
 import { randomUUID } from "node:crypto"
 import fs from "node:fs"
-import path from "node:path"
 import {
-  DAEMON_OWNERSHIP_SNAPSHOT_FILE,
   DAEMON_OWNERSHIP_SNAPSHOT_STALE_MS,
+  daemonOwnershipSnapshotPath,
+  isDaemonOwnershipSnapshot,
   DEFAULT_RECOVERY_BUDGETS,
   RecoveryContractError,
   parseRecoveryOutcome,
@@ -81,9 +81,7 @@ export type DaemonRecoveryResult = {
   replacementAllowed: boolean
 }
 
-export function claxedoDaemonOwnershipPath(dataRoot: string) {
-  return path.join(dataRoot, DAEMON_OWNERSHIP_SNAPSHOT_FILE)
-}
+export const claxedoDaemonOwnershipPath = daemonOwnershipSnapshotPath
 
 export function readDaemonOwnershipView(file: string): DaemonOwnershipView | undefined {
   let parsed: unknown
@@ -93,7 +91,7 @@ export function readDaemonOwnershipView(file: string): DaemonOwnershipView | und
     if (nodeErrorCode(error) === "ENOENT" || error instanceof SyntaxError) return undefined
     throw error
   }
-  return isDaemonOwnershipView(parsed) ? parsed : undefined
+  return isDaemonOwnershipSnapshot(parsed) ? parsed as DaemonOwnershipView : undefined
 }
 
 /**
@@ -315,24 +313,6 @@ function unknownFacts(generation: string, at: number): RecoveryFacts {
   }
 }
 
-function isDaemonOwnershipView(value: unknown): value is DaemonOwnershipView {
-  const record = asRecord(value)
-  return (
-    !!record &&
-    isNonEmptyString(record.machineId) &&
-    isNonEmptyString(record.generation) &&
-    typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 &&
-    isNonEmptyString(record.revision) &&
-    typeof record.writtenAt === "number" && Number.isFinite(record.writtenAt) &&
-    typeof record.residencyPins === "number" && Number.isFinite(record.residencyPins) &&
-    Array.isArray(record.owners) &&
-    record.owners.every((owner) => {
-      const row = asRecord(owner)
-      return !!row && isNonEmptyString(row.id) && isNonEmptyString(row.kind)
-        && isNonEmptyString(row.generation) && isNonEmptyString(row.state) && typeof row.pins === "boolean"
-    })
-  )
-}
 
 export const DAEMON_RECOVERY_CHANNELS = {
   inspect: "daemon-recovery:inspect",

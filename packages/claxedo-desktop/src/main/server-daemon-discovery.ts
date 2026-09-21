@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import type { CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
 import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"
@@ -110,7 +110,7 @@ export async function verifyClaxedoDaemonDiscovery(
     // The record's identity is what a later signal would be checked against, so
     // a listener that disagrees about its own process is not the daemon that
     // wrote the file, however well its token and generation match.
-    if (record.identity && !sameCreationIdentity(record.identity, readUnknown(identity, "identity"))) return undefined
+    if (record.identity && !reportsRecordedIdentity(record.identity, readUnknown(identity, "identity"))) return undefined
     return url
   } catch {
     return undefined
@@ -118,14 +118,8 @@ export async function verifyClaxedoDaemonDiscovery(
 }
 
 /** Whether a listener's reported identity is the one the discovery file recorded. */
-export function sameCreationIdentity(recorded: CreationIdentity, reported: unknown): boolean {
-  const observed = asRecord(reported)
-  if (!observed) return false
-  return observed.pid === recorded.pid
-    && observed.processGroupId === recorded.processGroupId
-    && observed.startSecond === recorded.startSecond
-    && observed.startedAtMs === recorded.startedAtMs
-    && observed.bootTime === recorded.bootTime
+export function reportsRecordedIdentity(recorded: CreationIdentity, reported: unknown): boolean {
+  return isCreationIdentity(reported) && sameCreationIdentity(recorded, reported)
 }
 
 /**

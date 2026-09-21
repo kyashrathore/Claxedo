@@ -1,6 +1,7 @@
 export {
   readBootTime,
   readCreationIdentity,
+  sameCreationIdentity,
   verifyCreationIdentity,
   type CreationIdentity,
   type CreationIdentitySource,

@@ -870,6 +870,28 @@ describe("desktop daemon discovery", () => {
       .toEqual({ state: "absent" })
   })
 
+  test("a listener that disagrees about its own process is not live, whichever field differs", async () => {
+    const record: DesktopDaemonDiscovery = {
+      pid: 7, port: 8, token: "t", generation: "g", protocol: 2, identity: fakeCreationIdentity(7),
+    }
+    const answer = (identity: unknown) => async () =>
+      Response.json({ service: "claxedo-local-daemon", protocol: 2, generation: "g", pid: 7, identity })
+
+    expect(await verifyDesktopDaemon(record, answer(fakeCreationIdentity(7)))).toBe("live")
+    for (const differing of [
+      { startSecond: "Fri Jan  2 00:00:00 1970" },
+      { startedAtMs: 86_400_000 },
+      { processGroupId: 43 },
+      { bootTime: "1" },
+    ]) {
+      expect(
+        await verifyDesktopDaemon(record, answer({ ...fakeCreationIdentity(7), ...differing })),
+        JSON.stringify(differing),
+      ).toBe("unresponsive")
+    }
+    expect(await verifyDesktopDaemon(record, answer(undefined)), "no identity reported").toBe("unresponsive")
+  })
+
   test("a daemon speaking another management protocol is incompatible, and is never probed", async () => {
     let probed = 0
     const state = await desktopDaemonState({
