@@ -116,6 +116,8 @@ describe("connection turn credentials on the session authority", () => {
         turnId: input.turnId,
         fencingToken: input.fencingToken,
       }),
+      grantSessionTurn: async () => { throw new Error("deferred turn grants are not under test") },
+      revokeSessionTurnGrants: async () => ({ revoked: 0 }),
     }
     const app = new Hono()
       .route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({

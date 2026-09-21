@@ -292,7 +292,13 @@ describe("runtime private-session authority oracle", () => {
         authorizeRuntimeSession: async () => {},
         runtimeAccessTokenActive: async () => ({ active: true }),
       },
-      turnAuthority: { acquireSessionTurn, renewSessionTurn, releaseSessionTurn },
+      turnAuthority: {
+        acquireSessionTurn,
+        renewSessionTurn,
+        releaseSessionTurn,
+        grantSessionTurn: async () => { throw new Error("deferred turn grants are not under test") },
+        revokeSessionTurnGrants: async () => ({ revoked: 0 }),
+      },
       env: {
         CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
         CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(turnKey.privateKey),
@@ -478,6 +484,8 @@ describe("the owner grant as a session proof", () => {
         ...turn, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000,
       })),
       releaseSessionTurn: vi.fn(async (turn: { sessionId: string; turnId: string; fencingToken: number }) => ({ released: true, ...turn })),
+      grantSessionTurn: async () => { throw new Error("deferred turn grants are not under test") },
+      revokeSessionTurnGrants: async () => ({ revoked: 0 }),
     }
     const target = app({
       authority,

@@ -12,7 +12,10 @@ import {
   exerciseSessionShareRuntimeTokenConformance,
   exerciseSessionWriteClassConformance,
 } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
-import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
+import {
+  exerciseSessionTurnAuthorityConformance,
+  exerciseSessionTurnGrantConformance,
+} from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
@@ -374,6 +377,89 @@ describe("SQLite private-session authority", () => {
       })).resolves.toMatchObject({
         exclusion: { concurrentDenied: true, reconstructionDenied: true },
         recovery: { expiryTakeover: true, staleReleaseFenced: true },
+      })
+    } finally {
+      Date.now = originalNow
+    }
+  })
+
+  test("satisfies deferred turn-grant conformance across reconstructed adapters", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-turn-grant-conformance-"))
+    temporaryDirectories.push(directory)
+    const databasePath = path.join(directory, "authority.db")
+    const creator = auth("creator")
+    const grantee = auth("grantee")
+    const first = createSqliteWorkspaceAuthority({ path: databasePath })
+    const reconstructed = createSqliteWorkspaceAuthority({ path: databasePath })
+    const seed = openAuthorityDb({ path: databasePath })
+    openAuthorities.push(first, reconstructed, seed)
+    await first.usersMe(grantee)
+    await first.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    await first.reserveSession(creator, {
+      operationId: "operation_grant_parent",
+      sessionId: "session_grant_parent",
+      workspaceId: "workspace_main",
+      kind: "create",
+    })
+    await first.registerRuntimeSession({
+      principalKind: "user",
+      actorId: creator.user.tokenIdentifier,
+      actorKind: "human",
+      operationId: "operation_grant_parent",
+      sessionId: "session_grant_parent",
+      workspaceId: "workspace_main",
+    })
+    orgMember(seed, "workspace_main", grantee.user.tokenIdentifier, "member")
+    seed().prepare(`INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      SELECT project_id, ?, 'editor', 1, 1 FROM workspaces WHERE workspace_id = 'workspace_main'`)
+      .run(grantee.user.tokenIdentifier)
+    let currentTime = Date.now()
+    const originalNow = Date.now
+    Date.now = () => currentTime
+    try {
+      await expect(exerciseSessionTurnGrantConformance({
+        authority: first,
+        reconstructed,
+        registrations: first,
+        workspaceId: "workspace_main",
+        sessionId: "session_grant_parent",
+        creator: { principalKind: "user", actorId: creator.user.tokenIdentifier, actorKind: "human" },
+        grantee: { principalKind: "user", actorId: grantee.user.tokenIdentifier, actorKind: "human" },
+        setGranteeShare: async (level) => {
+          const target = {
+            sessionId: "session_grant_parent",
+            workspaceId: "workspace_main",
+            grantedToTokenIdentifier: grantee.user.tokenIdentifier,
+          }
+          if (level) await first.grantSessionShare!(creator, { ...target, level })
+          else await first.revokeSessionShare!(creator, target)
+        },
+        turnProducer: async (turnId) => {
+          const row = seed().prepare<unknown[], { actor_id: string }>(
+            `SELECT actor_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?`,
+          ).get("session_grant_parent", turnId)
+          return row ? { actorId: row.actor_id } : undefined
+        },
+        advancePast(expiresAt) {
+          currentTime = expiresAt + 1
+        },
+      })).resolves.toEqual({
+        scenarios: [
+          "grant-under-send-share",
+          "redeem-mints-lease-and-producer",
+          "same-turn-retry-returns-the-live-lease",
+          "redeemed-grant-refused-after-release",
+          "turn-id-and-prefix-mismatch-refused",
+          "wrong-actor-refused",
+          "expired-refused",
+          "downgraded-share-refused-without-lease-or-producer",
+          "revoked-refused",
+          "reconstruction-visibility",
+        ],
+        grant: { requiresSendShare: true, requiresChildRegistration: true },
+        redemption: { leaseAndProducer: true, sameTurnRetry: true, refusedAfterRelease: true },
+        refusals: { mismatch: true, wrongActor: true, expired: true, downgradedShare: true, revoked: true },
+        reconstruction: { visible: true },
       })
     } finally {
       Date.now = originalNow

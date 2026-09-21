@@ -28,11 +28,19 @@ import {
   type TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
+  SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
+  SessionTurnGrantError,
   SessionTurnLeaseLostError,
+  normalizeGrantSessionTurnInput,
+  sessionTurnGrantRefusal,
   type AcquireSessionTurnInput,
+  type GrantSessionTurnInput,
   type OwnedSessionTurnInput,
+  type RevokeSessionTurnGrantsInput,
   type SessionTurnAuthority,
+  type SessionTurnGrant,
+  type SessionTurnGrantIntent,
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
@@ -55,18 +63,14 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "deleteSessionVisibility",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
-export const D1_SESSION_TURN_AUTHORITY_METHODS = [
-  "acquireSessionTurn",
-  "renewSessionTurn",
-  "releaseSessionTurn",
-] as const satisfies readonly (keyof SessionTurnAuthority)[]
+export const D1_SESSION_TURN_AUTHORITY_METHODS = SESSION_TURN_AUTHORITY_METHODS
 
 export type D1SessionAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_SESSION_AUTHORITY_METHODS)[number]>
 
 export type D1SessionAuthorityOptions = {
   deploymentId: string
   now?: () => number
-  randomId?: (prefix: "assert" | "snapshot" | "turn" | "share") => string
+  randomId?: (prefix: "assert" | "snapshot" | "turn" | "share" | "grant") => string
   turnLeaseTtlMs?: number
 }
 
@@ -173,6 +177,25 @@ type TurnLeaseRow = {
   acquired_at: number
   expires_at: number
   released_at: number | null
+}
+
+type TurnGrantRow = {
+  grant_id: string
+  session_id: string
+  workspace_id: string
+  org_id: string
+  project_id: string
+  actor_id: string
+  intent: SessionTurnGrantIntent
+  subject_session_id: string | null
+  turn_id: string | null
+  turn_id_prefix: string | null
+  issued_at: number
+  expires_at: number
+  redeemed_at: number | null
+  redeemed_turn_id: string | null
+  revoked_at: number | null
+  revoke_reason: string | null
 }
 
 type CanonicalMessage = {
@@ -562,46 +585,14 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const sessionId = requireText(input.sessionId, "sessionId")
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const turnId = requireText(input.turnId, "turnId", 512)
+    const grantId = optionalText(input.grantId, "grantId")
     await this.requireSessionAccess(actor, sessionId, workspaceId, "agent_turn")
     const now = this.now()
     const expiresAt = now + this.turnLeaseTtlMs
     const leaseId = this.randomId("turn")
-    await this.database
-      .prepare(
-        `
-      insert into session_turn_leases (
-        session_id, workspace_id, org_id, project_id, turn_id, lease_id,
-        fencing_token, actor_id, acquired_at, expires_at, released_at
-      )
-      select s.session_id, s.workspace_id, s.org_id, s.project_id, ?, ?,
-        1, ?, ?, ?, null
-      from sessions s
-      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-        and ${actorSessionAccessSql("?", "s", "agent_turn")}
-      on conflict (session_id) do update set
-        turn_id = excluded.turn_id,
-        lease_id = excluded.lease_id,
-        fencing_token = session_turn_leases.fencing_token + 1,
-        actor_id = excluded.actor_id,
-        acquired_at = excluded.acquired_at,
-        expires_at = excluded.expires_at,
-        released_at = null
-      where session_turn_leases.released_at is not null
-        or session_turn_leases.expires_at <= ?
-    `,
-      )
-      .bind(
-        turnId,
-        leaseId,
-        actor.actorId,
-        now,
-        expiresAt,
-        sessionId,
-        workspaceId,
-        ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
-        now,
-      )
-      .run()
+    const admission = { actor, sessionId, workspaceId, turnId, leaseId, now, expiresAt }
+    if (grantId === undefined) await this.turnLeaseInsert(admission).run()
+    else await this.redeemTurnGrant(admission, grantId)
     const row = await this.turnLease(sessionId)
     if (
       row
@@ -619,6 +610,204 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     // competing turn's expiry. Only an authorized contender gets a 409.
     await this.requireSessionAccess(actor, sessionId, workspaceId, "agent_turn")
     throw new SessionTurnConflictError(sessionId, row?.expires_at)
+  }
+
+  /**
+   * The lease insert both request-driven and grant-redeemed turns share. A
+   * live lease for the same turn and actor leaves the row untouched, which is
+   * what makes an exact retry idempotent; only release or expiry lets the
+   * `on conflict` branch replace it, advancing the fence in the same statement.
+   * With `grant`, the row is written only while the grant still admits this
+   * turn: unrevoked, unexpired, covering the turn id, and either unredeemed
+   * or redeemed for exactly this turn while that lease is still live.
+   */
+  private turnLeaseInsert(
+    input: TurnAdmission,
+    grant?: { grantId: string },
+  ) {
+    const grantGuard = grant === undefined
+      ? ""
+      : `and exists (
+          select 1 from session_turn_grants g
+          where g.grant_id = ? and g.session_id = s.session_id and g.workspace_id = s.workspace_id
+            and g.actor_id = ? and g.revoked_at is null and g.expires_at > ?
+            and (g.turn_id = ? or (g.turn_id_prefix is not null and substr(?, 1, length(g.turn_id_prefix)) = g.turn_id_prefix))
+            and (g.redeemed_at is null or (g.redeemed_turn_id = ? and exists (
+              select 1 from session_turn_leases live
+              where live.session_id = g.session_id and live.turn_id = ? and live.actor_id = g.actor_id
+                and live.released_at is null and live.expires_at > ?
+            )))
+        )`
+    const grantBindings = grant === undefined
+      ? []
+      : [grant.grantId, input.actor.actorId, input.now, input.turnId, input.turnId, input.turnId, input.turnId, input.now]
+    return this.database
+      .prepare(
+        `
+      insert into session_turn_leases (
+        session_id, workspace_id, org_id, project_id, turn_id, lease_id,
+        fencing_token, actor_id, acquired_at, expires_at, released_at
+      )
+      select s.session_id, s.workspace_id, s.org_id, s.project_id, ?, ?,
+        1, ?, ?, ?, null
+      from sessions s
+      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
+        and ${actorSessionAccessSql("?", "s", "agent_turn")}
+        ${grantGuard}
+      on conflict (session_id) do update set
+        turn_id = excluded.turn_id,
+        lease_id = excluded.lease_id,
+        fencing_token = session_turn_leases.fencing_token + 1,
+        actor_id = excluded.actor_id,
+        acquired_at = excluded.acquired_at,
+        expires_at = excluded.expires_at,
+        released_at = null
+      where session_turn_leases.released_at is not null
+        or session_turn_leases.expires_at <= ?
+    `,
+      )
+      .bind(
+        input.turnId,
+        input.leaseId,
+        input.actor.actorId,
+        input.now,
+        input.expiresAt,
+        input.sessionId,
+        input.workspaceId,
+        ...repeat(input.actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        ...grantBindings,
+        input.now,
+      )
+  }
+
+  /**
+   * Lease insert and grant redemption in one batch: the grant is marked
+   * redeemed only when the lease row now carries this batch's own `leaseId`,
+   * and the batch holds only when the lease is live for this turn and actor
+   * and the grant records this turn. A grant already redeemed for this turn
+   * therefore admits its live retry without a second write. A rejected batch
+   * is named by re-reading the grant afterwards; when the grant itself still
+   * admits the turn, the caller's post-read tells share loss from a competing
+   * turn the way a request-driven acquire does.
+   */
+  private async redeemTurnGrant(input: TurnAdmission, grantId: string) {
+    const assertionId = this.randomId("assert")
+    try {
+      await this.guardedBatch(
+        [
+          this.turnLeaseInsert(input, { grantId }),
+          this.database
+            .prepare(
+              `
+          update session_turn_grants set redeemed_at = ?, redeemed_turn_id = ?
+          where grant_id = ? and redeemed_at is null and exists (
+            select 1 from session_turn_leases l
+            where l.session_id = ? and l.workspace_id = ? and l.turn_id = ? and l.lease_id = ? and l.released_at is null
+          )
+        `,
+            )
+            .bind(input.now, input.turnId, grantId, input.sessionId, input.workspaceId, input.turnId, input.leaseId),
+          this.database
+            .prepare(
+              `
+          insert into authority_batch_assertions (assertion_id, passed)
+          values (?, case when exists (
+            select 1 from session_turn_leases l
+            join session_turn_grants g on g.grant_id = ?
+            where l.session_id = ? and l.workspace_id = ? and l.turn_id = ? and l.actor_id = ?
+              and l.released_at is null and l.expires_at > ?
+              and g.actor_id = l.actor_id and g.redeemed_at is not null and g.redeemed_turn_id = l.turn_id
+          ) then 1 else 0 end)
+        `,
+            )
+            .bind(assertionId, grantId, input.sessionId, input.workspaceId, input.turnId, input.actor.actorId, input.now),
+          this.deleteAssertion(assertionId),
+        ],
+        "Session turn grant redemption was refused",
+      )
+    } catch (error) {
+      if (!(error instanceof D1SessionAuthorityError && error.code === "resource_conflict")) throw error
+      const lease = await this.turnLease(input.sessionId)
+      const live = lease && lease.released_at === null && lease.expires_at > input.now
+        ? { turnId: lease.turn_id, actorId: lease.actor_id }
+        : undefined
+      const refusal = sessionTurnGrantRefusal(
+        turnGrantJson(await this.turnGrant(grantId)),
+        { actorId: input.actor.actorId, sessionId: input.sessionId, workspaceId: input.workspaceId, turnId: input.turnId, now: input.now },
+        live,
+      )
+      if (refusal) throw refusal
+    }
+  }
+
+  async grantSessionTurn(input: GrantSessionTurnInput): Promise<SessionTurnGrant> {
+    const actor = await this.requireRuntimeActor(input)
+    const sessionId = requireText(input.sessionId, "sessionId")
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const grant = normalizeGrantSessionTurnInput(input)
+    await this.requireSessionAccess(actor, sessionId, workspaceId, "agent_turn")
+    const now = this.now()
+    const grantId = this.randomId("grant")
+    await this.database
+      .prepare(
+        `
+      insert into session_turn_grants (
+        grant_id, session_id, workspace_id, org_id, project_id, actor_id, intent,
+        subject_session_id, turn_id, turn_id_prefix, issued_at, expires_at
+      )
+      select ?, s.session_id, s.workspace_id, s.org_id, s.project_id, ?, ?, ?, ?, ?, ?, ?
+      from sessions s
+      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
+        and ${actorSessionAccessSql("?", "s", "agent_turn")}
+        and (? is null or exists (
+          select 1 from session_registration_operations r
+          where r.operation_id = ? and r.session_id = ? and r.parent_session_id = s.session_id
+            and r.workspace_id = s.workspace_id and r.creator_actor_id = ?
+            and r.state not in ('compensation_pending', 'compensated')
+        ))
+    `,
+      )
+      .bind(
+        grantId,
+        actor.actorId,
+        grant.intent,
+        grant.subjectSessionId ?? null,
+        grant.turnId ?? null,
+        grant.turnIdPrefix ?? null,
+        now,
+        now + grant.ttlMs,
+        sessionId,
+        workspaceId,
+        ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        grant.registrationOperationId ?? null,
+        grant.registrationOperationId ?? null,
+        grant.subjectSessionId ?? null,
+        actor.actorId,
+      )
+      .run()
+    const row = await this.turnGrant(grantId)
+    if (row) return turnGrantJson(row)
+    await this.requireSessionAccess(actor, sessionId, workspaceId, "agent_turn")
+    throw new SessionTurnGrantError("session_turn_grant_mismatch", "Child registration does not name this parent and creator")
+  }
+
+  async revokeSessionTurnGrants(input: RevokeSessionTurnGrantsInput) {
+    const sessionId = optionalText(input.sessionId, "sessionId")
+    const subjectSessionId = optionalText(input.subjectSessionId, "subjectSessionId")
+    const reason = requireText(input.reason, "reason")
+    if (sessionId === undefined && subjectSessionId === undefined) {
+      throw new D1SessionAuthorityError("invalid_input", "sessionId or subjectSessionId is required")
+    }
+    const result = await this.database
+      .prepare(
+        `
+      update session_turn_grants set revoked_at = ?, revoke_reason = ?
+      where revoked_at is null and (session_id = ? or subject_session_id = ?)
+    `,
+      )
+      .bind(this.now(), reason, sessionId ?? null, subjectSessionId ?? null)
+      .run()
+    return { revoked: result.meta.changes }
   }
 
   /**
@@ -2097,6 +2286,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .first<TurnLeaseRow>()
   }
 
+  private async turnGrant(grantId: string) {
+    return await this.database
+      .prepare(`select * from session_turn_grants where grant_id = ?`)
+      .bind(grantId)
+      .first<TurnGrantRow>()
+  }
+
   private registrationAssertion(
     assertionId: string,
     intent: ReturnType<typeof normalizeReservation>,
@@ -2541,6 +2737,37 @@ function positiveFence(value: number) {
     throw new D1SessionAuthorityError("invalid_input", "fencingToken must be a positive safe integer")
   }
   return value
+}
+
+type TurnAdmission = {
+  actor: Principal
+  sessionId: string
+  workspaceId: string
+  turnId: string
+  leaseId: string
+  now: number
+  expiresAt: number
+}
+
+function turnGrantJson(row: TurnGrantRow): SessionTurnGrant
+function turnGrantJson(row: TurnGrantRow | null): SessionTurnGrant | undefined
+function turnGrantJson(row: TurnGrantRow | null): SessionTurnGrant | undefined {
+  if (!row) return undefined
+  return {
+    grantId: row.grant_id,
+    sessionId: row.session_id,
+    workspaceId: row.workspace_id,
+    actorId: row.actor_id,
+    intent: row.intent,
+    ...(row.subject_session_id === null ? {} : { subjectSessionId: row.subject_session_id }),
+    ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+    ...(row.turn_id_prefix === null ? {} : { turnIdPrefix: row.turn_id_prefix }),
+    issuedAt: row.issued_at,
+    expiresAt: row.expires_at,
+    ...(row.redeemed_at === null ? {} : { redeemedAt: row.redeemed_at }),
+    ...(row.redeemed_turn_id === null ? {} : { redeemedTurnId: row.redeemed_turn_id }),
+    ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
+  }
 }
 
 function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {

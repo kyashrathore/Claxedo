@@ -11,7 +11,10 @@ import {
   exerciseSessionShareRuntimeTokenConformance,
   exerciseSessionWriteClassConformance,
 } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
-import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
+import {
+  exerciseSessionTurnAuthorityConformance,
+  exerciseSessionTurnGrantConformance,
+} from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
@@ -507,6 +510,91 @@ describe("D1 private multiplayer session authority", () => {
       retry: { idempotent: true },
       recovery: { expiryTakeover: true, staleReleaseFenced: true },
     })
+  })
+
+  test("satisfies deferred turn-grant conformance across reconstructed adapters", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_grant_parent", sessionId: "ses_grant_parent" })
+    const reconstructed = new D1SessionAuthority(input.database, { deploymentId: "deployment-a", now: input.now })
+
+    await expect(exerciseSessionTurnGrantConformance({
+      authority: input.sessions,
+      reconstructed,
+      registrations: input.sessions,
+      workspaceId: "ws_main",
+      sessionId: "ses_grant_parent",
+      creator: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+      grantee: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+      setGranteeShare: async (level) => {
+        const target = { sessionId: "ses_grant_parent", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
+        if (level) await input.sessions.grantSessionShare(alice, { ...target, level })
+        else await input.sessions.revokeSessionShare(alice, target)
+      },
+      turnProducer: async (turnId) => {
+        const row = await input.database
+          .prepare("select actor_id from session_turn_producers where session_id = ? and turn_id = ?")
+          .bind("ses_grant_parent", turnId)
+          .first<{ actor_id: string }>()
+        return row ? { actorId: row.actor_id } : undefined
+      },
+      advancePast: input.advancePast,
+    })).resolves.toEqual({
+      scenarios: [
+        "grant-under-send-share",
+        "redeem-mints-lease-and-producer",
+        "same-turn-retry-returns-the-live-lease",
+        "redeemed-grant-refused-after-release",
+        "turn-id-and-prefix-mismatch-refused",
+        "wrong-actor-refused",
+        "expired-refused",
+        "downgraded-share-refused-without-lease-or-producer",
+        "revoked-refused",
+        "reconstruction-visibility",
+      ],
+      grant: { requiresSendShare: true, requiresChildRegistration: true },
+      redemption: { leaseAndProducer: true, sameTurnRetry: true, refusedAfterRelease: true },
+      refusals: { mismatch: true, wrongActor: true, expired: true, downgradedShare: true, revoked: true },
+      reconstruction: { visible: true },
+    })
+  })
+
+  test("parent share is rechecked inside the grant redemption batch", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_grant_race", sessionId: "ses_grant_race" })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_grant_race", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId, level: "send",
+    })
+    const principal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
+    const grant = await input.sessions.grantSessionTurn({
+      ...principal, sessionId: "ses_grant_race", workspaceId: "ws_main", intent: "queued_prompt", turnId: "msg_race",
+    })
+    let batches = 0
+    // Miniflare's RPC binding supplies methods dynamically, so intercept the
+    // database port passed to the authority rather than spying on the proxy.
+    const raced = new D1SessionAuthority(new Proxy(input.database, {
+      get(target, key) {
+        if (key === "batch") return async (statements: Parameters<typeof target.batch>[0]) => {
+          batches += 1
+          await target.prepare("UPDATE session_share_grants SET level = 'follow' WHERE session_id = 'ses_grant_race'").run()
+          return target.batch(statements)
+        }
+        const value = Reflect.get(target, key)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    }), { deploymentId: "deployment-a", now: input.now })
+
+    const outcome = await raced.acquireSessionTurn({
+      ...principal, sessionId: "ses_grant_race", workspaceId: "ws_main", turnId: "msg_race", grantId: grant.grantId,
+    }).then(() => "accepted", (error: unknown) => (error instanceof Error && "status" in error ? error.status : error))
+    expect(batches).toBe(1)
+    expect(outcome).toBe(403)
+    expect(await input.database.prepare("select 1 from session_turn_leases where session_id = ?").bind("ses_grant_race").first()).toBeNull()
+    expect(await input.database.prepare("select 1 from session_turn_producers where session_id = ? and turn_id = ?")
+      .bind("ses_grant_race", "msg_race").first()).toBeNull()
+    expect(await input.database.prepare("select redeemed_at, redeemed_turn_id from session_turn_grants where grant_id = ?")
+      .bind(grant.grantId).first()).toEqual({ redeemed_at: null, redeemed_turn_id: null })
   })
 
   test("makes reservation retries exact and keeps ambiguous or compensated runtimes invisible", async () => {

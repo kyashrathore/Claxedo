@@ -40,6 +40,18 @@ export function testManagedSessionAuthority(
     turnId: input.turnId,
     fencingToken: input.fencingToken,
   })
+  const grantSessionTurn: SessionTurnAuthority["grantSessionTurn"] = async (input) => ({
+    grantId: `grant_${input.sessionId}`,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+    actorId: input.actorId,
+    intent: input.intent,
+    ...(input.subjectSessionId === undefined ? {} : { subjectSessionId: input.subjectSessionId }),
+    ...(input.turnId === undefined ? {} : { turnId: input.turnId }),
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  })
+  const revokeSessionTurnGrants: SessionTurnAuthority["revokeSessionTurnGrants"] = async () => ({ revoked: 0 })
   return {
     reserveSession,
     registerRuntimeSession: async () => ({ registered: true }),
@@ -53,6 +65,8 @@ export function testManagedSessionAuthority(
     acquireSessionTurn,
     renewSessionTurn,
     releaseSessionTurn,
+    grantSessionTurn,
+    revokeSessionTurnGrants,
     ...overrides,
   } as ManagedTestAuthority
 }

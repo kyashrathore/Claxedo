@@ -530,6 +530,28 @@ function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
       PRIMARY KEY (session_id, turn_id),
       UNIQUE (session_id, fencing_token)
     );
+    CREATE TABLE IF NOT EXISTS session_turn_grants (
+      grant_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      org_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      intent TEXT NOT NULL CHECK (intent IN ('child_completion', 'queued_prompt')),
+      subject_session_id TEXT,
+      turn_id TEXT,
+      turn_id_prefix TEXT,
+      issued_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL CHECK (expires_at > issued_at),
+      redeemed_at INTEGER,
+      redeemed_turn_id TEXT,
+      revoked_at INTEGER,
+      revoke_reason TEXT,
+      CHECK ((turn_id IS NOT NULL) + (turn_id_prefix IS NOT NULL) = 1)
+    );
+    CREATE INDEX IF NOT EXISTS session_turn_grants_by_session
+      ON session_turn_grants (session_id, revoked_at);
+    CREATE INDEX IF NOT EXISTS session_turn_grants_by_subject
+      ON session_turn_grants (subject_session_id, revoked_at);
   `)
   addColumn(db, "session_history", "snapshot_hash", "TEXT")
   // Not backfilled: a session registered before this column reads as never

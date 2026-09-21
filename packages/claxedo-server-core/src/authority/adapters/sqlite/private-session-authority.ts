@@ -17,9 +17,14 @@ import {
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   SessionTurnConflictError,
+  SessionTurnGrantError,
   SessionTurnLeaseLostError,
+  normalizeGrantSessionTurnInput,
+  sessionTurnGrantRefusal,
   type OwnedSessionTurnInput,
   type SessionTurnAuthority,
+  type SessionTurnGrant,
+  type SessionTurnGrantIntent,
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
@@ -332,19 +337,88 @@ export function createSqlitePrivateSessionAuthority(input: {
         denied()
       }
     },
+    async grantSessionTurn(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const sessionId = required(value.sessionId, "sessionId")
+      const workspaceId = required(value.workspaceId, "workspaceId")
+      const grant = normalizeGrantSessionTurnInput(value)
+      const at = now()
+      return db.transaction(() => {
+        const { workspace } = requireSessionAccess(db, actor, sessionId, workspaceId, "agent_turn")
+        if (grant.registrationOperationId !== undefined) {
+          const row = registration(db, grant.registrationOperationId)
+          if (
+            !row
+            || row.session_id !== grant.subjectSessionId
+            || row.parent_session_id !== sessionId
+            || row.workspace_id !== workspaceId
+            || row.creator_actor_id !== actor.token_identifier
+            || row.state === "compensation_pending"
+            || row.state === "compensated"
+          ) {
+            throw new SessionTurnGrantError("session_turn_grant_mismatch", "Child registration does not name this parent and creator")
+          }
+        }
+        const grantId = `grant_${randomToken()}`
+        db.prepare(`
+          INSERT INTO session_turn_grants (
+            grant_id, session_id, workspace_id, org_id, actor_id, intent, subject_session_id,
+            turn_id, turn_id_prefix, issued_at, expires_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          grantId,
+          sessionId,
+          workspaceId,
+          workspace.org_id,
+          actor.token_identifier,
+          grant.intent,
+          grant.subjectSessionId ?? null,
+          grant.turnId ?? null,
+          grant.turnIdPrefix ?? null,
+          at,
+          at + grant.ttlMs,
+        )
+        return publicTurnGrant(turnGrant(db, grantId)!)
+      })()
+    },
+    async revokeSessionTurnGrants(value) {
+      const db = input.database()
+      const sessionId = trimToUndefined(value.sessionId)
+      const subjectSessionId = trimToUndefined(value.subjectSessionId)
+      const reason = required(value.reason, "reason")
+      if (sessionId === undefined && subjectSessionId === undefined) {
+        throw new SqlitePrivateSessionAuthorityError("invalid_input", "sessionId or subjectSessionId is required")
+      }
+      const revoked = db.prepare(`
+        UPDATE session_turn_grants SET revoked_at = ?, revoke_reason = ?
+        WHERE revoked_at IS NULL AND (session_id = ? OR subject_session_id = ?)
+      `).run(now(), reason, sessionId ?? null, subjectSessionId ?? null).changes
+      return { revoked }
+    },
     async acquireSessionTurn(value) {
       const db = input.database()
       const actor = runtimeActor(db, value)
       const sessionId = required(value.sessionId, "sessionId")
       const workspaceId = required(value.workspaceId, "workspaceId")
       const turnId = required(value.turnId, "turnId")
+      const grantId = trimToUndefined(value.grantId)
       const at = now()
       return db.transaction(() => {
         requireSessionAccess(db, actor, sessionId, workspaceId, "agent_turn")
         const current = turnLease(db, sessionId)
-        if (current && current.released_at === null && current.expires_at > at) {
-          if (current.turn_id === turnId && current.actor_id === actor.token_identifier) return publicTurnLease(current)
-          throw new SessionTurnConflictError(sessionId, current.expires_at)
+        const live = current && current.released_at === null && current.expires_at > at ? current : undefined
+        if (grantId !== undefined) {
+          const refusal = sessionTurnGrantRefusal(
+            publicTurnGrant(turnGrant(db, grantId)),
+            { actorId: actor.token_identifier, sessionId, workspaceId, turnId, now: at },
+            live && { turnId: live.turn_id, actorId: live.actor_id },
+          )
+          if (refusal) throw refusal
+        }
+        if (live) {
+          if (live.turn_id === turnId && live.actor_id === actor.token_identifier) return publicTurnLease(live)
+          throw new SessionTurnConflictError(sessionId, live.expires_at)
         }
         const fencingToken = (current?.fencing_token ?? 0) + 1
         const leaseId = `turn_${randomToken()}`
@@ -373,6 +447,12 @@ export function createSqlitePrivateSessionAuthority(input: {
             session_id, workspace_id, turn_id, fencing_token, actor_id, admitted_at
           ) VALUES (?, ?, ?, ?, ?, ?)
         `).run(sessionId, workspaceId, turnId, fencingToken, actor.token_identifier, at)
+        if (grantId !== undefined) {
+          db.prepare(`
+            UPDATE session_turn_grants SET redeemed_at = ?, redeemed_turn_id = ?
+            WHERE grant_id = ? AND redeemed_at IS NULL
+          `).run(at, turnId, grantId)
+        }
         stampHumanTurn(db, actor, sessionId, workspaceId, at)
         return publicTurnLease(turnLease(db, sessionId)!)
       })()
@@ -875,6 +955,49 @@ type TurnLeaseRow = {
 
 function turnLease(db: SqliteAuthorityDb, sessionId: string) {
   return db.prepare<unknown[], TurnLeaseRow>(`SELECT * FROM session_turn_leases WHERE session_id = ?`).get(sessionId)
+}
+
+type TurnGrantRow = {
+  grant_id: string
+  session_id: string
+  workspace_id: string
+  org_id: string
+  actor_id: string
+  intent: SessionTurnGrantIntent
+  subject_session_id: string | null
+  turn_id: string | null
+  turn_id_prefix: string | null
+  issued_at: number
+  expires_at: number
+  redeemed_at: number | null
+  redeemed_turn_id: string | null
+  revoked_at: number | null
+  revoke_reason: string | null
+}
+
+function turnGrant(db: SqliteAuthorityDb, grantId: string) {
+  return db.prepare<unknown[], TurnGrantRow>(`SELECT * FROM session_turn_grants WHERE grant_id = ?`).get(grantId)
+}
+
+function publicTurnGrant(row: TurnGrantRow): SessionTurnGrant
+function publicTurnGrant(row: TurnGrantRow | undefined): SessionTurnGrant | undefined
+function publicTurnGrant(row: TurnGrantRow | undefined): SessionTurnGrant | undefined {
+  if (!row) return undefined
+  return {
+    grantId: row.grant_id,
+    sessionId: row.session_id,
+    workspaceId: row.workspace_id,
+    actorId: row.actor_id,
+    intent: row.intent,
+    ...(row.subject_session_id === null ? {} : { subjectSessionId: row.subject_session_id }),
+    ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+    ...(row.turn_id_prefix === null ? {} : { turnIdPrefix: row.turn_id_prefix }),
+    issuedAt: row.issued_at,
+    expiresAt: row.expires_at,
+    ...(row.redeemed_at === null ? {} : { redeemedAt: row.redeemed_at }),
+    ...(row.redeemed_turn_id === null ? {} : { redeemedTurnId: row.redeemed_turn_id }),
+    ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
+  }
 }
 
 function publicTurnLease(row: TurnLeaseRow): SessionTurnLease {
