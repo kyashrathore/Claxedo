@@ -56,6 +56,7 @@ import {
   sessionStatus,
 } from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
+import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
 import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
 
@@ -802,6 +803,12 @@ export class RuntimeStore {
   private settleTimer: ReturnType<typeof setTimeout> | undefined
   private databaseFile: string
   private hadDatabaseFile: boolean
+  /**
+   * One instance per store: every launch this workspace prepares has to be
+   * reconcilable against the same table, and two views of it would let a
+   * survivor be owned twice.
+   */
+  private launchOwnershipStore: ReturnType<typeof sqliteLaunchOwnership> | undefined
 
   constructor(root = workspaceRuntimeStoreDir()) {
     this.root = root
@@ -905,6 +912,7 @@ export class RuntimeStore {
     // First, because the snapshot it may take has to precede every schema
     // write, not just the one that needs it.
     this.migrateRecoveryOperations()
+    migrateLaunchOwnership(this.db)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_journal (
         session_id TEXT NOT NULL,
@@ -4410,6 +4418,16 @@ export class RuntimeStore {
 
   releaseTurnLease(sessionId: string, leaseId: string) {
     this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
+  }
+
+  /**
+   * The durable owner of every process this workspace launches. A host that
+   * does not install it leaves ownership volatile, which means a survivor of
+   * this process cannot be identified after a restart.
+   */
+  launchOwnership() {
+    this.launchOwnershipStore ??= sqliteLaunchOwnership(this.db)
+    return this.launchOwnershipStore
   }
 
   /** Who may currently write for this session, as the durable lease row says. */

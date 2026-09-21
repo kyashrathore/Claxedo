@@ -64,6 +64,8 @@ import {
   mountWorkspacePty,
   type MountedWorkspaceEvents,
 } from "./core"
+import { Pty } from "../pty/index"
+import type { LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
 import type {
   RuntimeConfigApplyStatus,
   WorkspaceCheckpointBlocker,
@@ -104,6 +106,12 @@ export type WorkspaceRuntimeStore =
     getMessages(id: string): AgentMessage[]
     listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
+    /**
+     * The durable owner of every process launched for this workspace. Optional:
+     * a store that cannot keep launch records leaves ownership volatile, and
+     * nothing this process launched can be reconciled after a restart.
+     */
+    launchOwnership?: () => LaunchOwnershipStore
     getSessionMaxSeq(sessionId: string): number
     getSessionFencingToken?: (sessionId: string) => number | undefined
     listSubagents: (parentSessionId: string) => unknown[]
@@ -1161,6 +1169,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       sessionConfigStore = storeFactory({ storeRoot: options.storeRoot })
       sessionConfigStore.recoverBusySessions?.()
+      // Before anything this workspace can launch. A store that cannot back
+      // launch ownership leaves it volatile, and the PTY owner then says so
+      // rather than reporting an identity it never durably recorded.
+      const ownership = sessionConfigStore.launchOwnership?.()
+      if (ownership) Pty.useLaunchOwnership(ownership)
     }
     return sessionConfigStore
   }
@@ -1657,12 +1670,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   return {
     mount(app: Hono, options: WorkspaceHostMountOptions) {
       app.use("*", async (c, next) => {
-        // Inspecting a wedged session, and reading the receipt of an operation
-        // already accepted, are exactly what a caller needs while this runtime
-        // is closing; the runtime answers both without the store. Everything
-        // that would write goes on being refused.
-        const inspecting = c.req.method === "GET" && isSessionRecoveryPath(new URL(c.req.url).pathname)
-        if (closing && !inspecting) return c.json({ error: "Workspace runtime is disposed" }, 503)
+        // A recovery request is served while this runtime is closing, and it is
+        // not something disposal waits for. Both halves are the same point: a
+        // wedged session is contained BY cancelling it, so draining that
+        // request before tearing down would make the containment and the
+        // teardown it contains each other's precondition. The runtime answers
+        // recovery without the store, which is what makes this safe.
+        if (isSessionRecoveryPath(new URL(c.req.url).pathname)) {
+          await next()
+          return undefined
+        }
+        if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
         let finish!: () => void
         const request = new Promise<void>((resolve) => { finish = resolve })
         pendingRequests.add(request)

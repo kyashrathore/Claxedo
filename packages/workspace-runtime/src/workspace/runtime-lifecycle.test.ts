@@ -627,6 +627,44 @@ describe("workspace runtime public lifecycle", () => {
       await prompt
     }
   })
+  test("a closing runtime still serves recovery, and only that lets its disposal finish", async () => {
+    const f = await fixture({ runtimeConfig: true, configurable: true, hold: true })
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "local" })
+    const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
+    try {
+      await f.startedTurn
+      const inspected = await (await f.request("/session/local/recovery")).json() as { target?: { ownerGeneration: string } }
+      expect(inspected.target).toBeDefined()
+
+      // Disposal is now waiting on the held prompt request, and only a
+      // cancellation ends that turn. If recovery were refused while closing,
+      // or drained as one of the requests disposal waits for, this could never
+      // finish: the containment and the teardown it contains would each be
+      // waiting for the other.
+      const disposal = f.host.dispose()
+      expect((await f.request("/session", "POST", { id: "after-close" })).status).toBe(503)
+
+      const cancelled = await f.request("/session/local/recovery", "POST", {
+        requestId: "closing-cancel",
+        action: "cancel_turn",
+        target: inspected.target,
+        scopeRevision: inspected.target!.ownerGeneration,
+        attempt: 1,
+      })
+      expect(cancelled.status, await cancelled.clone().text()).toBe(200)
+      expect(f.controls).toEqual([{ instance: 1, action: "cancel" }])
+
+      const outcome = await Promise.race([
+        disposal.then(() => "disposed" as const),
+        new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 5_000)),
+      ])
+      expect(outcome).toBe("disposed")
+    } finally {
+      f.release()
+      await prompt
+    }
+  })
 })
 
 /** A store left behind by a process that died holding a queued prompt. */
