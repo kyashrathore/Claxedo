@@ -1,7 +1,6 @@
 /**
  * How a channel reads a stop back to the person who asked for it: whether the
- * turn stopped, whether the thread may be rebound, and the sentence to reply
- * with.
+ * thread may be rebound, and the sentence to reply with.
  */
 import { turnStopped, type RecoveryRefusal } from "@claxedo/agent-runtime-contract"
 import type { ChannelAbortResult } from "./resolve-session"

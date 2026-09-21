@@ -1,7 +1,6 @@
 /**
- * How this endpoint reads a `RecoveryOutcome` back to a caller: one predicate
- * for whether the turn stopped, one text rendering, and the tool result both
- * are assembled into.
+ * What this endpoint answers a `RecoveryOutcome` with: whether it is an error,
+ * the text a caller reads, and the tool result both are assembled into.
  */
 import {
   turnStopped,
