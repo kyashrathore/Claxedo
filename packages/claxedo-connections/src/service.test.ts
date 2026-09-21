@@ -4,7 +4,10 @@ import { createConnectionsService } from "./service.js"
 import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
 import {
+  ConnectionExistsError,
   ConnectionsUnavailableError,
+  type ConnectionStorePort,
+  type CredentialStorePort,
   type IntegrationDeclaration,
   type IntegrationImpl,
 } from "./types.js"
@@ -339,6 +342,106 @@ describe("connections service", () => {
     // Empty owner is a no-op (never a wildcard that reaps team rows).
     expect(await service.removeOwner("")).toBe(0)
     expect(await connections.get("fake", undefined)).toMatchObject({ id: "connection-1" })
+  })
+
+  test("a refused upsert reclaims the credential it just wrote", async () => {
+    // The two stores are separate ports, so a refused row write must be
+    // compensated: the secret under a fresh id has no consumer and cannot be
+    // left as durable residue (the lost concurrent-connect race writes here).
+    const registry = createIntegrationRegistry()
+    registry.register(KEY_DECL, {
+      actions: { docs: docsPort },
+      auth: { verify: async () => ({ ok: true }) },
+    })
+    const credentials = createMemoryCredentialStore()
+    const memory = createMemoryConnectionStore()
+    const connections: ConnectionStorePort = {
+      ...memory,
+      async upsert() {
+        throw new ConnectionExistsError()
+      },
+    }
+    const service = createConnectionsService({
+      registry,
+      credentials,
+      connections,
+      attempts: createAttempts({ sweepIntervalMs: 0 }),
+      newId: () => "connection-orphan",
+    })
+
+    await expect(service.connect({ integrationId: "fake", fields: {}, secret: "sk-residue" }))
+      .rejects.toBeInstanceOf(ConnectionExistsError)
+    expect(await credentials.get("integration:connection-orphan")).toBeUndefined()
+    expect(await credentials.readSecret("integration:connection-orphan")).toBeNull()
+  })
+
+  test("a refused upsert on an existing row keeps that row's credential slot", async () => {
+    // The provider id of an existing row is that row's own slot: the prior
+    // secret was already overwritten, and deleting would strand a live
+    // connection — the compensation only applies to a fresh id.
+    const registry = createIntegrationRegistry()
+    registry.register(KEY_DECL, {
+      actions: { docs: docsPort },
+      auth: { verify: async () => ({ ok: true }) },
+    })
+    const credentials = createMemoryCredentialStore()
+    const memory = createMemoryConnectionStore()
+    let failUpserts = false
+    const connections: ConnectionStorePort = {
+      ...memory,
+      async upsert(row) {
+        if (failUpserts) throw new Error("store outage")
+        return memory.upsert(row)
+      },
+    }
+    const service = createConnectionsService({
+      registry,
+      credentials,
+      connections,
+      attempts: createAttempts({ sweepIntervalMs: 0 }),
+      newId: () => "connection-1",
+    })
+    await service.connect({ integrationId: "fake", fields: {}, secret: "first" })
+
+    failUpserts = true
+    await expect(service.connect({ integrationId: "fake", fields: {}, secret: "second", confirmReplace: true }))
+      .rejects.toThrow("store outage")
+    expect(await connections.getById("connection-1")).toBeDefined()
+    expect(await credentials.readSecret("integration:connection-1")).toBe("second")
+  })
+
+  test("reportAuthFailure never relabels a credential that is not serving", async () => {
+    // revoked/expired are host lifecycle decisions and "error" is a prior
+    // report: a caller-asserted auth failure may only take an available
+    // credential out of service, not rewrite any other state.
+    for (const status of ["revoked", "expired", "error"] as const) {
+      const registry = createIntegrationRegistry()
+      registry.register(KEY_DECL, {
+        actions: { docs: docsPort },
+        auth: { verify: async () => ({ ok: true }) },
+      })
+      const memory = createMemoryCredentialStore()
+      const statusWrites: string[] = []
+      const credentials: CredentialStorePort = {
+        ...memory,
+        get: async () => ({ kind: "api_key", status }),
+        setStatus: async (_providerId, next) => {
+          statusWrites.push(next)
+        },
+      }
+      const service = createConnectionsService({
+        registry,
+        credentials,
+        connections: createMemoryConnectionStore(),
+        attempts: createAttempts({ sweepIntervalMs: 0 }),
+        newId: () => "connection-1",
+      })
+      await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
+
+      await service.reportAuthFailure("connection-1", "401 from provider")
+      expect(statusWrites, status).toEqual([])
+      service.dispose()
+    }
   })
 
   test("reportAuthFailure flips status; getToken then 409; reverify restores", async () => {

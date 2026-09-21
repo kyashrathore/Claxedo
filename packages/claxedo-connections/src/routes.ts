@@ -10,7 +10,14 @@ export type RouteGate = (c: Context) => Promise<Response | null> | Response | nu
 export type RouteOwnerResolver = (c: Context) => string | undefined
 
 export type IntegrationsRouteOptions = {
-  gate?: RouteGate
+  /**
+   * Authorization for every gated route. Required — the kit ships no
+   * implicit allow-all, so a host that intentionally serves unsigned
+   * traffic (a loopback-only self-host, or an app that authenticated the
+   * request upstream of these routes) states that policy by passing
+   * `() => null`.
+   */
+  gate: RouteGate
   tokenGate?: RouteGate
   /** Host authorization for organization/team mutations; personal writes do not use it. */
   teamWriteGate?: RouteGate
@@ -53,7 +60,13 @@ function scopeFrom(scope: unknown): ConnectionScope | undefined {
   return undefined
 }
 
-export function createIntegrationsRoutes(service: ConnectionsService, options: IntegrationsRouteOptions = {}) {
+export function createIntegrationsRoutes(service: ConnectionsService, options: IntegrationsRouteOptions) {
+  // Runtime fence for JS callers, which never see the type error: route
+  // policy must be stated, so composition without a gate fails LOUDLY here
+  // rather than silently serving unauthenticated management routes.
+  if (typeof options?.gate !== "function") {
+    throw new Error("createIntegrationsRoutes requires an explicit gate; pass () => null for intentionally open routes")
+  }
   const app = new Hono()
 
   // The service decides `connection_exists` from a RETURNED code, having read
@@ -66,7 +79,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (cause instanceof ConnectionExistsError) return c.json({ ok: false, code: "connection_exists" }, 409)
     throw cause
   })
-  const gate: RouteGate = options.gate ?? (() => null)
+  const gate = options.gate
   const tokenGate: RouteGate = options.tokenGate ?? (() => null)
   const refuseOwnerless = options.ownerlessRows === "refuse"
 

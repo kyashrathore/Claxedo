@@ -121,6 +121,7 @@ function oauthHarness(options: {
     newId: () => `connection-${++nextId}`,
   })
   const app = createIntegrationsRoutes(service, {
+    gate: () => null,
     ...(options.owner !== undefined ? { owner: () => options.owner } : {}),
     ...(options.teamOwner !== undefined ? { teamOwner: () => options.teamOwner } : {}),
     ...(options.ownerlessRows !== undefined ? { ownerlessRows: options.ownerlessRows } : {}),
@@ -131,6 +132,16 @@ function oauthHarness(options: {
 }
 
 describe("integrations routes", () => {
+  test("composition without an explicit gate is refused, not silently open", () => {
+    const { service } = harness()
+    // The kit ships no implicit allow-all; a JS caller that skips the option
+    // hits the runtime fence instead of serving unauthenticated routes.
+    // @ts-expect-error — `gate` is a required route-policy statement
+    expect(() => createIntegrationsRoutes(service)).toThrow("explicit gate")
+    // @ts-expect-error — an options object without `gate` is the same refusal
+    expect(() => createIntegrationsRoutes(service, {})).toThrow("explicit gate")
+  })
+
   test("gate runs on every gated route", async () => {
     const { app } = harness({ gateDenies: true })
     for (const [method, path] of [
@@ -293,7 +304,11 @@ describe("integrations routes", () => {
     const personal = ownerListing.connections.find((connection) => connection.scope === "personal")!
     expect((await app.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(200)
 
-    const otherUser = createIntegrationsRoutes(service, { owner: () => "user-b", tokenOwner: () => "user-b" })
+    const otherUser = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: () => "user-b",
+      tokenOwner: () => "user-b",
+    })
     const otherListing = await (await otherUser.request("/")).json() as { connections: Array<{ scope: string }> }
     expect(otherListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
     expect((await otherUser.request(`/connections/${personal.id}`, { method: "DELETE" })).status).toBe(404)
@@ -310,6 +325,32 @@ describe("integrations routes", () => {
     expect((await app.request("/connections/connection-1/token?capability=docs")).status).toBe(200)
     expect((await app.request("/connections/connection-1", { method: "DELETE" })).status).toBe(200)
     expect((await app.request("/connections/nope", { method: "DELETE" })).status).toBe(404)
+  })
+
+  test("an auth-failure report for a row outside the caller's partitions is refused and degrades nothing", async () => {
+    // A caller-asserted report is a degradation channel: it must obey the
+    // same partition visibility as the token route, or any authenticated
+    // caller could break a connection it cannot even see.
+    const { app, service, credentials } = harness({ owner: "user-a", tokenOwner: "user-a" })
+    await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "personal" }),
+    })
+    const personal = (await service.list({ owner: "user-a", scope: "personal" }))[0]
+
+    const foreign = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: () => "user-b",
+      tokenOwner: () => "user-b",
+    })
+    const denied = await foreign.request(`/connections/${personal.id}/auth-failure`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "401" }),
+    })
+    expect(denied.status).toBe(404)
+    expect(credentials.inspect(`integration:${personal.id}`)).toMatchObject({ status: "available" })
+    // The owning caller's token path is untouched by the refused report.
+    expect((await app.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(200)
   })
 
   test("token endpoint never reflects the request Origin (no CORS headers from the kit)", async () => {
@@ -520,6 +561,7 @@ describe("integrations routes", () => {
     const { service } = harness()
     const partitioned = (org: string, subject: string) =>
       createIntegrationsRoutes(service, {
+        gate: () => null,
         owner: () => `user:${subject}`,
         tokenOwner: () => `user:${subject}`,
         teamOwner: () => `org:${org}`,
@@ -557,6 +599,7 @@ describe("integrations routes", () => {
     const ownerless = seeded.connections[0].id
 
     const refusing = createIntegrationsRoutes(service, {
+      gate: () => null,
       owner: () => "user:alice",
       tokenOwner: () => "user:alice",
       teamOwner: () => "org:org-a",
@@ -573,6 +616,7 @@ describe("integrations routes", () => {
     // A refusing app without a resolved team key cannot write team rows and
     // never falls back to the owner-absent partition.
     const noTeamKey = createIntegrationsRoutes(service, {
+      gate: () => null,
       owner: () => "user:alice",
       ownerlessRows: "refuse",
     })

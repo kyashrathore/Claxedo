@@ -70,7 +70,10 @@ export type Attempts = {
   inspect(state: string): MaybePromise<AttemptRouting | undefined>
   // Non-consuming read for device grants, which poll the SAME attempt many
   // times before it settles. `consume` cannot serve this: it is single-use by
-  // design, so the second poll would report a lost attempt.
+  // design, so the second poll would report a lost attempt. A mid-consume
+  // (`completing`) attempt reads as absent — the in-flight consumer owns the
+  // settle, and a concurrent poller must not spend another upstream
+  // round-trip on a grant already being completed.
   peek(state: string): MaybePromise<AttemptDevicePending | undefined>
   settle(state: string, ok: boolean, message?: string): MaybePromise<void>
   // Settles an attempt the PROVIDER declared expired, as distinct from one
@@ -171,7 +174,10 @@ export function createAttempts(options: {
     },
     peek(state) {
       const entry = map.get(state)
-      if (!entry || entry.status !== "pending" || entry.deviceCode === undefined) return undefined
+      // `completing` reads as absent: a consumer already owns the settle, so
+      // a second poll re-reads the status instead of spending another
+      // upstream round-trip on the same grant.
+      if (!entry || entry.status !== "pending" || entry.completing || entry.deviceCode === undefined) return undefined
       if (entry.expiresAt <= now()) {
         map.set(state, {
           status: "expired",

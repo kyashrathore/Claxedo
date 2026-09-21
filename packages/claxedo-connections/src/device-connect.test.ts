@@ -14,7 +14,7 @@ const DEVICE_DECL: IntegrationDeclaration = {
   prompts: [{ id: "token", label: "Token", secret: true }],
 }
 
-function harness(polls: DevicePoll[], options: { verifyLabel?: string } = {}) {
+function harness(polls: DevicePoll[] | (() => Promise<DevicePoll>), options: { verifyLabel?: string } = {}) {
   const registry = createIntegrationRegistry()
   const started: number[] = []
   let pollIndex = 0
@@ -37,7 +37,8 @@ function harness(polls: DevicePoll[], options: { verifyLabel?: string } = {}) {
           }
         },
         async poll() {
-          return polls[Math.min(pollIndex++, polls.length - 1)]
+          pollIndex++
+          return typeof polls === "function" ? polls() : polls[Math.min(pollIndex - 1, polls.length - 1)]
         },
       },
     },
@@ -140,6 +141,37 @@ describe("device-flow connect", () => {
 
     expect((await service.pollAttempt(result.attemptId))?.status).toBe("expired")
     expect(await connections.list()).toEqual([])
+    await service.dispose()
+  })
+
+  test("concurrent polls of one attempt serialize on a single upstream call", async () => {
+    // Polling is what advances the grant, so overlapped polls must queue:
+    // two at once would otherwise both reach the provider and race `consume`
+    // for the same device code.
+    let release!: () => void
+    let upstreamCalls = 0
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { service, connections } = harness(async () => {
+      upstreamCalls++
+      await blocked
+      return authorized
+    })
+    const result = await service.connectOAuth({ integrationId: "github" })
+    if (!result.ok) throw new Error("expected ok")
+
+    const first = service.pollAttempt(result.attemptId)
+    const second = service.pollAttempt(result.attemptId)
+    release()
+    const [firstStatus, secondStatus] = await Promise.all([first, second])
+
+    expect(upstreamCalls).toBe(1)
+    expect(firstStatus).toMatchObject({ status: "complete" })
+    // The queued poll answers from the settled attempt rather than polling
+    // again — and the grant stored exactly one connection.
+    expect(secondStatus).toMatchObject({ status: "complete" })
+    expect((await connections.list()).length).toBe(1)
     await service.dispose()
   })
 

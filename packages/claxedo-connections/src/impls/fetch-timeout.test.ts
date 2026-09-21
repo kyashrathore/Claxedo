@@ -56,6 +56,38 @@ describe("integration fetch timeout", () => {
     expect(silent.signals[0]?.aborted).toBe(true)
   })
 
+  test("a credentialed request is pinned to manual redirects instead of runtime stripping policy", async () => {
+    // Whether `Authorization` survives a cross-origin redirect is the
+    // runtime's choice; the kit must not leave credential forwarding to it.
+    const seen: (RequestInit["redirect"] | undefined)[] = []
+    const wrapped = timeoutFetch({
+      fetchImpl: async (_url, init) => {
+        seen.push(init?.redirect)
+        return new Response("ok")
+      },
+    })
+    await wrapped("https://provider.test", { headers: { Authorization: "Bearer s" } })
+    await wrapped("https://provider.test", { headers: { cookie: "session=s" } })
+    await wrapped("https://provider.test", { headers: { "Proxy-Authorization": "Basic s" } })
+    await wrapped("https://provider.test")
+    expect(seen).toEqual(["manual", "manual", "manual", undefined])
+  })
+
+  test("an explicit caller redirect mode is respected even on a credentialed request", async () => {
+    let seen: RequestInit["redirect"] | undefined
+    const wrapped = timeoutFetch({
+      fetchImpl: async (_url, init) => {
+        seen = init?.redirect
+        return new Response("ok")
+      },
+    })
+    await wrapped("https://provider.test", {
+      headers: { authorization: "Bearer s" },
+      redirect: "follow",
+    })
+    expect(seen).toBe("follow")
+  })
+
   test("a caller-supplied signal still cancels alongside the deadline", async () => {
     const controller = new AbortController()
     let seen: AbortSignal | undefined

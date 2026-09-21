@@ -177,6 +177,9 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
     // created it. The durable D1 store's `dispose` is a no-op for exactly that
     // reason; disposing here would still destroy an injected in-memory store.
     const routes = createIntegrationsRoutes(service, {
+      // The surrounding handler already authenticated the request and resolved
+      // membership + entitlement; the route layer adds no second gate here.
+      gate: () => null,
       owner: () => `user:${membership.userId}`,
       teamOwner: () => `org:${membership.orgId}`,
       attemptRouting: () => ({ org_id: membership.orgId, owner_user_id: membership.userId }),
@@ -225,7 +228,12 @@ async function hostedCallback(input: HostedD1ConnectionsSetupInput, c: Context, 
     ...(pending.owner !== undefined ? { owner: pending.owner } : {}),
     ...(pending.context ? { attemptContext: pending.context } : {}),
   })
-  const routes = createIntegrationsRoutes(service, { ownerlessRows: "refuse" })
+  const routes = createIntegrationsRoutes(service, {
+    // Only ever serves the provider callback route — the one intentionally
+    // ungated path; the attempt row itself fences who may settle it.
+    gate: () => null,
+    ownerlessRows: "refuse",
+  })
   const url = new URL(c.req.url)
   url.pathname = subpath
   return await routes.fetch(new Request(url, c.req.raw))

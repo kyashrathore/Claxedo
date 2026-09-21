@@ -40,7 +40,8 @@ const service = createConnectionsService({
   newId: randomUUID,                            // host-owned row identity
 })
 
-// Mount under your app with YOUR gates — the kit enforces no auth policy.
+// Mount under your app with YOUR gates — `gate` is required, the kit ships
+// no implicit allow-all (pass `() => null` to state an open policy).
 app.route("/api/integrations", createIntegrationsRoutes(service, {
   gate: async (c) => (await myAuth(c)) ? null : c.json({ error: "forbidden" }, 403),
   tokenGate: async (c) => c.req.header("x-my-app") ? null : c.json({ error: "forbidden" }, 403),
@@ -379,7 +380,8 @@ authority, not a declaration string.
 ### F. Routes
 
 `createIntegrationsRoutes(service, options)` returns a Hono app. Every route is
-behind a host gate; the kit decides no auth policy.
+behind the required host `gate`; the kit decides no auth policy itself, so an
+intentionally open deployment states that with `gate: () => null`.
 
 | Route | Purpose |
 | --- | --- |
