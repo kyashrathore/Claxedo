@@ -39,7 +39,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 const { Hono } = await import("hono")
 const { contains, containsCanonical, gitRun, locate, trees } = await import("./git")
 const { ShellRoutes } = await import("./routes")
-const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
+const { ensureWorkspace, resolveWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
 const { unsignedLocalRequestGuard } = await import("@claxedo/server-core/authority/deployment-mode")
 
@@ -237,6 +237,19 @@ describe("POST /experimental/worktree/reset keeps `git reset --hard`/`clean -ffd
     )
     expect(res.status).toBe(400)
     expect(await exists(path.join(victim, "PRECIOUS.txt"))).toBe(true)
+  })
+})
+
+describe("GET /agent is discovery, not provisioning", () => {
+  test("an unregistered directory earns workspace_required and stays unregistered", async () => {
+    // A real repository on purpose: had the route still resolved with
+    // `create: true`, this GET would have registered a workspace for a path
+    // the caller merely named.
+    const unregistered = await makeRepo(`unregistered-agents-${randomUUID()}`)
+    const res = await app.request(`/agent?directory=${encodeURIComponent(unregistered)}`)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "workspace_required" } })
+    expect(await resolveWorkspace({ directory: unregistered })).toBeUndefined()
   })
 })
 

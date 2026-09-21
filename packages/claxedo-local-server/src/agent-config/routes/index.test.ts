@@ -3,17 +3,23 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { execFileSync } from "child_process"
+import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 
 const root = path.join(os.tmpdir(), `agent-config-snapshot-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const [{ createAgentConfigRoutes }, { configureAgentConfig, disposeAgentConfig }] = await Promise.all([
+vi.mock("@claxedo/server-core/workspace/http/sandbox-target-fetch", () => ({ sandboxFetch: vi.fn() }))
+
+const [{ createAgentConfigRoutes }, { configureAgentConfig, disposeAgentConfig }, { resolveWorkspace }] = await Promise.all([
   import("./index"),
   import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/server-core/workspace/store/index"),
 ])
 
 afterEach(async () => {
+  vi.clearAllMocks()
   disposeAgentConfig()
   await fs.rm(root, { recursive: true, force: true })
 })
@@ -50,4 +56,35 @@ test("the agent-config snapshot route serves the snapshot with its auth map remo
   expect(projectAuth).toHaveBeenCalledTimes(1)
   expect(JSON.parse(body)).toEqual({ version: 4, mcp: {}, connections: [] })
   expect(body).not.toContain("placeholder-that-must-not-travel")
+})
+
+/**
+ * The discovery read is not a provisioning path. `?directory=` scopes the
+ * lookup; only the explicit create flag the app passes through
+ * `/api/claxedo/workspace/resolve` may register one. A GET that names an
+ * unregistered directory must leave the store untouched and never reach the
+ * sandbox fetch — reaching it is what used to start a runtime for any
+ * caller-named path.
+ */
+test("the agents discovery GET resolves read-only and never creates a workspace", async () => {
+  await fs.mkdir(root, { recursive: true })
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "agents-discovery-")))
+  execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+  const scoped = `http://localhost/agents?directory=${encodeURIComponent(directory)}`
+  const routes = createAgentConfigRoutes()
+
+  const unknown = await routes.request(scoped)
+  expect(unknown.status).toBe(200)
+  expect(await unknown.json()).toEqual([])
+  expect(sandboxFetch).not.toHaveBeenCalled()
+  expect(await resolveWorkspace({ directory })).toBeUndefined()
+
+  const created = await resolveWorkspace({ directory, create: true })
+  expect(created).toBeDefined()
+
+  vi.mocked(sandboxFetch).mockResolvedValueOnce(Response.json([{ name: "build" }]))
+  const listed = await routes.request(scoped)
+  expect(listed.status).toBe(200)
+  expect(await listed.json()).toEqual([{ name: "build" }])
+  expect(vi.mocked(sandboxFetch).mock.calls[0]?.[0]?.id).toBe(created?.id)
 })

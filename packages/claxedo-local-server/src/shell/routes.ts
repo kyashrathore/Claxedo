@@ -196,7 +196,6 @@ function shellRoutes(options: ShellRouteOptions) {
       const ws = await resolveWorkspace({
         workspaceId: input.workspaceId,
         directory: input.directory,
-        create: !!input.directory,
       })
       if (!ws) return c.json({ error: { code: "workspace_required", message: "Workspace is required" } }, 400)
       const url = new URL("/agent", "http://workspace-runtime.local")

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { agentConfigHarnessRoutes } from "./harness-routes"
 
 // Exercise the source producer without adding workspace-runtime's source tree
@@ -51,6 +52,13 @@ describe("harness routes", () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual(error)
     expect(vi.mocked(sandboxFetch).mock.calls[0][1]).toBe("/api/wr/harness-config-options?directory=%2Fproject&connectionId=openclaw")
+  })
+
+  test("resolves the workspace read-only: a directory-scoped GET carries no create flag", async () => {
+    vi.mocked(sandboxFetch).mockResolvedValueOnce(Response.json({ options: [] }))
+    const response = await agentConfigHarnessRoutes().request("/harness/options?connectionId=external-opencode&directory=/unregistered")
+    expect(response.status).toBe(200)
+    expect(resolveWorkspace).toHaveBeenCalledWith({ workspaceId: undefined, directory: "/unregistered" })
   })
 
   test("does not silently choose OpenCode when no selection exists", async () => {

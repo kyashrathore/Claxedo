@@ -122,7 +122,7 @@ function appendSelection(url: URL, selection: RuntimeHarnessSelection) {
 async function workspace(c: Context) {
   const directory = c.req.query("directory") || c.req.header("x-claxedo-directory")
   const workspaceId = c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
-  return await resolveWorkspace({ workspaceId, directory, create: !!directory })
+  return await resolveWorkspace({ workspaceId, directory })
 }
 
 async function localOnly(c: Context, options: AgentConfigRouteOptions) {

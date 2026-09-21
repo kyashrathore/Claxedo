@@ -48,7 +48,6 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
       const ws = await resolveWorkspace({
         workspaceId,
         directory,
-        create: !!directory,
       }).catch(() => undefined)
       if (!ws) return c.json([])
       const url = new URL("/agent", "http://sandbox-manager.local")
