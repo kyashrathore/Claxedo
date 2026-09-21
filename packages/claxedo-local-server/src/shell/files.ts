@@ -4,6 +4,7 @@ import { git } from "./git"
 
 const ALL_IGNORE = new Set([".git", ".DS_Store", "node_modules", ".next", "dist", "build", ".turbo", ".vercel", ".cache"])
 const FILE_SEARCH_CACHE_MS = 10_000
+const FILE_SEARCH_CACHE_MAX_ROOTS = 32
 
 const fileSearchCache = new Map<
   string,
@@ -12,6 +13,30 @@ const fileSearchCache = new Map<
     index: Promise<{ files: string[]; directories: string[]; all: string[] }>
   }
 >()
+
+export function fileSearchCacheSize() {
+  return fileSearchCache.size
+}
+
+function rememberFileSearchIndex(root: string) {
+  const next = buildFileSearchIndex(root)
+  const now = Date.now()
+  // Expired roots are obsolete — drop them before evicting live ones, so a
+  // burst of one-off roots can never grow the map past the bound.
+  for (const [cached, entry] of fileSearchCache) {
+    if (entry.expires <= now) fileSearchCache.delete(cached)
+  }
+  while (fileSearchCache.size >= FILE_SEARCH_CACHE_MAX_ROOTS) {
+    const oldest = fileSearchCache.keys().next()
+    if (oldest.done) break
+    fileSearchCache.delete(oldest.value)
+  }
+  fileSearchCache.set(root, { expires: now + FILE_SEARCH_CACHE_MS, index: next })
+  void next.catch(() => {
+    if (fileSearchCache.get(root)?.index === next) fileSearchCache.delete(root)
+  })
+  return next
+}
 
 export async function globSearch(
   searchDir: string,
@@ -26,15 +51,13 @@ export async function globSearch(
   if (type === "directory") return directorySearch(root, q, limit)
   const cached = fileSearchCache.get(root)
   const index = cached && cached.expires > Date.now()
-    ? cached.index
-    : (() => {
-        const next = buildFileSearchIndex(root)
-        fileSearchCache.set(root, { expires: Date.now() + FILE_SEARCH_CACHE_MS, index: next })
-        void next.catch(() => {
-          if (fileSearchCache.get(root)?.index === next) fileSearchCache.delete(root)
-        })
-        return next
+    ? (() => {
+        // A hit refreshes recency: reinsert so eviction removes the oldest.
+        fileSearchCache.delete(root)
+        fileSearchCache.set(root, cached)
+        return cached.index
       })()
+    : rememberFileSearchIndex(root)
   const found = await index
   const paths = type === "file" ? found.files : found.all
   return paths.filter((item) => !q || item.toLowerCase().includes(q)).slice(0, limit)

@@ -2,7 +2,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { globSearch } from "./files"
+import { fileSearchCacheSize, globSearch } from "./files"
 
 const scratch: string[] = []
 
@@ -43,6 +43,46 @@ describe("globSearch", () => {
       globSearch(root, "alpha", "file", 50),
       globSearch(root, "beta", "file", 50),
     ])).toEqual([["src/alpha.ts"], ["src/beta.ts"]])
+  })
+
+  test("caps retained roots by evicting the oldest, and sweeps expired entries", async () => {
+    vi.useFakeTimers()
+    try {
+      const roots: string[] = []
+      for (let i = 0; i < 34; i++) {
+        const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), `claxedo-file-search-${i}-`))
+        scratch.push(root)
+        roots.push(root)
+        await globSearch(root, "", "file", 50)
+      }
+      expect(fileSearchCacheSize()).toBe(32)
+
+      // The two oldest roots were evicted: searching them again reindexes
+      // without pushing the cache past its bound.
+      const readdir = fs.promises.readdir
+      const reads: string[] = []
+      const spy = vi.spyOn(fs.promises, "readdir").mockImplementation(async (dir, options) => {
+        reads.push(String(dir))
+        return readdir(dir, options as never) as never
+      })
+      try {
+        await globSearch(roots[0], "", "file", 50)
+      } finally {
+        spy.mockRestore()
+      }
+      expect(reads.length).toBeGreaterThan(0)
+      expect(fileSearchCacheSize()).toBe(32)
+
+      // Once every entry has expired, a single new search discards them all
+      // instead of accumulating obsolete roots.
+      vi.setSystemTime(Date.now() + 11_000)
+      const fresh = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-file-search-fresh-"))
+      scratch.push(fresh)
+      await globSearch(fresh, "", "file", 50)
+      expect(fileSearchCacheSize()).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
