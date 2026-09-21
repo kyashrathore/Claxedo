@@ -132,7 +132,7 @@ export type SdkRuntimeTurnInput = {
     observation: SubagentObservation
     correlationKeys?: string[]
     source?: RuntimeAppendSource
-  }) => Promise<{ event: SubagentUpdatedEvent; childSessionId?: string }>
+  }) => Promise<{ event: SubagentUpdatedEvent; childSessionId?: string } | undefined>
   rebindAgentSession: (agentSessionId: string) => void
   model: string
 }

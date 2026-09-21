@@ -3,6 +3,7 @@ import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
+  UnknownHostSubagentKeyError,
   type SubagentObservation,
 } from "./subagent-admission"
 
@@ -264,6 +265,37 @@ describe("subagent host admission", () => {
     expect(item.store.records()).toEqual([])
   })
 
+  test("a harness tool edge naming a claxedo key the host never minted is refused as unknown and leaves no row", async () => {
+    const item = harness()
+    const forged = harnessBinding("subagent_forged", "someone-elses-session")
+    await expect(item.boundary.admit("parent", forged)).rejects.toBeInstanceOf(UnknownHostSubagentKeyError)
+    expect(item.store.records()).toEqual([])
+    expect(item.published).toEqual([])
+  })
+
+  test("the host's own create mints the claxedo row; the harness tool edge then attaches to it", async () => {
+    const item = harness()
+    const created = await item.boundary.admit("parent", hostCreate("subagent_host", "child-9"))
+    const bound = await item.boundary.admit("parent", harnessBinding("subagent_host", "child-9"))
+    expect(created).toMatchObject({ subagentKey: "subagent_host", childSessionId: "child-9", revision: 1 })
+    expect(bound).toMatchObject({
+      subagentKey: "subagent_host",
+      childSessionId: "child-9",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      status: "running",
+      revision: 2,
+    })
+  })
+
+  test("a harness tool edge naming the host's key with a different child is the immutable-binding conflict", async () => {
+    const item = harness()
+    await item.boundary.admit("parent", hostCreate("subagent_host", "child-9"))
+    await expect(item.boundary.admit("parent", harnessBinding("subagent_host", "someone-elses-session")))
+      .rejects.toThrow("conflicting immutable subagent providerId binding")
+    expect(item.store.records()).toHaveLength(1)
+  })
+
   test("child identity is the strongest correlator: an observation naming an owned child resolves to the owning row", async () => {
     const item = harness()
     // Claude dual-channel split: the tool-call channel and the background-task
@@ -429,3 +461,32 @@ describe("subagent host admission", () => {
     expect(wake).toMatchObject({ revision: 4, status: "completed", wake: "pending" })
   })
 })
+
+function hostCreate(subagentKey: string, childSessionId: string): SubagentObservation {
+  return {
+    observationId: `host:create:${childSessionId}`,
+    subagentKey,
+    mode: "background",
+    status: "pending",
+    label: "codex subagent",
+    providerKind: "claxedo",
+    providerId: childSessionId,
+    childSessionId,
+    transcript: { kind: "live" },
+  }
+}
+
+function harnessBinding(subagentKey: string, childSessionId: string): SubagentObservation {
+  return {
+    observationId: `claude:host-subagent:user-1:tool-1`,
+    harnessExecutionId: "sdk-1",
+    subagentKey,
+    toolCallId: "tool-1",
+    toolCallRole: "spawn",
+    status: "running",
+    providerKind: "claxedo",
+    providerId: childSessionId,
+    childSessionId,
+    transcript: { kind: "live" },
+  }
+}

@@ -42,3 +42,13 @@ describe("createClaudeTaskLedger", () => {
     ])
   })
 })
+
+describe("createClaudeTaskLedger host subagent calls", () => {
+  test("knows a create_subagent call only from the tool_use that made it", () => {
+    const ledger = createClaudeTaskLedger()
+    expect(ledger.isHostSubagentCall("tool-mcp-spawn-1")).toBe(false)
+    ledger.startHostSubagentCall("tool-mcp-spawn-1")
+    expect(ledger.isHostSubagentCall("tool-mcp-spawn-1")).toBe(true)
+    expect(ledger.isHostSubagentCall("tool-bash-1")).toBe(false)
+  })
+})

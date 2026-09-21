@@ -4,7 +4,7 @@ import {
   type AgentExecutionBinding,
   type HarnessInstructionChannel,
 } from "@claxedo/agent-runtime-contract"
-import { type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { type RawHarnessEvent, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { createGoalPublisher, type GoalPublisher } from "./goal-publisher"
 import { createNativeGoalResource } from "./native-goal-resource"
@@ -64,6 +64,7 @@ import { firstTurnErrorData } from "../../first-turn-error"
 import {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
+  UnknownHostSubagentKeyError,
 } from "../../subagent-admission"
 import type { AgentRuntimeSessionBinding } from "./runtime-store"
 import type {
@@ -613,10 +614,33 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       // row's child stamped toward another crashes the unique child index.
       const transcriptKind = observation.transcript?.kind
       const openable = transcriptKind === "live" || transcriptKind === "messages" || transcriptKind === "file"
-      const event = await createSubagentAdmissionBoundary({
+      const boundary = createSubagentAdmissionBoundary({
         store: admissionStore,
         publish: (_parentSessionId, payload) => router.project(payload, source),
-      }).admit(id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined)
+      })
+      let event: SubagentUpdatedEvent
+      try {
+        event = await boundary.admit(id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined)
+      } catch (error) {
+        if (!(error instanceof UnknownHostSubagentKeyError)) throw error
+        // Tool output that names a child row the host never minted is not a
+        // fault of the turn: it is recorded and the turn goes on without it.
+        router.project({
+          type: "diagnostic",
+          diagnostic: {
+            code: "subagent-binding-unknown",
+            message: error.message,
+            severity: "warn",
+            source: "subagent-admission",
+            details: {
+              observationId: error.observationId,
+              ...(error.subagentKey ? { subagentKey: error.subagentKey } : {}),
+              ...(observation.toolCallId ? { toolCallId: observation.toolCallId } : {}),
+            },
+          },
+        }, source)
+        return undefined
+      }
       subagentChildren.track(observation, event)
 
       const childSessionId = event.childSessionId

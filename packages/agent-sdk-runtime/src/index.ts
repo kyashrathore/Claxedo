@@ -135,6 +135,7 @@ export { renderSessionHandoff } from "./session-handoff"
 export {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
+  UnknownHostSubagentKeyError,
 } from "./subagent-admission"
 export type {
   AdmittedSubagentObservation,

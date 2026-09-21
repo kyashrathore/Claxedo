@@ -85,6 +85,24 @@ export function createSubagentAdmissionBoundary(input: {
   }
 }
 
+/**
+ * A harness tool edge named a claxedo row this store holds no child for. The
+ * host mints every claxedo row before `create_subagent` answers, so such an
+ * edge can only have been read from text some tool printed; admitting it
+ * would parent whichever session that text named. Thrown rather than
+ * returned because every `admit` result is persisted by the durable stores.
+ */
+export class UnknownHostSubagentKeyError extends Error {
+  constructor(
+    readonly parentSessionId: string,
+    readonly observationId: string,
+    readonly subagentKey: string | undefined,
+  ) {
+    super(`subagent observation ${observationId} names claxedo row ${subagentKey ?? "<none>"}, which ${parentSessionId} never created`)
+    this.name = "UnknownHostSubagentKeyError"
+  }
+}
+
 export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
   records(): AdmittedSubagentObservation[]
 } {
@@ -134,6 +152,13 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
       }
       if (!!input.observation.toolCallId !== !!input.observation.toolCallRole) {
         throw new Error("subagent tool-call edges require both toolCallId and toolCallRole")
+      }
+      if (input.observation.providerKind === "claxedo" && input.observation.toolCallId) {
+        const key = input.observation.subagentKey
+        const bound = key ? bindings.get(scoped(input.parentSessionId, key)) : undefined
+        if (!bound?.childSessionId) {
+          throw new UnknownHostSubagentKeyError(input.parentSessionId, input.observation.observationId, key)
+        }
       }
 
       const associationKeys = correlationKeys(input.observation)

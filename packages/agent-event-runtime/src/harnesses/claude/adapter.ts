@@ -354,16 +354,23 @@ function agentResultText(result: Record<string, unknown> | undefined, fallback: 
 }
 
 /**
- * The user message carries no tool name, so a `create_subagent` result is
- * recognised by its self-identifying shape rather than by the call it answers.
+ * Only the result of a `create_subagent` call the ledger saw binds a child;
+ * the same JSON printed by any other tool is output, not a binding. Each
+ * block is read from its own content; `tool_use_result` is one tool's
+ * structured output with no `tool_use_id`, so it stands in for a block only
+ * when the message delivers exactly one.
  */
 function claudeHostSubagentObservations(
   message: Record<string, unknown>,
   wrapperId: string,
   harnessExecutionId: string | undefined,
+  ledger: ClaudeTaskLedger,
 ): ClaudeSubagentObservation[] {
-  return toolResultBlocks(message).flatMap((tool) => {
-    const binding = hostSubagentBinding(message.tool_use_result) ?? hostSubagentBinding(tool.text)
+  const blocks = toolResultBlocks(message)
+  return blocks.flatMap((tool) => {
+    if (!ledger.isHostSubagentCall(tool.toolCallId)) return []
+    const binding = hostSubagentBinding(tool.block)
+      ?? (blocks.length === 1 ? hostSubagentBinding(message.tool_use_result) : undefined)
     if (!binding) return []
     return [hostSubagentObservation({
       observationId: `claude:host-subagent:${wrapperId}:${tool.toolCallId}`,
@@ -414,6 +421,12 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
   const harnessExecutionId = text(message.session_id)
   const wrapperId = text(message.uuid) ?? harnessExecutionId ?? "unknown"
 
+  if (message.type === "assistant") {
+    for (const { tool } of assistantToolBlocks(message)) {
+      if (isHostSubagentTool(tool.toolName)) ledger.startHostSubagentCall(tool.toolCallId)
+    }
+  }
+
   if (message.type === "assistant" && !claudeChildCorrelationKey(message)) {
     return assistantToolBlocks(message).flatMap(({ tool }) => {
       if (!isTaskTool(tool.toolName) || isHostSubagentTool(tool.toolName) || !tool.toolCallId) return []
@@ -438,7 +451,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
   if (message.type === "user") {
     const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
-    if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId)
+    if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId, ledger)
     // `SDKUserMessage.tool_use_result` is one tool's Output, and `AgentOutput`
     // names no tool call, so the agent it reports can only be attributed when
     // the message carries a single tool_result block. Stamping every block of
