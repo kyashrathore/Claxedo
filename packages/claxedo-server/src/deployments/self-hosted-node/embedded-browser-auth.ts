@@ -104,18 +104,26 @@ function exactCookieValue(request: Request, name: string): string | undefined {
 
 /**
  * Presents the exact session cookie as the bearer credential on requests that
- * carry no `Authorization` header. A request carrying both is left alone: the
- * descriptor's credential policy says the server rejects it, and the bearer
- * path's verifier is where that refusal lands.
+ * carry no `Authorization` header. A request carrying both is refused here:
+ * the descriptor's credential policy is `reject-cookie-and-authorization`,
+ * and this deployment verifies bare bearer tokens — nothing downstream sees
+ * the cookie, so the bridge is the only place the policy can be enforced.
+ * The refusal mirrors `ambiguous_credentials` in the canonical adapter
+ * (`assertUnambiguousCredential`, platform/auth/authentication.ts).
  */
 export function embeddedBrowserSessionBearer(descriptor: EmbeddedBrowserAuthDescriptor): MiddlewareHandler {
   const cookieName = descriptor.browser.cookie.name
   return async (context, next) => {
-    if (!context.req.raw.headers.has("authorization")) {
-      const session = exactCookieValue(context.req.raw, cookieName)
-      if (session) context.req.raw.headers.set("authorization", `Bearer ${session}`)
+    const session = exactCookieValue(context.req.raw, cookieName)
+    const hasAuthorization = context.req.raw.headers.has("authorization")
+    if (hasAuthorization && session !== undefined) {
+      return context.json(
+        { error: { code: "ambiguous_credentials", message: "Multiple authentication credentials are not accepted" } },
+        401,
+      )
     }
-    await next()
+    if (!hasAuthorization && session) context.req.raw.headers.set("authorization", `Bearer ${session}`)
+    return next()
   }
 }
 

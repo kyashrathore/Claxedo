@@ -47,10 +47,28 @@ describe("embedded browser auth", () => {
     const cookie = "__Secure-claxedo.session_token=tok.sig; other=1"
     const bridged = await routes.request("https://localhost:4449/api/echo", { headers: { cookie } })
     expect(await bridged.json()).toEqual({ authorization: "Bearer tok.sig" })
-    const explicit = await routes.request("https://localhost:4449/api/echo", { headers: { cookie, authorization: "Bearer other" } })
+    const explicit = await routes.request("https://localhost:4449/api/echo", { headers: { authorization: "Bearer other" } })
     expect(await explicit.json()).toEqual({ authorization: "Bearer other" })
     const lookalike = await routes.request("https://localhost:4449/api/echo", { headers: { cookie: "x__Secure-claxedo.session_token=nope" } })
     expect(await lookalike.json()).toEqual({ authorization: null })
+  })
+
+  test("rejects a request carrying both the session cookie and a bearer, matching or not", async () => {
+    const { routes } = app()
+    for (const authorization of ["Bearer other", "Bearer tok.sig"]) {
+      const res = await routes.request("https://localhost:4449/api/echo", {
+        headers: { cookie: "__Secure-claxedo.session_token=tok.sig", authorization },
+      })
+      expect(res.status, authorization).toBe(401)
+      expect(await res.json()).toEqual({
+        error: { code: "ambiguous_credentials", message: "Multiple authentication credentials are not accepted" },
+      })
+    }
+    // A lookalike cookie name is not the session credential: bearer alone passes.
+    const lookalike = await routes.request("https://localhost:4449/api/echo", {
+      headers: { cookie: "x__Secure-claxedo.session_token=nope", authorization: "Bearer other" },
+    })
+    expect(await lookalike.json()).toEqual({ authorization: "Bearer other" })
   })
 
   test("refuses a cookie-authenticated mutation without a JSON content type or from another site", async () => {
