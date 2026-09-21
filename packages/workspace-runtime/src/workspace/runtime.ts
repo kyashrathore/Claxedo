@@ -64,8 +64,7 @@ import {
   mountWorkspacePty,
   type MountedWorkspaceEvents,
 } from "./core"
-import { Pty } from "../pty/index"
-import type { LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
 import type {
   RuntimeConfigApplyStatus,
   WorkspaceCheckpointBlocker,
@@ -1169,13 +1168,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       sessionConfigStore = storeFactory({ storeRoot: options.storeRoot })
       sessionConfigStore.recoverBusySessions?.()
-      // Before anything this workspace can launch. A store that cannot back
-      // launch ownership leaves it volatile, and the PTY owner then says so
-      // rather than reporting an identity it never durably recorded.
-      const ownership = sessionConfigStore.launchOwnership?.()
-      if (ownership) Pty.useLaunchOwnership(ownership)
     }
     return sessionConfigStore
+  }
+
+  /**
+   * The owner every launch this workspace makes is recorded against.
+   *
+   * Resolved per launch rather than captured at mount: one process serves
+   * several workspaces, so a store fixed at mount time would record another
+   * workspace's terminals against this one. A store that cannot keep launch
+   * records leaves each launch volatile, recorded as such in its own row.
+   */
+  function launchOwnership() {
+    return store().launchOwnership?.() ?? volatileLaunchOwnership()
   }
 
   /**
@@ -1712,6 +1718,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           sessionStarts: store().sessionStarts,
           sessionParents: hostOptions.sessionParents ?? sessionParents,
           transcripts: hostOptions.transcripts,
+          launchOwnership,
         })
       } else {
         // A host that serves sessions serves their stream, whatever else it mounts.
@@ -1725,9 +1732,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
         })
         if (options.pty) {
-          mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy)
+          mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy, { ownership: launchOwnership })
         }
-        if (options.process) mountWorkspaceProcess(app, sessionAccessPolicy)
+        if (options.process) mountWorkspaceProcess(app, sessionAccessPolicy, { ownership: launchOwnership })
         if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
       }
       // A mount replaces whatever the previous one left attached: two live

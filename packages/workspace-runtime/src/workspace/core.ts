@@ -1,12 +1,13 @@
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
 import type { Hono } from "hono"
-import { PtyRoutes } from "../routes/pty"
+import { PtyRoutes, type PtyRouteOptions } from "../routes/pty"
 import { Pty } from "../pty/index"
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { workspaceEventsHandler, type WorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
 import { TranscriptRoutes } from "../routes/transcript"
 import type { TranscriptResolution, TranscriptUnavailable } from "../transcript-resolver"
-import { ProcessRoutes } from "../routes/process"
+import { ProcessRoutes, type ProcessRouteOptions } from "../routes/process"
 import { createDiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
 import { GitSourceRoutes } from "../routes/git-source"
@@ -30,8 +31,9 @@ export function mountWorkspacePty(
   upgradeWebSocket: Socket,
   processObserver?: ProcessObserver,
   sessionAccessPolicy?: SessionAccessPolicy,
+  options?: PtyRouteOptions,
 ) {
-  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver, sessionAccessPolicy))
+  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver, sessionAccessPolicy, options))
 }
 
 export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
@@ -87,8 +89,8 @@ export function mountWorkspaceTranscripts(app: Hono, options: WorkspaceTranscrip
   app.route(WorkspaceRuntimeRoutes.subagentTranscripts, TranscriptRoutes(options))
 }
 
-export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
-  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy))
+export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAccessPolicy, options?: ProcessRouteOptions) {
+  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy, options))
 }
 
 export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
@@ -118,14 +120,17 @@ export function mountWorkspaceCore(
     sessionStarts?: Pick<AgentSessionStarts, "get">
     sessionAccessPolicy?: SessionAccessPolicy
     transcripts?: WorkspaceTranscriptRoutesOptions
+    /** Resolved per launch, not captured: one process serves many workspaces. */
+    launchOwnership?: () => LaunchOwnershipStore
   },
 ): MountedWorkspaceEvents {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
-  mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy)
+  const ownership = options.launchOwnership ? { ownership: options.launchOwnership } : {}
+  mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy, ownership)
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
   const events = mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
-  mountWorkspaceProcess(app, options.sessionAccessPolicy)
+  mountWorkspaceProcess(app, options.sessionAccessPolicy, ownership)
   mountWorkspaceFiles(app, options.sessionAccessPolicy)
   return events
 }
