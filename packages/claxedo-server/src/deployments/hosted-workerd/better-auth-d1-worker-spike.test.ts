@@ -206,7 +206,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     try {
       const response = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: APP_ORIGIN },
+        headers: { "content-type": "application/json", origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.11" },
         body: JSON.stringify({
           name: "Atomic Failure",
           email: "atomic-failure@example.test",
@@ -230,9 +230,14 @@ describe("Better Auth + D1 inside Workerd", () => {
     }
   })
 
-  test.each(["userId", "providerId", "issuer", "accountId"])(
+  test.each([
+    ["userId", "198.51.100.21"],
+    ["providerId", "198.51.100.22"],
+    ["issuer", "198.51.100.23"],
+    ["accountId", "198.51.100.24"],
+  ])(
     "rejects an account hook that mutates the immutable %s binding before commit",
-    async (field) => {
+    async (field, ip) => {
       const email = `hook-${field.toLowerCase()}@example.test`
       const response = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
         method: "POST",
@@ -240,6 +245,9 @@ describe("Better Auth + D1 inside Workerd", () => {
           "content-type": "application/json",
           origin: APP_ORIGIN,
           "x-test-account-binding-mutation": field,
+          // Each case is a distinct sign-in attempt: the auth rate limiter
+          // keys per client IP, so these must not share one bucket.
+          "cf-connecting-ip": ip,
         },
         body: JSON.stringify({
           name: "Hook Mutation",
@@ -268,7 +276,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     const email = "empty-name@example.test"
     const response = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      headers: { "content-type": "application/json", origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.31" },
       body: JSON.stringify({ name: "", email, password: "correct horse battery staple" }),
     })
     expect(response.status, await response.clone().text()).toBe(200)
@@ -276,6 +284,47 @@ describe("Better Auth + D1 inside Workerd", () => {
     expect(await database.prepare(`select "name" from "user" where "email" = ?`).bind(email).first())
       .toEqual({ name: "" })
     await database.prepare(`delete from "user" where "email" = ?`).bind(email).run()
+  })
+
+  test("keys its own rate limiter on cf-connecting-ip, so varying a spoofed x-forwarded-for buys no fresh budget", async () => {
+    // Better Auth's default headers list is x-forwarded-for alone; the
+    // foundation pins cf-connecting-ip first, so these four sign-up attempts
+    // — one edge-stamped client, four forged XFF values — must share the
+    // 3-per-10s sign-up bucket instead of minting one bucket per forgery.
+    const send = (xff: string, ip = "198.51.100.71") =>
+      miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: APP_ORIGIN,
+          "cf-connecting-ip": ip,
+          "x-forwarded-for": xff,
+        },
+        body: JSON.stringify({
+          name: "Rate Probe",
+          email: `rate-probe-${crypto.randomUUID()}@example.test`,
+          password: "correct horse battery staple",
+        }),
+      })
+
+    try {
+      for (const xff of ["203.0.113.11", "203.0.113.12", "203.0.113.13"]) {
+        const response = await send(xff)
+        expect(response.status, await response.clone().text()).toBe(200)
+      }
+      const denied = await send("203.0.113.14")
+      expect(denied.status).toBe(429)
+      expect(denied.headers.get("x-retry-after")).toBeTruthy()
+      // Per-client: a different edge-stamped IP keeps its own budget.
+      expect((await send("203.0.113.14", "198.51.100.72")).status).toBe(200)
+    } finally {
+      const database = await miniflare.getD1Database("AUTH_DB")
+      await database.prepare(
+        `delete from "account" where "userId" in
+          (select "id" from "user" where "email" like 'rate-probe-%')`,
+      ).run()
+      await database.prepare(`delete from "user" where "email" like 'rate-probe-%'`).run()
+    }
   })
 
   test("rolls back parent consumption when refresh-child creation fails", async () => {
@@ -381,7 +430,7 @@ describe("Better Auth + D1 inside Workerd", () => {
 
     const preflight = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
       method: "OPTIONS",
-      headers: { origin: APP_ORIGIN },
+      headers: { origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.41" },
     })
     expect(preflight.status).toBe(204)
     expect(preflight.headers.get("access-control-allow-origin")).toBe(APP_ORIGIN)
@@ -391,7 +440,7 @@ describe("Better Auth + D1 inside Workerd", () => {
   test("runs cookie session, device OAuth token rotation/revocation, and desktop loopback validation", async () => {
     const signUp = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      headers: { "content-type": "application/json", origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.51" },
       body: JSON.stringify({
         name: "Unit One",
         email: "unit-one@example.test",
@@ -422,7 +471,7 @@ describe("Better Auth + D1 inside Workerd", () => {
 
     const signIn = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-in/email`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      headers: { "content-type": "application/json", origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.51" },
       body: JSON.stringify({
         email: "unit-one@example.test",
         password: "correct horse battery staple",
@@ -999,7 +1048,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     const email = "host-owner@example.test"
     const signUp = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      headers: { "content-type": "application/json", origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.61" },
       body: JSON.stringify({ name: "Host Owner", email, password: "correct horse battery staple" }),
     })
     expect(signUp.status, await signUp.clone().text()).toBe(200)
@@ -1010,7 +1059,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     await miniflare.dispatchFetch(actionUrl, { headers: { origin: APP_ORIGIN }, redirect: "manual" })
     const signIn = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-in/email`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      headers: { "content-type": "application/json", origin: APP_ORIGIN, "cf-connecting-ip": "198.51.100.61" },
       body: JSON.stringify({ email, password: "correct horse battery staple" }),
     })
     expect(signIn.status, await signIn.clone().text()).toBe(200)

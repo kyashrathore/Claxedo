@@ -139,7 +139,29 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
        */
       storeStateStrategy: "database",
     },
+    /**
+     * Better Auth gates its rate limiter on NODE_ENV=production, which a
+     * workerd isolate never sets — left to the default, the auth adapter's own
+     * per-path budgets (3/10s on sign-in, 3/60s on reset) simply do not exist
+     * on the certified deployment. Memory storage is the per-isolate fuse;
+     * "database" would require a rateLimit table the certified D1 schema does
+     * not carry.
+     */
+    rateLimit: {
+      enabled: true,
+      storage: "memory",
+    },
     advanced: {
+      ipAddress: {
+        /**
+         * cf-connecting-ip is stamped by the Cloudflare edge and a client
+         * cannot supply it; leftmost x-forwarded-for — Better Auth's entire
+         * default header list — is client-controlled, so keying on it lets a
+         * caller mint a fresh rate-limit bucket per request. XFF stays as the
+         * fallback for runtimes with no edge header (local dev).
+         */
+        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+      },
       useSecureCookies: true,
       disableCSRFCheck: false,
       disableOriginCheck: false,

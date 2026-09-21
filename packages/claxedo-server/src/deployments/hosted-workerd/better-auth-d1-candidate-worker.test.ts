@@ -70,7 +70,8 @@ vi.mock("./better-auth-d1-cutover-gate.cf", () => ({
   requireDeploymentCanaryAdmission: mocks.canaryAdmission,
 }))
 
-import worker from "./better-auth-d1-candidate-worker.cf"
+import worker, { createBetterAuthD1CandidateWorker } from "./better-auth-d1-candidate-worker.cf"
+import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 
 const identity = { deploymentId: "deployment-1", releaseId: "release-1" }
 const canaryIdentityHash = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
@@ -440,5 +441,82 @@ describe("Better Auth D1 candidate Worker", () => {
     // operator registers. Requiring that receipt here creates an impossible
     // hash-before-hash cycle; ordinary product requests remain receipt-gated.
     expect(mocks.admitOperation).not.toHaveBeenCalled()
+  })
+
+  describe("public-auth budget", () => {
+    function limitedWorker(limit: number) {
+      return createBetterAuthD1CandidateWorker({
+        composition: mocks.compose,
+        publicAuthRateLimiter: createFixedWindowConnectionRateLimiter({ limit, windowMs: 60_000 }),
+      })
+    }
+
+    test("keys auth requests on the trusted client IP, so a varying spoofed x-forwarded-for buys no fresh budget", async () => {
+      mocks.releaseState.mockResolvedValue(release("open"))
+      const shared = vi.fn(async (_input: { key: string }) => ({ success: true }))
+      const workerInstance = limitedWorker(3)
+      const limitedEnv = { ...env(), CLAXEDO_REQUEST_LIMITER: { limit: shared } }
+      const send = (xff: string, ip = "198.51.100.9") =>
+        workerInstance.fetch(
+          new Request("https://api.example.test/api/auth/get-session", {
+            headers: { "cf-connecting-ip": ip, "x-forwarded-for": xff },
+          }),
+          limitedEnv,
+        )
+
+      for (const xff of ["203.0.113.1", "203.0.113.2", "203.0.113.3"]) {
+        expect((await send(xff)).status).toBe(200)
+      }
+      const denied = await send("203.0.113.4")
+      expect(denied.status).toBe(429)
+      expect(denied.headers.get("retry-after")).toBeTruthy()
+      expect(await denied.json()).toMatchObject({ error: { code: "rate_limited" } })
+      // The spoofed header never reached either layer, and the fourth request
+      // never reached dispatch.
+      expect(mocks.authHandler).toHaveBeenCalledTimes(3)
+      expect(shared.mock.calls.map(([input]) => input.key)).toEqual([
+        "public-auth:198.51.100.9",
+        "public-auth:198.51.100.9",
+        "public-auth:198.51.100.9",
+      ])
+      // Per-client: a different edge IP keeps its own budget.
+      expect((await send("203.0.113.4", "203.0.113.7")).status).toBe(200)
+    })
+
+    test("a shared-store rejection denies auth dispatch while the local fuse still has room", async () => {
+      mocks.releaseState.mockResolvedValue(release("open"))
+      const workerInstance = limitedWorker(600)
+      const limitedEnv = {
+        ...env(),
+        CLAXEDO_REQUEST_LIMITER: { limit: async () => ({ success: false }) },
+      }
+      const response = await workerInstance.fetch(
+        new Request("https://api.example.test/api/auth/get-session", {
+          headers: { "cf-connecting-ip": "198.51.100.9" },
+        }),
+        limitedEnv,
+      )
+      expect(response.status).toBe(429)
+      expect(mocks.authHandler).not.toHaveBeenCalled()
+    })
+
+    test("the budget answers before the phase gates, so auth floods are bounded while locked too", async () => {
+      mocks.releaseState.mockResolvedValue(release("locked"))
+      const workerInstance = limitedWorker(1)
+      const send = () =>
+        workerInstance.fetch(
+          new Request("https://api.example.test/api/auth/sign-in/social", {
+            method: "POST",
+            headers: { "cf-connecting-ip": "203.0.113.7" },
+          }),
+          env(),
+        )
+
+      expect((await send()).status).toBe(503)
+      const denied = await send()
+      expect(denied.status).toBe(429)
+      expect(await denied.json()).toMatchObject({ error: { code: "rate_limited" } })
+      expect(mocks.authHandler).not.toHaveBeenCalled()
+    })
   })
 })

@@ -21,6 +21,13 @@ import {
 import type { HostedWorkerEnv } from "../../authority/provider-neutral-hosted-services"
 import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
 import {
+  cloudflareRateLimitStore,
+  createFixedWindowConnectionRateLimiter,
+  createLayeredRateLimiter,
+  type ConnectionRateLimiter,
+} from "../../platform/auth/rate-limit"
+import { requestClientKeyFromHeaders } from "../../platform/auth/request-guard"
+import {
   requireBetterAuthDatabaseSchema,
   requireBetterAuthNativeClientClosure,
 } from "../../platform/auth/better-auth-native-clients"
@@ -238,6 +245,65 @@ function available(request: Request, body: unknown) {
   )
 }
 
+// Auth traffic is dispatched to `selected.authHandler` below, ahead of the
+// core app — so the core app's `defaultRequestGuard` never sees it. The
+// public-auth budget therefore lives at this boundary: the same per-client
+// ceiling product requests get. The shared layer is the CLAXEDO_REQUEST_LIMITER
+// binding (600/60s in the generated wrangler config); the local fuse and its
+// window agree with that period so the two layers mean the same minute.
+const PUBLIC_AUTH_RATE_LIMIT = 600
+const PUBLIC_AUTH_RATE_LIMIT_WINDOW_MS = 60_000
+
+/**
+ * The budget check itself. Keyed on the edge-stamped client IP
+ * (`requestClientKeyFromHeaders` prefers `cf-connecting-ip`, which a client
+ * cannot supply on the Worker path) — never leftmost `x-forwarded-for`, which
+ * is client-controlled and would mint a fresh bucket per request. The
+ * `public-auth:` prefix keeps this bucket distinct from the product limiter's
+ * on the shared binding, same convention as the locked Worker's `locked:` key.
+ */
+function createPublicAuthRateLimiter(
+  env: BetterAuthD1CandidateWorkerEnv,
+  local: ConnectionRateLimiter,
+) {
+  return createLayeredRateLimiter({
+    local,
+    ...(env.CLAXEDO_REQUEST_LIMITER
+      ? {
+          sharedStore: cloudflareRateLimitStore(env.CLAXEDO_REQUEST_LIMITER, {
+            periodSeconds: PUBLIC_AUTH_RATE_LIMIT_WINDOW_MS / 1000,
+          }),
+        }
+      : {}),
+  })
+}
+
+function rateLimited(
+  request: Request,
+  cors: ReadonlyArray<readonly [string, string]>,
+  retryAfterMs: number,
+) {
+  return withSecurityHeaders(
+    Response.json(
+      {
+        error: {
+          code: "rate_limited",
+          message: "Request limit exceeded",
+          retryAfterMs,
+        },
+      },
+      { status: 429 },
+    ),
+    [
+      ...securityHeaderEntries({
+        https: requestIsHttps({ url: request.url, header: (name) => request.headers.get(name) ?? undefined }),
+      }),
+      ["retry-after", String(Math.max(1, Math.ceil(retryAfterMs / 1000)))],
+      ...cors,
+    ],
+  )
+}
+
 /**
  * One phase-gated candidate Worker over a statically selected composition.
  *
@@ -249,8 +315,20 @@ function available(request: Request, body: unknown) {
  */
 export function createBetterAuthD1CandidateWorker(input: {
   composition: (env: BetterAuthD1CandidateWorkerEnv) => BetterAuthD1UserDeployedComposition
+  /**
+   * Per-isolate fuse for the public-auth budget. Tests pass a smaller limit;
+   * entries leave it unset — buckets live inside the limiter, so the default
+   * must be created once per worker, not per request.
+   */
+  publicAuthRateLimiter?: ConnectionRateLimiter
 }) {
   const composition = input.composition
+  const publicAuthRateLimiter =
+    input.publicAuthRateLimiter ??
+    createFixedWindowConnectionRateLimiter({
+      limit: PUBLIC_AUTH_RATE_LIMIT,
+      windowMs: PUBLIC_AUTH_RATE_LIMIT_WINDOW_MS,
+    })
   const core = createHostedCoreWorker<BetterAuthD1CandidateWorkerEnv>((env) => {
     const selected = composition(env)
     return { plane: selected.plane, options: selected.options }
@@ -266,6 +344,15 @@ export function createBetterAuthD1CandidateWorker(input: {
         const url = new URL(request.url)
         if (url.origin !== configured.public.apiOrigin)
           throw new Error("observed request origin does not match BETTER_AUTH_URL")
+        // The public-auth budget, before ANY dispatch or release-state read:
+        // every `selected.authHandler` branch below is gated on authRoute(), so
+        // this one check covers auth traffic in every release phase.
+        if (authRoute(url.pathname)) {
+          const decision = await createPublicAuthRateLimiter(env, publicAuthRateLimiter).check({
+            key: `public-auth:${requestClientKeyFromHeaders(request.headers)}`,
+          })
+          if (!decision.allowed) return rateLimited(request, cors, decision.retryAfterMs)
+        }
         const identity = await betterAuthD1ReleaseIdentity(env, configured, {
           browserBuildId: requiredReleaseIdentifier(env.CLAXEDO_BROWSER_BUILD_ID, "CLAXEDO_BROWSER_BUILD_ID"),
           relayBuildId: requiredReleaseIdentifier(env.CLAXEDO_RELAY_BUILD_ID, "CLAXEDO_RELAY_BUILD_ID"),
