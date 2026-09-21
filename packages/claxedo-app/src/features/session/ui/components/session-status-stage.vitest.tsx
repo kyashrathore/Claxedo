@@ -84,7 +84,7 @@ describe("SessionStatusStage (rubric A2)", () => {
 
   test("forwards each Cancel click to its owner", () => {
     // The component itself just forwards each click; idempotency is the
-    // responsibility of the consumer's onCancel (existing session.abort).
+    // responsibility of the consumer's onCancel (the composer's Stop).
     // We assert here that the surface does not swallow clicks or otherwise
     // batch them, so a noop or guarded handler upstream remains safe.
     const onCancel = vi.fn()

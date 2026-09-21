@@ -642,22 +642,6 @@ export function createAgentRuntimeClient(options: {
       if (res.status === 204) return { data: undefined }
       return { data: await readJson<{ delivery?: PromptDelivery }>(res) }
     },
-    async abort(input: { directory: AgentRuntimeDirectory; sessionID: string; turnId?: string }) {
-      const url = agentRuntimeSessionUrl({
-        serverUrl: serverUrl(),
-        sessionID: input.sessionID,
-        suffix: "/abort",
-      })
-      url.searchParams.set("directory", input.directory)
-      // Names the turn the caller was looking at, so a request that lands after
-      // that turn ended cannot cancel the one that replaced it.
-      if (input.turnId) url.searchParams.set("turnId", input.turnId)
-      return await fetchRuntimePath({
-        directory: input.directory,
-        path: `${url.pathname}${url.search}`,
-        init: { method: "POST" },
-      })
-    },
     async answerPermission(input: { directory: AgentRuntimeDirectory; sessionID: string; permissionID: string; response: "once" | "always" | "reject" }) {
       const url = agentRuntimeSessionUrl({
         serverUrl: serverUrl(),

@@ -65,6 +65,7 @@ import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identi
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
+import { stopRunningTurn, recoveryOutcomeMessage, turnCancellationSucceeded } from "../composer/ui/submit-abort"
 
 const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
   default: module.DialogSelectFile,
@@ -559,8 +560,14 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const sessionID = args.sessionId()
         if (!sessionID) return
         const currentStatus = args.status()
+        // Undo rewrites the transcript the turn is still writing. A
+        // cancellation that did not stop it fails the command instead of
+        // reverting under a turn that is still producing.
         if (supports("abort") && (currentStatus.type === "busy" || currentStatus.type === "retry")) {
-          await sdk.client.session.abort({ sessionID }).catch(() => {})
+          const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
+          if (cancelled.cancelled && !turnCancellationSucceeded(cancelled.outcome)) {
+            throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+          }
         }
         const revert = info()?.revert?.messageID
         const message = findLast(userMessages(), (x) => !revert || x.id < revert)

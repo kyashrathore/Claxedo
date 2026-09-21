@@ -14,6 +14,7 @@ import type { useSDK } from "@/features/session/app-ports"
 import type { useLanguage } from "@/platform/i18n/provider"
 import type { usePrompt } from "@/features/session/providers/prompt"
 import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
+import { stopRunningTurn, recoveryOutcomeMessage, turnCancellationSucceeded } from "../composer/ui/submit-abort"
 
 export function createSessionMessageActions(input: {
   sessionID: () => string | undefined
@@ -67,8 +68,18 @@ export function createSessionMessageActions(input: {
   const supports = (name: keyof ReturnType<typeof sessionController.capabilities>) =>
     sessionController.capabilities()[name] !== false
 
-  const halt = (sessionID: string) =>
-    busy() && supports("abort") ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+  /**
+   * Revert and restore rewrite the transcript the turn is still writing, so
+   * they run only once the turn is known to have stopped. A cancellation that
+   * refused, failed or needs action is not that, and a caught rejection was
+   * never evidence of it either.
+   */
+  const halt = async (sessionID: string) => {
+    if (!busy() || !supports("abort")) return
+    const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
+    if (!cancelled.cancelled) return
+    if (!turnCancellationSucceeded(cancelled.outcome)) throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+  }
 
   const fork = (forkInput: { sessionID: string; messageID: string }) => {
     if (!supports("fork")) return Promise.resolve()

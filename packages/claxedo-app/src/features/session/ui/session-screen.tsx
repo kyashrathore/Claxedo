@@ -102,6 +102,7 @@ import { createSessionComposerModes } from "@/features/session/ui/composer/sessi
 import { createNewSessionDeepLinkPromptSeed } from "@/features/session/ui/composer/deep-link-prompt"
 import { assistantMessageIdForUserMessage } from "@/features/session/data/session-types"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
+import { stopRunningTurn, recoveryOutcomeMessage, turnCancellationSucceeded } from "../composer/ui/submit-abort"
 import { createQueuedMessagesController } from "@/features/session/queue/queued-messages-controller"
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
@@ -1454,7 +1455,12 @@ export default function SessionPage(props: {
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}
               canAbort={() => supports("abort")}
-              onAbort={(sessionID) => sdk.client.session.abort({ sessionID })}
+              onAbort={async (sessionID) => {
+                const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
+                if (cancelled.cancelled && !turnCancellationSucceeded(cancelled.outcome)) {
+                  throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+                }
+              }}
               canPrompt={() => supports("permissions")}
               sessionPromptAdmitted={() => draftSessionStart.pending() ? false : sessionController.capabilities()?.prompt}
               status={sessionController.status} activeTurn={sessionController.activeTurn}

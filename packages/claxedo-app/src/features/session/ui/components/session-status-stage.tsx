@@ -14,8 +14,8 @@
 // - shows a "This is taking a while" warning + Cancel button at `"long"`,
 // - shows "Session is unresponsive" + Cancel at `"failed"`.
 //
-// Cancel calls `onCancel` (wired to the existing `abort()` action in
-// prompt-input.tsx, which idempotently fires `session.abort`). Retry is
+// Cancel calls `onCancel` (wired to the composer's Stop, which submits a
+// `cancel_turn` recovery operation against the running turn). Retry is
 // optional and only meaningful at the `"failed"` stage: when provided,
 // the composer hoists "last submitted prompt" state (text + parts + agent
 // + model + variant + attachments) and re-runs its submit pipeline. This
@@ -31,7 +31,7 @@ export type SessionStatusStage = "redispatch" | "pending" | "long" | "failed" | 
 export interface SessionStatusStageProps {
   /** Current timeout stage from dispatcher-owned prompt status metadata. */
   stage: SessionStatusStage
-  /** Called when the user clicks Cancel. Should call `session.abort`. */
+  /** Called when the user clicks Cancel. Should stop the running turn. */
   onCancel: () => void
   /**
    * Optional: called when the user clicks Retry. Only rendered at the

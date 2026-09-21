@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import type { RecoveryOperation, RecoveryOperationState, RecoveryOutcome, RecoveryRequest, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
@@ -9,6 +10,101 @@ import {
   hasPendingPrompt,
 } from "../../store/pending-prompt-registry"
 import { createGoalAwareAbort, createPromptAbort, createSubmitAbort, stopSessionInteraction } from "./submit-abort"
+
+function target(sessionId: string, turnId = "msg_running"): RecoveryTurnTarget {
+  return { scope: "turn", workspaceId: "ws_1", sessionId, turnId, ownerGeneration: "lease_1" }
+}
+
+function operation(request: RecoveryRequest, state: RecoveryOperationState): RecoveryOperation {
+  const stopped = state === "succeeded"
+  return {
+    operationId: "op_1",
+    requestId: request.requestId,
+    target: request.target,
+    action: request.action,
+    scopeRevision: request.scopeRevision,
+    attempt: request.attempt,
+    state,
+    phase: "graceful_cancel",
+    phaseDeadlineAt: 2_000,
+    facts: {
+      execution: { value: stopped ? "terminal" : "unknown", source: "codex", observedAt: 1_000, generation: "lease_1" },
+      cleanup: { value: stopped ? "verified_clear" : "unknown", source: "codex", observedAt: 1_000, generation: "lease_1" },
+      persistence: { value: stopped ? "committed" : "pending", source: "store", observedAt: 1_000, generation: "lease_1" },
+    },
+    ...(stopped
+      ? {}
+      : {
+          initiatingError: {
+            code: "cancellation_timeout" as const,
+            origin: "codex",
+            target: request.target,
+            stage: "graceful_cancel" as const,
+            executionMayContinue: true,
+            message: "Stop request failed",
+            at: 1_000,
+          },
+        }),
+    cleanupErrors: [],
+    nextActions: [],
+    receipt: "durable",
+    createdAt: 1_000,
+    updatedAt: 1_000,
+  }
+}
+
+type ClientDouble = {
+  calls: string[]
+  requests: RecoveryRequest[]
+  client: ReturnType<Parameters<typeof createPromptAbort>[0]["clientForDirectory"]>
+}
+
+/**
+ * Every double drives the real Stop path: inspect for the turn identity,
+ * submit against it, then reconcile. `running` decides whether the owner has a
+ * turn to name at all.
+ */
+function clientDouble(input: {
+  sessionID: string
+  running?: RecoveryTurnTarget | undefined
+  answer?: (request: RecoveryRequest) => Promise<RecoveryOutcome> | RecoveryOutcome
+  inspect?: () => Promise<{ data: { target?: RecoveryTurnTarget } }>
+  statusAfter?: Record<string, { type: "idle" | "busy" }>
+  failRequests?: boolean
+}): ClientDouble {
+  const calls: string[] = []
+  const requests: RecoveryRequest[] = []
+  const running = "running" in input ? input.running : target(input.sessionID)
+  return {
+    calls,
+    requests,
+    client: {
+      session: {
+        recovery: {
+          inspect: input.inspect ?? (async () => {
+            calls.push("inspect")
+            return { data: running ? { target: running } : {} }
+          }),
+          submit: async ({ request }: { request: RecoveryRequest }) => {
+            calls.push("submit")
+            requests.push(request)
+            return { data: await (input.answer?.(request) ?? { kind: "operation", operation: operation(request, "succeeded") }) }
+          },
+        },
+        status: async () => { calls.push("status"); return { data: input.statusAfter ?? {} } },
+        get: async () => { calls.push("get"); return { data: {} } },
+      },
+      permission: {
+        list: async () => {
+          calls.push("permissions")
+          if (input.failRequests) throw new Error("permission list unavailable")
+          return { data: [] }
+        },
+      },
+      question: { list: async () => { calls.push("questions"); return { data: [] } } },
+    } as never,
+  }
+}
 
 describe("goal-aware abort", () => {
   test("routes to the Goal Stop mutation while a Goal is active", async () => {
@@ -89,83 +185,122 @@ test("interaction Stop surfaces Goal failure after interrupting its turn", async
 })
 
 describe("prompt Stop results", () => {
-  test.each(["transport", "failed", "recovering"])("reports %s failure without clearing authoritative state", async (failure) => {
+  const failures: Array<[string, (request: RecoveryRequest) => Promise<RecoveryOutcome> | RecoveryOutcome, string]> = [
+    ["a rejected request", () => Promise.reject(new Error("Stop request failed")), "Stop request failed"],
+    ["an operation that failed", (request) => ({ kind: "operation", operation: operation(request, "failed") }), "Stop request failed"],
+    ["an operation still owed an action", (request) => ({ kind: "operation", operation: operation(request, "needs_action") }), "Stop request failed"],
+    ["a refusal", () => ({ kind: "refused", refusal: { kind: "generation_conflict", message: "the turn was replaced" } }), "the turn was replaced"],
+    ["an unavailable owner", () => ({ kind: "refused", refusal: { kind: "unavailable", message: "the runtime is closing" } }), "the runtime is closing"],
+  ]
+
+  test.each(failures)("reports %s without refreshing authoritative state", async (_name, answer, message) => {
     const toasts: Array<{ description: string }> = []
-    let reads = 0
+    const double = clientDouble({ sessionID: "stop-failure", answer })
     const abort = createSubmitAbort({
       sessionID: () => "stop-failure",
       defaultDirectory: "/repo",
-      clientForDirectory: () => ({
-        session: {
-          abort: async () => {
-            if (failure === "transport") throw new Error("Stop request failed")
-            return { data: { ok: false as const, status: failure, message: "Stop request failed" } }
-          },
-          status: async () => { reads++; return { data: {} } },
-        get: async () => ({ data: {} }),
-        },
-        permission: { list: async () => { reads++; return { data: [] } } },
-        question: { list: async () => { reads++; return { data: [] } } },
-      }),
+      clientForDirectory: () => double.client,
       stopFailedTitle: () => "Request failed",
       stopGoalFailedTitle: () => "Goal Stop failed",
       errorMessage: (error) => (error as Error).message,
       showToast: (toast) => { toasts.push(toast) },
     })
+
     await expect(abort()).resolves.toBeUndefined()
-    expect(toasts).toEqual([{ title: "Request failed", description: "Stop request failed", variant: "error" }])
-    expect(reads).toBe(0)
+
+    expect(toasts).toEqual([{ title: "Request failed", description: message, variant: "error" }])
+    expect(double.calls.filter((call) => call !== "inspect" && call !== "submit")).toEqual([])
   })
 
-  test("acknowledged Stop refreshes the server snapshot", async () => {
-    const calls: string[] = []
+  test("an operation that reached its postcondition refreshes the server snapshot", async () => {
+    const double = clientDouble({ sessionID: "stop-success" })
     await createPromptAbort({
       sessionID: () => "stop-success",
       defaultDirectory: "/repo",
-      clientForDirectory: () => ({
-        session: {
-          abort: async () => { calls.push("abort"); return { data: { ok: true as const, status: "already_idle" as const } } },
-          status: async () => { calls.push("status"); return { data: {} } },
-        get: async () => ({ data: {} }),
-        },
-        permission: { list: async () => { calls.push("permissions"); return { data: [] } } },
-        question: { list: async () => { calls.push("questions"); return { data: [] } } },
-      }),
+      clientForDirectory: () => double.client,
     })()
-    expect(calls).toEqual(["abort", "status", "permissions", "questions"])
+    expect(double.calls).toEqual(["inspect", "submit", "get", "status", "permissions", "questions"])
+  })
+
+  test("a session running no turn refreshes without submitting anything", async () => {
+    const double = clientDouble({ sessionID: "stop-idle", running: undefined })
+    await createPromptAbort({
+      sessionID: () => "stop-idle",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => double.client,
+    })()
+    expect(double.calls).toEqual(["inspect", "get", "status", "permissions", "questions"])
   })
 })
 
 describe("which turn Stop names", () => {
-  const abortWith = (sessionID: string, seen: Array<string | undefined>, turnId?: string) => createPromptAbort({
-    sessionID: () => sessionID,
-    defaultDirectory: "/repo",
-    ...(turnId ? { turnId: () => turnId } : {}),
-    clientForDirectory: () => ({
-      session: {
-        abort: async (input: { turnId?: string }) => {
-          seen.push(input.turnId)
-          return { data: { ok: true as const, status: "cancelled" as const } }
-        },
-        status: async () => ({ data: {} }),
-      get: async () => ({ data: {} }),
+  test("sends back the exact identity the owner reported for the running turn", async () => {
+    const running = target("ses_scoped", "msg_first")
+    const double = clientDouble({ sessionID: "ses_scoped", running })
+    await createPromptAbort({
+      sessionID: () => "ses_scoped",
+      defaultDirectory: "/repo",
+      turnId: () => "msg_first",
+      clientForDirectory: () => double.client,
+    })()
+
+    expect(double.requests).toHaveLength(1)
+    expect(double.requests[0]).toMatchObject({ action: "cancel_turn", target: running, scopeRevision: "lease_1", attempt: 1 })
+  })
+
+  test("a composer that started no turn cancels whichever turn the owner reports", async () => {
+    const double = clientDouble({ sessionID: "ses_unscoped", running: target("ses_unscoped", "msg_someone_else") })
+    await createPromptAbort({
+      sessionID: () => "ses_unscoped",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => double.client,
+    })()
+    expect(double.requests[0]?.target).toEqual(target("ses_unscoped", "msg_someone_else"))
+  })
+
+  test("a Stop for a turn that has already been replaced cancels nothing", async () => {
+    const double = clientDouble({ sessionID: "ses_replaced", running: target("ses_replaced", "msg_second") })
+    await createPromptAbort({
+      sessionID: () => "ses_replaced",
+      defaultDirectory: "/repo",
+      turnId: () => "msg_first",
+      clientForDirectory: () => double.client,
+    })()
+    expect(double.requests).toEqual([])
+    expect(double.calls).toEqual(["inspect", "get", "status", "permissions", "questions"])
+  })
+
+  test("two Stops in flight for one turn join a single request id, and a later Stop mints a new one", async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let holding = true
+    const double = clientDouble({
+      sessionID: "ses_join",
+      answer: async (request) => {
+        if (holding) await held
+        return { kind: "operation", operation: operation(request, "succeeded") }
       },
-      permission: { list: async () => ({ data: [] }) },
-      question: { list: async () => ({ data: [] }) },
-    }),
-  })
+    })
+    const abort = createPromptAbort({
+      sessionID: () => "ses_join",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => double.client,
+    })
 
-  test("names the turn this composer started", async () => {
-    const seen: Array<string | undefined> = []
-    await abortWith("ses_scoped", seen, "msg_first")()
-    expect(seen).toEqual(["msg_first"])
-  })
+    const first = abort()
+    // The second click has to find the first submit already in flight, which
+    // is what makes it join rather than open a second operation.
+    while (double.requests.length < 1) await Promise.resolve()
+    const second = abort()
+    while (double.requests.length < 2) await Promise.resolve()
+    release()
+    await Promise.all([first, second])
 
-  test("names no turn when this composer started none", async () => {
-    const seen: Array<string | undefined> = []
-    await abortWith("ses_unscoped", seen)()
-    expect(seen).toHaveLength(1)
-    expect(seen[0]).toBeUndefined()
+    expect(double.requests[0]!.requestId).toBe(double.requests[1]!.requestId)
+
+    holding = false
+    await abort()
+    expect(double.requests[2]!.requestId).not.toBe(double.requests[0]!.requestId)
   })
 })
 
@@ -182,96 +317,93 @@ describe("prompt Stop feedback", () => {
     })
   }
 
-  test("reports the turn stopped before the abort answers", async () => {
-    const sessionID = "ses_stop_optimistic"
+  test("leaves the last authoritative state alone until the owner answers", async () => {
+    const sessionID = "ses_stop_no_optimism"
     runningSession(sessionID)
-    let answerAbort = () => {}
-    const abort = createPromptAbort({
+    let answer = () => {}
+    const double = clientDouble({
+      sessionID,
+      answer: (request) => new Promise((resolve) => {
+        answer = () => resolve({ kind: "operation", operation: operation(request, "succeeded") })
+      }),
+      statusAfter: { [sessionID]: { type: "idle" } },
+    })
+    const stopped = createPromptAbort({
       sessionID: () => sessionID,
       defaultDirectory: "/repo",
-      clientForDirectory: () => ({
-        session: {
-          abort: () => new Promise((resolve) => {
-            answerAbort = () => resolve({ data: { ok: true as const, status: "already_idle" as const } })
-          }),
-          status: async () => ({ data: { [sessionID]: { type: "idle" as const } } }),
-        get: async () => ({ data: {} }),
-        },
-        permission: { list: async () => ({ data: [] }) },
-        question: { list: async () => ({ data: [] }) },
-      }),
+      clientForDirectory: () => double.client,
+    })()
+
+    while (double.requests.length < 1) await Promise.resolve()
+    // Nothing the owner has not said: the turn is still busy and its todos are
+    // still its own until the cancellation reports otherwise.
+    expect(sessionSnapshot(sessionID)).toEqual({
+      status: { type: "busy" },
+      todos: [{ content: "run the build", status: "in_progress", priority: "high" }],
     })
-    const stopped = abort()
-    expect(sessionSnapshot(sessionID)).toEqual({ status: { type: "idle" }, todos: [] })
-    answerAbort()
+
+    answer()
     await stopped
+    expect(sessionSnapshot(sessionID).status).toEqual({ type: "idle" })
   })
 
-  test("a failed request refresh leaves the acknowledged Stop successful", async () => {
+  test("a stopped turn whose request refresh fails is still a stopped turn", async () => {
     const sessionID = "ses_stop_refresh_failure"
     runningSession(sessionID)
-    const abort = createPromptAbort({
+    const double = clientDouble({ sessionID, statusAfter: { [sessionID]: { type: "idle" } }, failRequests: true })
+
+    await expect(createPromptAbort({
       sessionID: () => sessionID,
       defaultDirectory: "/repo",
-      clientForDirectory: () => ({
-        session: {
-          abort: async () => ({ data: { ok: true as const, status: "already_idle" as const } }),
-          status: async () => ({ data: { [sessionID]: { type: "idle" as const } } }),
-        get: async () => ({ data: {} }),
-        },
-        permission: { list: () => Promise.reject(new Error("permission list unavailable")) },
-        question: { list: async () => ({ data: [] }) },
-      }),
-    })
-    await expect(abort()).resolves.toBeUndefined()
-    expect(sessionSnapshot(sessionID)).toEqual({ status: { type: "idle" }, todos: [] })
+      clientForDirectory: () => double.client,
+    })()).resolves.toBeUndefined()
+
+    expect(sessionSnapshot(sessionID).status).toEqual({ type: "idle" })
   })
 
-  test("a rejected abort reports the Stop as failed", async () => {
-    const abort = createPromptAbort({
-      sessionID: () => "ses_stop_rejected",
-      defaultDirectory: "/repo",
-      clientForDirectory: () => ({
-        session: {
-          abort: () => Promise.reject(new Error("Stop request failed")),
-          status: async () => ({ data: {} }),
-        get: async () => ({ data: {} }),
-        },
-        permission: { list: async () => ({ data: [] }) },
-        question: { list: async () => ({ data: [] }) },
-      }),
+  test("a rejected inspection reports the Stop as failed and never writes idle", async () => {
+    const sessionID = "ses_stop_rejected"
+    runningSession(sessionID)
+    const double = clientDouble({
+      sessionID,
+      inspect: () => Promise.reject(new Error("Stop request failed")),
     })
-    await expect(abort()).rejects.toThrow("Stop request failed")
+
+    await expect(createPromptAbort({
+      sessionID: () => sessionID,
+      defaultDirectory: "/repo",
+      clientForDirectory: () => double.client,
+    })()).rejects.toThrow("Stop request failed")
+    expect(sessionSnapshot(sessionID).status).toEqual({ type: "busy" })
   })
 
   test("cancels a prompt still queued locally and asks the runtime for one already sent", async () => {
     clearPendingPromptsForTest()
-    const calls: string[] = []
-    const promptAbort = (sessionID: string) => createPromptAbort({
-      sessionID: () => sessionID,
-      defaultDirectory: "/repo",
-      clientForDirectory: () => ({
-        session: {
-          abort: async () => { calls.push("runtime-abort"); return { data: { ok: true as const, status: "already_idle" as const } } },
-          status: async () => ({ data: {} }),
-        get: async () => ({ data: {} }),
-        },
-        permission: { list: async () => ({ data: [] }) },
-        question: { list: async () => ({ data: [] }) },
-      }),
-    })
+    const cleanups: string[] = []
+    const doubles = new Map<string, ClientDouble>()
+    const promptAbort = (sessionID: string) => {
+      const double = clientDouble({ sessionID })
+      doubles.set(sessionID, double)
+      return createPromptAbort({
+        sessionID: () => sessionID,
+        defaultDirectory: "/repo",
+        clientForDirectory: () => double.client,
+      })
+    }
 
     const controller = new AbortController()
-    registerPendingPrompt("ses_queued", { abort: controller, cleanup: () => calls.push("cleanup") })
+    registerPendingPrompt("ses_queued", { abort: controller, cleanup: () => cleanups.push("cleanup") })
     await promptAbort("ses_queued")()
-    expect(calls).toEqual(["cleanup"])
+    expect(cleanups).toEqual(["cleanup"])
     expect(controller.signal.aborted).toBe(true)
     expect(hasPendingPrompt("ses_queued")).toBe(false)
+    expect(doubles.get("ses_queued")!.calls).toEqual([])
 
-    registerPendingPrompt("ses_sent", { abort: new AbortController(), cleanup: () => calls.push("cleanup") })
+    registerPendingPrompt("ses_sent", { abort: new AbortController(), cleanup: () => cleanups.push("cleanup") })
     markPendingPromptSent("ses_sent")
     await promptAbort("ses_sent")()
-    expect(calls).toEqual(["cleanup", "runtime-abort"])
+    expect(cleanups).toEqual(["cleanup"])
+    expect(doubles.get("ses_sent")!.requests).toHaveLength(1)
     expect(hasPendingPrompt("ses_sent")).toBe(false)
   })
 })
