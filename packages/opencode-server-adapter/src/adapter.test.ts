@@ -376,7 +376,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     expect(aborts).toBe(1)
   })
 
-  test.each([500, 404])("keeps observing the bound turn after remote abort returns HTTP %s", async (abortStatus) => {
+  test.each([500, 404, 200])("a remote abort returning HTTP %s establishes nothing about the turn", async (abortStatus) => {
     let promptAccepted!: () => void
     const prompted = new Promise<void>((resolve) => { promptAccepted = resolve })
     let events!: ReadableStreamDefaultController<Uint8Array>
@@ -409,7 +409,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
         return Response.json([{ content: "Run tests", status: "pending", priority: "high" }])
       }
       if (url.pathname === "/session/ses_upstream/abort") {
-        return new Response("remote failed", { status: abortStatus })
+        return abortStatus === 200 ? Response.json(true) : new Response("remote failed", { status: abortStatus })
       }
       return new Response("missing", { status: 404 })
     })
@@ -419,18 +419,43 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     try {
       await prompted
       await expect(adapter.getTodos!(binding())).resolves.toEqual([{ content: "Run tests", status: "pending", priority: "high" }])
+      const stopping = adapter.cancelTurn!(binding(), {
+        turnId: userMessageId!,
+        assistantMessageId: "asst_1",
+        signal: new AbortController().signal,
+        deadlineAt: Date.now() + 5_000,
+      })
       if (abortStatus === 500) {
-        await expect(adapter.abort!(binding())).rejects.toMatchObject({ code: "http_error", status: 500 })
+        // A server error says nothing about the turn, and this adapter does
+        // not own the engine, so it invents neither fact.
+        await expect(stopping).rejects.toMatchObject({ code: "http_error", status: 500 })
+      } else if (abortStatus === 404) {
+        await expect(stopping).resolves.toEqual({
+          execution: "unknown",
+          cleanup: "unknown",
+          error: { code: "owner_unavailable", message: "Session claxedo_ses_1 was not found upstream" },
+        })
       } else {
-        await expect(adapter.abort!(binding())).resolves.toMatchObject({ ok: false, status: "not_found" })
+        // The upstream server accepted the request. Acceptance is not
+        // stopping, and this adapter can reach that engine without owning it,
+        // so neither fact is claimed.
+        await expect(stopping).resolves.toEqual({ execution: "unknown", cleanup: "unknown" })
       }
       completed = true
       events.enqueue(new TextEncoder().encode(envelope(TARGET, {
         type: "session.idle", properties: { sessionID: "ses_upstream" },
       })))
-      await expect(next).resolves.toEqual({ done: false, value: { type: "text-delta", delta: "Still running" } })
-      await expect(stream.next()).resolves.toEqual({ done: false, value: { type: "finish", sessionId: "claxedo_ses_1" } })
-      await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+      if (abortStatus === 200) {
+        // An accepted abort closes this adapter's own read of the turn; what
+        // the remote engine does next is no longer observed here.
+        await expect(next).resolves.toEqual({ done: true, value: undefined })
+      } else {
+        // A failed abort must not cost the caller its view of a turn that is
+        // demonstrably still running.
+        await expect(next).resolves.toEqual({ done: false, value: { type: "text-delta", delta: "Still running" } })
+        await expect(stream.next()).resolves.toEqual({ done: false, value: { type: "finish", sessionId: "claxedo_ses_1" } })
+        await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+      }
     } finally {
       await adapter.dispose()
       await stream.return?.()
@@ -489,7 +514,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     })
     expect(adapter).not.toHaveProperty("listSessions")
     expect(adapter).not.toHaveProperty("discoverSessions")
-    await expect((adapter.abort as unknown as (value: string) => Promise<unknown>)("ses_upstream")).rejects.toMatchObject({ code: "invalid_binding" })
+    await expect((adapter.cancelTurn as unknown as (value: string) => Promise<unknown>)("ses_upstream")).rejects.toMatchObject({ code: "invalid_binding" })
     await expect((adapter.getTodos as unknown as (value: string) => Promise<unknown>)("ses_upstream")).rejects.toMatchObject({ code: "invalid_binding" })
   })
 })
