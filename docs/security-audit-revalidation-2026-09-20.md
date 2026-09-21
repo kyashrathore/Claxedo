@@ -332,7 +332,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 134 | Hardening / latent | [P-18 — Event delivery has no workspace argument](#finding-p-18) | MED (design) → Informational now; Medium if exposed | Fixed; focused tests | Make workspace/tenant identity part of the event contract before exposing ingress. |
 | 135 | Hardening / latent | [P-19 — Telemetry exports raw exception text](#finding-p-19) | MED → Informational now | Fixed at production/export | String values scrubbed (URL credentials, auth tokens, `key=value` secrets, 512-char cap); `allowedAttributes` declares kept keys. |
 | 136 | Hardening / latent | [P-37 — Tracing configuration is not a consent boundary](#finding-p-37) | LOW → Informational now | Fixed; focused tests | Consent gates recording on the tracer and the exporter; attributes, events and trace state are validated and bounded. |
-| 137 | Hardening / latent | [R-3 — Injected host-tunnel authorization can weaken the contract](#finding-r-3) | LOW → Informational | Latent | Keep invariant host/workspace binding outside overridable policy, or require a validated-claims result. |
+| 137 | Hardening / latent | [R-3 — Injected host-tunnel authorization can weaken the contract](#finding-r-3) | LOW → Informational | Fixed; composition tests | The seam now requires a validated-claims result: `validateHostTunnelTokenClaims` re-checks issuer, audience, host/workspace binding, and clock bounds outside the overridable policy. |
 | 138 | Hardening / latent | [S-5 — Codex Windows shim uses a shell](#finding-s-5) | MED → Informational | Latent | Resolve the real executable where possible and keep arguments out of command strings. |
 | 139 | Hardening / latent | [S-11 — Hook token uses ordinary string comparison](#finding-s-11) | LOW → Informational | Fixed; focused tests | Use the existing constant-time string helper consistently and test correct, incorrect and different-length tokens. |
 | 140 | Hardening / latent | [P-112 — Pairing admin token uses ordinary equality](#finding-p-112) | LOW → Informational | Fixed; focused guard tests | Use the shared constant-time helper and narrow exemptions to actual public webhook paths. |
@@ -438,7 +438,9 @@ The next-action column is the first step; each finding link opens the complete e
 
 **Fix and acceptance:** Keep invariant host/workspace binding outside overridable policy, or require a validated-claims result. Add a composition test with a permissive policy and a mismatched host.
 
-**Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts). [Concept walkthrough A](#flow-a).
+**Resolution:** `authorizeHostTunnel` no longer returns a bare boolean. A grant must carry the Host Tunnel Token claims the policy verified, and the relay runs `validateHostTunnelTokenClaims` on them — issuer, audience, `host_id`/`workspace_ids` binding to the requested registration, and the same clock floor custom `tokenVerifier` results already get — before admission, and the claims now feed the generation fence like token-admitted tunnels. Composition tests in `composition.test.ts` prove a permissive policy whose claims bind a different host or omit a requested workspace is refused 403 and registers nothing, while a policy returning claims bound to the request still upgrades.
+
+**Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts); [packages/workspace-relay/src/auth.ts](../packages/workspace-relay/src/auth.ts). [Concept walkthrough A](#flow-a).
 
 <a id="finding-m-1"></a>
 ### M-1 — Unsigned loopback MCP grants machine-owner scope
