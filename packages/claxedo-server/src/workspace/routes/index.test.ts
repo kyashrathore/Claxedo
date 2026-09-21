@@ -148,6 +148,7 @@ configureWorkspaceSupervisorPort({
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
+  async reconcileCredentialDelivery() {},
 })
 
 vi.mock("../../workspace/supervisor", () => ({

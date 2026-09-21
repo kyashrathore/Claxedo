@@ -81,3 +81,72 @@ describe("the engine hears about the providers a mutation touched", () => {
     expect(synced.mock.calls[0]?.[1]).toEqual(["claude-sdk"])
   })
 })
+
+describe("the supervisor hears the delivered set change", () => {
+  const reconciled = vi.fn(async () => {})
+  const port = defaultControlPlaneCredentials()
+
+  beforeEach(async () => {
+    setBackendOverride(createTestBackend())
+    ClaxedoDB.use((db) => db.delete(ClaxedoProviderCredentialTable).run())
+    synced.mockClear()
+    reconciled.mockClear()
+    const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
+    configureWorkspaceSupervisorPort({
+      hold() {},
+      release() {},
+      markUse() {},
+      touch() {},
+      broadcastRuntimeConfig: async () => {},
+      reconcileCredentialDelivery: reconciled,
+    })
+  })
+
+  afterAll(async () => {
+    const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
+    configureWorkspaceSupervisorPort(undefined)
+  })
+
+  test("a revocation runs the delivery reconcile", async () => {
+    const claude = await port.putCredential({
+      provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
+    })
+    reconciled.mockClear()
+
+    await port.updateCredentialStatus(claude.id, "revoked")
+
+    expect(reconciled).toHaveBeenCalledOnce()
+  })
+
+  test("an account switch and a removal run it", async () => {
+    const claude = await port.putCredential({
+      provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
+    })
+    const cursor = await port.putCredential({
+      provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "key_cursor",
+    })
+    reconciled.mockClear()
+
+    await port.setActiveCredentials!([claude.id])
+    await port.deleteCredential(cursor.id)
+
+    expect(reconciled).toHaveBeenCalledTimes(2)
+  })
+
+  test("a write that changed nothing — a delete of a missing row — does not sweep", async () => {
+    await port.deleteCredential("missing-id")
+
+    expect(reconciled).not.toHaveBeenCalled()
+  })
+
+  test("a composition without a supervisor reconciles nothing and does not fail the write", async () => {
+    const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
+    configureWorkspaceSupervisorPort(undefined)
+
+    const claude = await port.putCredential({
+      provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "key_a",
+    })
+
+    await expect(port.updateCredentialStatus(claude.id, "revoked")).resolves.toBeUndefined()
+  })
+})

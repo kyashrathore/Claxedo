@@ -272,11 +272,58 @@ describe("binding broker HTTP entrypoint", () => {
     await second.body?.cancel()
   })
 
-  test("strips credential slots from the forwarded query", async () => {
+  test("strips credential slots from the forwarded query of a vendor that reads none", async () => {
     const f = await fixture()
     const response = await f.request("/v1/messages?key=foreign&access_token=foreign&api_key=foreign&apikey=foreign&model=x")
     expect(response.status).toBe(200)
     expect(f.upstream[0].url).toBe("https://api.anthropic.com/v1/messages?model=x")
+  })
+
+  test("refuses a query credential slot the vendor does read, and echoes none of it", async () => {
+    const f = await fixture()
+    f.update({
+      destination: {
+        origin: "https://generativelanguage.googleapis.com",
+        methods: ["POST"],
+        pathPrefixes: ["/v1beta"],
+        credentialQuerySlots: ["key"],
+      },
+    })
+    const response = await f.request("/v1beta/models:generateContent?key=foreign-key&model=x")
+    const body = await response.text()
+    expect([response.status, JSON.parse(body).error.code]).toEqual([403, "request_outside_policy"])
+    expect(f.upstream).toHaveLength(0)
+    expect(body).not.toContain("foreign-key")
+    expect([...response.headers.values()].join(" ")).not.toContain("foreign-key")
+  })
+
+  test("forwards only the answer headers a harness reads", async () => {
+    const f = await fixture()
+    f.respond(async () => new Response("ok", {
+      headers: {
+        "content-type": "application/json",
+        "anthropic-ratelimit-requests-remaining": "42",
+        "x-ratelimit-limit-tokens": "100",
+        "retry-after": "30",
+        "request-id": "req_1",
+        "content-encoding": "gzip",
+        "www-authenticate": `Bearer realm="anthropic"`,
+        "set-cookie": "session=1",
+        authorization: "Bearer leaked",
+        "openai-organization": "org-of-the-operator",
+        "anthropic-organization-id": "org_secret",
+        "x-goog-api-key": "real-key",
+      },
+    }))
+    const response = await f.request()
+    expect(response.status).toBe(200)
+    expect(Object.fromEntries(response.headers)).toEqual({
+      "content-type": "application/json",
+      "anthropic-ratelimit-requests-remaining": "42",
+      "x-ratelimit-limit-tokens": "100",
+      "retry-after": "30",
+      "request-id": "req_1",
+    })
   })
 
   test("strips every credential slot the binding owns from the answer", async () => {

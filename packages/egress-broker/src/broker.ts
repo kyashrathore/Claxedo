@@ -33,11 +33,45 @@ const DEFAULT_MAX_CONCURRENT_UPSTREAM = 32
 const API_KEY_HEADERS = ["x-api-key", "x-goog-api-key"] as const
 
 /**
- * The slots vendors also read a credential from in the query — Gemini answers
- * `?key=` over the injected header, and `access_token` is the OAuth form of
- * the same confusion. The query otherwise belongs to the caller.
+ * The query names a credential is commonly written into. A vendor that acts on
+ * one declares it on its binding and has the request refused instead; these
+ * come off the forwarded query because a key left in a URL reaches the
+ * vendor's access log and every proxy in between even where nothing reads it.
+ * The query otherwise belongs to the caller.
  */
 const CREDENTIAL_QUERY_PARAMS = ["key", "access_token", "api_key", "apikey"] as const
+
+/**
+ * What a vendor's answer may carry back to the harness.
+ *
+ * An allow-list, because what must not travel is open-ended: vendors echo the
+ * account they billed (`openai-organization`), the key slot they read, a
+ * `www-authenticate` challenge naming the operator's tenant, a session cookie.
+ * The SDKs a turn runs on read content negotiation, retry timing, rate-limit
+ * budgets, the id their support asks for, and Connect's status pair; the rest
+ * is the vendor's business with an account the sandbox cannot see.
+ *
+ * `content-length` is absent deliberately: `fetch` has decoded the body, so the
+ * upstream's length describes bytes the broker no longer sends.
+ */
+const FORWARDED_RESPONSE_HEADERS = new Set([
+  "cache-control", "content-language", "content-type", "date", "etag", "last-modified", "vary",
+  "request-id", "retry-after", "retry-after-ms", "x-request-id", "x-should-retry",
+  "grpc-status", "grpc-message", "grpc-status-details-bin",
+])
+
+/** Rate-limit budgets, whose individual names are per-vendor but whose prefixes are not. */
+const FORWARDED_RESPONSE_HEADER_PREFIXES = ["ratelimit-", "x-ratelimit-", "anthropic-ratelimit-"]
+
+function forwardedResponseHeaders(upstream: Headers) {
+  const headers = new Headers()
+  for (const [name, value] of upstream) {
+    if (FORWARDED_RESPONSE_HEADERS.has(name) || FORWARDED_RESPONSE_HEADER_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+      headers.set(name, value)
+    }
+  }
+  return headers
+}
 
 function brokerErrorResponse(status: number, code: CredentialBrokerErrorCode) {
   return Response.json(brokerErrorBody(code), { status })
@@ -221,6 +255,12 @@ export function createEgressBroker(options: BrokerOptions) {
       const allowedPath = binding.destination.pathPrefixes.some((prefix) => prefix.startsWith("/")
         && (pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`)))
       if (!binding.destination.methods.includes(request.method) || !allowedPath) return brokerErrorResponse(403, "request_outside_policy")
+      // The binding's own account is injected at the header this vendor reads.
+      // A caller that also fills a slot the vendor honours is presenting a
+      // second identity, and deleting it quietly would leave the harness
+      // reading the operator's account as the one the vendor refused.
+      const querySlots = binding.destination.credentialQuerySlots ?? []
+      if (querySlots.some((name) => url.searchParams.has(name))) return brokerErrorResponse(403, "request_outside_policy")
       const target = new URL(origin)
       target.pathname = pathname
       target.search = url.search
@@ -272,14 +312,7 @@ export function createEgressBroker(options: BrokerOptions) {
           throw error
         }
       }
-      const responseHeaders = new Headers(upstream.headers)
-      stripTransportHeaders(responseHeaders)
-      // `fetch` has already decoded the body, so forwarding the upstream's
-      // `content-encoding` labels plaintext as gzip and the client fails
-      // decoding it (`Z_DATA_ERROR: incorrect header check`). The credential
-      // slots come off beside it: the answer is the vendor's, and none of the
-      // names this binding owns may echo back to the caller.
-      for (const name of [...injected, "authorization", ...API_KEY_HEADERS, "set-cookie", "content-encoding"]) responseHeaders.delete(name)
+      const responseHeaders = forwardedResponseHeaders(upstream.headers)
       const body = upstream.body
       if (body) {
         forwarded = true

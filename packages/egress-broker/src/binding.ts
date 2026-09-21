@@ -33,6 +33,13 @@ export type Binding = Readonly<RuntimeIdentity & {
     origin: string
     methods: readonly string[]
     pathPrefixes: readonly string[]
+    /**
+     * The query names this vendor reads a credential from, absent when it
+     * reads none. A vendor that honours one accepts an identity the operator
+     * never chose, so the broker refuses a request that fills the slot rather
+     * than letting it reach the vendor beside the injected account.
+     */
+    credentialQuerySlots?: readonly string[]
   }>
   injection: BindingInjection
 }>

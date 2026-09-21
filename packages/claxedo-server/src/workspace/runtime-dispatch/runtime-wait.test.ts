@@ -133,6 +133,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
       markUse: mocks.markSupervisorSandboxUse,
       touch: mocks.touchSupervisorSandbox,
       broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
+      reconcileCredentialDelivery: vi.fn(async () => {}),
     })
     resolveWorkspace.mockResolvedValue({
       id: "ws_1",

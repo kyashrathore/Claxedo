@@ -1,13 +1,13 @@
 /**
  * What a request path needs from the sandbox supervisor, and nothing more.
  *
- * Local request paths — runtime dispatch and agent-config fanout
- * routes — must tell the supervisor when a cloud sandbox is in use, when a
- * stream is holding one open, and when configuration changed. Importing the
- * supervisor directly to say those six things pulled the whole cloud
- * provisioning graph (sandbox leases, drivers, network policy, the SQLite lease
- * store) into the closure of every one of those paths, including on a desktop
- * that has no cloud workspaces at all.
+ * Local request paths — runtime dispatch, agent-config fanout and the
+ * credential ports — must tell the supervisor when a cloud sandbox is in use,
+ * when a stream is holding one open, and when configuration or delivered
+ * credentials changed. Importing the supervisor directly to say those seven
+ * things pulled the whole cloud provisioning graph (sandbox leases, drivers,
+ * network policy, the SQLite lease store) into the closure of every one of
+ * those paths, including on a desktop that has no cloud workspaces at all.
  *
  * The supervisor installs itself here at composition time. A composition
  * without a supervisor has no cloud sandboxes, so every call is correctly a
@@ -25,6 +25,14 @@ export type WorkspaceSupervisorPort = {
   touch(workspaceId: string): void
   /** Push the current runtime configuration to every ready sandbox. */
   broadcastRuntimeConfig(): Promise<void>
+  /**
+   * The delivered credential set changed — a revocation, removal, rotation,
+   * scope change or re-selection. Reconcile every running sandbox against the
+   * registry: a sandbox whose installed set no longer matches is re-ensured
+   * through its driver, where an absent name withdraws the secret at the
+   * provider edge, and each runtime is pushed the fresh projection.
+   */
+  reconcileCredentialDelivery(): Promise<void>
 }
 
 const NO_SUPERVISOR: WorkspaceSupervisorPort = {
@@ -33,6 +41,7 @@ const NO_SUPERVISOR: WorkspaceSupervisorPort = {
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
+  async reconcileCredentialDelivery() {},
 }
 
 let installed: WorkspaceSupervisorPort | undefined

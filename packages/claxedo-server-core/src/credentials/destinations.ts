@@ -24,6 +24,13 @@ export type ProviderDestination = {
    */
   apiPath: string
   injection: BindingInjection
+  /**
+   * The query names this vendor accepts a credential in, absent when it
+   * accepts none. Only the broker can act on it — a request filling the slot
+   * is refused there — but which slots a vendor honours is one more fact about
+   * the vendor, so it is stated in the vendor's row.
+   */
+  credentialQuerySlots?: readonly string[]
   /** What the broker injects, which is the token inside a stored login document. */
   value: string
 }
@@ -128,6 +135,7 @@ const openAiCompatibleDestination = (input: {
   apiPath: string
   header?: string
   scheme?: string
+  credentialQuerySlots?: readonly string[]
 }): ProviderRow => () => ({
   origin: input.origin,
   methods: ["POST", "GET"],
@@ -136,6 +144,7 @@ const openAiCompatibleDestination = (input: {
   injection: input.header
     ? { header: input.header }
     : { header: "Authorization", scheme: "Bearer" },
+  ...(input.credentialQuerySlots ? { credentialQuerySlots: input.credentialQuerySlots } : {}),
 })
 
 const PROVIDER_ROWS: Record<string, ProviderRow> = {
@@ -146,11 +155,14 @@ const PROVIDER_ROWS: Record<string, ProviderRow> = {
   cursor: cursorDestination,
   "cursor-sdk": cursorDestination,
   openrouter: openAiCompatibleDestination({ origin: "https://openrouter.ai", apiPath: "/api/v1" }),
-  // Gemini takes its key in its own header rather than a bearer.
+  // Gemini takes its key in its own header rather than a bearer, and answers
+  // `?key=` just as readily — the one vendor here that spends whatever the URL
+  // carries instead of the injected account.
   google: openAiCompatibleDestination({
     origin: "https://generativelanguage.googleapis.com",
     apiPath: "/v1beta",
     header: "x-goog-api-key",
+    credentialQuerySlots: ["key"],
   }),
   groq: openAiCompatibleDestination({ origin: "https://api.groq.com", apiPath: "/openai/v1" }),
   xai: openAiCompatibleDestination({ origin: "https://api.x.ai", apiPath: "/v1" }),

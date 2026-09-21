@@ -228,7 +228,10 @@ export async function startSandbox(
     if (result.status !== "ready") {
       throw new Error(result.error ?? "sandbox unavailable")
     }
-    return await markSandboxReady(state, callbacks, result, authority.digest)
+    // A stale ready means the driver failed on a serving lease: the sandbox
+    // still holds the set it was last ensured with, and recording the new
+    // digest would book a withdrawal the provider edge never applied.
+    return await markSandboxReady(state, callbacks, result, result.stale ? state.installed_secrets : authority.digest)
   } catch (err) {
     state.url = undefined
     state.crashes += 1
