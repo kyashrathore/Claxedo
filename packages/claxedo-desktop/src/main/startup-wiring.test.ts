@@ -120,6 +120,20 @@ describe("desktop cold startup wiring", () => {
 // diagnostics, so each one is placed AFTER the step it measures: a probe that
 // can delay the step would be measuring a cost it created.
 describe("startup clock probe placement", () => {
+  test("the machine fence is closed before this port is announced to anyone", () => {
+    const start = childEntry.indexOf("lifecycle.start()")
+    const announce = childEntry.indexOf("parent?.send(claxedoServerReadyMessage(startup.port))")
+    const identity = childEntry.indexOf("await readCreationIdentity(process.pid)")
+
+    // start() is what closes machine admission for the launch reconciliation.
+    // A listener reachable before that hold exists admits work over launches
+    // nothing has accounted for yet, and reading the creation identity costs a
+    // subprocess — so it must not sit between the two.
+    expect(start).toBeGreaterThan(-1)
+    expect(announce).toBeGreaterThan(start)
+    expect(identity).toBeGreaterThan(announce)
+  })
+
   test("the server child sends its ready message before it stamps", () => {
     const send = childEntry.indexOf("parent?.send(claxedoServerReadyMessage(startup.port))")
     const stamp = childEntry.indexOf('recordStartupClock("server-listening"')

@@ -200,7 +200,8 @@ export type ReconciledLaunch = {
   role: string
   execution: "none" | "unknown" | "started"
   because: string
-  identity?: "live" | "exited" | "identity_mismatch" | "unknown"
+  /** `unknown` covers both a probe that could not answer and one there was no time for. */
+  identity?: string
 }
 
 export type MachineRecoveryInspection = {
@@ -250,6 +251,8 @@ export function createLocalDaemonLifecycle(options: {
     budgets?: Partial<RecoveryBudgets>
     /** Reads what each workspace store has no settled retirement for. */
     ownership?: () => Promise<EmbeddedWorkspaceRuntimeOwnership[]>
+    /** Whether a recorded process is still the launch it was recorded for. */
+    verifyIdentity?: (identity: CreationIdentity) => Promise<{ state: string }>
     /** Where each survivor is reported; a store that could not be read too. */
     onLaunchReconciled?: (reconciled: ReconciledLaunch) => void
     /** `workspaceId` is absent when the ownership read itself failed. */
@@ -464,6 +467,16 @@ export function createLocalDaemonLifecycle(options: {
    * the workspace store that owns it, and what this owner needs is only whether
    * admission may reopen.
    */
+  /** Said once, whichever step ran the reconciliation past its deadline. */
+  function reportOverdue() {
+    if (launchesOverdueAfterMs !== undefined) return
+    launchesOverdueAfterMs = budgets.reconcileMs
+    options.machine.onLaunchesUnreadable?.(
+      undefined,
+      `the launch reconciliation did not answer within ${String(budgets.reconcileMs)}ms; machine admission stays closed`,
+    )
+  }
+
   async function reconcileLaunches(): Promise<ReconciledLaunch[]> {
     const read = options.machine.ownership ?? embeddedWorkspaceRuntimeOwnership
     const reconciled: ReconciledLaunch[] = []
@@ -471,6 +484,7 @@ export function createLocalDaemonLifecycle(options: {
     // budget multiplied by the number of launches is a deadline the caller was
     // never promised.
     const deadlineAt = now() + budgets.reconcileMs
+    const verify = options.machine.verifyIdentity ?? verifyCreationIdentity
     try {
       let owned: EmbeddedWorkspaceRuntimeOwnership[]
       try {
@@ -479,13 +493,7 @@ export function createLocalDaemonLifecycle(options: {
         // but a restart. The read is detached rather than abandoned: when it
         // settles late its records are still reconciled, and until then the
         // refusal says the reconciliation is overdue instead of going quiet.
-        owned = await settleWithin(read(), deadlineAt - now(), () => {
-          launchesOverdueAfterMs = budgets.reconcileMs
-          options.machine.onLaunchesUnreadable?.(
-            undefined,
-            `the launch reconciliation did not answer within ${String(budgets.reconcileMs)}ms; machine admission stays closed`,
-          )
-        })
+        owned = await settleWithin(read(), deadlineAt - now(), reportOverdue)
       } catch (error) {
         // Reported, not rethrown: nothing awaits this at the entrypoint, and a
         // rejection nobody holds would take the daemon down over a read that
@@ -518,7 +526,9 @@ export function createLocalDaemonLifecycle(options: {
               role: record.role,
               execution: execution.execution,
               because: execution.because,
-              ...(record.identity ? { identity: await identityVerdict(record.identity, deadlineAt) } : {}),
+              ...(record.identity
+                ? { identity: await identityVerdict(verify, record.identity, deadlineAt, reportOverdue) }
+                : {}),
             }
           }))
           for (const row of rows) {
@@ -1153,10 +1163,17 @@ const IDENTITY_PROBE_CONCURRENCY = 4
  * A probe with no time left is not run: `unknown` is what this owner can say,
  * and it is the same answer the probe would be believed for anyway.
  */
-async function identityVerdict(identity: CreationIdentity, deadlineAt: number) {
+async function identityVerdict(
+  verify: (identity: CreationIdentity) => Promise<{ state: string }>,
+  identity: CreationIdentity,
+  deadlineAt: number,
+  onOverdue: () => void,
+) {
   const at = Date.now()
   const budget = capChildBudget(deadlineAt, deadlineAt - at, at) - at
-  if (budget <= 0) return "unknown" as const
-  return (await settleWithin(verifyCreationIdentity(identity), budget, () => {})
-    .catch(() => ({ state: "unknown" as const }))).state
+  if (budget <= 0) {
+    onOverdue()
+    return "unknown"
+  }
+  return (await settleWithin(verify(identity), budget, onOverdue).catch(() => ({ state: "unknown" }))).state
 }

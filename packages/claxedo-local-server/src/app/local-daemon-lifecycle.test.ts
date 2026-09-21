@@ -969,6 +969,61 @@ describe("startup launch reconciliation", () => {
     }
   })
 
+  test("an overdue reconciliation names the launches it has not answered for", async () => {
+    vi.useFakeTimers()
+    try {
+      const lifecycle = createLocalDaemonLifecycle({
+        activity: empty,
+        onStop() {},
+        machine: {
+          ...machine,
+          budgets: { reconcileMs: 1_000 },
+          // A probe that never answers: each one costs a subprocess, and this
+          // is the step that hangs on a machine already in trouble.
+          verifyIdentity: () => new Promise(() => {}),
+          ownership: async () => [{
+            workspaceId: "ws_a",
+            generation: "mount-1",
+            state: "serving",
+            attempt: 0,
+            turns: [],
+            launches: [record("launch-slow", {
+              // Activated and acknowledged, so its identity is probed — which
+              // is the step that can hang on a machine already in trouble.
+              identityReceivedAt: 2,
+              activationAuthorizedAt: 3,
+              activationAcknowledgedAt: 4,
+              identity: {
+                pid: 999_999,
+                processGroupId: 999_999,
+                parentPid: 1,
+                startSecond: "Thu Jan  1 00:00:00 1970",
+                startedAtMs: 0,
+                bootTime: "0",
+                source: "darwin-ps",
+              },
+            })],
+          }],
+          onLaunchesUnreadable: () => {},
+        },
+      })
+      lifecycle.start()
+      await vi.advanceTimersByTimeAsync(1_001)
+
+      const hold = lifecycle.recovery.ingressClosed()
+      expect(hold?.kind).toBe("launch_reconciliation")
+      // Named, so an operator reading the 503 knows which record is holding
+      // the machine rather than only that something is.
+      if (hold?.kind === "launch_reconciliation") {
+        expect(hold.overdueAfterMs).toBe(1_000)
+        expect(hold.pending).toEqual(["launch-slow"])
+      }
+      lifecycle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test("a workspace whose launches could not be read is unknown impact in every preview", async () => {
     const lifecycle = createLocalDaemonLifecycle({
       activity: empty,
