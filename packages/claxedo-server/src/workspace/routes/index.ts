@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { globalWorkspace, isGlobalDirectory } from "../../session/global"
 import {
@@ -88,6 +89,23 @@ const hostAssignmentBody = z
   .strict()
 
 const log = Log.create({ service: "workspace-routes" })
+
+/**
+ * JSON control payloads — names, ids, repository URLs — measured in
+ * kilobytes; the same bound the other control-plane route modules apply.
+ */
+const WORKSPACE_BODY_LIMIT_BYTES = 16 * 1024
+
+function workspaceBodyLimit() {
+  return bodyLimit({
+    maxSize: WORKSPACE_BODY_LIMIT_BYTES,
+    onError: (c) =>
+      c.json(
+        { error: apiError("request_body_too_large", `Request body exceeds the ${WORKSPACE_BODY_LIMIT_BYTES}-byte limit`) },
+        413,
+      ),
+  })
+}
 
 function slug(input: string | undefined, alt: string) {
   const txt = (input ?? "")
@@ -262,7 +280,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       // unsigned-only, exactly as the retired `?create=true` was: a signed
       // caller's workspaces are registered through the authority-bearing
       // create routes, never materialized here.
-      .post("/resolve", (c) => controlPlaneWorkspaceResolve(c, services, options, controlPlaneRateLimiter, true))
+      .post("/resolve", workspaceBodyLimit(), (c) => controlPlaneWorkspaceResolve(c, services, options, controlPlaneRateLimiter, true))
       .get("/", async (c) => {
         const host = c.req.query("host")
         if (host !== undefined && host !== "machine" && host !== "provisioner") {
@@ -309,7 +327,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         return c.json(await listProjects())
       })
       .route("/", workspaceConnectionRoutes(services, options))
-      .post("/:id/host-assignment", async (c) => {
+      .post("/:id/host-assignment", workspaceBodyLimit(), async (c) => {
         // Two shares meet on this path. A `hostId` body is the owner assigning
         // a directory on one of their ENROLLED machines (a `claxedo connect`
         // host): the authority records it and that machine acks on its beat.
@@ -498,7 +516,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       // NOTE: there is deliberately no `POST /ensure` route. It was an
       // unauthenticated endpoint that booted billable cloud runtimes; runtime
       // ensure now only happens behind the authenticated connection flow.
-      .post("/create", async (c) => {
+      .post("/create", workspaceBodyLimit(), async (c) => {
         // Provisioning is billable and widens the egress allowlist, so like
         // /ensure before it, this route must not be servable to anonymous
         // remote callers in signed mode. Loopback stays tokenless.

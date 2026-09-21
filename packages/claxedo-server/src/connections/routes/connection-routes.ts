@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -16,12 +17,23 @@ import {
   localLoopbackCloudConnectionStatus,
 } from "../cloud-connection"
 import { hostTunnelConnectionInfo } from "../host-tunnel-connection"
-import { signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { apiError, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { connectionRateLimitError } from "../../workspace/runtime-token-guards"
 
 const refreshConnectionBody = z.object({
   previousJti: z.string().optional(),
 }).strict()
+
+/** The refresh body carries one token id — the control-plane JSON bound. */
+const CONNECTION_BODY_LIMIT_BYTES = 16 * 1024
+
+const limitedBody = bodyLimit({
+  maxSize: CONNECTION_BODY_LIMIT_BYTES,
+  onError: (c) => c.json(
+    { error: apiError("request_body_too_large", `Request body exceeds the ${CONNECTION_BODY_LIMIT_BYTES}-byte limit`) },
+    413,
+  ),
+})
 
 export function workspaceConnectionRoutes(
   services?: ControlPlaneServices,
@@ -106,8 +118,8 @@ export function workspaceConnectionRoutes(
         throw err
       }
     })
-    .post("/:id/connection", connectionPost)
-    .post("/:id/connection/refresh", connectionPost)
+    .post("/:id/connection", limitedBody, connectionPost)
+    .post("/:id/connection/refresh", limitedBody, connectionPost)
 }
 
 async function localLoopbackConnectionResponse(

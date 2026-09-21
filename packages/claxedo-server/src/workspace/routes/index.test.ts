@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { Hono } from "hono"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -178,6 +179,7 @@ const { SqliteProjectConflictError } = await import("@claxedo/server-core/author
 // This deployment's own operator policy, not a second copy of it.
 const { selfHostedOperatorAuthorizer } = await import("../../deployments/self-hosted-node/operator")
 const { WorkspaceRoutes } = await import("./index")
+const { hostAssignmentHandlers } = await import("../host-assignment-handlers")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 
 const acceptedSandboxProbe = (async () =>
@@ -3991,4 +3993,122 @@ describe("workspace lifecycle authorization", () => {
   })
 
 
+})
+
+describe("workspace route body bound", () => {
+  const oversized = "x".repeat(17 * 1024)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  test("an oversized create body is refused before admission or provisioning", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(svc.authority?.authorizeWorkspaceCreate).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+  })
+
+  test("a chunked create body over the cap is refused without a declared length", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 4; i += 1) controller.enqueue(new TextEncoder().encode("x".repeat(8192)))
+        controller.close()
+      },
+    })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit)
+
+    expect(res.status).toBe(413)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("an oversized host-assignment body is refused before the share runs", async () => {
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_local",
+      project_id: "project_1",
+      workspace_name: "Local Main",
+      directory: "/tmp/local",
+      kind: "local",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const svc = services()
+    const assignments = {
+      hostId: vi.fn(async () => "host_machine"),
+      assignWorkspace: vi.fn(async () => ({ assignment: { assigned: true as const, workspace_id: "ws_local", host_id: "host_machine" } })),
+      unassignWorkspace: vi.fn(async () => ({ unassigned: true })),
+    }
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments as never })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
+    expect(svc.authority?.assignWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("the enrolled-host assignment handler keeps its bound mounted without a route cap", async () => {
+    // The handler is mounted by two routers; one mount is the hosted workerd
+    // spike, which composes no request guard, so the bound lives in the
+    // handler and not only in the wiring.
+    const svc = services()
+    const app = new Hono().post(
+      "/:id/host-assignment",
+      hostAssignmentHandlers(svc, { authConfig, verifier }, createFixedWindowConnectionRateLimiter()).assign,
+    )
+
+    const res = await app.request("http://localhost/ws_1/host-assignment", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(svc.authority?.assignWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("an oversized connection body is refused before the workspace is resolved", async () => {
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/ws_1/connection", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
 })
