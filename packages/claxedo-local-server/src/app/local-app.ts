@@ -54,6 +54,7 @@ import { hostServingEnrollmentId } from "@claxedo/host-serving/serving"
 import { HostServingRoutes } from "../workspace/host-serving-routes"
 import { HostProviderConfigRoutes } from "../workspace/host-provider-config-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
+import { daemonAdmission } from "./daemon-admission"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import {
@@ -268,6 +269,20 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     })
   }
 
+  // The local bootstrap body names this machine's paths, its project list and
+  // its provider accounts. A daemon that mints a capability answers it only to
+  // the application holding one — the loopback guard admits every page on this
+  // machine, and a bearer is spoofable by the same caller. A composition with
+  // no daemon identity mints no capability, so this mount exists only where
+  // the token does.
+  if (options.daemon) {
+    app.use("/api/claxedo/bootstrap", daemonAdmission({
+      capability: options.daemon.identity.token,
+      isPublicProbe: () => false,
+      hasOwnCredentialAuthority: () => false,
+      relayReplay: async () => undefined,
+    }))
+  }
   app.route("/", BootstrapRoutes({
     services,
     env,
