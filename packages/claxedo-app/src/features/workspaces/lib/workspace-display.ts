@@ -23,7 +23,19 @@ export function projectDisplayName(project: WorkspaceDisplayProject) {
   return project.name ?? getFilename(project.worktree)
 }
 
-export function projectWorkspaceDirectories(project: WorkspaceDisplayProject) {
+/**
+ * The part of a project row this function reads. Stated separately from
+ * `WorkspaceDisplayProject` so a caller holding a project without display
+ * fields — a deep link's registry check holds only ids and directories — asks
+ * the same question of the same authority.
+ */
+export type ProjectDirectorySource = {
+  worktree: string
+  sandboxes?: string[]
+  workspaces?: Record<string, { directory?: string }>
+}
+
+export function projectWorkspaceDirectories(project: ProjectDirectorySource) {
   const workspaceDirectory = (key: string) => project.workspaces?.[key]?.directory ?? key
   return [...new Set<string>([
     project.worktree,
