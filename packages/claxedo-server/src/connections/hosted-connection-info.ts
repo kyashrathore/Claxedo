@@ -76,7 +76,7 @@ async function cloudConnectionIngress(
   // for a workspace whose sandbox is already running, and a canceled
   // subscription must not keep minting off a warm lease either.
   if (options.requireCloudWorkspaceEntitlement) {
-    const denied = await options.requireCloudWorkspaceEntitlement(auth)
+    const denied = await options.requireCloudWorkspaceEntitlement({ auth })
     if (denied) {
       return {
         error:

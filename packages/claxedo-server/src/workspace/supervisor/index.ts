@@ -391,7 +391,14 @@ function sandboxReadyResult(
 function sandboxTargetResultFromLease(lease: SandboxLeaseRow | undefined): SandboxTargetResult {
   const target = sandboxTargetFromLease(lease)
   if (!lease) return { status: "unavailable", reason: "runtime_lease_missing" }
-  if (!target || lease.status !== "ready") return { status: "unavailable", reason: "runtime_lease_not_ready" }
+  if (!target || lease.status !== "ready") {
+    return {
+      status: "unavailable",
+      reason: "runtime_lease_not_ready",
+      leaseStatus: sandboxLeaseStatus(lease.status),
+      ...(lease.next_retry_at != null ? { retryAfterMs: Math.max(0, lease.next_retry_at - Date.now()) } : {}),
+    }
+  }
   return sandboxReadyResult(target, lease, "us-east")
 }
 

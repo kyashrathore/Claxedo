@@ -10,6 +10,10 @@ import {
   createHostedTasksSessionBridge,
   type HostedTasksSessionBridgeInput,
 } from "../../tasks/session-bridge"
+import {
+  createCloudCreateAdmission,
+  type CloudCreateAdmissionPolicy,
+} from "../../workspace/cloud-create-admission"
 
 /**
  * The hosted Tasks routes a Worker entry mounts, with the session bridge each
@@ -32,10 +36,22 @@ export function hostedTasksRouteContributions(
      */
     rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
     releaseRuntime?: HostedTasksSessionBridgeInput["releaseRuntime"]
+    sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"]
+    /**
+     * The deployment's half of the create admission a task's cloud root is
+     * subject to — the same gates `POST /api/workspace/create` applies, keyed
+     * on the person the root is created as. It is built once here, so its
+     * create budget is one bucket per isolate rather than one per request.
+     */
+    cloudCreateAdmission?: CloudCreateAdmissionPolicy
     sandboxEgress: HostedTasksSessionBridgeInput["sandboxEgress"]
     renewal?: Pick<TasksGrantRenewalInput, "tasksGroupEnabled" | "grant" | "ownerGrant">
   },
 ): readonly ControlPlaneRouteContribution[] {
+  const createAdmission = createCloudCreateAdmission({
+    services: input.services,
+    ...input.cloudCreateAdmission,
+  })
   const composition = createHostedTasksComposition({
     ...input,
     cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
@@ -49,6 +65,8 @@ export function hostedTasksRouteContributions(
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
         ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
         ...(input.releaseRuntime ? { releaseRuntime: input.releaseRuntime } : {}),
+        ...(input.sandboxUsage ? { sandboxUsage: input.sandboxUsage } : {}),
+        cloudCreateAdmission: createAdmission,
         sandboxEgress: input.sandboxEgress,
       }),
   })

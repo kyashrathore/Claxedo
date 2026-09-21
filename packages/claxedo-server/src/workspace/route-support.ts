@@ -61,6 +61,20 @@ export type LocalHostAssignments = {
   unassignWorkspace(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ unassigned: boolean }>
 }
 
+/**
+ * The paid-capability question, asked of the tenant a cloud workspace would
+ * belong to rather than of a request shape. `auth` is present when the caller
+ * holds a signed request; `orgId` is the authority-resolved organization when
+ * it does not. A gate given neither has no tenant to answer for and must
+ * refuse rather than guess one.
+ */
+export type CloudWorkspaceEntitlementGate = (tenant: {
+  orgId?: string
+  auth?: SignedControlPlaneAuth
+}) => Promise<
+  { status: 400 | 401 | 402 | 403 | 503; body: { error: { code: string; message: string } } } | undefined
+>
+
 export type WorkspaceRouteOptions = {
   hostAssignments?: LocalHostAssignments
   /**
@@ -117,12 +131,14 @@ export type WorkspaceRouteOptions = {
    * billing gate (route tests, self-host / local compositions never supply it);
    * the hosted app always supplies it. Only ever consulted for HOSTED cloud
    * workspaces (the wake choke point guards on backing=cloud-vm).
+   *
+   * The tenant is what is entitled: `auth` is the signed request when the
+   * caller holds one, `orgId` the authority-resolved organization when the
+   * create was initiated by a minted credential with no bearer of its own (a
+   * Tasks cloud root started by a session's agent). An implementation that
+   * needs neither is not an entitlement gate.
    */
-  requireCloudWorkspaceEntitlement?: (
-    auth: SignedControlPlaneAuth,
-  ) => Promise<
-    { status: 400 | 401 | 402 | 403 | 503; body: { error: { code: string; message: string } } } | undefined
-  >
+  requireCloudWorkspaceEntitlement?: CloudWorkspaceEntitlementGate
 }
 
 export function relayRole(input?: string): RelayRole {

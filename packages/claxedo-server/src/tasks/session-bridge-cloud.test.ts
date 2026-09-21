@@ -14,7 +14,7 @@ import {
   type SandboxManager,
 } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   deleteWorkspace,
   ensureWorkspace,
@@ -32,6 +32,8 @@ import {
   type Task,
 } from "@claxedo/tasks"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
+import { createCloudCreateAdmission } from "../workspace/cloud-create-admission"
+import { createFixedWindowConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import { composeProviderNeutralHostedControlPlane } from "../authority/provider-neutral-hosted-services"
 import type { TasksRootIdentity } from "./root-capability"
@@ -152,6 +154,8 @@ function services(
     })),
     beginSessionCompensation: vi.fn(async () => ({})),
     completeSessionCompensation: vi.fn(async () => ({})),
+    authorizeWorkspaceCreate: vi.fn(async () => undefined),
+    auditDeny: vi.fn(async () => undefined),
     createCloudWorkspace: vi.fn(
       async (_auth: unknown, args: { workspaceId: string; projectId?: string; displayName: string }) => {
         created.set(args.workspaceId, {
@@ -227,6 +231,8 @@ function bridge(
   port: ReturnType<typeof selectedCapabilities> | null = selectedCapabilities(),
   capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>,
   identity: Identity = signedPerson,
+  admission?: HostedTasksSessionBridgeInput["cloudCreateAdmission"],
+  sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"],
 ) {
   return createHostedTasksSessionBridge({
     services: composition.value,
@@ -235,6 +241,8 @@ function bridge(
     ...identity,
     ...(port ? { selectedCapabilities: port } : {}),
     ...(capability ? { capability } : {}),
+    ...(admission ? { cloudCreateAdmission: admission } : {}),
+    ...(sandboxUsage ? { sandboxUsage } : {}),
     sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test", extraHosts: ["registry.acme.test"] },
   })
 }
@@ -768,5 +776,158 @@ describe("hosted tasks cloud roots", () => {
       { code: "capability_unavailable", detail: expect.stringContaining("cannot project a selected capability set") },
     ])
     expect(ensured).toEqual([])
+  })
+})
+
+/**
+ * The admission `POST /api/workspace/create` applies, reached through the
+ * tasks bridge rather than the route: a task's cloud root is the same create
+ * on another door, so the same gates — the authority's own admission, the
+ * paid-capability entitlement, the concurrent-lease cap, and the per-caller
+ * create budget — answer before a row or a sandbox exists.
+ */
+describe("hosted tasks cloud create admission", () => {
+  test("the authority's create admission refuses a signed caller before a row or a sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    composition.authority.authorizeWorkspaceCreate.mockRejectedValue(
+      new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace creation authority was denied"),
+    )
+
+    const previewed = await bridge(composition).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(false)
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: "Workspace creation authority was denied" },
+    ])
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("the entitlement gate refuses a signed caller's start before a row or a sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const entitlement = vi.fn(async () => ({
+      status: 402 as const,
+      body: { error: { code: "billing_entitlement_required", message: "subscription required" } },
+    }))
+    const admission = createCloudCreateAdmission({ services: composition.value, entitlement })
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, admission)
+
+    const previewed = await kit.preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: "subscription required" },
+    ])
+    // The tenant the gate answered for is the signed request itself.
+    expect(entitlement).toHaveBeenCalledWith({ auth: expect.objectContaining({ user: { subject: "owner" } }) })
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("the entitlement gate refuses a grant-owner start on the owner's organization", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const entitlement = vi.fn(async () => ({
+      status: 402 as const,
+      body: { error: { code: "billing_entitlement_required", message: "subscription required" } },
+    }))
+    const admission = createCloudCreateAdmission({ services: composition.value, entitlement })
+    const kit = bridge(composition, selectedCapabilities(), undefined, grantOwner, admission)
+
+    const previewed = await kit.preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: "subscription required" },
+    ])
+    // No bearer exists for a grant's owner to sign with, so the gate is asked
+    // by the organization the root lands in — the same tenant the create
+    // charges.
+    expect(entitlement).toHaveBeenCalledWith({ orgId: OWNER.orgId })
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createRuntimeCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("the concurrent-lease cap refuses the start at the ceiling, before a row or a sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const countActiveLeases = vi.fn(async () => 25)
+    const admission = createCloudCreateAdmission({ services: composition.value, countActiveLeases })
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, admission)
+
+    const previewed = await kit.preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "source_unavailable", detail: expect.stringContaining("maximum number of running cloud workspaces") },
+    ])
+    // The signed caller is counted by their token subject — the same column a
+    // lease's tenant stamp carries.
+    expect(countActiveLeases).toHaveBeenCalledWith({ ownerSubject: "owner" })
+    expect(composition.authority.auditDeny).toHaveBeenCalledWith(
+      expect.objectContaining({ user: { subject: "owner" } }),
+      expect.objectContaining({ action: "workspace.create.denied", reason: "sandbox_lease_limit_reached" }),
+    )
+    expect(ensured).toEqual([])
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("the concurrent-lease cap does not refuse the retry of a root it already counts", async () => {
+    runtime()
+    const { driver } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    // The first admission admits and allocates; a second admission rebuilt at
+    // the ceiling must still re-admit the row the first filed — its lease is
+    // the cap's own, not new spend.
+    const kit = bridge(
+      composition,
+      selectedCapabilities(),
+      undefined,
+      signedPerson,
+      createCloudCreateAdmission({ services: composition.value, countActiveLeases: async () => 0 }),
+    )
+    expect((await start(kit, "tsk_one")).started).toMatchObject({ ok: true })
+
+    const capped = bridge(
+      composition,
+      selectedCapabilities(),
+      undefined,
+      signedPerson,
+      createCloudCreateAdmission({ services: composition.value, countActiveLeases: async () => 25 }),
+    )
+    const previewed = await capped.preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(true)
+  })
+
+  test("the create budget bounds task-driven creates", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const admission = createCloudCreateAdmission({
+      services: composition.value,
+      rateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1, windowMs: 60_000 }),
+    })
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, admission)
+
+    // The preview's allocation is the first spend; the start's retry is the
+    // second, and it stops before a sandbox exists.
+    const previewed = await kit.preview(previewCommand("tsk_one"))
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand("tsk_one", previewed.preview.digest))
+    expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })
+    expect(ensured).toHaveLength(1)
   })
 })

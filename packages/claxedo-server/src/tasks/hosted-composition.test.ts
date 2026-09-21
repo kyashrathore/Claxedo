@@ -35,6 +35,7 @@ import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "./capability"
 import { createD1TasksStore } from "./d1-store"
 import { createHostedTasksComposition, type HostedTasksCompositionInput } from "./hosted-composition"
 import { createHostedTasksSessionBridge } from "./session-bridge"
+import { createCloudCreateAdmission } from "../workspace/cloud-create-admission"
 
 // Set before the workspace store's first read: left unset, every root the
 // journey allocates would land in the developer's own data directory.
@@ -123,6 +124,7 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
         if (input.actorId !== "actor:alice" || registry.placed.get(input.sessionId) !== input.workspaceId) throw new Error("denied")
       }),
       resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => registry.owners.get(workspaceId)),
+      authorizeWorkspaceCreate: vi.fn(async () => undefined),
       createCloudWorkspace: vi.fn(async (auth: { user: { subject: string } }, args: { workspaceId: string; projectId: string }) =>
         createdRoot(args.workspaceId, ORGS[auth.user.subject] ?? "org-unknown", args.projectId),
       ),
@@ -1061,5 +1063,82 @@ describe("hosted Tasks cloud start from inside a session", () => {
     })
     expect(admissions()).toHaveLength(admittedBeforeHop)
     expect([...ensured]).toEqual([rootB])
+  })
+
+  test("the deployment's create admission answers a grant-minted start before a root exists", async () => {
+    const signingEnv = await signing()
+    const { driver, ensured } = fakeDriver()
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    // The same object the workspace create route would build from its
+    // entitlement option, handed to the bridge — the gate is asked for the
+    // owner the grant resolved to, because a grant has no bearer to sign with.
+    const entitlement = vi.fn(async (tenant: { orgId?: string }) => ({
+      status: 402 as const,
+      body: { error: { code: "billing_entitlement_required", message: `no cloud-workspace for ${tenant.orgId}` } },
+    }))
+    const app = await hostedApp(
+      { sandboxManager, defaultDriver: "daytona" },
+      {
+        signingEnv,
+        database: await database(),
+        cloudSelectedCapabilities: true,
+        bridge: (services) => (principal, auth, owner) =>
+          createHostedTasksSessionBridge({
+            services,
+            runtimeClient: {},
+            principal,
+            auth,
+            owner,
+            selectedCapabilities: { prepare: async () => ({}), apply: async () => undefined },
+            cloudCreateAdmission: createCloudCreateAdmission({ services, entitlement }),
+            sandboxEgress: { controlPlaneOrigin: "https://cp.test" },
+          }),
+      },
+    )
+    const authority = app.services.authority as unknown as Record<string, ReturnType<typeof vi.fn>>
+    const { token: rootToken } = await mintTasksCapability(
+      {
+        userId: "alice",
+        orgId: "org-1",
+        projectId: "project-a",
+        workspaceId: "ws_root",
+        sessionId: "ses_2",
+        operations: ["read", "create", "start"],
+      },
+      signingEnv,
+    )
+    const bearer = { authorization: `Bearer ${rootToken}`, "content-type": "application/json" }
+    const preset = await command(app, "alice", "owner-preset", {
+      ...CLOUD_PRESET,
+      input: { ...CLOUD_PRESET.input, agentStartable: true },
+    })
+    expect(preset.status).toBe(200)
+    const cloudPresetId = (preset.body.result as { preset: { id: string } }).preset.id
+    const created = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer,
+      body: JSON.stringify({
+        clientRequestId: "owner-task",
+        command: { ...TASK, input: { ...TASK.input, createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } } },
+      }),
+    })
+    expect(created.status).toBe(200)
+    const taskId = (((await created.json()) as { result: { task: { id: string } } }).result.task).id
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: bearer,
+      body: JSON.stringify(startBody(cloudPresetId, { workspaceId: "ws_root", sessionId: "ses_2" })),
+    })
+    expect(preview.status).toBe(200)
+    const previewed = ((await preview.json()) as { preview: { available: boolean; blockers: unknown[] } }).preview
+    expect(previewed).toMatchObject({
+      available: false,
+      blockers: [{ code: "source_unavailable", detail: "no cloud-workspace for org-1" }],
+    })
+    expect(entitlement).toHaveBeenCalledWith({ orgId: "org-1" })
+    expect(authority.createRuntimeCloudWorkspace).not.toHaveBeenCalled()
+    expect(authority.createCloudWorkspace).not.toHaveBeenCalled()
+    expect([...ensured]).toEqual([])
   })
 })

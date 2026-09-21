@@ -10,7 +10,7 @@ import {
   createWorkspaceRuntimeClient,
   type WorkspaceRuntimeClientOptions,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
-import { listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+import { getWorkspace, listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
@@ -20,7 +20,16 @@ import {
   type TasksActor,
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
-import { allocateOriginCloudWorkspace } from "../workspace/origin-cloud-workspace"
+import {
+  createCloudCreateAdmission,
+  type CloudCreateAdmission,
+  type CloudCreateCaller,
+  type CloudCreateUsage,
+} from "../workspace/cloud-create-admission"
+import {
+  allocateOriginCloudWorkspace,
+  originCloudWorkspaceId,
+} from "../workspace/origin-cloud-workspace"
 import type { TasksRootIdentity } from "./root-capability"
 import { configuredRelayUrl, type WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
@@ -79,6 +88,23 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
   /** The withdrawal the workspace routes run on deletion; a discarded root is deleted here, so it runs here too. */
   releaseRuntime?: (context: { workspaceId: string }) => Promise<void>
   /**
+   * The admission a cloud root's create passes through — the same gates `POST
+   * /api/workspace/create` applies, keyed on whoever the root is created as.
+   * A bridge built without one still runs the authority's own create
+   * admission and a per-bridge create budget; the product gates — entitlement,
+   * a create bucket shared with the route, the lease cap's counter — arrive
+   * only through the deployment's composition.
+   */
+  cloudCreateAdmission?: CloudCreateAdmission
+  /**
+   * The usage side effects the workspace create route runs on a lease it
+   * opens, fired identically for a task-driven root: the event that makes the
+   * spend attributable and the tenant stamp the concurrency cap counts.
+   * Absent, a root's lease is created but unattributed, which is exactly what
+   * leaves it invisible to the cap.
+   */
+  sandboxUsage?: CloudCreateUsage
+  /**
    * The rest of what a cloud root's egress allowlist is built from: the
    * origin the runtime reports back to this control plane at, and the
    * operator's extra hosts. The relay comes from the services, per region.
@@ -136,9 +162,34 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
 function createTasksCloudTarget(
   input: HostedTasksSessionBridgeInput,
 ): NonNullable<TasksSessionHost["cloudTarget"]> {
+  // A bridge composed without one still answers its authority half: the
+  // authority's own create admission and a create budget that lives as long
+  // as this bridge.
+  const admission = input.cloudCreateAdmission ?? createCloudCreateAdmission({ services: input.services })
   return async (origin): Promise<TasksCloudTargetChoice> => {
     const port = input.selectedCapabilities
     const creator = rootCreator(input, origin)
+    // The create route's own admission, before a row or a sandbox exists: the
+    // create budget, the authority's create admission, the paid-capability
+    // entitlement, and the concurrent-lease cap. A caller nobody resolved keeps
+    // its refusal inside `admit` below, where it always was. `existing` marks
+    // the retry that re-admits an already-filed row: its lease is the cap's
+    // own, so the cap does not count it a second time.
+    if (creator) {
+      const existing = Boolean(
+        await getWorkspace(
+          await originCloudWorkspaceId(
+            startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
+          ),
+        ).catch(() => undefined),
+      )
+      const denied =
+        await admission.preflight(creator.caller) ??
+        await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
+      if (denied) {
+        return { blocker: { code: "source_unavailable", detail: denied.body.error.message } }
+      }
+    }
     let projected: (() => Promise<void>) | undefined
     // Resolving the capability set inside the allocation is what orders these
     // two refusals: a deployment with no driver never reaches it and says so,
@@ -176,7 +227,7 @@ function createTasksCloudTarget(
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       projectId: origin.task.projectId,
       displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
-      admit: async (workspace) => {
+      admit: async (workspace, context) => {
         if (!creator) {
           throw new Error(
             "this host creates a cloud root as the person starting it, and this caller is neither signed nor a grant this host resolved to an owner",
@@ -191,6 +242,17 @@ function createTasksCloudTarget(
           ...(workspace.git_branch ? { gitBranch: workspace.git_branch } : {}),
           ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
         })
+        // Same position the create route fires it: the authority row exists,
+        // the sandbox does not yet, and `startedAt` covers the cold start.
+        if (context.created) {
+          input.sandboxUsage?.leaseOpened({
+            caller: creator.caller,
+            workspaceId: workspace.id,
+            driver: input.services.sandbox.defaultDriver ?? "unknown",
+            startedAt: Date.now(),
+            services: input.services,
+          })
+        }
       },
       discard: async (workspace) => {
         if (!creator) return
@@ -205,6 +267,15 @@ function createTasksCloudTarget(
       return { blocker: capabilityBlocker(origin, error) }
     }
     if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
+    // The lease row exists once `ensure` acquired it, so the tenant stamp the
+    // cap counts on lands here — the same post-acquire point the create route
+    // stamps it, as the caller the lease was opened for. An allocation that
+    // reached this far admitted, so `creator` resolved.
+    if (creator) {
+      await Promise.resolve(
+        input.sandboxUsage?.recordLeaseTenant({ caller: creator.caller, workspaceId: allocated.workspace.id }),
+      ).catch(() => undefined)
+    }
     try {
       if (!projected) throw new Error("the capability set for this root was never resolved")
       await projected()
@@ -234,11 +305,14 @@ type RootWorkspaceArgs = {
 /**
  * Who a cloud root is created as, and through which authority door.
  *
- * `owner` is what the root's own grant is minted for: absent for a signed
- * principal the authority never resolved to an application user, and then
- * the root launches with no Tasks grant rather than one naming nobody.
+ * `caller` is the identity create admission runs against — the signed request
+ * or the resolved owner. `owner` is what the root's own grant is minted for:
+ * absent for a signed principal the authority never resolved to an
+ * application user, and then the root launches with no Tasks grant rather
+ * than one naming nobody.
  */
 type RootCreator = {
+  caller: CloudCreateCaller
   owner: { userId: string; orgId: string } | undefined
   admit(authority: WorkspaceAuthority, args: RootWorkspaceArgs): Promise<void>
   discard(authority: WorkspaceAuthority, args: { workspaceId: string }): Promise<void>
@@ -256,6 +330,7 @@ function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOri
   if (auth) {
     const userId = auth.principal?.userId
     return {
+      caller: { kind: "signed", auth },
       owner: userId ? { userId, orgId: origin.actor.scopeId } : undefined,
       admit: (authority, args) => authority.createCloudWorkspace(auth, args).then(() => undefined),
       discard: (authority, args) => authority.deleteWorkspace(auth, args).then(() => undefined),
@@ -265,6 +340,7 @@ function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOri
   if (!owner) return undefined
   const principal = { principalKind: "user", actorId: owner.actorId, actorKind: "human" } as const
   return {
+    caller: { kind: "owner", owner: { userId: owner.userId, orgId: owner.orgId } },
     owner: { userId: owner.userId, orgId: owner.orgId },
     admit: async (authority, args) => {
       if (!authority.createRuntimeCloudWorkspace) {
