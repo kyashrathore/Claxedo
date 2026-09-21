@@ -201,6 +201,7 @@ function recoveryOwner(state: Workspace, _sessionId: string) {
         : healthyStop(`op_${state.aborted.length}`, request.requestId, target)
     },
     read: () => undefined,
+    reportContainmentFailure: () => {},
   }
 }
 

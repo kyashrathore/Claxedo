@@ -153,6 +153,7 @@ function fixture(input: {
       }
     },
     read: () => undefined,
+    reportContainmentFailure: () => {},
   }
   const runtime = {
     recovery,

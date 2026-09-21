@@ -957,10 +957,12 @@ export async function containLostTurn(input: {
   try {
     return await submitCancelTurn(input.runtime, target, input.caller, `session-turn-lease-loss:${target.turnId}:${target.ownerGeneration}`)
   } catch (error) {
-    // An owner that cannot even record the operation leaves the obligation
-    // with this lease; a rejection here would reach the lease as a bare
-    // message instead of something the revoked caller can be handed back.
-    return refusedOutcome("unavailable", `Session ${input.sessionId} could not record its lost turn's cancellation: ${thrownMessage(error)}`)
+    // A containment that never became an operation has no receipt to read it
+    // back by, and this lease dies with the request. The owner is the only
+    // thing that outlives both, so it is told before the caller is.
+    const message = thrownMessage(error)
+    input.runtime.reportContainmentFailure(target, input.caller, message)
+    return refusedOutcome("unavailable", `Session ${input.sessionId} could not record its lost turn's cancellation: ${message}`)
   }
 }
 

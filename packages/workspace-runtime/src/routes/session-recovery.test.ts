@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   parseRecoveryOutcome,
   type RecoveryFacts,
+  type RecoveryError,
   type RecoveryOperation,
   type RecoveryOutcome,
   type RecoveryRequest,
@@ -122,6 +123,7 @@ function recoveryDouble(input: {
         reads.push({ operationId, callerId: caller.callerId })
         return input.read
       },
+      reportContainmentFailure: () => {},
     },
   }
 }
@@ -353,9 +355,10 @@ describe("session recovery routes", () => {
  */
 function generationCheckedOwner(admitted: () => RecoveryTurnTarget | undefined) {
   const operations: RecoveryOperation[] = []
+  const failures: RecoveryError[] = []
   const seen: RecoveryRequest[] = []
   const owner: AgentRuntimeRecovery = {
-    inspect: (sessionId) => ({ ...inspection(admitted()), sessionId, operations: [...operations] }),
+    inspect: (sessionId) => ({ ...inspection(admitted()), sessionId, operations: [...operations], failures: [...failures] }),
     submit: async (request) => {
       seen.push(request)
       const current = admitted()
@@ -377,8 +380,19 @@ function generationCheckedOwner(admitted: () => RecoveryTurnTarget | undefined) 
       const found = operations.find((row) => row.operationId === operationId)
       return found ? { kind: "operation", operation: found } : undefined
     },
+    reportContainmentFailure: (target, caller, message) => {
+      failures.push({
+        code: "owner_unavailable",
+        origin: "fixture",
+        target,
+        stage: "graceful_cancel",
+        executionMayContinue: true,
+        message: `Containment of turn ${target.turnId} requested by ${caller.callerId} was not opened: ${message}`,
+        at: 1_000,
+      })
+    },
   }
-  return { owner, operations, seen }
+  return { owner, operations, failures, seen }
 }
 
 function leaseAuthority(input: { revoke: boolean }): SessionAccessPolicy {
@@ -476,11 +490,11 @@ describe("containing a turn whose lease was revoked", () => {
     expect(outcome).toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
   })
 
-  test("an owner that cannot record the cancellation answers the lease instead of rejecting at it", async () => {
+  test("a containment that never opened is answered to the lease and retained by the owner", async () => {
+    const running = generationCheckedOwner(() => TARGET)
     const broken: AgentRuntimeRecovery = {
-      inspect: () => inspection(TARGET),
+      ...running.owner,
       submit: async () => { throw new Error("operation store is gone") },
-      read: () => undefined,
     }
 
     const outcome = await containLostTurn({
@@ -494,6 +508,32 @@ describe("containing a turn whose lease was revoked", () => {
       kind: "refused",
       refusal: { kind: "unavailable", message: expect.stringContaining("operation store is gone") },
     })
+    // The lease dies with the request and no receipt was minted, so the owner
+    // is the only place this obligation can still be read.
+    expect(running.failures).toHaveLength(1)
+    expect(running.failures[0]).toMatchObject({
+      code: "owner_unavailable",
+      target: TARGET,
+      executionMayContinue: true,
+      message: expect.stringContaining("operation store is gone"),
+    })
+    expect(broken.inspect(SESSION).failures).toEqual(running.failures)
+  })
+
+  test("an owner that answered with an outcome is not also told the containment failed", async () => {
+    const refusing = generationCheckedOwner(() => ({ ...TARGET, turnId: "msg_2", ownerGeneration: "lease_2" }))
+
+    const outcome = await containLostTurn({
+      runtime: refusing.owner,
+      sessionId: SESSION,
+      target: TARGET,
+      caller: { callerId: "actor:a", authority: "session" },
+    })
+
+    expect(outcome).toMatchObject({ kind: "refused", refusal: { kind: "generation_conflict" } })
+    // The refusal IS the record; reporting it again would show one lost turn
+    // as two unresolved obligations.
+    expect(refusing.failures).toEqual([])
   })
 
   test("a revoked lease keeps the containment outcome, and inspection reports the operation it opened", async () => {
