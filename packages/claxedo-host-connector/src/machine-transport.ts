@@ -11,7 +11,7 @@ import {
   randomNonce,
   type HostKeyPair,
 } from "./host-identity"
-import { canonicalControlPlaneUrl, isPlainRecord, type HostScope } from "./host-state"
+import { canonicalControlPlaneUrl, canonicalFetchEndpointUrl, canonicalRelayUrl, isPlainRecord, type HostScope } from "./host-state"
 import type { AssignmentDescription, HeartbeatResponse, MachineHeartbeatInput, MachineTransport, ProviderConfigRevision } from "./connector"
 
 /** What this package needs of `fetch`; the global one satisfies it under Node, Bun and Electron. */
@@ -180,15 +180,29 @@ export function decodeScope(value: unknown): HostScope | undefined {
   return { revision: requireNumber(value.revision, "scope.revision"), allowed_roots: allowed, visibility }
 }
 
+/**
+ * The relay and authority addresses from one control-plane body — or the
+ * absent members, when the body carries none. A delivered address is
+ * validated HERE, where it enters, rather than at the dial or the fetch:
+ * every later reader (the persisted state, the tunnel that sends its token
+ * in an `authorization` header, the JWKS and session-authority fetches)
+ * trusts it, so an endpoint this machine may not use fails the beat or the
+ * redeem with the wire field named instead of being stored.
+ */
 export function decodeEndpoints(value: Record<string, unknown>) {
   const relay = isPlainRecord(value.relay) ? value.relay : undefined
   const authority = isPlainRecord(value.authority) ? value.authority : undefined
   return {
     ...(relay && typeof relay.url === "string" && typeof relay.jwks_url === "string"
-      ? { relay: { url: relay.url, jwksUrl: relay.jwks_url } }
+      ? {
+          relay: {
+            url: canonicalRelayUrl(relay.url, "relay.url"),
+            jwksUrl: canonicalFetchEndpointUrl(relay.jwks_url, "relay.jwks_url"),
+          },
+        }
       : {}),
     ...(authority && typeof authority.session_authority_url === "string"
-      ? { authority: { sessionAuthorityUrl: authority.session_authority_url } }
+      ? { authority: { sessionAuthorityUrl: canonicalFetchEndpointUrl(authority.session_authority_url, "authority.session_authority_url") } }
       : {}),
   }
 }

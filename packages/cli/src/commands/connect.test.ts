@@ -18,6 +18,7 @@ import { connectPaths, connectStateStore } from "../connect/paths"
 import { relayStub, until } from "../connect/relay-stub.test-support"
 import type { ServiceDeps } from "../connect/service"
 import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
+import { HostEndpointUrlError } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
@@ -350,6 +351,24 @@ describe("claxedo connect", () => {
     expect(h.lines.at(-1)).toContain("must be https://")
     expect(h.lines.at(-1)).toContain("claxedo connect --reset")
     expect(h.cp.beats(), "the enrollment it holds is not beaten for over cleartext").toHaveLength(beats)
+  })
+
+  test("a state file that records an undialable relay endpoint does not run, and says how to leave it", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const running = connect(["--token-file", file, "--root", h.root], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    h.stop()
+    await running
+    const stateFile = h.deps.paths.stateFile
+    const state = JSON.parse(await fs.readFile(stateFile, "utf8")) as { relay: { url: string } }
+    await fs.writeFile(stateFile, JSON.stringify({ ...state, relay: { ...state.relay, url: "ws://attacker.test" } }))
+    const beats = h.cp.beats().length
+
+    expect(await connect([], h.deps)).toBe(78)
+
+    expect(h.lines.at(-1)).toContain("relay.url")
+    expect(h.lines.at(-1)).toContain("claxedo connect --reset")
+    expect(h.cp.beats(), "the token is not carried to a relay the entry checks refuse").toHaveLength(beats)
   })
 
   test("a loopback control plane over http still enrolls: the local development flow is the one cleartext case", async () => {
@@ -953,5 +972,21 @@ describe("exit-code mapping and bootstrap retry", () => {
     expect(servingCredential({ ...tunnel, enrollmentId: undefined }, "https://relay")).toBeNull()
     expect(servingCredential(undefined, "https://relay")).toBeNull()
     expect(servingCredential(tunnel, undefined)).toBeNull()
+  })
+
+  test("a serving credential is refused rather than dialed against a relay this machine may not reach", () => {
+    const tunnel = { hostId: "host_1", enrollmentId: "enr_1", hostTunnelToken: "t", tokenExpiresAt: 5, jti: "j", workspaceIds: ["ws"] }
+    // The ack's relayUrl and the persisted fallback both pass through the
+    // transport's scheme check: the socket carries the Host Tunnel Token in
+    // an authorization header, so cleartext beyond loopback or an arbitrary
+    // scheme hands it to the wire.
+    for (const relayUrl of ["ws://attacker.test", "http://relay.internal", "file:///etc/passwd", "javascript:fetch(1)", "wss://user:pass@relay.test"]) {
+      expect(() => servingCredential({ ...tunnel, relayUrl }, "https://relay")).toThrow(HostEndpointUrlError)
+      expect(() => servingCredential({ ...tunnel, relayUrl }, "https://relay")).toThrow(/hostTunnel\.relayUrl/)
+      expect(() => servingCredential(tunnel, relayUrl)).toThrow(HostEndpointUrlError)
+    }
+    expect(servingCredential({ ...tunnel, relayUrl: "wss://relay.test" }, undefined)?.relayUrl).toBe("wss://relay.test")
+    expect(servingCredential({ ...tunnel, relayUrl: "ws://127.0.0.1:4100" }, undefined)?.relayUrl).toBe("ws://127.0.0.1:4100")
+    expect(servingCredential(tunnel, "http://localhost:4100")?.relayUrl).toBe("http://localhost:4100")
   })
 })

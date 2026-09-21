@@ -5,9 +5,12 @@ import { afterEach, describe, expect, test } from "vitest"
 
 import {
   canonicalControlPlaneUrl,
+  canonicalFetchEndpointUrl,
+  canonicalRelayUrl,
   ControlPlaneUrlError,
   createHostStateStore,
   effectiveRoots,
+  HostEndpointUrlError,
   newHostState,
   parseHostState,
   pathWithin,
@@ -165,6 +168,72 @@ describe("parseHostState", () => {
     expect(parseHostState(SEALING_BASE.replace('"https://cp.test"', '"http://127.0.0.1:2593/"') + "}").control_plane_url).toBe(
       "http://127.0.0.1:2593",
     )
+  })
+
+  test("recorded endpoints load canonicalized, and a file edited to name an undialable one does not load", () => {
+    const endpoints =
+      '"relay":{"url":"https://relay.test/","jwksUrl":"https://relay.test/.well-known/jwks.json"},"authority":{"sessionAuthorityUrl":"https://cp.test/api/runtime-authority/session-authorize"}'
+    expect(parseHostState(`${SEALING_BASE},${endpoints}}`)).toMatchObject({
+      relay: { url: "https://relay.test", jwksUrl: "https://relay.test/.well-known/jwks.json" },
+      authority: { sessionAuthorityUrl: "https://cp.test/api/runtime-authority/session-authorize" },
+    })
+
+    const cleartextRelay = `${SEALING_BASE},"relay":{"url":"ws://attacker.test","jwksUrl":"https://relay.test/jwks.json"}}`
+    expect(() => parseHostState(cleartextRelay)).toThrow(HostEndpointUrlError)
+    expect(() => parseHostState(cleartextRelay)).toThrow(/relay\.url/)
+
+    const fileJwks = `${SEALING_BASE},"relay":{"url":"https://relay.test","jwksUrl":"file:///etc/keys"}}`
+    expect(() => parseHostState(fileJwks)).toThrow(/relay\.jwksUrl/)
+
+    const scriptedAuthority = `${SEALING_BASE},"authority":{"sessionAuthorityUrl":"javascript:fetch(1)"}}`
+    expect(() => parseHostState(scriptedAuthority)).toThrow(/authority\.sessionAuthorityUrl/)
+  })
+})
+
+describe("canonicalRelayUrl and canonicalFetchEndpointUrl", () => {
+  test.each([
+    ["https://relay.test", "https://relay.test"],
+    ["wss://relay.test:8443", "wss://relay.test:8443"],
+    ["wss://relay.test/", "wss://relay.test"],
+    ["  https://RELAY.test/edge/  ", "https://relay.test/edge"],
+    ["ws://localhost:4100", "ws://localhost:4100"],
+    ["http://127.0.0.1:4100", "http://127.0.0.1:4100"],
+    ["ws://[::1]:4100", "ws://[::1]:4100"],
+  ])("relay %s → %s", (input, expected) => {
+    expect(canonicalRelayUrl(input)).toBe(expected)
+  })
+
+  test.each([
+    ["ws://relay.test", /wss:\/\/ or https/],
+    ["http://relay.test", /wss:\/\/ or https/],
+    ["ws://sub.localhost", /wss:\/\/ or https/],
+    ["file:///etc/passwd", /wss:\/\/ or https/],
+    ["javascript:fetch(1)", /wss:\/\/ or https/],
+    ["wss://user:pass@relay.test", /no user or password/],
+    ["wss://relay.test?t=1", /no query or fragment/],
+    ["wss://relay.test/#f", /no query or fragment/],
+    ["not a url", /is not a URL/],
+  ])("relay refuses %s", (input, message) => {
+    expect(() => canonicalRelayUrl(input)).toThrow(HostEndpointUrlError)
+    expect(() => canonicalRelayUrl(input)).toThrow(message)
+  })
+
+  test.each([
+    ["https://relay.test/.well-known/jwks.json", "https://relay.test/.well-known/jwks.json"],
+    ["http://localhost:3000/api/runtime-authority/session-authorize", "http://localhost:3000/api/runtime-authority/session-authorize"],
+  ])("fetch endpoint %s → %s", (input, expected) => {
+    expect(canonicalFetchEndpointUrl(input, "authority.session_authority_url")).toBe(expected)
+  })
+
+  test.each([
+    ["http://relay.test/jwks.json", /must be https/],
+    ["ws://relay.test/jwks.json", /must be https/],
+    ["ftp://relay.test/jwks.json", /must be https/],
+    ["https://user@keys.test/jwks.json", /no user or password/],
+  ])("fetch endpoint refuses %s", (input, message) => {
+    expect(() => canonicalFetchEndpointUrl(input, "relay.jwks_url")).toThrow(HostEndpointUrlError)
+    expect(() => canonicalFetchEndpointUrl(input, "relay.jwks_url")).toThrow(message)
+    expect(() => canonicalFetchEndpointUrl(input, "relay.jwks_url")).toThrow(/relay\.jwks_url/)
   })
 })
 

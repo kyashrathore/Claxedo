@@ -3,7 +3,7 @@ import path from "node:path"
 import { createHostConnector, type AssignmentDescription, type HostEndpoints } from "@claxedo/host-connector/connector"
 import { DECISION_EXIT_CODE, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
-import { pathWithinRoots, resolveRoots, type HostScope, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { canonicalRelayUrl, pathWithinRoots, resolveRoots, type HostScope, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import { createMachineSealingKeyPair, hostMachineSealAad, openMachineSeal, sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
 import {
   createMachineSignedTransport,
@@ -173,7 +173,10 @@ export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | un
     ? row.workspaceIds.filter((id): id is string => typeof id === "string" && id.length > 0)
     : []
   if (!hostId || !enrollmentId || !token || !expiresAt || !relayUrl || workspaceIds.length === 0) return null
-  return { hostId, enrollmentId, relayUrl, token, workspaceIds, expiresAt }
+  // The ack's relayUrl overrides the persisted endpoint, and neither is
+  // proof: refuse the credential rather than dial an address this machine
+  // may not carry the Host Tunnel Token to.
+  return { hostId, enrollmentId, relayUrl: canonicalRelayUrl(relayUrl, "hostTunnel.relayUrl"), token, workspaceIds, expiresAt }
 }
 
 function credentialWithout(credential: HostServingCredential | null, workspaceId: string) {

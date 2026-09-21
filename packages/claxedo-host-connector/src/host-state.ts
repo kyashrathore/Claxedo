@@ -182,6 +182,74 @@ export function canonicalControlPlaneUrl(value: string): string {
   return url.origin + pathname
 }
 
+/** An endpoint a control-plane body delivered that this machine refuses to use; the refusal names the field. */
+export class HostEndpointUrlError extends Error {
+  readonly field: string
+  readonly url: string
+  constructor(field: string, url: string, what: string) {
+    super(`${field} ${url} ${what}`)
+    this.name = "HostEndpointUrlError"
+    this.field = field
+    this.url = url
+  }
+}
+
+/**
+ * The relay, JWKS and session-authority addresses arrive inside a signed
+ * answer, but they are configuration, not proof: the consumer either dials
+ * the address with the Host Tunnel Token in an `authorization` header or
+ * fetches it for the key set and session decisions that gate relayed
+ * callers. An arbitrary scheme (`file:`, `javascript:`) is refused outright,
+ * credentials embedded in the URL would be sent or logged with it, and
+ * cleartext gets the same loopback-only exception the control-plane base
+ * has — a `ws:`/`http:` request to a network host hands the token, and the
+ * answers it admits, to the wire.
+ */
+function hostEndpointUrl(
+  value: string,
+  field: string,
+  secure: readonly string[],
+  cleartext: readonly string[],
+  expectation: string,
+): string {
+  const trimmed = value.trim()
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    throw new HostEndpointUrlError(field, value, "is not a URL")
+  }
+  if (!secure.includes(url.protocol) && !(cleartext.includes(url.protocol) && LOOPBACK_HOSTNAMES.has(url.hostname))) {
+    throw new HostEndpointUrlError(field, value, expectation)
+  }
+  if (url.username || url.password) throw new HostEndpointUrlError(field, value, "must carry no user or password")
+  if (trimmed.includes("?") || trimmed.includes("#")) throw new HostEndpointUrlError(field, value, "must carry no query or fragment")
+  return url.origin + url.pathname.replace(/\/+$/, "")
+}
+
+/**
+ * The relay address a heartbeat or the `hostTunnel` credential delivers,
+ * canonicalized or refused. The tunnel dials it as a WebSocket (http(s) is
+ * converted to ws(s)), so both spellings name the same endpoint.
+ */
+export function canonicalRelayUrl(value: string, field = "relay.url"): string {
+  return hostEndpointUrl(
+    value,
+    field,
+    ["wss:", "https:"],
+    ["ws:", "http:"],
+    "must be wss:// or https:// (ws:// or http:// only for localhost, 127.0.0.1 or ::1)",
+  )
+}
+
+/**
+ * An endpoint a heartbeat delivers for this machine to FETCH — the relay's
+ * JWKS, the session authority — canonicalized or refused.
+ */
+export function canonicalFetchEndpointUrl(value: string, field: string): string {
+  return hostEndpointUrl(value, field, ["https:"], ["http:"], "must be https:// (http:// only for localhost, 127.0.0.1 or ::1)")
+}
+
 function privateKeyJwk(value: unknown, field = "private_key_jwk"): JsonWebKey {
   const jwk = stateRecord(value, field)
   return {
@@ -276,11 +344,22 @@ export function parseHostState(text: string): HostState {
   }
   if (value.relay !== undefined) {
     const record = stateRecord(value.relay, "relay")
-    state.relay = { url: stateString(record.url, "relay.url"), jwksUrl: stateString(record.jwksUrl, "relay.jwksUrl") }
+    // Re-validated on the way back in, like control_plane_url: a file edited
+    // to name a cleartext or arbitrary-scheme endpoint must not put this
+    // machine back on a channel the write-time checks refused.
+    state.relay = {
+      url: canonicalRelayUrl(stateString(record.url, "relay.url")),
+      jwksUrl: canonicalFetchEndpointUrl(stateString(record.jwksUrl, "relay.jwksUrl"), "relay.jwksUrl"),
+    }
   }
   if (value.authority !== undefined) {
     const record = stateRecord(value.authority, "authority")
-    state.authority = { sessionAuthorityUrl: stateString(record.sessionAuthorityUrl, "authority.sessionAuthorityUrl") }
+    state.authority = {
+      sessionAuthorityUrl: canonicalFetchEndpointUrl(
+        stateString(record.sessionAuthorityUrl, "authority.sessionAuthorityUrl"),
+        "authority.sessionAuthorityUrl",
+      ),
+    }
   }
   if (value.sealing_private_key_jwk !== undefined) {
     state.sealing_private_key_jwk = privateKeyJwk(value.sealing_private_key_jwk, "sealing_private_key_jwk")

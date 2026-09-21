@@ -4,10 +4,11 @@ import { transientHeartbeatFailure } from "./connector"
 import { createFakeControlPlane, decodeFakeTunnelToken, enrollFakeHost } from "./fake-control-plane.test-support"
 import { createHostKeyPair } from "./host-identity"
 import { createMachineSealingKeyPair } from "./machine-seal"
-import { ControlPlaneUrlError } from "./host-state"
+import { ControlPlaneUrlError, HostEndpointUrlError } from "./host-state"
 import {
   createMachineSignedTransport,
   decisionCode,
+  decodeEndpoints,
   decodeProviderConfig,
   HostedHttpError,
   HostedRedirectError,
@@ -318,6 +319,127 @@ describe("heartbeat", () => {
 
     const nonces = cp.log.filter((entry) => entry.headers["x-claxedo-host-nonce"]).map((entry) => entry.headers["x-claxedo-host-nonce"])
     expect(new Set(nonces).size).toBe(nonces.length)
+  })
+})
+
+describe("the endpoints a control-plane body delivers", () => {
+  test("separate secure service origins are approved: wss relay, https JWKS and authority on other hosts", () => {
+    expect(
+      decodeEndpoints({
+        relay: { url: "wss://relay.example.test", jwks_url: "https://keys.example.test/.well-known/jwks.json" },
+        authority: { session_authority_url: "https://authority.example.test/api/runtime-authority/session-authorize" },
+      }),
+    ).toEqual({
+      relay: { url: "wss://relay.example.test", jwksUrl: "https://keys.example.test/.well-known/jwks.json" },
+      authority: { sessionAuthorityUrl: "https://authority.example.test/api/runtime-authority/session-authorize" },
+    })
+  })
+
+  test("cleartext is admitted for the exact loopback names only", () => {
+    expect(
+      decodeEndpoints({
+        relay: { url: "http://127.0.0.1:4100", jwks_url: "http://127.0.0.1:4100/.well-known/jwks.json" },
+        authority: { session_authority_url: "http://[::1]:2593/api/runtime-authority/session-authorize" },
+      }),
+    ).toEqual({
+      relay: { url: "http://127.0.0.1:4100", jwksUrl: "http://127.0.0.1:4100/.well-known/jwks.json" },
+      authority: { sessionAuthorityUrl: "http://[::1]:2593/api/runtime-authority/session-authorize" },
+    })
+    expect(decodeEndpoints({ relay: { url: "ws://localhost:4100", jwks_url: "https://k.test/j" } }).relay?.url).toBe(
+      "ws://localhost:4100",
+    )
+  })
+
+  test.each([
+    ["ws://attacker.test", /wss:\/\/ or https/],
+    ["http://relay.internal", /wss:\/\/ or https/],
+    ["file:///etc/passwd", /wss:\/\/ or https/],
+    ["javascript:fetch(1)", /wss:\/\/ or https/],
+    ["wss://user:pass@relay.test", /no user or password/],
+    ["wss://relay.test/?x=1", /no query or fragment/],
+  ])("a heartbeat naming relay.url %s is refused with the field", (url, message) => {
+    expect(() => decodeEndpoints({ relay: { url, jwks_url: "https://k.test/jwks.json" } })).toThrow(HostEndpointUrlError)
+    expect(() => decodeEndpoints({ relay: { url, jwks_url: "https://k.test/jwks.json" } })).toThrow(message)
+    expect(() => decodeEndpoints({ relay: { url, jwks_url: "https://k.test/jwks.json" } })).toThrow(/relay\.url/)
+  })
+
+  test.each([
+    ["http://attacker.test/jwks.json", /must be https/],
+    ["file:///etc/relay/jwks.json", /must be https/],
+    ["https://user@keys.test/jwks.json", /no user or password/],
+    ["https://keys.test/jwks.json#frag", /no query or fragment/],
+  ])("a substituted JWKS address %s is refused", (jwksUrl, message) => {
+    expect(() => decodeEndpoints({ relay: { url: "https://relay.test", jwks_url: jwksUrl } })).toThrow(HostEndpointUrlError)
+    expect(() => decodeEndpoints({ relay: { url: "https://relay.test", jwks_url: jwksUrl } })).toThrow(message)
+    expect(() => decodeEndpoints({ relay: { url: "https://relay.test", jwks_url: jwksUrl } })).toThrow(/relay\.jwks_url/)
+  })
+
+  test("a session-authority address on a non-https scheme is refused", () => {
+    for (const url of ["http://authority.internal/a", "file:///etc/a", "javascript:fetch(1)"]) {
+      expect(() => decodeEndpoints({ authority: { session_authority_url: url } })).toThrow(HostEndpointUrlError)
+      expect(() => decodeEndpoints({ authority: { session_authority_url: url } })).toThrow(/authority\.session_authority_url/)
+    }
+  })
+
+  test("a beat that carries an undialable relay fails rather than storing it", async () => {
+    const cp = createFakeControlPlane()
+    const { transport } = await host(cp, {
+      fetch: async (url, init) => {
+        const answer = await cp.fetch(url, init)
+        if (!url.pathname.endsWith("/heartbeat") || !answer.ok) return answer
+        const body: Record<string, unknown> = await answer.json()
+        const relay = body.relay as Record<string, unknown>
+        return Response.json({ ...body, relay: { ...relay, url: "ws://attacker.test" } })
+      },
+    })
+    const { generation } = await transport.acquire()
+
+    const error = await transport.heartbeat({ generation, acks: [] }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostEndpointUrlError)
+    expect(String(error)).toContain("relay.url")
+    // A decode refusal is not an HTTP decision: the lease stays live and the
+    // next beat retries, so a control plane that fixes its config recovers.
+    expect(transientHeartbeatFailure(error)).toBe(true)
+  })
+
+  test("a redeem answer carrying an undialable relay refuses the enrollment the same way", async () => {
+    const cp = createFakeControlPlane({ relayUrl: "file:///etc/passwd" })
+
+    const error = await enrollFakeHost(cp).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostEndpointUrlError)
+    expect(String(error)).toContain("relay.url")
+  })
+
+  test("a JWKS address swapped onto another origin mid-flight fails the beat", async () => {
+    const cp = createFakeControlPlane()
+    const { transport } = await host(cp, {
+      fetch: async (url, init) => {
+        const answer = await cp.fetch(url, init)
+        if (!url.pathname.endsWith("/heartbeat") || !answer.ok) return answer
+        const body: Record<string, unknown> = await answer.json()
+        const relay = body.relay as Record<string, unknown>
+        return Response.json({ ...body, relay: { ...relay, jwks_url: "http://attacker.test/jwks.json" } })
+      },
+    })
+    const { generation } = await transport.acquire()
+
+    const error = await transport.heartbeat({ generation, acks: [] }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostEndpointUrlError)
+    expect(String(error)).toContain("relay.jwks_url")
+    expect(String(error)).toContain("must be https")
+  })
+
+  test("a loopback cleartext relay beats normally", async () => {
+    const cp = createFakeControlPlane({ relayUrl: "http://127.0.0.1:4100" })
+    const { transport } = await host(cp)
+    const { generation } = await transport.acquire()
+
+    const beat = await transport.heartbeat({ generation, acks: [] })
+
+    expect(beat.relay).toEqual({ url: "http://127.0.0.1:4100", jwksUrl: "http://127.0.0.1:4100/.well-known/jwks.json" })
   })
 })
 

@@ -3,7 +3,7 @@ import os from "node:os"
 import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
-import { ControlPlaneUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { ControlPlaneUrlError, HostEndpointUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import { REDEEM_REQUEST_TIMEOUT_MS } from "@claxedo/host-connector/machine-transport"
 import { config } from "../config"
 import { errorMessage } from "../json"
@@ -83,6 +83,15 @@ function mintHint(controlPlaneUrl: string) {
 
 async function loadState(deps: ConnectDeps): Promise<HostState | undefined> {
   const loaded = await deps.store.load().catch((error: unknown) => {
+    if (error instanceof HostEndpointUrlError) {
+      // A recorded relay/authority endpoint that fails the entry checks was
+      // edited on disk or written before they existed; it cannot be re-learned
+      // from a beat the file never loads for.
+      throw new HostConnectDecisionError(
+        `${errorMessage(error)}; the recorded endpoint in ${deps.paths.stateFile} is refused, so run \`claxedo connect --reset\` and redeem a new invitation`,
+        { cause: error },
+      )
+    }
     if (!(error instanceof ControlPlaneUrlError)) throw error
     // A host enrolled against this endpoint before it was refused. Its key is
     // bound to that enrollment, so the way out is a new host id, not an edit.
