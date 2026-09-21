@@ -163,34 +163,29 @@ test("a retained unresolved launch stops refusing once its recorded pid is no lo
     store: createMemoryRuntimeStore(),
     codexHome: path.join(fake.directory, "codex-home"),
   }) as unknown as WithInternals<CodexHarnessAdapter, { driver: {
-    unretired: { result: RetirementResult; identity: CreationIdentity } | null
-    stillUnretired(): Promise<boolean>
+    retained: { hold(identity: CreationIdentity, result: RetirementResult): void; blocker(): Promise<unknown> }
     readRuntimeHealth(): { status: string; reason?: string }
   } }>
   const codex = driver.driver
   try {
     // A retirement that established nothing, recorded against a pid that has
     // since gone: exactly what a driver holds after a failed reap.
-    codex.unretired = {
-      result: { leader: "alive", descendants: "owned", signals: [] },
-      identity: {
-        pid: 999_999,
-        processGroupId: 999_999,
-        startSecond: "1",
-        bootTime: "1",
-        parentPid: 1,
-        startedAtMs: 1000,
-        source: "darwin-ps",
-      },
-    }
+    codex.retained.hold({
+      pid: 999_999,
+      processGroupId: 999_999,
+      startSecond: "1",
+      bootTime: "1",
+      parentPid: 1,
+      startedAtMs: 1000,
+      source: "darwin-ps",
+    }, { leader: "alive", descendants: "owned", signals: [] })
     // While it is held, the driver refuses to launch anything and says so.
     expect(codex.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })
 
     // Re-reading the recorded identity is what releases it. Without this a
     // single failed retirement refuses every later session for the life of
     // the driver.
-    expect(await codex.stillUnretired()).toBe(false)
-    expect(codex.unretired).toBeNull()
+    expect(await codex.retained.blocker()).toBeUndefined()
     expect(codex.readRuntimeHealth()).toMatchObject({ status: "ok" })
   } finally {
     await (driver as unknown as { dispose(): Promise<void> }).dispose()

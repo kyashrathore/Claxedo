@@ -204,7 +204,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
             }
             if (!event) continue
             if (isUnsupportedInteractiveEvent(event)) {
-              await this.abortUpstream(binding).catch(() => undefined)
+              await this.abortUpstream(binding, controller.signal).catch(() => undefined)
               throw this.error("unsupported_interaction", `OpenCode emitted unsupported ${event.type}`, "events.read")
             }
             for (const value of turn.translate(event)) {

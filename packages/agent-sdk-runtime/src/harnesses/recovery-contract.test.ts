@@ -20,6 +20,10 @@ import type { WithInternals } from "../test-utils/class-internals"
 import { SdkRuntimeInteractions } from "./shared/sdk-runtime-interactions"
 import { createMemoryRuntimeStore } from "../stores/memory"
 import { createAgentRuntime } from "../runtime"
+import { rm } from "node:fs/promises"
+import { installFakeCodexAppServer } from "../test-utils/fake-codex-app-server"
+import { cancelAdapterTurn } from "../test-utils/cancel-turn"
+import { executeTestTurn, executionBinding } from "../test-utils/execution-binding"
 import { questionAsked } from "../compat-events"
 
 /**
@@ -208,6 +212,66 @@ describe("per-harness recovery capability matrix", () => {
     for (const row of MATRIX) {
       const implemented = typeof adapterFor(row.harness).cancelTurn === "function"
       expect(implemented, `${row.harness} cancelTurn presence`).toBe(row.cancel !== "unsupported")
+    }
+  })
+
+  /** How much a cleanup fact claims. A harness may never report above its row. */
+  const CLEANUP_RANK: Record<CleanupFact, number> = { unknown: 0, owned: 1, verified_clear: 2 }
+
+  test("Codex is the only harness whose real cancel path can reach verified_clear", async () => {
+    // Driven through the real adapter and its real app-server protocol: the
+    // ceiling is a claim about what that protocol can establish, so a literal
+    // in the table would only be asserting itself.
+    const fake = await installFakeCodexAppServer({ command: true })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      store: createMemoryRuntimeStore(),
+      codexHome: `${fake.directory}/codex-home`,
+    })
+    try {
+      const session = await adapter.createSession(fake.directory)
+      let started!: () => void
+      const running = new Promise<void>((resolve) => { started = resolve })
+      const turn = (async () => {
+        for await (const event of executeTestTurn(adapter, session.id, {
+          parts: [{ type: "text", text: "Run a command" }],
+          userMessageId: "user-1",
+          assistantMessageId: "assistant-1",
+          agent: "build",
+          model: { providerID: "codex", modelID: "default" },
+        }, fake.directory)) {
+          if (JSON.stringify(event).includes("cmd-current")) started()
+        }
+      })()
+      await running
+      const outcome = await cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex"))
+      await turn
+
+      const codex = MATRIX.find((row) => row.harness === "codex")!
+      expect(CLEANUP_RANK[outcome.cleanup]).toBeLessThanOrEqual(CLEANUP_RANK[codex.cleanupBest])
+      // And it actually reaches it, which is what makes the row meaningful.
+      expect(outcome.cleanup).toBe(codex.cleanupBest)
+      // Every other row claims less, because no other harness publishes an
+      // inventory of what its turn started.
+      for (const row of MATRIX) {
+        if (row.harness === "codex") continue
+        expect(row.cleanupBest, `${row.harness} must not claim verified_clear`).not.toBe("verified_clear")
+      }
+    } finally {
+      await adapter.dispose()
+      await rm(fake.directory, { recursive: true, force: true })
+    }
+  })
+
+  test("ACP's real cancel path never reports cleanup above its row", async () => {
+    const acp = MATRIX.find((row) => row.harness === "acp")!
+    const outcomes = [
+      await cancelAcpTurn(acpPorts(), deadline()),
+      await cancelAcpTurn(acpPorts({ proc: undefined }), deadline()),
+      await cancelAcpTurn(acpPorts({ whenIdle: () => new Promise<void>(() => {}) }), deadline(20)),
+    ]
+    for (const outcome of outcomes) {
+      expect(CLEANUP_RANK[outcome.cleanup]).toBeLessThanOrEqual(CLEANUP_RANK[acp.cleanupBest])
     }
   })
 

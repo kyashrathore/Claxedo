@@ -124,6 +124,7 @@ function recoveryDouble(input: {
         return input.read
       },
       reportContainmentFailure: () => {},
+      reportOwnerFailure: () => {},
     },
   }
 }
@@ -380,6 +381,7 @@ function generationCheckedOwner(admitted: () => RecoveryTurnTarget | undefined) 
       const found = operations.find((row) => row.operationId === operationId)
       return found ? { kind: "operation", operation: found } : undefined
     },
+    reportOwnerFailure: () => {},
     reportContainmentFailure: (target, caller, message) => {
       failures.push({
         code: "owner_unavailable",

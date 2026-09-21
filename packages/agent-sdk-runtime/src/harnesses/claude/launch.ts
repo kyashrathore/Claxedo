@@ -105,6 +105,13 @@ export function spawnObservedClaudeCodeProcess(input: {
   return proc
 }
 
+/**
+ * `startedAtMs` has one-second resolution on every platform reachable without
+ * a native addon, so a process started in the same second as the spawn reads
+ * as marginally earlier than the clock this launcher sampled.
+ */
+const IDENTITY_START_TOLERANCE_MS = 1_000
+
 export type ClaudeDirectLaunch = {
   retire(budgets: RetirementBudgets): Promise<RetirementResult>
 }
@@ -124,6 +131,7 @@ function ownDirectClaudeLaunch(input: {
   sessionId?: string
   directory?: string
 }): ClaudeDirectLaunch {
+  const spawnedAt = Date.now()
   const recorded = (async () => {
     const prepared = await input.ownership.prepare({
       role: "harness",
@@ -134,7 +142,12 @@ function ownDirectClaudeLaunch(input: {
         ...(input.directory ? { directory: input.directory } : {}),
       },
     })
-    const identity = input.proc.pid ? await readCreationIdentity(input.proc.pid) : undefined
+    // Read after the spawn, so the pid may already have been recycled. The
+    // recorded start instant is what rules that out: a process that began
+    // before this launcher called spawn is not the one it started, and
+    // retiring it would signal a stranger.
+    const observed = input.proc.pid ? await readCreationIdentity(input.proc.pid) : undefined
+    const identity = observed && observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
     if (identity) await input.ownership.recordIdentity(prepared.launchId, identity)
     return { launchId: prepared.launchId, identity }
   })()

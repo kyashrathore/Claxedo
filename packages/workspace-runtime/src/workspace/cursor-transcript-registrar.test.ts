@@ -29,6 +29,7 @@ test("Cursor native receives the parent/workspace-bound opaque transcript regist
   const adapter = entry.create({
     runner,
     ownerGeneration: "generation-under-test",
+    reportOwnerFailure: () => {},
     store: createMemoryRuntimeStore() as unknown as WorkspaceRuntimeStore,
     options: {
       transcripts: {

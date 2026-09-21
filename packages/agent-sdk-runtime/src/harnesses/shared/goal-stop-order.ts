@@ -1,9 +1,11 @@
 import type { AgentGoalMutationFailure, AgentGoalMutationResult } from "../../adapter-contract"
+import { RecoveryCodedError, type RequestDeadline } from "../../launch"
+import { stoppedWaiting } from "./sdk-runtime-cancellation"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 
 /** The slice of a session turn lifecycle a Goal stop needs. */
 export type GoalTurnInterrupt = {
-  abort(sessionId: string): boolean
+  abort(sessionId: string, deadline?: RequestDeadline): boolean
   whenIdle(sessionId: string): Promise<void>
 }
 
@@ -16,8 +18,21 @@ export type GoalTurnInterrupt = {
  * reports itself active again. Nothing is awaited when no turn is registered,
  * because that session has no admitted provider work to release.
  */
-export async function interruptGoalTurn(sessionId: string, lifecycle: GoalTurnInterrupt) {
-  if (lifecycle.abort(sessionId)) await lifecycle.whenIdle(sessionId)
+export async function interruptGoalTurn(sessionId: string, lifecycle: GoalTurnInterrupt, deadline?: RequestDeadline) {
+  if (!lifecycle.abort(sessionId, deadline)) return
+  if (!deadline) return await lifecycle.whenIdle(sessionId)
+  // The wait is bounded by the same deadline the stop carries: a Goal stop
+  // that waits past it reports nothing later than a caller that has gone.
+  const idle = await Promise.race([
+    lifecycle.whenIdle(sessionId).then(() => true as const),
+    stoppedWaiting(deadline),
+  ])
+  if (!idle) {
+    throw new RecoveryCodedError(
+      "cancellation_timeout",
+      `The Goal turn on session ${sessionId} had not left its producer when the deadline passed`,
+    )
+  }
 }
 
 /**
@@ -46,11 +61,13 @@ export async function settleGoalStop<Goal extends RuntimeGoalSnapshot | null>(in
   lifecycle: GoalTurnInterrupt
   disableContinuation: () => Promise<AgentGoalMutationResult<Goal>>
   settle?: () => Promise<AgentGoalMutationResult<Goal>>
+  /** Bounds the interrupt and the wait for the turn to leave its producer. */
+  deadline?: RequestDeadline
 }): Promise<AgentGoalMutationResult<Goal>> {
   const disabled = await input.disableContinuation()
   if (!disabled.ok) return disabled
   try {
-    await interruptGoalTurn(input.sessionId, input.lifecycle)
+    await interruptGoalTurn(input.sessionId, input.lifecycle, input.deadline)
   } catch (error) {
     return interruptFailure(error)
   }

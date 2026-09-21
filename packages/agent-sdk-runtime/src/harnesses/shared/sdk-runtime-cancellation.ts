@@ -60,8 +60,16 @@ export async function cancelSdkRuntimeTurn(
 export function stoppedWaiting(input: { signal: AbortSignal; deadlineAt: number }): Promise<false> {
   return new Promise((resolve) => {
     if (input.signal.aborted) return resolve(false)
-    const timer = setTimeout(() => resolve(false), Math.max(0, input.deadlineAt - Date.now()))
-    input.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(false) }, { once: true })
+    const stop = () => {
+      clearTimeout(timer)
+      input.signal.removeEventListener("abort", stop)
+      resolve(false)
+    }
+    // Both the timer and the abort settle this promise, and the loser keeps a
+    // handle on the winner: a pending timer holds the event loop open for the
+    // rest of a deadline nobody is waiting on any more.
+    const timer = setTimeout(stop, Math.max(0, input.deadlineAt - Date.now()))
+    input.signal.addEventListener("abort", stop, { once: true })
   })
 }
 

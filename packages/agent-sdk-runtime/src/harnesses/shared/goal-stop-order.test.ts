@@ -83,3 +83,22 @@ describe("goal stop ordering", () => {
     expect(order).toEqual(["abort:session-1"])
   })
 })
+
+test("a Goal stop whose turn never leaves its producer is bounded by the caller's deadline", async () => {
+  const disabled = { ok: true as const, goal: null }
+  const stopping = settleGoalStop<null>({
+    sessionId: "s1",
+    lifecycle: {
+      abort: () => true,
+      // The producer never settles, which is the case an unbounded wait hangs on.
+      whenIdle: () => new Promise<void>(() => {}),
+    },
+    disableContinuation: async () => disabled,
+    deadline: { signal: new AbortController().signal, deadlineAt: Date.now() + 30 },
+  })
+
+  // Reported as a failed stop, not as a paused Goal: continuation is disabled
+  // but nothing established that the turn it was meant to end stopped.
+  expect(await stopping).toMatchObject({ ok: false, status: "failed" })
+  expect((await stopping as { message: string }).message).toContain("deadline")
+})
