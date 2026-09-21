@@ -113,10 +113,12 @@ export function resolveOpenCodeServerConnection(input: {
   const auth = input.config.auth?.type === "basic"
     ? { type: "basic" as const, username: input.config.auth.username ?? "opencode", password: input.secrets[input.config.auth.passwordSecret]! }
     : input.config.auth
-      ? { type: "header" as const, name: input.config.auth.name, value: input.secrets[input.config.auth.valueSecret]! }
+      ? { type: "header" as const, name: input.config.auth.name, value: resolvedHeaderValue(input.secrets[input.config.auth.valueSecret]!, "auth.valueSecret") }
       : undefined
   const trustedHeaders: Record<string, string> = {}
-  for (const [name, secret] of Object.entries(input.config.trustedHeaders ?? {})) trustedHeaders[name] = input.secrets[secret]!
+  for (const [name, secret] of Object.entries(input.config.trustedHeaders ?? {})) {
+    trustedHeaders[name] = resolvedHeaderValue(input.secrets[secret]!, `trustedHeaders.${name}`)
+  }
   const { auth: _auth, trustedHeaders: _trustedHeaders, ...publicConfig } = input.config
   const basicAuthorization = auth?.type === "basic"
     ? `Basic ${Buffer.from(`${auth.username}:${auth.password}`, "utf8").toString("base64")}`
@@ -129,8 +131,10 @@ export function resolveOpenCodeServerConnection(input: {
     ...(auth ? { auth } : {}),
     trustedHeaders,
     redactions: [...new Set([
-      ...Object.values(input.secrets),
-      ...(basicAuthorization ? [basicAuthorization, basicAuthorization.slice("Basic ".length)] : []),
+      ...Object.values(input.secrets).flatMap((secret) => [secret, encodeURIComponent(secret)]),
+      ...(basicAuthorization
+        ? [basicAuthorization, basicAuthorization.slice("Basic ".length), encodeURIComponent(basicAuthorization)]
+        : []),
     ])],
   }
 }
@@ -186,7 +190,7 @@ function parseSecretHeaders(input: unknown) {
 
 function parseTenant(input: unknown) {
   const tenant = object(input, "tenant")
-  return { header: headerName(tenant.header, "tenant.header"), value: text(tenant.value, "tenant.value") }
+  return { header: headerName(tenant.header, "tenant.header"), value: headerValue(tenant.value, "tenant.value") }
 }
 
 function parseReconnect(input: unknown) {
@@ -224,6 +228,19 @@ function opaque(input: unknown, field: string) {
 function headerName(input: unknown, field: string) {
   const value = text(input, field)
   try { new Headers({ [value]: "valid" }) } catch { throw invalid(`${field} must be a valid header name`) }
+  return value
+}
+
+function headerValue(input: unknown, field: string) {
+  const value = text(input, field)
+  try { new Headers({ "x-claxedo-check": value }) } catch { throw invalid(`${field} must be a valid header value`) }
+  return value
+}
+
+// Resolved secret material is validated without trimming so the header sent
+// matches the vault value byte for byte; the value itself never enters errors.
+function resolvedHeaderValue(value: string, field: string) {
+  try { new Headers({ "x-claxedo-check": value }) } catch { throw invalid(`${field} resolved to an invalid header value`) }
   return value
 }
 

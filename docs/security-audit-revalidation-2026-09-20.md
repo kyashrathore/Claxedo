@@ -292,7 +292,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Fixed; header constraint | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
 | 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
 | 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Mixed | Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. |
-| 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Mixed | Validate opaque session-id grammar, constrain credential destinations and redact error/diagnostic outputs consistently. |
+| 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Fixed; grammar + destination + redaction tests | Opaque-id grammar bars dot segments; resolved URLs pinned to the configured origin/path; diagnostics redacted at every yield. |
 | 98 | Scheduled fixes | [P-43 — CLI-generated files trust operator strings](#finding-p-43) | LOW → Low; transport risk separate | Fixed; focused validation/serialization tests | Validate app/region identifiers, serialize TOML safely and escape systemd syntax. |
 | 99 | Scheduled fixes | [P-55 — Channel approval parsing and administration need tightening](#finding-p-55) | INFO → Low; authorization effect conditional | Mixed | Use exact structured action values, apply the same access/rate/dedup checks on approvals, and atomically establish pairing bindings. |
 | 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Fixed; focused hook tests | Require an existing terminal and its bound hook capability for lifecycle writes. |
@@ -1062,11 +1062,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-42"></a>
 ### P-42 — Adapter identifiers and transport metadata need validation
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low; HTTP transport conditional.
+**Original severity:** LOW. **Current:** Fixed. **Reassessed severity:** Low; HTTP transport conditional.
 
-**What happens and why it matters:** encodeURIComponent leaves dot-only session ids intact, allowing URL normalization to retarget within the same server. This alone does not cross origins. Error redaction and configured header policies are incomplete; Headers rejecting CR/LF is fail-closed.
+**What changed:** `OPAQUE_UPSTREAM_ID` admits only unreserved characters (excluding `.`/`..`), so `encodeURIComponent` can never leave a live dot segment; bindings and upstream-returned session ids are both refused before a request is built. `request()` pins the resolved URL to the configured origin and path prefix — any deviation (dot segments, `%2e`, query or fragment drift) is `transport_error` — and sends `credentials: "omit"` with `redirect: "error"`. `redactDiagnostics` now covers `error` and `tool-error` events at all four yield sites, and redactions include percent-encoded variants of every secret.
 
-**Fix and acceptance:** Validate opaque session-id grammar, constrain credential destinations and redact error/diagnostic outputs consistently. Test dot segments, redirects, invalid headers and synthetic secrets.
+**Acceptance:** 16 tests cover the hostile-id table, invalid headers (name, CRLF tenant, CRLF secret), the safe dotted id, upstream `..` refusal, path-prefixed baseUrl, and raw+encoded secret redaction through the reconcile path.
 
 **Current code:** [packages/opencode-server-adapter/src/adapter.ts](../packages/opencode-server-adapter/src/adapter.ts); [packages/opencode-server-adapter/src/config.ts](../packages/opencode-server-adapter/src/config.ts). [Concept walkthrough C](#flow-c).
 
