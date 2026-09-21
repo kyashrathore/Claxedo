@@ -185,8 +185,7 @@ import { isComposedAuthorityPort } from "../../authority/composed-authority"
 const execFileAsync = promisify(execFile)
 
 const TrackBody = z.object({
-  distinctId: z.string(),
-  event: z.string(),
+  event: z.string().min(1),
   properties: z.record(z.string(), z.unknown()).optional(),
 })
 
@@ -963,10 +962,24 @@ export function createSelfHostedApp(
   }
 
   app.post("/api/claxedo/track", async (c) => {
-    const body = await c.req.json().catch(() => null)
-    const parsed = TrackBody.safeParse(body)
+    // distinctId is derived, never read from the body: a signed deployment
+    // attributes the event to the verified subject, and every other caller
+    // has already been bounded to loopback by the unsigned-local gate above —
+    // the machine's own telemetry bucket.
+    let distinctId: string
+    try {
+      const identity = await controlPlaneAuthContext(c.req.raw, {
+        config: services.auth.config,
+        ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      })
+      distinctId = identity.mode === "signed" ? identity.user.subject : "local"
+    } catch (error) {
+      if (!(error instanceof ControlPlaneAuthError)) throw error
+      return c.json(trackErrorBody(error.code, error.message), error.status)
+    }
+    const parsed = TrackBody.safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) return c.json(trackErrorBody("telemetry_invalid_body", "Invalid telemetry request body"), 400)
-    services.telemetry.capture(parsed.data.distinctId, parsed.data.event, parsed.data.properties)
+    services.telemetry.capture(distinctId, parsed.data.event, parsed.data.properties)
     return c.json({ ok: true })
   })
 

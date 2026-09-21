@@ -503,7 +503,7 @@ describe("control-plane services", () => {
 
       const track = await built.app.request("/api/claxedo/track", {
         method: "POST",
-        body: JSON.stringify({ event: "missing distinct id" }),
+        body: JSON.stringify({ properties: { missing: "event" } }),
       })
       expect(track.status).toBe(400)
       await expect(track.json()).resolves.toMatchObject({
