@@ -27,6 +27,9 @@ export type TurnCoverageObligation = {
 
 export type TurnCoverageTarget = Pick<TurnCoverageObligation, "directory" | "sessionID" | "turnId">
 
+/** One client scope: the session, in the directory it was opened under. */
+export type TurnCoverageScope = Pick<TurnCoverageObligation, "directory" | "sessionID">
+
 /**
  * Per client scope, so one busy session cannot crowd out every other one. The
  * oldest is dropped rather than the newest: reopening a history range
@@ -45,7 +48,7 @@ export const MAX_CONCURRENT_COVERAGE_READS = 4
 
 const [obligations, setObligations] = createSignal<readonly TurnCoverageObligation[]>([])
 
-function scopeKey(target: { directory: string; sessionID: string }) {
+function scopeKey(target: TurnCoverageScope) {
   return `${target.directory}\0${target.sessionID}`
 }
 
@@ -69,7 +72,7 @@ export function requestAcceptedPromptRefresh(input: { directory: string; session
 }
 
 /** Every turn this client still owes a complete transcript for. */
-export function outstandingTurnCoverage(scope?: { directory: string; sessionID: string }) {
+export function outstandingTurnCoverage(scope?: TurnCoverageScope) {
   const all = obligations()
   if (!scope) return all
   return all.filter((entry) => entry.directory === scope.directory && entry.sessionID === scope.sessionID)
