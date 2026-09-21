@@ -138,22 +138,63 @@ type Entry = {
   upgrades: Server
 }
 
+/**
+ * What this host still owns for a workspace. A retirement that failed leaves
+ * an owner behind rather than an absence: its store root and whatever its
+ * runtime still holds are not free for a replacement writer, and the only way
+ * to learn that is to see the owner.
+ */
+export type HostRuntimeOwner = {
+  workspaceId: string
+  state: "serving" | "retiring" | "retire_failed"
+  attempt: number
+  error?: string
+}
+
+export type HostRuntimeRetirementResult = {
+  workspaceId: string
+  state: "retired" | "retire_failed"
+  attempt: number
+  /** The drain deadline expired before the runtime reported itself quiet. */
+  timedOut: boolean
+  /** The drain refused; teardown still ran, and what it left is unverified. */
+  drainError?: string
+  error?: string
+}
+
+export class HostRuntimeRetirementUnresolvedError extends Error {
+  readonly code = "host_runtime_retirement_unresolved"
+
+  constructor(readonly workspaceId: string, readonly attempt: number, readonly reason: string) {
+    super(
+      `Workspace ${workspaceId} cannot be served again: retirement attempt ${attempt} failed (${reason}). `
+        + "Retire it again with retry before a replacement runtime is created.",
+    )
+    this.name = "HostRuntimeRetirementUnresolvedError"
+  }
+}
+
 export type HostRuntimeListener = {
   /** The origin the serving loop's `localBaseUrl` points at. */
   url: string
   /** The runtime for this workspace, created on first call; a changed directory replaces it. */
   ensure: (workspace: HostWorkspaceRuntimeOptions) => Promise<WorkspaceRuntimeApp>
-  /** Tear one runtime down, letting in-flight turns finish first. */
-  dispose: (workspaceId: string) => Promise<void>
-  workspaceIds: () => string[]
+  /**
+   * Tear one runtime down, letting in-flight turns finish first. Joins a
+   * retirement already under way; `retry` starts a fresh attempt for one that
+   * failed, rerunning only the steps that did not complete.
+   */
+  dispose: (workspaceId: string, options?: { retry?: boolean }) => Promise<HostRuntimeRetirementResult>
+  /** Every workspace this host still owns, serving or not. */
+  owners: () => HostRuntimeOwner[]
   /**
    * Re-resolve and apply the configuration on every live runtime, after the
    * rows it resolves against changed. One workspace's failure is logged and
    * the rest still move.
    */
   applyRuntimeConfig: () => Promise<void>
-  /** Dispose every runtime and stop listening. */
-  close: () => Promise<void>
+  /** Retire every runtime and stop listening; a failed owner is reported, not lost. */
+  close: () => Promise<{ ok: boolean; results: HostRuntimeRetirementResult[] }>
 }
 
 const WORKSPACE_PREFIX = /^\/workspaces\/([^/]+)(\/.*)?$/
@@ -181,7 +222,6 @@ function workspaceNotServed(workspaceId: string | undefined) {
 
 export async function createHostRuntimeListener(options: HostRuntimeListenerOptions): Promise<HostRuntimeListener> {
   const entries = new Map<string, Entry>()
-  const retiring = new Map<string, Promise<void>>()
   const drainTimeoutMs = options.drainTimeoutMs ?? 10_000
 
   const app = new Hono()
@@ -218,46 +258,135 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
   if (!address || typeof address === "string") throw new Error("Host runtime listener did not bind a TCP port")
   const url = `http://${options.hostname}:${address.port}`
 
-  const disposeEntry = (entry: Entry): Promise<void> => {
-    const pending = retiring.get(entry.workspaceId)
-    if (pending) return pending
-    if (entries.get(entry.workspaceId) === entry) entries.delete(entry.workspaceId)
-    const done = (async () => {
-      // Freezing refuses new writes and resolves once every in-flight turn
-      // and write has finished; the timeout bounds a turn that never does.
-      // `dispose` then aborts whatever is left.
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        await Promise.race([
-          entry.runtime.host.checkpoint.freeze("drain"),
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, drainTimeoutMs)
-          }),
-        ])
-      } catch (error) {
-        log.warn("host runtime drain failed; disposing anyway", { workspaceId: entry.workspaceId, error })
-      } finally {
-        if (timer) clearTimeout(timer)
+  /**
+   * A retirement in progress or stuck. It outlives its `Entry` on purpose: the
+   * runtime is no longer routed to, but whatever it did not release is still
+   * this host's, and a replacement writer must not be admitted over it.
+   */
+  type Retirement = {
+    workspaceId: string
+    entry: Entry
+    attempt: number
+    /** Freeze/drain finished (however it went); a retry does not redo it. */
+    drained: boolean
+    timedOut: boolean
+    drainError?: string
+    state: "retiring" | "retire_failed"
+    error?: string
+    done: Promise<HostRuntimeRetirementResult>
+  }
+
+  const retirements = new Map<string, Retirement>()
+
+  const drain = async (record: Retirement) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const raced = await Promise.race([
+        record.entry.runtime.host.checkpoint.freeze("drain").then(() => "frozen" as const),
+        new Promise<"timed_out">((resolve) => {
+          timer = setTimeout(() => resolve("timed_out"), drainTimeoutMs)
+        }),
+      ])
+      record.timedOut = raced === "timed_out"
+    } catch (error) {
+      // Teardown still runs — that is the point of retiring — but a refused
+      // drain means nothing verified what the runtime was still holding.
+      record.drainError = String(error)
+      log.warn("host runtime drain failed; disposing anyway", { workspaceId: record.workspaceId, error })
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+    record.drained = true
+  }
+
+  const runRetirement = async (record: Retirement): Promise<HostRuntimeRetirementResult> => {
+    try {
+      if (!record.drained) await drain(record)
+      await record.entry.runtime.dispose()
+      record.state = "retiring"
+      retirements.delete(record.workspaceId)
+      return {
+        workspaceId: record.workspaceId,
+        state: "retired",
+        attempt: record.attempt,
+        timedOut: record.timedOut,
+        ...(record.drainError ? { drainError: record.drainError } : {}),
       }
-      await entry.runtime.dispose()
-    })()
-    retiring.set(entry.workspaceId, done)
-    void done.then(
-      () => {
-        if (retiring.get(entry.workspaceId) === done) retiring.delete(entry.workspaceId)
-      },
-      () => { /* A failed retirement keeps the id fenced until the next ensure retries it. */ },
-    )
-    return done
+    } catch (error) {
+      record.state = "retire_failed"
+      record.error = String(error)
+      log.warn("host runtime retirement failed", { workspaceId: record.workspaceId, attempt: record.attempt, error })
+      return {
+        workspaceId: record.workspaceId,
+        state: "retire_failed",
+        attempt: record.attempt,
+        timedOut: record.timedOut,
+        ...(record.drainError ? { drainError: record.drainError } : {}),
+        error: record.error,
+      }
+    }
+  }
+
+  const retireEntry = (entry: Entry): Promise<HostRuntimeRetirementResult> => {
+    const pending = retirements.get(entry.workspaceId)
+    if (pending) return pending.done
+    if (entries.get(entry.workspaceId) === entry) entries.delete(entry.workspaceId)
+    const record: Retirement = {
+      workspaceId: entry.workspaceId,
+      entry,
+      attempt: 1,
+      drained: false,
+      timedOut: false,
+      state: "retiring",
+      done: Promise.resolve({ workspaceId: entry.workspaceId, state: "retired", attempt: 1, timedOut: false }),
+    }
+    record.done = runRetirement(record)
+    retirements.set(entry.workspaceId, record)
+    return record.done
+  }
+
+  const retire: HostRuntimeListener["dispose"] = (workspaceId, options = {}) => {
+    const entry = entries.get(workspaceId)
+    if (entry) return retireEntry(entry)
+    const record = retirements.get(workspaceId)
+    if (!record) return Promise.resolve({ workspaceId, state: "retired", attempt: 0, timedOut: false })
+    if (record.state === "retiring") return record.done
+    if (!options.retry) {
+      return Promise.resolve({
+        workspaceId,
+        state: "retire_failed",
+        attempt: record.attempt,
+        timedOut: record.timedOut,
+        ...(record.drainError ? { drainError: record.drainError } : {}),
+        ...(record.error ? { error: record.error } : {}),
+      })
+    }
+    record.attempt += 1
+    record.state = "retiring"
+    delete record.error
+    record.done = runRetirement(record)
+    return record.done
   }
 
   const ensure: HostRuntimeListener["ensure"] = async (workspace) => {
-    const pending = retiring.get(workspace.workspaceId)
-    if (pending) await pending
+    const unresolved = retirements.get(workspace.workspaceId)
+    if (unresolved) {
+      if (unresolved.state === "retiring") await unresolved.done
+      const settled = retirements.get(workspace.workspaceId)
+      // A retry is an explicit operation, never something creation performs on
+      // its own: the old owner's cleanup is unverified until one succeeds.
+      if (settled) {
+        throw new HostRuntimeRetirementUnresolvedError(
+          workspace.workspaceId,
+          settled.attempt,
+          settled.error ?? "retirement did not complete",
+        )
+      }
+    }
     const hit = entries.get(workspace.workspaceId)
     if (hit) {
       if (hit.directory === workspace.directory) return hit.runtime
-      await disposeEntry(hit)
+      await retireEntry(hit)
       return ensure(workspace)
     }
     const runtime = await createHostWorkspaceRuntime(workspace)
@@ -277,11 +406,16 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
   return {
     url,
     ensure,
-    dispose: (workspaceId) => {
-      const entry = entries.get(workspaceId)
-      return entry ? disposeEntry(entry) : retiring.get(workspaceId) ?? Promise.resolve()
-    },
-    workspaceIds: () => [...entries.keys()].sort(),
+    dispose: retire,
+    owners: () => [
+      ...[...entries.keys()].map((workspaceId) => ({ workspaceId, state: "serving" as const, attempt: 0 })),
+      ...[...retirements.values()].map((record) => ({
+        workspaceId: record.workspaceId,
+        state: record.state,
+        attempt: record.attempt,
+        ...(record.error ? { error: record.error } : {}),
+      })),
+    ].sort((a, b) => a.workspaceId.localeCompare(b.workspaceId)),
     applyRuntimeConfig: async () => {
       await Promise.all([...entries.values()].map(async (entry) => {
         try {
@@ -292,11 +426,29 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
       }))
     },
     close: async () => {
-      await Promise.all([...entries.values()].map(disposeEntry).concat([...retiring.values()]))
+      // Settled, not raced: one owner's failed retirement must not discard the
+      // outcome of every other owner's. Owners already retiring are collected
+      // before the serving ones start, so neither is counted twice.
+      const pending = [
+        ...[...retirements.values()].map((record) => ({ workspaceId: record.workspaceId, done: record.done })),
+        ...[...entries.values()].map((entry) => ({ workspaceId: entry.workspaceId, done: retireEntry(entry) })),
+      ]
+      const settled = await Promise.allSettled(pending.map((owner) => owner.done))
+      const results = settled.map((outcome, index): HostRuntimeRetirementResult =>
+        outcome.status === "fulfilled"
+          ? outcome.value
+          : {
+            workspaceId: pending[index]!.workspaceId,
+            state: "retire_failed",
+            attempt: 0,
+            timedOut: false,
+            error: String(outcome.reason),
+          })
       await new Promise<void>((resolve) => {
         server.close(() => resolve())
         server.closeAllConnections()
       })
+      return { ok: results.every((result) => result.state === "retired"), results }
     },
   }
 }

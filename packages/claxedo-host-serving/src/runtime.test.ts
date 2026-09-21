@@ -9,7 +9,7 @@ import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { projectRuntimeAuth } from "@claxedo/server-core/agent-config/index"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 
-import { createHostRuntimeListener, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
+import { createHostRuntimeListener, HostRuntimeRetirementUnresolvedError, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
 
 const HOST_ID = "host_machine-1"
 const WS_A = "11111111-1111-4111-8111-111111111111"
@@ -117,7 +117,7 @@ describe("host workspace runtime behind the loopback listener", () => {
   }
 
   test("routes /workspaces/<id>/global/health to that workspace's runtime and 404s an unknown id", async () => {
-    expect(listener.workspaceIds()).toEqual([WS_A, WS_B])
+    expect(listener.owners()).toEqual([{ workspaceId: WS_A, state: "serving", attempt: 0 }, { workspaceId: WS_B, state: "serving", attempt: 0 }])
     for (const workspaceId of [WS_A, WS_B]) {
       const response = await fetch(`${listener.url}/workspaces/${workspaceId}/global/health`)
       expect(response.status, workspaceId).toBe(200)
@@ -219,7 +219,7 @@ describe("host workspace runtime behind the loopback listener", () => {
 
   test("dispose drains and removes one runtime while the other keeps serving", async () => {
     await listener.dispose(WS_B)
-    expect(listener.workspaceIds()).toEqual([WS_A])
+    expect(listener.owners()).toEqual([{ workspaceId: WS_A, state: "serving", attempt: 0 }])
     const gone = await fetch(`${listener.url}/workspaces/${WS_B}/global/health`)
     expect(gone.status).toBe(404)
     const kept = await fetch(`${listener.url}/workspaces/${WS_A}/global/health`)
@@ -247,7 +247,7 @@ describe("host workspace runtime behind the loopback listener", () => {
       storeRoot: path.join(root, "state", WS_A),
     })
     expect(after).not.toBe(before)
-    expect(listener.workspaceIds()).toEqual([WS_A])
+    expect(listener.owners()).toEqual([{ workspaceId: WS_A, state: "serving", attempt: 0 }])
     const health = await fetch(`${listener.url}/workspaces/${WS_A}/global/health`)
     expect(health.status).toBe(200)
   })
@@ -295,5 +295,78 @@ describe("host workspace runtime behind the loopback listener", () => {
     expect(() => setHostProviderConfig(JSON.stringify({ version: 2, providers: {} }))).toThrow("version 2, not 1")
     expect(() => setHostProviderConfig("{")).toThrow("not JSON")
     expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "an unreadable payload leaves the rows in place").toEqual({ "claude-sdk": row })
+  })
+
+  test("a failed retirement stays fenced and visible, and an explicit retry reruns only what is left", async () => {
+    const WS_E = "66666666-6666-4666-8666-666666666666"
+    const workspace = {
+      workspaceId: WS_E,
+      directory: path.join(root, WS_E),
+      hostId: HOST_ID,
+      relay: { jwksUrl },
+      sessionAuthorityUrl,
+      storeRoot: path.join(root, "state", WS_E),
+    }
+    await fs.mkdir(workspace.directory, { recursive: true })
+    const runtime = await listener.ensure(workspace)
+
+    const teardown = runtime.dispose.bind(runtime)
+    let refusals = 1
+    let drains = 0
+    const patched = runtime as unknown as { dispose: () => Promise<void>; host: { checkpoint: { freeze: (policy: "drain" | "interrupt") => Promise<unknown> } } }
+    const freeze = patched.host.checkpoint.freeze.bind(patched.host.checkpoint)
+    patched.host.checkpoint.freeze = (policy) => {
+      drains += 1
+      return freeze(policy)
+    }
+    patched.dispose = () => (refusals-- > 0 ? Promise.reject(new Error("teardown refused")) : teardown())
+
+    const failed = await listener.dispose(WS_E)
+    expect(failed).toMatchObject({ workspaceId: WS_E, state: "retire_failed", attempt: 1, timedOut: false })
+    expect(failed.error).toMatch(/teardown refused/)
+    expect(listener.owners()).toContainEqual(expect.objectContaining({ workspaceId: WS_E, state: "retire_failed", attempt: 1 }))
+    expect(await fetch(`${listener.url}/workspaces/${WS_E}/global/health`).then((response) => response.status)).toBe(404)
+
+    // Creation must not reinterpret itself as permission to replace an owner
+    // whose cleanup nothing verified.
+    await expect(listener.ensure(workspace)).rejects.toThrow(HostRuntimeRetirementUnresolvedError)
+    // Asking again without retry reports the same failure; it starts nothing.
+    expect(await listener.dispose(WS_E)).toMatchObject({ state: "retire_failed", attempt: 1 })
+    expect(drains).toBe(1)
+
+    expect(await listener.dispose(WS_E, { retry: true })).toMatchObject({ workspaceId: WS_E, state: "retired", attempt: 2 })
+    expect(drains, "the drain already finished; the retry reran only the teardown").toBe(1)
+    expect(listener.owners().map((owner) => owner.workspaceId)).not.toContain(WS_E)
+    await listener.ensure(workspace)
+    expect(await fetch(`${listener.url}/workspaces/${WS_E}/global/health`).then((response) => response.status)).toBe(200)
+    await listener.dispose(WS_E)
+  })
+
+  test("close collects every owner's retirement result instead of losing the rest to one failure", async () => {
+    const WS_F = "77777777-7777-4777-8777-777777777777"
+    const WS_G = "88888888-8888-4888-8888-888888888888"
+    const closing = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 2_000 })
+    const runtimes = new Map<string, { dispose: () => Promise<void> }>()
+    for (const workspaceId of [WS_F, WS_G]) {
+      const directory = path.join(root, workspaceId)
+      await fs.mkdir(directory, { recursive: true })
+      runtimes.set(workspaceId, await closing.ensure({
+        workspaceId,
+        directory,
+        hostId: HOST_ID,
+        relay: { jwksUrl },
+        sessionAuthorityUrl,
+        storeRoot: path.join(root, "state", workspaceId),
+      }) as unknown as { dispose: () => Promise<void> })
+    }
+    const stuck = runtimes.get(WS_F)!
+    const teardown = stuck.dispose.bind(stuck)
+    stuck.dispose = () => Promise.reject(new Error("teardown refused"))
+
+    const result = await closing.close()
+    expect(result.ok).toBe(false)
+    expect(result.results.map((entry) => [entry.workspaceId, entry.state])).toEqual([[WS_F, "retire_failed"], [WS_G, "retired"]])
+    expect(result.results.find((entry) => entry.workspaceId === WS_F)?.error).toMatch(/teardown refused/)
+    await teardown()
   })
 })
