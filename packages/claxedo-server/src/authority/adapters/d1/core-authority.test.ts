@@ -364,7 +364,7 @@ describe("composed Better Auth + D1 authority", () => {
     await expect(authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")).rejects.toMatchObject({ status: 403 })
     await authority.addOrganizationMember(alice, { orgId: "org_channels", userId: bob.principal!.userId, role: "admin" })
     const access = await authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")
-    expect(access).toMatchObject({ actorId: bob.principal!.actorId, orgId: "org_channels" })
+    expect(access).toMatchObject({ actorId: bob.principal!.actorId, orgId: "org_channels", identityVersion: 1 })
     const tokenScope = { jti: "channel-token", workspaceId: "ws_channels", hostId: "channel-host", actorId: access.actorId, actorKind: access.actorKind, role: access.role, expiresAt: Date.now() + 600_000 }
     await expect(authority.recordChannelRuntimeAccessToken(channelIdentity, { ...tokenScope, actorId: alice.principal!.actorId })).rejects.toMatchObject({ status: 403 })
     await authority.recordChannelRuntimeAccessToken(channelIdentity, tokenScope)
