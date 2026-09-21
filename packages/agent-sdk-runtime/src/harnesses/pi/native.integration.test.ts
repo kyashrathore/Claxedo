@@ -7,6 +7,7 @@ import { harnessFactory } from "../../harness-factories/factory"
 import { PiRpcProcess } from "./rpc-process"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { GOAL_PROMPT_TEXT } from "../shared/goal-protocol"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { pinnedPiExecutable } from "../../test-utils/pinned-pi"
 import { PiHarnessAdapter } from "./index"
 import { piProviderOverrides, retainPiAuth } from "./auth"
@@ -263,7 +264,7 @@ test(
         pending = await adapter.listQuestions(directory)
       }
       expect(pending[0]?.questions[0]?.question).toBe("Native extension question")
-      expect(await adapter.abort(binding)).toMatchObject({ ok: true, status: "cancelled" })
+      expect(await cancelAdapterTurn(adapter, binding)).toMatchObject({ execution: "terminal" })
       await execution
       expect(await adapter.listQuestions(directory)).toEqual([])
       const answeredTurn = execute()
@@ -286,7 +287,7 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 10))
       }
       expect(await fs.readFile(answerFile, "utf8")).toBe("native answer")
-      await adapter.abort(binding)
+      await cancelAdapterTurn(adapter, binding)
       await answeredTurn
     } finally {
       await adapter.dispose()

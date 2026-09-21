@@ -1,6 +1,7 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import type { McpServer } from "@agentclientprotocol/sdk"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { type WithInternals } from "../../test-utils/class-internals"
 import { committedStartTurn, fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import type { AgentRuntimeTurnStartInput } from "../shared/runtime-store"
@@ -542,9 +543,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.sessionProcesses = new Map([["s1", "process-key"]])
     item.permissionOwners = new Map([["perm-mine", proc], ["perm-other", proc]])
 
-    const result = await item.abort(executionBinding("s1", path.resolve("/work")))
+    const result = await cancelAdapterTurn(item, executionBinding("s1", path.resolve("/work")))
 
-    expect(result).toEqual({ ok: true, status: "cancelled" })
+    // The agent acknowledged the notification; ACP says nothing about whether
+    // the prompt stopped, so neither fact may be claimed here.
+    expect(result).toEqual({ execution: "unknown", cleanup: "unknown" })
     expect(responses).toEqual([{ id: "perm-mine", response: { outcome: { outcome: "cancelled" } } }])
     expect(proc.pendingPermissions.has("perm-mine")).toBe(false)
     expect(proc.pendingPermissions.has("perm-other")).toBe(true)
@@ -619,12 +622,15 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.sessionProcesses = new Map([["s1", "process-key"], ["s2", "process-key"]])
     item.permissionOwners = new Map([["perm-1", proc]])
 
-    const result = await item.abort(executionBinding("s1", path.resolve("/work")))
+    const result = await cancelAdapterTurn(item, executionBinding("s1", path.resolve("/work")))
 
     expect(result).toEqual({
-      ok: false,
-      status: "recovering",
-      message: "ACP session cancellation was not acknowledged; its outcome is uncertain.",
+      execution: "unknown",
+      cleanup: "unknown",
+      error: {
+        code: "provider_unreachable",
+        message: "ACP session cancellation was not acknowledged; its outcome is uncertain.",
+      },
     })
     expect(calls).toEqual(["cancel"])
     expect(lost).toEqual([{

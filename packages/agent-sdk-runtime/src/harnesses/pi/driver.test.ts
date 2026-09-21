@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { PiHarnessAdapter } from "./index"
 import { resolvePiExecutable, unpinnedPiReason } from "./executable"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -84,7 +85,7 @@ test.each(["resolve", "reject"] as const)(
       await checked.promise
       // The idle check has finished its filesystem observation; allow its continuation to run.
       await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(await adapter.abort(binding)).toMatchObject({ ok: true, status: "cancelled" })
+      expect(await cancelAdapterTurn(adapter, binding)).toMatchObject({ execution: "terminal" })
       await turn
       expect(JSON.stringify(events)).not.toContain("Pi process disposed")
     } finally {
@@ -279,7 +280,7 @@ test("stopping an extension question releases admission and leaves another sessi
     const session = await f.adapter.createSession(f.directory)
     const other = { ...f.binding, sessionId: session.id, upstreamSessionId: f.store.getAgentSessionId(session.id)! }
     const second = collect(f.adapter, other, "hello")
-    expect(await f.adapter.abort(f.binding)).toMatchObject({ ok: true, status: "cancelled" })
+    expect(await cancelAdapterTurn(f.adapter, f.binding)).toMatchObject({ execution: "terminal" })
     await Promise.all([first, second])
     expect(JSON.stringify(f.store.getMessages(other.sessionId))).toContain("work done")
     expect(await f.adapter.listQuestions(f.directory)).toEqual([])

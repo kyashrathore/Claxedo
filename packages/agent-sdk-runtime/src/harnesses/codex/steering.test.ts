@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createMemoryRuntimeStore } from "../../stores/memory"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
 import { CodexHarnessAdapter } from "./index"
@@ -42,7 +43,7 @@ test("a prompt sent mid-turn is steered into the running turn by its own id", as
 
     const steers = (await requests(fake.log)).filter((request) => request.method === "turn/steer")
     expect(steers).toEqual([{ method: "turn/steer", expectedTurnId: "turn-1" }])
-    await adapter.abort(binding)
+    await cancelAdapterTurn(adapter, binding)
     await turn
   } finally {
     await adapter.dispose()

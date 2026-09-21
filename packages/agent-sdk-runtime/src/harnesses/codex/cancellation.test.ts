@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { createRuntimeEventHub } from "../../runtime-event-hub"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
 import { CodexHarnessAdapter } from "./index"
@@ -44,11 +45,11 @@ for (const terminateFails of [false, true]) {
         }
       })()
       await started
-      const stopping = goalMode ? adapter.goals!.stop(session.id, fake.directory) : adapter.abort(executionBinding(session.id, fake.directory, "native:codex"))
+      const stopping = goalMode ? adapter.goals!.stop(session.id, fake.directory) : cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex"))
       if (terminateFails) {
         await expect(stopping).rejects.toThrow("terminal cleanup failed")
       } else {
-        await expect(stopping).resolves.toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { ok: true, status: "cancelled" })
+        await expect(stopping).resolves.toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { execution: "terminal" })
         expect(await fs.readFile(fake.goalFile + ".terminated", "utf8")).toBe("process-current")
       }
       await turn

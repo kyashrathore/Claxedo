@@ -12,7 +12,7 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AdapterCancelOutcome, AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import { NO_HARNESS_EFFORT, ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
@@ -495,10 +495,12 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async abort(binding: AgentExecutionBinding) {
+  async cancelTurn(binding: AgentExecutionBinding): Promise<AdapterCancelOutcome> {
     const runtime = await this.engine()
     await runtime.sessions.interrupt(this.scope(binding.directory), binding.sessionId)
-    return { ok: true as const, status: "cancelled" as const }
+    // The engine acknowledged the interrupt. Its own turn loop decides when the
+    // turn ends, and this call sees neither that nor what the tools left.
+    return { execution: "unknown", cleanup: "unknown" }
   }
 
   async forkSession(binding: AgentExecutionBinding, messageId: string) {

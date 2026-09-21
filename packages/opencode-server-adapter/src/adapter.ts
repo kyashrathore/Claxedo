@@ -1,6 +1,6 @@
 import { requireAgentExecutionBinding, NO_HARNESS_EFFORT, parseAgentMessage } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding, AgentMessage, AgentSession, PromptInput } from "@claxedo/agent-runtime-contract"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AdapterCancelOutcome, AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import type { HarnessCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
@@ -119,13 +119,23 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     })
   }
 
-  async abort(binding: AgentExecutionBinding) {
+  async cancelTurn(
+    binding: AgentExecutionBinding,
+    input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
+  ): Promise<AdapterCancelOutcome> {
     this.assertBinding(binding)
-    const result = await this.abortUpstream(binding)
-    if (result.ok && result.status === "cancelled") {
-      this.streams.get(binding.upstreamSessionId)?.abort(new DOMException("Turn aborted", "AbortError"))
+    const accepted = await this.abortUpstream(binding, input.signal)
+    if (!accepted) {
+      return {
+        execution: "unknown",
+        cleanup: "unknown",
+        error: { code: "owner_unavailable", message: `Session ${binding.sessionId} was not found upstream` },
+      }
     }
-    return result
+    this.streams.get(binding.upstreamSessionId)?.abort(new DOMException("Turn aborted", "AbortError"))
+    // A 200 from the upstream server accepts the request. Whether the remote
+    // turn stopped, and what it left behind, is not in that response.
+    return { execution: "unknown", cleanup: "unknown" }
   }
 
   getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
@@ -252,14 +262,12 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     await this.requireOk("session.prompt", response)
   }
 
-  private async abortUpstream(binding: AgentExecutionBinding) {
+  private async abortUpstream(binding: AgentExecutionBinding, signal: AbortSignal) {
     await this.ensureCompatible()
-    const response = await this.request("session.abort", `/session/${encodeURIComponent(binding.upstreamSessionId)}/abort`, { method: "POST" })
-    if (response.status === 404) {
-      return { ok: false as const, status: "not_found" as const, message: `Session ${binding.sessionId} was not found` }
-    }
+    const response = await this.request("session.abort", `/session/${encodeURIComponent(binding.upstreamSessionId)}/abort`, { method: "POST", signal })
+    if (response.status === 404) return false
     await this.requireOk("session.abort", response)
-    return { ok: true as const, status: "cancelled" as const }
+    return true
   }
 
   private async reconcile(binding: AgentExecutionBinding, turn: OpenCodeTurn, mode: "recover" | "completion" = "recover") {

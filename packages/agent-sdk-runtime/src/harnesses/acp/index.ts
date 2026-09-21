@@ -37,7 +37,7 @@ import type {
   SessionConfigUpdate,
 } from "../../index"
 import type {
-  AbortResult,
+  AdapterCancelOutcome,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
@@ -541,45 +541,53 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return this.store.getMessages(binding.sessionId)
   }
 
-  async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
+  async cancelTurn(
+    binding: AgentExecutionBinding,
+    input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
+  ): Promise<AdapterCancelOutcome> {
     requireAgentExecutionBinding(binding)
     const { sessionId: id } = binding
     const directory = requireWorkspaceDirectory(binding.directory)
-    log.info("abort: called", { id, directory })
+    log.info("cancelTurn: called", { id, directory, turnId: input.turnId })
     const agentSessionId = this.store.getAgentSessionId(id)
     if (!agentSessionId) {
-      log.info("abort: session not found in store", { id })
-      this.store.markSessionInterrupted(id, "ACP session could not be cancelled because no agent session is attached.")
+      log.info("cancelTurn: session not found in store", { id })
+      const message = "ACP session could not be cancelled because no agent session is attached."
+      this.store.markSessionInterrupted(id, message)
       return {
-        ok: false,
-        status: "recovering",
-        message: "ACP session could not be cancelled because no agent session is attached.",
+        execution: "unknown",
+        cleanup: "unknown",
+        error: { code: "ownership_unverified", message },
       }
     }
     const proc = this.entryForSession(id)?.proc
     if (!proc?.alive) {
-      log.info("abort: no alive process for session", { id, directory })
-      this.store.markSessionInterrupted(id, "ACP session could not be cancelled because its process is no longer alive.", agentSessionId)
+      log.info("cancelTurn: no alive process for session", { id, directory })
+      const message = "ACP session could not be cancelled because its process is no longer alive."
+      this.store.markSessionInterrupted(id, message, agentSessionId)
       return {
-        ok: false,
-        status: "recovering",
-        message: "ACP session could not be cancelled because its process is no longer alive.",
+        execution: "unknown",
+        cleanup: "unknown",
+        error: { code: "provider_unreachable", message },
       }
     }
     try {
       cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
       await proc.cancelAndWait(agentSessionId)
-      return { ok: true, status: "cancelled" }
+      // The agent acknowledged the cancel notification. ACP has no reply that
+      // states the prompt stopped, and the tools it launched are its own, so
+      // neither execution nor cleanup is established here.
+      return { execution: "unknown", cleanup: "unknown" }
     } catch (err) {
-      log.info("abort: cancellation outcome uncertain", { id, directory, err })
+      log.info("cancelTurn: cancellation outcome uncertain", { id, directory, err })
       const message = "ACP session cancellation was not acknowledged; its outcome is uncertain."
       // A live original turn owns its recovering status and eventual terminal
       // event. Do not queue a restart error for its next successful prompt.
       if (!this.lifecycle().activeTurns.has(id)) this.store.markSessionInterrupted(id, message, agentSessionId)
       return {
-        ok: false,
-        status: "recovering",
-        message,
+        execution: "unknown",
+        cleanup: "unknown",
+        error: { code: "provider_unreachable", message },
       }
     }
   }

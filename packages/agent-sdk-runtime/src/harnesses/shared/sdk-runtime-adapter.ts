@@ -31,7 +31,7 @@ import type {
   SessionConfigUpdate,
 } from "../../index"
 import type {
-  AbortResult,
+  AdapterCancelOutcome,
   AgentConfigOptions,
   AgentGoalResource,
   AgentGoalMutationResult,
@@ -791,17 +791,22 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return await steerActiveTurn(this.lifecycle(), binding.sessionId, input)
   }
 
-  async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
+  async cancelTurn(
+    binding: AgentExecutionBinding,
+    input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
+  ): Promise<AdapterCancelOutcome> {
     requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const lifecycle = this.lifecycle()
-    if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
-    // `cancelled` is an admission acknowledgement: callers may start the next
-    // turn as soon as it resolves. Wait until this adapter's own generation has
-    // left its busy section so the replacement cannot be rejected by a stale
-    // second lock and persisted as a failed assistant turn.
-    await lifecycle.whenIdle(id)
-    return { ok: true, status: "cancelled" }
+    // No local entry is not evidence that nothing is running: this adapter's
+    // process may have restarted under a turn the store still holds open.
+    if (!lifecycle.abort(id)) return { execution: "unknown", cleanup: "unknown" }
+    // Leaving the busy section is what makes a replacement turn safe to admit,
+    // so it is the only thing here that establishes termination.
+    const left = await Promise.race([lifecycle.whenIdle(id).then(() => true), stoppedWaiting(input)])
+    if (left) return { execution: "terminal", cleanup: "unknown" }
+    const message = `${this.driver.type} turn ${input.turnId} had not left its producer when the deadline passed`
+    return { execution: "running", cleanup: "unknown", error: { code: "cancellation_timeout", message } }
   }
 
   async listCommands(_directory: string): Promise<AgentCommand[]> { return listCommands() }
@@ -902,4 +907,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.interactions.resolvePermissions(sessionId, decision)
   }
 
+}
+
+/** Resolves false at the caller's deadline, or as soon as the caller stops waiting. */
+function stoppedWaiting(input: { signal: AbortSignal; deadlineAt: number }): Promise<false> {
+  return new Promise((resolve) => {
+    if (input.signal.aborted) return resolve(false)
+    const timer = setTimeout(() => resolve(false), Math.max(0, input.deadlineAt - Date.now()))
+    input.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(false) }, { once: true })
+  })
 }

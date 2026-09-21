@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { removeTestTempDir } from "./test-temp-dir"
 import { createSqliteRuntimeStore } from "../../stores/sqlite"
 import { describe, expect, test } from "bun:test"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
@@ -688,7 +689,8 @@ describe("SdkRuntimeAdapter", () => {
     })()
 
     await running
-    await expect(adapter.abort(executionBinding(session.id, path.resolve("/repo")))).resolves.toEqual({ ok: true, status: "cancelled" })
+    await expect(cancelAdapterTurn(adapter, executionBinding(session.id, path.resolve("/repo"))))
+      .resolves.toEqual({ execution: "terminal", cleanup: "unknown" })
     await turn
 
     expect(events.map((event) => event.type)).not.toContain("session.error")
@@ -765,7 +767,7 @@ describe("SdkRuntimeAdapter", () => {
 
     await running
     let abortSettled = false
-    const abort = adapter.abort(executionBinding(session.id, path.resolve("/repo"))).then((result) => {
+    const abort = cancelAdapterTurn(adapter, executionBinding(session.id, path.resolve("/repo"))).then((result) => {
       abortSettled = true
       return result
     })
@@ -773,7 +775,7 @@ describe("SdkRuntimeAdapter", () => {
 
     expect(abortSettled).toBe(false)
     releaseFirst?.()
-    await expect(abort).resolves.toEqual({ ok: true, status: "cancelled" })
+    await expect(abort).resolves.toEqual({ execution: "terminal", cleanup: "unknown" })
     await first
 
     const replacementEvents: AgentRuntimeStreamEvent[] = []

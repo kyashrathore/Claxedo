@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { AcpHarnessAdapter, type ACPTransport } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 
 function fixture() {
@@ -255,7 +256,7 @@ test("acknowledged cancellation settles one session while its sibling continues"
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
     f.cancelPrompts.set("agent-1", () => f.prompts.get("agent-1")!("cancelled"))
-    expect(await f.adapter.abort(executionBinding("a", "/work"))).toMatchObject({ ok: true, status: "cancelled" })
+    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", "/work"))).toEqual({ execution: "unknown", cleanup: "unknown" })
     await a
     expect(f.store.getMessages("b").some((row) => row.info.error)).toBe(false)
     f.prompts.get("agent-2")!()
@@ -274,7 +275,7 @@ test("unacknowledged cancellation does not dispose a healthy sibling or replay t
     const a = f.turn("a")
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
-    expect(await f.adapter.abort(executionBinding("a", "/work"))).toMatchObject({ ok: false, status: "recovering" })
+    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", "/work"))).toMatchObject({ error: { code: "provider_unreachable" } })
     f.prompts.get("agent-2")!()
     expect((await b).some((event) => event.type === "session.idle")).toBe(true)
     expect(f.transports).toHaveLength(1)

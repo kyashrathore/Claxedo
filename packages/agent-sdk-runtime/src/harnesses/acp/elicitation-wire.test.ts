@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { AcpHarnessAdapter, type ACPTransport } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 
 function fixture(store = new MemoryRuntimeStore()) {
@@ -125,7 +126,7 @@ test("stopping a parent cancels descendant elicitations and preserves another se
     f.elicit("grandchild-question", { sessionId: "grandchild" })
     f.elicit("sibling-question", { sessionId: "sibling" })
     await f.wait(() => f.store.listQuestions("/repo").length === 3)
-    await f.adapter.abort({ ...executionBinding("local", "/repo"), upstreamSessionId: "remote" })
+    await cancelAdapterTurn(f.adapter, { ...executionBinding("local", "/repo"), upstreamSessionId: "remote" })
     await turn
     await f.wait(() => f.responses.has("child-question") && f.responses.has("grandchild-question"))
     expect(f.responses.get("child-question")).toMatchObject({ result: { action: "cancel" } })

@@ -4,6 +4,7 @@ import os from "os"
 import path from "path"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createRuntimeEventHub } from "../../runtime-event-hub"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { committedStartTurn } from "../../test-utils/fake-runtime-store"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
@@ -488,9 +489,10 @@ describe("Codex Goal lifecycle", () => {
     }
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "Working" }))
     expect(await adapter.goals!.pause(session.id, fake.directory)).toMatchObject({ ok: true, goal: { status: "paused" } })
-    // Pause interrupts and awaits the in-flight Goal turn, so the session must
-    // already be idle — a stranded turn would report "cancelled" here instead.
-    expect(await adapter.abort(executionBinding(session.id, fake.directory, "native:codex"))).toEqual({ ok: true, status: "already_idle" })
+    // Pause interrupts and awaits the in-flight Goal turn, so this adapter has
+    // no entry left to stop — a stranded turn would report "terminal" instead.
+    expect(await cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex")))
+      .toEqual({ execution: "unknown", cleanup: "unknown" })
     await adapter.dispose()
   })
 })
